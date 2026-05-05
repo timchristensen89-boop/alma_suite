@@ -12,7 +12,10 @@ import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
 
 const stripe = env.stripe.secretKey
-  ? new Stripe(env.stripe.secretKey, { apiVersion: env.stripe.apiVersion })
+  ? new Stripe(env.stripe.secretKey, {
+      apiVersion: env.stripe.apiVersion,
+      ...(env.stripe.context && { stripeContext: env.stripe.context })
+    })
   : null;
 
 function toGiftCardPayload(card: {

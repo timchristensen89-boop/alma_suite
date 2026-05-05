@@ -83,6 +83,7 @@ export const env = {
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY ?? '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET ?? '',
+    context: process.env.STRIPE_CONTEXT ?? process.env.STRIPE_ACCOUNT_ID ?? '',
     apiVersion: '2026-04-22.dahlia' as const
   },
   giftCards: {

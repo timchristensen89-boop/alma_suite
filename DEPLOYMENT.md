@@ -81,6 +81,7 @@ Required production API settings:
 - `RESEND_API_KEY` and `RESEND_FROM` for onboarding invite emails
 - `STRIPE_SECRET_KEY` for gift card checkout payments
 - `STRIPE_WEBHOOK_SECRET` for the gift card checkout webhook
+- `STRIPE_CONTEXT` when `STRIPE_SECRET_KEY` is an Organization API key and Stripe requires a target account context
 - `STOCK_JWT_SECRET`, `STOCK_SESSION_SECRET`, or `JWT_SECRET` for `@alma/stock-api`
 - Production stock frontend origins via `STOCK_CORS_ORIGIN` or `COMPLIANCE_WEB_URL`, `STOCK_WEB_URL`, `STAFF_WEB_URL`, `REPORTS_WEB_URL`, `RESERVE_WEB_URL`, `MARKETING_WEB_URL`, and `GIFTCARDS_WEB_URL`
 
@@ -120,7 +121,7 @@ Subscribe it to:
 checkout.session.completed
 ```
 
-Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the API host's secret manager. Without these values, the checkout endpoint returns a clear setup error and does not create fake successful payments.
+Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the API host's secret manager. Prefer an account-level Stripe secret key. If using an Organization API key, also set `STRIPE_CONTEXT` to the target Stripe account context, for example the `acct_...` account id. Without these values, the checkout endpoint returns a clear setup error and does not create fake successful payments.
 
 ## Frontend Deployment
 
