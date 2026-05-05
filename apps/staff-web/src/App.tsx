@@ -1431,7 +1431,7 @@ function AdminPage({
         <StatCard label="Staff profiles" value={staff.length} hint="Shared authority" loading={loading} />
       </div>
 
-      <div className="staff-board">
+      <div className="tips-entry-grid">
         <Card title="Organisation settings" subtitle="Production-safe basics shared across the suite">
           <form
             className="staff-profile-form"
@@ -3870,7 +3870,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </Card>
       </div>
 
-      <Card title="Staff entitlements" subtitle="Review the calculated split, exclude a staff member, or add a once-off adjustment before locking a paid run." padding="none">
+        <Card title="Staff entitlements" subtitle="Review the calculated split, exclude a staff member, or add a once-off adjustment before locking a paid run." padding="none" className="tips-entitlements-card">
         {!loading && !reviewedRows.length ? (
           <EmptyState title="No tip entitlements yet" description="Approve timesheets and add cash tips to calculate staff payouts." />
         ) : null}

@@ -284,6 +284,7 @@ export function SuiteAppSwitcher({
   apps = SUITE_APPS,
   variant = 'login'
 }: SuiteAppSwitcherProps) {
+  const [mobileOpen, setMobileOpen] = useState(false);
   const isSidebar = variant === 'sidebar';
   const isTopbar = variant === 'topbar';
   const current = apps.find((app) => app.id === currentApp);
@@ -374,8 +375,14 @@ export function SuiteAppSwitcher({
 
   if (isTopbar) {
     return (
-      <details className={className}>
-        <summary aria-label="Open Alma app switcher">
+      <div className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
+        <button
+          type="button"
+          className="suite-switcher-mobile-trigger"
+          aria-label="Open Alma app switcher"
+          aria-expanded={mobileOpen}
+          onClick={() => setMobileOpen((open) => !open)}
+        >
           <span className="suite-switcher-current-mark" aria-hidden="true">
             {current ? (
               <AlmaAppIcon
@@ -391,9 +398,9 @@ export function SuiteAppSwitcher({
             ) : null}
           </span>
           <span>Apps</span>
-        </summary>
+        </button>
         {grid}
-      </details>
+      </div>
     );
   }
 
@@ -423,3 +430,4 @@ export function SuiteApps() {
     </div>
   );
 }
+import { useState } from 'react';

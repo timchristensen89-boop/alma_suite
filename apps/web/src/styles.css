@@ -4069,13 +4069,9 @@ a.suite-app-tile:hover {
   overflow: visible;
 }
 
-.suite-switcher--topbar > summary {
+.suite-switcher--topbar > .suite-switcher-mobile-trigger {
   display: none;
   list-style: none;
-}
-
-.suite-switcher--topbar > summary::-webkit-details-marker {
-  display: none;
 }
 
 .suite-switcher--topbar .suite-app-grid {
@@ -4190,7 +4186,7 @@ a.suite-app-tile:hover {
     order: -1;
   }
 
-  .suite-switcher--topbar > summary {
+  .suite-switcher--topbar > .suite-switcher-mobile-trigger {
     display: inline-flex;
     align-items: center;
     gap: 7px;
@@ -4232,7 +4228,7 @@ a.suite-app-tile:hover {
     box-shadow: var(--shadow-lg);
   }
 
-  .suite-switcher--topbar[open] .suite-app-grid {
+  .suite-switcher--topbar.is-open .suite-app-grid {
     display: grid;
   }
 

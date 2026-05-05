@@ -44,12 +44,43 @@
 
 .tips-section-stack {
   display: grid;
-  gap: 14px;
+  gap: 18px;
+}
+
+.tips-page {
+  gap: 22px;
+}
+
+.tips-page .page-header {
+  align-items: flex-end;
+}
+
+.tips-page .page-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tips-page .stats-grid {
+  grid-template-columns: repeat(6, minmax(132px, 1fr));
+}
+
+.tips-entry-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(360px, 1.15fr) minmax(300px, 1fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.tips-entry-grid .card,
+.tips-entitlements-card {
+  min-width: 0;
 }
 
 .tips-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
 }
 
 .tips-table {
@@ -60,6 +91,10 @@
 
 .tips-table td {
   vertical-align: top;
+}
+
+.tips-table table {
+  min-width: 920px;
 }
 
 .tips-table .field {
@@ -123,6 +158,14 @@
   display: grid;
   gap: 2px;
   min-width: 0;
+}
+
+.tips-page .toolbar-right {
+  flex-wrap: wrap;
+}
+
+.tips-page textarea {
+  resize: vertical;
 }
 
 .inline-checkbox {
@@ -1329,6 +1372,30 @@
 }
 
 @media (max-width: 1200px) {
+  .tips-page .stats-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .tips-entry-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tips-entry-grid .card:last-child {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 960px) {
+  .tips-entry-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tips-entry-grid .card:last-child {
+    grid-column: auto;
+  }
+}
+
+@media (max-width: 1200px) {
   .deputy-roster-layout {
     grid-template-columns: 1fr;
   }
@@ -1551,6 +1618,26 @@
 }
 
 @media (max-width: 760px) {
+  .tips-page .page-header {
+    align-items: stretch;
+  }
+
+  .tips-page .page-header-actions {
+    justify-content: stretch;
+  }
+
+  .tips-page .page-header-actions .btn {
+    flex: 1 1 120px;
+  }
+
+  .tips-page .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tips-entry-grid {
+    gap: 12px;
+  }
+
   .public-onboarding {
     padding: 20px 12px;
   }
@@ -1722,6 +1809,23 @@
 }
 
 @media (max-width: 520px) {
+  .tips-page .stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .tips-page .card-header,
+  .tips-page .card-body {
+    padding-inline: 14px;
+  }
+
+  .tips-page .toolbar-right {
+    justify-content: stretch;
+  }
+
+  .tips-page .toolbar-right .btn {
+    flex: 1 1 100%;
+  }
+
   .deputy-roster-actions {
     grid-template-columns: 1fr;
   }
