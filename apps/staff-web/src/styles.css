@@ -577,6 +577,62 @@
   font-weight: 700;
 }
 
+.roster-closed-days {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.roster-closed-days > strong {
+  margin-right: 4px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.roster-closed-days button {
+  display: inline-grid;
+  gap: 1px;
+  min-width: 64px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: #ffffff;
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-closed-days button:hover {
+  border-color: rgba(36, 76, 159, 0.32);
+  background: #f8fafc;
+}
+
+.roster-closed-days button.is-closed {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #991b1b;
+}
+
+.roster-closed-days span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.roster-closed-days small {
+  color: currentColor;
+  font-size: 10px;
+  opacity: 0.72;
+}
+
 .deputy-day-summary-strip {
   display: grid;
   grid-template-columns: repeat(7, minmax(0, 1fr));
@@ -985,6 +1041,34 @@
   color: var(--color-accent-text);
 }
 
+.deputy-day-head.is-closed {
+  align-items: center;
+  padding: 8px 5px;
+  background: #fff1f2;
+  color: #991b1b;
+  text-align: center;
+}
+
+.deputy-day-head.is-closed strong,
+.deputy-day-head.is-closed span,
+.deputy-day-head.is-closed small {
+  overflow: hidden;
+  max-width: 100%;
+  text-overflow: ellipsis;
+}
+
+.deputy-close-day-button {
+  margin-top: 4px;
+  padding: 3px 5px;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+}
+
 .deputy-schedule-row {
   display: contents;
 }
@@ -1049,6 +1133,42 @@
 
 .deputy-schedule-cell.has-shifts {
   background: #fbfdff;
+}
+
+.deputy-schedule-cell.is-closed {
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  padding: 4px;
+  background: #fff7f7;
+  color: #991b1b;
+  cursor: not-allowed;
+}
+
+.deputy-closed-cell {
+  display: grid;
+  justify-items: center;
+  gap: 3px;
+  color: #991b1b;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+}
+
+.deputy-closed-cell small {
+  display: inline-grid;
+  min-width: 16px;
+  min-height: 16px;
+  place-items: center;
+  border-radius: 999px;
+  background: #fecaca;
+  color: #7f1d1d;
+  font-size: 10px;
+  writing-mode: horizontal-tb;
+  transform: rotate(180deg);
 }
 
 .deputy-add-shift {

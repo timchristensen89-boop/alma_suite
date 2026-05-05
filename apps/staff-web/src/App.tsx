@@ -143,6 +143,7 @@ const VENUE_OPTIONS = [
 ];
 
 const ROSTER_FORECAST_STORAGE_KEY = 'alma.staff.roster.forecast.v1';
+const ROSTER_CLOSED_DAYS_STORAGE_KEY = 'alma.staff.roster.closedDays.v1';
 
 type RosterForecastDraft = {
   forecastSales: string;
@@ -1824,7 +1825,7 @@ function RosterPage({
 }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [boardDays, setBoardDays] = useState<7 | 14>(7);
-  const [viewMode, setViewMode] = useState<'team' | 'area'>('team');
+  const [viewMode, setViewMode] = useState<'team' | 'area'>('area');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | RosterShift['status']>('all');
   const [staffProfileId, setStaffProfileId] = useState(staff[0]?.id ?? '');
@@ -1846,10 +1847,14 @@ function RosterPage({
   const [forecastSales, setForecastSales] = useState(forecastDraft.forecastSales);
   const [dailyForecastSales, setDailyForecastSales] = useState<Record<string, string>>(forecastDraft.dailyForecastSales);
   const [targetWagePercent, setTargetWagePercent] = useState(forecastDraft.targetWagePercent);
+  const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
+  const closedScopeKey = `${toDateInput(weekStart)}:${boardDays}:${venueFilter}`;
+  const closedDayKeys = useMemo(() => new Set(closedDaysByScope[closedScopeKey] ?? []), [closedDaysByScope, closedScopeKey]);
+  const closedDayCount = closedDayKeys.size;
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const venueRoster = roster
@@ -2082,6 +2087,24 @@ function RosterPage({
       : splitAreaRows.filter((row) =>
           `${row.venue} ${row.label} ${row.sublabel}`.toLowerCase().includes(rowSearch)
         );
+  const scheduleGridStyle = useMemo<CSSProperties>(() => {
+    const labelColumn = editorOpen ? 'minmax(136px, 0.78fr)' : 'minmax(150px, 0.72fr)';
+    const openColumn =
+      boardDays === 14
+        ? editorOpen
+          ? 'minmax(82px, 1fr)'
+          : 'minmax(96px, 1fr)'
+        : editorOpen
+          ? 'minmax(112px, 1fr)'
+          : 'minmax(132px, 1fr)';
+    const closedColumn = boardDays === 14 ? 'minmax(38px, 0.18fr)' : 'minmax(46px, 0.22fr)';
+    return {
+      gridTemplateColumns: [
+        labelColumn,
+        ...days.map((day) => (closedDayKeys.has(toDateInput(day)) ? closedColumn : openColumn))
+      ].join(' ')
+    };
+  }, [boardDays, closedDayKeys, days, editorOpen]);
 
   useEffect(() => {
     if (!staffProfileId && activeStaff[0]) setStaffProfileId(activeStaff[0].id);
@@ -2097,6 +2120,10 @@ function RosterPage({
       JSON.stringify({ forecastSales, targetWagePercent, dailyForecastSales })
     );
   }, [dailyForecastSales, forecastSales, targetWagePercent]);
+
+  useEffect(() => {
+    window.localStorage.setItem(ROSTER_CLOSED_DAYS_STORAGE_KEY, JSON.stringify(closedDaysByScope));
+  }, [closedDaysByScope]);
 
   function setRosterWeek(nextWeekStart: Date) {
     setWeekStart(nextWeekStart);
@@ -2139,6 +2166,22 @@ function RosterPage({
     setDailyForecastSales(nextDailyForecast);
     setForecastSales(totalCents > 0 ? String(Math.round(totalCents / 100)) : '');
     setMessage('Historical sales forecast applied to this roster view.');
+  }
+
+  function toggleClosedDay(day: Date) {
+    const key = toDateInput(day);
+    setClosedDaysByScope((current) => {
+      const existing = new Set(current[closedScopeKey] ?? []);
+      if (existing.has(key)) {
+        existing.delete(key);
+      } else {
+        existing.add(key);
+      }
+      return {
+        ...current,
+        [closedScopeKey]: Array.from(existing).sort()
+      };
+    });
   }
 
   useEffect(() => {
@@ -2363,6 +2406,10 @@ function RosterPage({
   }
 
   function prefillCell(row: (typeof scheduleRows)[number], day: Date) {
+    if (closedDayKeys.has(toDateInput(day))) {
+      setMessage('This day is marked closed. Re-open the day before adding shifts.');
+      return;
+    }
     setEditingShift(null);
     setEditorOpen(true);
     setDate(toDateInput(day));
@@ -2421,6 +2468,11 @@ function RosterPage({
   }
 
   async function moveShiftToCell(shift: RosterShift, row: (typeof scheduleRows)[number], day: Date) {
+    if (closedDayKeys.has(toDateInput(day))) {
+      setMessage('This day is marked closed. Re-open the day before moving shifts here.');
+      setDraggingShiftId(null);
+      return;
+    }
     const startsAt = moveDateKeepingTime(shift.startsAt, day);
     const endsAt = moveDateKeepingTime(shift.endsAt, day);
     const targetMember =
@@ -2567,9 +2619,30 @@ function RosterPage({
         <span><strong>{draftCount}</strong> draft</span>
         <span><strong>{publishedCount}</strong> published</span>
         <span><strong>{roundHours(totalHours)}</strong> roster hours</span>
+        <span><strong>{closedDayCount}</strong> closed</span>
         <span><strong>{visibleRoster.filter(isDeputyImportedShift).length}</strong> Deputy import</span>
         <span><strong>{visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length}</strong> unallocated</span>
         {message ? <span className="deputy-roster-message">{message}</span> : null}
+      </div>
+
+      <div className="roster-closed-days" aria-label="Weekly closed days">
+        <strong>Closed days</strong>
+        {days.map((day) => {
+          const key = toDateInput(day);
+          const isClosed = closedDayKeys.has(key);
+          return (
+            <button
+              key={key}
+              type="button"
+              className={isClosed ? 'is-closed' : ''}
+              onClick={() => toggleClosedDay(day)}
+              aria-pressed={isClosed}
+            >
+              <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+              <small>{isClosed ? 'Closed' : 'Open'}</small>
+            </button>
+          );
+        })}
       </div>
 
       {publishPreviewOpen ? (
@@ -2745,18 +2818,22 @@ function RosterPage({
 
       <div className={`deputy-roster-layout ${editorOpen ? 'is-editor-open' : 'is-editor-closed'}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
-          <div className={`deputy-schedule-grid roster-days-${boardDays}`}>
+          <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
               <span>{viewMode === 'team' ? 'Team member' : 'Area'}</span>
             </div>
             {days.map((day) => {
               const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
               const hours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+              const isClosed = closedDayKeys.has(toDateInput(day));
               return (
-                <div key={day.toISOString()} className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''}`}>
+                <div key={day.toISOString()} className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}>
                   <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                   <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-                  <small>{roundHours(hours)}</small>
+                  <small>{isClosed ? 'Closed' : roundHours(hours)}</small>
+                  <button type="button" className="deputy-close-day-button" onClick={() => toggleClosedDay(day)}>
+                    {isClosed ? 'Open' : 'Close'}
+                  </button>
                 </div>
               );
             })}
@@ -2778,11 +2855,13 @@ function RosterPage({
                     </div>
                     {days.map((day) => {
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
+                      const isClosed = closedDayKeys.has(toDateInput(day));
                       return (
                         <button
                           key={`${row.id}-${day.toISOString()}`}
                           type="button"
-                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''}`}
+                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}`}
+                          aria-disabled={isClosed}
                           onClick={() => prefillCell(row, day)}
                           onDragOver={(event) => {
                             event.preventDefault();
@@ -2790,8 +2869,14 @@ function RosterPage({
                           }}
                           onDrop={(event) => void handleDrop(event, row, day)}
                         >
-                          {cellShifts.length === 0 ? <span className="deputy-add-shift">+ Shift</span> : null}
-                          {cellShifts.map((shift) => (
+                          {isClosed ? (
+                            <span className="deputy-closed-cell">
+                              Closed
+                              {cellShifts.length ? <small>{cellShifts.length}</small> : null}
+                            </span>
+                          ) : null}
+                          {!isClosed && cellShifts.length === 0 ? <span className="deputy-add-shift">+ Shift</span> : null}
+                          {!isClosed ? cellShifts.map((shift) => (
                             <span
                               key={shift.id}
                               draggable
@@ -2814,7 +2899,7 @@ function RosterPage({
                                     : shift.status}
                               </small>
                             </span>
-                          ))}
+                          )) : null}
                         </button>
                       );
                     })}
@@ -3076,6 +3161,23 @@ function loadRosterForecastDraft(): RosterForecastDraft {
     };
   } catch {
     return fallback;
+  }
+}
+
+function loadRosterClosedDays(): Record<string, string[]> {
+  try {
+    const raw = window.localStorage.getItem(ROSTER_CLOSED_DAYS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {};
+    return Object.entries(parsed).reduce((draft, [scope, value]) => {
+      if (Array.isArray(value)) {
+        draft[scope] = value.filter((item): item is string => typeof item === 'string');
+      }
+      return draft;
+    }, {} as Record<string, string[]>);
+  } catch {
+    return {};
   }
 }
 
