@@ -24,7 +24,12 @@ import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
-const AMOUNTS = [5000, 10000, 15000, 20000];
+const AMOUNTS = [
+  { amountCents: 5000, title: 'Margaritas and tacos', note: 'A round, a few plates, a very easy thank you.' },
+  { amountCents: 10000, title: 'Dinner for two', note: 'A simple way to send someone out for dinner.' },
+  { amountCents: 15000, title: 'Long lunch', note: 'For a long lunch that has room to roll on.' },
+  { amountCents: 20000, title: 'A celebration', note: 'For birthdays, milestones and bigger tables.' }
+];
 const VENUES = ['Alma Avalon', 'St Alma'];
 const GIFTCARD_NAV_ITEMS = [
   {
@@ -116,6 +121,7 @@ function useGiftCardAuth() {
 
 function PublicGiftCardShop() {
   const [amountCents, setAmountCents] = useState(10000);
+  const [customAmount, setCustomAmount] = useState('');
   const [purchaserName, setPurchaserName] = useState('');
   const [purchaserEmail, setPurchaserEmail] = useState('');
   const [recipientName, setRecipientName] = useState('');
@@ -125,6 +131,10 @@ function PublicGiftCardShop() {
   const [submitting, setSubmitting] = useState(false);
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
   const [paidCard, setPaidCard] = useState<GiftCardPublic | null>(null);
+  const selectedGift = AMOUNTS.find((gift) => gift.amountCents === amountCents);
+  const amountError = amountCents < 1000 || amountCents > 200000
+    ? 'Choose an amount between $10 and $2,000.'
+    : null;
 
   useEffect(() => {
     if (!sessionId) return;
@@ -135,6 +145,10 @@ function PublicGiftCardShop() {
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (amountError) {
+      setFeedback(amountError);
+      return;
+    }
     setSubmitting(true);
     setFeedback(null);
     try {
@@ -159,12 +173,39 @@ function PublicGiftCardShop() {
     }
   }
 
+  function chooseAmount(cents: number) {
+    setAmountCents(cents);
+    setCustomAmount('');
+  }
+
+  function updateCustomAmount(value: string) {
+    setCustomAmount(value);
+    const dollars = Number(value);
+    if (Number.isFinite(dollars)) {
+      setAmountCents(Math.round(dollars * 100));
+    }
+  }
+
   return (
     <main className="giftcards-public-page">
+      <header className="giftcards-public-header">
+        <a href="https://almagroup.com.au/" aria-label="Alma Group home">
+          <img src="/images/alma-group-logo.png" alt="Alma Group" />
+        </a>
+        <nav aria-label="Alma Group">
+          <a href="https://almagroup.com.au/menu">Menus</a>
+          <a href="https://almagroup.com.au/book">Book</a>
+          <a href="https://almagroup.com.au/contact">Contact</a>
+        </nav>
+      </header>
       <div className="giftcards-public-shell">
-        <ProductLogo appId="giftcards" size="lg" />
         {paidCard ? (
-          <Card title="Gift card payment received" subtitle="Stripe has confirmed the checkout session.">
+          <section className="giftcards-public-panel giftcards-public-success" aria-label="Gift card payment received">
+            <div>
+              <p className="giftcards-public-eyebrow">Payment received</p>
+              <h2>Your gift card is ready.</h2>
+              <p>Stripe has confirmed the payment. The code below is ready to use at Alma Avalon and St Alma.</p>
+            </div>
             <div className="giftcards-paid-card">
               <strong>{paidCard.code}</strong>
               <span>{formatCents(paidCard.balanceCents)} available</span>
@@ -172,31 +213,112 @@ function PublicGiftCardShop() {
               {paidCard.emailedAt ? <small>Email sent to the purchaser and recipient.</small> : null}
               {paidCard.emailError ? <small>Email needs attention: {paidCard.emailError}</small> : null}
               <div className="giftcards-inline-actions">
-                <Button type="button" variant="secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</Button>
+                <button type="button" className="giftcards-public-secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</button>
               </div>
             </div>
-          </Card>
+          </section>
         ) : null}
-        <Card title="Buy an ALMA gift card" subtitle="Redeemable at ALMA venues. Payment is handled securely by Stripe.">
-          <form className="giftcards-form" onSubmit={checkout}>
-            <div className="giftcards-amounts">
-              {AMOUNTS.map((amount) => (
-                <button key={amount} type="button" className={amountCents === amount ? 'is-selected' : ''} onClick={() => setAmountCents(amount)}>
-                  {formatCents(amount)}
-                </button>
-              ))}
+        <section className="giftcards-public-hero">
+          <div className="giftcards-public-copy">
+            <p className="giftcards-public-eyebrow">Alma Group gift cards</p>
+            <h1>Gift a good table.</h1>
+            <p>
+              Send lunch, dinner, margaritas or a celebration across Alma Avalon and St Alma.
+              Choose a set amount or enter your own.
+            </p>
+            <div className="giftcards-public-links">
+              <a href="https://almagroup.com.au/book">Book a table</a>
+              <a href="https://almagroup.com.au/menu">View menus</a>
             </div>
-            <div className="form-grid two">
-              <Input label="Your name" required value={purchaserName} onChange={(event) => setPurchaserName(event.currentTarget.value)} />
-              <Input label="Your email" required type="email" value={purchaserEmail} onChange={(event) => setPurchaserEmail(event.currentTarget.value)} />
-              <Input label="Recipient name" value={recipientName} onChange={(event) => setRecipientName(event.currentTarget.value)} />
-              <Input label="Recipient email" type="email" value={recipientEmail} onChange={(event) => setRecipientEmail(event.currentTarget.value)} />
+          </div>
+          <div className="giftcards-public-image" aria-hidden="true">
+            <img src="/images/alma-avalon-margaritas.jpg" alt="" />
+          </div>
+        </section>
+
+        <section className="giftcards-public-grid">
+          <div className="giftcards-public-amounts" aria-label="Gift card amounts">
+            {AMOUNTS.map((gift) => (
+              <button
+                key={gift.amountCents}
+                type="button"
+                className={amountCents === gift.amountCents && customAmount === '' ? 'is-selected' : ''}
+                onClick={() => chooseAmount(gift.amountCents)}
+              >
+                <span>Alma Group</span>
+                <strong>{formatCents(gift.amountCents)}</strong>
+                <em>{gift.title}</em>
+                <small>{gift.note}</small>
+              </button>
+            ))}
+            <label className={`giftcards-custom-amount ${customAmount ? 'is-selected' : ''}`}>
+              <span>Custom amount</span>
+              <strong>{customAmount ? formatCents(amountCents) : 'Your choice'}</strong>
+              <small>Enter any amount from $10 to $2,000.</small>
+              <input
+                type="number"
+                min="10"
+                max="2000"
+                step="1"
+                value={customAmount}
+                onChange={(event) => updateCustomAmount(event.currentTarget.value)}
+                placeholder="125"
+              />
+            </label>
+          </div>
+
+          <form className="giftcards-public-form" onSubmit={checkout}>
+            <div className="giftcards-form-heading">
+              <p className="giftcards-public-eyebrow">Secure checkout</p>
+              <h2>{selectedGift ? selectedGift.title : 'Custom gift card'}</h2>
+              <p>{selectedGift?.note ?? 'A flexible Alma Group gift card for whatever table they choose.'}</p>
+              <strong>{formatCents(amountCents)}</strong>
             </div>
-            <Textarea label="Message" rows={3} value={message} onChange={(event) => setMessage(event.currentTarget.value)} />
-            {feedback ? <p className="error-text">{feedback}</p> : null}
-            <Button type="submit" disabled={submitting}>{submitting ? 'Opening Stripe...' : `Pay ${formatCents(amountCents)}`}</Button>
+            <div className="giftcards-public-fields">
+              <label>
+                <span>Your name</span>
+                <input required value={purchaserName} onChange={(event) => setPurchaserName(event.currentTarget.value)} />
+              </label>
+              <label>
+                <span>Your email</span>
+                <input required type="email" value={purchaserEmail} onChange={(event) => setPurchaserEmail(event.currentTarget.value)} />
+              </label>
+              <label>
+                <span>Recipient name</span>
+                <input value={recipientName} onChange={(event) => setRecipientName(event.currentTarget.value)} />
+              </label>
+              <label>
+                <span>Recipient email</span>
+                <input type="email" value={recipientEmail} onChange={(event) => setRecipientEmail(event.currentTarget.value)} />
+              </label>
+              <label className="giftcards-public-message">
+                <span>Message</span>
+                <textarea rows={3} value={message} onChange={(event) => setMessage(event.currentTarget.value)} />
+              </label>
+            </div>
+            {feedback || amountError ? <p className="giftcards-public-error">{feedback ?? amountError}</p> : null}
+            <button className="giftcards-public-submit" type="submit" disabled={submitting || Boolean(amountError)}>
+              {submitting ? 'Opening Stripe...' : `Pay ${formatCents(amountCents)}`}
+            </button>
           </form>
-        </Card>
+        </section>
+        <section className="giftcards-public-notes">
+          <div>
+            <img src="/images/fish.png" alt="" />
+            <strong>Redeem across venues</strong>
+            <span>Alma Avalon and St Alma Freshwater.</span>
+          </div>
+          <div>
+            <img src="/images/fish.png" alt="" />
+            <strong>Delivered by email</strong>
+            <span>Only after Stripe confirms payment.</span>
+          </div>
+          <div>
+            <img src="/images/fish.png" alt="" />
+            <strong>Easy to print</strong>
+            <span>Use the printable gift card after checkout.</span>
+          </div>
+        </section>
         <a className="giftcards-staff-link" href="/redeem">Staff redeem</a>
       </div>
     </main>
