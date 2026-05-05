@@ -53,7 +53,7 @@ type CliArgs = {
 
 const REPO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const DEFAULT_FILE = 'tmp/alma-control-export.json';
-const APP_IDS: AlmaAppId[] = ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'TRAINING', 'SETTINGS'];
+const APP_IDS: AlmaAppId[] = ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'SETTINGS'];
 
 const summary = Object.fromEntries(
   (

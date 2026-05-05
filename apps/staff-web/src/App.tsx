@@ -57,7 +57,6 @@ const STAFF_APPS: Array<{ id: AlmaAppId; label: string; role: string }> = [
   { id: 'STOCK', label: 'Stock', role: 'USER' },
   { id: 'STAFF', label: 'Staff', role: 'MANAGER' },
   { id: 'REPORTS', label: 'Reports', role: 'USER' },
-  { id: 'TRAINING', label: 'Academy', role: 'USER' },
   { id: 'SETTINGS', label: 'Admin', role: 'ADMIN' }
 ];
 
@@ -120,6 +119,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     description: 'Upcoming shifts and timesheets',
     icon: <PeopleIcon />,
     end: true
+  },
+  {
+    to: '/academy',
+    label: 'Academy',
+    description: 'Assigned training modules',
+    icon: <CapIcon />
   },
   {
     to: '/timesheets',
@@ -597,6 +602,65 @@ function StaffMemberHome({
           <Button type="button" variant={policyAcknowledged ? 'secondary' : 'primary'} onClick={acknowledgePolicy}>
             {policyAcknowledged ? 'Acknowledged' : 'Acknowledge'}
           </Button>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function StaffMemberAcademyPage({ staff, loading }: { staff: StaffProfile[]; loading: boolean }) {
+  const { user } = useAuth();
+  const member = staff.find((item) => item.id === user?.id) ?? staff[0] ?? null;
+  const records = [...(member?.trainingRecords ?? [])].sort((a, b) => {
+    const statusRank = { ASSIGNED: 0, IN_PROGRESS: 1, EXPIRED: 2, COMPLETED: 3 } as const;
+    const left = statusRank[a.status] ?? 9;
+    const right = statusRank[b.status] ?? 9;
+    if (left !== right) return left - right;
+    return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
+  });
+  const openRecords = records.filter((record) => record.status !== 'COMPLETED');
+  const completedRecords = records.filter((record) => record.status === 'COMPLETED');
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="My Academy"
+        title="Training assigned to you"
+        description="Academy now lives inside Staff. Your manager assigns modules and records completion against your staff profile."
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Open modules" value={openRecords.length} hint="Assigned or in progress" loading={loading} />
+        <StatCard label="Completed" value={completedRecords.length} hint="Finished modules" loading={loading} />
+        <StatCard label="Level" value={member?.trainingLevel ?? 0} hint="Current Academy level" loading={loading} />
+        <StatCard label="Training rate" value={formatCents(member?.trainingPayRateCents ?? null)} hint="Pay rule rate" loading={loading} />
+      </div>
+
+      <Card title="Assigned modules" subtitle="Ask your manager to mark completion once practical training is signed off." padding="none">
+        {loading ? <Spinner label="Loading Academy…" /> : null}
+        {!loading && records.length === 0 ? (
+          <EmptyState title="No Academy modules assigned" description="Your assigned training modules will appear here." />
+        ) : null}
+        <div className="invite-list">
+          {records.map((record) => (
+            <div key={record.id} className="invite-row">
+              <span>
+                <strong>{record.module?.title ?? 'Academy module'}</strong>
+                <span className="subtle">
+                  Level {record.module?.level ?? '-'} · {record.module?.category || 'Training'}
+                  {record.module?.estimatedMinutes ? ` · ${record.module.estimatedMinutes}m` : ''}
+                </span>
+                {record.module?.description ? <span className="subtle">{record.module.description}</span> : null}
+                {record.completedAt ? <span className="subtle">Completed {new Date(record.completedAt).toLocaleDateString()}</span> : null}
+                {record.notes ? <span className="subtle">{record.notes}</span> : null}
+              </span>
+              <span className="invite-row-actions">
+                <Badge tone={record.status === 'COMPLETED' ? 'positive' : record.status === 'EXPIRED' ? 'danger' : record.status === 'IN_PROGRESS' ? 'warning' : 'muted'}>
+                  {record.status.replace('_', ' ')}
+                </Badge>
+              </span>
+            </div>
+          ))}
         </div>
       </Card>
     </div>
@@ -4907,6 +4971,8 @@ function StaffShell() {
       {isStaffUser ? (
         <Routes>
           <Route path="/" element={<StaffMemberHome staff={staff} roster={roster} loading={loading} reload={reload} />} />
+          <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
+          <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<StaffMemberTipsPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />

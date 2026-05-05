@@ -18,7 +18,6 @@ const MASTER_APP_ACCESS: Array<{
   { appId: 'STOCK', status: 'ENABLED', role: 'MANAGER', notes: 'Master admin access' },
   { appId: 'STAFF', status: 'ENABLED', role: 'MANAGER', notes: 'Master admin access' },
   { appId: 'REPORTS', status: 'ENABLED', role: 'USER', notes: 'Master admin access' },
-  { appId: 'TRAINING', status: 'ENABLED', role: 'USER', notes: 'Master admin access' },
   { appId: 'SETTINGS', status: 'ENABLED', role: 'ADMIN', notes: 'Master admin access' }
 ];
 

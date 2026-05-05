@@ -286,14 +286,6 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <DocumentIcon />
   },
   {
-    id: 'training',
-    label: 'ACADEMY',
-    from: '#B98216',
-    to: '#73520E',
-    iconKey: 'cap',
-    icon: <CapIcon />
-  },
-  {
     id: 'settings',
     label: 'ADMIN',
     from: '#343A40',

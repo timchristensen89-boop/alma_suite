@@ -26,7 +26,6 @@ const PROD_ADMIN_ACCESS: Array<{
   { appId: 'STOCK', status: 'ENABLED', role: 'MANAGER', notes: 'Production admin access' },
   { appId: 'STAFF', status: 'ENABLED', role: 'MANAGER', notes: 'Production admin access' },
   { appId: 'REPORTS', status: 'ENABLED', role: 'USER', notes: 'Production admin access' },
-  { appId: 'TRAINING', status: 'ENABLED', role: 'USER', notes: 'Production admin access' },
   { appId: 'SETTINGS', status: 'ENABLED', role: 'ADMIN', notes: 'Production admin access' }
 ];
 
