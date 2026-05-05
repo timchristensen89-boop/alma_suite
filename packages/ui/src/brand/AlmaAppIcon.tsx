@@ -232,24 +232,24 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'compliance',
     label: 'COMPLIANCE',
-    from: '#B3262E',
-    to: '#6B2424',
+    from: '#9F2531',
+    to: '#641F25',
     iconKey: 'shield',
     icon: <ShieldIcon />
   },
   {
     id: 'stock',
     label: 'STOCK',
-    from: '#1a6e34',
-    to: '#0e4820',
+    from: '#176B4D',
+    to: '#0D3F31',
     iconKey: 'produce',
     icon: <ProduceIcon />
   },
   {
     id: 'reports',
     label: 'REPORTS',
-    from: '#D7DCE2',
-    to: '#7E8792',
+    from: '#56616D',
+    to: '#2F3740',
     iconKey: 'chart',
     icon: <ChartIcon />
   },
@@ -264,32 +264,32 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'reserve',
     label: 'RESERVE',
-    from: '#7C3AED',
-    to: '#4C1D95',
+    from: '#0E7490',
+    to: '#164E63',
     iconKey: 'book',
     icon: <BookIcon />
   },
   {
     id: 'marketing',
     label: 'MARKETING',
-    from: '#C2410C',
-    to: '#7C2D12',
+    from: '#BE3455',
+    to: '#7A1F35',
     iconKey: 'search',
     icon: <SearchIcon />
   },
   {
     id: 'training',
     label: 'ACADEMY',
-    from: '#D18A00',
-    to: '#9A6500',
+    from: '#B98216',
+    to: '#73520E',
     iconKey: 'cap',
     icon: <CapIcon />
   },
   {
     id: 'settings',
     label: 'ADMIN',
-    from: '#2F343A',
-    to: '#1F2429',
+    from: '#343A40',
+    to: '#1F2328',
     iconKey: 'gear',
     icon: <GearIcon />
   }
