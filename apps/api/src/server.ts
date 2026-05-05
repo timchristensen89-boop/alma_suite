@@ -11,6 +11,7 @@ import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
+import { marketingRouter } from './routes/marketing.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
 import { reserveRouter } from './routes/reserve.js';
@@ -48,6 +49,7 @@ app.get('/', (_req, res) => {
       'temperatures',
       'audits',
       'reserve',
+      'marketing',
       'training',
       'settings',
       'notifications',
@@ -87,6 +89,7 @@ app.use('/api/settings', settingsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/reserve', reserveRouter);
+app.use('/api/marketing', marketingRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/website', websiteRouter);
 

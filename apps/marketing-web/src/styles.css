@@ -1,0 +1,119 @@
+@import url('../../web/src/styles.css');
+
+:root {
+  --color-accent: #c2410c;
+  --color-accent-hover: #9a3412;
+  --color-accent-soft: #fff1e8;
+  --color-accent-text: #7c2d12;
+}
+
+.marketing-page {
+  display: grid;
+  gap: 18px;
+}
+
+.marketing-page .page-header-actions {
+  align-items: flex-end;
+}
+
+.marketing-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+
+.marketing-main,
+.marketing-side,
+.marketing-form,
+.marketing-contact-list,
+.marketing-campaign-list {
+  display: grid;
+  gap: 16px;
+}
+
+.marketing-contact,
+.marketing-campaign {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.marketing-contact:first-child,
+.marketing-campaign:first-child {
+  border-top: 0;
+}
+
+.marketing-checkbox {
+  display: grid;
+  grid-template-columns: 18px minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
+.marketing-checkbox input,
+.marketing-consent-row input {
+  margin-top: 3px;
+  accent-color: var(--color-accent);
+}
+
+.marketing-checkbox span,
+.marketing-campaign > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.marketing-contact small,
+.marketing-campaign span,
+.marketing-campaign em {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-style: normal;
+}
+
+.marketing-badges,
+.marketing-campaign-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.marketing-campaign-actions {
+  min-width: 120px;
+}
+
+.marketing-consent-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+}
+
+.marketing-consent-row label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+@media (max-width: 960px) {
+  .marketing-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .marketing-contact,
+  .marketing-campaign {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-badges,
+  .marketing-campaign-actions {
+    justify-content: flex-start;
+  }
+}

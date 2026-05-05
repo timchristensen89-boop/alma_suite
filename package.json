@@ -16,6 +16,8 @@
     "dev:reports-web": "pnpm --filter @alma/reports-web dev",
     "dev:reserve": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/reserve-web dev\"",
     "dev:reserve-web": "pnpm --filter @alma/reserve-web dev",
+    "dev:marketing": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/marketing-web dev\"",
+    "dev:marketing-web": "pnpm --filter @alma/marketing-web dev",
     "db:up": "docker compose up -d postgres",
     "db:prepare": "bash ./scripts/prepare-postgres.sh",
     "db:down": "docker compose down",

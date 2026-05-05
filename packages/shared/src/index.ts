@@ -20,7 +20,7 @@ export const temperatureLogStatusSchema = z.enum(['IN_RANGE', 'OUT_OF_RANGE']);
 export const stockItemStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const supplierStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED']);
-export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'TRAINING', 'SETTINGS']);
+export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);
 export const timesheetStatusSchema = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED']);
@@ -28,6 +28,8 @@ export const trainingModuleStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const staffTrainingStatusSchema = z.enum(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED']);
 export const reserveReservationStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
 export const reserveServicePeriodSchema = z.enum(['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT']);
+export const marketingChannelSchema = z.enum(['EMAIL', 'SMS']);
+export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SENT', 'ARCHIVED']);
 
 export const issueEvidenceInputSchema = z.object({
   name: z.string().min(1),
@@ -470,6 +472,47 @@ export const reserveReservationInputSchema = z.object({
 
 export const reserveReservationUpdateInputSchema = reserveReservationInputSchema.partial();
 
+export const marketingContactInputSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email().optional().or(z.literal('')),
+  phone: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal('')),
+  source: z.string().optional().or(z.literal('')),
+  tags: z.array(z.string()).default([]),
+  consentEmail: z.boolean().default(false),
+  consentSms: z.boolean().default(false),
+  totalVisits: z.coerce.number().int().nonnegative().default(0),
+  lastVisitAt: z.string().optional().or(z.literal('')),
+  allergyNotes: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal('')),
+  reserveGuestId: z.string().optional().or(z.literal(''))
+});
+
+export const marketingContactUpdateInputSchema = marketingContactInputSchema.partial();
+
+export const marketingSegmentInputSchema = z.object({
+  name: z.string().min(2),
+  description: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal('')),
+  rules: z.record(z.string(), z.unknown()).default({}),
+  isActive: z.boolean().default(true)
+});
+
+export const marketingCampaignInputSchema = z.object({
+  name: z.string().min(2),
+  channel: marketingChannelSchema.default('EMAIL'),
+  status: marketingCampaignStatusSchema.default('DRAFT'),
+  audienceName: z.string().optional().or(z.literal('')),
+  subject: z.string().optional().or(z.literal('')),
+  previewText: z.string().optional().or(z.literal('')),
+  body: z.string().min(5),
+  scheduledFor: z.string().optional().or(z.literal('')),
+  contactIds: z.array(z.string().min(1)).default([])
+});
+
+export const marketingCampaignUpdateInputSchema = marketingCampaignInputSchema.partial();
+
 export const staffTrainingAssignInputSchema = z.object({
   staffProfileId: z.string().min(1),
   moduleId: z.string().min(1),
@@ -704,6 +747,8 @@ export type TrainingModuleStatus = z.infer<typeof trainingModuleStatusSchema>;
 export type StaffTrainingStatus = z.infer<typeof staffTrainingStatusSchema>;
 export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSchema>;
 export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
+export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
+export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
 export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
@@ -719,6 +764,11 @@ export type ReserveGuestInput = z.infer<typeof reserveGuestInputSchema>;
 export type ReserveTableInput = z.infer<typeof reserveTableInputSchema>;
 export type ReserveReservationInput = z.infer<typeof reserveReservationInputSchema>;
 export type ReserveReservationUpdateInput = z.infer<typeof reserveReservationUpdateInputSchema>;
+export type MarketingContactInput = z.infer<typeof marketingContactInputSchema>;
+export type MarketingContactUpdateInput = z.infer<typeof marketingContactUpdateInputSchema>;
+export type MarketingSegmentInput = z.infer<typeof marketingSegmentInputSchema>;
+export type MarketingCampaignInput = z.infer<typeof marketingCampaignInputSchema>;
+export type MarketingCampaignUpdateInput = z.infer<typeof marketingCampaignUpdateInputSchema>;
 
 export type IssueEvidence = {
   id: string;
@@ -909,6 +959,79 @@ export type ReserveDiarySummary = {
     completed: number;
     cancelled: number;
     noShow: number;
+  };
+};
+
+export type MarketingContact = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  venue: string | null;
+  source: string;
+  tags: string[];
+  consentEmail: boolean;
+  consentSms: boolean;
+  totalVisits: number;
+  lastVisitAt: string | null;
+  allergyNotes: string | null;
+  notes: string | null;
+  reserveGuestId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingSegment = {
+  id: string;
+  name: string;
+  description: string | null;
+  venue: string | null;
+  rules: Record<string, unknown>;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingCampaignRecipient = {
+  id: string;
+  campaignId: string;
+  contactId: string;
+  status: string;
+  sentAt: string | null;
+  error: string | null;
+  createdAt: string;
+  contact: MarketingContact;
+};
+
+export type MarketingCampaign = {
+  id: string;
+  name: string;
+  channel: MarketingChannel;
+  status: MarketingCampaignStatus;
+  audienceName: string | null;
+  subject: string | null;
+  previewText: string | null;
+  body: string;
+  scheduledFor: string | null;
+  sentAt: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  recipients: MarketingCampaignRecipient[];
+};
+
+export type MarketingOverview = {
+  contacts: MarketingContact[];
+  segments: MarketingSegment[];
+  campaigns: MarketingCampaign[];
+  totals: {
+    contacts: number;
+    emailConsent: number;
+    smsConsent: number;
+    draftCampaigns: number;
+    readyCampaigns: number;
+    reserveGuestContacts: number;
   };
 };
 

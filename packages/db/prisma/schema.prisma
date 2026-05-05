@@ -122,6 +122,8 @@ enum AlmaAppId {
   STOCK
   STAFF
   REPORTS
+  RESERVE
+  MARKETING
   TRAINING
   SETTINGS
 }
@@ -173,6 +175,18 @@ enum ReserveServicePeriod {
   LUNCH
   DINNER
   EVENT
+}
+
+enum MarketingChannel {
+  EMAIL
+  SMS
+}
+
+enum MarketingCampaignStatus {
+  DRAFT
+  READY
+  SENT
+  ARCHIVED
 }
 
 model Issue {
@@ -511,6 +525,7 @@ model ReserveGuest {
   createdAt      DateTime              @default(now())
   updatedAt      DateTime              @updatedAt
   reservations   ReserveReservation[]
+  marketingContact MarketingContact?
 
   @@index([lastName, firstName])
   @@index([email])
@@ -560,6 +575,84 @@ model ReserveReservation {
   @@index([status, serviceDate])
   @@index([guestId])
   @@index([tableId])
+}
+
+model MarketingContact {
+  id             String                       @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  venue          String?
+  source         String                       @default("manual")
+  tags           String[]                     @default([])
+  consentEmail   Boolean                      @default(false)
+  consentSms     Boolean                      @default(false)
+  totalVisits    Int                          @default(0)
+  lastVisitAt    DateTime?
+  allergyNotes   String?
+  notes          String?
+  reserveGuestId String?                      @unique
+  createdAt      DateTime                     @default(now())
+  updatedAt      DateTime                     @updatedAt
+  reserveGuest   ReserveGuest?                @relation(fields: [reserveGuestId], references: [id], onDelete: SetNull)
+  recipients     MarketingCampaignRecipient[]
+
+  @@index([lastName, firstName])
+  @@index([email])
+  @@index([phone])
+  @@index([venue])
+  @@index([source])
+}
+
+model MarketingSegment {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  venue       String?
+  rules       Json     @default("{}")
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([venue])
+  @@index([isActive])
+}
+
+model MarketingCampaign {
+  id           String                       @id @default(cuid())
+  name         String
+  channel      MarketingChannel
+  status       MarketingCampaignStatus      @default(DRAFT)
+  audienceName String?
+  subject      String?
+  previewText  String?
+  body         String
+  scheduledFor DateTime?
+  sentAt       DateTime?
+  createdById  String?
+  createdAt    DateTime                     @default(now())
+  updatedAt    DateTime                     @updatedAt
+  recipients   MarketingCampaignRecipient[]
+
+  @@index([status, channel])
+  @@index([scheduledFor])
+}
+
+model MarketingCampaignRecipient {
+  id         String            @id @default(cuid())
+  campaignId String
+  contactId  String
+  status     String            @default("QUEUED")
+  sentAt     DateTime?
+  error      String?
+  createdAt  DateTime          @default(now())
+  campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  contact    MarketingContact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, contactId])
+  @@index([contactId])
+  @@index([status])
 }
 
 model Timesheet {

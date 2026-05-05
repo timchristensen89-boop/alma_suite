@@ -270,6 +270,14 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <BookIcon />
   },
   {
+    id: 'marketing',
+    label: 'MARKETING',
+    from: '#C2410C',
+    to: '#7C2D12',
+    iconKey: 'search',
+    icon: <SearchIcon />
+  },
+  {
     id: 'training',
     label: 'ACADEMY',
     from: '#D18A00',
@@ -293,6 +301,7 @@ export const ALMA_APP_LOGO_SRC = {
   reports: '/brand/alma-reports-logo.svg',
   staff: '/brand/alma-staff-logo.svg',
   reserve: '/brand/alma-reserve-logo.svg',
+  marketing: '/brand/alma-marketing-logo.svg',
   audits: '/brand/alma-audits-logo.svg',
   training: '/brand/alma-training-logo.svg',
   settings: '/brand/alma-settings-logo.svg'
