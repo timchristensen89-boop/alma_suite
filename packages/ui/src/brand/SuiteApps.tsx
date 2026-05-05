@@ -29,6 +29,7 @@ export type SuiteAppId =
   | 'compliance'
   | 'stock'
   | 'staff'
+  | 'reserve'
   | 'learning'
   | 'reports'
   | 'policies'
@@ -91,6 +92,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'compliance' ||
     app.id === 'stock' ||
     app.id === 'staff' ||
+    app.id === 'reserve' ||
     app.id === 'reports' ||
     app.id === 'training' ||
     app.id === 'settings'
@@ -135,6 +137,8 @@ function descriptionFor(id: string) {
       return 'Dashboards, exports, and operating insights.';
     case 'staff':
       return 'Team records, onboarding, roles, roster access, and app access.';
+    case 'reserve':
+      return 'Reservations, guests, table diary, waitlist, and covers forecast.';
     case 'policies':
       return 'Policies now live inside Compliance.';
     case 'incidents':

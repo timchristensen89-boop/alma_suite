@@ -159,6 +159,22 @@ enum StaffTrainingStatus {
   EXPIRED
 }
 
+enum ReserveReservationStatus {
+  PENDING
+  CONFIRMED
+  SEATED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+enum ReserveServicePeriod {
+  BREAKFAST
+  LUNCH
+  DINNER
+  EVENT
+}
+
 model Issue {
   id              String           @id @default(cuid())
   legacyId        String?          @unique
@@ -481,6 +497,69 @@ model SalesActualEntry {
   @@unique([venue, serviceDate, source, externalId])
   @@index([serviceDate])
   @@index([venue, serviceDate])
+}
+
+model ReserveGuest {
+  id             String                @id @default(cuid())
+  firstName      String
+  lastName       String
+  email          String?
+  phone          String?
+  tags           String[]              @default([])
+  allergyNotes   String?
+  visitNotes     String?
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  reservations   ReserveReservation[]
+
+  @@index([lastName, firstName])
+  @@index([email])
+  @@index([phone])
+}
+
+model ReserveTable {
+  id             String                @id @default(cuid())
+  venue          String
+  area           String
+  label          String
+  minCovers      Int                   @default(1)
+  maxCovers      Int
+  sortOrder      Int                   @default(0)
+  isActive       Boolean               @default(true)
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+  reservations   ReserveReservation[]
+
+  @@unique([venue, label])
+  @@index([venue, area, sortOrder])
+  @@index([isActive])
+}
+
+model ReserveReservation {
+  id             String                   @id @default(cuid())
+  venue          String
+  serviceDate    DateTime
+  servicePeriod  ReserveServicePeriod
+  startsAt       DateTime
+  endsAt         DateTime
+  covers         Int
+  status         ReserveReservationStatus @default(PENDING)
+  source         String                   @default("manager")
+  tableId        String?
+  guestId        String
+  occasion       String?
+  notes          String?
+  createdById    String?
+  createdAt      DateTime                 @default(now())
+  updatedAt      DateTime                 @updatedAt
+  guest          ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  table          ReserveTable?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
+
+  @@index([venue, serviceDate, servicePeriod])
+  @@index([startsAt, endsAt])
+  @@index([status, serviceDate])
+  @@index([guestId])
+  @@index([tableId])
 }
 
 model Timesheet {

@@ -13,6 +13,7 @@ import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
+import { reserveRouter } from './routes/reserve.js';
 import { searchRouter } from './routes/search.js';
 import { settingsRouter } from './routes/settings.js';
 import { staffRouter } from './routes/staff.js';
@@ -46,6 +47,7 @@ app.get('/', (_req, res) => {
       'incidents',
       'temperatures',
       'audits',
+      'reserve',
       'training',
       'settings',
       'notifications',
@@ -84,6 +86,7 @@ app.use('/api/liquor', liquorRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/reports', reportsRouter);
+app.use('/api/reserve', reserveRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/website', websiteRouter);
 

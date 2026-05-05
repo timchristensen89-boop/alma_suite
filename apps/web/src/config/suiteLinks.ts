@@ -11,6 +11,7 @@ export const COMPLIANCE_WEB_URL = envUrl('VITE_COMPLIANCE_WEB_URL', 'http://loca
 export const STOCK_WEB_URL = envUrl('VITE_STOCK_WEB_URL', 'http://localhost:5174');
 export const STAFF_WEB_URL = envUrl('VITE_STAFF_WEB_URL', 'http://localhost:5175');
 export const REPORTS_WEB_URL = envUrl('VITE_REPORTS_WEB_URL', 'http://localhost:5176');
+export const RESERVE_WEB_URL = envUrl('VITE_RESERVE_WEB_URL', 'http://localhost:5177');
 
 function safeProductionUrl(name: string, value: string) {
   if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value)) {
@@ -24,7 +25,8 @@ const suiteUrls = {
   compliance: safeProductionUrl('VITE_COMPLIANCE_WEB_URL', COMPLIANCE_WEB_URL),
   stock: safeProductionUrl('VITE_STOCK_WEB_URL', STOCK_WEB_URL),
   staff: safeProductionUrl('VITE_STAFF_WEB_URL', STAFF_WEB_URL),
-  reports: safeProductionUrl('VITE_REPORTS_WEB_URL', REPORTS_WEB_URL)
+  reports: safeProductionUrl('VITE_REPORTS_WEB_URL', REPORTS_WEB_URL),
+  reserve: safeProductionUrl('VITE_RESERVE_WEB_URL', RESERVE_WEB_URL)
 };
 
 function trimTrailingSlash(value: string) {
@@ -36,6 +38,7 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   if (app.id === 'stock') return suiteUrls.stock ? `${trimTrailingSlash(suiteUrls.stock)}/login` : undefined;
   if (app.id === 'staff') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/login` : undefined;
   if (app.id === 'reports') return suiteUrls.reports ? `${trimTrailingSlash(suiteUrls.reports)}/login` : undefined;
+  if (app.id === 'reserve') return suiteUrls.reserve ? `${trimTrailingSlash(suiteUrls.reserve)}/login` : undefined;
   if (app.id === 'training' || app.id === 'academy') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/academy` : undefined;
   if (app.id === 'settings') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/admin` : undefined;
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;

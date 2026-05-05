@@ -26,6 +26,8 @@ export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED'
 export const timesheetStatusSchema = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED']);
 export const trainingModuleStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const staffTrainingStatusSchema = z.enum(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED']);
+export const reserveReservationStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
+export const reserveServicePeriodSchema = z.enum(['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT']);
 
 export const issueEvidenceInputSchema = z.object({
   name: z.string().min(1),
@@ -430,6 +432,44 @@ export const trainingPayRuleInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const reserveGuestInputSchema = z.object({
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email().optional().or(z.literal('')),
+  phone: z.string().optional().or(z.literal('')),
+  tags: z.array(z.string()).default([]),
+  allergyNotes: z.string().optional().or(z.literal('')),
+  visitNotes: z.string().optional().or(z.literal(''))
+});
+
+export const reserveTableInputSchema = z.object({
+  venue: z.string().min(1),
+  area: z.string().min(1),
+  label: z.string().min(1),
+  minCovers: z.coerce.number().int().positive().default(1),
+  maxCovers: z.coerce.number().int().positive(),
+  sortOrder: z.coerce.number().int().default(0),
+  isActive: z.boolean().default(true)
+});
+
+export const reserveReservationInputSchema = z.object({
+  venue: z.string().min(1),
+  serviceDate: z.string().min(4),
+  servicePeriod: reserveServicePeriodSchema,
+  startsAt: z.string().min(4),
+  endsAt: z.string().min(4),
+  covers: z.coerce.number().int().positive(),
+  status: reserveReservationStatusSchema.default('PENDING'),
+  source: z.string().optional().or(z.literal('')),
+  tableId: z.string().optional().or(z.literal('')),
+  guestId: z.string().optional().or(z.literal('')),
+  guest: reserveGuestInputSchema.optional(),
+  occasion: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal(''))
+});
+
+export const reserveReservationUpdateInputSchema = reserveReservationInputSchema.partial();
+
 export const staffTrainingAssignInputSchema = z.object({
   staffProfileId: z.string().min(1),
   moduleId: z.string().min(1),
@@ -662,6 +702,8 @@ export type RosterShiftStatus = z.infer<typeof rosterShiftStatusSchema>;
 export type TimesheetStatus = z.infer<typeof timesheetStatusSchema>;
 export type TrainingModuleStatus = z.infer<typeof trainingModuleStatusSchema>;
 export type StaffTrainingStatus = z.infer<typeof staffTrainingStatusSchema>;
+export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSchema>;
+export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
 export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
@@ -673,6 +715,10 @@ export type TrainingModuleInput = z.infer<typeof trainingModuleInputSchema>;
 export type TrainingPayRuleInput = z.infer<typeof trainingPayRuleInputSchema>;
 export type StaffTrainingAssignInput = z.infer<typeof staffTrainingAssignInputSchema>;
 export type StaffTrainingUpdateInput = z.infer<typeof staffTrainingUpdateInputSchema>;
+export type ReserveGuestInput = z.infer<typeof reserveGuestInputSchema>;
+export type ReserveTableInput = z.infer<typeof reserveTableInputSchema>;
+export type ReserveReservationInput = z.infer<typeof reserveReservationInputSchema>;
+export type ReserveReservationUpdateInput = z.infer<typeof reserveReservationUpdateInputSchema>;
 
 export type IssueEvidence = {
   id: string;
@@ -801,6 +847,69 @@ export type SalesActualSummary = {
     salesCents: number;
     days: number;
   }>;
+};
+
+export type ReserveGuest = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  phone: string | null;
+  tags: string[];
+  allergyNotes: string | null;
+  visitNotes: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReserveTable = {
+  id: string;
+  venue: string;
+  area: string;
+  label: string;
+  minCovers: number;
+  maxCovers: number;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReserveReservation = {
+  id: string;
+  venue: string;
+  serviceDate: string;
+  servicePeriod: ReserveServicePeriod;
+  startsAt: string;
+  endsAt: string;
+  covers: number;
+  status: ReserveReservationStatus;
+  source: string;
+  tableId: string | null;
+  guestId: string;
+  occasion: string | null;
+  notes: string | null;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  guest: ReserveGuest;
+  table: ReserveTable | null;
+};
+
+export type ReserveDiarySummary = {
+  start: string;
+  end: string;
+  venue: string;
+  reservations: ReserveReservation[];
+  tables: ReserveTable[];
+  totals: {
+    covers: number;
+    confirmed: number;
+    seated: number;
+    completed: number;
+    cancelled: number;
+    noShow: number;
+  };
 };
 
 export type Timesheet = {

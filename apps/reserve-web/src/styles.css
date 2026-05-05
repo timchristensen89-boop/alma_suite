@@ -1,0 +1,108 @@
+@import url('../../web/src/styles.css');
+
+:root {
+  --color-accent: #7c3aed;
+  --color-accent-hover: #5b21b6;
+  --color-accent-soft: #f1ecff;
+  --color-accent-text: #4c1d95;
+}
+
+.reserve-page {
+  display: grid;
+  gap: 18px;
+}
+
+.reserve-page .page-header-actions {
+  align-items: flex-end;
+}
+
+.reserve-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
+  gap: 16px;
+  align-items: start;
+}
+
+.reserve-main,
+.reserve-side,
+.reserve-form {
+  display: grid;
+  gap: 16px;
+}
+
+.reserve-periods {
+  display: grid;
+}
+
+.reserve-period + .reserve-period {
+  border-top: 1px solid var(--color-border);
+}
+
+.reserve-period-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--color-surface-muted);
+}
+
+.reserve-booking-list {
+  display: grid;
+}
+
+.reserve-booking {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(190px, auto);
+  gap: 14px;
+  align-items: start;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.reserve-booking > div:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.reserve-booking span,
+.reserve-booking em,
+.reserve-table-list span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  font-style: normal;
+}
+
+.reserve-booking-actions {
+  display: grid;
+  gap: 8px;
+  justify-items: end;
+}
+
+.reserve-table-list {
+  display: grid;
+  gap: 8px;
+}
+
+.reserve-table-list span {
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 960px) {
+  .reserve-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .reserve-booking {
+    grid-template-columns: 1fr;
+  }
+
+  .reserve-booking-actions {
+    justify-items: stretch;
+  }
+}
