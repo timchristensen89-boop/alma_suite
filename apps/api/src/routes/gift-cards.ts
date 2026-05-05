@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import type Stripe from 'stripe';
 import { requireManager } from '../lib/auth-middleware.js';
 import {
   constructStripeWebhookEvent,
@@ -68,8 +69,22 @@ giftCardsRouter.post('/cards/:code/cancel', requireManager, async (req, res, nex
 export async function stripeGiftCardWebhook(req: { body: Buffer; header(name: string): string | undefined }, res: { json(body: unknown): void }, next: (error?: unknown) => void) {
   try {
     const event = constructStripeWebhookEvent(req.body, req.header('stripe-signature'));
-    if (event.type === 'checkout.session.completed') {
-      await giftCardService.handleCheckoutCompleted(event.data.object);
+    if (
+      event.type === 'checkout.session.completed' ||
+      event.type === 'checkout.session.async_payment_succeeded'
+    ) {
+      await giftCardService.handleCheckoutCompleted(event.data.object as Stripe.Checkout.Session);
+    }
+    if (
+      event.type === 'checkout.session.expired' ||
+      event.type === 'checkout.session.async_payment_failed'
+    ) {
+      await giftCardService.disregardUnconfirmedCheckout(
+        event.data.object as Stripe.Checkout.Session,
+        event.type === 'checkout.session.expired'
+          ? 'Stripe checkout expired before payment was confirmed.'
+          : 'Stripe asynchronous payment failed.'
+      );
     }
     res.json({ received: true });
   } catch (error) {

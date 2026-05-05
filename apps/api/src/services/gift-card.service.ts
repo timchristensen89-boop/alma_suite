@@ -107,6 +107,20 @@ function printableUrl(code: string) {
   return `${env.giftCards.webUrl.replace(/\/+$/, '')}/print?code=${encodeURIComponent(code)}`;
 }
 
+function isStripePaymentConfirmed(session: Stripe.Checkout.Session) {
+  return session.mode === 'payment' && session.status === 'complete' && session.payment_status === 'paid';
+}
+
+function paymentIntentId(session: Stripe.Checkout.Session) {
+  return typeof session.payment_intent === 'string'
+    ? session.payment_intent
+    : session.payment_intent?.id ?? null;
+}
+
+function sessionAmountCents(session: Stripe.Checkout.Session) {
+  return typeof session.amount_total === 'number' ? session.amount_total : null;
+}
+
 async function findCardByCode(code: string) {
   const parsed = giftCardLookupInputSchema.parse({ code });
   const card = await prisma.giftCard.findUnique({
@@ -181,25 +195,54 @@ export const giftCardService = {
   },
 
   async getByCheckoutSession(sessionId: string) {
-    const card = await prisma.giftCard.findUnique({
+    let card = await prisma.giftCard.findUnique({
       where: { stripeCheckoutSessionId: sessionId },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
     if (!card) throw new HttpError(404, 'Gift card checkout session not found');
+    if (card.status === 'PENDING_PAYMENT' && stripe) {
+      const session = await stripe.checkout.sessions.retrieve(sessionId, { expand: ['payment_intent'] });
+      if (isStripePaymentConfirmed(session)) {
+        const updated = await this.handleCheckoutCompleted(session);
+        if (updated) return publicGiftCard(updated);
+        card = await prisma.giftCard.findUnique({
+          where: { stripeCheckoutSessionId: sessionId },
+          include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+        });
+      } else if (session.status === 'expired' || session.payment_status === 'unpaid' || session.payment_status === 'no_payment_required') {
+        await this.disregardUnconfirmedCheckout(session, 'Stripe did not confirm payment for this checkout.');
+        throw new HttpError(404, 'Gift card payment was not confirmed by Stripe.');
+      }
+    }
+    if (!card || card.status !== 'ACTIVE' || !card.paidAt) {
+      throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe yet.');
+    }
     return publicGiftCard(toGiftCardPayload(card));
   },
 
   async getPrintableByCode(code: string) {
     const card = await findCardByCode(code);
-    if (card.status === 'PENDING_PAYMENT') throw new HttpError(404, 'Gift card is not active yet');
+    if (!card.paidAt || !['ACTIVE', 'REDEEMED'].includes(card.status)) {
+      throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe.');
+    }
     return publicGiftCard(toGiftCardPayload(card));
   },
 
   async list(input: { query?: string }) {
     const query = input.query?.trim();
     const giftCards = await prisma.giftCard.findMany({
-      where: query
-        ? {
+      where: {
+        AND: [
+          { status: { not: 'PENDING_PAYMENT' } },
+          {
+            OR: [
+              { paidAt: { not: null } },
+              { status: { in: ['ACTIVE', 'REDEEMED'] } }
+            ]
+          }
+        ],
+        ...(query
+          ? {
             OR: [
               { code: { contains: query, mode: 'insensitive' } },
               { purchaserEmail: { contains: query, mode: 'insensitive' } },
@@ -208,7 +251,8 @@ export const giftCardService = {
               { recipientName: { contains: query, mode: 'insensitive' } }
             ]
           }
-        : {},
+          : {})
+      },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } },
       orderBy: [{ createdAt: 'desc' }],
       take: 100
@@ -222,7 +266,7 @@ export const giftCardService = {
       giftCards: giftCards.map(toGiftCardPayload),
       totals: {
         active: giftCards.filter((card) => card.status === 'ACTIVE').length,
-        pending: giftCards.filter((card) => card.status === 'PENDING_PAYMENT').length,
+        pending: 0,
         redeemed: giftCards.filter((card) => card.status === 'REDEEMED').length,
         activeBalanceCents: totals._sum.balanceCents ?? 0,
         soldValueCents: totals._sum.initialValueCents ?? 0
@@ -231,7 +275,11 @@ export const giftCardService = {
   },
 
   async lookup(code: string) {
-    return toGiftCardPayload(await findCardByCode(code));
+    const card = await findCardByCode(code);
+    if (!card.paidAt || card.status === 'PENDING_PAYMENT') {
+      throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe.');
+    }
+    return toGiftCardPayload(card);
   },
 
   async redeem(input: unknown, redeemedById?: string) {
@@ -287,13 +335,30 @@ export const giftCardService = {
   async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const cardId = session.metadata?.giftCardId || session.client_reference_id;
     if (!cardId) return null;
+    const existing = await prisma.giftCard.findUnique({
+      where: { id: cardId },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+    });
+    if (!existing) return null;
+    if (!isStripePaymentConfirmed(session)) {
+      await this.disregardUnconfirmedCheckout(session, 'Stripe checkout completed without confirmed payment.');
+      return null;
+    }
+    const paidAmountCents = sessionAmountCents(session);
+    if (paidAmountCents !== null && paidAmountCents !== existing.initialValueCents) {
+      await this.disregardUnconfirmedCheckout(session, 'Stripe payment amount did not match the gift card value.');
+      throw new HttpError(400, 'Stripe payment amount did not match the gift card value.');
+    }
+    if (existing.status !== 'PENDING_PAYMENT') {
+      return toGiftCardPayload(existing);
+    }
     const card = await prisma.giftCard.update({
       where: { id: cardId },
       data: {
         status: 'ACTIVE',
         paidAt: new Date(),
         stripeCheckoutSessionId: session.id,
-        stripePaymentIntentId: typeof session.payment_intent === 'string' ? session.payment_intent : session.payment_intent?.id ?? null
+        stripePaymentIntentId: paymentIntentId(session)
       },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
@@ -325,6 +390,31 @@ export const giftCardService = {
         : { emailedAt: new Date(), emailError: null }
     });
     return payload;
+  },
+
+  async disregardUnconfirmedCheckout(session: Stripe.Checkout.Session, reason: string) {
+    const cardId = session.metadata?.giftCardId || session.client_reference_id;
+    const where = cardId
+      ? { id: cardId }
+      : session.id
+        ? { stripeCheckoutSessionId: session.id }
+        : null;
+    if (!where) return null;
+    const existing = await prisma.giftCard.findUnique({ where });
+    if (!existing || existing.paidAt || existing.status !== 'PENDING_PAYMENT') return null;
+    return prisma.giftCard.update({
+      where: { id: existing.id },
+      data: {
+        status: 'CANCELLED',
+        balanceCents: 0,
+        stripeCheckoutSessionId: session.id,
+        stripePaymentIntentId: paymentIntentId(session),
+        cancelledAt: new Date(),
+        cancelReason: reason,
+        refundNote: 'No gift card issued because Stripe did not confirm payment.'
+      },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+    });
   }
 };
 

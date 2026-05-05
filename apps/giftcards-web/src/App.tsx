@@ -459,7 +459,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
         {message ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         <div className="stats-grid">
           <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
-          <StatCard label="Pending" value={data?.totals.pending ?? 0} hint="Waiting for Stripe" loading={loading} />
+          <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
           <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
           <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint="Stripe-confirmed value" loading={loading} />
         </div>
