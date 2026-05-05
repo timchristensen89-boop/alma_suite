@@ -1,0 +1,948 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum IssueSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum IssueStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  RESOLVED
+  CLOSED
+}
+
+enum ChecklistRunStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+}
+
+enum ChecklistItemResult {
+  PENDING
+  PASS
+  FAIL
+  NA
+}
+
+enum StaffRecordType {
+  RSA
+  RSG
+  FSS
+  FIRST_AID
+  FOOD_SAFETY
+  ALLERGEN
+  TRAINING
+  OTHER
+}
+
+enum StaffRecordStatus {
+  PENDING
+  APPROVED
+  EXPIRED
+}
+
+enum IncidentStatus {
+  OPEN
+  UNDER_REVIEW
+  CLOSED
+}
+
+enum TemperatureAssetStatus {
+  ACTIVE
+  INACTIVE
+}
+
+enum TemperatureLogSource {
+  MANUAL
+  GOVEE
+}
+
+enum TemperatureLogStatus {
+  IN_RANGE
+  OUT_OF_RANGE
+}
+
+enum LiquorLicenceType {
+  HOTEL
+  ON_PREMISES
+  SMALL_BAR
+  CLUB
+  PACKAGED
+  PRODUCER_WHOLESALER
+  LIMITED
+  OUTDOOR_SEATING
+  FOOD_BUSINESS
+  FOOTPATH_DINING
+  MUSIC_ENTERTAINMENT
+  SIGNAGE
+  FIRE_SAFETY
+  WASTE_TRADE
+  OTHER
+}
+
+enum LiquorLicenceStatus {
+  ACTIVE
+  SUSPENDED
+  EXPIRED
+  PENDING
+}
+
+enum StockItemStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum SupplierStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum StocktakeStatus {
+  IN_PROGRESS
+  SUBMITTED
+}
+
+enum InventoryMovementType {
+  STOCKTAKE_ADJUSTMENT
+}
+
+enum AlmaAppId {
+  COMPLIANCE
+  STOCK
+  STAFF
+  REPORTS
+  TRAINING
+  SETTINGS
+}
+
+enum StaffAppAccessStatus {
+  ENABLED
+  DISABLED
+  PENDING
+}
+
+enum RosterShiftStatus {
+  DRAFT
+  PUBLISHED
+  COMPLETED
+  CANCELLED
+}
+
+enum TimesheetStatus {
+  DRAFT
+  SUBMITTED
+  APPROVED
+  REJECTED
+  EXPORTED
+}
+
+enum TrainingModuleStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+enum StaffTrainingStatus {
+  ASSIGNED
+  IN_PROGRESS
+  COMPLETED
+  EXPIRED
+}
+
+model Issue {
+  id              String           @id @default(cuid())
+  legacyId        String?          @unique
+  title           String
+  description     String
+  severity        IssueSeverity
+  category        String
+  status          IssueStatus      @default(OPEN)
+  assignee        String?
+  dueDate         DateTime?
+  notes           String?
+  resolutionNotes String?
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  evidence        IssueEvidence[]
+  activities      IssueActivity[]
+  checklistLinks  ChecklistItem[]
+  auditLinks      AuditFinding[]
+  incidentLinks   IncidentReport[]
+}
+
+model IssueEvidence {
+  id        String   @id @default(cuid())
+  legacyId  String?  @unique
+  issueId   String
+  name      String
+  url       String
+  fileType  String?
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+model IssueActivity {
+  id        String   @id @default(cuid())
+  legacyId  String?  @unique
+  issueId   String
+  action    String
+  message   String
+  actor     String
+  createdAt DateTime @default(now())
+  issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+model ChecklistTemplate {
+  id        String                  @id @default(cuid())
+  legacyId  String?                 @unique
+  name      String
+  area      String?
+  items     ChecklistItemTemplate[]
+  runs      ChecklistRun[]
+  createdAt DateTime                @default(now())
+  updatedAt DateTime                @updatedAt
+}
+
+model ChecklistItemTemplate {
+  id          String            @id @default(cuid())
+  legacyId    String?           @unique
+  templateId  String
+  label       String
+  description String?
+  position    Int
+  template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+model ChecklistRun {
+  id          String             @id @default(cuid())
+  legacyId    String?            @unique
+  templateId  String
+  runDate     DateTime           @default(now())
+  status      ChecklistRunStatus @default(OPEN)
+  area        String?
+  performedBy String?
+  notes       String?
+  template    ChecklistTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  items       ChecklistItem[]
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+}
+
+model ChecklistItem {
+  id             String              @id @default(cuid())
+  legacyId       String?             @unique
+  runId          String
+  templateItemId String?
+  label          String
+  description    String?
+  position       Int
+  result         ChecklistItemResult @default(PENDING)
+  notes          String?
+  linkedIssueId  String?
+  run            ChecklistRun        @relation(fields: [runId], references: [id], onDelete: Cascade)
+  linkedIssue    Issue?              @relation(fields: [linkedIssueId], references: [id])
+}
+
+model AuditTemplate {
+  id        String                 @id @default(cuid())
+  legacyId  String?                @unique
+  name      String
+  sections  AuditTemplateSection[]
+  runs      AuditRun[]
+  createdAt DateTime               @default(now())
+  updatedAt DateTime               @updatedAt
+}
+
+model AuditTemplateSection {
+  id          String        @id @default(cuid())
+  legacyId    String?       @unique
+  templateId  String
+  title       String
+  description String?
+  position    Int
+  template    AuditTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+}
+
+model AuditRun {
+  id         String         @id @default(cuid())
+  legacyId   String?        @unique
+  templateId String
+  title      String
+  score      Float?
+  summary    String?
+  runDate    DateTime       @default(now())
+  template   AuditTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  findings   AuditFinding[]
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+}
+
+model AuditFinding {
+  id            String   @id @default(cuid())
+  legacyId      String?  @unique
+  auditRunId    String
+  sectionTitle  String
+  finding       String
+  score         Float?
+  linkedIssueId String?
+  auditRun      AuditRun @relation(fields: [auditRunId], references: [id], onDelete: Cascade)
+  linkedIssue   Issue?   @relation(fields: [linkedIssueId], references: [id])
+}
+
+model StaffProfile {
+  id               String                  @id @default(cuid())
+  firstName        String
+  lastName         String
+  roleTitle        String
+  email            String?                 @unique
+  phone            String?
+  venue            String?
+  employmentStatus String                  @default("ACTIVE")
+  startDate        DateTime?
+  dateOfBirth      DateTime?
+  addressLine1     String?
+  addressLine2     String?
+  suburb           String?
+  state            String?
+  postcode         String?
+  emergencyContactName         String?
+  emergencyContactRelationship String?
+  emergencyContactPhone        String?
+  employmentType   String?
+  payType          String?
+  payRateCents     Int?
+  payAward         String?
+  taxFileNumber    String?
+  taxResidencyStatus String?
+  taxFreeThreshold Boolean?
+  hasStudyTrainingLoan Boolean?
+  superFundName    String?
+  superFundAbn     String?
+  superFundUsi     String?
+  superMemberNumber String?
+  bankAccountName  String?
+  bankBsb          String?
+  bankAccountNumber String?
+  visaStatus       String?
+  visaSubclass     String?
+  visaExpiryDate   DateTime?
+  workRightsNotes  String?
+  xeroEmployeeId   String?
+  xeroPayrollCalendarId String?
+  xeroEarningsRateId String?
+  trainingLevel    Int                     @default(0)
+  trainingPayRateCents Int?
+  notes            String?
+  passwordHash     String?
+  isAdmin          Boolean                 @default(false)
+  lastLoginAt      DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  records          StaffComplianceRecord[]
+  appAccess        StaffAppAccess[]
+  rosterShifts     RosterShift[]
+  timesheets       Timesheet[]
+  trainingRecords  StaffTrainingRecord[]
+  tipPaymentRunLines StaffTipPaymentRunLine[]
+
+  @@index([venue])
+  @@index([xeroEmployeeId])
+}
+
+model StaffAppAccess {
+  id             String               @id @default(cuid())
+  staffProfileId String
+  appId          AlmaAppId
+  status         StaffAppAccessStatus @default(DISABLED)
+  role           String               @default("USER")
+  notes          String?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  staffProfile   StaffProfile         @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, appId])
+  @@index([appId, status])
+}
+
+model TrainingModule {
+  id               String               @id @default(cuid())
+  title            String
+  description      String?
+  category         String?
+  level            Int                  @default(1)
+  estimatedMinutes Int?
+  status           TrainingModuleStatus @default(ACTIVE)
+  createdAt        DateTime             @default(now())
+  updatedAt        DateTime             @updatedAt
+  records          StaffTrainingRecord[]
+
+  @@index([status, level])
+  @@index([category])
+}
+
+model TrainingLevelPayRule {
+  id           String   @id @default(cuid())
+  level        Int      @unique
+  label        String
+  payRateCents Int
+  notes        String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model StaffTrainingRecord {
+  id             String              @id @default(cuid())
+  staffProfileId String
+  moduleId       String
+  status         StaffTrainingStatus @default(ASSIGNED)
+  assignedAt     DateTime            @default(now())
+  startedAt      DateTime?
+  completedAt    DateTime?
+  expiresAt      DateTime?
+  score          Float?
+  evidenceName   String?
+  evidenceUrl    String?
+  notes          String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  staffProfile   StaffProfile        @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  module         TrainingModule      @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, moduleId])
+  @@index([staffProfileId, status])
+  @@index([moduleId, status])
+}
+
+model RosterShift {
+  id             String            @id @default(cuid())
+  staffProfileId String
+  venue          String?
+  area           String?
+  roleTitle      String?
+  startsAt       DateTime
+  endsAt         DateTime
+  breakMinutes   Int               @default(0)
+  status         RosterShiftStatus @default(DRAFT)
+  notes          String?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  staffProfile   StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, startsAt])
+  @@index([startsAt, endsAt])
+}
+
+model RosterForecastSnapshot {
+  id                 String   @id @default(cuid())
+  weekStart          DateTime
+  weekEnd            DateTime
+  venue              String?
+  source             String?
+  targetWagePercent  Float
+  forecastSalesCents Int
+  wageBudgetCents    Int
+  rosterCostCents    Int
+  plannedHours       Float
+  recommendedHours   Float
+  dailySalesCents    Json
+  venueBreakdown     Json
+  areaBreakdown      Json
+  publishedById      String?
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([weekStart, weekEnd, venue])
+  @@index([weekStart, weekEnd])
+  @@index([venue, weekStart])
+}
+
+model SalesActualEntry {
+  id           String   @id @default(cuid())
+  venue        String
+  serviceDate  DateTime
+  salesCents   Int
+  source       String   @default("manual")
+  externalId   String?
+  notes        String?
+  importedById String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([venue, serviceDate, source, externalId])
+  @@index([serviceDate])
+  @@index([venue, serviceDate])
+}
+
+model Timesheet {
+  id                String          @id @default(cuid())
+  staffProfileId    String
+  rosterShiftId     String?
+  venue             String?
+  area              String?
+  roleTitle         String?
+  workDate          DateTime
+  clockInAt         DateTime
+  clockOutAt        DateTime
+  breakMinutes      Int             @default(0)
+  notes             String?
+  status            TimesheetStatus @default(DRAFT)
+  submittedAt       DateTime?
+  approvedAt        DateTime?
+  approvedById      String?
+  rejectedAt        DateTime?
+  rejectionReason   String?
+  xeroEmployeeId    String?
+  xeroEarningsRateId String?
+  xeroTimesheetId   String?
+  xeroExportBatchId String?
+  paymentMethod     String          @default("XERO")
+  cashPaidAt        DateTime?
+  cashPaidById      String?
+  cashPaymentNotes  String?
+  exportedAt        DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  staffProfile      StaffProfile    @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, workDate])
+  @@index([status, workDate])
+  @@index([paymentMethod, workDate])
+  @@index([xeroExportBatchId])
+}
+
+model StaffTipCashEntry {
+  id          String   @id @default(cuid())
+  venue       String
+  serviceDate DateTime
+  amountCents Int
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([venue, serviceDate])
+  @@index([serviceDate])
+}
+
+model StaffTipCardEntry {
+  id          String   @id @default(cuid())
+  venue       String
+  serviceDate DateTime
+  amountCents Int
+  source      String   @default("control")
+  externalId  String?
+  importKey   String   @unique
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([serviceDate])
+  @@index([venue, serviceDate])
+  @@index([source])
+}
+
+model StaffTipPaymentRun {
+  id           String   @id @default(cuid())
+  venue        String
+  weekStart    DateTime
+  weekEnd      DateTime
+  tipPoolCents Int
+  status       String   @default("PAID")
+  notes        String?
+  paidAt       DateTime @default(now())
+  paidById     String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  lines        StaffTipPaymentRunLine[]
+
+  @@index([venue, weekStart, weekEnd])
+}
+
+model StaffTipPaymentRunLine {
+  id             String             @id @default(cuid())
+  paymentRunId   String
+  staffProfileId String
+  hours          Float
+  baseAmountCents Int               @default(0)
+  adjustmentCents Int               @default(0)
+  amountCents    Int
+  excluded       Boolean            @default(false)
+  paymentMethod  String             @default("CASH")
+  notes          String?
+  paidAt         DateTime?
+  createdAt      DateTime           @default(now())
+  paymentRun     StaffTipPaymentRun @relation(fields: [paymentRunId], references: [id], onDelete: Cascade)
+  staffProfile   StaffProfile       @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId])
+  @@index([paymentRunId])
+}
+
+model AppSettings {
+  id                   String   @id @default("singleton")
+  orgName              String   @default("Alma Hospitality")
+  primaryContactName   String?
+  primaryContactEmail  String?
+  primaryContactPhone  String?
+  venues               Json     @default("[]")
+  handbookContent      Json     @default("{}")
+  onboardingSettings   Json     @default("{}")
+  goveeApiKey          String?
+  goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
+  notifyEmail          String?
+  notifyOverdueIssues  Boolean  @default(true)
+  notifyExpiringStaff  Boolean  @default(true)
+  notifyOutOfRangeTemp Boolean  @default(true)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model StaffInvite {
+  id             String    @id @default(cuid())
+  token          String    @unique
+  email          String?
+  note           String?
+  expiresAt      DateTime?
+  completedAt    DateTime?
+  staffProfileId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@index([token])
+}
+
+model StaffComplianceRecord {
+  id                String            @id @default(cuid())
+  staffProfileId    String
+  recordType        StaffRecordType
+  title             String
+  issuer            String?
+  certificateNumber String?
+  issueDate         DateTime?
+  expiryDate        DateTime?
+  status            StaffRecordStatus @default(PENDING)
+  documentName      String?
+  documentUrl       String?
+  notes             String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  staffProfile      StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, recordType])
+}
+
+model IncidentReport {
+  id                String           @id @default(cuid())
+  title             String
+  incidentType      String
+  severity          IssueSeverity    @default(MEDIUM)
+  status            IncidentStatus   @default(OPEN)
+  occurredAt        DateTime
+  reportedBy        String
+  venue             String?
+  location          String?
+  summary           String
+  immediateActions  String?
+  treatmentProvided String?
+  followUpRequired  Boolean          @default(false)
+  followUpNotes     String?
+  linkedIssueId     String?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  linkedIssue       Issue?           @relation(fields: [linkedIssueId], references: [id])
+  people            IncidentPerson[]
+}
+
+model IncidentPerson {
+  id               String         @id @default(cuid())
+  incidentReportId String
+  name             String
+  role             String
+  involvement      String
+  contactDetails   String?
+  injuryDetails    String?
+  witnessStatement String?
+  createdAt        DateTime       @default(now())
+  incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
+}
+
+model TemperatureAsset {
+  id                  String                 @id @default(cuid())
+  name                String
+  venue               String?
+  area                String?
+  assetType           String
+  minTempC            Float
+  maxTempC            Float
+  integrationProvider String?
+  externalDeviceId    String?
+  externalModel       String?
+  externalSku         String?
+  lastReadingAt       DateTime?
+  lastSyncAt          DateTime?
+  status              TemperatureAssetStatus @default(ACTIVE)
+  notes               String?
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
+  sensors             TemperatureSensor[]
+  logs                TemperatureLog[]
+}
+
+model TemperatureIntegration {
+  id           String              @id @default(cuid())
+  provider     String
+  status       String              @default("disconnected")
+  apiKeyHint   String?
+  baseUrl      String?
+  lastSyncedAt DateTime?
+  lastError    String?
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+  sensors      TemperatureSensor[]
+
+  @@unique([provider])
+}
+
+model TemperatureSensor {
+  id               String                 @id @default(cuid())
+  integrationId    String
+  externalSensorId String
+  externalName     String?
+  externalModel    String?
+  assetId          String?
+  lastSeenAt       DateTime?
+  lastTemperature  Float?
+  lastBatteryLevel Int?
+  rawPayload       Json?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  integration      TemperatureIntegration @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  asset            TemperatureAsset?      @relation(fields: [assetId], references: [id], onDelete: SetNull)
+
+  @@unique([integrationId, externalSensorId])
+  @@index([integrationId, externalSensorId])
+}
+
+model TemperatureLog {
+  id                String               @id @default(cuid())
+  assetId           String
+  recordedAt        DateTime
+  temperatureC      Float
+  humidityPct       Float?
+  source            TemperatureLogSource @default(MANUAL)
+  status            TemperatureLogStatus
+  correctiveAction  String?
+  recordedBy        String?
+  externalReadingId String?
+  createdAt         DateTime             @default(now())
+  asset             TemperatureAsset     @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@index([assetId, recordedAt])
+}
+
+model LiquorLicence {
+  id            String              @id @default(cuid())
+  venue         String
+  licenceNumber String              @unique
+  licenceType   LiquorLicenceType   @default(ON_PREMISES)
+  status        LiquorLicenceStatus @default(ACTIVE)
+  licensee      String
+  issuer        String              @default("NSW Liquor & Gaming")
+  issueDate     DateTime?
+  expiryDate    DateTime?
+  tradingHours  String?
+  conditions    String?
+  restrictions  String?
+  notes         String?
+  documentName  String?
+  documentUrl   String?
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+
+  @@index([venue])
+  @@index([expiryDate])
+}
+
+model StockCategory {
+  id          String      @id @default(cuid())
+  legacyId    String?     @unique
+  name        String      @unique
+  description String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  items       StockItem[]
+}
+
+model StockItem {
+  id             String          @id @default(cuid())
+  legacyId       String?         @unique
+  sku            String?         @unique
+  name           String
+  categoryId     String?
+  unit           String
+  onHand         Float           @default(0)
+  parLevel       Float           @default(0)
+  reorderPoint   Float?
+  avgCostCents   Int?
+  status         StockItemStatus @default(ACTIVE)
+  notes          String?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+  category       StockCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  recipeLines    RecipeLine[]
+  stocktakeLines StocktakeLine[]
+  movements      InventoryMovement[]
+
+  @@index([categoryId])
+  @@index([status])
+  @@index([name])
+}
+
+model Stocktake {
+  id        String          @id @default(cuid())
+  legacyId  String?         @unique
+  name      String
+  venue     String?
+  template  String?
+  countedAt DateTime
+  status    StocktakeStatus @default(IN_PROGRESS)
+  notes     String?
+  appliedAt DateTime?
+  createdAt DateTime        @default(now())
+  updatedAt DateTime        @updatedAt
+  lines     StocktakeLine[]
+  movements InventoryMovement[]
+
+  @@index([countedAt])
+  @@index([status])
+}
+
+model StocktakeLine {
+  id              String     @id @default(cuid())
+  legacyId        String?    @unique
+  stocktakeId     String
+  itemId          String?
+  position        Int        @default(0)
+  label           String
+  countedQty      Float
+  unit            String?
+  location        String?
+  stockValueCents Int?
+  notes           String?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  stocktake       Stocktake  @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  item            StockItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  movement        InventoryMovement?
+
+  @@index([stocktakeId])
+  @@index([itemId])
+}
+
+model InventoryMovement {
+  id                    String                @id @default(cuid())
+  itemId                String
+  movementType          InventoryMovementType
+  quantityDelta         Float
+  quantityBefore        Float
+  quantityAfter         Float
+  unit                  String?
+  sourceStocktakeId     String?
+  sourceStocktakeLineId String?               @unique
+  notes                 String?
+  createdAt             DateTime              @default(now())
+  item                  StockItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sourceStocktake       Stocktake?            @relation(fields: [sourceStocktakeId], references: [id], onDelete: SetNull)
+  sourceStocktakeLine   StocktakeLine?        @relation(fields: [sourceStocktakeLineId], references: [id], onDelete: SetNull)
+
+  @@index([itemId, createdAt])
+  @@index([movementType])
+  @@index([sourceStocktakeId])
+}
+
+model Recipe {
+  id            String       @id @default(cuid())
+  legacyId      String?      @unique
+  title         String
+  kind          String?
+  category      String?
+  subcategory   String?
+  venue         String?
+  estimatedCost Float        @default(0)
+  notes         String?
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  lines         RecipeLine[]
+
+  @@index([title])
+  @@index([category])
+}
+
+model RecipeCategory {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  kind        String   @default("FOOD")
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([kind])
+}
+
+model RecipeLine {
+  id             String     @id @default(cuid())
+  legacyId       String?    @unique
+  recipeId       String
+  position       Int        @default(0)
+  ingredientName String
+  quantity       Float?
+  unit           String?
+  cost           Float?
+  itemId         String?
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
+  recipe         Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  item           StockItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@index([recipeId])
+  @@index([itemId])
+}
+
+model Supplier {
+  id            String         @id @default(cuid())
+  legacyId      String?        @unique
+  name          String
+  contactName   String?
+  email         String?
+  phone         String?
+  website       String?
+  address       String?
+  accountNumber String?
+  paymentTerms  String?
+  notes         String?
+  status        SupplierStatus @default(ACTIVE)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([status])
+  @@index([name])
+}
+
+model Venue {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  slug      String   @unique
+  address   String?
+  lga       String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}

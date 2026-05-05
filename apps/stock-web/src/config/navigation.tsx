@@ -1,0 +1,57 @@
+import type { ReactNode } from 'react';
+import {
+  IconDashboard,
+  IconItems,
+  IconRecipes,
+  IconSettings,
+  IconStocktake,
+  IconSuppliers
+} from '../lib/icons';
+
+export type NavItem = {
+  to: string;
+  label: string;
+  description: string;
+  icon: ReactNode;
+  end?: boolean;
+};
+
+export const NAV_ITEMS: NavItem[] = [
+  {
+    to: '/',
+    label: 'Overview',
+    description: 'At-a-glance stock snapshot',
+    icon: <IconDashboard />,
+    end: true
+  },
+  {
+    to: '/items',
+    label: 'Items',
+    description: 'Product catalogue, categories, pars',
+    icon: <IconItems />
+  },
+  {
+    to: '/stocktake',
+    label: 'Stocktake',
+    description: 'Periodic counts and variance',
+    icon: <IconStocktake />
+  },
+  {
+    to: '/suppliers',
+    label: 'Suppliers',
+    description: 'Vendors, invoices, reconciliation',
+    icon: <IconSuppliers />
+  },
+  {
+    to: '/recipes',
+    label: 'Recipes & sales',
+    description: 'Prep recipes and sales-driven depletion',
+    icon: <IconRecipes />
+  },
+  {
+    to: '/settings',
+    label: 'Settings',
+    description: 'Categories, units, account',
+    icon: <IconSettings />
+  }
+];

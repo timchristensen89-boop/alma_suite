@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: alma-suite-v18-postgres
+    environment:
+      POSTGRES_USER: ${ALMA_DB_USER:-alma}
+      POSTGRES_PASSWORD: ${ALMA_DB_PASSWORD:-alma}
+      POSTGRES_DB: ${ALMA_DB_NAME:-alma_suite_v18}
+    ports:
+      - "${ALMA_DB_PORT:-5438}:5432"
+    volumes:
+      - alma-suite-v18-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  alma-suite-v18-postgres-data:

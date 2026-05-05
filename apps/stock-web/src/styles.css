@@ -1,0 +1,643 @@
+/*
+ * Stock app styles.
+ *
+ * The compliance web app's stylesheet is structured around CSS custom
+ * properties (`--color-accent`, `--color-accent-hover`, `--color-accent-soft`,
+ * `--color-accent-text`). To keep the two apps visually consistent but
+ * distinct, we import the compliance base stylesheet and then re-declare
+ * those accent variables to the Stocktake forest green from the brand spec
+ * (#1a6e34 → #0e4820), a cool counterpoint to the vivid Compliance red.
+ *
+ * Do not add unrelated component styles here unless they are stock-specific;
+ * shared polish belongs back in the base stylesheet.
+ */
+
+@import url('../../web/src/styles.css');
+
+:root {
+  /* Stocktake forest green */
+  --color-accent: #1a6e34;
+  --color-accent-hover: #0e4820;
+  --color-accent-soft: #e6f3eb;
+  --color-accent-text: #0e4820;
+}
+
+/*
+ * A handful of spots in the base stylesheet hardcode the compliance red
+ * (e.g. the dashboard hero gradient). Re-declare those rules using the
+ * stock values so nothing leaks through.
+ */
+.app-shell-brand-mark {
+  /* The default mark has a red gradient container; we use the brand mark
+     itself to carry colour, so the container can stay neutral. */
+  background: transparent;
+  overflow: hidden;
+}
+
+.sidebar-footer-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-accent-text);
+  text-decoration: none;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--color-accent-soft);
+  background: var(--color-accent-soft);
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.sidebar-footer-link:hover {
+  background: #d8f0e8;
+  border-color: #bfe4d8;
+}
+
+.stock-items-table {
+  margin: -4px;
+}
+
+.stock-filter-toolbar {
+  display: grid;
+  gap: 14px;
+  margin: -4px 0 12px;
+  align-items: end;
+}
+
+.table-card > .stock-filter-toolbar {
+  margin: 0;
+  padding: 12px 16px 0;
+}
+
+.stock-filter-toolbar-three {
+  grid-template-columns: minmax(220px, 2fr) minmax(180px, 1fr) minmax(150px, 0.7fr);
+}
+
+.stock-filter-toolbar-four {
+  grid-template-columns:
+    minmax(220px, 1.7fr)
+    minmax(150px, 0.9fr)
+    minmax(170px, 1fr)
+    minmax(150px, 0.8fr);
+}
+
+.stock-bulk-toolbar {
+  align-items: center;
+}
+
+.stock-bulk-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.select-cell {
+  width: 42px;
+  text-align: center;
+}
+
+.select-cell input[type='checkbox'] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--color-accent);
+  cursor: pointer;
+}
+
+tbody tr.stock-selected-row {
+  background: var(--color-accent-soft);
+}
+
+tbody tr.stock-selected-row:hover {
+  background: #d8f0e8;
+}
+
+.stock-duplicate-hint {
+  display: inline-flex;
+  margin-left: 8px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: #fff7ed;
+  color: #9a3412;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/*
+ * Clickable rows on the Items table — hitting the row body opens the edit
+ * form. We dim the pointer-cursor hint just enough to feel interactive
+ * without competing with the hover row background that the base stylesheet
+ * already paints. The Edit button inside the row gets its own stopPropagation
+ * in the component so clicking it doesn't double-fire.
+ */
+tbody tr.row-interactive {
+  cursor: pointer;
+}
+
+.cell-actions {
+  width: 1%;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.cell-actions .btn + .btn {
+  margin-left: 4px;
+}
+
+.recipe-row-toggle {
+  min-width: 78px;
+}
+
+.stock-category-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+}
+
+.stock-category-group,
+.recipe-kind-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stock-category-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.recipe-kind-group {
+  padding: 2px 0 8px;
+}
+
+.recipe-kind-group + .recipe-kind-group {
+  border-top: 1px solid var(--color-border);
+  padding-top: 16px;
+}
+
+.stock-category-group-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--color-surface-muted);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.stock-category-group-toggle {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.stock-category-group-toggle:hover {
+  background: #eef7f2;
+}
+
+.stock-category-group.is-collapsed .stock-category-group-head {
+  border-bottom: 0;
+}
+
+.recipe-kind-group-head {
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.stock-category-group-head > span:first-child {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.stock-category-group-head strong {
+  color: var(--color-text);
+  font-size: 14px;
+}
+
+.recipe-kind-group-head strong {
+  color: var(--color-accent-text);
+}
+
+.stock-category-mini-stats {
+  flex: none;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-muted);
+}
+
+.stock-category-collapse-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.stock-category-collapse-icon,
+.recipe-row-toggle-icon {
+  transition: transform 140ms ease;
+}
+
+.stock-category-collapse-icon.is-open,
+.recipe-row-toggle-icon.is-open {
+  transform: rotate(180deg);
+}
+
+.stock-category-group .table-empty-cell {
+  padding: 18px 14px !important;
+}
+
+.stock-category-group table {
+  margin: 0;
+}
+
+/* Settings — category admin rows for stock and recipes. */
+.settings-category-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.settings-category-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.25fr) auto auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.settings-category-row-create {
+  background: var(--color-accent-soft);
+  border-color: rgba(26, 110, 52, 0.18);
+}
+
+.settings-category-row-recipe {
+  grid-template-columns:
+    minmax(160px, 1fr)
+    minmax(140px, 0.65fr)
+    minmax(200px, 1.1fr)
+    auto
+    auto;
+}
+
+.settings-category-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 38px;
+  padding: 0 10px;
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/*
+ * Recipes — search + category filter sit above the table. Two-column on
+ * desktop, single column on narrow screens so the inputs stay usable.
+ */
+.recipes-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  gap: 14px;
+  margin: -4px 0 12px;
+}
+
+@media (max-width: 720px) {
+  .recipes-toolbar,
+  .stock-filter-toolbar,
+  .stock-filter-toolbar-three,
+  .stock-filter-toolbar-four {
+    grid-template-columns: 1fr;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+
+  .settings-category-row,
+  .settings-category-row-recipe {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-bulk-toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stock-bulk-toolbar .table-toolbar-right {
+    margin-left: 0;
+    width: 100%;
+  }
+
+  .stock-bulk-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .stock-bulk-actions .btn {
+    flex: 1 1 130px;
+  }
+
+  .stock-bulk-toolbar > span:first-child {
+    width: 100%;
+  }
+
+  .stock-category-groups {
+    gap: 10px;
+    padding: 8px;
+  }
+
+  .stock-category-group-head {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+  }
+
+  .stock-category-group-head > span:first-child {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .stock-category-mini-stats,
+  .stock-category-collapse-meta {
+    white-space: normal;
+  }
+
+  .stock-duplicate-hint {
+    display: inline-flex;
+    margin: 4px 0 0;
+    width: fit-content;
+  }
+}
+
+@media (max-width: 560px) {
+  .stock-items-table {
+    margin: 0;
+  }
+
+  .table-card > .stock-filter-toolbar {
+    padding: 10px;
+    margin-bottom: 0;
+  }
+
+  .select-cell {
+    width: 36px;
+  }
+
+  .cell-actions {
+    white-space: normal;
+  }
+
+  .cell-actions .btn {
+    margin-top: 4px;
+  }
+
+  .recipe-row-toggle {
+    min-width: 0;
+    width: 100%;
+  }
+
+  .stock-category-group,
+  .recipe-kind-group-head {
+    border-radius: 8px;
+  }
+
+  .stock-category-group table,
+  .recipe-lines-table {
+    min-width: 620px;
+  }
+}
+
+/*
+ * Expanded-detail row inside a table — used to surface ingredient lines
+ * without leaving the list. The hover background needs to be neutral (the
+ * default tbody hover would tint it), and the inner mini-table strips its
+ * own outer chrome since it lives inside a cell.
+ */
+tbody tr.row-detail:hover {
+  background: var(--color-surface-muted);
+}
+
+.row-detail > td {
+  padding: 14px 16px 18px;
+  background: var(--color-surface-muted);
+}
+
+.recipe-lines-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.recipe-lines-table thead th {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted);
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.recipe-lines-table tbody td {
+  padding: 8px 10px;
+  border-bottom: 1px dashed var(--color-border);
+  font-size: 13px;
+  vertical-align: top;
+}
+
+.recipe-lines-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.recipe-edit-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.recipe-edit-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.3fr) minmax(160px, 1.2fr) minmax(88px, 0.55fr) minmax(84px, 0.55fr) minmax(92px, 0.6fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 980px) {
+  .recipe-edit-line {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .recipe-edit-line {
+    grid-template-columns: 1fr;
+  }
+
+  .row-detail > td {
+    padding: 10px;
+  }
+
+  .recipe-lines-table {
+    min-width: 520px;
+  }
+}
+
+.table-empty-cell {
+  padding: 28px 16px !important;
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+/*
+ * Stocktake detail — group lines by location so the user can read a
+ * historical count the way it would have been physically taken (Spirits,
+ * Wine, Bar Back, etc).
+ */
+.stocktake-line-group + .stocktake-line-group {
+  margin-top: 16px;
+}
+
+.stocktake-line-group-title {
+  margin: 0 0 6px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-muted);
+}
+
+.stocktake-count-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-top: 6px;
+}
+
+.stocktake-table-scroll {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.stocktake-history-card table {
+  min-width: 760px;
+}
+
+.stocktake-count-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stocktake-count-line {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.4fr) minmax(160px, 1.2fr) minmax(88px, 0.6fr) minmax(78px, 0.5fr) minmax(120px, 0.8fr) minmax(110px, 0.7fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+@media (max-width: 1100px) {
+  .stocktake-count-line {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 560px) {
+  .stocktake-history-card {
+    margin-inline: -8px;
+    border-radius: 8px;
+  }
+
+  .stocktake-history-card table {
+    min-width: 680px;
+  }
+
+  .stocktake-history-card th,
+  .stocktake-history-card td {
+    padding: 10px 8px;
+  }
+
+  .stock-bulk-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .stock-bulk-actions {
+    justify-content: stretch;
+  }
+
+  .stock-bulk-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .stocktake-count-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stocktake-count-toolbar .btn,
+  .toolbar-right .btn {
+    flex: 1 1 auto;
+  }
+
+  .stocktake-count-line {
+    grid-template-columns: 1fr;
+  }
+}
+
+/*
+ * New item form — inline on the Items page. Stacks the form controls
+ * vertically with a soft divider before the "Add category" helper so the
+ * secondary action feels distinct from the item fields.
+ */
+.new-item-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.new-item-inline-category {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+  padding-top: 12px;
+  border-top: 1px dashed var(--color-border);
+}
+
+@media (max-width: 560px) {
+  .new-item-inline-category {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+}

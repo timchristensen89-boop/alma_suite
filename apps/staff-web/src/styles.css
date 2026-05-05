@@ -1,0 +1,1582 @@
+@import url('../../web/src/styles.css');
+
+:root {
+  --color-accent: #244C9F;
+  --color-accent-hover: #102E69;
+  --color-accent-soft: #e8eefc;
+  --color-accent-text: #102E69;
+}
+
+.staff-board {
+  display: grid;
+  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.staff-action-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.staff-action-strip > span {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.staff-member-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+
+.staff-member-grid > div {
+  display: grid;
+  gap: 4px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.tips-section-stack {
+  display: grid;
+  gap: 14px;
+}
+
+.tips-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.tips-table {
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.tips-table td {
+  vertical-align: top;
+}
+
+.tips-table .field {
+  min-width: 110px;
+  margin: 0;
+}
+
+.tips-review-actions {
+  display: grid;
+  gap: 8px;
+  min-width: 190px;
+}
+
+.tips-day-picker {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tips-day-picker button {
+  display: grid;
+  gap: 2px;
+  min-height: 58px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.tips-day-picker button.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.tips-day-picker span {
+  color: var(--color-text-subtle);
+  font-size: 11px;
+}
+
+.tips-status-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--tone-warning-bg);
+}
+
+.tips-status-panel.is-locked {
+  border-color: var(--color-border);
+  background: var(--tone-positive-bg);
+}
+
+.tips-status-panel > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--color-text-subtle);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.timesheet-shift-picklist {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.timesheet-shift-picklist button {
+  display: grid;
+  gap: 3px;
+  min-height: 64px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.timesheet-shift-picklist button:hover,
+.timesheet-shift-picklist button.is-selected {
+  border-color: rgba(36, 76, 159, 0.34);
+  background: var(--color-accent-soft);
+}
+
+.timesheet-shift-picklist span {
+  color: var(--color-text-subtle);
+  font-size: 12px;
+}
+
+.staff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-list-button {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  text-align: left;
+}
+
+.staff-list-main {
+  flex: 1 1 auto;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.staff-list-main:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+  border-radius: 6px;
+}
+
+.staff-list-main > span:first-child,
+.staff-expiry-row > span:first-child,
+.invite-row > span:first-child {
+  min-width: 0;
+}
+
+.staff-list-button.is-selected {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.staff-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.staff-profile-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.onboarding-settings-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 12px;
+}
+
+.onboarding-setting-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.onboarding-setting-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.onboarding-setting-header > span:first-child {
+  min-width: 0;
+}
+
+.onboarding-setting-header strong,
+.onboarding-setting-header .subtle {
+  display: block;
+}
+
+.onboarding-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.field-action {
+  align-self: end;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.staff-expiry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.staff-expiry-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.staff-expiry-row span span {
+  display: block;
+}
+
+.invites-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.invite-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.invite-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.invite-row:last-child {
+  border-bottom: none;
+}
+
+.invite-row > span:first-child {
+  min-width: 0;
+}
+
+.invite-row strong,
+.invite-row .subtle,
+.invite-link {
+  display: block;
+}
+
+.invite-link {
+  margin-top: 4px;
+  max-width: 72ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-accent-text);
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.invite-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.public-onboarding {
+  min-height: 100vh;
+  display: grid;
+  place-items: start center;
+  padding: 40px 20px;
+  background: var(--color-bg);
+}
+
+.public-onboarding .card {
+  width: min(980px, 100%);
+}
+
+.public-onboarding .card .card {
+  width: 100%;
+  box-shadow: none;
+}
+
+.public-onboarding input[type='file'] {
+  max-width: 240px;
+  font-size: 12px;
+}
+
+.app-access-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.app-access-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.roster-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 220px;
+  gap: 16px;
+  align-items: end;
+}
+
+.roster-week-controls {
+  display: grid;
+  grid-template-columns: 68px minmax(132px, 1fr) 68px;
+  align-items: center;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.roster-week-label {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 0 10px;
+  color: var(--color-text);
+  text-align: center;
+}
+
+.roster-week-label span {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.roster-week-controls > .btn:last-child {
+  grid-column: 1 / -1;
+  justify-self: center;
+  min-width: 92px;
+}
+
+.roster-workbench {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 16px;
+  align-items: start;
+}
+
+.roster-team-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  max-height: 402px;
+  overflow: auto;
+}
+
+.roster-team-member {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.roster-team-member.is-rostered {
+  border-color: rgba(36, 76, 159, 0.24);
+  background: linear-gradient(135deg, rgba(36, 76, 159, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.roster-team-member strong,
+.roster-team-member .subtle {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-avatar {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0;
+  flex: 0 0 auto;
+}
+
+.roster-avatar.small {
+  width: 26px;
+  height: 26px;
+  font-size: 10px;
+}
+
+.deputy-roster-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.deputy-roster-header h1 {
+  font-size: 26px;
+  line-height: 1.15;
+}
+
+.deputy-roster-actions,
+.deputy-editor-actions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: max-content;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.deputy-roster-commandbar {
+  display: grid;
+  grid-template-columns: minmax(300px, 1fr) minmax(176px, auto) minmax(132px, auto) minmax(150px, 0.8fr) minmax(140px, 0.7fr) minmax(132px, 0.6fr);
+  gap: 12px;
+  align-items: end;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.deputy-view-toggle {
+  display: inline-grid;
+  grid-template-columns: 1fr 1fr;
+  align-self: end;
+  min-height: 36px;
+  padding: 3px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.deputy-view-toggle button {
+  min-width: 104px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.deputy-view-toggle button.is-active {
+  background: var(--color-surface);
+  color: var(--color-accent-text);
+  box-shadow: var(--shadow-xs);
+}
+
+.deputy-roster-summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+
+.deputy-roster-summary strong {
+  color: var(--color-text);
+}
+
+.deputy-roster-message {
+  margin-left: auto;
+  color: var(--color-accent-text);
+  font-weight: 700;
+}
+
+.deputy-day-summary-strip {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.deputy-area-legend {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-height: 30px;
+}
+
+.deputy-area-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 9px;
+  border: 1px solid var(--shift-border, var(--color-border));
+  border-radius: 999px;
+  background: var(--shift-bg, var(--color-surface));
+  color: var(--shift-text, var(--color-text));
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.deputy-area-legend i {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--shift-border, var(--color-accent));
+  flex: 0 0 auto;
+}
+
+.publish-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.roster-publish-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.publish-preview-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 0.9fr) minmax(180px, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.publish-preview-row:hover {
+  background: var(--color-surface-muted);
+}
+
+.publish-preview-row strong,
+.publish-preview-row small {
+  display: block;
+}
+
+.publish-preview-row small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.roster-forecast-metrics {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.roster-daily-forecast {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.roster-forecast-source {
+  margin-top: 8px;
+}
+
+.roster-daily-forecast label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.roster-daily-forecast label.is-over {
+  border-color: var(--tone-warning-dot);
+  background: var(--tone-warning-bg);
+}
+
+.roster-daily-forecast label.is-under {
+  border-color: var(--tone-positive-dot);
+  background: var(--tone-positive-bg);
+}
+
+.roster-daily-forecast span,
+.roster-daily-forecast small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-daily-forecast input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 5px 6px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.roster-forecast-metrics > div {
+  display: grid;
+  gap: 2px;
+  min-height: 62px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.roster-forecast-metrics span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.roster-forecast-metrics strong {
+  font-size: 18px;
+}
+
+.roster-venue-forecast {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.roster-venue-forecast > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) repeat(2, minmax(90px, auto)) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.roster-venue-forecast span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-venue-forecast small {
+  overflow: hidden;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-venue-forecast strong {
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-forecast-callout {
+  display: grid;
+  gap: 4px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--tone-warning-dot);
+  border-radius: 8px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+
+.roster-forecast-callout.is-under {
+  border-color: var(--tone-positive-dot);
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+
+.roster-publish-guardrails {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--tone-warning-dot);
+  border-radius: 8px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+
+.roster-publish-guardrails.is-clear {
+  border-color: var(--tone-positive-dot);
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+
+.roster-publish-guardrails strong {
+  font-size: 13px;
+}
+
+.roster-publish-guardrails span {
+  font-size: 12px;
+}
+
+.roster-area-guidance {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.roster-area-guidance > strong {
+  font-size: 13px;
+}
+
+.roster-area-guidance > div {
+  display: grid;
+  grid-template-columns: minmax(70px, 0.8fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.roster-area-guidance span,
+.roster-area-guidance small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-area-guidance small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.roster-area-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.deputy-day-summary-strip > div {
+  display: grid;
+  gap: 2px;
+  min-height: 74px;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.deputy-day-summary-strip > div.is-today {
+  border-color: rgba(36, 76, 159, 0.36);
+  background: var(--color-accent-soft);
+}
+
+.deputy-day-summary-strip strong {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deputy-day-summary-strip span,
+.deputy-day-summary-strip small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.deputy-day-summary-strip small {
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.deputy-roster-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 300px);
+  gap: 16px;
+  align-items: start;
+}
+
+.deputy-roster-layout.is-editor-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.deputy-schedule-panel {
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.deputy-schedule-panel,
+.deputy-schedule-grid,
+.roster-board-shell {
+  min-width: 0;
+}
+
+.deputy-schedule-grid {
+  display: grid;
+  grid-template-columns: minmax(136px, 0.78fr) repeat(7, minmax(112px, 1fr));
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.deputy-roster-layout.is-editor-closed .deputy-schedule-grid {
+  grid-template-columns: minmax(150px, 0.72fr) repeat(7, minmax(132px, 1fr));
+}
+
+.deputy-schedule-grid.roster-days-14 {
+  grid-template-columns: minmax(136px, 0.78fr) repeat(14, minmax(82px, 1fr));
+}
+
+.deputy-roster-layout.is-editor-closed .deputy-schedule-grid.roster-days-14 {
+  grid-template-columns: minmax(150px, 0.72fr) repeat(14, minmax(96px, 1fr));
+}
+
+.deputy-schedule-corner,
+.deputy-day-head,
+.deputy-row-label,
+.deputy-schedule-cell {
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deputy-schedule-corner,
+.deputy-day-head {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  min-height: 64px;
+  background: #f8fafc;
+}
+
+.deputy-schedule-corner {
+  left: 0;
+  z-index: 3;
+  display: flex;
+  align-items: end;
+  padding: 12px;
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deputy-day-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  justify-content: center;
+  padding: 8px 10px;
+}
+
+.deputy-day-head strong {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deputy-day-head span,
+.deputy-day-head small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.deputy-day-head.is-today {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+
+.deputy-schedule-row {
+  display: contents;
+}
+
+.deputy-row-label {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  min-height: 88px;
+  padding: 8px;
+  background: var(--color-surface);
+}
+
+.deputy-row-label .badge {
+  grid-column: 1 / -1;
+  justify-self: start;
+}
+
+.deputy-row-label strong,
+.deputy-row-label small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deputy-row-label small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.deputy-schedule-cell {
+  min-height: 88px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: stretch;
+  padding: 6px;
+  border-top: 0;
+  border-left: 0;
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.deputy-schedule-cell:hover {
+  background: #f8fafc;
+}
+
+.deputy-schedule-cell:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: -2px;
+}
+
+.deputy-schedule-cell:has(.deputy-shift-card.is-dragging) {
+  background: #f8fafc;
+}
+
+.deputy-schedule-cell.has-shifts {
+  background: #fbfdff;
+}
+
+.deputy-add-shift {
+  display: grid;
+  place-items: center;
+  min-height: 50px;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 6px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.deputy-schedule-cell:hover .deputy-add-shift {
+  color: var(--color-accent-text);
+  border-color: rgba(36, 76, 159, 0.34);
+  background: rgba(36, 76, 159, 0.05);
+}
+
+.deputy-shift-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 7px;
+  border-left: 4px solid var(--shift-border, var(--color-accent));
+  border-radius: 6px;
+  background: var(--shift-bg, #eef5ff);
+  color: var(--shift-text, #102e69);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  cursor: grab;
+}
+
+.deputy-shift-card:hover {
+  filter: brightness(0.98);
+}
+
+.deputy-shift-card:active {
+  cursor: grabbing;
+}
+
+.deputy-shift-card.is-dragging {
+  opacity: 0.52;
+  outline: 2px dashed rgba(36, 76, 159, 0.38);
+  outline-offset: 2px;
+}
+
+.deputy-shift-card.is-deputy-import {
+  box-shadow: inset 0 0 0 1px rgba(36, 76, 159, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.deputy-shift-card.is-unallocated {
+  border-left-style: dashed;
+  background: #fff7ed;
+  color: #7c2d12;
+}
+
+.deputy-shift-card strong {
+  font-size: 11.5px;
+  font-weight: 800;
+}
+
+.deputy-shift-card span,
+.deputy-shift-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+}
+
+.deputy-shift-card small {
+  opacity: 0.78;
+}
+
+.deputy-shift-draft {
+  box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.32), 0 1px 2px rgba(15, 23, 42, 0.08);
+}
+
+.deputy-shift-cancelled {
+  border-left-color: #94a3b8;
+  background: #f1f5f9;
+  color: #475569;
+  opacity: 0.72;
+}
+
+.roster-duration-hint {
+  margin-top: -8px;
+}
+
+.roster-conflict-warning {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--tone-warning-dot);
+  border-radius: 8px;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+  font-size: 13px;
+}
+
+.deputy-schedule-empty {
+  grid-column: 1 / -1;
+  padding: 28px;
+  color: var(--color-text-muted);
+  text-align: center;
+}
+
+.deputy-shift-editor {
+  position: sticky;
+  top: 76px;
+}
+
+@media (max-width: 1200px) {
+  .deputy-roster-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .deputy-shift-editor {
+    position: static;
+  }
+
+  .roster-publish-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .roster-daily-forecast {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .roster-venue-forecast > div {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .deputy-roster-layout.is-editor-closed .deputy-schedule-grid,
+  .deputy-schedule-grid {
+    grid-template-columns: minmax(146px, 0.8fr) repeat(7, minmax(110px, 1fr));
+  }
+
+  .deputy-roster-layout.is-editor-closed .deputy-schedule-grid.roster-days-14,
+  .deputy-schedule-grid.roster-days-14 {
+    grid-template-columns: minmax(146px, 0.8fr) repeat(14, minmax(92px, 1fr));
+  }
+}
+
+.roster-board-shell {
+  overflow-x: auto;
+  padding-bottom: 6px;
+}
+
+.roster-board {
+  min-width: 1120px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.roster-day {
+  min-height: 360px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-muted));
+  padding: 10px;
+  box-shadow: var(--shadow-xs);
+}
+
+.roster-day.is-today {
+  border-color: rgba(36, 76, 159, 0.42);
+  box-shadow: 0 0 0 3px rgba(36, 76, 159, 0.08);
+}
+
+.roster-day-title {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+  color: var(--color-text);
+}
+
+.roster-day-title span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.roster-day-title strong {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.roster-day-title span span {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.roster-day-meta {
+  min-height: 42px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  margin-bottom: 8px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.035);
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.roster-day-meta span:first-child {
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.roster-shift-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.roster-empty {
+  display: flex;
+  min-height: 90px;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--color-border-strong);
+  border-radius: 8px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.55);
+}
+
+.roster-shift {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-xs);
+  font-size: 12px;
+}
+
+.roster-shift-published {
+  border-color: rgba(4, 120, 87, 0.22);
+}
+
+.roster-shift-cancelled {
+  opacity: 0.68;
+}
+
+.roster-shift-time,
+.roster-shift-detail {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roster-shift-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.roster-shift-time strong {
+  font-size: 13px;
+}
+
+.roster-shift-person {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.roster-shift-person strong,
+.roster-shift-person span span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.roster-shift-person span span,
+.roster-shift-detail {
+  color: var(--color-text-muted);
+}
+
+@media (max-width: 960px) {
+  .staff-action-strip {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-board,
+  .invites-layout,
+  .deputy-roster-layout,
+  .roster-workbench,
+  .roster-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .deputy-roster-commandbar {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .deputy-day-summary-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .publish-preview-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .deputy-shift-editor {
+    position: static;
+  }
+
+  .roster-week-controls {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .roster-week-label {
+    order: -1;
+    grid-column: 1 / -1;
+    width: 100%;
+    min-width: 0;
+    align-items: center;
+  }
+}
+
+@media (max-width: 760px) {
+  .public-onboarding {
+    padding: 20px 12px;
+  }
+
+  .public-onboarding .card-body {
+    padding: 16px;
+  }
+
+  .public-onboarding .card .card-header,
+  .public-onboarding .card .card-body {
+    padding-inline: 14px;
+  }
+
+  .deputy-roster-header {
+    flex-direction: column;
+  }
+
+  .deputy-roster-actions {
+    width: 100%;
+    grid-auto-flow: row;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .deputy-roster-actions .btn {
+    width: 100%;
+  }
+
+  .deputy-roster-commandbar {
+    grid-template-columns: 1fr;
+    padding: 10px;
+    gap: 10px;
+  }
+
+  .deputy-roster-summary {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .deputy-roster-message {
+    margin-left: 0;
+  }
+
+  .deputy-area-legend {
+    gap: 6px;
+  }
+
+  .deputy-area-legend span {
+    min-height: 26px;
+    padding-inline: 8px;
+  }
+
+  .deputy-day-summary-strip {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .publish-preview-row {
+    grid-template-columns: 1fr;
+  }
+
+  .deputy-view-toggle {
+    width: 100%;
+  }
+
+  .deputy-view-toggle button {
+    min-width: 0;
+  }
+
+  .roster-daily-forecast {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .roster-venue-forecast > div {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .deputy-schedule-grid {
+    grid-template-columns: 132px repeat(7, minmax(92px, 1fr));
+  }
+
+  .deputy-schedule-grid.roster-days-14 {
+    grid-template-columns: 132px repeat(14, minmax(86px, 1fr));
+  }
+
+  .deputy-row-label {
+    min-height: 92px;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 6px;
+    padding: 7px;
+  }
+
+  .deputy-row-label .badge {
+    grid-column: 1 / -1;
+    justify-self: start;
+  }
+
+  .deputy-schedule-cell {
+    min-height: 92px;
+    padding: 5px;
+  }
+
+  .deputy-shift-card {
+    padding: 6px;
+  }
+
+  .roster-toolbar {
+    gap: 12px;
+  }
+
+  .roster-week-controls {
+    padding: 8px;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .roster-board-shell {
+    overflow: visible;
+  }
+
+  .roster-board {
+    min-width: 0;
+    grid-template-columns: 1fr;
+  }
+
+  .roster-day {
+    min-height: 0;
+  }
+
+  .roster-day-title {
+    align-items: center;
+  }
+
+  .roster-shift-detail {
+    flex-wrap: wrap;
+  }
+
+  .staff-list-button,
+  .staff-expiry-row,
+  .invite-row,
+  .tips-row {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-row-actions,
+  .invite-row-actions {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .staff-row-actions .btn,
+  .invite-row-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .invite-link {
+    max-width: calc(100vw - 72px);
+  }
+
+  .tips-day-picker {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .tips-status-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .deputy-roster-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .deputy-day-summary-strip {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-list-button,
+  .staff-expiry-row,
+  .invite-row {
+    padding: 12px;
+  }
+
+  .invite-row-actions .btn,
+  .staff-row-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .public-onboarding input[type='file'] {
+    max-width: 100%;
+    width: 100%;
+  }
+}

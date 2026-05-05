@@ -1,0 +1,42 @@
+{
+  "name": "@alma/db",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev --schema prisma/schema.prisma",
+    "migrate:deploy": "prisma migrate deploy --schema prisma/schema.prisma",
+    "migrate:production": "prisma migrate deploy --schema prisma/schema.prisma",
+    "seed": "tsx prisma/seed.ts",
+    "seed:prod": "tsx prisma/seed-prod.ts",
+    "seed:beta": "tsx prisma/seed-beta.ts",
+    "create:master-user": "tsx prisma/create-master-user.ts",
+    "import:alma-control": "tsx ../../scripts/import-alma-control.ts",
+    "import:compliance-documents": "tsx prisma/import-compliance-documents.ts",
+    "import:deputy-roster": "tsx prisma/import-deputy-roster.ts",
+    "import:legacy": "tsx prisma/import-legacy.ts",
+    "import:legacy-stock": "tsx prisma/import-legacy-stock.ts",
+    "extract:legacy-compliance": "tsx prisma/extract-legacy-compliance.ts",
+    "extract:legacy-stock": "tsx prisma/extract-legacy-stock.ts",
+    "sync:govee-temperature": "tsx prisma/sync-govee-temperature.ts"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.5.0",
+    "bcryptjs": "^2.4.3"
+  },
+  "devDependencies": {
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^22.13.14",
+    "prisma": "^6.5.0",
+    "tsx": "^4.19.3",
+    "typescript": "^5.8.3"
+  },
+  "prisma": {
+    "seed": "tsx prisma/seed.ts"
+  }
+}
