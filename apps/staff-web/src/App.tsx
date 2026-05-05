@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { CSSProperties, DragEvent } from 'react';
+import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type {
   AppSettingsPayload,
@@ -149,6 +149,12 @@ const VENUE_OPTIONS = [
 
 const ROSTER_FORECAST_STORAGE_KEY = 'alma.staff.roster.forecast.v1';
 const ROSTER_CLOSED_DAYS_STORAGE_KEY = 'alma.staff.roster.closedDays.v1';
+
+type RosterShiftContextMenu = {
+  shift: RosterShift;
+  x: number;
+  y: number;
+};
 
 type RosterForecastDraft = {
   forecastSales: string;
@@ -1901,6 +1907,7 @@ function RosterPage({
   const [editingShift, setEditingShift] = useState<RosterShift | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
+  const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
   const [publishPreviewOpen, setPublishPreviewOpen] = useState(false);
   const [forecastDraft] = useState(loadRosterForecastDraft);
   const [forecastSales, setForecastSales] = useState(forecastDraft.forecastSales);
@@ -2184,6 +2191,22 @@ function RosterPage({
     window.localStorage.setItem(ROSTER_CLOSED_DAYS_STORAGE_KEY, JSON.stringify(closedDaysByScope));
   }, [closedDaysByScope]);
 
+  useEffect(() => {
+    if (!shiftContextMenu) return undefined;
+    const close = () => setShiftContextMenu(null);
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') close();
+    };
+    window.addEventListener('click', close);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('click', close);
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [shiftContextMenu]);
+
   function setRosterWeek(nextWeekStart: Date) {
     setWeekStart(nextWeekStart);
     const selectedDate = new Date(`${date}T00:00:00`);
@@ -2302,6 +2325,7 @@ function RosterPage({
   }
 
   function startEditShift(shift: RosterShift) {
+    setShiftContextMenu(null);
     setEditingShift(shift);
     setEditorOpen(true);
     setStaffProfileId(shift.staffProfileId);
@@ -2318,6 +2342,7 @@ function RosterPage({
   }
 
   async function deleteShift(shift: RosterShift) {
+    setShiftContextMenu(null);
     if (!window.confirm('Delete this roster shift? This cannot be undone.')) return;
     setSaving(true);
     setMessage(null);
@@ -2388,32 +2413,49 @@ function RosterPage({
     }
   }
 
-  async function duplicateShift() {
-    if (!editingShift) return;
+  async function duplicateShiftFromShift(shift: RosterShift) {
+    setShiftContextMenu(null);
     setSaving(true);
     setMessage(null);
     try {
       await api('/api/staff/roster', {
         method: 'POST',
         body: JSON.stringify({
-          staffProfileId: editingShift.staffProfileId,
-          venue: editingShift.venue ?? editingShift.staffProfile?.venue ?? '',
-          area: editingShift.area ?? '',
-          roleTitle: editingShift.roleTitle ?? '',
-          startsAt: editingShift.startsAt,
-          endsAt: editingShift.endsAt,
-          breakMinutes: editingShift.breakMinutes,
+          staffProfileId: shift.staffProfileId,
+          venue: shift.venue ?? shift.staffProfile?.venue ?? '',
+          area: shift.area ?? '',
+          roleTitle: shift.roleTitle ?? '',
+          startsAt: shift.startsAt,
+          endsAt: shift.endsAt,
+          breakMinutes: shift.breakMinutes,
           status: 'DRAFT',
-          notes: editingShift.notes ?? ''
+          notes: shift.notes ?? ''
         })
       });
       await reload(weekStart, weekEnd);
-      setMessage('Shift duplicated as draft.');
+      setMessage('Shift copied as a draft.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not duplicate shift.');
+      setMessage(err instanceof Error ? err.message : 'Could not copy shift.');
     } finally {
       setSaving(false);
     }
+  }
+
+  async function duplicateShift() {
+    if (!editingShift) return;
+    await duplicateShiftFromShift(editingShift);
+  }
+
+  function openShiftContextMenu(event: MouseEvent<HTMLElement>, shift: RosterShift) {
+    event.preventDefault();
+    event.stopPropagation();
+    const menuWidth = 188;
+    const menuHeight = 116;
+    setShiftContextMenu({
+      shift,
+      x: Math.min(event.clientX, window.innerWidth - menuWidth - 12),
+      y: Math.min(event.clientY, window.innerHeight - menuHeight - 12)
+    });
   }
 
   async function copyPreviousWeek() {
@@ -2947,6 +2989,7 @@ function RosterPage({
                                 event.stopPropagation();
                                 startEditShift(shift);
                               }}
+                              onContextMenu={(event) => openShiftContextMenu(event, shift)}
                             >
                               <strong>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}</strong>
                               <span>{viewMode === 'team' ? shift.area || shift.roleTitle || 'Shift' : `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}</span>
@@ -3068,6 +3111,25 @@ function RosterPage({
         </aside>
         ) : null}
       </div>
+      {shiftContextMenu ? (
+        <div
+          className="roster-shift-context-menu"
+          style={{ left: shiftContextMenu.x, top: shiftContextMenu.y }}
+          role="menu"
+          aria-label="Shift actions"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button type="button" role="menuitem" onClick={() => startEditShift(shiftContextMenu.shift)}>
+            Edit shift
+          </button>
+          <button type="button" role="menuitem" disabled={saving} onClick={() => void duplicateShiftFromShift(shiftContextMenu.shift)}>
+            Copy shift
+          </button>
+          <button type="button" role="menuitem" className="is-danger" disabled={saving} onClick={() => void deleteShift(shiftContextMenu.shift)}>
+            Delete shift
+          </button>
+        </div>
+      ) : null}
     </div>
   );
 }

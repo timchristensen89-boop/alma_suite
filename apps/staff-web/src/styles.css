@@ -1243,6 +1243,52 @@
   opacity: 0.78;
 }
 
+.roster-shift-context-menu {
+  position: fixed;
+  z-index: 120;
+  display: grid;
+  width: 188px;
+  padding: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.roster-shift-context-menu button {
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.roster-shift-context-menu button:hover,
+.roster-shift-context-menu button:focus-visible {
+  background: var(--color-surface-hover);
+  outline: none;
+}
+
+.roster-shift-context-menu button.is-danger {
+  color: #b42318;
+}
+
+.roster-shift-context-menu button.is-danger:hover,
+.roster-shift-context-menu button.is-danger:focus-visible {
+  background: #fef3f2;
+}
+
+.roster-shift-context-menu button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
 .deputy-shift-draft {
   box-shadow: inset 0 0 0 1px rgba(245, 158, 11, 0.32), 0 1px 2px rgba(15, 23, 42, 0.08);
 }
