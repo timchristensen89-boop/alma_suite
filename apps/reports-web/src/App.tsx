@@ -30,6 +30,8 @@ import {
 } from '@alma/ui';
 import {
   clearApiAuthTokens,
+  consumeSuiteHandoffToken,
+  installSuiteHandoff,
   setStaffApiAuthToken,
   setStockApiAuthToken,
   staffApi,
@@ -328,6 +330,11 @@ function useReportsAuth() {
 
   const refresh = useCallback(async () => {
     try {
+      const handoffUser = await consumeSuiteHandoffToken();
+      if (handoffUser) {
+        setUser(handoffUser);
+        return;
+      }
       const data = await staffApi<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
     } catch {
@@ -340,6 +347,8 @@ function useReportsAuth() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => installSuiteHandoff(), []);
 
   const login = useCallback(async (email: string, password: string) => {
     const staffSession = await staffApi<{ user: AuthUser; token?: string }>('/api/auth/login', {

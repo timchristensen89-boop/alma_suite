@@ -25,7 +25,7 @@ import {
   TopBar
 } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
-import { api, clearApiAuthToken, setApiAuthToken } from './lib/api';
+import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const VENUES = ['All venues', 'Alma Avalon', 'St Alma'];
@@ -133,6 +133,11 @@ function useMarketingAuth() {
 
   const refresh = useCallback(async () => {
     try {
+      const handoffUser = await consumeSuiteHandoffToken();
+      if (handoffUser) {
+        setUser(handoffUser);
+        return;
+      }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
     } catch {
@@ -145,6 +150,8 @@ function useMarketingAuth() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => installSuiteHandoff(), []);
 
   const login = useCallback(async (email: string, password: string) => {
     const session = await api<{ user: AuthUser; token?: string }>('/api/auth/login', {

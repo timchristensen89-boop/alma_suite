@@ -5,6 +5,7 @@ import { env } from '../env.js';
 type SessionPayload = {
   userId: string;
   issuedAt: number;
+  purpose?: 'session' | 'suite-handoff';
 };
 
 const SEP = '.';
@@ -18,8 +19,8 @@ function fromBase64url(input: string): Buffer {
   return Buffer.from(input, 'base64url');
 }
 
-function sign(input: string): string {
-  return createHmac('sha256', env.sessionSecret).update(input).digest('base64url');
+function sign(input: string, secret = env.sessionSecret): string {
+  return createHmac('sha256', secret).update(input).digest('base64url');
 }
 
 export function createSessionToken(userId: string): string {
@@ -32,12 +33,12 @@ export function createSessionToken(userId: string): string {
   return `${body}${SEP}${sig}`;
 }
 
-export function parseSessionToken(token: string | undefined): SessionPayload | null {
+function parseSignedToken(token: string | undefined, secret: string, maxAgeMs: number, purpose?: SessionPayload['purpose']): SessionPayload | null {
   if (!token) return null;
   const [body, sig] = token.split(SEP);
   if (!body || !sig) return null;
 
-  const expected = sign(body);
+  const expected = sign(body, secret);
   const sigBuf = Buffer.from(sig);
   const expectedBuf = Buffer.from(expected);
   if (sigBuf.length !== expectedBuf.length) return null;
@@ -46,11 +47,31 @@ export function parseSessionToken(token: string | undefined): SessionPayload | n
   try {
     const payload = JSON.parse(fromBase64url(body).toString('utf8')) as SessionPayload;
     if (!payload?.userId || typeof payload.issuedAt !== 'number') return null;
-    if (Date.now() - payload.issuedAt > env.sessionMaxAgeMs) return null;
+    if (purpose && payload.purpose !== purpose) return null;
+    if (Date.now() - payload.issuedAt > maxAgeMs) return null;
     return payload;
   } catch {
     return null;
   }
+}
+
+export function parseSessionToken(token: string | undefined): SessionPayload | null {
+  return parseSignedToken(token, env.sessionSecret, env.sessionMaxAgeMs);
+}
+
+export function createSuiteHandoffToken(userId: string): string {
+  const payload: SessionPayload = {
+    userId,
+    issuedAt: Date.now(),
+    purpose: 'suite-handoff'
+  };
+  const body = base64url(JSON.stringify(payload));
+  const sig = sign(body, env.suiteAuthSecret);
+  return `${body}${SEP}${sig}`;
+}
+
+export function parseSuiteHandoffToken(token: string | undefined): SessionPayload | null {
+  return parseSignedToken(token, env.suiteAuthSecret, 2 * 60 * 1000, 'suite-handoff');
 }
 
 export function cookieOptions(): CookieOptions {

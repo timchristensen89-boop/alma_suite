@@ -165,6 +165,15 @@ Required production frontend settings:
 
 Production frontends refuse to boot if required URLs are missing or point to localhost.
 
+## Suite Sign-In Handoff
+
+The app switcher shares sign-in between the separate Firebase apps using a short-lived suite handoff token. Set the same `SUITE_AUTH_SECRET` on both API services:
+
+- `@alma/api`
+- `@alma/stock-api`
+
+If `SUITE_AUTH_SECRET` is missing, each API falls back to its own session secret. That is fine for a single API, but Stock handoff will not work unless both APIs use the same suite secret.
+
 ## Custom Domains
 
 Recommended domain layout:

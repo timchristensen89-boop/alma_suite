@@ -1,3 +1,5 @@
+import type { AuthUser } from '@alma/shared';
+
 function requiredUrl(names: string[], localFallback: string) {
   const value = names.map((name) => import.meta.env[name]).find(Boolean);
   if (import.meta.env.PROD && !value) {
@@ -81,4 +83,43 @@ export async function api<T>(path: string, init?: RequestInit): Promise<T> {
   }
 
   return JSON.parse(body) as T;
+}
+
+function urlWithSuiteToken(href: string, token: string) {
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set('suite_token', token);
+  url.searchParams.set('suite_from', window.location.origin);
+  return url.toString();
+}
+
+export async function createSuiteHandoffUrl(href: string) {
+  const data = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
+  return urlWithSuiteToken(href, data.token);
+}
+
+export async function consumeSuiteHandoffToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('suite_token');
+  if (!token) return null;
+  const data = await api<{ user: AuthUser; token?: string }>('/api/auth/handoff/consume', {
+    method: 'POST',
+    body: JSON.stringify({ token })
+  });
+  setApiAuthToken(data.token);
+  params.delete('suite_token');
+  params.delete('suite_from');
+  const nextSearch = params.toString();
+  window.history.replaceState(null, '', `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`);
+  return data.user;
+}
+
+export function installSuiteHandoff() {
+  (globalThis as typeof globalThis & {
+    almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+  }).almaCreateSuiteHandoffUrl = createSuiteHandoffUrl;
+  return () => {
+    delete (globalThis as typeof globalThis & {
+      almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+  };
 }

@@ -27,7 +27,7 @@ import {
   Textarea,
   TopBar
 } from '@alma/ui';
-import { api, clearApiAuthToken, setApiAuthToken } from './lib/api';
+import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { withSuiteAppLinks } from './config/suiteLinks';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -162,6 +162,11 @@ function useReserveAuth() {
 
   const refresh = useCallback(async () => {
     try {
+      const handoffUser = await consumeSuiteHandoffToken();
+      if (handoffUser) {
+        setUser(handoffUser);
+        return;
+      }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
     } catch {
@@ -174,6 +179,8 @@ function useReserveAuth() {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => installSuiteHandoff(), []);
 
   const login = useCallback(async (email: string, password: string) => {
     const session = await api<{ user: AuthUser; token?: string }>('/api/auth/login', {

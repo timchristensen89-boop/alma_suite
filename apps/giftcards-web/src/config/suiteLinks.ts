@@ -38,12 +38,12 @@ function trimTrailingSlash(value: string) {
 }
 
 export function suiteAppHref(app: SuiteAppIdentity) {
-  if (app.id === 'compliance') return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/login` : undefined;
-  if (app.id === 'stock') return suiteUrls.stock ? `${trimTrailingSlash(suiteUrls.stock)}/login` : undefined;
-  if (app.id === 'staff') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/login` : undefined;
-  if (app.id === 'reports') return suiteUrls.reports ? `${trimTrailingSlash(suiteUrls.reports)}/login` : undefined;
-  if (app.id === 'reserve') return suiteUrls.reserve ? `${trimTrailingSlash(suiteUrls.reserve)}/login` : undefined;
-  if (app.id === 'marketing') return suiteUrls.marketing ? `${trimTrailingSlash(suiteUrls.marketing)}/login` : undefined;
+  if (app.id === 'compliance') return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/` : undefined;
+  if (app.id === 'stock') return suiteUrls.stock ? `${trimTrailingSlash(suiteUrls.stock)}/` : undefined;
+  if (app.id === 'staff') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/` : undefined;
+  if (app.id === 'reports') return suiteUrls.reports ? `${trimTrailingSlash(suiteUrls.reports)}/` : undefined;
+  if (app.id === 'reserve') return suiteUrls.reserve ? `${trimTrailingSlash(suiteUrls.reserve)}/` : undefined;
+  if (app.id === 'marketing') return suiteUrls.marketing ? `${trimTrailingSlash(suiteUrls.marketing)}/` : undefined;
   if (app.id === 'giftcards') return suiteUrls.giftcards ? `${trimTrailingSlash(suiteUrls.giftcards)}/redeem` : undefined;
   if (app.id === 'training' || app.id === 'academy') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/academy` : undefined;
   if (app.id === 'settings') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/settings` : undefined;

@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import type { AuthUser } from '@alma/shared';
-import { ApiError, api, clearApiAuthToken, setApiAuthToken } from './api';
+import { ApiError, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './api';
 
 type AuthContextValue = {
   user: AuthUser | null;
@@ -21,6 +21,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const refresh = useCallback(async () => {
     try {
+      const handoffUser = await consumeSuiteHandoffToken();
+      if (handoffUser) {
+        setUser(handoffUser);
+        return;
+      }
       const data = await api<{ user: AuthUser | null }>('/api/auth/me');
       setUser(data.user);
     } catch (err) {
@@ -37,6 +42,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh();
   }, [refresh]);
+
+  useEffect(() => installSuiteHandoff(), []);
 
   const login = useCallback(async (email: string, password: string) => {
     setError(null);

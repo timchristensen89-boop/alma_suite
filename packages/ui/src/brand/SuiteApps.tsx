@@ -339,6 +339,18 @@ export function SuiteAppSwitcher({
             key={app.id}
             className={tileClassName}
             href={app.href}
+            onClick={(event) => {
+              const handoff = (globalThis as typeof globalThis & {
+                almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+              }).almaCreateSuiteHandoffUrl;
+              if (!handoff || app.id === currentApp) return;
+              event.preventDefault();
+              void handoff(app.href!).then((href) => {
+                window.location.assign(href);
+              }).catch(() => {
+                window.location.assign(app.href!);
+              });
+            }}
             aria-label={
               isAvailable
                 ? `Open Alma ${app.label}`

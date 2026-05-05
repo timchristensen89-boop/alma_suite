@@ -16,10 +16,12 @@ const PUBLIC_PATHS = new Set<string>([
   '/health',
   '/api/health',
   '/api/auth/login',
+  '/api/auth/handoff/consume',
   '/api/auth/me',
   '/api/auth/logout',
   '/stock-api/api/health',
   '/stock-api/api/auth/login',
+  '/stock-api/api/auth/handoff/consume',
   '/stock-api/api/auth/me',
   '/stock-api/api/auth/logout'
 ]);

@@ -68,6 +68,7 @@ export const env = {
   host: process.env.HOST ?? '0.0.0.0',
   corsOrigin: isProduction ? configuredCorsOrigins : configuredCorsOrigins.length > 0 ? configuredCorsOrigins : localCorsOrigins,
   sessionSecret,
+  suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
   isProduction,
   sessionCookieName: 'alma.stock.sid',
   sessionMaxAgeMs: 30 * 24 * 60 * 60 * 1000
