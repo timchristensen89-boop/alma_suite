@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ALMA Gift Cards">
+  <defs>
+    <linearGradient id="almaGiftCardsGradient" x1="12" y1="8" x2="52" y2="56" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#CFA04A"/>
+      <stop offset="1" stop-color="#73520E"/>
+    </linearGradient>
+  </defs>
+  <rect x="8" y="12" width="48" height="40" rx="12" fill="url(#almaGiftCardsGradient)"/>
+  <path d="M17 27h30M32 19v28" fill="none" stroke="#FFF7DF" stroke-width="4" stroke-linecap="round"/>
+  <path d="M25 20c-5-5-12 2-5 7 4 3 9 1 12-2-2-1-4-3-7-5Zm14 0c5-5 12 2 5 7-4 3-9 1-12-2 2-1 4-3 7-5Z" fill="#FFF7DF"/>
+</svg>

@@ -278,6 +278,14 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <SearchIcon />
   },
   {
+    id: 'giftcards',
+    label: 'GIFTCARDS',
+    from: '#B98216',
+    to: '#73520E',
+    iconKey: 'document',
+    icon: <DocumentIcon />
+  },
+  {
     id: 'training',
     label: 'ACADEMY',
     from: '#B98216',
@@ -302,6 +310,7 @@ export const ALMA_APP_LOGO_SRC = {
   staff: '/brand/alma-staff-logo.svg',
   reserve: '/brand/alma-reserve-logo.svg',
   marketing: '/brand/alma-marketing-logo.svg',
+  giftcards: '/brand/alma-giftcards-logo.svg',
   audits: '/brand/alma-audits-logo.svg',
   training: '/brand/alma-training-logo.svg',
   settings: '/brand/alma-settings-logo.svg'

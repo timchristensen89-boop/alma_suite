@@ -18,6 +18,8 @@
     "dev:reserve-web": "pnpm --filter @alma/reserve-web dev",
     "dev:marketing": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/marketing-web dev\"",
     "dev:marketing-web": "pnpm --filter @alma/marketing-web dev",
+    "dev:giftcards": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/giftcards-web dev\"",
+    "dev:giftcards-web": "pnpm --filter @alma/giftcards-web dev",
     "db:up": "docker compose up -d postgres",
     "db:prepare": "bash ./scripts/prepare-postgres.sh",
     "db:down": "docker compose down",
@@ -59,6 +61,7 @@
     "express": "^4.21.2",
     "nodemailer": "^8.0.6",
     "pdf-lib": "^1.17.1",
+    "stripe": "^22.1.0",
     "zod": "^3.24.3"
   }
 }

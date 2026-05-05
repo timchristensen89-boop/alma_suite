@@ -124,6 +124,7 @@ enum AlmaAppId {
   REPORTS
   RESERVE
   MARKETING
+  GIFTCARDS
   TRAINING
   SETTINGS
 }
@@ -187,6 +188,19 @@ enum MarketingCampaignStatus {
   READY
   SENT
   ARCHIVED
+}
+
+enum GiftCardStatus {
+  PENDING_PAYMENT
+  ACTIVE
+  REDEEMED
+  CANCELLED
+  EXPIRED
+}
+
+enum GiftCardRedemptionStatus {
+  COMPLETED
+  VOIDED
 }
 
 model Issue {
@@ -653,6 +667,49 @@ model MarketingCampaignRecipient {
   @@unique([campaignId, contactId])
   @@index([contactId])
   @@index([status])
+}
+
+model GiftCard {
+  id                      String                 @id @default(cuid())
+  code                    String                 @unique
+  status                  GiftCardStatus         @default(PENDING_PAYMENT)
+  initialValueCents       Int
+  balanceCents            Int
+  currency                String                 @default("aud")
+  purchaserName           String
+  purchaserEmail          String
+  recipientName           String?
+  recipientEmail          String?
+  message                 String?
+  stripeCheckoutSessionId String?                @unique
+  stripePaymentIntentId   String?
+  paidAt                  DateTime?
+  expiresAt               DateTime?
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
+  redemptions             GiftCardRedemption[]
+
+  @@index([status])
+  @@index([purchaserEmail])
+  @@index([recipientEmail])
+  @@index([createdAt])
+}
+
+model GiftCardRedemption {
+  id             String                   @id @default(cuid())
+  giftCardId     String
+  amountCents    Int
+  venue          String?
+  notes          String?
+  status         GiftCardRedemptionStatus @default(COMPLETED)
+  redeemedById   String?
+  redeemedAt     DateTime                 @default(now())
+  createdAt      DateTime                 @default(now())
+  giftCard       GiftCard                 @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+
+  @@index([giftCardId])
+  @@index([redeemedAt])
+  @@index([venue])
 }
 
 model Timesheet {

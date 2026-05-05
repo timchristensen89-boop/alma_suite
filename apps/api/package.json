@@ -20,6 +20,7 @@
     "express": "^4.21.2",
     "nodemailer": "^8.0.6",
     "pdf-lib": "^1.17.1",
+    "stripe": "^22.1.0",
     "zod": "^3.24.3"
   },
   "devDependencies": {

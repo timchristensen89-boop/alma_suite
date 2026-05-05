@@ -19,10 +19,12 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/health',
   '/api/auth/login',
   '/api/auth/me',
-  '/api/auth/logout'
+  '/api/auth/logout',
+  '/api/gift-cards/checkout'
 ]);
 
 const PUBLIC_PREFIXES = [
+  '/api/gift-cards/session/',
   '/api/staff/invites/by-token/'
 ];
 

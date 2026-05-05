@@ -20,7 +20,7 @@ export const temperatureLogStatusSchema = z.enum(['IN_RANGE', 'OUT_OF_RANGE']);
 export const stockItemStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const supplierStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED']);
-export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'TRAINING', 'SETTINGS']);
+export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);
 export const timesheetStatusSchema = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED']);
@@ -30,6 +30,8 @@ export const reserveReservationStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'S
 export const reserveServicePeriodSchema = z.enum(['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT']);
 export const marketingChannelSchema = z.enum(['EMAIL', 'SMS']);
 export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SENT', 'ARCHIVED']);
+export const giftCardStatusSchema = z.enum(['PENDING_PAYMENT', 'ACTIVE', 'REDEEMED', 'CANCELLED', 'EXPIRED']);
+export const giftCardRedemptionStatusSchema = z.enum(['COMPLETED', 'VOIDED']);
 
 export const issueEvidenceInputSchema = z.object({
   name: z.string().min(1),
@@ -513,6 +515,28 @@ export const marketingCampaignInputSchema = z.object({
 
 export const marketingCampaignUpdateInputSchema = marketingCampaignInputSchema.partial();
 
+export const giftCardCheckoutInputSchema = z.object({
+  amountCents: z.coerce.number().int().min(1000).max(200000),
+  purchaserName: z.string().min(2),
+  purchaserEmail: z.string().email(),
+  recipientName: z.string().optional().or(z.literal('')),
+  recipientEmail: z.string().email().optional().or(z.literal('')),
+  message: z.string().max(500).optional().or(z.literal('')),
+  successUrl: z.string().url().optional().or(z.literal('')),
+  cancelUrl: z.string().url().optional().or(z.literal(''))
+});
+
+export const giftCardLookupInputSchema = z.object({
+  code: z.string().min(4)
+});
+
+export const giftCardRedemptionInputSchema = z.object({
+  code: z.string().min(4),
+  amountCents: z.coerce.number().int().positive(),
+  venue: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal(''))
+});
+
 export const staffTrainingAssignInputSchema = z.object({
   staffProfileId: z.string().min(1),
   moduleId: z.string().min(1),
@@ -749,6 +773,8 @@ export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSc
 export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
 export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
 export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
+export type GiftCardStatus = z.infer<typeof giftCardStatusSchema>;
+export type GiftCardRedemptionStatus = z.infer<typeof giftCardRedemptionStatusSchema>;
 export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
@@ -769,6 +795,9 @@ export type MarketingContactUpdateInput = z.infer<typeof marketingContactUpdateI
 export type MarketingSegmentInput = z.infer<typeof marketingSegmentInputSchema>;
 export type MarketingCampaignInput = z.infer<typeof marketingCampaignInputSchema>;
 export type MarketingCampaignUpdateInput = z.infer<typeof marketingCampaignUpdateInputSchema>;
+export type GiftCardCheckoutInput = z.infer<typeof giftCardCheckoutInputSchema>;
+export type GiftCardLookupInput = z.infer<typeof giftCardLookupInputSchema>;
+export type GiftCardRedemptionInput = z.infer<typeof giftCardRedemptionInputSchema>;
 
 export type IssueEvidence = {
   id: string;
@@ -1032,6 +1061,61 @@ export type MarketingOverview = {
     draftCampaigns: number;
     readyCampaigns: number;
     reserveGuestContacts: number;
+  };
+};
+
+export type GiftCardRedemption = {
+  id: string;
+  giftCardId: string;
+  amountCents: number;
+  venue: string | null;
+  notes: string | null;
+  status: GiftCardRedemptionStatus;
+  redeemedById: string | null;
+  redeemedAt: string;
+  createdAt: string;
+};
+
+export type GiftCard = {
+  id: string;
+  code: string;
+  status: GiftCardStatus;
+  initialValueCents: number;
+  balanceCents: number;
+  currency: string;
+  purchaserName: string;
+  purchaserEmail: string;
+  recipientName: string | null;
+  recipientEmail: string | null;
+  message: string | null;
+  stripeCheckoutSessionId: string | null;
+  stripePaymentIntentId: string | null;
+  paidAt: string | null;
+  expiresAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  redemptions: GiftCardRedemption[];
+};
+
+export type GiftCardPublic = Pick<
+  GiftCard,
+  'code' | 'status' | 'initialValueCents' | 'balanceCents' | 'currency' | 'recipientName' | 'message' | 'paidAt' | 'expiresAt'
+>;
+
+export type GiftCardCheckoutResult = {
+  giftCardId: string;
+  checkoutUrl: string;
+  checkoutSessionId: string;
+};
+
+export type GiftCardOverview = {
+  giftCards: GiftCard[];
+  totals: {
+    active: number;
+    pending: number;
+    redeemed: number;
+    activeBalanceCents: number;
+    soldValueCents: number;
   };
 };
 

@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from './lib/http.js';
 import { auditsRouter } from './routes/audits.js';
 import { authRouter } from './routes/auth.js';
 import { checklistsRouter } from './routes/checklists.js';
+import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
 import { issuesRouter } from './routes/issues.js';
@@ -30,6 +31,7 @@ import { temperatureService } from './services/temperature.service.js';
 const app = express();
 
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
+app.post('/api/gift-cards/webhook', express.raw({ type: 'application/json' }), stripeGiftCardWebhook);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -50,6 +52,7 @@ app.get('/', (_req, res) => {
       'audits',
       'reserve',
       'marketing',
+      'gift-cards',
       'training',
       'settings',
       'notifications',
@@ -90,6 +93,7 @@ app.use('/api/notifications', notificationsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/reserve', reserveRouter);
 app.use('/api/marketing', marketingRouter);
+app.use('/api/gift-cards', giftCardsRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/website', websiteRouter);
 

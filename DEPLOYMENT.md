@@ -11,6 +11,10 @@ This repo is a pnpm monorepo. Production is split into API services, static fron
 | `@alma/web` | `apps/web` | Compliance frontend | `pnpm --filter @alma/web build` | `pnpm --filter @alma/web start` |
 | `@alma/stock-web` | `apps/stock-web` | Stock frontend | `pnpm --filter @alma/stock-web build` | `pnpm --filter @alma/stock-web start` |
 | `@alma/staff-web` | `apps/staff-web` | Staff frontend | `pnpm --filter @alma/staff-web build` | `pnpm --filter @alma/staff-web start` |
+| `@alma/reports-web` | `apps/reports-web` | Reports frontend | `pnpm --filter @alma/reports-web build` | `pnpm --filter @alma/reports-web start` |
+| `@alma/reserve-web` | `apps/reserve-web` | Reserve frontend | `pnpm --filter @alma/reserve-web build` | `pnpm --filter @alma/reserve-web start` |
+| `@alma/marketing-web` | `apps/marketing-web` | Marketing frontend | `pnpm --filter @alma/marketing-web build` | `pnpm --filter @alma/marketing-web start` |
+| `@alma/giftcards-web` | `apps/giftcards-web` | Gift cards frontend | `pnpm --filter @alma/giftcards-web build` | `pnpm --filter @alma/giftcards-web start` |
 
 `@alma/db`, `@alma/shared`, and `@alma/ui` are workspace packages, not standalone deployable services.
 
@@ -75,8 +79,10 @@ Required production API settings:
 - `JWT_SECRET` or `SESSION_SECRET` for `@alma/api`
 - `CORS_ORIGIN` for `@alma/api`
 - `RESEND_API_KEY` and `RESEND_FROM` for onboarding invite emails
+- `STRIPE_SECRET_KEY` for gift card checkout payments
+- `STRIPE_WEBHOOK_SECRET` for the gift card checkout webhook
 - `STOCK_JWT_SECRET`, `STOCK_SESSION_SECRET`, or `JWT_SECRET` for `@alma/stock-api`
-- Production stock frontend origins via `STOCK_CORS_ORIGIN` or `COMPLIANCE_WEB_URL`, `STOCK_WEB_URL`, `STAFF_WEB_URL`, and `REPORTS_WEB_URL`
+- Production stock frontend origins via `STOCK_CORS_ORIGIN` or `COMPLIANCE_WEB_URL`, `STOCK_WEB_URL`, `STAFF_WEB_URL`, `REPORTS_WEB_URL`, `RESERVE_WEB_URL`, `MARKETING_WEB_URL`, and `GIFTCARDS_WEB_URL`
 
 Production validation refuses to boot with localhost CORS origins.
 
@@ -102,6 +108,20 @@ WEBSITE_MENU_COMMITTER_EMAIL="reports@almagroup.com.au"
 
 Without `WEBSITE_MENU_GITHUB_TOKEN`, the Reports menu publisher only validates payloads and returns a clear setup error on publish.
 
+Gift card checkout uses Stripe Checkout Sessions. Configure a Stripe webhook endpoint for:
+
+```text
+https://<giftcards-domain>/api/gift-cards/webhook
+```
+
+Subscribe it to:
+
+```text
+checkout.session.completed
+```
+
+Keep `STRIPE_SECRET_KEY` and `STRIPE_WEBHOOK_SECRET` in the API host's secret manager. Without these values, the checkout endpoint returns a clear setup error and does not create fake successful payments.
+
 ## Frontend Deployment
 
 Deploy each frontend as a separate static app:
@@ -110,6 +130,9 @@ Deploy each frontend as a separate static app:
 - Stock: `apps/stock-web`
 - Staff: `apps/staff-web`
 - Reports: `apps/reports-web`
+- Reserve: `apps/reserve-web`
+- Marketing: `apps/marketing-web`
+- Gift Cards: `apps/giftcards-web`
 
 Use these settings on Vercel, Firebase Hosting, Netlify, Cloudflare Pages, or similar:
 
@@ -137,6 +160,7 @@ Required production frontend settings:
 - Stock: `VITE_STOCK_API_URL` or `VITE_STOCK_API_BASE_URL`
 - Reports also needs `VITE_STOCK_API_URL` or `VITE_STOCK_API_BASE_URL`
 - All frontends: `VITE_COMPLIANCE_WEB_URL`, `VITE_STOCK_WEB_URL`, `VITE_STAFF_WEB_URL`, `VITE_REPORTS_WEB_URL`
+- Reserve, Marketing, and Gift Cards links: `VITE_RESERVE_WEB_URL`, `VITE_MARKETING_WEB_URL`, `VITE_GIFTCARDS_WEB_URL`
 
 Production frontends refuse to boot if required URLs are missing or point to localhost.
 
@@ -148,6 +172,9 @@ Recommended domain layout:
 - `stock.yourdomain.com` -> `apps/stock-web`
 - `staff.yourdomain.com` -> `apps/staff-web`
 - `reports.yourdomain.com` -> `apps/reports-web`
+- `reserve.yourdomain.com` -> `apps/reserve-web`
+- `marketing.yourdomain.com` -> `apps/marketing-web`
+- `giftcards.yourdomain.com` -> `apps/giftcards-web`
 - `api.yourdomain.com` -> `@alma/api`
 - `stock-api.yourdomain.com` -> `@alma/stock-api`
 
@@ -178,9 +205,11 @@ Then log in and change the password from the app.
 
 1. `curl https://api.yourdomain.com/api/health` returns `{ "ok": true }`.
 2. `curl https://stock-api.yourdomain.com/api/health` returns `{ "ok": true }`.
-3. Open Compliance, Stock, and Staff frontend URLs.
+3. Open Compliance, Stock, Staff, Reports, Reserve, Marketing, and Gift Cards frontend URLs.
 4. Confirm login succeeds from each frontend.
 5. Confirm app switcher links go to production domains, not localhost.
 6. Confirm CORS errors do not appear in the browser console.
 7. Create or resend a staff onboarding invite and confirm Resend reports a delivered email.
-8. Confirm no local/demo seed users are present unless deliberately created.
+8. Open Gift Cards, confirm the public purchase page loads, and confirm the manager redemption area requires login.
+9. With Stripe configured, create a test checkout, complete payment in Stripe test mode, and confirm the card becomes active only after the webhook completes.
+10. Confirm no local/demo seed users are present unless deliberately created.

@@ -1,0 +1,62 @@
+import { Router } from 'express';
+import { requireManager } from '../lib/auth-middleware.js';
+import {
+  constructStripeWebhookEvent,
+  giftCardService
+} from '../services/gift-card.service.js';
+
+export const giftCardsRouter = Router();
+
+giftCardsRouter.post('/checkout', async (req, res, next) => {
+  try {
+    res.status(201).json(await giftCardService.createCheckout(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/session/:sessionId', async (req, res, next) => {
+  try {
+    res.json(await giftCardService.getByCheckoutSession(String(req.params.sessionId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/cards', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.list({
+      query: typeof req.query.query === 'string' ? req.query.query : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/cards/:code', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.lookup(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/redeem', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.redeem(req.body, req.user?.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+export async function stripeGiftCardWebhook(req: { body: Buffer; header(name: string): string | undefined }, res: { json(body: unknown): void }, next: (error?: unknown) => void) {
+  try {
+    const event = constructStripeWebhookEvent(req.body, req.header('stripe-signature'));
+    if (event.type === 'checkout.session.completed') {
+      await giftCardService.handleCheckoutCompleted(event.data.object);
+    }
+    res.json({ received: true });
+  } catch (error) {
+    next(error);
+  }
+}

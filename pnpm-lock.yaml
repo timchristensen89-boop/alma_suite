@@ -41,6 +41,9 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
+      stripe:
+        specifier: ^22.1.0
+        version: 22.1.0(@types/node@25.6.0)
       zod:
         specifier: ^3.24.3
         version: 3.25.76
@@ -81,6 +84,9 @@ importers:
       pdf-lib:
         specifier: ^1.17.1
         version: 1.17.1
+      stripe:
+        specifier: ^22.1.0
+        version: 22.1.0(@types/node@25.6.0)
       zod:
         specifier: ^3.24.3
         version: 3.25.76
@@ -109,6 +115,37 @@ importers:
       typescript:
         specifier: ^5.8.3
         version: 5.9.3
+
+  apps/giftcards-web:
+    dependencies:
+      '@alma/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
+      '@alma/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
+      '@vitejs/plugin-react':
+        specifier: ^4.3.4
+        version: 4.7.0(vite@6.4.2(@types/node@25.6.0)(jiti@2.6.1)(tsx@4.21.0))
+      react:
+        specifier: ^18.3.1
+        version: 18.3.1
+      react-dom:
+        specifier: ^18.3.1
+        version: 18.3.1(react@18.3.1)
+      typescript:
+        specifier: ^5.8.3
+        version: 5.9.3
+      vite:
+        specifier: ^6.2.2
+        version: 6.4.2(@types/node@25.6.0)(jiti@2.6.1)(tsx@4.21.0)
+    devDependencies:
+      '@types/react':
+        specifier: ^18.3.20
+        version: 18.3.28
+      '@types/react-dom':
+        specifier: ^18.3.6
+        version: 18.3.7(@types/react@18.3.28)
 
   apps/marketing-web:
     dependencies:
@@ -1945,6 +1982,15 @@ packages:
     resolution: {integrity: sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==}
     engines: {node: '>=8'}
 
+  stripe@22.1.0:
+    resolution: {integrity: sha512-w/xHyJGxXWnLPbNHG13sz/fae0MrFGC80Oz7YbICQymbfpqfEcsoG+6yG+9BWb81PWc4rrkeSO4wmTcmefmbLw==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      '@types/node': '>=18'
+    peerDependenciesMeta:
+      '@types/node':
+        optional: true
+
   supports-color@7.2.0:
     resolution: {integrity: sha512-qpCAvRl9stuOHveKsn7HncJRvv501qIacKzQlO/+Lwxc9+0q2wLyv4Dfvt80/DPn2pqOBsJdDiogXGR9+OvwRw==}
     engines: {node: '>=8'}
@@ -3579,6 +3625,10 @@ snapshots:
   strip-ansi@6.0.1:
     dependencies:
       ansi-regex: 5.0.1
+
+  stripe@22.1.0(@types/node@25.6.0):
+    optionalDependencies:
+      '@types/node': 25.6.0
 
   supports-color@7.2.0:
     dependencies:
