@@ -27,6 +27,38 @@
   min-width: 0;
 }
 
+.lightweight-profile-summary {
+  margin-bottom: 12px;
+}
+
+.lightweight-profile-list {
+  display: grid;
+  gap: 8px;
+}
+
+.lightweight-profile-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.lightweight-profile-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.lightweight-profile-row .subtle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .staff-member-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
@@ -1578,6 +1610,15 @@
   .staff-action-strip {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .lightweight-profile-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
+  }
+
+  .lightweight-profile-row .btn {
+    justify-self: stretch;
   }
 
   .staff-board,

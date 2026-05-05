@@ -314,11 +314,46 @@ function StaffHome({
       .map((record) => ({ member, record }))
   );
   const [form, setForm] = useState<StaffFormState>({ mode: 'closed' });
+  const [reonboardingId, setReonboardingId] = useState<string | null>(null);
+  const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
+  const [reonboardError, setReonboardError] = useState<string | null>(null);
 
   async function handleSaved(member: StaffProfile) {
     await reload();
     onSelect(member.id);
     setForm({ mode: 'closed' });
+  }
+
+  async function reonboardLightweightProfile(member: StaffProfile) {
+    setReonboardMessage(null);
+    setReonboardError(null);
+    if (!member.email) {
+      setReonboardError(`Add an email to ${member.firstName} ${member.lastName} before sending an onboarding link.`);
+      setForm({ mode: 'edit', member });
+      return;
+    }
+
+    setReonboardingId(member.id);
+    try {
+      const created = await api<CreatedStaffInvite>(`/api/staff/profiles/${member.id}/reonboard`, {
+        method: 'POST',
+        body: JSON.stringify({
+          onboardingBaseUrl: window.location.origin,
+          expiresInDays: 30,
+          note: 'Please complete your ALMA Staff onboarding details.'
+        })
+      });
+      setReonboardMessage(
+        created.emailDelivery?.status === 'sent'
+          ? `Re-onboarding link sent to ${created.email ?? member.email}.`
+          : `Re-onboarding link is ready to copy. ${created.emailDelivery?.reason ?? 'Email was not sent.'}`
+      );
+      await reload();
+    } catch (err) {
+      setReonboardError(err instanceof Error ? err.message : 'Could not send re-onboarding link.');
+    } finally {
+      setReonboardingId(null);
+    }
   }
 
   return (
@@ -338,16 +373,40 @@ function StaffHome({
 
       {lightweightDeputyProfiles.length ? (
         <Card title="Deputy roster profiles" subtitle="These were created from Deputy so the roster has names. Re-onboard them before payroll use.">
-          <div className="staff-action-strip">
+          <div className="staff-action-strip lightweight-profile-summary">
             <span>
               <strong>{lightweightDeputyProfiles.length} lightweight profiles need onboarding</strong>
-              <span className="subtle">Use Invites then Re-onboard staff to collect tax, super, bank, visa and documents.</span>
+              <span className="subtle">Send each person a fresh onboarding link from here. Existing roster details stay on the profile.</span>
             </span>
             <NavLink to="/invites">
               <Button type="button" variant="secondary">
-                Re-onboard staff
+                View invites
               </Button>
             </NavLink>
+          </div>
+          {reonboardMessage ? <p className="subtle">{reonboardMessage}</p> : null}
+          {reonboardError ? <p className="error-text">{reonboardError}</p> : null}
+          <div className="lightweight-profile-list">
+            {lightweightDeputyProfiles.slice(0, 8).map((member) => (
+              <div key={member.id} className="lightweight-profile-row">
+                <span>
+                  <strong>{member.firstName} {member.lastName}</strong>
+                  <span className="subtle">{member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'Add email first'}</span>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={member.email ? 'secondary' : 'ghost'}
+                  disabled={reonboardingId === member.id}
+                  onClick={() => void reonboardLightweightProfile(member)}
+                >
+                  {reonboardingId === member.id ? 'Sending…' : member.email ? 'Re-onboard' : 'Add email'}
+                </Button>
+              </div>
+            ))}
+            {lightweightDeputyProfiles.length > 8 ? (
+              <p className="subtle">Showing 8 of {lightweightDeputyProfiles.length}. The rest are in the staff register below.</p>
+            ) : null}
           </div>
         </Card>
       ) : null}
@@ -415,6 +474,20 @@ function StaffHome({
                     {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
                     {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
                     <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+                    {isDeputyImportedProfile(member) ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={reonboardingId === member.id}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          void reonboardLightweightProfile(member);
+                        }}
+                      >
+                        {reonboardingId === member.id ? 'Sending…' : 'Re-onboard'}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       size="sm"

@@ -85,6 +85,14 @@ staffRouter.post('/invites/:id/resend', requireManager, async (req, res, next) =
   }
 });
 
+staffRouter.post('/profiles/:id/reonboard', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.reonboardProfile(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Public onboarding endpoints (no auth), exposed by token only.
 staffRouter.get('/invites/by-token/:token', async (req, res, next) => {
   try {

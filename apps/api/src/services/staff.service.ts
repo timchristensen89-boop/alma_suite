@@ -10,6 +10,7 @@ import {
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
   staffProfileCreateInputSchema,
+  staffProfileReonboardInputSchema,
   staffProfileUpdateInputSchema,
   staffReonboardInputSchema,
   timesheetApprovalInputSchema,
@@ -1500,6 +1501,26 @@ export const staffService = {
           } as const);
 
     return { ...invite, inviteLink, emailDelivery, reonboarded: true };
+  },
+
+  async reonboardProfile(id: string, input: unknown) {
+    const data = staffProfileReonboardInputSchema.parse(input ?? {});
+    const profile = await prisma.staffProfile.findUnique({ where: { id } });
+    if (!profile) throw new HttpError(404, 'Staff profile not found');
+    if (!profile.email) {
+      throw new HttpError(400, 'Add an email to this staff profile before sending a re-onboarding link.');
+    }
+
+    return this.reonboardStaff({
+      email: profile.email,
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      roleTitle: profile.roleTitle,
+      venue: profile.venue ?? '',
+      note: data.note?.trim() || 'Please complete your ALMA Staff onboarding details.',
+      expiresInDays: data.expiresInDays,
+      onboardingBaseUrl: data.onboardingBaseUrl
+    });
   },
 
   async resendInvite(id: string, input: unknown) {

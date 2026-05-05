@@ -173,6 +173,12 @@ export const staffReonboardInputSchema = z.object({
   expiresInDays: z.number().int().positive().optional()
 });
 
+export const staffProfileReonboardInputSchema = z.object({
+  note: z.string().optional().or(z.literal('')),
+  onboardingBaseUrl: z.string().url().optional().or(z.literal('')),
+  expiresInDays: z.number().int().positive().optional()
+});
+
 export const staffInviteCompleteInputSchema = staffProfileCreateInputSchema.extend({
   password: z.string().min(8, 'Password must be at least 8 characters')
 });
