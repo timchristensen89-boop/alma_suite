@@ -23,6 +23,14 @@ giftCardsRouter.get('/session/:sessionId', async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/print/:code', async (req, res, next) => {
+  try {
+    res.json(await giftCardService.getPrintableByCode(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.get('/cards', requireManager, async (req, res, next) => {
   try {
     res.json(await giftCardService.list({
@@ -44,6 +52,14 @@ giftCardsRouter.get('/cards/:code', requireManager, async (req, res, next) => {
 giftCardsRouter.post('/redeem', requireManager, async (req, res, next) => {
   try {
     res.json(await giftCardService.redeem(req.body, req.user?.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/cards/:code/cancel', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.cancel(String(req.params.code), req.body, req.user?.id));
   } catch (error) {
     next(error);
   }

@@ -76,10 +76,28 @@
   background: var(--color-accent-soft);
 }
 
+.giftcards-paid-card small,
+.giftcards-balance-card small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
 .giftcards-paid-card strong,
 .giftcards-balance-card strong {
   font-size: 22px;
   letter-spacing: 0.05em;
+}
+
+.giftcards-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.giftcards-cancel-form {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
 }
 
 .giftcards-list {
@@ -120,9 +138,113 @@
   white-space: nowrap;
 }
 
+.giftcards-print-page {
+  min-height: 100vh;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 18px;
+  padding: 28px;
+  background: #f6f7f9;
+}
+
+.giftcards-print-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.giftcards-print-card {
+  width: min(720px, 100%);
+  aspect-ratio: 1.65;
+  display: grid;
+  align-content: space-between;
+  gap: 16px;
+  padding: 42px;
+  border: 1px solid #e2d3ad;
+  border-radius: 18px;
+  background:
+    linear-gradient(135deg, rgba(185, 130, 22, 0.14), transparent 42%),
+    #fffaf0;
+  box-shadow: 0 24px 70px rgba(17, 24, 39, 0.12);
+  color: #111827;
+}
+
+.giftcards-print-brand {
+  color: #73520e;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.giftcards-print-card h1 {
+  margin: 0;
+  color: #111827;
+  font-size: 58px;
+  line-height: 0.95;
+}
+
+.giftcards-print-card p,
+.giftcards-print-card blockquote {
+  margin: 0;
+  color: #475569;
+}
+
+.giftcards-print-code {
+  width: fit-content;
+  padding: 12px 16px;
+  border: 1px solid #e2d3ad;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #111827;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.giftcards-print-card footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  color: #64748b;
+  font-size: 13px;
+}
+
 @media (max-width: 840px) {
   .giftcards-layout,
   .giftcards-amounts {
     grid-template-columns: 1fr;
+  }
+
+  .giftcards-print-card {
+    padding: 24px;
+    aspect-ratio: auto;
+  }
+
+  .giftcards-print-card h1 {
+    font-size: 42px;
+  }
+}
+
+@media print {
+  body {
+    background: #ffffff;
+  }
+
+  .giftcards-print-actions,
+  .error-text {
+    display: none;
+  }
+
+  .giftcards-print-page {
+    min-height: auto;
+    padding: 0;
+    background: #ffffff;
+  }
+
+  .giftcards-print-card {
+    width: 100%;
+    box-shadow: none;
+    page-break-inside: avoid;
   }
 }

@@ -683,6 +683,12 @@ model GiftCard {
   message                 String?
   stripeCheckoutSessionId String?                @unique
   stripePaymentIntentId   String?
+  emailedAt               DateTime?
+  emailError              String?
+  cancelledAt             DateTime?
+  cancelReason            String?
+  refundNote              String?
+  cancelledById           String?
   paidAt                  DateTime?
   expiresAt               DateTime?
   createdAt               DateTime               @default(now())

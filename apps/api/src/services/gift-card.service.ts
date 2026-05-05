@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '@alma/db';
 import {
+  giftCardCancelInputSchema,
   giftCardCheckoutInputSchema,
   giftCardLookupInputSchema,
   giftCardRedemptionInputSchema
@@ -8,6 +9,7 @@ import {
 import Stripe from 'stripe';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 
 const stripe = env.stripe.secretKey
   ? new Stripe(env.stripe.secretKey, { apiVersion: env.stripe.apiVersion })
@@ -27,6 +29,12 @@ function toGiftCardPayload(card: {
   message: string | null;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
+  emailedAt: Date | null;
+  emailError: string | null;
+  cancelledAt: Date | null;
+  cancelReason: string | null;
+  refundNote: string | null;
+  cancelledById: string | null;
   paidAt: Date | null;
   expiresAt: Date | null;
   createdAt: Date;
@@ -45,6 +53,8 @@ function toGiftCardPayload(card: {
 }) {
   return {
     ...card,
+    emailedAt: card.emailedAt?.toISOString() ?? null,
+    cancelledAt: card.cancelledAt?.toISOString() ?? null,
     paidAt: card.paidAt?.toISOString() ?? null,
     expiresAt: card.expiresAt?.toISOString() ?? null,
     createdAt: card.createdAt.toISOString(),
@@ -66,6 +76,8 @@ function publicGiftCard(card: ReturnType<typeof toGiftCardPayload>) {
     currency: card.currency,
     recipientName: card.recipientName,
     message: card.message,
+    emailedAt: card.emailedAt,
+    emailError: card.emailError,
     paidAt: card.paidAt,
     expiresAt: card.expiresAt
   };
@@ -86,6 +98,10 @@ function successUrl(sessionIdPlaceholder = '{CHECKOUT_SESSION_ID}') {
 
 function cancelUrl() {
   return `${env.giftCards.webUrl.replace(/\/+$/, '')}/`;
+}
+
+function printableUrl(code: string) {
+  return `${env.giftCards.webUrl.replace(/\/+$/, '')}/print?code=${encodeURIComponent(code)}`;
 }
 
 async function findCardByCode(code: string) {
@@ -170,6 +186,12 @@ export const giftCardService = {
     return publicGiftCard(toGiftCardPayload(card));
   },
 
+  async getPrintableByCode(code: string) {
+    const card = await findCardByCode(code);
+    if (card.status === 'PENDING_PAYMENT') throw new HttpError(404, 'Gift card is not active yet');
+    return publicGiftCard(toGiftCardPayload(card));
+  },
+
   async list(input: { query?: string }) {
     const query = input.query?.trim();
     const giftCards = await prisma.giftCard.findMany({
@@ -238,6 +260,27 @@ export const giftCardService = {
     return toGiftCardPayload(updated);
   },
 
+  async cancel(code: string, input: unknown, cancelledById?: string) {
+    const data = giftCardCancelInputSchema.parse(input);
+    const card = await findCardByCode(code);
+    if (card.status === 'CANCELLED') throw new HttpError(400, 'Gift card is already cancelled');
+    if (card.status === 'EXPIRED') throw new HttpError(400, 'Gift card is expired');
+
+    const updated = await prisma.giftCard.update({
+      where: { id: card.id },
+      data: {
+        status: 'CANCELLED',
+        balanceCents: 0,
+        cancelledAt: new Date(),
+        cancelReason: data.reason.trim(),
+        refundNote: data.refundNote?.trim() || null,
+        cancelledById: cancelledById ?? null
+      },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+    });
+    return toGiftCardPayload(updated);
+  },
+
   async handleCheckoutCompleted(session: Stripe.Checkout.Session) {
     const cardId = session.metadata?.giftCardId || session.client_reference_id;
     if (!cardId) return null;
@@ -251,7 +294,34 @@ export const giftCardService = {
       },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
-    return toGiftCardPayload(card);
+    const payload = toGiftCardPayload(card);
+    if (card.emailedAt) return payload;
+    const recipients = Array.from(new Set([card.purchaserEmail, card.recipientEmail].filter(Boolean)));
+    if (recipients.length === 0) return payload;
+
+    const results = await Promise.all(
+      recipients.map((to) =>
+        mailService.sendGiftCard({
+          to: to!,
+          purchaserName: card.purchaserName,
+          recipientName: card.recipientName,
+          code: card.code,
+          amountCents: card.initialValueCents,
+          balanceCents: card.balanceCents,
+          message: card.message,
+          printableUrl: printableUrl(card.code),
+          expiresAt: card.expiresAt
+        })
+      )
+    );
+    const failed = results.find((result) => result.status !== 'sent');
+    await prisma.giftCard.update({
+      where: { id: card.id },
+      data: failed
+        ? { emailError: failed.reason }
+        : { emailedAt: new Date(), emailError: null }
+    });
+    return payload;
   }
 };
 

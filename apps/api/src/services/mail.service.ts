@@ -10,6 +10,18 @@ type InviteEmailInput = {
   expiresAt: Date;
 };
 
+type GiftCardEmailInput = {
+  to: string;
+  purchaserName: string;
+  recipientName?: string | null;
+  code: string;
+  amountCents: number;
+  balanceCents: number;
+  message?: string | null;
+  printableUrl: string;
+  expiresAt?: Date | null;
+};
+
 type EmailDeliveryResult =
   | { status: 'sent'; to: string; provider: 'resend' | 'smtp' }
   | { status: 'skipped'; reason: string }
@@ -58,6 +70,73 @@ function escapeHtml(value: string) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function formatMoney(cents: number) {
+  return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
+}
+
+async function deliverEmail(input: {
+  to: string;
+  subject: string;
+  text: string;
+  html: string;
+}): Promise<EmailDeliveryResult> {
+  if (resendApiKey && resendFrom) {
+    try {
+      const response = await fetch(resendApiUrl, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${resendApiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          from: resendFrom,
+          to: [input.to],
+          reply_to: replyTo || undefined,
+          subject: input.subject,
+          text: input.text,
+          html: input.html
+        })
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json().catch(() => null);
+        const message =
+          typeof errorBody?.message === 'string'
+            ? errorBody.message
+            : `Resend returned HTTP ${response.status}`;
+        return { status: 'failed', reason: message };
+      }
+
+      return { status: 'sent', to: input.to, provider: 'resend' };
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'Unknown Resend error';
+      return { status: 'failed', reason };
+    }
+  }
+
+  if (!transporter || !mailFrom) {
+    return { status: 'skipped', reason: 'Resend or SMTP is not configured' };
+  }
+
+  try {
+    await transporter.sendMail({
+      from: mailFrom,
+      replyTo,
+      to: input.to,
+      subject: input.subject,
+      text: input.text,
+      html: input.html
+    });
+
+    return { status: 'sent', to: input.to, provider: 'smtp' };
+  } catch (err) {
+    // Don't 500 the parent request — the source record is already persisted,
+    // and the UI can surface the delivery failure for manual follow-up.
+    const reason = err instanceof Error ? err.message : 'Unknown SMTP error';
+    return { status: 'failed', reason };
+  }
 }
 
 export const mailService = {
@@ -130,62 +209,62 @@ export const mailService = {
       </div>
     `;
 
-    if (resendApiKey && resendFrom) {
-      try {
-        const response = await fetch(resendApiUrl, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${resendApiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            from: resendFrom,
-            to: [input.to],
-            reply_to: replyTo || undefined,
-            subject,
-            text,
-            html
-          })
-        });
+    return deliverEmail({ to: input.to, subject, text, html });
+  },
 
-        if (!response.ok) {
-          const errorBody = await response.json().catch(() => null);
-          const message =
-            typeof errorBody?.message === 'string'
-              ? errorBody.message
-              : `Resend returned HTTP ${response.status}`;
-          return { status: 'failed', reason: message };
-        }
+  async sendGiftCard(input: GiftCardEmailInput): Promise<EmailDeliveryResult> {
+    const recipient = input.recipientName?.trim() || input.purchaserName;
+    const safeRecipient = escapeHtml(recipient);
+    const safeCode = escapeHtml(input.code);
+    const safePrintableUrl = escapeHtml(input.printableUrl);
+    const safeMessage = input.message?.trim() ? escapeHtml(input.message.trim()) : '';
+    const amount = formatMoney(input.amountCents);
+    const balance = formatMoney(input.balanceCents);
+    const expiry = input.expiresAt
+      ? input.expiresAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
+      : null;
+    const subject = `Your ALMA gift card ${input.code}`;
+    const text = [
+      `Hi ${recipient},`,
+      '',
+      `Your ALMA gift card is ready.`,
+      `Code: ${input.code}`,
+      `Value: ${amount}`,
+      `Balance: ${balance}`,
+      expiry ? `Expiry: ${expiry}` : '',
+      input.message?.trim() ? `Message: ${input.message.trim()}` : '',
+      '',
+      'Open or print your gift card:',
+      input.printableUrl
+    ]
+      .filter(Boolean)
+      .join('\n');
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:600px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ALMA Gift Cards
+        </div>
+        <p style="font-size:16px;margin:0 0 12px">Hi ${safeRecipient},</p>
+        <p style="font-size:14px;margin:0 0 18px">Your ALMA gift card is ready.</p>
+        <div style="border:1px solid #e2d3ad;background:#fff8e7;border-radius:14px;padding:22px;margin:0 0 22px">
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#73520e;margin-bottom:8px">Gift card code</div>
+          <div style="font-size:28px;font-weight:900;letter-spacing:0.08em;color:#111827;margin-bottom:12px">${safeCode}</div>
+          <div style="font-size:16px;font-weight:800;color:#73520e">${escapeHtml(balance)} available</div>
+          <div style="font-size:13px;color:#64748b">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
+          ${safeMessage ? `<p style="font-size:14px;color:#334155;border-top:1px solid #eadcb8;padding-top:14px;margin:16px 0 0">${safeMessage}</p>` : ''}
+        </div>
+        <p style="margin:0 0 22px">
+          <a href="${safePrintableUrl}" style="display:inline-block;background:#b98216;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
+            Open printable gift card
+          </a>
+        </p>
+        <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
+          If the button doesn't work, paste this link into your browser:<br>
+          <span style="word-break:break-all;color:#475569">${safePrintableUrl}</span>
+        </p>
+      </div>
+    `;
 
-        return { status: 'sent', to: input.to, provider: 'resend' };
-      } catch (err) {
-        const reason = err instanceof Error ? err.message : 'Unknown Resend error';
-        return { status: 'failed', reason };
-      }
-    }
-
-    if (!transporter || !mailFrom) {
-      return { status: 'skipped', reason: 'Resend or SMTP is not configured' };
-    }
-
-    try {
-      await transporter.sendMail({
-        from: mailFrom,
-        replyTo,
-        to: input.to,
-        subject,
-        text,
-        html
-      });
-
-      return { status: 'sent', to: input.to, provider: 'smtp' };
-    } catch (err) {
-      // Don't 500 the invite request — the staff record + invite link are
-      // already persisted, the UI will show the link, and the admin can
-      // share it manually. Surface the failure reason so the UI can show
-      // a useful message instead of pretending the email went through.
-      const reason = err instanceof Error ? err.message : 'Unknown SMTP error';
-      return { status: 'failed', reason };
-    }
+    return deliverEmail({ to: input.to, subject, text, html });
   }
 };

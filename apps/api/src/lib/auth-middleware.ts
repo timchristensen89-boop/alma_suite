@@ -25,6 +25,7 @@ const PUBLIC_PATHS = new Set<string>([
 
 const PUBLIC_PREFIXES = [
   '/api/gift-cards/session/',
+  '/api/gift-cards/print/',
   '/api/staff/invites/by-token/'
 ];
 

@@ -537,6 +537,11 @@ export const giftCardRedemptionInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const giftCardCancelInputSchema = z.object({
+  reason: z.string().min(3).max(500),
+  refundNote: z.string().max(500).optional().or(z.literal(''))
+});
+
 export const staffTrainingAssignInputSchema = z.object({
   staffProfileId: z.string().min(1),
   moduleId: z.string().min(1),
@@ -798,6 +803,7 @@ export type MarketingCampaignUpdateInput = z.infer<typeof marketingCampaignUpdat
 export type GiftCardCheckoutInput = z.infer<typeof giftCardCheckoutInputSchema>;
 export type GiftCardLookupInput = z.infer<typeof giftCardLookupInputSchema>;
 export type GiftCardRedemptionInput = z.infer<typeof giftCardRedemptionInputSchema>;
+export type GiftCardCancelInput = z.infer<typeof giftCardCancelInputSchema>;
 
 export type IssueEvidence = {
   id: string;
@@ -1090,6 +1096,12 @@ export type GiftCard = {
   message: string | null;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
+  emailedAt: string | null;
+  emailError: string | null;
+  cancelledAt: string | null;
+  cancelReason: string | null;
+  refundNote: string | null;
+  cancelledById: string | null;
   paidAt: string | null;
   expiresAt: string | null;
   createdAt: string;
@@ -1099,7 +1111,17 @@ export type GiftCard = {
 
 export type GiftCardPublic = Pick<
   GiftCard,
-  'code' | 'status' | 'initialValueCents' | 'balanceCents' | 'currency' | 'recipientName' | 'message' | 'paidAt' | 'expiresAt'
+  | 'code'
+  | 'status'
+  | 'initialValueCents'
+  | 'balanceCents'
+  | 'currency'
+  | 'recipientName'
+  | 'message'
+  | 'paidAt'
+  | 'expiresAt'
+  | 'emailedAt'
+  | 'emailError'
 >;
 
 export type GiftCardCheckoutResult = {

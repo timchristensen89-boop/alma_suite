@@ -43,6 +43,10 @@ function statusTone(status: GiftCard['status']) {
   }
 }
 
+function giftCardPrintUrl(code: string) {
+  return `/print?code=${encodeURIComponent(code)}`;
+}
+
 function useGiftCardAuth() {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
@@ -135,6 +139,11 @@ function PublicGiftCardShop() {
               <strong>{paidCard.code}</strong>
               <span>{formatCents(paidCard.balanceCents)} available</span>
               <Badge tone={paidCard.status === 'ACTIVE' ? 'positive' : 'warning'}>{paidCard.status.replace('_', ' ')}</Badge>
+              {paidCard.emailedAt ? <small>Email sent to the purchaser and recipient.</small> : null}
+              {paidCard.emailError ? <small>Email needs attention: {paidCard.emailError}</small> : null}
+              <div className="giftcards-inline-actions">
+                <Button type="button" variant="secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</Button>
+              </div>
             </div>
           </Card>
         ) : null}
@@ -160,6 +169,51 @@ function PublicGiftCardShop() {
         </Card>
         <a className="giftcards-staff-link" href="/redeem">Staff redeem</a>
       </div>
+    </main>
+  );
+}
+
+function PrintableGiftCardPage() {
+  const params = new URLSearchParams(window.location.search);
+  const code = params.get('code') ?? '';
+  const sessionId = params.get('session_id') ?? '';
+  const [card, setCard] = useState<GiftCardPublic | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const endpoint = sessionId
+      ? `/api/gift-cards/session/${encodeURIComponent(sessionId)}`
+      : `/api/gift-cards/print/${encodeURIComponent(code)}`;
+    if (!sessionId && !code) {
+      setMessage('Gift card code is missing.');
+      return;
+    }
+    api<GiftCardPublic>(endpoint)
+      .then(setCard)
+      .catch((error) => setMessage(error instanceof Error ? error.message : 'Could not load printable gift card.'));
+  }, [code, sessionId]);
+
+  return (
+    <main className="giftcards-print-page">
+      <div className="giftcards-print-actions">
+        <Button type="button" variant="secondary" onClick={() => window.location.assign('/')}>Back</Button>
+        <Button type="button" onClick={() => window.print()} disabled={!card}>Print / save PDF</Button>
+      </div>
+      {message ? <p className="error-text">{message}</p> : null}
+      {card ? (
+        <section className="giftcards-print-card">
+          <div className="giftcards-print-brand">ALMA Gift Cards</div>
+          <h1>{formatCents(card.balanceCents)}</h1>
+          <p>Redeemable at ALMA venues</p>
+          <div className="giftcards-print-code">{card.code}</div>
+          {card.recipientName ? <p>For {card.recipientName}</p> : null}
+          {card.message ? <blockquote>{card.message}</blockquote> : null}
+          <footer>
+            <span>Status: {card.status.replace('_', ' ')}</span>
+            {card.expiresAt ? <span>Expires {new Date(card.expiresAt).toLocaleDateString('en-AU')}</span> : null}
+          </footer>
+        </section>
+      ) : null}
     </main>
   );
 }
@@ -211,6 +265,8 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
   const [notes, setNotes] = useState('');
   const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [refundNote, setRefundNote] = useState('');
 
   const giftCards = data?.giftCards ?? [];
   const selectedFromList = useMemo(
@@ -269,6 +325,28 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
     }
   }
 
+  async function cancelCard(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!card) return;
+    setMessage(null);
+    try {
+      const updated = await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(card.code)}/cancel`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: cancelReason,
+          refundNote
+        })
+      });
+      setSelectedCard(updated);
+      setCancelReason('');
+      setRefundNote('');
+      setMessage('Gift card cancelled. Stripe refund, if needed, still needs to be handled in Stripe.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not cancel gift card.');
+    }
+  }
+
   const card = selectedCard ?? selectedFromList;
 
   return (
@@ -304,13 +382,26 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
                   <strong>{card.code}</strong>
                   <span>{formatCents(card.balanceCents)} remaining of {formatCents(card.initialValueCents)}</span>
                   <Badge tone={statusTone(card.status)}>{card.status.replace('_', ' ')}</Badge>
+                  {card.emailedAt ? <small>Email sent {new Date(card.emailedAt).toLocaleString('en-AU')}</small> : null}
+                  {card.emailError ? <small>Email issue: {card.emailError}</small> : null}
+                  {card.cancelReason ? <small>Cancel note: {card.cancelReason}</small> : null}
                 </div>
                 <div className="form-grid two">
                   <Input label="Redeem amount" required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
                   <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((item) => ({ label: item, value: item }))} />
                 </div>
                 <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
-                <Button type="submit" disabled={!card || card.status !== 'ACTIVE'}>Redeem</Button>
+                <div className="giftcards-inline-actions">
+                  <Button type="submit" disabled={!card || card.status !== 'ACTIVE'}>Redeem</Button>
+                  <Button type="button" variant="secondary" onClick={() => window.open(giftCardPrintUrl(card.code), '_blank')}>Print</Button>
+                </div>
+              </form>
+            ) : null}
+            {card && card.status !== 'CANCELLED' && card.status !== 'EXPIRED' ? (
+              <form className="giftcards-form giftcards-cancel-form" onSubmit={(event) => void cancelCard(event)}>
+                <Textarea label="Void / cancellation reason" required rows={2} value={cancelReason} onChange={(event) => setCancelReason(event.currentTarget.value)} />
+                <Textarea label="Refund note" rows={2} value={refundNote} onChange={(event) => setRefundNote(event.currentTarget.value)} placeholder="Example: refunded in Stripe dashboard, left as store credit, manager comp" />
+                <Button type="submit" variant="danger">Cancel card</Button>
               </form>
             ) : null}
           </Card>
@@ -341,7 +432,9 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
 export function App() {
   const auth = useGiftCardAuth();
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
+  const isPrintPath = window.location.pathname.startsWith('/print');
 
+  if (isPrintPath) return <PrintableGiftCardPage />;
   if (!isRedeemPath) return <PublicGiftCardShop />;
   if (auth.loading) return <div className="login-page"><Spinner label="Checking session" /></div>;
   if (!auth.user) return <LoginScreen onLogin={auth.login} />;
