@@ -149,6 +149,8 @@ const VENUE_OPTIONS = [
 
 const ROSTER_FORECAST_STORAGE_KEY = 'alma.staff.roster.forecast.v1';
 const ROSTER_CLOSED_DAYS_STORAGE_KEY = 'alma.staff.roster.closedDays.v1';
+const ROSTER_AREA_SETTINGS_STORAGE_KEY = 'alma.staff.roster.areas.v1';
+const DEFAULT_ROSTER_AREAS = ['Floor', 'Bar', 'Kitchen', 'Management', 'Events', 'Training'];
 
 type RosterShiftContextMenu = {
   shift: RosterShift;
@@ -160,6 +162,12 @@ type RosterForecastDraft = {
   forecastSales: string;
   targetWagePercent: string;
   dailyForecastSales: Record<string, string>;
+};
+
+type RosterAreaSettings = {
+  order: string[];
+  hidden: string[];
+  deleted: string[];
 };
 
 function TopBarWithContext() {
@@ -1987,6 +1995,8 @@ function RosterPage({
   const [dailyForecastSales, setDailyForecastSales] = useState<Record<string, string>>(forecastDraft.dailyForecastSales);
   const [targetWagePercent, setTargetWagePercent] = useState(forecastDraft.targetWagePercent);
   const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
+  const [rosterAreaSettings, setRosterAreaSettings] = useState(loadRosterAreaSettings);
+  const [newAreaName, setNewAreaName] = useState('');
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
@@ -2068,15 +2078,14 @@ function RosterPage({
       wagePercent: forecastCents > 0 ? (plannedCostCents / forecastCents) * 100 : 0
     };
   });
-  const activeAreas = uniqueValues([
-    'Floor',
-    'Bar',
-    'Kitchen',
-    'Management',
-    'Events',
-    'Training',
-    ...visibleRoster.map((shift) => shift.area || 'Shift')
-  ]);
+  const allRosterAreas = useMemo(
+    () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
+    [rosterAreaSettings, visibleRoster]
+  );
+  const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
+  const activeAreas = allRosterAreas.filter((areaName) => !hiddenAreaNames.has(normaliseRosterAreaKey(areaName)));
+  const areaSelectOptions = uniqueValues([...allRosterAreas, area || 'Floor']).map((item) => ({ label: item, value: item }));
+  const hiddenAreaCount = allRosterAreas.length - activeAreas.length;
   const areaVenues = uniqueValues([
     ...(venueFilter === 'all' ? operationalVenues : [venueFilter]),
     ...visibleRoster.map((shift) => shift.venue || shift.staffProfile?.venue || '').filter(Boolean)
@@ -2265,6 +2274,10 @@ function RosterPage({
   }, [closedDaysByScope]);
 
   useEffect(() => {
+    window.localStorage.setItem(ROSTER_AREA_SETTINGS_STORAGE_KEY, JSON.stringify(rosterAreaSettings));
+  }, [rosterAreaSettings]);
+
+  useEffect(() => {
     if (!shiftContextMenu) return undefined;
     const close = () => setShiftContextMenu(null);
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2337,6 +2350,67 @@ function RosterPage({
         [closedScopeKey]: Array.from(existing).sort()
       };
     });
+  }
+
+  function addRosterArea() {
+    const name = normaliseRosterAreaName(newAreaName);
+    if (!name) {
+      setMessage('Enter an area name first.');
+      return;
+    }
+    if (allRosterAreas.some((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(name))) {
+      setMessage(`${name} already exists in roster areas.`);
+      return;
+    }
+    setRosterAreaSettings((current) => ({
+      order: [...current.order, name],
+      hidden: current.hidden.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name)),
+      deleted: current.deleted.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name))
+    }));
+    setArea(name);
+    setNewAreaName('');
+    setMessage(`${name} added to roster areas.`);
+  }
+
+  function toggleRosterAreaHidden(areaName: string) {
+    const key = normaliseRosterAreaKey(areaName);
+    setRosterAreaSettings((current) => {
+      const isHidden = current.hidden.some((item) => normaliseRosterAreaKey(item) === key);
+      return {
+        ...current,
+        hidden: isHidden
+          ? current.hidden.filter((item) => normaliseRosterAreaKey(item) !== key)
+          : uniqueValues([...current.hidden, areaName])
+      };
+    });
+  }
+
+  function moveRosterArea(areaName: string, direction: -1 | 1) {
+    setRosterAreaSettings((current) => {
+      const ordered = mergeRosterAreas(current, visibleRoster.map((shift) => shift.area || 'Shift'));
+      const index = ordered.findIndex((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(areaName));
+      const nextIndex = index + direction;
+      if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return current;
+      const nextOrder = [...ordered];
+      [nextOrder[index], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[index]];
+      return { ...current, order: nextOrder };
+    });
+  }
+
+  function deleteRosterArea(areaName: string) {
+    const key = normaliseRosterAreaKey(areaName);
+    const hasShifts = roster.some((shift) => normaliseRosterAreaKey(shift.area || 'Shift') === key);
+    if (hasShifts) {
+      setMessage(`${areaName} has rostered shifts. Hide it for this board or move those shifts before deleting.`);
+      return;
+    }
+    setRosterAreaSettings((current) => ({
+      order: current.order.filter((item) => normaliseRosterAreaKey(item) !== key),
+      hidden: current.hidden.filter((item) => normaliseRosterAreaKey(item) !== key),
+      deleted: uniqueValues([...current.deleted, areaName])
+    }));
+    if (normaliseRosterAreaKey(area) === key) setArea('Floor');
+    setMessage(`${areaName} removed from roster areas.`);
   }
 
   useEffect(() => {
@@ -2819,6 +2893,54 @@ function RosterPage({
         })}
       </div>
 
+      <Card title="Roster areas" subtitle="Choose which area rows show on the board, and move sections into the order managers expect.">
+        <div className="roster-area-manager">
+          <div className="roster-area-create">
+            <Input
+              label="New area"
+              value={newAreaName}
+              onChange={(event) => setNewAreaName(event.currentTarget.value)}
+              placeholder="Example: Host, Pass, Prep"
+            />
+            <Button type="button" variant="secondary" onClick={addRosterArea}>
+              Add area
+            </Button>
+          </div>
+          <div className="roster-area-manager-list">
+            {allRosterAreas.map((areaName, index) => {
+              const isHidden = hiddenAreaNames.has(normaliseRosterAreaKey(areaName));
+              const shiftCount = visibleRoster.filter((shift) => (shift.area || 'Shift') === areaName).length;
+              return (
+                <div key={areaName} className={`roster-area-manager-row ${isHidden ? 'is-hidden' : ''}`}>
+                  <span className="roster-area-chip" style={areaStyle(areaName)}>
+                    <i aria-hidden="true" />
+                    <strong>{areaName}</strong>
+                    <small>{shiftCount} shifts</small>
+                  </span>
+                  <span className="roster-area-manager-actions">
+                    <Button type="button" size="sm" variant="ghost" disabled={index === 0} onClick={() => moveRosterArea(areaName, -1)}>
+                      Up
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={index === allRosterAreas.length - 1} onClick={() => moveRosterArea(areaName, 1)}>
+                      Down
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => toggleRosterAreaHidden(areaName)}>
+                      {isHidden ? 'Show' : 'Hide'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => deleteRosterArea(areaName)}>
+                      Delete
+                    </Button>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          <p className="subtle">
+            {hiddenAreaCount ? `${hiddenAreaCount} hidden area${hiddenAreaCount === 1 ? '' : 's'} are excluded from area view and guidance.` : 'All areas are visible.'}
+          </p>
+        </div>
+      </Card>
+
       {publishPreviewOpen ? (
         <div className="roster-publish-grid">
           <Card
@@ -3125,7 +3247,7 @@ function RosterPage({
                   label="Area"
                   value={area}
                   onChange={(event) => setArea(event.currentTarget.value)}
-                  options={activeAreas.map((item) => ({ label: item, value: item }))}
+                  options={areaSelectOptions}
                 />
                 <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
               </div>
@@ -3373,6 +3495,56 @@ function loadRosterClosedDays(): Record<string, string[]> {
   } catch {
     return {};
   }
+}
+
+function normaliseRosterAreaName(value: string) {
+  return value.trim().replace(/\s+/g, ' ');
+}
+
+function normaliseRosterAreaKey(value: string) {
+  return normaliseRosterAreaName(value).toLowerCase();
+}
+
+function loadRosterAreaSettings(): RosterAreaSettings {
+  const fallback: RosterAreaSettings = {
+    order: DEFAULT_ROSTER_AREAS,
+    hidden: [],
+    deleted: []
+  };
+
+  try {
+    const raw = window.localStorage.getItem(ROSTER_AREA_SETTINGS_STORAGE_KEY);
+    if (!raw) return fallback;
+    const parsed = JSON.parse(raw) as Partial<RosterAreaSettings>;
+    return {
+      order: Array.isArray(parsed.order) ? uniqueRosterAreaNames(parsed.order) : fallback.order,
+      hidden: Array.isArray(parsed.hidden) ? uniqueRosterAreaNames(parsed.hidden) : fallback.hidden,
+      deleted: Array.isArray(parsed.deleted) ? uniqueRosterAreaNames(parsed.deleted) : fallback.deleted
+    };
+  } catch {
+    return fallback;
+  }
+}
+
+function uniqueRosterAreaNames(values: unknown[]) {
+  const seen = new Set<string>();
+  return values.reduce<string[]>((areas, value) => {
+    if (typeof value !== 'string') return areas;
+    const name = normaliseRosterAreaName(value);
+    const key = normaliseRosterAreaKey(name);
+    if (!name || seen.has(key)) return areas;
+    seen.add(key);
+    areas.push(name);
+    return areas;
+  }, []);
+}
+
+function mergeRosterAreas(settings: RosterAreaSettings, rosterAreas: string[]) {
+  const deleted = new Set(settings.deleted.map(normaliseRosterAreaKey));
+  const ordered = uniqueRosterAreaNames(settings.order);
+  const discovered = uniqueRosterAreaNames([...DEFAULT_ROSTER_AREAS, ...rosterAreas]);
+  const merged = uniqueRosterAreaNames([...ordered, ...discovered]);
+  return merged.filter((areaName) => !deleted.has(normaliseRosterAreaKey(areaName)));
 }
 
 const AREA_THEMES: Record<string, { bg: string; border: string; text: string }> = {
