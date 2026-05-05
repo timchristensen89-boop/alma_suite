@@ -12,10 +12,13 @@ import {
   Badge,
   Button,
   Card,
+  DocumentIcon,
   EmptyState,
+  GearIcon,
   Input,
   PageHeader,
   ProductLogo,
+  SearchIcon,
   Select,
   Spinner,
   StatCard,
@@ -31,6 +34,26 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const VENUES = ['Alma Avalon', 'St Alma'];
 const PERIODS: ReserveServicePeriod[] = ['LUNCH', 'DINNER', 'EVENT'];
 const STATUSES: ReserveReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+const RESERVE_NAV_ITEMS = [
+  {
+    href: '#diary',
+    label: 'Diary',
+    description: 'Bookings by service',
+    icon: <DocumentIcon />
+  },
+  {
+    href: '#new-reservation',
+    label: 'New booking',
+    description: 'Create a reservation',
+    icon: <SearchIcon />
+  },
+  {
+    href: '#tables',
+    label: 'Tables',
+    description: 'Venue table map',
+    icon: <GearIcon />
+  }
+];
 
 type ReservationForm = {
   venue: string;
@@ -207,6 +230,59 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
+function SidebarNav() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeHash, setActiveHash] = useState('#diary');
+
+  useEffect(() => {
+    const syncHash = () => setActiveHash(window.location.hash || '#diary');
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
+  const active = RESERVE_NAV_ITEMS.find((item) => item.href === activeHash) ?? RESERVE_NAV_ITEMS[0]!;
+
+  return (
+    <>
+      <button
+        className="mobile-nav-toggle"
+        type="button"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="reserve-mobile-nav"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span className="mobile-nav-toggle-current">
+          <span className="sidebar-nav-icon">{active.icon}</span>
+          <span>{active.label}</span>
+        </span>
+        <span className="mobile-nav-toggle-caret" aria-hidden="true">⌄</span>
+      </button>
+      <ul
+        id="reserve-mobile-nav"
+        className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
+      >
+        <li className="sidebar-nav-section">Reserve</li>
+        {RESERVE_NAV_ITEMS.map((item) => (
+          <li key={item.href}>
+            <a
+              href={item.href}
+              className={activeHash === item.href ? 'active' : ''}
+              onClick={() => {
+                setActiveHash(item.href);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [venue, setVenue] = useState('Alma Avalon');
   const [selectedDate, setSelectedDate] = useState(todayInput());
@@ -334,7 +410,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
   return (
     <AppShell
       brand={<ProductLogo appId="reserve" size="md" showBrandMark={false} />}
-      sidebar={<div className="sidebar-nav" />}
+      sidebar={<SidebarNav />}
       topBar={
         <TopBar
           title="ALMA Reserve"
@@ -372,7 +448,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
         </div>
 
         <div className="reserve-layout">
-          <section className="reserve-main">
+          <section id="diary" className="reserve-main">
             <Card title={`${venue} diary`} subtitle={`${selectedDay.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}`} padding="none">
               {loading ? <Spinner label="Loading diary..." /> : null}
               {!loading && reservations.length === 0 ? (
@@ -413,6 +489,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
           </section>
 
           <aside className="reserve-side">
+            <div id="new-reservation">
             <Card title="New reservation" subtitle="Create a manager-entered booking. Public widget comes later.">
               <form className="reserve-form" onSubmit={(event) => void saveReservation(event)}>
                 <div className="form-grid two">
@@ -436,7 +513,9 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
                 <Button type="submit">Save booking</Button>
               </form>
             </Card>
+            </div>
 
+            <div id="tables">
             <Card title="Tables" subtitle="Build the table map base for this venue.">
               <form className="reserve-form" onSubmit={(event) => void saveTable(event)}>
                 <div className="form-grid two">
@@ -455,6 +534,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
                 ))}
               </div>
             </Card>
+            </div>
           </aside>
         </div>
       </div>

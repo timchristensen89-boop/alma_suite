@@ -5,10 +5,13 @@ import {
   Badge,
   Button,
   Card,
+  ChartIcon,
+  DocumentIcon,
   EmptyState,
   Input,
   PageHeader,
   ProductLogo,
+  SearchIcon,
   Select,
   Spinner,
   StatCard,
@@ -23,6 +26,26 @@ import { api, clearApiAuthToken, setApiAuthToken } from './lib/api';
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const AMOUNTS = [5000, 10000, 15000, 20000];
 const VENUES = ['Alma Avalon', 'St Alma'];
+const GIFTCARD_NAV_ITEMS = [
+  {
+    href: '#redeem',
+    label: 'Redeem',
+    description: 'Check and redeem',
+    icon: <SearchIcon />
+  },
+  {
+    href: '#recent',
+    label: 'Cards',
+    description: 'Recent sales',
+    icon: <DocumentIcon />
+  },
+  {
+    href: '/',
+    label: 'Public shop',
+    description: 'Buy gift card page',
+    icon: <ChartIcon />
+  }
+];
 
 function formatCents(cents: number) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
@@ -255,6 +278,59 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
+function SidebarNav() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [activeHash, setActiveHash] = useState('#redeem');
+
+  useEffect(() => {
+    const syncHash = () => setActiveHash(window.location.hash || '#redeem');
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+
+  const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHash) ?? GIFTCARD_NAV_ITEMS[0]!;
+
+  return (
+    <>
+      <button
+        className="mobile-nav-toggle"
+        type="button"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="giftcards-mobile-nav"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span className="mobile-nav-toggle-current">
+          <span className="sidebar-nav-icon">{active.icon}</span>
+          <span>{active.label}</span>
+        </span>
+        <span className="mobile-nav-toggle-caret" aria-hidden="true">⌄</span>
+      </button>
+      <ul
+        id="giftcards-mobile-nav"
+        className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
+      >
+        <li className="sidebar-nav-section">Gift Cards</li>
+        {GIFTCARD_NAV_ITEMS.map((item) => (
+          <li key={item.href}>
+            <a
+              href={item.href}
+              className={activeHash === item.href ? 'active' : ''}
+              onClick={() => {
+                setActiveHash(item.href);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [data, setData] = useState<GiftCardOverview | null>(null);
   const [loading, setLoading] = useState(true);
@@ -352,7 +428,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<div className="sidebar-nav" />}
+      sidebar={<SidebarNav />}
       topBar={
         <TopBar
           title="ALMA Gift Cards"
@@ -381,6 +457,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
           <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint="Stripe-confirmed value" loading={loading} />
         </div>
         <div className="giftcards-layout">
+          <div id="redeem">
           <Card title="Redeem gift card" subtitle="Enter the customer code and redeem only the amount used.">
             <form className="giftcards-form" onSubmit={(event) => void lookup(event)}>
               <Input label="Gift card code" required value={code} onChange={(event) => setCode(event.currentTarget.value.toUpperCase())} placeholder="ALMA-XXXXXXXX" />
@@ -415,6 +492,8 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
               </form>
             ) : null}
           </Card>
+          </div>
+          <div id="recent">
           <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
             {loading ? <Spinner label="Loading gift cards..." /> : null}
             {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid Stripe checkouts will appear here." /> : null}
@@ -433,6 +512,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
               ))}
             </div>
           </Card>
+          </div>
         </div>
       </div>
     </AppShell>
