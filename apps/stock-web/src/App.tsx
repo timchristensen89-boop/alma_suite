@@ -90,25 +90,20 @@ function TopBarWithContext() {
       subtitle={active.description}
       right={
         user ? (
-          <IconButton
-            label="Sign out"
-            icon={<IconExternal size={15} />}
-            onClick={async () => {
-              await logout();
-              navigate('/login', { replace: true });
-            }}
-          />
+          <>
+            <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="topbar" />
+            <IconButton
+              label="Sign out"
+              icon={<IconExternal size={15} />}
+              onClick={async () => {
+                await logout();
+                navigate('/login', { replace: true });
+              }}
+            />
+          </>
         ) : null
       }
     />
-  );
-}
-
-function SidebarFooter() {
-  return (
-    <div className="sidebar-app-launcher">
-      <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="sidebar" />
-    </div>
   );
 }
 
@@ -118,7 +113,6 @@ function StockAppShell() {
       brand={<StockBrand />}
       sidebar={<SidebarNav />}
       topBar={<TopBarWithContext />}
-      footer={<SidebarFooter />}
     >
       <Routes>
         <Route path="/" element={<DashboardPage />} />

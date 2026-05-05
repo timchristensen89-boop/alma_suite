@@ -169,16 +169,19 @@ function TopBarWithContext() {
       subtitle={active.description}
       right={
         user ? (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={async () => {
-              await logout();
-              navigate('/login', { replace: true });
-            }}
-          >
-            Sign out
-          </Button>
+          <>
+            <SuiteAppSwitcher currentApp="staff" apps={suiteApps} variant="topbar" />
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={async () => {
+                await logout();
+                navigate('/login', { replace: true });
+              }}
+            >
+              Sign out
+            </Button>
+          </>
         ) : null
       }
     />
@@ -239,14 +242,6 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
         ))}
       </ul>
     </>
-  );
-}
-
-function SidebarFooter() {
-  return (
-    <div className="sidebar-app-launcher">
-      <SuiteAppSwitcher currentApp="staff" apps={suiteApps} variant="sidebar" />
-    </div>
   );
 }
 
@@ -4961,7 +4956,6 @@ function StaffShell() {
       brand={<ProductLogo appId="staff" size="md" showBrandMark={false} />}
       sidebar={<SidebarNav items={isStaffUser ? STAFF_MEMBER_NAV_ITEMS : NAV_ITEMS} />}
       topBar={<TopBarWithContext />}
-      footer={<SidebarFooter />}
     >
       {error ? (
         <Card>

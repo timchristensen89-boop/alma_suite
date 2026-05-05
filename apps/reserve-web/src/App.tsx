@@ -207,10 +207,6 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarFooter() {
-  return <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="sidebar" />;
-}
-
 function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [venue, setVenue] = useState('Alma Avalon');
   const [selectedDate, setSelectedDate] = useState(todayInput());
@@ -338,9 +334,19 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
   return (
     <AppShell
       brand={<ProductLogo appId="reserve" size="md" showBrandMark={false} />}
-      sidebar={<SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="sidebar" />}
-      footer={<SidebarFooter />}
-      topBar={<TopBar title="ALMA Reserve" subtitle="Reservations, guests, tables, and covers pacing" right={<Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>} />}
+      sidebar={<div className="sidebar-nav" />}
+      topBar={
+        <TopBar
+          title="ALMA Reserve"
+          subtitle="Reservations, guests, tables, and covers pacing"
+          right={
+            <>
+              <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
+              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+            </>
+          }
+        />
+      }
     >
       <div className="reserve-page">
         <PageHeader

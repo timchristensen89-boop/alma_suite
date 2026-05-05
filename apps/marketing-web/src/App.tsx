@@ -201,10 +201,6 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarFooter() {
-  return <SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="sidebar" />;
-}
-
 function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [venue, setVenue] = useState('All venues');
   const [data, setData] = useState<MarketingOverview | null>(null);
@@ -315,9 +311,19 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
   return (
     <AppShell
       brand={<ProductLogo appId="marketing" size="md" showBrandMark={false} />}
-      sidebar={<SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="sidebar" />}
-      footer={<SidebarFooter />}
-      topBar={<TopBar title="ALMA Marketing" subtitle="Guest lists, segments, and send-ready campaigns" right={<Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>} />}
+      sidebar={<div className="sidebar-nav" />}
+      topBar={
+        <TopBar
+          title="ALMA Marketing"
+          subtitle="Guest lists, segments, and send-ready campaigns"
+          right={
+            <>
+              <SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="topbar" />
+              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+            </>
+          }
+        />
+      }
     >
       <div className="marketing-page">
         <PageHeader

@@ -490,10 +490,6 @@ function SidebarNav() {
   );
 }
 
-function SidebarFooter() {
-  return <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="sidebar" />;
-}
-
 function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
@@ -1143,15 +1139,17 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     <AppShell
       brand={<ProductLogo appId="reports" size="md" />}
       sidebar={<SidebarNav />}
-      footer={<SidebarFooter />}
       topBar={
         <TopBar
           title="Reports"
           subtitle="Wages, stock value, and operating cost signals"
           right={
-            <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
-              Sign out
-            </Button>
+            <>
+              <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
+              <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
+                Sign out
+              </Button>
+            </>
           }
         />
       }

@@ -276,7 +276,7 @@ export function SuiteLogo({
 type SuiteAppSwitcherProps = {
   currentApp?: SuiteAppId;
   apps?: SuiteAppIdentity[];
-  variant?: 'login' | 'sidebar';
+  variant?: 'login' | 'sidebar' | 'topbar';
 };
 
 export function SuiteAppSwitcher({
@@ -285,74 +285,112 @@ export function SuiteAppSwitcher({
   variant = 'login'
 }: SuiteAppSwitcherProps) {
   const isSidebar = variant === 'sidebar';
+  const isTopbar = variant === 'topbar';
+  const current = apps.find((app) => app.id === currentApp);
+  const className = [
+    'suite-switcher',
+    isSidebar ? 'suite-switcher--sidebar' : '',
+    isTopbar ? 'suite-switcher--topbar' : ''
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const grid = (
+    <div className="suite-app-grid">
+      {apps.map((app) => {
+        const isCurrent = app.id === currentApp;
+        const hasHref = Boolean(app.href);
+        const isAvailable = app.status === 'active' && hasHref;
+        const tileClassName = [
+          'suite-app-tile',
+          isCurrent ? 'is-current' : '',
+          app.status === 'active' ? '' : 'is-disabled'
+        ]
+          .filter(Boolean)
+          .join(' ');
+
+        const content = (
+          <>
+            <span className="suite-app-mark" aria-hidden="true">
+              <AlmaAppIcon
+                label={app.label.toUpperCase()}
+                colorFrom={app.fromColor}
+                colorTo={app.toColor}
+                icon={app.icon}
+                size={isSidebar || isTopbar ? 32 : 50}
+                featureScale={0.68}
+                variant="compact"
+                showBrandMark={!isSidebar && !isTopbar}
+              />
+            </span>
+            <span className="suite-app-label">{app.label}</span>
+            <span className="suite-app-tooltip" role="tooltip">
+              <strong>Alma {app.label}</strong>
+              <span>{app.description}</span>
+              <em>
+                {isCurrent ? 'Current app' : isAvailable ? 'Open app' : 'Coming soon'}
+              </em>
+            </span>
+          </>
+        );
+
+        return hasHref ? (
+          <a
+            key={app.id}
+            className={tileClassName}
+            href={app.href}
+            aria-label={
+              isAvailable
+                ? `Open Alma ${app.label}`
+                : `View Alma ${app.label} login page`
+            }
+          >
+            {content}
+          </a>
+        ) : (
+          <span
+            key={app.id}
+            className={tileClassName}
+            aria-label={`Alma ${app.label} coming soon`}
+          >
+            {content}
+          </span>
+        );
+      })}
+    </div>
+  );
+
+  if (isTopbar) {
+    return (
+      <details className={className}>
+        <summary aria-label="Open Alma app switcher">
+          <span className="suite-switcher-current-mark" aria-hidden="true">
+            {current ? (
+              <AlmaAppIcon
+                label={current.label.toUpperCase()}
+                colorFrom={current.fromColor}
+                colorTo={current.toColor}
+                icon={current.icon}
+                size={28}
+                featureScale={0.68}
+                variant="compact"
+                showBrandMark={false}
+              />
+            ) : null}
+          </span>
+          <span>Apps</span>
+        </summary>
+        {grid}
+      </details>
+    );
+  }
 
   return (
     <nav
-      className={isSidebar ? 'suite-switcher suite-switcher--sidebar' : 'suite-switcher'}
+      className={className}
       aria-label="Alma apps"
     >
-      <div className="suite-app-grid">
-        {apps.map((app) => {
-          const isCurrent = app.id === currentApp;
-          const hasHref = Boolean(app.href);
-          const isAvailable = app.status === 'active' && hasHref;
-          const className = [
-            'suite-app-tile',
-            isCurrent ? 'is-current' : '',
-            app.status === 'active' ? '' : 'is-disabled'
-          ]
-            .filter(Boolean)
-            .join(' ');
-
-          const content = (
-            <>
-              <span className="suite-app-mark" aria-hidden="true">
-                <AlmaAppIcon
-                  label={app.label.toUpperCase()}
-                  colorFrom={app.fromColor}
-                  colorTo={app.toColor}
-                  icon={app.icon}
-                  size={isSidebar ? 32 : 50}
-                  featureScale={0.68}
-                  variant="compact"
-                  showBrandMark={!isSidebar}
-                />
-              </span>
-              <span className="suite-app-label">{app.label}</span>
-              <span className="suite-app-tooltip" role="tooltip">
-                <strong>Alma {app.label}</strong>
-                <span>{app.description}</span>
-                <em>
-                  {isCurrent ? 'Current app' : isAvailable ? 'Open app' : 'Coming soon'}
-                </em>
-              </span>
-            </>
-          );
-
-          return hasHref ? (
-            <a
-              key={app.id}
-              className={className}
-              href={app.href}
-              aria-label={
-                isAvailable
-                  ? `Open Alma ${app.label}`
-                  : `View Alma ${app.label} login page`
-              }
-            >
-              {content}
-            </a>
-          ) : (
-            <span
-              key={app.id}
-              className={className}
-              aria-label={`Alma ${app.label} coming soon`}
-            >
-              {content}
-            </span>
-          );
-        })}
-      </div>
+      {grid}
     </nav>
   );
 }

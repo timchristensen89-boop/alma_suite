@@ -352,9 +352,19 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
   return (
     <AppShell
       brand={<ProductLogo appId="giftcards" size="md" showBrandMark={false} />}
-      sidebar={<SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="sidebar" />}
-      footer={<SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="sidebar" />}
-      topBar={<TopBar title="ALMA Gift Cards" subtitle="Sell, check balances, and redeem cards" right={<Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>} />}
+      sidebar={<div className="sidebar-nav" />}
+      topBar={
+        <TopBar
+          title="ALMA Gift Cards"
+          subtitle="Sell, check balances, and redeem cards"
+          right={
+            <>
+              <SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="topbar" />
+              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+            </>
+          }
+        />
+      }
     >
       <div className="giftcards-page">
         <PageHeader

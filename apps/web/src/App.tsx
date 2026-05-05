@@ -218,19 +218,12 @@ function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
             <span>Search issues, staff, assets…</span>
             <kbd>⌘K</kbd>
           </button>
+          <SuiteAppSwitcher currentApp="compliance" apps={suiteApps} variant="topbar" />
           <NotificationsDrawer />
           <UserMenu />
         </>
       }
     />
-  );
-}
-
-function SidebarFooter() {
-  return (
-    <div className="sidebar-app-launcher">
-      <SuiteAppSwitcher currentApp="compliance" apps={suiteApps} variant="sidebar" />
-    </div>
   );
 }
 
@@ -241,7 +234,6 @@ function AuthenticatedApp() {
     <AppShell
       sidebar={<SidebarNav />}
       topBar={<TopBarWithContext onOpenPalette={() => setPaletteOpen(true)} />}
-      footer={<SidebarFooter />}
     >
       <ErrorBoundary>
         <Routes>
