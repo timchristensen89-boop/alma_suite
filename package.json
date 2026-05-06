@@ -47,6 +47,7 @@
     "lint": "pnpm -r --if-present lint"
   },
   "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.10",
     "concurrently": "^9.1.2"
   },
   "dependencies": {
@@ -59,7 +60,9 @@
     "cors": "^2.8.5",
     "exceljs": "^4.4.0",
     "express": "^4.21.2",
+    "jsonwebtoken": "^9.0.3",
     "nodemailer": "^8.0.6",
+    "passkit-generator": "^3.5.7",
     "pdf-lib": "^1.17.1",
     "stripe": "^22.1.0",
     "zod": "^3.24.3"

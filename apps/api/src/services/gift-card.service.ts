@@ -10,6 +10,7 @@ import Stripe from 'stripe';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { giftCardWalletService } from './gift-card-wallet.service.js';
 
 const stripe = env.stripe.secretKey
   ? new Stripe(env.stripe.secretKey, {
@@ -105,6 +106,18 @@ function cancelUrl() {
 
 function printableUrl(code: string) {
   return `${env.giftCards.webUrl.replace(/\/+$/, '')}/print?code=${encodeURIComponent(code)}`;
+}
+
+function apiUrl(path: string) {
+  return `${env.publicApiUrl.replace(/\/+$/, '')}${path}`;
+}
+
+function appleWalletUrl(code: string) {
+  return apiUrl(`/api/gift-cards/wallet/apple/${encodeURIComponent(code)}`);
+}
+
+function googleWalletUrl(code: string) {
+  return apiUrl(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`);
 }
 
 function isStripePaymentConfirmed(session: Stripe.Checkout.Session) {
@@ -226,6 +239,16 @@ export const giftCardService = {
       throw new HttpError(404, 'Gift card payment has not been confirmed by Stripe.');
     }
     return publicGiftCard(toGiftCardPayload(card));
+  },
+
+  async appleWalletPass(code: string) {
+    const card = await findCardByCode(code);
+    return giftCardWalletService.applePass(card);
+  },
+
+  async googleWalletSaveUrl(code: string) {
+    const card = await findCardByCode(code);
+    return giftCardWalletService.googleSaveUrl(card);
   },
 
   async list(input: { query?: string }) {
@@ -378,6 +401,8 @@ export const giftCardService = {
           balanceCents: card.balanceCents,
           message: card.message,
           printableUrl: printableUrl(card.code),
+          appleWalletUrl: appleWalletUrl(card.code),
+          googleWalletUrl: googleWalletUrl(card.code),
           expiresAt: card.expiresAt
         })
       )

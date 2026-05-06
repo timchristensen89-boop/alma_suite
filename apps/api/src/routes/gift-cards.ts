@@ -32,6 +32,26 @@ giftCardsRouter.get('/print/:code', async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/wallet/apple/:code', async (req, res, next) => {
+  try {
+    const code = String(req.params.code);
+    const pass = await giftCardService.appleWalletPass(code);
+    res.setHeader('Content-Type', 'application/vnd.apple.pkpass');
+    res.setHeader('Content-Disposition', `attachment; filename="${code}.pkpass"`);
+    res.send(pass);
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/wallet/google/:code', async (req, res, next) => {
+  try {
+    res.redirect(await giftCardService.googleWalletSaveUrl(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.get('/cards', requireManager, async (req, res, next) => {
   try {
     res.json(await giftCardService.list({

@@ -174,6 +174,34 @@ The app switcher shares sign-in between the separate Firebase apps using a short
 
 If `SUITE_AUTH_SECRET` is missing, each API falls back to its own session secret. That is fine for a single API, but Stock handoff will not work unless both APIs use the same suite secret.
 
+## Gift Card Wallets
+
+Gift card wallet passes are generated only for Stripe-confirmed active cards with a remaining balance. Apple Wallet downloads a signed `.pkpass`; Google Wallet redirects to a signed Save to Google Wallet URL.
+
+Required shared setting:
+
+- `API_PUBLIC_URL`: public API origin used in gift card emails. For Firebase rewrites this can be `https://alma-giftcards.web.app`.
+
+Apple Wallet settings:
+
+- `APPLE_WALLET_PASS_TYPE_IDENTIFIER`
+- `APPLE_WALLET_TEAM_IDENTIFIER`
+- `APPLE_WALLET_ORGANIZATION_NAME`
+- `APPLE_WALLET_SIGNER_CERT`
+- `APPLE_WALLET_SIGNER_KEY`
+- `APPLE_WALLET_SIGNER_KEY_PASSPHRASE` if the private key is encrypted
+- `APPLE_WALLET_WWDR_CERT`
+
+Google Wallet settings:
+
+- `GOOGLE_WALLET_ISSUER_ID`
+- `GOOGLE_WALLET_CLASS_SUFFIX`
+- `GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL`
+- `GOOGLE_WALLET_PRIVATE_KEY`
+- `GOOGLE_WALLET_ORIGINS`
+
+Store PEM certificates/keys as Secret Manager values or base64 strings. Do not commit wallet certificates or service account keys.
+
 ## Custom Domains
 
 Recommended domain layout:

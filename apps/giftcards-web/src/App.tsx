@@ -21,7 +21,7 @@ import {
   TopBar
 } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
-import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const AMOUNTS = [
@@ -73,6 +73,45 @@ function statusTone(status: GiftCard['status']) {
 
 function giftCardPrintUrl(code: string) {
   return `/print?code=${encodeURIComponent(code)}`;
+}
+
+function apiPath(path: string) {
+  const cleanPath = path.startsWith('/') ? path : `/${path}`;
+  if (API_BASE_URL.endsWith('/api') && cleanPath.startsWith('/api/')) return cleanPath.slice(4);
+  return cleanPath;
+}
+
+function giftCardAppleWalletUrl(code: string) {
+  return `${API_BASE_URL}${apiPath(`/api/gift-cards/wallet/apple/${encodeURIComponent(code)}`)}`;
+}
+
+function giftCardGoogleWalletUrl(code: string) {
+  return `${API_BASE_URL}${apiPath(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`)}`;
+}
+
+function WalletButtons({ card, onMessage }: { card: GiftCardPublic; onMessage?: (message: string | null) => void }) {
+  const canAddToWallet = card.status === 'ACTIVE' && card.balanceCents > 0;
+
+  if (!canAddToWallet) return null;
+
+  return (
+    <div className="giftcards-wallet-actions" aria-label="Add gift card to wallet">
+      <a
+        className="giftcards-wallet-button giftcards-wallet-button-apple"
+        href={giftCardAppleWalletUrl(card.code)}
+        onClick={() => onMessage?.(null)}
+      >
+        Add to Apple Wallet
+      </a>
+      <a
+        className="giftcards-wallet-button giftcards-wallet-button-google"
+        href={giftCardGoogleWalletUrl(card.code)}
+        onClick={() => onMessage?.(null)}
+      >
+        Add to Google Wallet
+      </a>
+    </div>
+  );
 }
 
 function useGiftCardAuth() {
@@ -215,6 +254,7 @@ function PublicGiftCardShop() {
               <div className="giftcards-inline-actions">
                 <button type="button" className="giftcards-public-secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</button>
               </div>
+              <WalletButtons card={paidCard} onMessage={setFeedback} />
             </div>
           </section>
         ) : null}
@@ -364,6 +404,7 @@ function PrintableGiftCardPage() {
             <span>Status: {card.status.replace('_', ' ')}</span>
             {card.expiresAt ? <span>Expires {new Date(card.expiresAt).toLocaleDateString('en-AU')}</span> : null}
           </footer>
+          <WalletButtons card={card} onMessage={setMessage} />
         </section>
       ) : null}
     </main>

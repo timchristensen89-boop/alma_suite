@@ -19,6 +19,8 @@ type GiftCardEmailInput = {
   balanceCents: number;
   message?: string | null;
   printableUrl: string;
+  appleWalletUrl?: string | null;
+  googleWalletUrl?: string | null;
   expiresAt?: Date | null;
 };
 
@@ -217,6 +219,8 @@ export const mailService = {
     const safeRecipient = escapeHtml(recipient);
     const safeCode = escapeHtml(input.code);
     const safePrintableUrl = escapeHtml(input.printableUrl);
+    const safeAppleWalletUrl = input.appleWalletUrl ? escapeHtml(input.appleWalletUrl) : '';
+    const safeGoogleWalletUrl = input.googleWalletUrl ? escapeHtml(input.googleWalletUrl) : '';
     const safeMessage = input.message?.trim() ? escapeHtml(input.message.trim()) : '';
     const amount = formatMoney(input.amountCents);
     const balance = formatMoney(input.balanceCents);
@@ -235,7 +239,9 @@ export const mailService = {
       input.message?.trim() ? `Message: ${input.message.trim()}` : '',
       '',
       'Open or print your gift card:',
-      input.printableUrl
+      input.printableUrl,
+      input.appleWalletUrl ? `Add to Apple Wallet: ${input.appleWalletUrl}` : '',
+      input.googleWalletUrl ? `Add to Google Wallet: ${input.googleWalletUrl}` : ''
     ]
       .filter(Boolean)
       .join('\n');
@@ -257,6 +263,8 @@ export const mailService = {
           <a href="${safePrintableUrl}" style="display:inline-block;background:#b98216;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
             Open printable gift card
           </a>
+          ${safeAppleWalletUrl ? `<a href="${safeAppleWalletUrl}" style="display:inline-block;background:#1f3524;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Apple Wallet</a>` : ''}
+          ${safeGoogleWalletUrl ? `<a href="${safeGoogleWalletUrl}" style="display:inline-block;background:#ffffff;color:#1f3524;border:1px solid #d5d0c7;text-decoration:none;font-weight:800;padding:11px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Google Wallet</a>` : ''}
         </p>
         <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
           If the button doesn't work, paste this link into your browser:<br>

@@ -66,6 +66,7 @@ if (isProduction) {
 export const env = {
   port: Number(process.env.PORT ?? process.env.API_PORT ?? 3018),
   host: process.env.HOST ?? '0.0.0.0',
+  publicApiUrl: process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`,
   corsOrigin: isProduction ? configuredCorsOrigins : configuredCorsOrigins.length > 0 ? configuredCorsOrigins : localCorsOrigins,
   sessionSecret,
   suiteAuthSecret: process.env.SUITE_AUTH_SECRET ?? sessionSecret,
@@ -88,6 +89,22 @@ export const env = {
     apiVersion: '2026-04-22.dahlia' as const
   },
   giftCards: {
-    webUrl: process.env.GIFTCARDS_WEB_URL ?? process.env.GIFT_CARDS_WEB_URL ?? 'http://localhost:5179'
+    webUrl: process.env.GIFTCARDS_WEB_URL ?? process.env.GIFT_CARDS_WEB_URL ?? 'http://localhost:5179',
+    appleWallet: {
+      passTypeIdentifier: process.env.APPLE_WALLET_PASS_TYPE_IDENTIFIER ?? '',
+      teamIdentifier: process.env.APPLE_WALLET_TEAM_IDENTIFIER ?? '',
+      organizationName: process.env.APPLE_WALLET_ORGANIZATION_NAME ?? 'ALMA Group',
+      signerCert: process.env.APPLE_WALLET_SIGNER_CERT ?? '',
+      signerKey: process.env.APPLE_WALLET_SIGNER_KEY ?? '',
+      signerKeyPassphrase: process.env.APPLE_WALLET_SIGNER_KEY_PASSPHRASE ?? '',
+      wwdr: process.env.APPLE_WALLET_WWDR_CERT ?? ''
+    },
+    googleWallet: {
+      issuerId: process.env.GOOGLE_WALLET_ISSUER_ID ?? '',
+      classSuffix: process.env.GOOGLE_WALLET_CLASS_SUFFIX ?? 'alma_gift_card',
+      serviceAccountEmail: process.env.GOOGLE_WALLET_SERVICE_ACCOUNT_EMAIL ?? '',
+      privateKey: process.env.GOOGLE_WALLET_PRIVATE_KEY ?? '',
+      origins: parseCorsOrigins(process.env.GOOGLE_WALLET_ORIGINS)
+    }
   }
 };
