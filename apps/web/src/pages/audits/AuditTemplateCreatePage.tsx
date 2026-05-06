@@ -2,6 +2,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useState } from 'react';
 import type { AuditTemplate } from '@alma/shared';
 import {
+  ActionFeedback,
   Button,
   Card,
   EmptyState,
@@ -194,8 +195,6 @@ export function AuditTemplateCreatePage() {
         )}
       </Card>
 
-      {error ? <p className="error-text">{error}</p> : null}
-
       <div className="toolbar-right">
         <Link to="/audits">
           <Button type="button" variant="ghost">
@@ -205,6 +204,7 @@ export function AuditTemplateCreatePage() {
         <Button type="submit" disabled={!canSave || submitting}>
           {submitting ? 'Saving…' : 'Create template'}
         </Button>
+        <ActionFeedback message={error} tone="error" />
       </div>
     </form>
   );

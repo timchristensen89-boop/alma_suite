@@ -9,6 +9,7 @@ import type {
 } from '@alma/shared';
 import {
   AppShell,
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -21,6 +22,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   Textarea,
   TopBar
 } from '@alma/ui';
@@ -208,11 +210,12 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+function MarketingDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [venue, setVenue] = useState('All venues');
   const [data, setData] = useState<MarketingOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [contactForm, setContactForm] = useState(defaultContactForm);
   const [campaignForm, setCampaignForm] = useState(defaultCampaignForm);
   const [selectedContactIds, setSelectedContactIds] = useState<string[]>([]);
@@ -233,6 +236,7 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
       const suffix = query.toString() ? `?${query.toString()}` : '';
       setData(await api<MarketingOverview>(`/api/marketing/overview${suffix}`));
     } catch (error) {
+      setMessageTarget(null);
       setMessage(error instanceof Error ? error.message : 'Could not load Marketing');
     } finally {
       setLoading(false);
@@ -245,10 +249,12 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
 
   async function syncReserveGuests() {
     setMessage(null);
+    setMessageTarget('sync');
     try {
       const result = await api<{ ok: true; imported: number }>('/api/marketing/sync-reserve-guests', { method: 'POST' });
-      setMessage(`Synced ${result.imported} Reserve guests into Marketing.`);
       await load();
+      setMessageTarget('sync');
+      setMessage(`Synced ${result.imported} Reserve guests into Marketing.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not sync Reserve guests.');
     }
@@ -257,6 +263,7 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
   async function saveContact(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('contact');
     try {
       await api<MarketingContact>('/api/marketing/contacts', {
         method: 'POST',
@@ -267,8 +274,9 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
         })
       });
       setContactForm(defaultContactForm());
-      setMessage('Contact saved.');
       await load();
+      setMessageTarget('contact');
+      setMessage('Contact saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save contact.');
     }
@@ -277,6 +285,7 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
   async function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('campaign');
     try {
       await api<MarketingCampaign>('/api/marketing/campaigns', {
         method: 'POST',
@@ -288,8 +297,9 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
       });
       setCampaignForm(defaultCampaignForm());
       setSelectedContactIds([]);
-      setMessage('Campaign draft saved.');
       await load();
+      setMessageTarget('campaign');
+      setMessage('Campaign draft saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save campaign.');
     }
@@ -297,13 +307,15 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
 
   async function markCampaignReady(campaign: MarketingCampaign) {
     setMessage(null);
+    setMessageTarget(`campaign:${campaign.id}`);
     try {
       await api(`/api/marketing/campaigns/${campaign.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status: 'READY' })
       });
-      setMessage('Campaign marked ready. Connect Resend or SMS before sending.');
       await load();
+      setMessageTarget(`campaign:${campaign.id}`);
+      setMessage('Campaign marked ready. Connect Resend or SMS before sending.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not update campaign.');
     }
@@ -326,6 +338,13 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
           right={
             <>
               <SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="topbar" />
+              <SuiteCommsWidget
+                appId="MARKETING"
+                api={api}
+                venue={user.venue}
+                userName={`${user.firstName} ${user.lastName}`}
+                canAnnounce={user.role !== 'STAFF'}
+              />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }
@@ -341,12 +360,16 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
             <>
               <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((value) => ({ label: value, value }))} />
               <Button type="button" variant="secondary" onClick={() => void syncReserveGuests()}>Sync Reserve guests</Button>
+              <ActionFeedback
+                message={messageTarget === 'sync' ? message : null}
+                tone={message?.includes('Could') ? 'error' : 'success'}
+              />
               <Button type="button" variant="secondary" onClick={() => downloadContactsCsv(contacts)} disabled={contacts.length === 0}>Export contacts</Button>
             </>
           }
         />
 
-        {message ? <p className={message.includes('Could') || message.includes('invalid') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('invalid') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
         <div className="stats-grid">
           <StatCard label="Contacts" value={data?.totals.contacts ?? 0} hint="Current filtered list" loading={loading} />
@@ -395,7 +418,13 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
                     <div className="marketing-campaign-actions">
                       <Badge tone={statusTone(campaign.status)}>{campaign.status}</Badge>
                       {campaign.status === 'DRAFT' ? (
-                        <Button type="button" size="sm" variant="secondary" onClick={() => void markCampaignReady(campaign)}>Mark ready</Button>
+                        <>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => void markCampaignReady(campaign)}>Mark ready</Button>
+                          <ActionFeedback
+                            message={messageTarget === `campaign:${campaign.id}` ? message : null}
+                            tone={message?.includes('Could') ? 'error' : 'success'}
+                          />
+                        </>
                       ) : null}
                     </div>
                   </article>
@@ -415,7 +444,13 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
                 <Input label="Subject" value={campaignForm.subject} onChange={(event) => setCampaignForm({ ...campaignForm, subject: event.currentTarget.value })} />
                 <Input label="Preview text" value={campaignForm.previewText} onChange={(event) => setCampaignForm({ ...campaignForm, previewText: event.currentTarget.value })} />
                 <Textarea label="Message" required rows={6} value={campaignForm.body} onChange={(event) => setCampaignForm({ ...campaignForm, body: event.currentTarget.value })} />
-                <Button type="submit">Save draft</Button>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={messageTarget === 'campaign' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="submit">Save draft</Button>
+                </div>
               </form>
             </Card>
 
@@ -434,7 +469,13 @@ function MarketingDashboard({ onLogout }: { user: AuthUser; onLogout: () => Prom
                   <label><input type="checkbox" checked={contactForm.consentSms} onChange={(event) => setContactForm({ ...contactForm, consentSms: event.currentTarget.checked })} /> SMS consent</label>
                 </div>
                 <Textarea label="Notes" rows={3} value={contactForm.notes} onChange={(event) => setContactForm({ ...contactForm, notes: event.currentTarget.value })} />
-                <Button type="submit" variant="secondary">Save contact</Button>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={messageTarget === 'contact' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="submit" variant="secondary">Save contact</Button>
+                </div>
               </form>
             </Card>
           </aside>

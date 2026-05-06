@@ -1,12 +1,17 @@
 # Alma Suite v18
 
-Compliance first local app suite with three core modules:
+Local-first multi-venue hospitality operations suite. The live internal-use
+products are Compliance, Stock, and Staff, with Academy and Control dashboard
+remaining later lanes.
+
+Compliance started with three core modules:
 
 1. Issues
 2. Checklists
 3. Audits
 
-This repo is local first, Postgres backed, and intentionally separate from Stock.
+This repo is pnpm workspace based, Postgres backed, and split into separate
+frontend/API apps that share Prisma, shared types, and UI primitives.
 
 ## Quick start
 
@@ -18,17 +23,17 @@ This repo is local first, Postgres backed, and intentionally separate from Stock
 
 ```bash
 cp .env.example .env
-npm install
-npm run db:up
-npm run db:generate
-npm run db:migrate
-npm run db:seed
-npm run dev
+pnpm install
+pnpm db:up
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm dev
 ```
 
 ### Master admin login
 
-`npm run db:seed` provisions two admin logins:
+`pnpm db:seed` provisions local/demo admin logins:
 
 | Login | Password | Use |
 | --- | --- | --- |
@@ -39,7 +44,7 @@ To (re)create only the master user against an existing database without wiping
 data, run:
 
 ```bash
-npm run db:create:master-user
+pnpm db:create:master-user
 ```
 
 The script is idempotent — re-running updates the password hash and admin flag
@@ -51,13 +56,13 @@ on the existing profile.
 Import legacy compliance data from a JSON export:
 
 ```bash
-npm run db:import:legacy -- --file ../alma-control-v1-7-data.json
+pnpm db:import:legacy -- --file ../alma-control-v1-7-data.json
 ```
 
 Use `--replace` to wipe existing compliance records before import:
 
 ```bash
-npm run db:import:legacy -- --file /absolute/path/to/export.json --replace
+pnpm db:import:legacy -- --file /absolute/path/to/export.json --replace
 ```
 
 Supported top-level collections in the import JSON:
@@ -70,19 +75,19 @@ Supported top-level collections in the import JSON:
 Directly extract from the legacy `alma_compliance_v14` Postgres database:
 
 ```bash
-npm run db:extract:legacy-compliance
+pnpm db:extract:legacy-compliance
 ```
 
 Use a different source database or replace existing imported records:
 
 ```bash
-npm run db:extract:legacy-compliance -- --source-url postgresql://timothychristensen@localhost:5432/alma_compliance_v14 --replace
+pnpm db:extract:legacy-compliance -- --source-url postgresql://timothychristensen@localhost:5432/alma_compliance_v14 --replace
 ```
 
 Extract legacy stock control data directly from the old Firestore project into a portable JSON bundle:
 
 ```bash
-npm run db:extract:legacy-stock
+pnpm db:extract:legacy-stock
 ```
 
 The extractor supports both known legacy layouts:
@@ -97,7 +102,7 @@ By default the extractor looks for:
 Use a different org, service account, output path, or functions directory when needed:
 
 ```bash
-npm run db:extract:legacy-stock -- --org-id alma --out ./tmp/alma-stock-export.json --service-account ../alma-stock-firebase-adminsdk-fbsvc-ac4e175402.json --legacy-functions-dir ../alma-stocktake/functions
+pnpm db:extract:legacy-stock -- --org-id alma --out ./tmp/alma-stock-export.json --service-account ../alma-stock-firebase-adminsdk-fbsvc-ac4e175402.json --legacy-functions-dir ../alma-stocktake/functions
 ```
 
 The stock export includes both the nested Firestore source records and flattened arrays for:
@@ -117,7 +122,7 @@ script above), bring the products, categories, and recipes into the new Alma
 Stock schema:
 
 ```bash
-npm run -w @alma/db import:legacy-stock
+pnpm db:import:legacy-stock
 ```
 
 Pass `--file <path>` to read from somewhere other than
@@ -140,7 +145,7 @@ This compliance suite now has a clear path for:
 Run the govee sync manually with:
 
 ```bash
-npm run db:sync:govee
+pnpm db:sync:govee
 ```
 
 Required env:
@@ -150,7 +155,7 @@ GOVEE_API_KEY=your_api_key
 GOVEE_API_BASE_URL=https://openapi.api.govee.com
 ```
 
-For an hourly pull, keep the app-level sync in place and schedule `npm run db:sync:govee` once the real `GOVEE_API_KEY` is present in `.env`. Without the key, the sync route and CLI stay safe but will return a clear credential error instead of creating noisy failures.
+For an hourly pull, keep the app-level sync in place and schedule `pnpm db:sync:govee` once the real `GOVEE_API_KEY` is present in `.env`. Without the key, the sync route and CLI stay safe but will return a clear credential error instead of creating noisy failures.
 
 If the govee account authenticates but returns zero devices, use the Alma Control style fallback:
 - discover and persist the connector state with `POST /api/temperatures/integrations/govee/discover`
@@ -179,21 +184,22 @@ Camera feeds are possible, but they should stay out of this first compliance pas
 ## Stock app
 
 The Stock app (`apps/stock-web` + `apps/stock-api`) is a sibling product to
-Compliance — same shell, same UI kit, deeper burgundy accent so it feels like
-its own thing. It currently ships as scaffolding only: shell, navigation,
-placeholder pages for Items, Stocktake, Suppliers & invoices, and Recipes &
-sales. No database schema is attached yet.
+Compliance — same shell, same UI kit, with its own stock accent. It includes
+real catalogue, stocktake, suppliers, invoices, recipes, and settings flows.
+Stocktake submission is review-only: it does not mutate `StockItem.onHand`.
+Approved stocktakes create `InventoryMovement` rows first, then update on-hand
+inside the same ledger-backed transaction.
 
 Run it alongside Compliance:
 
 ```bash
-npm run dev:stock          # both stock-api (3019) + stock-web (5174)
-npm run dev:stock-api      # just the API
-npm run dev:stock-web      # just the web
+pnpm dev:stock          # both stock-api (3019) + stock-web (5174)
+pnpm dev:stock-api      # just the API
+pnpm dev:stock-web      # just the web
 ```
 
 The two apps can run side-by-side in the same terminal session (use a second
-tab for `npm run dev`), and the Stock sidebar has an "Open Compliance" link
+tab for `pnpm dev`), and the Stock sidebar has an "Open Compliance" link
 down at the bottom for quick switching.
 
 ## Deploying

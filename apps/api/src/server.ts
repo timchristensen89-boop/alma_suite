@@ -7,6 +7,7 @@ import { errorHandler, notFoundHandler } from './lib/http.js';
 import { auditsRouter } from './routes/audits.js';
 import { authRouter } from './routes/auth.js';
 import { checklistsRouter } from './routes/checklists.js';
+import { communicationsRouter } from './routes/communications.js';
 import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
@@ -55,6 +56,7 @@ app.get('/', (_req, res) => {
       'gift-cards',
       'training',
       'settings',
+      'communications',
       'notifications',
       'search'
     ]
@@ -89,6 +91,7 @@ app.use('/api/licences', liquorRouter);
 app.use('/api/licenses', liquorRouter);
 app.use('/api/liquor', liquorRouter);
 app.use('/api/settings', settingsRouter);
+app.use('/api/communications', communicationsRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/reserve', reserveRouter);

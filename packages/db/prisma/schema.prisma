@@ -115,6 +115,8 @@ enum StocktakeStatus {
 
 enum InventoryMovementType {
   STOCKTAKE_ADJUSTMENT
+  STOCKTAKE_CORRECTION
+  STOCKTAKE_REVERSAL
 }
 
 enum AlmaAppId {
@@ -201,6 +203,19 @@ enum GiftCardStatus {
 enum GiftCardRedemptionStatus {
   COMPLETED
   VOIDED
+}
+
+enum GiftCardPromoDiscountType {
+  PERCENT
+  FIXED_AMOUNT
+}
+
+enum SuiteChatChannelType {
+  GENERAL
+  VENUE
+  AREA
+  GROUP
+  DIRECT
 }
 
 model Issue {
@@ -409,6 +424,7 @@ model StaffAppAccess {
   appId          AlmaAppId
   status         StaffAppAccessStatus @default(DISABLED)
   role           String               @default("USER")
+  permissions    Json                 @default("{}")
   notes          String?
   createdAt      DateTime             @default(now())
   updatedAt      DateTime             @updatedAt
@@ -416,6 +432,80 @@ model StaffAppAccess {
 
   @@unique([staffProfileId, appId])
   @@index([appId, status])
+}
+
+model SuiteAnnouncement {
+  id            String     @id @default(cuid())
+  title         String
+  body          String
+  audience      String     @default("ALL")
+  appId         AlmaAppId?
+  venue         String?
+  pinned        Boolean    @default(false)
+  createdById   String?
+  createdByName String?
+  updatedById   String?
+  updatedByName String?
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  expiresAt     DateTime?
+
+  @@index([audience, appId, venue, createdAt])
+  @@index([expiresAt])
+  @@index([deletedAt])
+}
+
+model SuiteChatChannel {
+  id                String               @id @default(cuid())
+  name              String
+  description       String?
+  channelKey        String               @unique
+  type              SuiteChatChannelType @default(GROUP)
+  appId             AlmaAppId?
+  venue             String?
+  groupKey          String?
+  isActive          Boolean              @default(true)
+  readPermission    String?
+  postPermission    String?
+  directMessagesAllowed Boolean          @default(false)
+  createdById       String?
+  createdByName     String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  messages          SuiteChatMessage[]
+
+  @@index([type, appId, venue, isActive])
+  @@index([groupKey])
+}
+
+model SuiteChatMessage {
+  id            String     @id @default(cuid())
+  channelId     String?
+  channel       String     @default("general")
+  channelType   SuiteChatChannelType @default(GENERAL)
+  appId         AlmaAppId?
+  venue         String?
+  recipientId   String?
+  recipientName String?
+  body          String
+  createdById   String?
+  createdByName String?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  editedAt      DateTime?
+  deletedAt     DateTime?
+  deletedById   String?
+  deletedByName String?
+  channelRef    SuiteChatChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+
+  @@index([channel, appId, venue, createdAt])
+  @@index([channelId, createdAt])
+  @@index([createdById, createdAt])
+  @@index([recipientId, createdAt])
+  @@index([deletedAt])
 }
 
 model TrainingModule {
@@ -675,12 +765,17 @@ model GiftCard {
   status                  GiftCardStatus         @default(PENDING_PAYMENT)
   initialValueCents       Int
   balanceCents            Int
+  discountCents           Int                    @default(0)
+  amountPaidCents         Int?
   currency                String                 @default("aud")
   purchaserName           String
   purchaserEmail          String
   recipientName           String?
   recipientEmail          String?
   message                 String?
+  promoCodeId             String?
+  promoCodeSnapshot       String?
+  testMode                Boolean                @default(false)
   stripeCheckoutSessionId String?                @unique
   stripePaymentIntentId   String?
   emailedAt               DateTime?
@@ -693,11 +788,35 @@ model GiftCard {
   expiresAt               DateTime?
   createdAt               DateTime               @default(now())
   updatedAt               DateTime               @updatedAt
+  promoCode               GiftCardPromoCode?     @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
 
   @@index([status])
   @@index([purchaserEmail])
   @@index([recipientEmail])
+  @@index([createdAt])
+  @@index([promoCodeId])
+  @@index([testMode])
+}
+
+model GiftCardPromoCode {
+  id             String                    @id @default(cuid())
+  code           String                    @unique
+  description    String?
+  discountType   GiftCardPromoDiscountType
+  percentOff     Int?
+  amountOffCents Int?
+  isActive       Boolean                   @default(true)
+  startsAt       DateTime?
+  expiresAt      DateTime?
+  maxRedemptions Int?
+  createdById    String?
+  createdAt      DateTime                  @default(now())
+  updatedAt      DateTime                  @updatedAt
+  giftCards      GiftCard[]
+
+  @@index([isActive])
+  @@index([expiresAt])
   @@index([createdAt])
 }
 
@@ -831,6 +950,7 @@ model AppSettings {
   venues               Json     @default("[]")
   handbookContent      Json     @default("{}")
   onboardingSettings   Json     @default("{}")
+  giftCardSettings     Json     @default("{}")
   goveeApiKey          String?
   goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
   notifyEmail          String?
@@ -1036,6 +1156,7 @@ model StockItem {
   recipeLines    RecipeLine[]
   stocktakeLines StocktakeLine[]
   movements      InventoryMovement[]
+  invoiceLines   SupplierInvoiceLine[]
 
   @@index([categoryId])
   @@index([status])
@@ -1077,7 +1198,7 @@ model StocktakeLine {
   updatedAt       DateTime   @updatedAt
   stocktake       Stocktake  @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
   item            StockItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
-  movement        InventoryMovement?
+  movements       InventoryMovement[]
 
   @@index([stocktakeId])
   @@index([itemId])
@@ -1092,7 +1213,7 @@ model InventoryMovement {
   quantityAfter         Float
   unit                  String?
   sourceStocktakeId     String?
-  sourceStocktakeLineId String?               @unique
+  sourceStocktakeLineId String?
   notes                 String?
   createdAt             DateTime              @default(now())
   item                  StockItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
@@ -1102,6 +1223,7 @@ model InventoryMovement {
   @@index([itemId, createdAt])
   @@index([movementType])
   @@index([sourceStocktakeId])
+  @@index([sourceStocktakeLineId])
 }
 
 model Recipe {
@@ -1167,9 +1289,74 @@ model Supplier {
   status        SupplierStatus @default(ACTIVE)
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
+  invoices      SupplierInvoice[]
 
   @@index([status])
   @@index([name])
+}
+
+model SupplierInvoice {
+  id                String                @id @default(cuid())
+  source            String                @default("XERO")
+  invoiceKey        String
+  externalInvoiceId String?
+  invoiceNumber     String?
+  supplierId        String?
+  supplierName      String
+  supplierEmail     String?
+  venue             String?
+  invoiceDate       DateTime?
+  dueDate           DateTime?
+  currencyCode      String                @default("AUD")
+  status            String                @default("DRAFT")
+  subtotalCents     Int                   @default(0)
+  taxCents          Int                   @default(0)
+  totalCents        Int                   @default(0)
+  sourceFileName    String?
+  sourceFileType    String?
+  sourceMetadata    Json?
+  importedAt        DateTime              @default(now())
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  supplier          Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  lines             SupplierInvoiceLine[]
+
+  @@unique([source, invoiceKey])
+  @@index([venue, invoiceDate])
+  @@index([supplierId, invoiceDate])
+  @@index([externalInvoiceId])
+  @@index([invoiceNumber])
+}
+
+model SupplierInvoiceLine {
+  id                String           @id @default(cuid())
+  supplierInvoiceId String
+  lineNumber        Int
+  lineKey           String
+  externalLineId    String?
+  description       String
+  itemCode          String?
+  accountCode       String?
+  quantity          Float            @default(0)
+  unit              String?
+  unitAmountCents   Int              @default(0)
+  lineAmountCents   Int              @default(0)
+  taxAmountCents    Int              @default(0)
+  itemId            String?
+  matchingStatus    String           @default("NEEDS_REVIEW")
+  notes             String?
+  sourceMetadata    Json?
+  costAppliedAt     DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  invoice           SupplierInvoice  @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+  item              StockItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+
+  @@unique([supplierInvoiceId, lineKey])
+  @@index([supplierInvoiceId, lineNumber])
+  @@index([itemId])
+  @@index([matchingStatus])
+  @@index([itemCode])
 }
 
 model Venue {

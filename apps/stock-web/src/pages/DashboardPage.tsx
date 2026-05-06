@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import type { StockItemsSummary } from '@alma/shared';
+import type { StockInvoicesSummary, StockItemsSummary } from '@alma/shared';
 import { Card, StatCard } from '@alma/ui';
-import { IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
+import { IconInvoices, IconItems, IconStocktake, IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { api } from '../lib/api';
 
@@ -14,6 +14,7 @@ function formatQuantity(value: number | null | undefined) {
 export function DashboardPage() {
   useDocumentTitle('Overview');
   const [summary, setSummary] = useState<StockItemsSummary | null>(null);
+  const [invoiceSummary, setInvoiceSummary] = useState<StockInvoicesSummary | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -21,10 +22,19 @@ export function DashboardPage() {
 
     async function loadSummary() {
       try {
-        const nextSummary = await api<StockItemsSummary>('/api/items/summary');
-        if (!cancelled) setSummary(nextSummary);
+        const [nextSummary, nextInvoiceSummary] = await Promise.all([
+          api<StockItemsSummary>('/api/items/summary'),
+          api<StockInvoicesSummary>('/api/invoices/summary')
+        ]);
+        if (!cancelled) {
+          setSummary(nextSummary);
+          setInvoiceSummary(nextInvoiceSummary);
+        }
       } catch {
-        if (!cancelled) setSummary(null);
+        if (!cancelled) {
+          setSummary(null);
+          setInvoiceSummary(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -69,10 +79,11 @@ export function DashboardPage() {
           hint="Total units across active items"
         />
         <StatCard
-          icon={<IconRecipes size={18} />}
-          label="Recipes"
-          value="—"
-          hint="Define prep recipes to drive sales depletion"
+          icon={<IconInvoices size={18} />}
+          label="Invoice review"
+          value={loading ? '—' : String(invoiceSummary?.needsReviewLines ?? 0)}
+          hint="Supplier lines needing match"
+          tone={(invoiceSummary?.needsReviewLines ?? 0) > 0 ? 'warning' : 'positive'}
         />
       </div>
     </div>

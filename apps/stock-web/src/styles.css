@@ -263,6 +263,74 @@ tbody tr.row-interactive {
   margin: 0;
 }
 
+/* Invoices — Xero import/ripping and item match review. */
+.stock-invoice-import-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.8fr) minmax(260px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stock-invoice-import-side {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stock-invoice-import-action,
+.stock-invoice-button-stack {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stock-invoice-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stock-invoice-table {
+  max-height: 560px;
+  overflow: auto;
+}
+
+.stock-invoice-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.stock-invoice-line-card {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.stock-invoice-line-main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.stock-invoice-line-main p {
+  margin: 4px 0 0;
+}
+
+.stock-invoice-line-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
 /* Settings — category admin rows for stock and recipes. */
 .settings-category-stack {
   display: flex;
@@ -387,6 +455,22 @@ tbody tr.row-interactive {
     margin: 4px 0 0;
     width: fit-content;
   }
+
+  .stock-invoice-import-grid,
+  .stock-invoice-layout,
+  .stock-invoice-line-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .stock-invoice-import-action,
+  .stock-invoice-button-stack {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .stock-invoice-table {
+    max-height: none;
+  }
 }
 
 @media (max-width: 560px) {
@@ -424,6 +508,10 @@ tbody tr.row-interactive {
   .stock-category-group table,
   .recipe-lines-table {
     min-width: 620px;
+  }
+
+  .stock-invoice-line-main {
+    flex-direction: column;
   }
 }
 
@@ -530,6 +618,108 @@ tbody tr.row-detail:hover {
   color: var(--color-text-muted);
 }
 
+.stocktake-variance-summary {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.stocktake-variance-summary > div {
+  display: grid;
+  gap: 2px;
+  min-height: 58px;
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+}
+
+.stocktake-variance-summary span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.stocktake-variance-summary strong {
+  color: var(--color-text);
+  font-size: 16px;
+}
+
+.stocktake-variance-positive {
+  color: var(--tone-positive-fg);
+  font-weight: 800;
+}
+
+.stocktake-variance-negative {
+  color: var(--tone-danger-fg);
+  font-weight: 800;
+}
+
+.stocktake-review-panel {
+  display: grid;
+  gap: 14px;
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-border);
+}
+
+.stocktake-review-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.stocktake-review-header h4,
+.stocktake-correction-list h4,
+.stocktake-reversal-box h4 {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.stocktake-movement-table {
+  min-width: 940px;
+}
+
+.stocktake-movement-table td:last-child {
+  min-width: 220px;
+}
+
+.stocktake-review-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);
+  gap: 14px;
+}
+
+.stocktake-correction-list,
+.stocktake-reversal-box {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.stocktake-correction-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(110px, 0.5fr) minmax(190px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+}
+
+.stocktake-inline-action {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 38px;
+}
+
 .stocktake-count-toolbar {
   display: flex;
   align-items: center;
@@ -584,6 +774,21 @@ tbody tr.row-detail:hover {
   .stocktake-history-card th,
   .stocktake-history-card td {
     padding: 10px 8px;
+  }
+
+  .stocktake-variance-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .stocktake-review-header,
+  .stocktake-inline-action {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .stocktake-review-actions,
+  .stocktake-correction-row {
+    grid-template-columns: 1fr;
   }
 
   .stock-bulk-toolbar {

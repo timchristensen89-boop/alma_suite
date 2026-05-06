@@ -10,7 +10,7 @@ import type {
   StockItem,
   StockItemsPayload
 } from '@alma/shared';
-import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -836,7 +836,8 @@ function RecipeForm({
     initial ? draftFromRecipe(initial) : emptyRecipeDraft()
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
   const itemOptions = useMemo(
     () => [
       { label: 'Unlinked ingredient', value: '' },
@@ -885,9 +886,10 @@ function RecipeForm({
   }
 
   async function submit() {
-    setError(null);
+    setFeedback(null);
     if (!draft.title.trim()) {
-      setError('Recipe title is required');
+      setFeedback('Recipe title is required');
+      setFeedbackTone('error');
       return;
     }
     const lines: RecipeLineInput[] = draft.lines
@@ -924,9 +926,12 @@ function RecipeForm({
           body: JSON.stringify(payload)
         });
       }
-      onSaved();
+      setFeedback(mode === 'edit' ? 'Recipe saved.' : 'Recipe created.');
+      setFeedbackTone('success');
+      window.setTimeout(() => onSaved(), 500);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save recipe');
+      setFeedback(err instanceof ApiError ? err.message : 'Could not save recipe');
+      setFeedbackTone('error');
     } finally {
       setSaving(false);
     }
@@ -984,11 +989,10 @@ function RecipeForm({
         ))}
       </div>
 
-      {error ? <p className="error-text">{error}</p> : null}
-
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Create recipe'}</Button>
+        <ActionFeedback message={feedback} tone={feedbackTone} />
       </div>
     </form>
   );

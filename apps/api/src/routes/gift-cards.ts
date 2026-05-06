@@ -1,12 +1,23 @@
-import { Router } from 'express';
+import { Router, type NextFunction, type Request, type Response } from 'express';
 import type Stripe from 'stripe';
 import { requireManager } from '../lib/auth-middleware.js';
+import { HttpError } from '../lib/http.js';
 import {
   constructStripeWebhookEvent,
   giftCardService
 } from '../services/gift-card.service.js';
 
 export const giftCardsRouter = Router();
+
+function requireGiftCardOwner(req: Request, res: Response, next: NextFunction) {
+  requireManager(req, res, (error?: unknown) => {
+    if (error) return next(error);
+    if (!giftCardService.canManagePromoCodes(req.user)) {
+      return next(new HttpError(403, 'Only Tim can manage gift card promo codes and checkout settings.'));
+    }
+    return next();
+  });
+}
 
 giftCardsRouter.post('/checkout', async (req, res, next) => {
   try {
@@ -24,9 +35,35 @@ giftCardsRouter.get('/session/:sessionId', async (req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/settings/public', async (_req, res, next) => {
+  try {
+    res.json(await giftCardService.getPublicSettings());
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/promo/quote', async (req, res, next) => {
+  try {
+    res.json(await giftCardService.quotePromo(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.get('/print/:code', async (req, res, next) => {
   try {
     res.json(await giftCardService.getPrintableByCode(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/qr/:code', async (req, res, next) => {
+  try {
+    res.setHeader('Content-Type', 'image/svg+xml');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.send(await giftCardService.qrCodeSvg(String(req.params.code)));
   } catch (error) {
     next(error);
   }
@@ -47,6 +84,54 @@ giftCardsRouter.get('/wallet/apple/:code', async (req, res, next) => {
 giftCardsRouter.get('/wallet/google/:code', async (req, res, next) => {
   try {
     res.redirect(await giftCardService.googleWalletSaveUrl(String(req.params.code)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/settings', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.getAdminSettings(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.patch('/settings', requireGiftCardOwner, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.updateSettings(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/promo-codes', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await giftCardService.listPromoCodes());
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/promo-codes', requireGiftCardOwner, async (req, res, next) => {
+  try {
+    res.status(201).json(await giftCardService.createPromoCode(req.body, req.user?.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.patch('/promo-codes/:id', requireGiftCardOwner, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.updatePromoCode(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.delete('/promo-codes/:id', requireGiftCardOwner, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.removePromoCode(String(req.params.id)));
   } catch (error) {
     next(error);
   }

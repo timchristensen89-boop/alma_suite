@@ -19,9 +19,17 @@ type GiftCardEmailInput = {
   balanceCents: number;
   message?: string | null;
   printableUrl: string;
+  qrCodeUrl?: string | null;
   appleWalletUrl?: string | null;
   googleWalletUrl?: string | null;
   expiresAt?: Date | null;
+  settings?: {
+    emailSubject?: string;
+    emailIntro?: string;
+    artworkUrl?: string;
+    primaryColor?: string;
+    accentColor?: string;
+  };
 };
 
 type EmailDeliveryResult =
@@ -219,19 +227,24 @@ export const mailService = {
     const safeRecipient = escapeHtml(recipient);
     const safeCode = escapeHtml(input.code);
     const safePrintableUrl = escapeHtml(input.printableUrl);
+    const safeQrCodeUrl = input.qrCodeUrl ? escapeHtml(input.qrCodeUrl) : '';
     const safeAppleWalletUrl = input.appleWalletUrl ? escapeHtml(input.appleWalletUrl) : '';
     const safeGoogleWalletUrl = input.googleWalletUrl ? escapeHtml(input.googleWalletUrl) : '';
+    const safeArtworkUrl = input.settings?.artworkUrl ? escapeHtml(input.settings.artworkUrl) : '';
     const safeMessage = input.message?.trim() ? escapeHtml(input.message.trim()) : '';
     const amount = formatMoney(input.amountCents);
     const balance = formatMoney(input.balanceCents);
+    const primaryColor = input.settings?.primaryColor ?? '#1f3524';
+    const accentColor = input.settings?.accentColor ?? '#b98216';
+    const intro = input.settings?.emailIntro?.trim() || 'Your ALMA gift card is ready.';
     const expiry = input.expiresAt
       ? input.expiresAt.toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })
       : null;
-    const subject = `Your ALMA gift card ${input.code}`;
+    const subject = (input.settings?.emailSubject?.trim() || 'Your ALMA gift card {{code}}').replace(/\{\{\s*code\s*\}\}/gi, input.code);
     const text = [
       `Hi ${recipient},`,
       '',
-      `Your ALMA gift card is ready.`,
+      intro,
       `Code: ${input.code}`,
       `Value: ${amount}`,
       `Balance: ${balance}`,
@@ -240,6 +253,7 @@ export const mailService = {
       '',
       'Open or print your gift card:',
       input.printableUrl,
+      input.qrCodeUrl ? `Redemption QR: ${input.qrCodeUrl}` : '',
       input.appleWalletUrl ? `Add to Apple Wallet: ${input.appleWalletUrl}` : '',
       input.googleWalletUrl ? `Add to Google Wallet: ${input.googleWalletUrl}` : ''
     ]
@@ -251,20 +265,22 @@ export const mailService = {
           ALMA Gift Cards
         </div>
         <p style="font-size:16px;margin:0 0 12px">Hi ${safeRecipient},</p>
-        <p style="font-size:14px;margin:0 0 18px">Your ALMA gift card is ready.</p>
+        <p style="font-size:14px;margin:0 0 18px">${escapeHtml(intro)}</p>
         <div style="border:1px solid #e2d3ad;background:#fff8e7;border-radius:14px;padding:22px;margin:0 0 22px">
-          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:#73520e;margin-bottom:8px">Gift card code</div>
+          ${safeArtworkUrl ? `<img src="${safeArtworkUrl}" alt="" style="display:block;width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin:0 0 18px" />` : ''}
+          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:${accentColor};margin-bottom:8px">Gift card code</div>
           <div style="font-size:28px;font-weight:900;letter-spacing:0.08em;color:#111827;margin-bottom:12px">${safeCode}</div>
-          <div style="font-size:16px;font-weight:800;color:#73520e">${escapeHtml(balance)} available</div>
+          <div style="font-size:16px;font-weight:800;color:${accentColor}">${escapeHtml(balance)} available</div>
           <div style="font-size:13px;color:#64748b">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
           ${safeMessage ? `<p style="font-size:14px;color:#334155;border-top:1px solid #eadcb8;padding-top:14px;margin:16px 0 0">${safeMessage}</p>` : ''}
+          ${safeQrCodeUrl ? `<div style="border-top:1px solid #eadcb8;margin-top:18px;padding-top:18px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="150" height="150" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /><p style="font-size:12px;color:#64748b;margin:8px 0 0">Staff can scan this QR code to open redemption.</p></div>` : ''}
         </div>
         <p style="margin:0 0 22px">
-          <a href="${safePrintableUrl}" style="display:inline-block;background:#b98216;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
+          <a href="${safePrintableUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
             Open printable gift card
           </a>
-          ${safeAppleWalletUrl ? `<a href="${safeAppleWalletUrl}" style="display:inline-block;background:#1f3524;color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Apple Wallet</a>` : ''}
-          ${safeGoogleWalletUrl ? `<a href="${safeGoogleWalletUrl}" style="display:inline-block;background:#ffffff;color:#1f3524;border:1px solid #d5d0c7;text-decoration:none;font-weight:800;padding:11px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Google Wallet</a>` : ''}
+          ${safeAppleWalletUrl ? `<a href="${safeAppleWalletUrl}" style="display:inline-block;background:${primaryColor};color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Apple Wallet</a>` : ''}
+          ${safeGoogleWalletUrl ? `<a href="${safeGoogleWalletUrl}" style="display:inline-block;background:#ffffff;color:${primaryColor};border:1px solid #d5d0c7;text-decoration:none;font-weight:800;padding:11px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Google Wallet</a>` : ''}
         </p>
         <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
           If the button doesn't work, paste this link into your browser:<br>

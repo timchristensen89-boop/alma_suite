@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import {
   IconDashboard,
+  IconInvoices,
   IconItems,
   IconRecipes,
   IconSettings,
@@ -39,8 +40,14 @@ export const NAV_ITEMS: NavItem[] = [
   {
     to: '/suppliers',
     label: 'Suppliers',
-    description: 'Vendors, invoices, reconciliation',
+    description: 'Vendors and account details',
     icon: <IconSuppliers />
+  },
+  {
+    to: '/invoices',
+    label: 'Invoices',
+    description: 'Xero bills, ripped invoices and item matching',
+    icon: <IconInvoices />
   },
   {
     to: '/recipes',

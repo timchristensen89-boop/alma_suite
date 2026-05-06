@@ -239,5 +239,17 @@ export const trainingService = {
 
     await recalculateStaffTrainingPay(record.staffProfileId);
     return record;
+  },
+
+  async deleteRecord(id: string) {
+    const existing = await prisma.staffTrainingRecord.findUnique({ where: { id } });
+
+    if (!existing) {
+      throw new HttpError(404, 'Training record not found');
+    }
+
+    await prisma.staffTrainingRecord.delete({ where: { id } });
+    await recalculateStaffTrainingPay(existing.staffProfileId);
+    return { id, deleted: true };
   }
 };

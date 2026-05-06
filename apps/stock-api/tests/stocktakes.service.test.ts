@@ -119,6 +119,24 @@ test('applying submitted stocktakes creates movement deltas and updates balances
     assert.equal(movementByItem.get(itemB.id)?.quantityDelta, -3);
     assert.equal(movements.every((movement) => movement.movementType === 'STOCKTAKE_ADJUSTMENT'), true);
 
+    const correction = await stocktakesService.createCorrection(stocktake.id, {
+      corrections: [
+        {
+          sourceStocktakeLineId: applied.stocktake.lines[0].id,
+          quantityAfter: 16,
+          reason: 'Manager found one extra bottle'
+        }
+      ]
+    });
+    assert.equal(correction.movements.length, 1);
+    assert.equal(correction.movements[0].movementType, 'STOCKTAKE_CORRECTION');
+    assert.equal(correction.movements[0].quantityBefore, 14);
+    assert.equal(correction.movements[0].quantityAfter, 16);
+    assert.equal(correction.movements[0].quantityDelta, 2);
+
+    const correctedA = await prisma.stockItem.findUniqueOrThrow({ where: { id: itemA.id } });
+    assert.equal(correctedA.onHand, 16);
+
     await assert.rejects(
       () => stocktakesService.applyStocktake(stocktake.id),
       /already been applied/
@@ -127,7 +145,40 @@ test('applying submitted stocktakes creates movement deltas and updates balances
     const movementCount = await prisma.inventoryMovement.count({
       where: { sourceStocktakeId: stocktake.id }
     });
-    assert.equal(movementCount, 2);
+    assert.equal(movementCount, 3);
+
+    await assert.rejects(
+      () => stocktakesService.deleteStocktakes({ ids: [stocktake.id] }),
+      /Applied stocktakes cannot be deleted/
+    );
+
+    const stocktakeStillExists = await prisma.stocktake.count({
+      where: { id: stocktake.id }
+    });
+    assert.equal(stocktakeStillExists, 1);
+
+    const reversal = await stocktakesService.reverseStocktake(stocktake.id, {
+      reason: 'Reverse before recount'
+    });
+    assert.equal(reversal.movements.length, 2);
+    assert.equal(reversal.movements.every((movement) => movement.movementType === 'STOCKTAKE_REVERSAL'), true);
+    assert.equal(reversal.stocktake.appliedAt, null);
+    assert.equal(reversal.stocktake.status, 'IN_PROGRESS');
+
+    const [reversedA, reversedB] = await Promise.all([
+      prisma.stockItem.findUniqueOrThrow({ where: { id: itemA.id } }),
+      prisma.stockItem.findUniqueOrThrow({ where: { id: itemB.id } })
+    ]);
+    assert.equal(reversedA.onHand, 10);
+    assert.equal(reversedB.onHand, 5);
+
+    await assert.rejects(
+      () => stocktakesService.reverseStocktake(stocktake.id, { reason: 'Again' }),
+      /Only applied stocktakes can be reversed/
+    );
+
+    const deleted = await stocktakesService.deleteStocktakes({ ids: [stocktake.id] });
+    assert.equal(deleted.deleted, 1);
   } finally {
     await cleanup({ stocktakeIds, itemIds: [itemA.id, itemB.id] });
   }

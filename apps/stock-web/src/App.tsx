@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, TopBar } from '@alma/ui';
+import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { SuppliersPage } from './pages/SuppliersPage';
+import { InvoicesPage } from './pages/InvoicesPage';
 import { RecipesPage } from './pages/RecipesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { LoginPage } from './pages/LoginPage';
@@ -14,6 +15,7 @@ import { NAV_ITEMS } from './config/navigation';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { IconChevronDown, IconExternal } from './lib/icons';
+import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -92,6 +94,13 @@ function TopBarWithContext() {
         user ? (
           <>
             <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="topbar" />
+            <SuiteCommsWidget
+              appId="STOCK"
+              api={api}
+              venue={user.venue}
+              userName={`${user.firstName} ${user.lastName}`}
+              canAnnounce={user.role !== 'STAFF'}
+            />
             <IconButton
               label="Sign out"
               icon={<IconExternal size={15} />}
@@ -119,6 +128,7 @@ function StockAppShell() {
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/stocktake" element={<StocktakePage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
+        <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/recipes" element={<RecipesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />

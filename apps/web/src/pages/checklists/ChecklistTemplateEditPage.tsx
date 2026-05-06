@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import type { ChecklistTemplate } from '@alma/shared';
 import {
+  ActionFeedback,
   Button,
   Card,
   EmptyState,
@@ -196,6 +197,7 @@ export function ChecklistTemplateEditPage() {
             <Button onClick={() => void handleSubmit()} disabled={!canSubmit}>
               {submitting ? 'Saving…' : isEdit ? 'Save changes' : 'Create template'}
             </Button>
+            <ActionFeedback message={submitError} tone="error" />
           </>
         }
       />
@@ -278,11 +280,7 @@ export function ChecklistTemplateEditPage() {
         </div>
       </Card>
 
-      {submitError ? (
-        <Card>
-          <p className="error-text">{submitError}</p>
-        </Card>
-      ) : null}
+      {submitError ? <Card><p className="error-text">{submitError}</p></Card> : null}
     </div>
   );
 }

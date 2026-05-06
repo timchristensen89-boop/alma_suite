@@ -1,8 +1,38 @@
-import { Router } from 'express';
+import { Router, type Request } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
+import { HttpError } from '../lib/http.js';
 import { staffService } from '../services/staff.service.js';
 
 export const staffRouter = Router();
+
+function canManageSettingsAccess(req: Request) {
+  const user = req.user;
+  if (!user) return false;
+  if (user.isAdmin || user.role === 'ADMIN') return true;
+  const settingsAccess = user.appAccess.find((access) => access.appId === 'SETTINGS' && access.status === 'ENABLED');
+  return Boolean(settingsAccess?.role === 'ADMIN' || settingsAccess?.permissions?.admin);
+}
+
+function grantsSettingsAccess(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const apps = (input as { apps?: unknown }).apps;
+  if (!Array.isArray(apps)) return false;
+
+  return apps.some((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const app = entry as { appId?: unknown; status?: unknown; role?: unknown; permissions?: unknown };
+    if (app.appId !== 'SETTINGS') return false;
+    const permissions =
+      app.permissions && typeof app.permissions === 'object' && !Array.isArray(app.permissions)
+        ? (app.permissions as Record<string, unknown>)
+        : {};
+    return (
+      app.status !== 'DISABLED' ||
+      String(app.role ?? '').toUpperCase() === 'ADMIN' ||
+      Object.values(permissions).some(Boolean)
+    );
+  });
+}
 
 staffRouter.get('/', async (_req, res, next) => {
   try {
@@ -179,6 +209,17 @@ staffRouter.get('/roster/forecast-snapshots', requireManager, async (req, res, n
   }
 });
 
+staffRouter.get('/manager-dashboard', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.getManagerDashboard({
+      date: typeof req.query.date === 'string' ? req.query.date : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/timesheets', async (req, res, next) => {
   try {
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
@@ -311,6 +352,9 @@ staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
 
 staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
   try {
+    if (grantsSettingsAccess(req.body) && !canManageSettingsAccess(req)) {
+      throw new HttpError(403, 'Settings access required to change Admin access.');
+    }
     res.json(await staffService.updateAppAccess(String(req.params.id), req.body));
   } catch (error) {
     next(error);
@@ -328,6 +372,14 @@ staffRouter.post('/:id/records', requireManager, async (req, res, next) => {
 staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.approveRecord(String(req.params.id), String(req.params.recordId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteRecord(String(req.params.id), String(req.params.recordId)));
   } catch (error) {
     next(error);
   }

@@ -51,3 +51,11 @@ trainingRouter.patch('/records/:id', requireManager, async (req, res, next) => {
     next(error);
   }
 });
+
+trainingRouter.delete('/records/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await trainingService.deleteRecord(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});

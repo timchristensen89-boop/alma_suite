@@ -21,12 +21,15 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/auth/handoff/consume',
   '/api/auth/me',
   '/api/auth/logout',
-  '/api/gift-cards/checkout'
+  '/api/gift-cards/checkout',
+  '/api/gift-cards/settings/public',
+  '/api/gift-cards/promo/quote'
 ]);
 
 const PUBLIC_PREFIXES = [
   '/api/gift-cards/session/',
   '/api/gift-cards/print/',
+  '/api/gift-cards/qr/',
   '/api/gift-cards/wallet/apple/',
   '/api/gift-cards/wallet/google/',
   '/api/staff/invites/by-token/'
@@ -47,6 +50,12 @@ function isManager(user: AuthUser) {
   return user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin;
 }
 
+function hasSettingsAccess(user: AuthUser) {
+  if (user.isAdmin || user.role === 'ADMIN') return true;
+  const settingsAccess = user.appAccess.find((access) => access.appId === 'SETTINGS' && access.status === 'ENABLED');
+  return Boolean(settingsAccess?.role === 'ADMIN' || settingsAccess?.permissions?.admin);
+}
+
 function isWrite(req: Request) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
 }
@@ -57,6 +66,7 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/incidents' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/checklists/runs')) return true;
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
+  if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
   if (req.path === '/api/staff/timesheets' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/staff/timesheets/') && req.method === 'PATCH') return true;
   return false;
@@ -89,7 +99,13 @@ export async function authMiddleware(
     return next(new HttpError(401, 'Not authenticated'));
   }
 
-  if (!hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
+  const settingsRequest = req.path.startsWith('/api/settings');
+
+  if (settingsRequest && !hasSettingsAccess(req.user)) {
+    return next(new HttpError(403, 'Settings access required'));
+  }
+
+  if (!settingsRequest && !hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
     return next(new HttpError(403, 'Compliance access disabled'));
   }
 
@@ -99,10 +115,6 @@ export async function authMiddleware(
     !hasEnabledAppAccess(req.user, 'COMPLIANCE')
   ) {
     return next(new HttpError(403, 'Staff access disabled'));
-  }
-
-  if (req.path.startsWith('/api/settings') && !isManager(req.user)) {
-    return next(new HttpError(403, 'Manager access required'));
   }
 
   if (!isManager(req.user) && !isStaffWriteAllowed(req)) {

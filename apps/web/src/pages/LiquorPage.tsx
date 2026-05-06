@@ -10,6 +10,7 @@ import {
   type LiquorLicenceType
 } from '@alma/shared';
 import {
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -127,6 +128,7 @@ export function LiquorPage() {
   const [form, setForm] = useState<FormState>(() => emptyForm());
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [formMessage, setFormMessage] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const venueOptions = useMemo(() => {
@@ -149,6 +151,7 @@ export function LiquorPage() {
   function openCreate() {
     setForm({ ...emptyForm(), venue: venueOptions[0] ?? '' });
     setError(null);
+    setFormMessage(null);
     setMode('form');
   }
 
@@ -171,6 +174,7 @@ export function LiquorPage() {
       documentName: licence.documentName ?? ''
     });
     setError(null);
+    setFormMessage(null);
     setMode('form');
   }
 
@@ -178,12 +182,14 @@ export function LiquorPage() {
     setMode('none');
     setForm(emptyForm());
     setError(null);
+    setFormMessage(null);
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setSaving(true);
     setError(null);
+    setFormMessage(null);
     try {
       const payload = {
         venue: form.venue,
@@ -213,10 +219,11 @@ export function LiquorPage() {
           body: JSON.stringify(payload)
         });
       }
-      closeForm();
       await Promise.all([licences.reload(), summary.reload()]);
+      setFormMessage('Licence saved.');
+      window.setTimeout(() => closeForm(), 900);
     } catch (submitError) {
-      setError(
+      setFormMessage(
         submitError instanceof Error ? submitError.message : 'Could not save licence'
       );
     } finally {
@@ -305,6 +312,8 @@ export function LiquorPage() {
           loading={summary.loading}
         />
       </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
 
       {mode === 'form' ? (
         <Card
@@ -410,9 +419,11 @@ export function LiquorPage() {
               placeholder="https://…/licence-or-approval.pdf"
             />
 
-            {error ? <p className="error-text">{error}</p> : null}
-
             <div className="toolbar-right">
+              <ActionFeedback
+                message={formMessage}
+                tone={formMessage?.includes('Could') || formMessage?.includes('not') ? 'error' : 'success'}
+              />
               <Button type="button" variant="ghost" onClick={closeForm}>
                 Cancel
               </Button>

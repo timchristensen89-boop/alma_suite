@@ -5,7 +5,7 @@ import type {
   SupplierStatus,
   SupplierUpdateInput
 } from '@alma/shared';
-import { Button, Input, Select } from '@alma/ui';
+import { ActionFeedback, Button, Input, Select } from '@alma/ui';
 import { ApiError, api } from '../../lib/api';
 
 type Mode = 'create' | 'edit';
@@ -78,16 +78,18 @@ export function SupplierForm({ mode, initial, onSaved, onCancel }: Props) {
     mode === 'edit' && initial ? draftFromSupplier(initial) : emptyDraft()
   );
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
 
   function update<K extends keyof Draft>(key: K, value: Draft[K]) {
     setDraft((d) => ({ ...d, [key]: value }));
   }
 
   async function handleSubmit() {
-    setError(null);
+    setFeedback(null);
     if (!draft.name.trim()) {
-      setError('Supplier name is required');
+      setFeedback('Supplier name is required');
+      setFeedbackTone('error');
       return;
     }
 
@@ -112,23 +114,28 @@ export function SupplierForm({ mode, initial, onSaved, onCancel }: Props) {
           method: 'PATCH',
           body: JSON.stringify(updatePayload)
         });
-        onSaved(saved);
+        setFeedback('Supplier saved.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(saved), 450);
       } else {
         const created = await api<Supplier>('/api/suppliers', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        onSaved(created);
+        setFeedback('Supplier created.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(created), 450);
         setDraft(emptyDraft());
       }
     } catch (err) {
-      setError(
+      const message =
         err instanceof ApiError
           ? err.message
           : mode === 'edit'
             ? 'Could not save changes'
-            : 'Could not create supplier'
-      );
+            : 'Could not create supplier';
+      setFeedback(message);
+      setFeedbackTone('error');
     } finally {
       setSubmitting(false);
     }
@@ -226,8 +233,6 @@ export function SupplierForm({ mode, initial, onSaved, onCancel }: Props) {
         placeholder="Anything useful — delivery days, min order, etc."
       />
 
-      {error ? <p className="error-text">{error}</p> : null}
-
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>
           Cancel
@@ -235,6 +240,7 @@ export function SupplierForm({ mode, initial, onSaved, onCancel }: Props) {
         <Button type="submit" disabled={submitting}>
           {submitLabel}
         </Button>
+        <ActionFeedback message={feedback} tone={feedbackTone} />
       </div>
     </form>
   );

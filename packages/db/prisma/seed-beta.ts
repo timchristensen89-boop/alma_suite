@@ -11,8 +11,9 @@ const betaUsers = [
     venue: 'Alma Avalon',
     isAdmin: true,
     access: [
-      { appId: 'COMPLIANCE' as const, role: 'ADMIN' },
-      { appId: 'STAFF' as const, role: 'ADMIN' }
+      { appId: 'COMPLIANCE' as const, role: 'ADMIN', permissions: { admin: true } },
+      { appId: 'STAFF' as const, role: 'ADMIN', permissions: { admin: true } },
+      { appId: 'SETTINGS' as const, role: 'ADMIN', permissions: { admin: true } }
     ]
   },
   {
@@ -25,7 +26,21 @@ const betaUsers = [
     isAdmin: false,
     access: [
       { appId: 'COMPLIANCE' as const, role: 'MANAGER' },
-      { appId: 'STAFF' as const, role: 'MANAGER' },
+      {
+        appId: 'STAFF' as const,
+        role: 'MANAGER',
+        permissions: {
+          staffView: true,
+          staffEdit: true,
+          rosterManage: true,
+          timesheetsApprove: true,
+          tipsManage: true,
+          chatTeam: true,
+          chatDirect: true,
+          announcementsManage: true,
+          communicationsManage: true
+        }
+      },
       { appId: 'STOCK' as const, role: 'MANAGER' }
     ]
   },
@@ -37,7 +52,19 @@ const betaUsers = [
     roleTitle: 'Floor Staff',
     venue: 'Alma Avalon',
     isAdmin: false,
-    access: [{ appId: 'COMPLIANCE' as const, role: 'STAFF' }]
+    access: [
+      { appId: 'COMPLIANCE' as const, role: 'STAFF' },
+      {
+        appId: 'STAFF' as const,
+        role: 'USER',
+        permissions: {
+          staffSelfView: true,
+          timesheetsSubmit: true,
+          tipsViewOwn: true,
+          chatTeam: true
+        }
+      }
+    ]
   },
   {
     email: 'tim@almagroup.com.au',
@@ -48,9 +75,10 @@ const betaUsers = [
     venue: 'Alma Avalon',
     isAdmin: true,
     access: [
-      { appId: 'COMPLIANCE' as const, role: 'ADMIN' },
-      { appId: 'STAFF' as const, role: 'ADMIN' },
-      { appId: 'STOCK' as const, role: 'ADMIN' }
+      { appId: 'COMPLIANCE' as const, role: 'ADMIN', permissions: { admin: true } },
+      { appId: 'STAFF' as const, role: 'ADMIN', permissions: { admin: true } },
+      { appId: 'STOCK' as const, role: 'ADMIN', permissions: { admin: true } },
+      { appId: 'SETTINGS' as const, role: 'ADMIN', permissions: { admin: true } }
     ]
   }
 ];
@@ -112,6 +140,7 @@ async function seedBetaUsers() {
         update: {
           status: 'ENABLED',
           role: access.role,
+          permissions: access.permissions ?? {},
           notes: 'Controlled staff beta account'
         },
         create: {
@@ -119,6 +148,7 @@ async function seedBetaUsers() {
           appId: access.appId,
           status: 'ENABLED',
           role: access.role,
+          permissions: access.permissions ?? {},
           notes: 'Controlled staff beta account'
         }
       });

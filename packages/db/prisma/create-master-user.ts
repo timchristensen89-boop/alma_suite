@@ -22,11 +22,16 @@ const MASTER_APP_ACCESS: Array<{
 ];
 
 async function main() {
-  const email = (process.env.MASTER_USER_EMAIL ?? 'tim@almagroup.com.au').toLowerCase();
-  const password = process.env.MASTER_USER_PASSWORD ?? 'Tim@lma2017';
+  const isProduction = process.env.NODE_ENV === 'production';
+  const email = (process.env.MASTER_USER_EMAIL ?? (isProduction ? '' : 'tim@almagroup.com.au')).toLowerCase();
+  const password = process.env.MASTER_USER_PASSWORD ?? (isProduction ? '' : 'Tim@lma2017');
   const firstName = process.env.MASTER_USER_FIRST_NAME ?? 'Tim';
   const lastName = process.env.MASTER_USER_LAST_NAME ?? 'Christensen';
   const roleTitle = process.env.MASTER_USER_ROLE ?? 'Owner / Master Admin';
+
+  if (!email || !password) {
+    throw new Error('MASTER_USER_EMAIL and MASTER_USER_PASSWORD are required when creating a master user in production.');
+  }
 
   const passwordHash = await bcrypt.hash(password, 10);
 
@@ -77,7 +82,9 @@ async function main() {
   );
 
   console.log(`Master user ready: ${profile.email} (id=${profile.id})`);
-  console.log(`  Password: ${password}`);
+  if (!isProduction) {
+    console.log(`  Password: ${password}`);
+  }
   console.log('  isAdmin:  true');
   console.log(`  appAccess: ${MASTER_APP_ACCESS.map((access) => access.appId).join(', ')}`);
 }

@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, TopBar } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -40,6 +40,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { CommandPalette } from './components/CommandPalette';
 import { NotificationsDrawer } from './components/NotificationsDrawer';
+import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { NAV_ITEMS, navItemsForRole } from './config/navigation';
 import { withSuiteAppLinks } from './config/suiteLinks';
@@ -218,6 +219,13 @@ function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
             <span>Search issues, staff, assets…</span>
             <kbd>⌘K</kbd>
           </button>
+          <SuiteCommsWidget
+            appId="COMPLIANCE"
+            api={api}
+            venue={user?.venue}
+            userName={user ? `${user.firstName} ${user.lastName}` : undefined}
+            canAnnounce={canManage(user)}
+          />
           <SuiteAppSwitcher currentApp="compliance" apps={suiteApps} variant="topbar" />
           <NotificationsDrawer />
           <UserMenu />

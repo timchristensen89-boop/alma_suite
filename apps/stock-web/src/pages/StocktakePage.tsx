@@ -3,6 +3,9 @@ import type {
   ApplyStocktakeResult,
   StockItem,
   StockItemsPayload,
+  StocktakeMovement,
+  StocktakeMovementHistoryPayload,
+  StocktakeMovementResult,
   Stocktake,
   StocktakeLineInput,
   StocktakeStatus,
@@ -10,10 +13,11 @@ import type {
   StocktakesPayload,
   StocktakesSummary
 } from '@alma/shared';
-import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { useAuth } from '../lib/auth';
 
 type FormState =
   | { mode: 'closed' }
@@ -65,6 +69,50 @@ function formatDateTimeInput(iso: string) {
 function formatQuantity(qty: number, unit: string | null) {
   const value = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);
   return unit ? `${value} ${unit}` : value;
+}
+
+function formatSignedQuantity(qty: number, unit: string | null) {
+  const sign = qty > 0 ? '+' : '';
+  return `${sign}${formatQuantity(qty, unit)}`;
+}
+
+function movementTypeLabel(type: StocktakeMovement['movementType']) {
+  switch (type) {
+    case 'STOCKTAKE_CORRECTION':
+      return 'Correction';
+    case 'STOCKTAKE_REVERSAL':
+      return 'Reversal';
+    case 'STOCKTAKE_ADJUSTMENT':
+    default:
+      return 'Approval';
+  }
+}
+
+function movementTone(type: StocktakeMovement['movementType']): 'info' | 'warning' | 'danger' {
+  if (type === 'STOCKTAKE_REVERSAL') return 'danger';
+  if (type === 'STOCKTAKE_CORRECTION') return 'warning';
+  return 'info';
+}
+
+function varianceSummary(detail: StocktakeWithLines) {
+  return detail.lines.reduce(
+    (summary, line) => {
+      if (!line.item) return summary;
+      const variance = line.countedQty - line.item.onHand;
+      summary.linkedLines += 1;
+      if (Math.abs(variance) > 0.0001) summary.varianceLines += 1;
+      if (variance > 0) summary.positiveAdjustments += variance;
+      if (variance < 0) summary.negativeAdjustments += variance;
+      return summary;
+    },
+    {
+      totalLines: detail.lines.length,
+      linkedLines: 0,
+      varianceLines: 0,
+      positiveAdjustments: 0,
+      negativeAdjustments: 0
+    }
+  );
 }
 
 function emptyLine(item?: StockItem): LineDraft {
@@ -126,6 +174,7 @@ function linePayload(line: LineDraft): StocktakeLineInput {
 
 export function StocktakePage() {
   useDocumentTitle('Stocktake');
+  const { user } = useAuth();
 
   const [data, setData] = useState<StocktakesPayload | null>(null);
   const [summary, setSummary] = useState<StocktakesSummary | null>(null);
@@ -141,6 +190,7 @@ export function StocktakePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const canManageReview = Boolean(user && (user.isAdmin || user.role === 'ADMIN' || user.role === 'MANAGER'));
 
   async function load() {
     setLoading(true);
@@ -179,8 +229,13 @@ export function StocktakePage() {
     [data, selectedIds]
   );
 
+  const selectableStocktakes = useMemo(
+    () => filtered.filter((stocktake) => !stocktake.appliedAt),
+    [filtered]
+  );
+
   const allVisibleSelected = Boolean(
-    filtered.length && filtered.every((stocktake) => selectedIds.has(stocktake.id))
+    selectableStocktakes.length && selectableStocktakes.every((stocktake) => selectedIds.has(stocktake.id))
   );
 
   async function toggleRow(stocktake: Stocktake) {
@@ -227,29 +282,45 @@ export function StocktakePage() {
     await load();
   }
 
+  async function refreshDetail(id: string) {
+    setDetailLoading(true);
+    setDetailError(null);
+    try {
+      const full = await api<StocktakeWithLines>(`/api/stocktake/${id}`);
+      setDetail(full);
+      await load();
+    } catch (err) {
+      setDetailError(err instanceof ApiError ? err.message : 'Could not refresh stocktake');
+    } finally {
+      setDetailLoading(false);
+    }
+  }
+
   async function applyStocktake(stocktake: Stocktake) {
     const confirmed = window.confirm(
-      `Apply "${stocktake.name}" to inventory balances?\n\nThis creates ledger movements and cannot be run twice.`
+      `Approve "${stocktake.name}" and apply variances to inventory balances?\n\nThis creates ledger movements and cannot be run twice.`
     );
     if (!confirmed) return;
 
     setApplyingId(stocktake.id);
     setError(null);
     try {
-      await api<ApplyStocktakeResult>(`/api/stocktake/${stocktake.id}/apply`, {
+      await api<ApplyStocktakeResult>(`/api/stocktake/${stocktake.id}/approve`, {
         method: 'POST'
       });
       setExpandedId(null);
       setDetail(null);
       await load();
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not apply stocktake');
+      setError(err instanceof ApiError ? err.message : 'Could not approve stocktake');
     } finally {
       setApplyingId(null);
     }
   }
 
   function toggleSelected(id: string) {
+    const stocktake = data?.stocktakes.find((item) => item.id === id);
+    if (stocktake?.appliedAt) return;
     setSelectedIds((current) => {
       const next = new Set(current);
       if (next.has(id)) {
@@ -264,10 +335,10 @@ export function StocktakePage() {
   function toggleAllVisible() {
     setSelectedIds((current) => {
       const next = new Set(current);
-      if (filtered.every((stocktake) => next.has(stocktake.id))) {
-        filtered.forEach((stocktake) => next.delete(stocktake.id));
+      if (selectableStocktakes.every((stocktake) => next.has(stocktake.id))) {
+        selectableStocktakes.forEach((stocktake) => next.delete(stocktake.id));
       } else {
-        filtered.forEach((stocktake) => next.add(stocktake.id));
+        selectableStocktakes.forEach((stocktake) => next.add(stocktake.id));
       }
       return next;
     });
@@ -283,7 +354,7 @@ export function StocktakePage() {
     const confirmed = window.confirm(
       `Delete ${ids.length} stocktake${ids.length === 1 ? '' : 's'}?` +
         (sampleNames ? `\n\n${sampleNames}${ids.length > 3 ? ', ...' : ''}` : '') +
-        '\n\nCount lines for deleted stocktakes will also be removed. This cannot be undone.'
+        '\n\nDraft and review count lines will also be removed. Applied stocktakes must be reversed instead of deleted.'
     );
     if (!confirmed) return;
 
@@ -399,6 +470,7 @@ export function StocktakePage() {
                           type="checkbox"
                           aria-label="Select visible stocktakes"
                           checked={allVisibleSelected}
+                          disabled={selectableStocktakes.length === 0}
                           onChange={toggleAllVisible}
                         />
                       </th>
@@ -430,6 +502,8 @@ export function StocktakePage() {
                                   type="checkbox"
                                   aria-label={`Select ${stocktake.name}`}
                                   checked={selectedIds.has(stocktake.id)}
+                                  disabled={Boolean(stocktake.appliedAt)}
+                                  title={stocktake.appliedAt ? 'Applied stocktakes cannot be deleted.' : undefined}
                                   onClick={(event) => event.stopPropagation()}
                                   onChange={() => toggleSelected(stocktake.id)}
                                 />
@@ -465,7 +539,7 @@ export function StocktakePage() {
                                       void applyStocktake(stocktake);
                                     }}
                                   >
-                                    {applyingId === stocktake.id ? 'Applying…' : 'Apply'}
+                                    {applyingId === stocktake.id ? 'Approving…' : 'Approve'}
                                   </Button>
                                 ) : null}
                                 <Button
@@ -487,7 +561,13 @@ export function StocktakePage() {
                                 <td colSpan={8}>
                                   {detailLoading ? <Spinner label="Loading lines" /> : null}
                                   {detailError ? <p className="error-text">{detailError}</p> : null}
-                                  {detail && detail.id === stocktake.id ? <StocktakeLinesTable detail={detail} /> : null}
+                                  {detail && detail.id === stocktake.id ? (
+                                    <StocktakeLinesTable
+                                      detail={detail}
+                                      canManageReview={canManageReview}
+                                      onChanged={() => void refreshDetail(stocktake.id)}
+                                    />
+                                  ) : null}
                                 </td>
                               </tr>
                             ) : null}
@@ -530,7 +610,9 @@ function StocktakeForm({
     initial ? draftFromStocktake(initial) : emptyDraft(items)
   );
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
+  const [feedbackTarget, setFeedbackTarget] = useState<'draft' | 'review'>('draft');
 
   const itemOptions = useMemo(
     () => [
@@ -565,15 +647,18 @@ function StocktakeForm({
     setDraft((current) => ({ ...current, lines: current.lines.filter((_, i) => i !== index) }));
   }
 
-  async function submit(status: StocktakeStatus) {
-    setError(null);
+  async function submit(status: StocktakeStatus, target: 'draft' | 'review') {
+    setFeedback(null);
+    setFeedbackTarget(target);
     if (!draft.name.trim()) {
-      setError('Stocktake name is required');
+      setFeedback('Stocktake name is required');
+      setFeedbackTone('error');
       return;
     }
     const lines = draft.lines.filter((line) => line.label.trim()).map(linePayload);
     if (lines.length === 0) {
-      setError('Add at least one count line');
+      setFeedback('Add at least one count line');
+      setFeedbackTone('error');
       return;
     }
 
@@ -600,9 +685,12 @@ function StocktakeForm({
           body: JSON.stringify(payload)
         });
       }
-      onSaved();
+      setFeedback(status === 'SUBMITTED' ? 'Stocktake marked ready for review.' : 'Stocktake draft saved.');
+      setFeedbackTone('success');
+      window.setTimeout(() => onSaved(), 500);
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save stocktake');
+      setFeedback(err instanceof ApiError ? err.message : 'Could not save stocktake');
+      setFeedbackTone('error');
     } finally {
       setSaving(false);
     }
@@ -613,7 +701,7 @@ function StocktakeForm({
       className="new-item-form"
       onSubmit={(event) => {
         event.preventDefault();
-        void submit(draft.status);
+        void submit(draft.status, 'draft');
       }}
     >
       <div className="form-grid three">
@@ -649,22 +737,31 @@ function StocktakeForm({
         ))}
       </div>
 
-      {error ? <p className="error-text">{error}</p> : null}
-
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="secondary" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
-        <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED')}>
+        <ActionFeedback message={feedbackTarget === 'draft' ? feedback : null} tone={feedbackTone} />
+        <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED', 'review')}>
           {saving ? 'Submitting…' : 'Mark ready for review'}
         </Button>
+        <ActionFeedback message={feedbackTarget === 'review' ? feedback : null} tone={feedbackTone} />
       </div>
     </form>
   );
 }
 
-function StocktakeLinesTable({ detail }: { detail: StocktakeWithLines }) {
+function StocktakeLinesTable({
+  detail,
+  canManageReview,
+  onChanged
+}: {
+  detail: StocktakeWithLines;
+  canManageReview: boolean;
+  onChanged: () => void;
+}) {
   if (detail.lines.length === 0) return <p className="subtle">This stocktake has no recorded lines.</p>;
 
+  const summary = varianceSummary(detail);
   const groups = new Map<string, typeof detail.lines>();
   for (const line of detail.lines) {
     const key = line.location ?? 'Other';
@@ -675,6 +772,32 @@ function StocktakeLinesTable({ detail }: { detail: StocktakeWithLines }) {
 
   return (
     <div className="recipe-lines">
+      {summary.linkedLines > 0 ? (
+        <div className="stocktake-variance-summary">
+          <div>
+            <span>Total lines</span>
+            <strong>{summary.totalLines}</strong>
+          </div>
+          <div>
+            <span>Linked lines</span>
+            <strong>{summary.linkedLines}</strong>
+          </div>
+          <div>
+            <span>Variance lines</span>
+            <strong>{summary.varianceLines}</strong>
+          </div>
+          <div>
+            <span>Positive adjustments</span>
+            <strong>{formatSignedQuantity(summary.positiveAdjustments, null)}</strong>
+          </div>
+          <div>
+            <span>Negative adjustments</span>
+            <strong>{formatSignedQuantity(summary.negativeAdjustments, null)}</strong>
+          </div>
+        </div>
+      ) : (
+        <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
+      )}
       {[...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([location, lines]) => (
         <div key={location} className="stocktake-line-group">
           <h4 className="stocktake-line-group-title">{location}</h4>
@@ -683,26 +806,326 @@ function StocktakeLinesTable({ detail }: { detail: StocktakeWithLines }) {
               <tr>
                 <th>Item</th>
                 <th>Qty</th>
+                <th>Current</th>
+                <th>Variance</th>
                 <th>Value</th>
               </tr>
             </thead>
             <tbody>
-              {lines.map((line) => (
-                <tr key={line.id}>
+              {lines.map((line) => {
+                const variance = line.item ? line.countedQty - line.item.onHand : null;
+                return (
+                  <tr key={line.id}>
+                    <td>
+                      <span className="cell-stack">
+                        <strong>{line.label}</strong>
+                        <span className="subtle">{line.item ? `Linked to ${line.item.name}` : 'Unlinked count'}</span>
+                      </span>
+                    </td>
+                    <td>{formatQuantity(line.countedQty, line.unit)}</td>
+                    <td>{line.item ? formatQuantity(line.item.onHand, line.unit ?? line.item.unit) : '—'}</td>
+                    <td>
+                      {variance === null ? (
+                        '—'
+                      ) : (
+                        <span className={variance === 0 ? 'subtle' : variance > 0 ? 'stocktake-variance-positive' : 'stocktake-variance-negative'}>
+                          {formatSignedQuantity(variance, line.unit ?? line.item?.unit ?? null)}
+                        </span>
+                      )}
+                    </td>
+                    <td>{line.stockValueCents === null ? '—' : formatCurrency(line.stockValueCents)}</td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      ))}
+      <StocktakeMovementReview
+        detail={detail}
+        canManageReview={canManageReview}
+        onChanged={onChanged}
+      />
+    </div>
+  );
+}
+
+type CorrectionDraftState = {
+  quantityAfter: string;
+  reason: string;
+  saving: boolean;
+  feedback: string | null;
+  feedbackTone: 'success' | 'error';
+};
+
+function StocktakeMovementReview({
+  detail,
+  canManageReview,
+  onChanged
+}: {
+  detail: StocktakeWithLines;
+  canManageReview: boolean;
+  onChanged: () => void;
+}) {
+  const [history, setHistory] = useState<StocktakeMovementHistoryPayload | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [corrections, setCorrections] = useState<Record<string, CorrectionDraftState>>({});
+  const [reversalReason, setReversalReason] = useState('');
+  const [reversing, setReversing] = useState(false);
+  const [reversalFeedback, setReversalFeedback] = useState<string | null>(null);
+  const [reversalTone, setReversalTone] = useState<'success' | 'error'>('success');
+
+  const linkedLines = useMemo(
+    () => detail.lines.filter((line) => line.itemId && line.item),
+    [detail.lines]
+  );
+
+  async function loadHistory() {
+    setLoading(true);
+    try {
+      const payload = await api<StocktakeMovementHistoryPayload>(`/api/stocktake/${detail.id}/movements`);
+      setHistory(payload);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load stocktake movement history');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadHistory();
+  }, [detail.id]);
+
+  useEffect(() => {
+    setCorrections((current) => {
+      const next: Record<string, CorrectionDraftState> = {};
+      for (const line of linkedLines) {
+        next[line.id] = current[line.id] ?? {
+          quantityAfter: String(line.item?.onHand ?? line.countedQty),
+          reason: '',
+          saving: false,
+          feedback: null,
+          feedbackTone: 'success'
+        };
+      }
+      return next;
+    });
+  }, [linkedLines]);
+
+  function updateCorrection(lineId: string, patch: Partial<CorrectionDraftState>) {
+    setCorrections((current) => ({
+      ...current,
+      [lineId]: {
+        ...(current[lineId] ?? {
+          quantityAfter: '',
+          reason: '',
+          saving: false,
+          feedback: null,
+          feedbackTone: 'success'
+        }),
+        ...patch
+      }
+    }));
+  }
+
+  async function submitCorrection(line: StocktakeWithLines['lines'][number]) {
+    const draft = corrections[line.id];
+    if (!draft) return;
+    updateCorrection(line.id, { feedback: null, saving: true });
+    try {
+      await api<StocktakeMovementResult>(`/api/stocktake/${detail.id}/corrections`, {
+        method: 'POST',
+        body: JSON.stringify({
+          corrections: [
+            {
+              sourceStocktakeLineId: line.id,
+              quantityAfter: Number(draft.quantityAfter || 0),
+              reason: draft.reason.trim()
+            }
+          ]
+        })
+      });
+      updateCorrection(line.id, {
+        feedback: 'Correction saved.',
+        feedbackTone: 'success',
+        saving: false
+      });
+      await loadHistory();
+      onChanged();
+    } catch (err) {
+      updateCorrection(line.id, {
+        feedback: err instanceof ApiError ? err.message : 'Could not save correction',
+        feedbackTone: 'error',
+        saving: false
+      });
+    }
+  }
+
+  async function reverseStocktake() {
+    const confirmed = window.confirm(
+      `Reverse "${detail.name}"?\n\nThis writes reversal movements and returns the stocktake to draft so it can be edited or deleted safely.`
+    );
+    if (!confirmed) return;
+
+    setReversing(true);
+    setReversalFeedback(null);
+    try {
+      await api<StocktakeMovementResult>(`/api/stocktake/${detail.id}/reverse`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: reversalReason.trim() })
+      });
+      setReversalFeedback('Reversal movements saved.');
+      setReversalTone('success');
+      await loadHistory();
+      onChanged();
+    } catch (err) {
+      setReversalFeedback(err instanceof ApiError ? err.message : 'Could not reverse stocktake');
+      setReversalTone('error');
+    } finally {
+      setReversing(false);
+    }
+  }
+
+  if (!loading && !history?.movements.length && !detail.appliedAt) return null;
+
+  const canChangeLedger = canManageReview && Boolean(detail.appliedAt) && Boolean(history?.canReverse);
+
+  return (
+    <div className="stocktake-review-panel">
+      <div className="stocktake-review-header">
+        <div>
+          <h4>Movement history</h4>
+          <p className="subtle">Ledger records created from approval, corrections and reversals.</p>
+        </div>
+        {history?.hasReversal ? (
+          <Badge tone="danger" dot>Reversed</Badge>
+        ) : detail.appliedAt ? (
+          <Badge tone="info" dot>Applied</Badge>
+        ) : (
+          <Badge tone="warning" dot>Draft after reversal</Badge>
+        )}
+      </div>
+
+      {loading ? <Spinner label="Loading movement history" /> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+
+      {history?.movements.length ? (
+        <div className="stocktake-table-scroll">
+          <table className="recipe-lines-table stocktake-movement-table">
+            <thead>
+              <tr>
+                <th>Date</th>
+                <th>Type</th>
+                <th>Item</th>
+                <th>Line</th>
+                <th>Before</th>
+                <th>Delta</th>
+                <th>After</th>
+                <th>Notes</th>
+              </tr>
+            </thead>
+            <tbody>
+              {history.movements.map((movement) => (
+                <tr key={movement.id}>
+                  <td>{formatDate(movement.createdAt)}</td>
                   <td>
-                    <span className="cell-stack">
-                      <strong>{line.label}</strong>
-                      <span className="subtle">{line.item ? `Linked to ${line.item.name}` : 'Unlinked count'}</span>
+                    <Badge tone={movementTone(movement.movementType)}>{movementTypeLabel(movement.movementType)}</Badge>
+                  </td>
+                  <td>{movement.item?.name ?? movement.itemId}</td>
+                  <td>{movement.sourceStocktakeLine?.label ?? 'Stocktake'}</td>
+                  <td>{formatQuantity(movement.quantityBefore, movement.unit)}</td>
+                  <td>
+                    <span className={movement.quantityDelta === 0 ? 'subtle' : movement.quantityDelta > 0 ? 'stocktake-variance-positive' : 'stocktake-variance-negative'}>
+                      {formatSignedQuantity(movement.quantityDelta, movement.unit)}
                     </span>
                   </td>
-                  <td>{formatQuantity(line.countedQty, line.unit)}</td>
-                  <td>{line.stockValueCents === null ? '—' : formatCurrency(line.stockValueCents)}</td>
+                  <td>{formatQuantity(movement.quantityAfter, movement.unit)}</td>
+                  <td>{movement.notes ?? '—'}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      ))}
+      ) : (
+        <p className="subtle">No ledger movements have been created for this stocktake yet.</p>
+      )}
+
+      {detail.appliedAt && !history?.hasReversal ? (
+        <div className="stocktake-review-actions">
+          <div className="stocktake-correction-list">
+            <h4>Ledger-backed corrections</h4>
+            {!canManageReview ? (
+              <p className="subtle">Manager access is required to correct applied stocktakes.</p>
+            ) : linkedLines.length === 0 ? (
+              <p className="subtle">No linked stock items are available for corrections.</p>
+            ) : (
+              linkedLines.map((line) => {
+                const draft = corrections[line.id];
+                return (
+                  <div key={line.id} className="stocktake-correction-row">
+                    <span className="cell-stack">
+                      <strong>{line.label}</strong>
+                      <span className="subtle">Current: {formatQuantity(line.item?.onHand ?? 0, line.unit ?? line.item?.unit ?? null)}</span>
+                    </span>
+                    <Input
+                      label="Correct to"
+                      type="number"
+                      step="0.01"
+                      value={draft?.quantityAfter ?? ''}
+                      disabled={!canChangeLedger}
+                      onChange={(event) => updateCorrection(line.id, { quantityAfter: event.currentTarget.value })}
+                    />
+                    <Input
+                      label="Reason"
+                      value={draft?.reason ?? ''}
+                      disabled={!canChangeLedger}
+                      onChange={(event) => updateCorrection(line.id, { reason: event.currentTarget.value })}
+                      placeholder="e.g. recount found one extra"
+                    />
+                    <div className="stocktake-inline-action">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={!canChangeLedger || draft?.saving}
+                        onClick={() => void submitCorrection(line)}
+                      >
+                        {draft?.saving ? 'Saving...' : 'Save correction'}
+                      </Button>
+                      <ActionFeedback message={draft?.feedback} tone={draft?.feedbackTone} />
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+
+          <div className="stocktake-reversal-box">
+            <h4>Reverse approval</h4>
+            <p className="subtle">Use this when the approved count needs to be edited or deleted. It creates reversal movements first.</p>
+            <Input
+              label="Reason"
+              value={reversalReason}
+              disabled={!canChangeLedger || reversing}
+              onChange={(event) => setReversalReason(event.currentTarget.value)}
+              placeholder="e.g. wrong stocktake approved"
+            />
+            <div className="stocktake-inline-action">
+              <Button
+                type="button"
+                variant="danger"
+                disabled={!canChangeLedger || reversing}
+                onClick={() => void reverseStocktake()}
+              >
+                {reversing ? 'Reversing...' : 'Create reversal'}
+              </Button>
+              <ActionFeedback message={reversalFeedback} tone={reversalTone} />
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

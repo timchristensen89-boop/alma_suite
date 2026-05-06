@@ -1,14 +1,16 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { ALMA_COMPLIANCE_DOCUMENTS, type AppSettingsPayload } from '@alma/shared';
-import { Badge, Button, Card, EmptyState, Input, Spinner } from '@alma/ui';
+import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Spinner } from '@alma/ui';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
+import { STAFF_WEB_URL } from '../config/suiteLinks';
 import { IconArrowRight, IconHandbook, IconPlus, IconRefresh } from '../lib/icons';
 
 type Venue = AppSettingsPayload['venues'][number];
 
 type Tab = 'org' | 'venues' | 'integrations' | 'notifications' | 'handbook' | 'account';
+type SettingsFeedback = { message: string | null; tone: 'success' | 'error' };
 
 const TABS: { key: Tab; label: string; adminOnly?: boolean }[] = [
   { key: 'org', label: 'Organisation', adminOnly: true },
@@ -31,6 +33,7 @@ export function SettingsPage() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ok, setOk] = useState<string | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<string | null>(null);
 
   async function load() {
     setLoading(true);
@@ -52,10 +55,12 @@ export function SettingsPage() {
     () => TABS.filter((t) => !t.adminOnly || user?.isAdmin),
     [user?.isAdmin]
   );
+  const adminHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/admin` : '';
 
-  async function save(patch: Partial<AppSettingsPayload>) {
+  async function save(patch: Partial<AppSettingsPayload>, target: string) {
     if (!settings) return;
     setSaving(true);
+    setFeedbackTarget(target);
     setError(null);
     setOk(null);
     try {
@@ -65,7 +70,10 @@ export function SettingsPage() {
       });
       setSettings(data);
       setOk('Saved');
-      window.setTimeout(() => setOk(null), 1800);
+      window.setTimeout(() => {
+        setOk(null);
+        setFeedbackTarget(null);
+      }, 1800);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed');
     } finally {
@@ -98,19 +106,45 @@ export function SettingsPage() {
     );
   }
 
+  const feedbackFor = (target: string): SettingsFeedback | undefined =>
+    feedbackTarget === target ? { message: error ?? ok, tone: error ? 'error' : 'success' } : undefined;
+
   return (
     <div className="page-stack">
       <section className="hero">
         <div className="hero-text">
           <p className="page-header-eyebrow">Settings</p>
           <h1>{settings.orgName}</h1>
-          <p>Manage venues, integrations, notifications, and your account.</p>
+          <p>Major suite settings now live in ALMA Admin. Compliance keeps account access and compliance-specific handbook/document links here.</p>
         </div>
         <div className="hero-actions">
-          {ok ? <Badge tone="positive" dot>{ok}</Badge> : null}
+          {user?.isAdmin && adminHref ? (
+            <Button type="button" onClick={() => { window.location.href = adminHref; }}>
+              Open ALMA Admin
+            </Button>
+          ) : null}
+          {ok && !feedbackTarget ? <Badge tone="positive" dot>{ok}</Badge> : null}
           {saving ? <Badge tone="info">Saving…</Badge> : null}
         </div>
       </section>
+
+      {user?.isAdmin ? (
+        <Card
+          title="Suite settings moved to ALMA Admin"
+          subtitle="Organisation details, venues, notifications, integrations, onboarding rules, and app access are managed from one admin surface."
+          action={
+            adminHref ? (
+              <Button type="button" variant="secondary" onClick={() => { window.location.href = adminHref; }}>
+                Open Admin
+              </Button>
+            ) : undefined
+          }
+        >
+          <p className="subtle">
+            This page remains available for your account password and Compliance handbook/document shortcuts while the shared settings are centralised.
+          </p>
+        </Card>
+      ) : null}
 
       <div className="settings-tabs">
         {visibleTabs.map((t) => (
@@ -125,19 +159,19 @@ export function SettingsPage() {
         ))}
       </div>
 
-      {error ? (
+      {error && !feedbackTarget ? (
         <Card>
           <p className="error-text">{error}</p>
         </Card>
       ) : null}
 
-      {tab === 'org' && user?.isAdmin ? <OrgTab settings={settings} onSave={save} /> : null}
-      {tab === 'venues' && user?.isAdmin ? <VenuesTab settings={settings} onSave={save} /> : null}
+      {tab === 'org' && user?.isAdmin ? <OrgTab settings={settings} onSave={save} feedback={feedbackFor('org')} /> : null}
+      {tab === 'venues' && user?.isAdmin ? <VenuesTab settings={settings} onSave={save} feedback={feedbackFor('venues')} /> : null}
       {tab === 'integrations' && user?.isAdmin ? (
-        <IntegrationsTab settings={settings} onSave={save} />
+        <IntegrationsTab settings={settings} onSave={save} feedback={feedbackFor('integrations')} />
       ) : null}
       {tab === 'notifications' && user?.isAdmin ? (
-        <NotificationsTab settings={settings} onSave={save} />
+        <NotificationsTab settings={settings} onSave={save} feedback={feedbackFor('notifications')} />
       ) : null}
       {tab === 'handbook' && user?.isAdmin ? <HandbookTab /> : null}
       {tab === 'account' ? <AccountTab /> : null}
@@ -148,10 +182,12 @@ export function SettingsPage() {
 /* ---------- Organisation ---------- */
 function OrgTab({
   settings,
-  onSave
+  onSave,
+  feedback
 }: {
   settings: AppSettingsPayload;
-  onSave: (patch: Partial<AppSettingsPayload>) => void;
+  onSave: (patch: Partial<AppSettingsPayload>, target: string) => void;
+  feedback?: SettingsFeedback;
 }) {
   const [orgName, setOrgName] = useState(settings.orgName);
   const [name, setName] = useState(settings.primaryContactName ?? '');
@@ -165,7 +201,7 @@ function OrgTab({
       primaryContactName: name,
       primaryContactEmail: email,
       primaryContactPhone: phone
-    });
+    }, 'org');
   }
 
   return (
@@ -177,6 +213,7 @@ function OrgTab({
         <Input label="Primary contact phone" value={phone} onChange={(e) => setPhone(e.currentTarget.value)} />
         <div className="inline-actions">
           <Button type="submit">Save</Button>
+          <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
       </form>
     </Card>
@@ -186,10 +223,12 @@ function OrgTab({
 /* ---------- Venues ---------- */
 function VenuesTab({
   settings,
-  onSave
+  onSave,
+  feedback
 }: {
   settings: AppSettingsPayload;
-  onSave: (patch: Partial<AppSettingsPayload>) => void;
+  onSave: (patch: Partial<AppSettingsPayload>, target: string) => void;
+  feedback?: SettingsFeedback;
 }) {
   const [venues, setVenues] = useState<Venue[]>(settings.venues);
 
@@ -207,7 +246,7 @@ function VenuesTab({
 
   function submit(event: FormEvent) {
     event.preventDefault();
-    onSave({ venues: venues.filter((v) => v.name.trim()) });
+    onSave({ venues: venues.filter((v) => v.name.trim()) }, 'venues');
   }
 
   return (
@@ -250,6 +289,7 @@ function VenuesTab({
         )}
         <div className="inline-actions">
           <Button type="submit">Save venues</Button>
+          <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
       </form>
     </Card>
@@ -259,10 +299,12 @@ function VenuesTab({
 /* ---------- Integrations ---------- */
 function IntegrationsTab({
   settings,
-  onSave
+  onSave,
+  feedback
 }: {
   settings: AppSettingsPayload;
-  onSave: (patch: Partial<AppSettingsPayload>) => void;
+  onSave: (patch: Partial<AppSettingsPayload>, target: string) => void;
+  feedback?: SettingsFeedback;
 }) {
   const [key, setKey] = useState(settings.goveeApiKey ?? '');
   const [baseUrl, setBaseUrl] = useState(settings.goveeBaseUrl ?? 'https://openapi.api.govee.com');
@@ -273,7 +315,7 @@ function IntegrationsTab({
       // Only send the key if it was edited away from the masked value.
       goveeApiKey: key === (settings.goveeApiKey ?? '') ? undefined : key,
       goveeBaseUrl: baseUrl
-    });
+    }, 'integrations');
   }
 
   return (
@@ -293,6 +335,7 @@ function IntegrationsTab({
         />
         <div className="inline-actions">
           <Button type="submit">Save</Button>
+          <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
       </form>
     </Card>
@@ -302,10 +345,12 @@ function IntegrationsTab({
 /* ---------- Notifications ---------- */
 function NotificationsTab({
   settings,
-  onSave
+  onSave,
+  feedback
 }: {
   settings: AppSettingsPayload;
-  onSave: (patch: Partial<AppSettingsPayload>) => void;
+  onSave: (patch: Partial<AppSettingsPayload>, target: string) => void;
+  feedback?: SettingsFeedback;
 }) {
   const [email, setEmail] = useState(settings.notifyEmail ?? '');
   const [overdue, setOverdue] = useState(settings.notifyOverdueIssues);
@@ -319,7 +364,7 @@ function NotificationsTab({
       notifyOverdueIssues: overdue,
       notifyExpiringStaff: staff,
       notifyOutOfRangeTemp: temp
-    });
+    }, 'notifications');
   }
 
   return (
@@ -345,6 +390,7 @@ function NotificationsTab({
         </label>
         <div className="inline-actions">
           <Button type="submit">Save</Button>
+          <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
       </form>
     </Card>
@@ -536,12 +582,11 @@ function AccountTab() {
             onChange={(e) => setConfirm(e.currentTarget.value)}
             required
           />
-          {err ? <p className="error-text">{err}</p> : null}
-          {done ? <p className="success-text">{done}</p> : null}
           <div className="inline-actions">
             <Button type="submit" disabled={submitting}>
               {submitting ? 'Updating…' : 'Update password'}
             </Button>
+            <ActionFeedback message={err ?? done} tone={err ? 'error' : 'success'} />
           </div>
         </form>
       </Card>

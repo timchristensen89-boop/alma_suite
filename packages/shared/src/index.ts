@@ -20,6 +20,11 @@ export const temperatureLogStatusSchema = z.enum(['IN_RANGE', 'OUT_OF_RANGE']);
 export const stockItemStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const supplierStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED']);
+export const stockInvoiceMatchingStatusSchema = z.enum([
+  'AUTO_MATCHED',
+  'MANUAL_MATCHED',
+  'NEEDS_REVIEW'
+]);
 export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);
@@ -277,8 +282,53 @@ export const staffAppAccessInputSchema = z.object({
     appId: almaAppIdSchema,
     status: staffAppAccessStatusSchema,
     role: z.string().min(1).default('USER'),
+    permissions: z.record(z.string(), z.boolean()).optional().default({}),
     notes: z.string().optional().or(z.literal(''))
   }))
+});
+
+export const suiteAnnouncementInputSchema = z.object({
+  title: z.string().min(2),
+  body: z.string().min(1),
+  audience: z.string().optional().or(z.literal('')).default('ALL'),
+  appId: almaAppIdSchema.optional(),
+  venue: z.string().optional().or(z.literal('')),
+  pinned: z.boolean().optional().default(false),
+  expiresAt: z.string().optional().or(z.literal(''))
+});
+
+export const suiteAnnouncementUpdateSchema = suiteAnnouncementInputSchema.partial();
+
+export const suiteChatChannelTypeSchema = z.enum(['GENERAL', 'VENUE', 'AREA', 'GROUP', 'DIRECT']);
+
+export const suiteChatChannelInputSchema = z.object({
+  name: z.string().min(2).max(80),
+  description: z.string().max(240).optional().or(z.literal('')),
+  channelKey: z.string().max(120).optional().or(z.literal('')),
+  type: suiteChatChannelTypeSchema.default('GROUP'),
+  appId: almaAppIdSchema.optional(),
+  venue: z.string().optional().or(z.literal('')),
+  groupKey: z.string().max(80).optional().or(z.literal('')),
+  isActive: z.boolean().optional().default(true),
+  readPermission: z.string().max(80).optional().or(z.literal('')),
+  postPermission: z.string().max(80).optional().or(z.literal('')),
+  directMessagesAllowed: z.boolean().optional().default(false)
+});
+
+export const suiteChatChannelUpdateSchema = suiteChatChannelInputSchema.partial();
+
+export const suiteChatMessageInputSchema = z.object({
+  channel: z.string().optional().or(z.literal('')).default('general'),
+  channelId: z.string().optional().or(z.literal('')),
+  channelType: suiteChatChannelTypeSchema.optional(),
+  appId: almaAppIdSchema.optional(),
+  venue: z.string().optional().or(z.literal('')),
+  recipientId: z.string().optional().or(z.literal('')),
+  body: z.string().min(1).max(2000)
+});
+
+export const suiteChatMessageUpdateSchema = z.object({
+  body: z.string().min(1).max(2000)
 });
 
 export const rosterShiftInputSchema = z.object({
@@ -528,6 +578,7 @@ export const giftCardCheckoutInputSchema = z.object({
   recipientName: z.string().optional().or(z.literal('')),
   recipientEmail: z.string().email().optional().or(z.literal('')),
   message: z.string().max(500).optional().or(z.literal('')),
+  promoCode: z.string().max(40).optional().or(z.literal('')),
   successUrl: z.string().url().optional().or(z.literal('')),
   cancelUrl: z.string().url().optional().or(z.literal(''))
 });
@@ -547,6 +598,86 @@ export const giftCardCancelInputSchema = z.object({
   reason: z.string().min(3).max(500),
   refundNote: z.string().max(500).optional().or(z.literal(''))
 });
+
+export const giftCardPromoDiscountTypeSchema = z.enum(['PERCENT', 'FIXED_AMOUNT']);
+
+export const giftCardPromoCodeInputSchema = z.object({
+  code: z.string().min(3).max(40),
+  description: z.string().max(160).optional().or(z.literal('')),
+  discountType: giftCardPromoDiscountTypeSchema,
+  percentOff: z.coerce.number().int().min(1).max(95).optional(),
+  amountOffCents: z.coerce.number().int().min(100).max(200000).optional(),
+  isActive: z.boolean().optional().default(true),
+  startsAt: z.string().optional().or(z.literal('')),
+  expiresAt: z.string().optional().or(z.literal('')),
+  maxRedemptions: z.coerce.number().int().min(1).max(100000).optional()
+});
+
+export const giftCardPromoCodeUpdateSchema = giftCardPromoCodeInputSchema.partial();
+
+export const giftCardPromoQuoteInputSchema = z.object({
+  code: z.string().min(3).max(40),
+  amountCents: z.coerce.number().int().min(1000).max(200000)
+});
+
+const giftCardImageSettingSchema = z
+  .string()
+  .max(4_500_000)
+  .refine(
+    (value) =>
+      value === '' ||
+      /^https?:\/\/.+/i.test(value) ||
+      /^\/.+/.test(value) ||
+      /^data:image\/(png|jpeg|jpg|webp|gif|svg\+xml);base64,/i.test(value),
+    'Use a public image URL, a local image path, or an uploaded image.'
+  );
+
+export const giftCardSettingsInputSchema = z.object({
+  testCheckoutEnabled: z.boolean().optional(),
+  publicHeadline: z.string().min(4).max(90).optional(),
+  publicSubheading: z.string().min(10).max(220).optional(),
+  heroImageUrl: giftCardImageSettingSchema.optional().or(z.literal('')),
+  artworkUrl: giftCardImageSettingSchema.optional().or(z.literal('')),
+  emailSubject: z.string().min(4).max(120).optional(),
+  emailIntro: z.string().min(4).max(240).optional(),
+  primaryColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional(),
+  accentColor: z.string().regex(/^#[0-9a-f]{6}$/i).optional()
+});
+
+export type GiftCardSettings = {
+  testCheckoutEnabled: boolean;
+  publicHeadline: string;
+  publicSubheading: string;
+  heroImageUrl: string;
+  artworkUrl: string;
+  emailSubject: string;
+  emailIntro: string;
+  primaryColor: string;
+  accentColor: string;
+};
+
+export const DEFAULT_GIFT_CARD_SETTINGS: GiftCardSettings = {
+  testCheckoutEnabled: false,
+  publicHeadline: 'Gift a good table.',
+  publicSubheading: 'Send lunch, dinner, margaritas or a celebration across Alma Avalon and St Alma. Choose a set amount or enter your own.',
+  heroImageUrl: '/images/st-alma-food.JPG',
+  artworkUrl: '/images/fish.png',
+  emailSubject: 'Your ALMA gift card {{code}}',
+  emailIntro: 'Your ALMA gift card is ready.',
+  primaryColor: '#1f3524',
+  accentColor: '#b98216'
+};
+
+export function normaliseGiftCardSettings(input: unknown): GiftCardSettings {
+  const parsed = giftCardSettingsInputSchema.partial().safeParse(input);
+  const patch = parsed.success ? parsed.data : {};
+  return {
+    ...DEFAULT_GIFT_CARD_SETTINGS,
+    ...Object.fromEntries(
+      Object.entries(patch).filter(([, value]) => value !== undefined && value !== '')
+    )
+  };
+}
 
 export const staffTrainingAssignInputSchema = z.object({
   staffProfileId: z.string().min(1),
@@ -635,7 +766,7 @@ export type AuthUser = {
   venue: string | null;
   isAdmin: boolean;
   role: 'ADMIN' | 'MANAGER' | 'STAFF';
-  appAccess: Array<Pick<StaffAppAccess, 'appId' | 'status' | 'role'>>;
+  appAccess: Array<Pick<StaffAppAccess, 'appId' | 'status' | 'role' | 'permissions'>>;
 };
 
 export type AppSettingsPayload = {
@@ -774,6 +905,9 @@ export type TemperatureLogStatus = z.infer<typeof temperatureLogStatusSchema>;
 export type StockItemStatus = z.infer<typeof stockItemStatusSchema>;
 export type SupplierStatus = z.infer<typeof supplierStatusSchema>;
 export type StocktakeStatus = z.infer<typeof stocktakeStatusSchema>;
+export type StockInvoiceMatchingStatus = z.infer<
+  typeof stockInvoiceMatchingStatusSchema
+>;
 export type AlmaAppId = z.infer<typeof almaAppIdSchema>;
 export type StaffAppAccessStatus = z.infer<typeof staffAppAccessStatusSchema>;
 export type RosterShiftStatus = z.infer<typeof rosterShiftStatusSchema>;
@@ -810,7 +944,6 @@ export type GiftCardCheckoutInput = z.infer<typeof giftCardCheckoutInputSchema>;
 export type GiftCardLookupInput = z.infer<typeof giftCardLookupInputSchema>;
 export type GiftCardRedemptionInput = z.infer<typeof giftCardRedemptionInputSchema>;
 export type GiftCardCancelInput = z.infer<typeof giftCardCancelInputSchema>;
-
 export type IssueEvidence = {
   id: string;
   issueId: string;
@@ -876,10 +1009,85 @@ export type StaffAppAccess = {
   appId: AlmaAppId;
   status: StaffAppAccessStatus;
   role: string;
+  permissions: Record<string, boolean>;
   notes: string | null;
   createdAt: string;
   updatedAt: string;
 };
+
+export type SuiteAnnouncement = {
+  id: string;
+  title: string;
+  body: string;
+  audience: string;
+  appId: AlmaAppId | null;
+  venue: string | null;
+  pinned: boolean;
+  createdById: string | null;
+  createdByName: string | null;
+  updatedById: string | null;
+  updatedByName: string | null;
+  deletedAt: string | null;
+  deletedById: string | null;
+  deletedByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  expiresAt: string | null;
+};
+
+export type SuiteChatChannelType = z.infer<typeof suiteChatChannelTypeSchema>;
+
+export type SuiteChatChannel = {
+  id: string;
+  name: string;
+  description: string | null;
+  channelKey: string;
+  type: SuiteChatChannelType;
+  appId: AlmaAppId | null;
+  venue: string | null;
+  groupKey: string | null;
+  isActive: boolean;
+  readPermission: string | null;
+  postPermission: string | null;
+  directMessagesAllowed: boolean;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type SuiteChatMessage = {
+  id: string;
+  channelId: string | null;
+  channel: string;
+  channelType: SuiteChatChannelType;
+  appId: AlmaAppId | null;
+  venue: string | null;
+  recipientId: string | null;
+  recipientName: string | null;
+  body: string;
+  createdById: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  updatedAt: string;
+  editedAt: string | null;
+  deletedAt: string | null;
+  deletedById: string | null;
+  deletedByName: string | null;
+};
+
+export type SuiteCommunicationsPayload = {
+  announcements: SuiteAnnouncement[];
+  channels: SuiteChatChannel[];
+  chat: SuiteChatMessage[];
+};
+
+export type SuiteAnnouncementInput = z.infer<typeof suiteAnnouncementInputSchema>;
+export type SuiteAnnouncementUpdateInput = z.infer<typeof suiteAnnouncementUpdateSchema>;
+export type SuiteChatChannelInput = z.infer<typeof suiteChatChannelInputSchema>;
+export type SuiteChatChannelUpdateInput = z.infer<typeof suiteChatChannelUpdateSchema>;
+export type SuiteChatMessageInput = z.infer<typeof suiteChatMessageInputSchema>;
+export type SuiteChatMessageUpdateInput = z.infer<typeof suiteChatMessageUpdateSchema>;
 
 export type RosterShift = {
   id: string;
@@ -937,6 +1145,55 @@ export type SalesActualSummary = {
     venue: string;
     salesCents: number;
     days: number;
+  }>;
+};
+
+export type StaffManagerDashboardPayload = {
+  date: string;
+  venue: string;
+  generatedAt: string;
+  totals: {
+    salesCents: number;
+    actualWageCents: number;
+    rosterWageCents: number;
+    actualHours: number;
+    rosterHours: number;
+    wagePercent: number | null;
+    pendingTimesheets: number;
+    lowStockItems: number;
+    openIssues: number;
+    criticalIssues: number;
+  };
+  salesByVenue: Array<{
+    venue: string;
+    salesCents: number;
+  }>;
+  wagesByVenue: Array<{
+    venue: string;
+    actualWageCents: number;
+    rosterWageCents: number;
+    actualHours: number;
+    rosterHours: number;
+  }>;
+  pendingTimesheets: Timesheet[];
+  lowStock: Array<{
+    id: string;
+    name: string;
+    unit: string;
+    onHand: number;
+    parLevel: number;
+    reorderPoint: number | null;
+    categoryName: string | null;
+  }>;
+  complianceIssues: Array<{
+    id: string;
+    title: string;
+    severity: IssueSeverity;
+    status: IssueStatus;
+    category: string;
+    assignee: string | null;
+    dueDate: string | null;
+    createdAt: string;
   }>;
 };
 
@@ -1088,18 +1345,42 @@ export type GiftCardRedemption = {
   createdAt: string;
 };
 
+export type GiftCardPromoDiscountType = z.infer<typeof giftCardPromoDiscountTypeSchema>;
+
+export type GiftCardPromoCode = {
+  id: string;
+  code: string;
+  description: string | null;
+  discountType: GiftCardPromoDiscountType;
+  percentOff: number | null;
+  amountOffCents: number | null;
+  isActive: boolean;
+  startsAt: string | null;
+  expiresAt: string | null;
+  maxRedemptions: number | null;
+  confirmedRedemptions: number;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type GiftCard = {
   id: string;
   code: string;
   status: GiftCardStatus;
   initialValueCents: number;
   balanceCents: number;
+  discountCents: number;
+  amountPaidCents: number | null;
   currency: string;
   purchaserName: string;
   purchaserEmail: string;
   recipientName: string | null;
   recipientEmail: string | null;
   message: string | null;
+  promoCodeId: string | null;
+  promoCodeSnapshot: string | null;
+  testMode: boolean;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
   emailedAt: string | null;
@@ -1128,12 +1409,22 @@ export type GiftCardPublic = Pick<
   | 'expiresAt'
   | 'emailedAt'
   | 'emailError'
->;
+> & {
+  discountCents: number;
+  amountPaidCents: number | null;
+  promoCodeSnapshot: string | null;
+  testMode: boolean;
+  qrCodeUrl: string;
+  redeemUrl: string;
+};
 
 export type GiftCardCheckoutResult = {
   giftCardId: string;
   checkoutUrl: string;
   checkoutSessionId: string;
+  testMode?: boolean;
+  discountCents?: number;
+  amountPaidCents?: number;
 };
 
 export type GiftCardOverview = {
@@ -1142,9 +1433,22 @@ export type GiftCardOverview = {
     active: number;
     pending: number;
     redeemed: number;
+    test: number;
     activeBalanceCents: number;
     soldValueCents: number;
   };
+};
+
+export type GiftCardPromoQuote = {
+  code: string;
+  description: string | null;
+  discountCents: number;
+  amountDueCents: number;
+};
+
+export type GiftCardAdminSettingsResponse = {
+  settings: GiftCardSettings;
+  canManagePromoCodes: boolean;
 };
 
 export type Timesheet = {
@@ -1795,6 +2099,115 @@ export type SupplierUpdateInput = z.infer<typeof supplierUpdateInputSchema>;
 export type SupplierBulkDeleteInput = z.infer<typeof supplierBulkDeleteInputSchema>;
 
 /* ------------------------------------------------------------------------- */
+/* Supplier invoices                                                          */
+/* ------------------------------------------------------------------------- */
+
+export type StockSupplierInvoiceLine = {
+  id: string;
+  supplierInvoiceId: string;
+  lineNumber: number;
+  lineKey: string;
+  externalLineId: string | null;
+  description: string;
+  itemCode: string | null;
+  accountCode: string | null;
+  quantity: number;
+  unit: string | null;
+  unitAmountCents: number;
+  lineAmountCents: number;
+  taxAmountCents: number;
+  itemId: string | null;
+  item: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
+  matchingStatus: StockInvoiceMatchingStatus;
+  notes: string | null;
+  costAppliedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StockSupplierInvoice = {
+  id: string;
+  source: string;
+  invoiceKey: string;
+  externalInvoiceId: string | null;
+  invoiceNumber: string | null;
+  supplierId: string | null;
+  supplierName: string;
+  supplierEmail: string | null;
+  venue: string | null;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  currencyCode: string;
+  status: string;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  sourceFileName: string | null;
+  sourceFileType: string | null;
+  importedAt: string;
+  createdAt: string;
+  updatedAt: string;
+  lineCount: number;
+  matchedLineCount: number;
+  needsReviewLineCount: number;
+  lines?: StockSupplierInvoiceLine[];
+};
+
+export type StockInvoicesPayload = {
+  invoices: StockSupplierInvoice[];
+};
+
+export type StockInvoicesSummary = {
+  totalInvoices: number;
+  needsReviewInvoices: number;
+  needsReviewLines: number;
+  matchedLines: number;
+  importedThisWeek: number;
+};
+
+export type StockInvoiceImportResult = {
+  importedCount: number;
+  createdCount: number;
+  updatedCount: number;
+  lineCount: number;
+  matchedLineCount: number;
+  needsReviewLineCount: number;
+  warnings: string[];
+  invoices: StockSupplierInvoice[];
+};
+
+export type StockInvoiceRipResult = {
+  invoices: Record<string, unknown>[];
+  warnings: string[];
+};
+
+export const stockInvoiceImportInputSchema = z.object({
+  source: z.string().min(1).default('XERO'),
+  venue: z.string().optional().or(z.literal('')),
+  sourceFileName: z.string().optional().or(z.literal('')),
+  sourceFileType: z.string().optional().or(z.literal('')),
+  sourceMetadata: z.record(z.unknown()).optional(),
+  invoices: z.array(z.record(z.unknown())).min(1, 'At least one invoice is required')
+});
+
+export const stockInvoiceRipInputSchema = z.object({
+  text: z.string().min(10, 'Paste the invoice text first'),
+  venue: z.string().optional().or(z.literal('')),
+  sourceFileName: z.string().optional().or(z.literal(''))
+});
+
+export const stockInvoiceLineRematchInputSchema = z.object({
+  itemId: z.string().min(1, 'Choose a stock item').or(z.literal('')),
+  notes: z.string().optional().or(z.literal(''))
+});
+
+export type StockInvoiceImportInput = z.infer<typeof stockInvoiceImportInputSchema>;
+export type StockInvoiceRipInput = z.infer<typeof stockInvoiceRipInputSchema>;
+export type StockInvoiceLineRematchInput = z.infer<
+  typeof stockInvoiceLineRematchInputSchema
+>;
+
+/* ------------------------------------------------------------------------- */
 /* Recipes                                                                    */
 /* ------------------------------------------------------------------------- */
 
@@ -1909,7 +2322,7 @@ export type StocktakeLine = {
   legacyId: string | null;
   stocktakeId: string;
   itemId: string | null;
-  item: { id: string; name: string; unit: string } | null;
+  item: { id: string; name: string; unit: string; onHand: number } | null;
   position: number;
   label: string;
   countedQty: number;
@@ -1976,14 +2389,36 @@ export const stocktakeBulkDeleteInputSchema = z.object({
   ids: z.array(z.string().min(1)).min(1, 'Select at least one stocktake')
 });
 
+export const inventoryMovementTypeSchema = z.enum([
+  'STOCKTAKE_ADJUSTMENT',
+  'STOCKTAKE_CORRECTION',
+  'STOCKTAKE_REVERSAL'
+]);
+
+export const stocktakeCorrectionLineInputSchema = z.object({
+  sourceStocktakeLineId: z.string().min(1, 'Select a stocktake line'),
+  quantityAfter: z.coerce.number(),
+  reason: z.string().min(3, 'Add a short correction reason')
+});
+
+export const stocktakeCorrectionInputSchema = z.object({
+  corrections: z.array(stocktakeCorrectionLineInputSchema).min(1, 'Add at least one correction')
+});
+
+export const stocktakeReversalInputSchema = z.object({
+  reason: z.string().optional().or(z.literal(''))
+});
+
 export type StocktakeLineInput = z.infer<typeof stocktakeLineInputSchema>;
 export type StocktakeCreateInput = z.infer<typeof stocktakeCreateInputSchema>;
 export type StocktakeUpdateInput = z.infer<typeof stocktakeUpdateInputSchema>;
 export type StocktakeBulkDeleteInput = z.infer<
   typeof stocktakeBulkDeleteInputSchema
 >;
+export type StocktakeCorrectionInput = z.infer<typeof stocktakeCorrectionInputSchema>;
+export type StocktakeReversalInput = z.infer<typeof stocktakeReversalInputSchema>;
 
-export type InventoryMovementType = 'STOCKTAKE_ADJUSTMENT';
+export type InventoryMovementType = z.infer<typeof inventoryMovementTypeSchema>;
 
 export type InventoryMovement = {
   id: string;
@@ -1999,7 +2434,30 @@ export type InventoryMovement = {
   createdAt: string;
 };
 
+export type StocktakeMovement = InventoryMovement & {
+  item: { id: string; name: string; unit: string; onHand: number } | null;
+  sourceStocktakeLine: {
+    id: string;
+    label: string;
+    countedQty: number;
+    unit: string | null;
+    location: string | null;
+  } | null;
+};
+
 export type ApplyStocktakeResult = {
   stocktake: StocktakeWithLines;
   movements: InventoryMovement[];
+};
+
+export type StocktakeMovementHistoryPayload = {
+  stocktake: Stocktake;
+  movements: StocktakeMovement[];
+  canReverse: boolean;
+  hasReversal: boolean;
+};
+
+export type StocktakeMovementResult = {
+  stocktake: StocktakeWithLines;
+  movements: StocktakeMovement[];
 };

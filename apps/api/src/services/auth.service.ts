@@ -3,6 +3,14 @@ import { prisma } from '@alma/db';
 import { authChangePasswordSchema, authLoginSchema, type AuthUser } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 
+function permissionRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, allowed]) => typeof allowed === 'boolean')
+  ) as Record<string, boolean>;
+}
+
 function toAuthUser(profile: {
   id: string;
   firstName: string;
@@ -11,7 +19,7 @@ function toAuthUser(profile: {
   roleTitle: string;
   venue: string | null;
   isAdmin: boolean;
-  appAccess: AuthUser['appAccess'];
+  appAccess: Array<Pick<AuthUser['appAccess'][number], 'appId' | 'status' | 'role'> & { permissions: unknown }>;
 }): AuthUser {
   const complianceAccess = profile.appAccess.find(
     (access) => access.appId === 'COMPLIANCE' && access.status === 'ENABLED'
@@ -35,7 +43,8 @@ function toAuthUser(profile: {
     appAccess: profile.appAccess.map((access) => ({
       appId: access.appId,
       status: access.status,
-      role: access.role
+      role: access.role,
+      permissions: permissionRecord(access.permissions)
     }))
   };
 }
@@ -52,7 +61,7 @@ export const authService = {
       where: { email: email.toLowerCase() },
       include: {
         appAccess: {
-          select: { appId: true, status: true, role: true }
+          select: { appId: true, status: true, role: true, permissions: true }
         }
       }
     });
@@ -79,7 +88,7 @@ export const authService = {
       where: { id: userId },
       include: {
         appAccess: {
-          select: { appId: true, status: true, role: true }
+          select: { appId: true, status: true, role: true, permissions: true }
         }
       }
     });

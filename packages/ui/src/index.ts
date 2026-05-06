@@ -1,6 +1,7 @@
 export { AppShell } from './layout/AppShell';
 export { PageHeader } from './layout/PageHeader';
 export { TopBar } from './layout/TopBar';
+export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { Card } from './primitives/Card';
 export { StatCard } from './primitives/StatCard';
 export { Button } from './primitives/Button';
@@ -9,6 +10,7 @@ export { Input } from './primitives/Input';
 export { Textarea } from './primitives/Textarea';
 export { Select } from './primitives/Select';
 export { Badge } from './primitives/Badge';
+export { ActionFeedback } from './primitives/ActionFeedback';
 export { EmptyState } from './primitives/EmptyState';
 export { Skeleton } from './primitives/Skeleton';
 export { Spinner } from './primitives/Spinner';

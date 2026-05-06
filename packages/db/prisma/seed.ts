@@ -586,7 +586,23 @@ async function seedStaff() {
       appAccess: {
         create: [
           { appId: 'COMPLIANCE', status: 'ENABLED', role: 'MANAGER', notes: 'Staff beta manager account' },
-          { appId: 'STAFF', status: 'ENABLED', role: 'MANAGER', notes: 'Can manage staff onboarding during beta' },
+          {
+            appId: 'STAFF',
+            status: 'ENABLED',
+            role: 'MANAGER',
+            permissions: {
+              staffView: true,
+              staffEdit: true,
+              rosterManage: true,
+              timesheetsApprove: true,
+              tipsManage: true,
+              chatTeam: true,
+              chatDirect: true,
+              announcementsManage: true,
+              communicationsManage: true
+            },
+            notes: 'Can manage staff onboarding during beta'
+          },
           { appId: 'STOCK', status: 'ENABLED', role: 'MANAGER', notes: 'Can view stock during beta' }
         ]
       },
@@ -664,7 +680,19 @@ async function seedStaff() {
       passwordHash: staffHash,
       appAccess: {
         create: [
-          { appId: 'COMPLIANCE', status: 'ENABLED', role: 'STAFF', notes: 'Staff beta test account' }
+          { appId: 'COMPLIANCE', status: 'ENABLED', role: 'STAFF', notes: 'Staff beta test account' },
+          {
+            appId: 'STAFF',
+            status: 'ENABLED',
+            role: 'USER',
+            permissions: {
+              staffSelfView: true,
+              timesheetsSubmit: true,
+              tipsViewOwn: true,
+              chatTeam: true
+            },
+            notes: 'Staff mobile beta test account'
+          }
         ]
       },
       records: {
@@ -887,14 +915,20 @@ async function seedAdminAndSettings() {
 
   await prisma.staffAppAccess.upsert({
     where: { staffProfileId_appId: { staffProfileId: admin.id, appId: 'COMPLIANCE' } },
-    update: { status: 'ENABLED', role: 'ADMIN', notes: 'Staff beta admin account' },
-    create: { staffProfileId: admin.id, appId: 'COMPLIANCE', status: 'ENABLED', role: 'ADMIN', notes: 'Staff beta admin account' }
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta admin account' },
+    create: { staffProfileId: admin.id, appId: 'COMPLIANCE', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta admin account' }
   });
 
   await prisma.staffAppAccess.upsert({
     where: { staffProfileId_appId: { staffProfileId: admin.id, appId: 'STAFF' } },
-    update: { status: 'ENABLED', role: 'ADMIN', notes: 'Staff beta admin account' },
-    create: { staffProfileId: admin.id, appId: 'STAFF', status: 'ENABLED', role: 'ADMIN', notes: 'Staff beta admin account' }
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta admin account' },
+    create: { staffProfileId: admin.id, appId: 'STAFF', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta admin account' }
+  });
+
+  await prisma.staffAppAccess.upsert({
+    where: { staffProfileId_appId: { staffProfileId: admin.id, appId: 'SETTINGS' } },
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta settings admin account' },
+    create: { staffProfileId: admin.id, appId: 'SETTINGS', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Staff beta settings admin account' }
   });
 
   const masterHash = await bcrypt.hash('Tim@lma2017', 10);
@@ -915,8 +949,20 @@ async function seedAdminAndSettings() {
 
   await prisma.staffAppAccess.upsert({
     where: { staffProfileId_appId: { staffProfileId: master.id, appId: 'COMPLIANCE' } },
-    update: { status: 'ENABLED', role: 'ADMIN', notes: 'Owner admin account' },
-    create: { staffProfileId: master.id, appId: 'COMPLIANCE', status: 'ENABLED', role: 'ADMIN', notes: 'Owner admin account' }
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner admin account' },
+    create: { staffProfileId: master.id, appId: 'COMPLIANCE', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner admin account' }
+  });
+
+  await prisma.staffAppAccess.upsert({
+    where: { staffProfileId_appId: { staffProfileId: master.id, appId: 'STAFF' } },
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner staff admin account' },
+    create: { staffProfileId: master.id, appId: 'STAFF', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner staff admin account' }
+  });
+
+  await prisma.staffAppAccess.upsert({
+    where: { staffProfileId_appId: { staffProfileId: master.id, appId: 'SETTINGS' } },
+    update: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner settings admin account' },
+    create: { staffProfileId: master.id, appId: 'SETTINGS', status: 'ENABLED', role: 'ADMIN', permissions: { admin: true }, notes: 'Owner settings admin account' }
   });
 
   console.log('Seed admin login: admin@alma.local / almaadmin');

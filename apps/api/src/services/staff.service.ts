@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '@alma/db';
+import { z } from 'zod';
 import {
   normaliseOnboardingSettings,
   rosterShiftInputSchema,
@@ -291,8 +292,42 @@ function parseDate(value: string, label: string) {
   return date;
 }
 
+const managerDashboardQuerySchema = z.object({
+  date: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal(''))
+});
+
+function dateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = String(value.getMonth() + 1).padStart(2, '0');
+  const day = String(value.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function dayRange(value?: string) {
+  const reference = value ? parseDate(`${value}T00:00:00`, 'Dashboard date') : new Date();
+  const start = new Date(reference.getFullYear(), reference.getMonth(), reference.getDate());
+  const end = new Date(start.getTime() + 24 * 60 * 60 * 1000);
+  return { start, end, key: dateKey(start) };
+}
+
 function timesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number }) {
   return Math.max(0, (entry.clockOutAt.getTime() - entry.clockInAt.getTime()) / 36e5 - entry.breakMinutes / 60);
+}
+
+function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number; status: string }, now: Date) {
+  const effectiveOut = entry.status === 'DRAFT' && now > entry.clockInAt ? now : entry.clockOutAt;
+  if (effectiveOut <= entry.clockInAt) return 0;
+  return Math.max(0, (effectiveOut.getTime() - entry.clockInAt.getTime()) / 36e5 - entry.breakMinutes / 60);
+}
+
+function shiftHours(entry: { startsAt: Date; endsAt: Date; breakMinutes: number }) {
+  if (entry.endsAt <= entry.startsAt) return 0;
+  return Math.max(0, (entry.endsAt.getTime() - entry.startsAt.getTime()) / 36e5 - entry.breakMinutes / 60);
+}
+
+function staffRateCents(profile: { payRateCents: number | null; trainingPayRateCents: number | null } | null | undefined) {
+  return profile?.trainingPayRateCents ?? profile?.payRateCents ?? 0;
 }
 
 function csvCell(value: unknown) {
@@ -571,6 +606,20 @@ export const staffService = {
     });
   },
 
+  async deleteRecord(staffProfileId: string, recordId: string) {
+    await this.getById(staffProfileId);
+    const record = await prisma.staffComplianceRecord.findFirst({
+      where: { id: recordId, staffProfileId }
+    });
+
+    if (!record) {
+      throw new HttpError(404, 'Staff document not found');
+    }
+
+    await prisma.staffComplianceRecord.delete({ where: { id: recordId } });
+    return { id: recordId, deleted: true };
+  },
+
   async updateAppAccess(staffProfileId: string, input: unknown) {
     await this.getById(staffProfileId);
     const data = staffAppAccessInputSchema.parse(input);
@@ -587,6 +636,7 @@ export const staffService = {
           update: {
             status: app.status,
             role: app.role,
+            permissions: app.permissions,
             notes: app.notes || null
           },
           create: {
@@ -594,6 +644,7 @@ export const staffService = {
             appId: app.appId,
             status: app.status,
             role: app.role,
+            permissions: app.permissions,
             notes: app.notes || null
           }
         })
@@ -803,6 +854,237 @@ export const staffService = {
       createdAt: snapshot.createdAt.toISOString(),
       updatedAt: snapshot.updatedAt.toISOString()
     }));
+  },
+
+  async getManagerDashboard(input: unknown) {
+    const data = managerDashboardQuerySchema.parse(input);
+    const venue = data.venue?.trim() || '';
+    const { start, end, key } = dayRange(data.date);
+    const now = new Date();
+    const activeIssueStatuses = ['OPEN', 'IN_PROGRESS', 'BLOCKED'] as const;
+
+    const [
+      salesEntries,
+      wageTimesheets,
+      pendingTimesheets,
+      pendingTimesheetCount,
+      rosterShifts,
+      stockItems,
+      openIssues,
+      openIssueCount,
+      criticalIssueCount
+    ] = await Promise.all([
+      prisma.salesActualEntry.findMany({
+        where: {
+          serviceDate: { gte: start, lt: end },
+          ...(venue ? { venue } : {})
+        },
+        orderBy: [{ venue: 'asc' }, { source: 'asc' }]
+      }),
+      prisma.timesheet.findMany({
+        where: {
+          workDate: { gte: start, lt: end },
+          status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED', 'EXPORTED'] },
+          ...(venue ? { venue } : {})
+        },
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              roleTitle: true,
+              venue: true,
+              email: true,
+              payRateCents: true,
+              trainingPayRateCents: true
+            }
+          }
+        }
+      }),
+      prisma.timesheet.findMany({
+        where: {
+          status: 'SUBMITTED',
+          ...(venue ? { venue } : {})
+        },
+        orderBy: [{ workDate: 'desc' }, { clockInAt: 'asc' }],
+        take: 8,
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              roleTitle: true,
+              venue: true,
+              email: true
+            }
+          }
+        }
+      }),
+      prisma.timesheet.count({
+        where: {
+          status: 'SUBMITTED',
+          ...(venue ? { venue } : {})
+        }
+      }),
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
+          ...(venue ? { venue } : {})
+        },
+        include: {
+          staffProfile: {
+            select: {
+              payRateCents: true,
+              trainingPayRateCents: true
+            }
+          }
+        }
+      }),
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        include: { category: { select: { name: true } } },
+        orderBy: [{ name: 'asc' }]
+      }),
+      prisma.issue.findMany({
+        where: { status: { in: [...activeIssueStatuses] } },
+        orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
+        take: 12
+      }),
+      prisma.issue.count({ where: { status: { in: [...activeIssueStatuses] } } }),
+      prisma.issue.count({ where: { severity: 'CRITICAL', status: { in: [...activeIssueStatuses] } } })
+    ]);
+
+    const salesByVenue = Array.from(
+      salesEntries.reduce((map, entry) => {
+        map.set(entry.venue, (map.get(entry.venue) ?? 0) + entry.salesCents);
+        return map;
+      }, new Map<string, number>())
+    ).map(([entryVenue, salesCents]) => ({ venue: entryVenue, salesCents }));
+
+    const wagesByVenueMap = new Map<string, {
+      venue: string;
+      actualWageCents: number;
+      rosterWageCents: number;
+      actualHours: number;
+      rosterHours: number;
+    }>();
+
+    for (const entry of wageTimesheets) {
+      const entryVenue = entry.venue || entry.staffProfile.venue || 'Unassigned';
+      const current = wagesByVenueMap.get(entryVenue) ?? {
+        venue: entryVenue,
+        actualWageCents: 0,
+        rosterWageCents: 0,
+        actualHours: 0,
+        rosterHours: 0
+      };
+      const hours = liveTimesheetHours(entry, now);
+      current.actualHours += hours;
+      current.actualWageCents += Math.round(hours * staffRateCents(entry.staffProfile));
+      wagesByVenueMap.set(entryVenue, current);
+    }
+
+    for (const shift of rosterShifts) {
+      const shiftVenue = shift.venue || 'Unassigned';
+      const current = wagesByVenueMap.get(shiftVenue) ?? {
+        venue: shiftVenue,
+        actualWageCents: 0,
+        rosterWageCents: 0,
+        actualHours: 0,
+        rosterHours: 0
+      };
+      const hours = shiftHours(shift);
+      current.rosterHours += hours;
+      current.rosterWageCents += Math.round(hours * staffRateCents(shift.staffProfile));
+      wagesByVenueMap.set(shiftVenue, current);
+    }
+
+    const lowStock = stockItems
+      .filter((item) => {
+        const threshold = item.reorderPoint ?? item.parLevel;
+        return threshold > 0 && item.onHand <= threshold;
+      })
+      .sort((a, b) => {
+        const aThreshold = a.reorderPoint ?? a.parLevel;
+        const bThreshold = b.reorderPoint ?? b.parLevel;
+        return (a.onHand - aThreshold) - (b.onHand - bThreshold);
+      })
+      .slice(0, 8)
+      .map((item) => ({
+        id: item.id,
+        name: item.name,
+        unit: item.unit,
+        onHand: item.onHand,
+        parLevel: item.parLevel,
+        reorderPoint: item.reorderPoint,
+        categoryName: item.category?.name ?? null
+      }));
+
+    const issueSeverityRank = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3 } as const;
+    const complianceIssues = openIssues
+      .sort((a, b) => issueSeverityRank[a.severity] - issueSeverityRank[b.severity])
+      .slice(0, 8)
+      .map((issue) => ({
+        id: issue.id,
+        title: issue.title,
+        severity: issue.severity,
+        status: issue.status,
+        category: issue.category,
+        assignee: issue.assignee,
+        dueDate: issue.dueDate?.toISOString() ?? null,
+        createdAt: issue.createdAt.toISOString()
+      }));
+
+    const wagesByVenue = Array.from(wagesByVenueMap.values()).sort((a, b) => a.venue.localeCompare(b.venue));
+    const actualWageCents = wagesByVenue.reduce((sum, row) => sum + row.actualWageCents, 0);
+    const rosterWageCents = wagesByVenue.reduce((sum, row) => sum + row.rosterWageCents, 0);
+    const salesCents = salesEntries.reduce((sum, entry) => sum + entry.salesCents, 0);
+
+    return {
+      date: key,
+      venue,
+      generatedAt: now.toISOString(),
+      totals: {
+        salesCents,
+        actualWageCents,
+        rosterWageCents,
+        actualHours: Math.round(wagesByVenue.reduce((sum, row) => sum + row.actualHours, 0) * 100) / 100,
+        rosterHours: Math.round(wagesByVenue.reduce((sum, row) => sum + row.rosterHours, 0) * 100) / 100,
+        wagePercent: salesCents > 0 ? Math.round((actualWageCents / salesCents) * 1000) / 10 : null,
+        pendingTimesheets: pendingTimesheetCount,
+        lowStockItems: stockItems.filter((item) => {
+          const threshold = item.reorderPoint ?? item.parLevel;
+          return threshold > 0 && item.onHand <= threshold;
+        }).length,
+        openIssues: openIssueCount,
+        criticalIssues: criticalIssueCount
+      },
+      salesByVenue,
+      wagesByVenue: wagesByVenue.map((row) => ({
+        ...row,
+        actualHours: Math.round(row.actualHours * 100) / 100,
+        rosterHours: Math.round(row.rosterHours * 100) / 100
+      })),
+      pendingTimesheets: pendingTimesheets.map((entry) => ({
+        ...entry,
+        workDate: entry.workDate.toISOString(),
+        clockInAt: entry.clockInAt.toISOString(),
+        clockOutAt: entry.clockOutAt.toISOString(),
+        submittedAt: entry.submittedAt?.toISOString() ?? null,
+        approvedAt: entry.approvedAt?.toISOString() ?? null,
+        rejectedAt: entry.rejectedAt?.toISOString() ?? null,
+        cashPaidAt: entry.cashPaidAt?.toISOString() ?? null,
+        exportedAt: entry.exportedAt?.toISOString() ?? null,
+        createdAt: entry.createdAt.toISOString(),
+        updatedAt: entry.updatedAt.toISOString()
+      })),
+      lowStock,
+      complianceIssues
+    };
   },
 
   async listTimesheets(start?: string, end?: string, status?: string, venue?: string, staffProfileId?: string) {

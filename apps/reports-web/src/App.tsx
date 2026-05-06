@@ -26,6 +26,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   TopBar
 } from '@alma/ui';
 import {
@@ -1155,6 +1156,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           right={
             <>
               <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
+              <SuiteCommsWidget
+                appId="REPORTS"
+                api={staffApi}
+                venue={user.venue}
+                userName={`${user.firstName} ${user.lastName}`}
+                canAnnounce={user.role !== 'STAFF'}
+              />
               <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
                 Sign out
               </Button>

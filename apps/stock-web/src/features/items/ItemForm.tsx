@@ -6,7 +6,7 @@ import type {
   StockItemStatus,
   StockItemUpdateInput
 } from '@alma/shared';
-import { Button, Input, Select } from '@alma/ui';
+import { ActionFeedback, Button, Input, Select } from '@alma/ui';
 import { ApiError, api } from '../../lib/api';
 
 type Mode = 'create' | 'edit';
@@ -86,6 +86,8 @@ export function ItemForm({
   );
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
 
   const [newCategoryName, setNewCategoryName] = useState('');
   const [creatingCategory, setCreatingCategory] = useState(false);
@@ -111,6 +113,7 @@ export function ItemForm({
     }
     setCreatingCategory(true);
     setCategoryError(null);
+    setFeedback(null);
     try {
       const created = await api<StockCategory>('/api/items/categories', {
         method: 'POST',
@@ -119,8 +122,13 @@ export function ItemForm({
       onCategoryCreated(created);
       update('categoryId', created.id);
       setNewCategoryName('');
+      setFeedback('Category added.');
+      setFeedbackTone('success');
     } catch (err) {
-      setCategoryError(err instanceof ApiError ? err.message : 'Could not add category');
+      const message = err instanceof ApiError ? err.message : 'Could not add category';
+      setCategoryError(message);
+      setFeedback(message);
+      setFeedbackTone('error');
     } finally {
       setCreatingCategory(false);
     }
@@ -128,12 +136,17 @@ export function ItemForm({
 
   async function handleSubmit() {
     setError(null);
+    setFeedback(null);
     if (!draft.name.trim()) {
       setError('Item name is required');
+      setFeedback('Item name is required');
+      setFeedbackTone('error');
       return;
     }
     if (!draft.unit.trim()) {
       setError('Unit is required');
+      setFeedback('Unit is required');
+      setFeedbackTone('error');
       return;
     }
 
@@ -159,23 +172,29 @@ export function ItemForm({
           method: 'PATCH',
           body: JSON.stringify(updatePayload)
         });
-        onSaved(saved);
+        setFeedback('Item saved.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(saved), 450);
       } else {
         const created = await api<StockItem>('/api/items', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        onSaved(created);
+        setFeedback('Item created.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(created), 450);
         setDraft(emptyDraft());
       }
     } catch (err) {
-      setError(
+      const message =
         err instanceof ApiError
           ? err.message
           : mode === 'edit'
             ? 'Could not save changes'
-            : 'Could not create item'
-      );
+            : 'Could not create item';
+      setError(message);
+      setFeedback(message);
+      setFeedbackTone('error');
     } finally {
       setSubmitting(false);
     }
@@ -276,10 +295,9 @@ export function ItemForm({
           >
             {creatingCategory ? 'Adding…' : 'Add category'}
           </Button>
+          <ActionFeedback message={feedback?.includes('Category') || feedback?.includes('category') ? feedback : null} tone={feedbackTone} />
         </div>
       ) : null}
-
-      {error ? <p className="error-text">{error}</p> : null}
 
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>
@@ -288,6 +306,10 @@ export function ItemForm({
         <Button type="submit" disabled={submitting}>
           {submitLabel}
         </Button>
+        <ActionFeedback
+          message={feedback && !feedback.toLowerCase().includes('category') ? feedback : null}
+          tone={feedbackTone}
+        />
       </div>
     </form>
   );

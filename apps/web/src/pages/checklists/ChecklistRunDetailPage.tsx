@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import type { ChecklistItemResult, ChecklistRun } from '@alma/shared';
 import {
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -46,10 +47,12 @@ export function ChecklistRunDetailPage() {
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [itemNotes, setItemNotes] = useState<Record<string, string>>({});
   const [issueTitles, setIssueTitles] = useState<Record<string, string>>({});
+  const [itemFeedback, setItemFeedback] = useState<Record<string, { message: string; tone: 'success' | 'error' }>>({});
 
   async function updateItem(itemId: string, result: ChecklistItemResult) {
     try {
       setSavingItemId(itemId);
+      setItemFeedback((current) => ({ ...current, [itemId]: { message: '', tone: 'success' } }));
       await api(`/api/checklists/runs/${id}/items/${itemId}`, {
         method: 'PUT',
         body: JSON.stringify({
@@ -62,6 +65,12 @@ export function ChecklistRunDetailPage() {
         })
       });
       await reload();
+      setItemFeedback((current) => ({ ...current, [itemId]: { message: 'Checklist item saved.', tone: 'success' } }));
+    } catch (err) {
+      setItemFeedback((current) => ({
+        ...current,
+        [itemId]: { message: err instanceof Error ? err.message : 'Could not save checklist item.', tone: 'error' }
+      }));
     } finally {
       setSavingItemId(null);
     }
@@ -208,6 +217,10 @@ export function ChecklistRunDetailPage() {
                 >
                   Save notes
                 </Button>
+                <ActionFeedback
+                  message={itemFeedback[item.id]?.message}
+                  tone={itemFeedback[item.id]?.tone}
+                />
                 {item.linkedIssue ? (
                   <Link to={`/issues/${item.linkedIssue.id}`}>
                     <Button variant="ghost" size="sm">

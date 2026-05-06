@@ -1,12 +1,21 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '@alma/db';
 import {
+  DEFAULT_GIFT_CARD_SETTINGS,
+  giftCardPromoCodeInputSchema,
+  giftCardPromoCodeUpdateSchema,
+  giftCardPromoQuoteInputSchema,
   giftCardCancelInputSchema,
   giftCardCheckoutInputSchema,
   giftCardLookupInputSchema,
-  giftCardRedemptionInputSchema
+  giftCardRedemptionInputSchema,
+  giftCardSettingsInputSchema,
+  normaliseGiftCardSettings,
+  type AuthUser,
+  type GiftCardSettings
 } from '@alma/shared';
 import Stripe from 'stripe';
+import QRCode from 'qrcode';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
@@ -19,18 +28,26 @@ const stripe = env.stripe.secretKey
     })
   : null;
 
+const GIFT_CARD_SETTINGS_ID = 'singleton';
+const GIFT_CARD_OWNER_EMAIL = (process.env.GIFT_CARD_OWNER_EMAIL ?? 'tim@almagroup.com.au').trim().toLowerCase();
+
 function toGiftCardPayload(card: {
   id: string;
   code: string;
   status: 'PENDING_PAYMENT' | 'ACTIVE' | 'REDEEMED' | 'CANCELLED' | 'EXPIRED';
   initialValueCents: number;
   balanceCents: number;
+  discountCents: number;
+  amountPaidCents: number | null;
   currency: string;
   purchaserName: string;
   purchaserEmail: string;
   recipientName: string | null;
   recipientEmail: string | null;
   message: string | null;
+  promoCodeId: string | null;
+  promoCodeSnapshot: string | null;
+  testMode: boolean;
   stripeCheckoutSessionId: string | null;
   stripePaymentIntentId: string | null;
   emailedAt: Date | null;
@@ -77,13 +94,19 @@ function publicGiftCard(card: ReturnType<typeof toGiftCardPayload>) {
     status: card.status,
     initialValueCents: card.initialValueCents,
     balanceCents: card.balanceCents,
+    discountCents: card.discountCents,
+    amountPaidCents: card.amountPaidCents,
     currency: card.currency,
     recipientName: card.recipientName,
     message: card.message,
+    promoCodeSnapshot: card.promoCodeSnapshot,
+    testMode: card.testMode,
     emailedAt: card.emailedAt,
     emailError: card.emailError,
     paidAt: card.paidAt,
-    expiresAt: card.expiresAt
+    expiresAt: card.expiresAt,
+    qrCodeUrl: qrCodeUrl(card.code),
+    redeemUrl: redeemUrl(card.code)
   };
 }
 
@@ -108,6 +131,10 @@ function printableUrl(code: string) {
   return `${env.giftCards.webUrl.replace(/\/+$/, '')}/print?code=${encodeURIComponent(code)}`;
 }
 
+function redeemUrl(code: string) {
+  return `${env.giftCards.webUrl.replace(/\/+$/, '')}/redeem?code=${encodeURIComponent(code)}`;
+}
+
 function apiUrl(path: string) {
   return `${env.publicApiUrl.replace(/\/+$/, '')}${path}`;
 }
@@ -118,6 +145,10 @@ function appleWalletUrl(code: string) {
 
 function googleWalletUrl(code: string) {
   return apiUrl(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`);
+}
+
+function qrCodeUrl(code: string) {
+  return apiUrl(`/api/gift-cards/qr/${encodeURIComponent(code)}.svg`);
 }
 
 function isStripePaymentConfirmed(session: Stripe.Checkout.Session) {
@@ -134,6 +165,123 @@ function sessionAmountCents(session: Stripe.Checkout.Session) {
   return typeof session.amount_total === 'number' ? session.amount_total : null;
 }
 
+function normalisePromoCode(code: string) {
+  return code.trim().toUpperCase().replace(/\s+/g, '');
+}
+
+function parseOptionalDate(value: string | undefined | null) {
+  if (!value) return null;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new HttpError(400, 'Enter a valid promo code date.');
+  return date;
+}
+
+function canManagePromoCodes(user?: AuthUser | null) {
+  return user?.email?.toLowerCase() === GIFT_CARD_OWNER_EMAIL;
+}
+
+function validatePromoShape(input: {
+  discountType?: 'PERCENT' | 'FIXED_AMOUNT';
+  percentOff?: number;
+  amountOffCents?: number;
+}) {
+  if (input.discountType === 'PERCENT' && !input.percentOff) {
+    throw new HttpError(400, 'Percent promo codes need a percent off value.');
+  }
+  if (input.discountType === 'FIXED_AMOUNT' && !input.amountOffCents) {
+    throw new HttpError(400, 'Fixed amount promo codes need an amount off value.');
+  }
+}
+
+async function getGiftCardSettings() {
+  const settings = await prisma.appSettings.upsert({
+    where: { id: GIFT_CARD_SETTINGS_ID },
+    update: {},
+    create: { id: GIFT_CARD_SETTINGS_ID },
+    select: { giftCardSettings: true }
+  });
+  return normaliseGiftCardSettings(settings.giftCardSettings);
+}
+
+function cleanSettingsPatch(input: unknown) {
+  const parsed = giftCardSettingsInputSchema.parse(input);
+  return normaliseGiftCardSettings({
+    ...DEFAULT_GIFT_CARD_SETTINGS,
+    ...parsed
+  });
+}
+
+async function toPromoPayload(promo: {
+  id: string;
+  code: string;
+  description: string | null;
+  discountType: 'PERCENT' | 'FIXED_AMOUNT';
+  percentOff: number | null;
+  amountOffCents: number | null;
+  isActive: boolean;
+  startsAt: Date | null;
+  expiresAt: Date | null;
+  maxRedemptions: number | null;
+  createdById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}) {
+  const confirmedRedemptions = await prisma.giftCard.count({
+    where: {
+      promoCodeId: promo.id,
+      testMode: false,
+      paidAt: { not: null },
+      status: { in: ['ACTIVE', 'REDEEMED'] }
+    }
+  });
+  return {
+    ...promo,
+    startsAt: promo.startsAt?.toISOString() ?? null,
+    expiresAt: promo.expiresAt?.toISOString() ?? null,
+    createdAt: promo.createdAt.toISOString(),
+    updatedAt: promo.updatedAt.toISOString(),
+    confirmedRedemptions
+  };
+}
+
+async function quotePromoCode(code: string, amountCents: number) {
+  const parsed = giftCardPromoQuoteInputSchema.parse({ code, amountCents });
+  const normalisedCode = normalisePromoCode(parsed.code);
+  const promo = await prisma.giftCardPromoCode.findUnique({ where: { code: normalisedCode } });
+  if (!promo || !promo.isActive) throw new HttpError(404, 'Promo code not found.');
+  const now = new Date();
+  if (promo.startsAt && promo.startsAt > now) throw new HttpError(400, 'Promo code is not active yet.');
+  if (promo.expiresAt && promo.expiresAt < now) throw new HttpError(400, 'Promo code has expired.');
+  const confirmedRedemptions = await prisma.giftCard.count({
+    where: {
+      promoCodeId: promo.id,
+      testMode: false,
+      paidAt: { not: null },
+      status: { in: ['ACTIVE', 'REDEEMED'] }
+    }
+  });
+  if (promo.maxRedemptions && confirmedRedemptions >= promo.maxRedemptions) {
+    throw new HttpError(400, 'Promo code has reached its usage limit.');
+  }
+
+  const rawDiscount =
+    promo.discountType === 'PERCENT'
+      ? Math.floor(parsed.amountCents * ((promo.percentOff ?? 0) / 100))
+      : promo.amountOffCents ?? 0;
+  const discountCents = Math.min(Math.max(rawDiscount, 0), parsed.amountCents - 100);
+  if (discountCents <= 0) throw new HttpError(400, 'Promo code does not change this gift card total.');
+
+  return {
+    promo,
+    quote: {
+      code: promo.code,
+      description: promo.description,
+      discountCents,
+      amountDueCents: parsed.amountCents - discountCents
+    }
+  };
+}
+
 async function findCardByCode(code: string) {
   const parsed = giftCardLookupInputSchema.parse({ code });
   const card = await prisma.giftCard.findUnique({
@@ -145,12 +293,152 @@ async function findCardByCode(code: string) {
 }
 
 export const giftCardService = {
+  canManagePromoCodes,
+
+  async getPublicSettings() {
+    return getGiftCardSettings();
+  },
+
+  async getAdminSettings(user?: AuthUser | null) {
+    return {
+      settings: await getGiftCardSettings(),
+      canManagePromoCodes: canManagePromoCodes(user)
+    };
+  },
+
+  async updateSettings(input: unknown) {
+    const settings = cleanSettingsPatch(input);
+    const updated = await prisma.appSettings.upsert({
+      where: { id: GIFT_CARD_SETTINGS_ID },
+      create: {
+        id: GIFT_CARD_SETTINGS_ID,
+        giftCardSettings: settings
+      },
+      update: {
+        giftCardSettings: settings
+      },
+      select: { giftCardSettings: true }
+    });
+    return normaliseGiftCardSettings(updated.giftCardSettings);
+  },
+
+  async listPromoCodes() {
+    const promos = await prisma.giftCardPromoCode.findMany({
+      orderBy: [{ isActive: 'desc' }, { createdAt: 'desc' }]
+    });
+    return Promise.all(promos.map(toPromoPayload));
+  },
+
+  async createPromoCode(input: unknown, createdById?: string | null) {
+    const data = giftCardPromoCodeInputSchema.parse(input);
+    validatePromoShape(data);
+    try {
+      const promo = await prisma.giftCardPromoCode.create({
+        data: {
+          code: normalisePromoCode(data.code),
+          description: data.description?.trim() || null,
+          discountType: data.discountType,
+          percentOff: data.discountType === 'PERCENT' ? data.percentOff ?? null : null,
+          amountOffCents: data.discountType === 'FIXED_AMOUNT' ? data.amountOffCents ?? null : null,
+          isActive: data.isActive,
+          startsAt: parseOptionalDate(data.startsAt),
+          expiresAt: parseOptionalDate(data.expiresAt),
+          maxRedemptions: data.maxRedemptions ?? null,
+          createdById: createdById ?? null
+        }
+      });
+      return toPromoPayload(promo);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'P2002') {
+        throw new HttpError(409, 'That promo code already exists.');
+      }
+      throw error;
+    }
+  },
+
+  async updatePromoCode(id: string, input: unknown) {
+    const data = giftCardPromoCodeUpdateSchema.parse(input);
+    validatePromoShape(data);
+    const promo = await prisma.giftCardPromoCode.update({
+      where: { id },
+      data: {
+        ...(data.code !== undefined && { code: normalisePromoCode(data.code) }),
+        ...(data.description !== undefined && { description: data.description?.trim() || null }),
+        ...(data.discountType !== undefined && { discountType: data.discountType }),
+        ...(data.percentOff !== undefined && { percentOff: data.percentOff ?? null }),
+        ...(data.amountOffCents !== undefined && { amountOffCents: data.amountOffCents ?? null }),
+        ...(data.isActive !== undefined && { isActive: data.isActive }),
+        ...(data.startsAt !== undefined && { startsAt: parseOptionalDate(data.startsAt) }),
+        ...(data.expiresAt !== undefined && { expiresAt: parseOptionalDate(data.expiresAt) }),
+        ...(data.maxRedemptions !== undefined && { maxRedemptions: data.maxRedemptions ?? null })
+      }
+    });
+    return toPromoPayload(promo);
+  },
+
+  async removePromoCode(id: string) {
+    const promo = await prisma.giftCardPromoCode.update({
+      where: { id },
+      data: { isActive: false }
+    });
+    return toPromoPayload(promo);
+  },
+
+  async quotePromo(input: unknown) {
+    const parsed = giftCardPromoQuoteInputSchema.parse(input);
+    const { quote } = await quotePromoCode(parsed.code, parsed.amountCents);
+    return quote;
+  },
+
   async createCheckout(input: unknown) {
-    if (!stripe) throw new HttpError(503, 'Stripe is not configured yet. Add STRIPE_SECRET_KEY before taking gift card payments.');
     const data = giftCardCheckoutInputSchema.parse(input);
+    const settings = await getGiftCardSettings();
+    const promoResult = data.promoCode?.trim()
+      ? await quotePromoCode(data.promoCode, data.amountCents)
+      : null;
+    const discountCents = promoResult?.quote.discountCents ?? 0;
+    const amountDueCents = data.amountCents - discountCents;
     const code = await uniqueCode();
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 3);
+
+    if (settings.testCheckoutEnabled) {
+      const testSessionId = `TEST-${randomBytes(8).toString('hex').toUpperCase()}`;
+      const card = await prisma.giftCard.create({
+        data: {
+          code,
+          status: 'ACTIVE',
+          initialValueCents: data.amountCents,
+          balanceCents: data.amountCents,
+          discountCents,
+          amountPaidCents: 0,
+          currency: 'aud',
+          purchaserName: data.purchaserName.trim(),
+          purchaserEmail: data.purchaserEmail.trim().toLowerCase(),
+          recipientName: data.recipientName?.trim() || null,
+          recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
+          message: data.message?.trim() || null,
+          promoCodeId: promoResult?.promo.id ?? null,
+          promoCodeSnapshot: promoResult?.promo.code ?? null,
+          testMode: true,
+          stripeCheckoutSessionId: testSessionId,
+          paidAt: new Date(),
+          expiresAt
+        },
+        include: { redemptions: true }
+      });
+      await this.sendGiftCardEmail(card, settings);
+      return {
+        giftCardId: card.id,
+        checkoutUrl: successUrl(testSessionId),
+        checkoutSessionId: testSessionId,
+        testMode: true,
+        discountCents,
+        amountPaidCents: 0
+      };
+    }
+
+    if (!stripe) throw new HttpError(503, 'Stripe is not configured yet. Add STRIPE_SECRET_KEY before taking gift card payments.');
 
     const card = await prisma.giftCard.create({
       data: {
@@ -158,12 +446,15 @@ export const giftCardService = {
         status: 'PENDING_PAYMENT',
         initialValueCents: data.amountCents,
         balanceCents: data.amountCents,
+        discountCents,
         currency: 'aud',
         purchaserName: data.purchaserName.trim(),
         purchaserEmail: data.purchaserEmail.trim().toLowerCase(),
         recipientName: data.recipientName?.trim() || null,
         recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
         message: data.message?.trim() || null,
+        promoCodeId: promoResult?.promo.id ?? null,
+        promoCodeSnapshot: promoResult?.promo.code ?? null,
         expiresAt
       },
       include: { redemptions: true }
@@ -177,17 +468,22 @@ export const giftCardService = {
       client_reference_id: card.id,
       metadata: {
         giftCardId: card.id,
-        giftCardCode: card.code
+        giftCardCode: card.code,
+        promoCode: promoResult?.promo.code ?? '',
+        discountCents: String(discountCents)
       },
       line_items: [
         {
           quantity: 1,
           price_data: {
             currency: 'aud',
-            unit_amount: data.amountCents,
+            unit_amount: amountDueCents,
             product_data: {
               name: `ALMA Gift Card ${formatAmount(data.amountCents)}`,
-              description: card.recipientName ? `For ${card.recipientName}` : 'Redeemable at ALMA venues'
+              description: [
+                card.recipientName ? `For ${card.recipientName}` : 'Redeemable at ALMA venues',
+                discountCents ? `Promo ${promoResult?.promo.code}: ${formatAmount(discountCents)} off` : ''
+              ].filter(Boolean).join(' · ')
             }
           }
         }
@@ -203,7 +499,9 @@ export const giftCardService = {
     return {
       giftCardId: card.id,
       checkoutUrl: session.url,
-      checkoutSessionId: session.id
+      checkoutSessionId: session.id,
+      discountCents,
+      amountPaidCents: amountDueCents
     };
   },
 
@@ -283,14 +581,16 @@ export const giftCardService = {
     const totals = await prisma.giftCard.aggregate({
       _count: { id: true },
       _sum: { balanceCents: true, initialValueCents: true },
-      where: { status: { in: ['ACTIVE', 'REDEEMED'] } }
+      where: { status: { in: ['ACTIVE', 'REDEEMED'] }, testMode: false }
     });
+    const test = await prisma.giftCard.count({ where: { testMode: true, status: { in: ['ACTIVE', 'REDEEMED'] } } });
     return {
       giftCards: giftCards.map(toGiftCardPayload),
       totals: {
-        active: giftCards.filter((card) => card.status === 'ACTIVE').length,
+        active: giftCards.filter((card) => card.status === 'ACTIVE' && !card.testMode).length,
         pending: 0,
-        redeemed: giftCards.filter((card) => card.status === 'REDEEMED').length,
+        redeemed: giftCards.filter((card) => card.status === 'REDEEMED' && !card.testMode).length,
+        test,
         activeBalanceCents: totals._sum.balanceCents ?? 0,
         soldValueCents: totals._sum.initialValueCents ?? 0
       }
@@ -368,7 +668,8 @@ export const giftCardService = {
       return null;
     }
     const paidAmountCents = sessionAmountCents(session);
-    if (paidAmountCents !== null && paidAmountCents !== existing.initialValueCents) {
+    const expectedAmountCents = existing.initialValueCents - existing.discountCents;
+    if (paidAmountCents !== null && paidAmountCents !== expectedAmountCents) {
       await this.disregardUnconfirmedCheckout(session, 'Stripe payment amount did not match the gift card value.');
       throw new HttpError(400, 'Stripe payment amount did not match the gift card value.');
     }
@@ -380,6 +681,7 @@ export const giftCardService = {
       data: {
         status: 'ACTIVE',
         paidAt: new Date(),
+        amountPaidCents: paidAmountCents ?? expectedAmountCents,
         stripeCheckoutSessionId: session.id,
         stripePaymentIntentId: paymentIntentId(session)
       },
@@ -387,8 +689,14 @@ export const giftCardService = {
     });
     const payload = toGiftCardPayload(card);
     if (card.emailedAt) return payload;
+    await this.sendGiftCardEmail(card, await getGiftCardSettings());
+    return payload;
+  },
+
+  async sendGiftCardEmail(card: Parameters<typeof toGiftCardPayload>[0], settings: GiftCardSettings) {
+    if (card.emailedAt) return toGiftCardPayload(card);
     const recipients = Array.from(new Set([card.purchaserEmail, card.recipientEmail].filter(Boolean)));
-    if (recipients.length === 0) return payload;
+    if (recipients.length === 0) return toGiftCardPayload(card);
 
     const results = await Promise.all(
       recipients.map((to) =>
@@ -401,20 +709,23 @@ export const giftCardService = {
           balanceCents: card.balanceCents,
           message: card.message,
           printableUrl: printableUrl(card.code),
+          qrCodeUrl: qrCodeUrl(card.code),
           appleWalletUrl: appleWalletUrl(card.code),
           googleWalletUrl: googleWalletUrl(card.code),
-          expiresAt: card.expiresAt
+          expiresAt: card.expiresAt,
+          settings
         })
       )
     );
     const failed = results.find((result) => result.status !== 'sent');
-    await prisma.giftCard.update({
+    const updated = await prisma.giftCard.update({
       where: { id: card.id },
       data: failed
         ? { emailError: failed.reason }
-        : { emailedAt: new Date(), emailError: null }
+        : { emailedAt: new Date(), emailError: null },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
     });
-    return payload;
+    return toGiftCardPayload(updated);
   },
 
   async disregardUnconfirmedCheckout(session: Stripe.Checkout.Session, reason: string) {
@@ -434,11 +745,28 @@ export const giftCardService = {
         balanceCents: 0,
         stripeCheckoutSessionId: session.id,
         stripePaymentIntentId: paymentIntentId(session),
+        amountPaidCents: sessionAmountCents(session),
         cancelledAt: new Date(),
         cancelReason: reason,
         refundNote: 'No gift card issued because Stripe did not confirm payment.'
       },
       include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
+    });
+  },
+
+  async qrCodeSvg(code: string) {
+    const card = await findCardByCode(code.replace(/\.svg$/i, ''));
+    if (!card.paidAt || !['ACTIVE', 'REDEEMED'].includes(card.status)) {
+      throw new HttpError(404, 'Gift card payment has not been confirmed.');
+    }
+    return QRCode.toString(redeemUrl(card.code), {
+      type: 'svg',
+      margin: 1,
+      width: 260,
+      color: {
+        dark: '#1f3524',
+        light: '#ffffff'
+      }
     });
   }
 };

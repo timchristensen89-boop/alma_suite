@@ -5,7 +5,9 @@ import { env } from './env.js';
 import { authMiddleware } from './lib/auth-middleware.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
 import { authRouter } from './routes/auth.js';
+import { communicationsRouter } from './routes/communications.js';
 import { healthRouter } from './routes/health.js';
+import { invoicesRouter } from './routes/invoices.js';
 import { itemsRouter } from './routes/items.js';
 import { recipesRouter } from './routes/recipes.js';
 import { stocktakeRouter } from './routes/stocktake.js';
@@ -22,22 +24,26 @@ app.get('/', (_req, res) => {
   res.json({
     name: 'alma-stock-api',
     version: '0.1.0',
-    modules: ['items', 'stocktake', 'suppliers', 'recipes']
+    modules: ['items', 'stocktake', 'suppliers', 'invoices', 'recipes', 'communications']
   });
 });
 
 app.use('/health', healthRouter);
 app.use('/api/health', healthRouter);
 app.use('/api/auth', authRouter);
+app.use('/api/communications', communicationsRouter);
 app.use('/api/items', itemsRouter);
 app.use('/api/stocktake', stocktakeRouter);
 app.use('/api/suppliers', suppliersRouter);
+app.use('/api/invoices', invoicesRouter);
 app.use('/api/recipes', recipesRouter);
 app.use('/stock-api/api/health', healthRouter);
 app.use('/stock-api/api/auth', authRouter);
+app.use('/stock-api/api/communications', communicationsRouter);
 app.use('/stock-api/api/items', itemsRouter);
 app.use('/stock-api/api/stocktake', stocktakeRouter);
 app.use('/stock-api/api/suppliers', suppliersRouter);
+app.use('/stock-api/api/invoices', invoicesRouter);
 app.use('/stock-api/api/recipes', recipesRouter);
 
 app.use(notFoundHandler);

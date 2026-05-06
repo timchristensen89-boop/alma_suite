@@ -12,8 +12,14 @@ import type {
   StaffTipHistory,
   StaffProfile,
   StaffRecordType,
+  StaffManagerDashboardPayload,
+  StaffTrainingStatus,
+  SuiteAnnouncement,
+  SuiteChatChannel,
+  SuiteChatMessage,
   StaffTipsSummary,
   StaffTrainingRecord,
+  SuiteCommunicationsPayload,
   Timesheet,
   TrainingOverview
 } from '@alma/shared';
@@ -22,6 +28,7 @@ import {
   normaliseOnboardingSettings
 } from '@alma/shared';
 import {
+  ActionFeedback,
   AppShell,
   Badge,
   Button,
@@ -40,6 +47,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   Textarea,
   TopBar
 } from '@alma/ui';
@@ -47,7 +55,7 @@ import { LoginPage } from './LoginPage';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -57,8 +65,169 @@ const STAFF_APPS: Array<{ id: AlmaAppId; label: string; role: string }> = [
   { id: 'STOCK', label: 'Stock', role: 'USER' },
   { id: 'STAFF', label: 'Staff', role: 'MANAGER' },
   { id: 'REPORTS', label: 'Reports', role: 'USER' },
-  { id: 'SETTINGS', label: 'Admin', role: 'ADMIN' }
+  { id: 'RESERVE', label: 'Reserve', role: 'USER' },
+  { id: 'MARKETING', label: 'Marketing', role: 'USER' },
+  { id: 'GIFTCARDS', label: 'Giftcards', role: 'USER' },
+  { id: 'TRAINING', label: 'Academy', role: 'USER' },
+  { id: 'SETTINGS', label: 'Settings', role: 'ADMIN' }
 ];
+
+const SUITE_APP_ACCESS_MAP: Partial<Record<(typeof suiteApps)[number]['id'], AlmaAppId>> = {
+  compliance: 'COMPLIANCE',
+  stock: 'STOCK',
+  staff: 'STAFF',
+  reports: 'REPORTS',
+  reserve: 'RESERVE',
+  marketing: 'MARKETING',
+  giftcards: 'GIFTCARDS',
+  training: 'TRAINING',
+  academy: 'TRAINING',
+  settings: 'SETTINGS'
+};
+
+const STAFF_PROFILE_PRESETS: Array<{
+  id: string;
+  label: string;
+  roleTitle: string;
+  employmentType: string;
+  appAccess: Partial<Record<AlmaAppId, { status: StaffAppAccessStatus; role: string; permissions?: Record<string, boolean> }>>;
+}> = [
+  {
+    id: 'staff',
+    label: 'Staff',
+    roleTitle: 'Staff',
+    employmentType: 'Casual',
+    appAccess: {
+      STAFF: { status: 'ENABLED', role: 'USER', permissions: { staffSelfView: true, timesheetsSubmit: true, tipsViewOwn: true, chatTeam: true } },
+      TRAINING: { status: 'ENABLED', role: 'USER', permissions: { academyViewOwn: true } },
+      SETTINGS: { status: 'DISABLED', role: 'USER' }
+    }
+  },
+  {
+    id: 'manager',
+    label: 'Manager',
+    roleTitle: 'Manager',
+    employmentType: 'Salaried',
+    appAccess: {
+      COMPLIANCE: { status: 'ENABLED', role: 'MANAGER', permissions: { issuesManage: true, checklistsManage: true, documentsView: true } },
+      STOCK: { status: 'ENABLED', role: 'MANAGER', permissions: { stockCount: true, stockItemsManage: true, suppliersManage: true } },
+      STAFF: { status: 'ENABLED', role: 'MANAGER', permissions: { staffView: true, rosterManage: true, timesheetsApprove: true, tipsManage: true, chatTeam: true, chatDirect: true, announcementsManage: true } },
+      REPORTS: { status: 'ENABLED', role: 'USER', permissions: { reportsView: true } },
+      SETTINGS: { status: 'DISABLED', role: 'USER' }
+    }
+  },
+  {
+    id: 'venue-manager',
+    label: 'Venue Manager',
+    roleTitle: 'Venue Manager',
+    employmentType: 'Salaried',
+    appAccess: {
+      COMPLIANCE: { status: 'ENABLED', role: 'MANAGER', permissions: { issuesManage: true, checklistsManage: true, auditsManage: true, licencesManage: true, temperaturesManage: true, documentsView: true } },
+      STOCK: { status: 'ENABLED', role: 'MANAGER', permissions: { stockCount: true, stockItemsManage: true, suppliersManage: true, recipesManage: true, stockSettings: true } },
+      STAFF: { status: 'ENABLED', role: 'MANAGER', permissions: { staffView: true, staffEdit: true, rosterManage: true, rosterPublish: true, timesheetsApprove: true, tipsManage: true, chatTeam: true, chatDirect: true, chatModerate: true, announcementsManage: true, communicationsManage: true } },
+      REPORTS: { status: 'ENABLED', role: 'MANAGER', permissions: { reportsView: true, forecastManage: true, payrollExport: true } },
+      RESERVE: { status: 'ENABLED', role: 'MANAGER', permissions: { reserveDiary: true, reserveManage: true, reserveSettings: true } },
+      MARKETING: { status: 'ENABLED', role: 'USER', permissions: { marketingView: true, campaignsDraft: true } },
+      GIFTCARDS: { status: 'ENABLED', role: 'MANAGER', permissions: { giftcardsSell: true, giftcardsRedeem: true, giftcardsVoid: true } },
+      SETTINGS: { status: 'DISABLED', role: 'USER' }
+    }
+  },
+  {
+    id: 'head-chef',
+    label: 'Head Chef',
+    roleTitle: 'Head Chef',
+    employmentType: 'Salaried',
+    appAccess: {
+      COMPLIANCE: { status: 'ENABLED', role: 'MANAGER', permissions: { checklistsManage: true, auditsManage: true, temperaturesManage: true, documentsView: true } },
+      STOCK: { status: 'ENABLED', role: 'MANAGER', permissions: { stockCount: true, stockItemsManage: true, suppliersManage: true, recipesManage: true, cogsView: true } },
+      STAFF: { status: 'ENABLED', role: 'MANAGER', permissions: { rosterView: true, rosterAreaManage: true, academyAssign: true, chatTeam: true, chatDirect: true } },
+      REPORTS: { status: 'ENABLED', role: 'USER', permissions: { reportsView: true, cogsView: true } },
+      SETTINGS: { status: 'DISABLED', role: 'USER' }
+    }
+  },
+  {
+    id: 'admin',
+    label: 'Admin',
+    roleTitle: 'Administrator',
+    employmentType: 'Salaried',
+    appAccess: {
+      COMPLIANCE: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      STOCK: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      STAFF: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      REPORTS: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      RESERVE: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      MARKETING: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      GIFTCARDS: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      TRAINING: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } },
+      SETTINGS: { status: 'ENABLED', role: 'ADMIN', permissions: { admin: true } }
+    }
+  }
+];
+
+const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; label: string }>>> = {
+  COMPLIANCE: [
+    { key: 'issuesManage', label: 'Manage issues' },
+    { key: 'checklistsManage', label: 'Manage checklists' },
+    { key: 'auditsManage', label: 'Manage audits' },
+    { key: 'licencesManage', label: 'Manage licences' },
+    { key: 'temperaturesManage', label: 'Manage temperatures' },
+    { key: 'documentsView', label: 'View document register' }
+  ],
+  STOCK: [
+    { key: 'stockCount', label: 'Perform stocktakes' },
+    { key: 'stockItemsManage', label: 'Manage items' },
+    { key: 'suppliersManage', label: 'Manage suppliers' },
+    { key: 'recipesManage', label: 'Manage recipes' },
+    { key: 'cogsView', label: 'View COGS' },
+    { key: 'stockSettings', label: 'Stock settings' }
+  ],
+  STAFF: [
+    { key: 'staffView', label: 'View staff' },
+    { key: 'staffEdit', label: 'Edit staff profiles' },
+    { key: 'rosterView', label: 'View roster' },
+    { key: 'rosterManage', label: 'Manage roster' },
+    { key: 'rosterPublish', label: 'Publish roster' },
+    { key: 'timesheetsSubmit', label: 'Submit timesheets' },
+    { key: 'timesheetsApprove', label: 'Approve timesheets' },
+    { key: 'tipsViewOwn', label: 'View own tips' },
+    { key: 'tipsManage', label: 'Manage tips' },
+    { key: 'academyAssign', label: 'Assign Academy' },
+    { key: 'chatTeam', label: 'Use team chat' },
+    { key: 'chatDirect', label: 'Direct message staff' },
+    { key: 'chatModerate', label: 'Moderate chats' },
+    { key: 'announcementsManage', label: 'Manage announcements' },
+    { key: 'communicationsManage', label: 'Manage all communications' }
+  ],
+  REPORTS: [
+    { key: 'reportsView', label: 'View reports' },
+    { key: 'forecastManage', label: 'Manage forecast' },
+    { key: 'payrollExport', label: 'Payroll export' },
+    { key: 'cogsView', label: 'View COGS' }
+  ],
+  RESERVE: [
+    { key: 'reserveDiary', label: 'View diary' },
+    { key: 'reserveManage', label: 'Manage bookings' },
+    { key: 'reserveSettings', label: 'Reserve settings' }
+  ],
+  MARKETING: [
+    { key: 'marketingView', label: 'View marketing' },
+    { key: 'campaignsDraft', label: 'Draft campaigns' },
+    { key: 'campaignsSend', label: 'Send campaigns' }
+  ],
+  GIFTCARDS: [
+    { key: 'giftcardsSell', label: 'Sell gift cards' },
+    { key: 'giftcardsRedeem', label: 'Redeem gift cards' },
+    { key: 'giftcardsVoid', label: 'Void/refund note' }
+  ],
+  TRAINING: [
+    { key: 'academyViewOwn', label: 'View own Academy' },
+    { key: 'academyAssign', label: 'Assign Academy' },
+    { key: 'academyManage', label: 'Manage modules' }
+  ],
+  SETTINGS: [
+    { key: 'admin', label: 'Full admin' }
+  ]
+};
 
 const NAV_ITEMS = [
   {
@@ -67,6 +236,18 @@ const NAV_ITEMS = [
     description: 'Shared StaffProfile authority',
     icon: <PeopleIcon />,
     end: true
+  },
+  {
+    to: '/manager',
+    label: 'Manager',
+    description: 'Mobile approvals and live operating warnings',
+    icon: <ChartIcon />
+  },
+  {
+    to: '/access',
+    label: 'Profiles',
+    description: 'Full staff profiles, permissions, documents, and tasks',
+    icon: <PeopleIcon />
   },
   {
     to: '/invites',
@@ -107,8 +288,14 @@ const NAV_ITEMS = [
   {
     to: '/settings',
     label: 'Settings',
-    description: 'Onboarding, organisation, and access',
+    description: 'Admin-only suite settings, venues, integrations, and access',
     icon: <GearIcon />
+  },
+  {
+    to: '/communications',
+    label: 'Comms',
+    description: 'Announcements, group chats, and messaging permissions',
+    icon: <DocumentIcon />
   }
 ];
 
@@ -137,6 +324,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     label: 'Tips',
     description: 'Paid tip history',
     icon: <ChartIcon />
+  },
+  {
+    to: '/communications',
+    label: 'Chat',
+    description: 'Announcements and team messages',
+    icon: <DocumentIcon />
   }
 ];
 
@@ -170,11 +363,77 @@ type RosterAreaSettings = {
   deleted: string[];
 };
 
+type RosterSidePanelMode = 'staff' | 'history' | 'shift';
+
+type RosterScheduleRow = {
+  id: string;
+  label: string;
+  sublabel: string;
+  initials: string;
+  shifts: RosterShift[];
+  member: StaffProfile | null;
+  venue: string;
+  area: string;
+  isVenueHeader?: boolean;
+};
+
+function staffPermissions(user: ReturnType<typeof useAuth>['user']) {
+  return user?.appAccess.find((access) => access.appId === 'STAFF' && access.status === 'ENABLED')?.permissions ?? {};
+}
+
+function canAccessSettings(user: ReturnType<typeof useAuth>['user']) {
+  const settingsAccess = user?.appAccess.find((access) => access.appId === 'SETTINGS' && access.status === 'ENABLED');
+  return Boolean(
+    user &&
+    (user.isAdmin ||
+      user.role === 'ADMIN' ||
+      settingsAccess?.role === 'ADMIN' ||
+      settingsAccess?.permissions?.admin)
+  );
+}
+
+function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
+  if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
+  if (canAccessSettings(user)) return NAV_ITEMS;
+  return NAV_ITEMS.filter((item) => item.to !== '/settings' && item.to !== '/admin');
+}
+
+function suiteAppsForUser(user: ReturnType<typeof useAuth>['user']) {
+  if (!user || user.isAdmin) return suiteApps;
+
+  return suiteApps.filter((app) => {
+    const accessAppId = SUITE_APP_ACCESS_MAP[app.id];
+    if (!accessAppId) return false;
+    if (accessAppId === 'SETTINGS') return canAccessSettings(user);
+    return user.appAccess.some((access) => access.appId === accessAppId && access.status === 'ENABLED');
+  });
+}
+
+function canManageCommunications(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    (user.isAdmin ||
+      user.role === 'ADMIN' ||
+      user.role === 'MANAGER' ||
+      permissions.admin ||
+      permissions.communicationsManage ||
+      permissions.announcementsManage ||
+      permissions.chatModerate)
+  );
+}
+
+function canDirectMessage(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(user && (canManageCommunications(user) || permissions.chatDirect));
+}
+
 function TopBarWithContext() {
   const location = useLocation();
   const navigate = useNavigate();
   const { logout, user } = useAuth();
-  const active = currentPage(location.pathname, user?.role === 'STAFF' ? STAFF_MEMBER_NAV_ITEMS : NAV_ITEMS);
+  const navItems = navItemsForUser(user);
+  const active = currentPage(location.pathname, navItems);
   useDocumentTitle(active.label);
 
   return (
@@ -184,7 +443,14 @@ function TopBarWithContext() {
       right={
         user ? (
           <>
-            <SuiteAppSwitcher currentApp="staff" apps={suiteApps} variant="topbar" />
+            <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
+            <SuiteCommsWidget
+              appId="STAFF"
+              api={api}
+              venue={user.venue}
+              userName={`${user.firstName} ${user.lastName}`}
+              canAnnounce={canManageCommunications(user)}
+            />
             <Button
               size="sm"
               variant="secondary"
@@ -557,28 +823,66 @@ function StaffMemberHome({
   const member = staff.find((item) => item.id === user?.id) ?? staff[0] ?? null;
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
+  const [communications, setCommunications] = useState<SuiteCommunicationsPayload>({ announcements: [], channels: [], chat: [] });
+  const [chatText, setChatText] = useState('');
   const [policyAcknowledged, setPolicyAcknowledged] = useState(() => {
     return window.localStorage.getItem('alma-staff-policy-ack') === 'yes';
   });
   const today = new Date();
+  const mobileStart = useMemo(() => startOfWeek(new Date()), []);
+  const mobileEnd = useMemo(() => addDays(mobileStart, 14), [mobileStart]);
   const upcomingShifts = roster
     .filter((shift) => !member || shift.staffProfileId === member.id)
     .filter((shift) => new Date(shift.endsAt) >= today && shift.status !== 'CANCELLED')
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
   const nextShift = upcomingShifts[0] ?? null;
+  const currentShift =
+    upcomingShifts.find((shift) => {
+      const startsAt = new Date(shift.startsAt).getTime() - 2 * 60 * 60 * 1000;
+      const endsAt = new Date(shift.endsAt).getTime() + 6 * 60 * 60 * 1000;
+      const now = Date.now();
+      return now >= startsAt && now <= endsAt;
+    }) ?? nextShift;
+  const activeTimesheet = timesheets
+    .filter((entry) => entry.staffProfileId === member?.id && entry.status === 'DRAFT')
+    .sort((a, b) => new Date(b.clockInAt).getTime() - new Date(a.clockInAt).getTime())[0] ?? null;
+  const submittedThisWeek = timesheets.filter((entry) => entry.status === 'SUBMITTED').length;
+  const approvedThisWeek = timesheets.filter((entry) => entry.status === 'APPROVED').length;
+
+  const loadMobileData = useCallback(async () => {
+    if (!member) return;
+    const timesheetQuery = new URLSearchParams({
+      start: mobileStart.toISOString(),
+      end: mobileEnd.toISOString(),
+      status: 'all',
+      venue: 'all'
+    });
+    const commsQuery = new URLSearchParams({ appId: 'STAFF', channel: 'general' });
+    if (member.venue) commsQuery.set('venue', member.venue);
+    const [timesheetData, commsData] = await Promise.all([
+      api<Timesheet[]>(`/api/staff/timesheets?${timesheetQuery.toString()}`),
+      api<SuiteCommunicationsPayload>(`/api/communications?${commsQuery.toString()}`)
+    ]);
+    setTimesheets(timesheetData);
+    setCommunications(commsData);
+  }, [member?.id, member?.venue, mobileEnd, mobileStart]);
 
   useEffect(() => {
-    const start = startOfWeek(new Date());
-    void reload(start, addDays(start, 14));
-  }, [reload]);
+    void reload(mobileStart, mobileEnd);
+    void loadMobileData().catch((err) => setMessage(err instanceof Error ? err.message : 'Could not load staff mobile data.'));
+  }, [loadMobileData, mobileEnd, mobileStart, reload]);
 
   function acknowledgePolicy() {
+    setMessageTarget('policy');
     window.localStorage.setItem('alma-staff-policy-ack', 'yes');
     setPolicyAcknowledged(true);
     setMessage('Policy acknowledgement saved on this device.');
   }
 
   async function submitFromShift(shift: RosterShift) {
+    setMessageTarget(`timesheet:${shift.id}`);
     if (!member) {
       setMessage('Could not find your staff profile.');
       return;
@@ -604,9 +908,134 @@ function StaffMemberHome({
           xeroEarningsRateId: member.xeroEarningsRateId ?? ''
         })
       });
+      await loadMobileData();
       setMessage('Timesheet submitted. A manager can now approve it.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not submit timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clockIn() {
+    setMessageTarget('clock');
+    if (!member) {
+      setMessage('Could not find your staff profile.');
+      return;
+    }
+    if (activeTimesheet) {
+      setMessage('You are already clocked in.');
+      return;
+    }
+    const clockInAt = new Date();
+    const placeholderClockOut = new Date(clockInAt.getTime() + 60 * 1000);
+    const shift = currentShift;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api('/api/staff/timesheets', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffProfileId: member.id,
+          rosterShiftId: shift?.id ?? '',
+          venue: shift?.venue ?? member.venue ?? '',
+          area: shift?.area ?? '',
+          roleTitle: shift?.roleTitle ?? member.roleTitle ?? '',
+          workDate: toDateInput(clockInAt),
+          clockInAt: clockInAt.toISOString(),
+          clockOutAt: placeholderClockOut.toISOString(),
+          breakMinutes: shift?.breakMinutes ?? 0,
+          notes: shift
+            ? `Clocked in from Staff mobile for ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} shift.`
+            : 'Clocked in from Staff mobile without a rostered shift.',
+          status: 'DRAFT',
+          xeroEmployeeId: member.xeroEmployeeId ?? '',
+          xeroEarningsRateId: member.xeroEarningsRateId ?? ''
+        })
+      });
+      await loadMobileData();
+      setMessage('Clocked in. Remember to clock out after your shift.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not clock in.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function clockOut() {
+    setMessageTarget('clock');
+    if (!activeTimesheet) {
+      setMessage('No active clock-in found.');
+      return;
+    }
+    const clockInAt = new Date(activeTimesheet.clockInAt);
+    const clockOutAt = new Date();
+    if (clockOutAt <= clockInAt) clockOutAt.setTime(clockInAt.getTime() + 60 * 1000);
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/timesheets/${activeTimesheet.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          clockOutAt: clockOutAt.toISOString(),
+          status: 'SUBMITTED',
+          notes: `${activeTimesheet.notes ?? 'Clocked in from Staff mobile.'} Clocked out ${timeOf(clockOutAt.toISOString())}.`
+        })
+      });
+      await loadMobileData();
+      setMessage('Clocked out and submitted for manager approval.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not clock out.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestShiftSwitch(shift: RosterShift) {
+    if (!member) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`switch:${shift.id}`);
+    try {
+      await api('/api/communications/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          appId: 'STAFF',
+          venue: shift.venue ?? member.venue ?? '',
+          channel: 'general',
+          body: `${member.firstName} ${member.lastName} is asking to switch or cover ${new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || shift.roleTitle || 'shift'} at ${shift.venue || member.venue || 'ALMA'}.`
+        })
+      });
+      await loadMobileData();
+      setMessage('Shift switch request posted to team chat.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request a shift switch.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendChatMessage() {
+    if (!member || !chatText.trim()) return;
+    const body = chatText.trim();
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('chat');
+    try {
+      await api('/api/communications/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          appId: 'STAFF',
+          venue: member.venue ?? '',
+          channel: 'general',
+          body
+        })
+      });
+      setChatText('');
+      await loadMobileData();
+      setMessage('Message sent.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send chat message.');
     } finally {
       setSaving(false);
     }
@@ -621,28 +1050,52 @@ function StaffMemberHome({
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack staff-mobile-home">
       <PageHeader
         eyebrow="My staff home"
         title={member ? `Hi ${member.firstName}` : 'My shifts'}
-        description="Your rostered shifts, announcements, policies and timesheet shortcuts."
+        description="Your shifts, clock-in, team chat, announcements and shift-switch requests."
       />
 
       <div className="stats-grid">
         <StatCard label="Upcoming shifts" value={upcomingShifts.length} hint="Next two weeks" loading={loading} />
         <StatCard label="Next shift" value={nextShift ? new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'None'} hint={nextShift ? `${timeOf(nextShift.startsAt)}-${timeOf(nextShift.endsAt)}` : 'No rostered shift'} loading={loading} />
+        <StatCard label="Submitted" value={submittedThisWeek} hint="Waiting approval" loading={loading} />
+        <StatCard label="Approved" value={approvedThisWeek} hint="This fortnight" loading={loading} />
         <StatCard label="Policy" value={policyAcknowledged ? 'Done' : 'Needed'} hint="Device acknowledgement" loading={loading} />
       </div>
 
-      {message ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <Card title="Upcoming shifts" subtitle="Tap submit after the shift, then adjust in Timesheets if actual hours changed." padding="none">
+      <Card title={activeTimesheet ? 'You are clocked in' : 'Clock in'} subtitle={currentShift ? `${timeOf(currentShift.startsAt)}-${timeOf(currentShift.endsAt)} · ${currentShift.area || currentShift.roleTitle || 'Shift'}` : 'No current shift selected'}>
+        <div className="staff-clock-card">
+          <span>
+            <strong>{activeTimesheet ? `Started ${timeOf(activeTimesheet.clockInAt)}` : currentShift ? 'Ready for your shift' : 'Clock in without rostered shift'}</strong>
+            <span className="subtle">
+              {activeTimesheet
+                ? `${activeTimesheet.venue || member?.venue || 'No venue'} · ${activeTimesheet.area || activeTimesheet.roleTitle || 'Shift'}`
+                : currentShift
+                  ? `${currentShift.venue || member?.venue || 'No venue'} · ${roundHours(shiftHours(currentShift))}`
+                  : 'A manager can reconcile it from Timesheets.'}
+            </span>
+          </span>
+          <Button type="button" size="sm" disabled={saving} onClick={() => void (activeTimesheet ? clockOut() : clockIn())}>
+            {saving ? 'Saving…' : activeTimesheet ? 'Clock out' : 'Clock in'}
+          </Button>
+          <ActionFeedback
+            message={messageTarget === 'clock' ? message : null}
+            tone={message?.includes('Could') || message?.includes('already') || message?.includes('No active') ? 'error' : 'success'}
+          />
+        </div>
+      </Card>
+
+      <Card title="My shifts" subtitle="Clock in, submit actual hours, or ask the team to switch a shift." padding="none">
         {upcomingShifts.length === 0 ? (
           <EmptyState title="No upcoming shifts" description="Published roster shifts will appear here once your manager assigns them." />
         ) : (
-          <div className="invite-list">
+          <div className="staff-mobile-shift-list">
             {upcomingShifts.map((shift) => (
-              <div key={shift.id} className="invite-row">
+              <div key={shift.id} className="staff-mobile-shift-card">
                 <span>
                   <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
                   <span className="subtle">
@@ -650,11 +1103,22 @@ function StaffMemberHome({
                   </span>
                   <span className="subtle">{shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break recorded'} · {roundHours(shiftHours(shift))}</span>
                 </span>
-                <span className="invite-row-actions">
+                <span className="staff-mobile-actions">
                   <Badge tone={statusTone(shift.status)}>{shift.status}</Badge>
                   <Button type="button" size="sm" disabled={saving || isUnallocatedProfile(shift.staffProfile)} onClick={() => void submitFromShift(shift)}>
                     Submit timesheet
                   </Button>
+                  <ActionFeedback
+                    message={messageTarget === `timesheet:${shift.id}` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="button" size="sm" variant="secondary" disabled={saving || isUnallocatedProfile(shift.staffProfile)} onClick={() => void requestShiftSwitch(shift)}>
+                    Switch shift
+                  </Button>
+                  <ActionFeedback
+                    message={messageTarget === `switch:${shift.id}` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
                 </span>
               </div>
             ))}
@@ -662,15 +1126,51 @@ function StaffMemberHome({
         )}
       </Card>
 
-      <Card title="Announcements" subtitle="Staff beta notes">
-        <div className="staff-member-grid">
-          <div>
-            <strong>Roster imported from Deputy</strong>
-            <span className="subtle">Managers are checking unallocated and draft shifts before final payroll use.</span>
+      <Card title="Announcements" subtitle="Manager updates for your venue">
+        <div className="staff-mobile-comms-list">
+          {communications.announcements.length === 0 ? (
+            <div>
+              <strong>No announcements yet</strong>
+              <span className="subtle">Team updates will appear here when managers publish them.</span>
+            </div>
+          ) : (
+            communications.announcements.map((announcement) => (
+              <div key={announcement.id}>
+                <strong>{announcement.title}</strong>
+                <span>{announcement.body}</span>
+                <small>{announcement.createdByName || 'ALMA'} · {formatDateTime(announcement.createdAt)}</small>
+              </div>
+            ))
+          )}
+        </div>
+      </Card>
+
+      <Card title="Team chat" subtitle="Send a note to the staff channel">
+        <div className="staff-mobile-chat">
+          <div className="staff-mobile-comms-list">
+            {communications.chat.slice(-8).map((item) => (
+              <div key={item.id}>
+                <strong>{item.createdByName || 'Team'}</strong>
+                <span>{item.body}</span>
+                <small>{formatDateTime(item.createdAt)}</small>
+              </div>
+            ))}
+            {communications.chat.length === 0 ? (
+              <div>
+                <strong>No chat yet</strong>
+                <span className="subtle">Switch requests and staff messages will appear here.</span>
+              </div>
+            ) : null}
           </div>
-          <div>
-            <strong>Timesheets are approval-first</strong>
-            <span className="subtle">Submitted hours go to managers before Xero export.</span>
+          <div className="staff-mobile-chat-form">
+            <Input label="Message" value={chatText} onChange={(event) => setChatText(event.currentTarget.value)} placeholder="Message the team" />
+            <Button type="button" disabled={saving || !chatText.trim()} onClick={() => void sendChatMessage()}>
+              Send
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'chat' ? message : null}
+              tone={message?.includes('Could') ? 'error' : 'success'}
+            />
           </div>
         </div>
       </Card>
@@ -684,6 +1184,7 @@ function StaffMemberHome({
           <Button type="button" variant={policyAcknowledged ? 'secondary' : 'primary'} onClick={acknowledgePolicy}>
             {policyAcknowledged ? 'Acknowledged' : 'Acknowledge'}
           </Button>
+          <ActionFeedback message={messageTarget === 'policy' ? message : null} tone="success" />
         </div>
       </Card>
     </div>
@@ -758,6 +1259,37 @@ type StaffDraft = {
   venue: string;
   employmentStatus: string;
   startDate: string;
+  dateOfBirth: string;
+  addressLine1: string;
+  addressLine2: string;
+  suburb: string;
+  state: string;
+  postcode: string;
+  emergencyContactName: string;
+  emergencyContactRelationship: string;
+  emergencyContactPhone: string;
+  employmentType: string;
+  payType: string;
+  payRate: string;
+  payAward: string;
+  taxFileNumber: string;
+  taxResidencyStatus: string;
+  taxFreeThreshold: boolean;
+  hasStudyTrainingLoan: boolean;
+  superFundName: string;
+  superFundAbn: string;
+  superFundUsi: string;
+  superMemberNumber: string;
+  bankAccountName: string;
+  bankBsb: string;
+  bankAccountNumber: string;
+  visaStatus: string;
+  visaSubclass: string;
+  visaExpiryDate: string;
+  workRightsNotes: string;
+  xeroEmployeeId: string;
+  xeroPayrollCalendarId: string;
+  xeroEarningsRateId: string;
   notes: string;
 };
 
@@ -771,6 +1303,37 @@ function emptyStaffDraft(): StaffDraft {
     venue: '',
     employmentStatus: 'ACTIVE',
     startDate: '',
+    dateOfBirth: '',
+    addressLine1: '',
+    addressLine2: '',
+    suburb: '',
+    state: '',
+    postcode: '',
+    emergencyContactName: '',
+    emergencyContactRelationship: '',
+    emergencyContactPhone: '',
+    employmentType: '',
+    payType: '',
+    payRate: '',
+    payAward: '',
+    taxFileNumber: '',
+    taxResidencyStatus: '',
+    taxFreeThreshold: false,
+    hasStudyTrainingLoan: false,
+    superFundName: '',
+    superFundAbn: '',
+    superFundUsi: '',
+    superMemberNumber: '',
+    bankAccountName: '',
+    bankBsb: '',
+    bankAccountNumber: '',
+    visaStatus: '',
+    visaSubclass: '',
+    visaExpiryDate: '',
+    workRightsNotes: '',
+    xeroEmployeeId: '',
+    xeroPayrollCalendarId: '',
+    xeroEarningsRateId: '',
     notes: ''
   };
 }
@@ -785,7 +1348,84 @@ function draftFromStaff(member: StaffProfile): StaffDraft {
     venue: member.venue ?? '',
     employmentStatus: member.employmentStatus,
     startDate: member.startDate ? toDateInput(new Date(member.startDate)) : '',
+    dateOfBirth: member.dateOfBirth ? toDateInput(new Date(member.dateOfBirth)) : '',
+    addressLine1: member.addressLine1 ?? '',
+    addressLine2: member.addressLine2 ?? '',
+    suburb: member.suburb ?? '',
+    state: member.state ?? '',
+    postcode: member.postcode ?? '',
+    emergencyContactName: member.emergencyContactName ?? '',
+    emergencyContactRelationship: member.emergencyContactRelationship ?? '',
+    emergencyContactPhone: member.emergencyContactPhone ?? '',
+    employmentType: member.employmentType ?? '',
+    payType: member.payType ?? '',
+    payRate: member.payRateCents ? String(member.payRateCents / 100) : '',
+    payAward: member.payAward ?? '',
+    taxFileNumber: member.taxFileNumber ?? '',
+    taxResidencyStatus: member.taxResidencyStatus ?? '',
+    taxFreeThreshold: Boolean(member.taxFreeThreshold),
+    hasStudyTrainingLoan: Boolean(member.hasStudyTrainingLoan),
+    superFundName: member.superFundName ?? '',
+    superFundAbn: member.superFundAbn ?? '',
+    superFundUsi: member.superFundUsi ?? '',
+    superMemberNumber: member.superMemberNumber ?? '',
+    bankAccountName: member.bankAccountName ?? '',
+    bankBsb: member.bankBsb ?? '',
+    bankAccountNumber: member.bankAccountNumber ?? '',
+    visaStatus: member.visaStatus ?? '',
+    visaSubclass: member.visaSubclass ?? '',
+    visaExpiryDate: member.visaExpiryDate ? toDateInput(new Date(member.visaExpiryDate)) : '',
+    workRightsNotes: member.workRightsNotes ?? '',
+    xeroEmployeeId: member.xeroEmployeeId ?? '',
+    xeroPayrollCalendarId: member.xeroPayrollCalendarId ?? '',
+    xeroEarningsRateId: member.xeroEarningsRateId ?? '',
     notes: member.notes ?? ''
+  };
+}
+
+function staffPayloadFromDraft(draft: StaffDraft) {
+  const payRate = Number(draft.payRate.replace(/[^0-9.]/g, ''));
+  return {
+    firstName: draft.firstName.trim(),
+    lastName: draft.lastName.trim(),
+    roleTitle: draft.roleTitle.trim(),
+    email: draft.email.trim(),
+    phone: draft.phone.trim(),
+    venue: draft.venue.trim(),
+    employmentStatus: draft.employmentStatus,
+    startDate: draft.startDate,
+    dateOfBirth: draft.dateOfBirth,
+    addressLine1: draft.addressLine1.trim(),
+    addressLine2: draft.addressLine2.trim(),
+    suburb: draft.suburb.trim(),
+    state: draft.state.trim(),
+    postcode: draft.postcode.trim(),
+    emergencyContactName: draft.emergencyContactName.trim(),
+    emergencyContactRelationship: draft.emergencyContactRelationship.trim(),
+    emergencyContactPhone: draft.emergencyContactPhone.trim(),
+    employmentType: draft.employmentType.trim(),
+    payType: draft.payType.trim(),
+    payRateCents: Number.isFinite(payRate) && draft.payRate.trim() ? Math.round(payRate * 100) : undefined,
+    payAward: draft.payAward.trim(),
+    taxFileNumber: draft.taxFileNumber.trim(),
+    taxResidencyStatus: draft.taxResidencyStatus.trim(),
+    taxFreeThreshold: draft.taxFreeThreshold,
+    hasStudyTrainingLoan: draft.hasStudyTrainingLoan,
+    superFundName: draft.superFundName.trim(),
+    superFundAbn: draft.superFundAbn.trim(),
+    superFundUsi: draft.superFundUsi.trim(),
+    superMemberNumber: draft.superMemberNumber.trim(),
+    bankAccountName: draft.bankAccountName.trim(),
+    bankBsb: draft.bankBsb.trim(),
+    bankAccountNumber: draft.bankAccountNumber.trim(),
+    visaStatus: draft.visaStatus.trim(),
+    visaSubclass: draft.visaSubclass.trim(),
+    visaExpiryDate: draft.visaExpiryDate,
+    workRightsNotes: draft.workRightsNotes.trim(),
+    xeroEmployeeId: draft.xeroEmployeeId.trim(),
+    xeroPayrollCalendarId: draft.xeroPayrollCalendarId.trim(),
+    xeroEarningsRateId: draft.xeroEarningsRateId.trim(),
+    notes: draft.notes.trim()
   };
 }
 
@@ -802,49 +1442,44 @@ function StaffProfileForm({
 }) {
   const [draft, setDraft] = useState<StaffDraft>(() => (initial ? draftFromStaff(initial) : emptyStaffDraft()));
   const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
 
   function update<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
   async function submit() {
-    setError(null);
+    setFeedback(null);
     if (!draft.firstName.trim() || !draft.lastName.trim() || !draft.roleTitle.trim()) {
-      setError('First name, last name and role are required');
+      setFeedback('First name, last name and role are required');
+      setFeedbackTone('error');
       return;
     }
-    const payload = {
-      firstName: draft.firstName.trim(),
-      lastName: draft.lastName.trim(),
-      roleTitle: draft.roleTitle.trim(),
-      email: draft.email.trim(),
-      phone: draft.phone.trim(),
-      venue: draft.venue.trim(),
-      employmentStatus: draft.employmentStatus,
-      startDate: draft.startDate,
-      notes: draft.notes.trim()
-    };
+    const payload = staffPayloadFromDraft(draft);
 
     setSaving(true);
     try {
       if (mode === 'edit' && initial) {
-        onSaved(
-          await api<StaffProfile>(`/api/staff/${initial.id}`, {
+        const saved = await api<StaffProfile>(`/api/staff/${initial.id}`, {
             method: 'PATCH',
             body: JSON.stringify(payload)
-          })
-        );
+          });
+        setFeedback('Staff profile saved.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(saved), 500);
       } else {
-        onSaved(
-          await api<StaffProfile>('/api/staff', {
+        const created = await api<StaffProfile>('/api/staff', {
             method: 'POST',
             body: JSON.stringify(payload)
-          })
-        );
+          });
+        setFeedback('Staff profile created.');
+        setFeedbackTone('success');
+        window.setTimeout(() => onSaved(created), 500);
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not save staff profile');
+      setFeedback(err instanceof Error ? err.message : 'Could not save staff profile');
+      setFeedbackTone('error');
     } finally {
       setSaving(false);
     }
@@ -878,10 +1513,10 @@ function StaffProfileForm({
       </div>
       <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => update('startDate', event.currentTarget.value)} />
       <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
-      {error ? <p className="error-text">{error}</p> : null}
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" disabled={saving}>{saving ? 'Saving…' : mode === 'edit' ? 'Save changes' : 'Create staff'}</Button>
+        <ActionFeedback message={feedback} tone={feedbackTone} />
       </div>
     </form>
   );
@@ -956,6 +1591,7 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
   const [reonboardDraft, setReonboardDraft] = useState<ReonboardDraft>(() => emptyReonboardDraft());
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const pendingInvites = invites.filter((invite) => inviteStatus(invite) === 'Pending');
   const completedInvites = invites.filter((invite) => invite.completedAt);
   const expiredInvites = invites.filter((invite) => inviteStatus(invite) === 'Expired');
@@ -987,8 +1623,11 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
   async function createInvite() {
     setError(null);
     setMessage(null);
+    setMessageTarget('create-invite');
     if (!draft.firstName.trim() || !draft.lastName.trim() || !draft.roleTitle.trim()) {
-      setError('First name, last name and role are required');
+      const next = 'First name, last name and role are required';
+      setError(next);
+      setMessage(next);
       return;
     }
 
@@ -1015,7 +1654,9 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
       );
       await Promise.all([loadInvites(), reloadStaff()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not create invite');
+      const next = err instanceof Error ? err.message : 'Could not create invite';
+      setError(next);
+      setMessage(next);
     } finally {
       setSaving(false);
     }
@@ -1024,14 +1665,18 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
   async function copyInviteLink(invite: StaffInvite) {
     const link = inviteLink(invite.token);
     await navigator.clipboard?.writeText(link);
+    setMessageTarget(`copy:${invite.id}`);
     setMessage('Onboarding link copied.');
   }
 
   async function reonboardStaff() {
     setError(null);
     setMessage(null);
+    setMessageTarget('reonboard');
     if (!reonboardDraft.email.trim()) {
-      setError('Email is required to reset onboarding.');
+      const next = 'Email is required to reset onboarding.';
+      setError(next);
+      setMessage(next);
       return;
     }
 
@@ -1058,7 +1703,9 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
       );
       await Promise.all([loadInvites(), reloadStaff()]);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not reset onboarding.');
+      const next = err instanceof Error ? err.message : 'Could not reset onboarding.';
+      setError(next);
+      setMessage(next);
     } finally {
       setSaving(false);
     }
@@ -1068,6 +1715,7 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
     setSaving(true);
     setError(null);
     setMessage(null);
+    setMessageTarget(`resend:${invite.id}`);
     try {
       const resent = await api<CreatedStaffInvite>(`/api/staff/invites/${invite.id}/resend`, {
         method: 'POST',
@@ -1080,7 +1728,9 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
       );
       await loadInvites();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not resend invite');
+      const next = err instanceof Error ? err.message : 'Could not resend invite';
+      setError(next);
+      setMessage(next);
     } finally {
       setSaving(false);
     }
@@ -1123,10 +1773,12 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
               <Input label="Expires in days" type="number" min="1" value={draft.expiresInDays} onChange={(event) => update('expiresInDays', event.currentTarget.value)} />
             </div>
             <Textarea label="Note" rows={2} value={draft.note} onChange={(event) => update('note', event.currentTarget.value)} placeholder="Optional message for the invite email" />
-            {error ? <p className="error-text">{error}</p> : null}
             <div className="toolbar-right">
-              {message ? <span className="subtle">{message}</span> : null}
               <Button type="submit" disabled={saving}>{saving ? 'Creating…' : 'Create invite'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'create-invite' ? message : null}
+                tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'}
+              />
             </div>
           </form>
         </Card>
@@ -1161,6 +1813,10 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
             <Textarea label="Reset note" rows={2} value={reonboardDraft.note} onChange={(event) => updateReonboard('note', event.currentTarget.value)} />
             <div className="toolbar-right">
               <Button type="submit" disabled={saving}>{saving ? 'Resetting…' : 'Reset onboarding'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'reonboard' ? message : null}
+                tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'}
+              />
             </div>
           </form>
         </Card>
@@ -1209,9 +1865,17 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
                     <Button type="button" size="sm" variant="secondary" onClick={() => void copyInviteLink(invite)}>
                       Copy link
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `copy:${invite.id}` ? message : null}
+                      tone="success"
+                    />
                     <Button type="button" size="sm" variant="ghost" disabled={saving || status === 'Completed'} onClick={() => void resendInvite(invite)}>
                       Resend
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `resend:${invite.id}` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
                   </span>
                 </div>
               );
@@ -1234,25 +1898,77 @@ function AccessPage({
   setSelectedId: (id: string) => void;
   reload: () => Promise<void>;
 }) {
+  const { user } = useAuth();
   const selected = staff.find((member) => member.id === selectedId) ?? staff[0] ?? null;
+  const [profileDraft, setProfileDraft] = useState<StaffDraft>(() => selected ? draftFromStaff(selected) : emptyStaffDraft());
+  const [training, setTraining] = useState<TrainingOverview | null>(null);
+  const [selectedModuleId, setSelectedModuleId] = useState('');
+  const [documentDraft, setDocumentDraft] = useState({
+    recordType: 'TRAINING' as StaffRecordType,
+    title: '',
+    issuer: '',
+    certificateNumber: '',
+    issueDate: '',
+    expiryDate: '',
+    status: 'PENDING',
+    documentName: '',
+    documentUrl: '',
+    notes: ''
+  });
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const accessByApp = new Map(selected?.appAccess.map((access) => [access.appId, access]));
+  const activeModules = (training?.modules ?? []).filter((module) => module.status === 'ACTIVE');
+  const selectedTrainingRecords = training?.records.filter((record) => record.staffProfileId === selected?.id) ?? selected?.trainingRecords ?? [];
+  const canManageSettings = canAccessSettings(user);
+  const visibleStaffApps = canManageSettings ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
+  const visibleProfilePresets = canManageSettings
+    ? STAFF_PROFILE_PRESETS
+    : STAFF_PROFILE_PRESETS.filter((preset) => preset.id !== 'admin');
+
+  function permissionsFor(appId: AlmaAppId) {
+    return accessByApp.get(appId)?.permissions ?? {};
+  }
+
+  const loadTraining = useCallback(async () => {
+    try {
+      const overview = await api<TrainingOverview>('/api/training/overview');
+      setTraining(overview);
+      if (!selectedModuleId && overview.modules[0]) setSelectedModuleId(overview.modules[0].id);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load Academy records.');
+    }
+  }, [selectedModuleId]);
+
+  useEffect(() => {
+    setProfileDraft(selected ? draftFromStaff(selected) : emptyStaffDraft());
+  }, [selected?.id]);
+
+  useEffect(() => {
+    void loadTraining();
+  }, [loadTraining]);
+
+  function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
+    setProfileDraft((current) => ({ ...current, [key]: value }));
+  }
 
   async function setAccess(appId: AlmaAppId, status: StaffAppAccessStatus) {
     if (!selected) return;
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`access:${appId}`);
     try {
       await api(`/api/staff/${selected.id}/app-access`, {
         method: 'PUT',
         body: JSON.stringify({
-          apps: STAFF_APPS.map((app) => {
+          apps: visibleStaffApps.map((app) => {
             const current = accessByApp.get(app.id);
             return {
               appId: app.id,
               status: app.id === appId ? status : current?.status ?? 'DISABLED',
               role: current?.role ?? app.role,
+              permissions: current?.permissions ?? {},
               notes: current?.notes ?? ''
             };
           })
@@ -1262,6 +1978,252 @@ function AccessPage({
       setMessage('App access updated.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not update app access.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveAppAccessWithPreset(presetId: string) {
+    if (!selected) return;
+    const preset = STAFF_PROFILE_PRESETS.find((item) => item.id === presetId);
+    if (!preset) return;
+
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`preset:${presetId}`);
+    try {
+      await api<StaffProfile>(`/api/staff/${selected.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          ...staffPayloadFromDraft({ ...profileDraft, roleTitle: preset.roleTitle, employmentType: preset.employmentType }),
+          roleTitle: preset.roleTitle,
+          employmentType: preset.employmentType
+        })
+      });
+      await api(`/api/staff/${selected.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          apps: visibleStaffApps.map((app) => {
+            const configured = preset.appAccess[app.id];
+            const current = accessByApp.get(app.id);
+            return {
+              appId: app.id,
+              status: configured?.status ?? current?.status ?? 'DISABLED',
+              role: configured?.role ?? current?.role ?? app.role,
+              permissions: configured?.permissions ?? current?.permissions ?? {},
+              notes: current?.notes ?? `Preset: ${preset.label}`
+            };
+          })
+        })
+      });
+      setProfileDraft((current) => ({ ...current, roleTitle: preset.roleTitle, employmentType: preset.employmentType }));
+      await reload();
+      setMessage(`${preset.label} profile applied.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not apply profile preset.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setPermission(appId: AlmaAppId, permissionKey: string, enabled: boolean) {
+    if (!selected) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`permission:${appId}`);
+    try {
+      await api(`/api/staff/${selected.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          apps: visibleStaffApps.map((app) => {
+            const current = accessByApp.get(app.id);
+            const currentPermissions = current?.permissions ?? {};
+            return {
+              appId: app.id,
+              status: current?.status ?? 'DISABLED',
+              role: current?.role ?? app.role,
+              permissions: app.id === appId
+                ? { ...currentPermissions, [permissionKey]: enabled }
+                : currentPermissions,
+              notes: current?.notes ?? ''
+            };
+          })
+        })
+      });
+      await reload();
+      setMessage('Custom permission updated.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update permission.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveProfile() {
+    if (!selected) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('profile');
+    try {
+      await api<StaffProfile>(`/api/staff/${selected.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(staffPayloadFromDraft(profileDraft))
+      });
+      await reload();
+      setMessage('Staff profile saved.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save staff profile.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function archiveProfile() {
+    if (!selected || selected.isAdmin) return;
+    if (!window.confirm(`Archive ${selected.firstName} ${selected.lastName}? They will disappear from active staff lists.`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('profile');
+    try {
+      await api(`/api/staff/${selected.id}`, { method: 'DELETE' });
+      await reload();
+      const next = staff.find((member) => member.id !== selected.id);
+      setSelectedId(next?.id ?? '');
+      setMessage('Staff profile archived.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not archive staff profile.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addDocument() {
+    setMessageTarget('document');
+    if (!selected || !documentDraft.title.trim()) {
+      setMessage('Document title is required.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/${selected.id}/records`, {
+        method: 'POST',
+        body: JSON.stringify(documentDraft)
+      });
+      setDocumentDraft({
+        recordType: 'TRAINING',
+        title: '',
+        issuer: '',
+        certificateNumber: '',
+        issueDate: '',
+        expiryDate: '',
+        status: 'PENDING',
+        documentName: '',
+        documentUrl: '',
+        notes: ''
+      });
+      await reload();
+      setMessage('Document added.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not add document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approveDocument(record: StaffComplianceRecord) {
+    if (!selected) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:approve`);
+    try {
+      await api(`/api/staff/${selected.id}/records/${record.id}/approve`, { method: 'POST' });
+      await reload();
+      setMessage('Document approved.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not approve document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteDocument(record: StaffComplianceRecord) {
+    if (!selected) return;
+    if (!window.confirm(`Remove ${record.title} from ${selected.firstName}'s documents?`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:remove`);
+    try {
+      await api(`/api/staff/${selected.id}/records/${record.id}`, { method: 'DELETE' });
+      await reload();
+      setMessage('Document removed.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function assignAcademyModule() {
+    setMessageTarget('academy-assign');
+    if (!selected || !selectedModuleId) {
+      setMessage('Choose a module before assigning Academy training.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api('/api/training/assignments', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffProfileId: selected.id,
+          moduleId: selectedModuleId,
+          notes: 'Assigned from Access profile.'
+        })
+      });
+      await Promise.all([loadTraining(), reload()]);
+      setMessage('Academy module assigned.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not assign Academy module.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateAcademyRecord(record: StaffTrainingRecord, status: StaffTrainingStatus) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`academy:${record.id}:${status}`);
+    try {
+      await api(`/api/training/records/${record.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          status,
+          completedAt: status === 'COMPLETED' ? new Date().toISOString() : '',
+          notes: record.notes ?? ''
+        })
+      });
+      await Promise.all([loadTraining(), reload()]);
+      setMessage('Academy record updated.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update Academy record.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAcademyRecord(record: StaffTrainingRecord) {
+    if (!window.confirm(`Remove ${record.module?.title ?? 'this Academy module'} from ${selected?.firstName ?? 'this staff member'}?`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`academy:${record.id}:remove`);
+    try {
+      await api(`/api/training/records/${record.id}`, { method: 'DELETE' });
+      await Promise.all([loadTraining(), reload()]);
+      setMessage('Academy assignment removed.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove Academy assignment.');
     } finally {
       setSaving(false);
     }
@@ -1283,6 +2245,7 @@ function AccessPage({
                   {member.firstName} {member.lastName}
                 </strong>
                 <span className="subtle" style={{ display: 'block' }}>{member.roleTitle}</span>
+                <span className="subtle" style={{ display: 'block' }}>{member.venue || 'No venue'} · {member.employmentStatus}</span>
               </span>
             </button>
           ))}
@@ -1290,14 +2253,120 @@ function AccessPage({
       </Card>
 
       <Card
-        title={selected ? `${selected.firstName} ${selected.lastName}` : 'App access'}
-        subtitle="Enable or disable access across the ALMA Suite from the shared staff profile"
+        title={selected ? `${selected.firstName} ${selected.lastName}` : 'Staff profile'}
+        subtitle="Edit details, documents, Academy tasks, notes, and app access from one admin workspace"
       >
         {!selected ? <EmptyState title="No staff selected" description="Add or import staff first." /> : null}
         {selected ? (
           <>
+            <div className="stats-grid">
+              <StatCard label="Profile" value={selected.roleTitle} hint={selected.venue || 'No venue'} />
+              <StatCard label="Documents" value={selected.records.length} hint={`${selected.records.filter((record) => record.status === 'APPROVED').length} approved`} />
+              <StatCard label="Academy" value={`L${selected.trainingLevel ?? 0}`} hint={`${selectedTrainingRecords.length} records`} />
+              <StatCard label="Pay" value={formatCents(selected.trainingPayRateCents ?? selected.payRateCents)} hint={selected.payType || 'No pay type'} />
+            </div>
+
+            <Card title="Profile type" subtitle="Use these as starting points, then tweak the person below.">
+              <div className="app-access-grid">
+                {visibleProfilePresets.map((preset) => (
+                  <button
+                    key={preset.id}
+                    type="button"
+                    className="app-access-tile"
+                    disabled={saving}
+                    onClick={() => void saveAppAccessWithPreset(preset.id)}
+                  >
+                    <strong>{preset.label}</strong>
+                    <span className="subtle">{preset.roleTitle}</span>
+                    <Badge tone="info">{Object.values(preset.appAccess).filter((access) => access.status === 'ENABLED').length} apps</Badge>
+                    <ActionFeedback
+                      message={messageTarget === `preset:${preset.id}` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </button>
+                ))}
+              </div>
+            </Card>
+
+            <Card title="Personal and payroll details" subtitle="Admin view of the shared StaffProfile authority.">
+              <form
+                className="staff-profile-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void saveProfile();
+                }}
+              >
+                <div className="form-grid three">
+                  <Input label="First name" value={profileDraft.firstName} onChange={(event) => updateProfile('firstName', event.currentTarget.value)} />
+                  <Input label="Last name" value={profileDraft.lastName} onChange={(event) => updateProfile('lastName', event.currentTarget.value)} />
+                  <Input label="Role title" value={profileDraft.roleTitle} onChange={(event) => updateProfile('roleTitle', event.currentTarget.value)} />
+                  <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
+                  <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
+                  <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
+                  <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
+                  <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
+                  <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
+                </div>
+                <div className="form-grid three">
+                  <Input label="Address" value={profileDraft.addressLine1} onChange={(event) => updateProfile('addressLine1', event.currentTarget.value)} />
+                  <Input label="Address 2" value={profileDraft.addressLine2} onChange={(event) => updateProfile('addressLine2', event.currentTarget.value)} />
+                  <Input label="Suburb" value={profileDraft.suburb} onChange={(event) => updateProfile('suburb', event.currentTarget.value)} />
+                  <Input label="State" value={profileDraft.state} onChange={(event) => updateProfile('state', event.currentTarget.value)} />
+                  <Input label="Postcode" value={profileDraft.postcode} onChange={(event) => updateProfile('postcode', event.currentTarget.value)} />
+                  <Input label="Employment type" value={profileDraft.employmentType} onChange={(event) => updateProfile('employmentType', event.currentTarget.value)} />
+                </div>
+                <div className="form-grid three">
+                  <Input label="Emergency contact" value={profileDraft.emergencyContactName} onChange={(event) => updateProfile('emergencyContactName', event.currentTarget.value)} />
+                  <Input label="Relationship" value={profileDraft.emergencyContactRelationship} onChange={(event) => updateProfile('emergencyContactRelationship', event.currentTarget.value)} />
+                  <Input label="Emergency phone" value={profileDraft.emergencyContactPhone} onChange={(event) => updateProfile('emergencyContactPhone', event.currentTarget.value)} />
+                  <Input label="Pay type" value={profileDraft.payType} onChange={(event) => updateProfile('payType', event.currentTarget.value)} />
+                  <Input label="Pay rate" value={profileDraft.payRate} onChange={(event) => updateProfile('payRate', event.currentTarget.value)} />
+                  <Input label="Award" value={profileDraft.payAward} onChange={(event) => updateProfile('payAward', event.currentTarget.value)} />
+                </div>
+                <div className="form-grid three">
+                  <Input label="TFN" value={profileDraft.taxFileNumber} onChange={(event) => updateProfile('taxFileNumber', event.currentTarget.value)} />
+                  <Input label="Tax residency" value={profileDraft.taxResidencyStatus} onChange={(event) => updateProfile('taxResidencyStatus', event.currentTarget.value)} />
+                  <Input label="Super fund" value={profileDraft.superFundName} onChange={(event) => updateProfile('superFundName', event.currentTarget.value)} />
+                  <Input label="Super ABN" value={profileDraft.superFundAbn} onChange={(event) => updateProfile('superFundAbn', event.currentTarget.value)} />
+                  <Input label="Super USI" value={profileDraft.superFundUsi} onChange={(event) => updateProfile('superFundUsi', event.currentTarget.value)} />
+                  <Input label="Member number" value={profileDraft.superMemberNumber} onChange={(event) => updateProfile('superMemberNumber', event.currentTarget.value)} />
+                  <Input label="Bank account name" value={profileDraft.bankAccountName} onChange={(event) => updateProfile('bankAccountName', event.currentTarget.value)} />
+                  <Input label="BSB" value={profileDraft.bankBsb} onChange={(event) => updateProfile('bankBsb', event.currentTarget.value)} />
+                  <Input label="Account number" value={profileDraft.bankAccountNumber} onChange={(event) => updateProfile('bankAccountNumber', event.currentTarget.value)} />
+                </div>
+                <div className="onboarding-toggle-row">
+                  <label className="check-row">
+                    <input type="checkbox" checked={profileDraft.taxFreeThreshold} onChange={(event) => updateProfile('taxFreeThreshold', event.currentTarget.checked)} />
+                    Claims tax-free threshold
+                  </label>
+                  <label className="check-row">
+                    <input type="checkbox" checked={profileDraft.hasStudyTrainingLoan} onChange={(event) => updateProfile('hasStudyTrainingLoan', event.currentTarget.checked)} />
+                    Study or training loan
+                  </label>
+                </div>
+                <div className="form-grid three">
+                  <Input label="Visa status" value={profileDraft.visaStatus} onChange={(event) => updateProfile('visaStatus', event.currentTarget.value)} />
+                  <Input label="Visa subclass" value={profileDraft.visaSubclass} onChange={(event) => updateProfile('visaSubclass', event.currentTarget.value)} />
+                  <Input label="Visa expiry" type="date" value={profileDraft.visaExpiryDate} onChange={(event) => updateProfile('visaExpiryDate', event.currentTarget.value)} />
+                  <Input label="Xero employee ID" value={profileDraft.xeroEmployeeId} onChange={(event) => updateProfile('xeroEmployeeId', event.currentTarget.value)} />
+                  <Input label="Xero payroll calendar" value={profileDraft.xeroPayrollCalendarId} onChange={(event) => updateProfile('xeroPayrollCalendarId', event.currentTarget.value)} />
+                  <Input label="Xero earnings rate" value={profileDraft.xeroEarningsRateId} onChange={(event) => updateProfile('xeroEarningsRateId', event.currentTarget.value)} />
+                </div>
+                <Textarea label="Work rights notes" rows={2} value={profileDraft.workRightsNotes} onChange={(event) => updateProfile('workRightsNotes', event.currentTarget.value)} />
+                <Textarea label="Manager notes" rows={3} value={profileDraft.notes} onChange={(event) => updateProfile('notes', event.currentTarget.value)} />
+                <div className="toolbar-right">
+                  <Button type="button" variant="danger" disabled={saving || selected.isAdmin} onClick={() => void archiveProfile()}>Archive profile</Button>
+                  <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</Button>
+                  <ActionFeedback
+                    message={messageTarget === 'profile' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                </div>
+              </form>
+            </Card>
+
             <div className="app-access-grid">
-              {STAFF_APPS.map((app) => {
+              {visibleStaffApps.map((app) => {
                 const current = accessByApp.get(app.id);
                 const enabled = current?.status === 'ENABLED';
                 return (
@@ -1307,6 +2376,9 @@ function AccessPage({
                     <Badge tone={enabled ? 'positive' : 'muted'} dot>
                       {current?.status ?? 'DISABLED'}
                     </Badge>
+                    <span className="subtle">
+                      {Object.entries(current?.permissions ?? {}).filter(([, allowed]) => allowed).length} custom permissions
+                    </span>
                     <Button
                       size="sm"
                       variant={enabled ? 'secondary' : 'primary'}
@@ -1315,11 +2387,148 @@ function AccessPage({
                     >
                       {enabled ? 'Disable' : 'Enable'}
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `access:${app.id}` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
                   </div>
                 );
               })}
             </div>
-            {message ? <p className={message.includes('updated') ? 'subtle' : 'error-text'}>{message}</p> : null}
+
+            <Card title="Custom permissions" subtitle="Fine tune what this person can do after applying a profile type.">
+              <div className="app-access-grid">
+                {visibleStaffApps.map((app) => {
+                  const permissions = ACCESS_PERMISSION_GROUPS[app.id] ?? [];
+                  if (!permissions.length) return null;
+                  const current = accessByApp.get(app.id);
+                  const appPermissions = permissionsFor(app.id);
+                  return (
+                    <div key={app.id} className="app-access-tile">
+                      <strong>{app.label}</strong>
+                      <span className="subtle">{current?.status ?? 'DISABLED'} · {current?.role ?? app.role}</span>
+                      <div className="onboarding-toggle-row">
+                        {permissions.map((permission) => (
+                          <label key={permission.key} className="check-row">
+                            <input
+                              type="checkbox"
+                              checked={Boolean(appPermissions[permission.key] || appPermissions.admin)}
+                              disabled={saving || Boolean(appPermissions.admin && permission.key !== 'admin')}
+                              onChange={(event) => void setPermission(app.id, permission.key, event.currentTarget.checked)}
+                            />
+                            {permission.label}
+                          </label>
+                        ))}
+                      </div>
+                      <ActionFeedback
+                        message={messageTarget === `permission:${app.id}` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+            </Card>
+
+            <Card title="Documents" subtitle="View uploaded documents and add certificates or admin-only notes.">
+              <div className="staff-list">
+                {selected.records.length === 0 ? <EmptyState title="No documents" description="Add RSA, visa, payroll or training documents below." /> : null}
+                {selected.records.map((record) => (
+                  <div key={record.id} className="staff-expiry-row">
+                    <span>
+                      <strong>{record.title}</strong>
+                      <span className="subtle">{record.recordType} · {record.issuer || 'No issuer'} · expires {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}</span>
+                      {record.documentUrl ? <a href={record.documentUrl} target="_blank" rel="noreferrer">Open document</a> : <span className="subtle">No document link</span>}
+                      {record.notes ? <span className="subtle">{record.notes}</span> : null}
+                    </span>
+                    <span className="invite-row-actions">
+                      <Badge tone={record.status === 'APPROVED' ? 'positive' : record.status === 'EXPIRED' ? 'danger' : 'warning'}>{record.status}</Badge>
+                      <Button type="button" size="sm" variant="secondary" disabled={saving || record.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
+                      <ActionFeedback
+                        message={messageTarget === `record:${record.id}:approve` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                      <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void deleteDocument(record)}>Remove</Button>
+                      <ActionFeedback
+                        message={messageTarget === `record:${record.id}:remove` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+              <form
+                className="staff-profile-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void addDocument();
+                }}
+              >
+                <div className="form-grid three">
+                  <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+                  <Input label="Title" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
+                  <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
+                  <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
+                  <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, issueDate: event.currentTarget.value }))} />
+                  <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
+                  <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
+                  <Input label="Document name" value={documentDraft.documentName} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentName: event.currentTarget.value }))} />
+                  <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentUrl: event.currentTarget.value }))} />
+                </div>
+                <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                <div className="toolbar-right">
+                  <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add document'}</Button>
+                  <ActionFeedback
+                    message={messageTarget === 'document' ? message : null}
+                    tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'}
+                  />
+                </div>
+              </form>
+            </Card>
+
+            <Card title="Academy and tasks" subtitle="Assign modules and update completion from the same profile screen.">
+              <div className="form-grid two">
+                <Select label="Assign module" value={selectedModuleId} onChange={(event) => setSelectedModuleId(event.currentTarget.value)} options={[{ label: 'Select module', value: '' }, ...activeModules.map((module) => ({ label: `L${module.level} · ${module.title}`, value: module.id }))]} />
+                <div className="toolbar-right">
+                  <Button type="button" disabled={saving || !selectedModuleId} onClick={() => void assignAcademyModule()}>Assign module</Button>
+                  <ActionFeedback
+                    message={messageTarget === 'academy-assign' ? message : null}
+                    tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+                  />
+                </div>
+              </div>
+              <div className="staff-list">
+                {selectedTrainingRecords.length === 0 ? <EmptyState title="No Academy modules assigned" description="Assigned training appears here." /> : null}
+                {selectedTrainingRecords.map((record) => (
+                  <div key={record.id} className="staff-expiry-row">
+                    <span>
+                      <strong>{record.module?.title ?? 'Academy module'}</strong>
+                      <span className="subtle">Level {record.module?.level ?? '-'} · {record.module?.category ?? 'General'} · {record.notes || 'No notes'}</span>
+                    </span>
+                    <span className="invite-row-actions">
+                      <Badge tone={record.status === 'COMPLETED' ? 'positive' : record.status === 'IN_PROGRESS' ? 'warning' : 'muted'}>{record.status.replace('_', ' ')}</Badge>
+                      <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void updateAcademyRecord(record, 'IN_PROGRESS')}>Start</Button>
+                      <ActionFeedback
+                        message={messageTarget === `academy:${record.id}:IN_PROGRESS` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                      <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void updateAcademyRecord(record, 'COMPLETED')}>Complete</Button>
+                      <ActionFeedback
+                        message={messageTarget === `academy:${record.id}:COMPLETED` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                      <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void deleteAcademyRecord(record)}>Remove</Button>
+                      <ActionFeedback
+                        message={messageTarget === `academy:${record.id}:remove` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
           </>
         ) : null}
       </Card>
@@ -1332,7 +2541,13 @@ type AdminSettingsDraft = {
   primaryContactName: string;
   primaryContactEmail: string;
   primaryContactPhone: string;
+  venues: AppSettingsPayload['venues'];
   notifyEmail: string;
+  notifyOverdueIssues: boolean;
+  notifyExpiringStaff: boolean;
+  notifyOutOfRangeTemp: boolean;
+  goveeApiKey: string;
+  goveeBaseUrl: string;
   onboardingSettings: OnboardingSettings;
 };
 
@@ -1342,9 +2557,19 @@ function draftFromSettings(settings: AppSettingsPayload): AdminSettingsDraft {
     primaryContactName: settings.primaryContactName ?? '',
     primaryContactEmail: settings.primaryContactEmail ?? '',
     primaryContactPhone: settings.primaryContactPhone ?? '',
+    venues: settings.venues,
     notifyEmail: settings.notifyEmail ?? '',
+    notifyOverdueIssues: settings.notifyOverdueIssues,
+    notifyExpiringStaff: settings.notifyExpiringStaff,
+    notifyOutOfRangeTemp: settings.notifyOutOfRangeTemp,
+    goveeApiKey: settings.goveeApiKey ?? '',
+    goveeBaseUrl: settings.goveeBaseUrl ?? 'https://openapi.api.govee.com',
     onboardingSettings: normaliseOnboardingSettings(settings.onboardingSettings)
   };
+}
+
+function blankAdminVenue(): AppSettingsPayload['venues'][number] {
+  return { name: '', address: '', phone: '' };
 }
 
 const ONBOARDING_SETTING_ROWS: Array<{
@@ -1379,6 +2604,554 @@ const ONBOARDING_SETTING_ROWS: Array<{
   }
 ];
 
+const COMMUNICATION_PERMISSION_KEYS = [
+  { key: 'chatTeam', label: 'Team chat' },
+  { key: 'chatDirect', label: 'Direct messages' },
+  { key: 'chatModerate', label: 'Moderate chats' },
+  { key: 'announcementsManage', label: 'Announcements' },
+  { key: 'communicationsManage', label: 'Comms admin' }
+];
+
+type AnnouncementDraft = {
+  title: string;
+  body: string;
+  audience: string;
+  appId: AlmaAppId;
+  venue: string;
+  pinned: boolean;
+  expiresAt: string;
+};
+
+type ChannelDraft = {
+  name: string;
+  description: string;
+  type: SuiteChatChannel['type'];
+  venue: string;
+  groupKey: string;
+  postPermission: string;
+  directMessagesAllowed: boolean;
+};
+
+function emptyAnnouncementDraft(): AnnouncementDraft {
+  return {
+    title: '',
+    body: '',
+    audience: 'ALL',
+    appId: 'STAFF',
+    venue: '',
+    pinned: false,
+    expiresAt: ''
+  };
+}
+
+function emptyChannelDraft(): ChannelDraft {
+  return {
+    name: '',
+    description: '',
+    type: 'GROUP',
+    venue: '',
+    groupKey: '',
+    postPermission: '',
+    directMessagesAllowed: true
+  };
+}
+
+function dateInputFromIso(value: string | null | undefined) {
+  if (!value) return '';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toISOString().slice(0, 10);
+}
+
+function permissionsForMember(member: StaffProfile) {
+  return member.appAccess.find((access) => access.appId === 'STAFF')?.permissions ?? {};
+}
+
+function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: () => Promise<void> }) {
+  const { user } = useAuth();
+  const [payload, setPayload] = useState<SuiteCommunicationsPayload>({ announcements: [], channels: [], chat: [] });
+  const [announcementDraft, setAnnouncementDraft] = useState<AnnouncementDraft>(() => emptyAnnouncementDraft());
+  const [editingAnnouncementId, setEditingAnnouncementId] = useState('');
+  const [channelDraft, setChannelDraft] = useState<ChannelDraft>(() => emptyChannelDraft());
+  const [editingChannelId, setEditingChannelId] = useState('');
+  const [selectedChannelId, setSelectedChannelId] = useState('');
+  const [directRecipientId, setDirectRecipientId] = useState('');
+  const [chatText, setChatText] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const canManage = canManageCommunications(user);
+  const canDirect = canDirectMessage(user);
+  const permissionStaffApps = canAccessSettings(user) ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
+  const activeChannels = payload.channels.filter((channel) => channel.isActive);
+  const selectedChannel = activeChannels.find((channel) => channel.id === selectedChannelId) ?? activeChannels[0] ?? null;
+  const recipients = staff.filter((member) => member.id !== user?.id && member.employmentStatus !== 'ARCHIVED');
+
+  const loadCommunications = useCallback(async (options?: { channelId?: string; recipientId?: string }) => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const params = new URLSearchParams({ appId: 'STAFF' });
+      if (user?.venue) params.set('venue', user.venue);
+      if (options?.channelId) params.set('channelId', options.channelId);
+      if (options?.recipientId) params.set('recipientId', options.recipientId);
+      const data = canManage && !options?.channelId && !options?.recipientId
+        ? await api<SuiteCommunicationsPayload>('/api/communications/admin')
+        : await api<SuiteCommunicationsPayload>(`/api/communications?${params.toString()}`);
+      setPayload(data);
+      if (!selectedChannelId && data.channels[0]) setSelectedChannelId(data.channels[0].id);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load communications.');
+    } finally {
+      setLoading(false);
+    }
+  }, [canManage, selectedChannelId, user?.venue]);
+
+  useEffect(() => {
+    void loadCommunications();
+  }, [loadCommunications]);
+
+  function startEditAnnouncement(announcement: SuiteAnnouncement) {
+    setEditingAnnouncementId(announcement.id);
+    setAnnouncementDraft({
+      title: announcement.title,
+      body: announcement.body,
+      audience: announcement.audience,
+      appId: announcement.appId ?? 'STAFF',
+      venue: announcement.venue ?? '',
+      pinned: announcement.pinned,
+      expiresAt: dateInputFromIso(announcement.expiresAt)
+    });
+  }
+
+  function startEditChannel(channel: SuiteChatChannel) {
+    setEditingChannelId(channel.id);
+    setChannelDraft({
+      name: channel.name,
+      description: channel.description ?? '',
+      type: channel.type,
+      venue: channel.venue ?? '',
+      groupKey: channel.groupKey ?? '',
+      postPermission: channel.postPermission ?? '',
+      directMessagesAllowed: channel.directMessagesAllowed
+    });
+  }
+
+  async function saveAnnouncement() {
+    if (!canManage) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('announcement');
+    try {
+      const body = JSON.stringify({
+        title: announcementDraft.title,
+        body: announcementDraft.body,
+        audience: announcementDraft.audience,
+        appId: announcementDraft.appId,
+        venue: announcementDraft.venue,
+        pinned: announcementDraft.pinned,
+        expiresAt: announcementDraft.expiresAt
+      });
+      if (editingAnnouncementId) {
+        await api<SuiteAnnouncement>(`/api/communications/announcements/${editingAnnouncementId}`, { method: 'PATCH', body });
+        setMessage('Announcement updated.');
+      } else {
+        await api<SuiteAnnouncement>('/api/communications/announcements', { method: 'POST', body });
+        setMessage('Announcement published.');
+      }
+      setAnnouncementDraft(emptyAnnouncementDraft());
+      setEditingAnnouncementId('');
+      await loadCommunications();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save announcement.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteAnnouncement(announcement: SuiteAnnouncement) {
+    if (!canManage || !window.confirm(`Delete announcement "${announcement.title}"?`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`announcement:${announcement.id}:delete`);
+    try {
+      await api(`/api/communications/announcements/${announcement.id}`, { method: 'DELETE' });
+      await loadCommunications();
+      setMessage('Announcement deleted.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not delete announcement.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveChannel() {
+    if (!canManage) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('channel');
+    try {
+      const body = JSON.stringify({
+        name: channelDraft.name,
+        description: channelDraft.description,
+        type: channelDraft.type,
+        appId: 'STAFF',
+        venue: channelDraft.venue,
+        groupKey: channelDraft.groupKey,
+        postPermission: channelDraft.postPermission,
+        directMessagesAllowed: channelDraft.directMessagesAllowed,
+        isActive: true
+      });
+      if (editingChannelId) {
+        await api<SuiteChatChannel>(`/api/communications/channels/${editingChannelId}`, { method: 'PATCH', body });
+        setMessage('Chat group updated.');
+      } else {
+        await api<SuiteChatChannel>('/api/communications/channels', { method: 'POST', body });
+        setMessage('Chat group created.');
+      }
+      setChannelDraft(emptyChannelDraft());
+      setEditingChannelId('');
+      await loadCommunications();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save chat group.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteChannel(channel: SuiteChatChannel) {
+    if (!canManage || !window.confirm(`Archive chat group "${channel.name}"? Messages stay in history.`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`channel:${channel.id}:delete`);
+    try {
+      await api(`/api/communications/channels/${channel.id}`, { method: 'DELETE' });
+      if (selectedChannelId === channel.id) setSelectedChannelId('');
+      await loadCommunications();
+      setMessage('Chat group archived.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not archive chat group.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function openChannel(channel: SuiteChatChannel) {
+    setSelectedChannelId(channel.id);
+    setDirectRecipientId('');
+    await loadCommunications({ channelId: channel.id });
+  }
+
+  async function openDirect(recipientId: string) {
+    setDirectRecipientId(recipientId);
+    setSelectedChannelId('');
+    await loadCommunications({ recipientId });
+  }
+
+  async function sendMessage() {
+    if (!chatText.trim()) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('chat-send');
+    try {
+      await api<SuiteChatMessage>('/api/communications/chat', {
+        method: 'POST',
+        body: JSON.stringify({
+          appId: 'STAFF',
+          channelId: directRecipientId ? '' : selectedChannel?.id ?? '',
+          recipientId: directRecipientId,
+          venue: user?.venue ?? '',
+          body: chatText.trim()
+        })
+      });
+      setChatText('');
+      await loadCommunications(directRecipientId ? { recipientId: directRecipientId } : { channelId: selectedChannel?.id });
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send message.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteMessage(chat: SuiteChatMessage) {
+    if (!window.confirm('Delete this message?')) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`chat:${chat.id}:delete`);
+    try {
+      await api(`/api/communications/chat/${chat.id}`, { method: 'DELETE' });
+      await loadCommunications(directRecipientId ? { recipientId: directRecipientId } : { channelId: selectedChannel?.id });
+      setMessage('Message deleted.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not delete message.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setChatPermission(member: StaffProfile, key: string, enabled: boolean) {
+    if (!canManage) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`chat-permission:${member.id}`);
+    try {
+      await api(`/api/staff/${member.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          apps: permissionStaffApps.map((app) => {
+            const current = member.appAccess.find((access) => access.appId === app.id);
+            const permissions = current?.permissions ?? {};
+            return {
+              appId: app.id,
+              status: current?.status ?? (app.id === 'STAFF' ? 'ENABLED' : 'DISABLED'),
+              role: current?.role ?? app.role,
+              permissions: app.id === 'STAFF' ? { ...permissions, [key]: enabled } : permissions,
+              notes: current?.notes ?? ''
+            };
+          })
+        })
+      });
+      await reload();
+      setMessage('Chat permission updated.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update chat permission.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const conversationTitle = directRecipientId
+    ? `Direct message: ${recipients.find((member) => member.id === directRecipientId)?.firstName ?? 'Staff'}`
+    : selectedChannel?.name ?? 'Team chat';
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Communications"
+        title={canManage ? 'Announcements and team chats' : 'Team chat'}
+        description={canManage ? 'Manage announcements, venue and area group chats, direct messaging, and staff chat permissions.' : 'Read announcements, use your approved team channels, and direct-message staff if enabled.'}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Announcements" value={payload.announcements.length} hint="Active" loading={loading} />
+        <StatCard label="Chat groups" value={payload.channels.length} hint="Visible channels" loading={loading} />
+        <StatCard label="Messages" value={payload.chat.length} hint="Current thread" loading={loading} />
+        <StatCard label="Direct messages" value={canDirect ? 'On' : 'Off'} hint="Controlled in Profiles" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') || message.includes('permission') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      {canManage ? (
+        <div className="tips-entry-grid">
+          <Card title="Announcements" subtitle="Create, edit, pin, expire, or delete staff announcements.">
+            <form
+              className="staff-profile-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveAnnouncement();
+              }}
+            >
+              <div className="form-grid two">
+                <Input label="Title" value={announcementDraft.title} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
+                <Select label="Venue" value={announcementDraft.venue} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
+              </div>
+              <Textarea label="Announcement" rows={3} value={announcementDraft.body} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, body: event.currentTarget.value }))} />
+              <div className="form-grid two">
+                <Input label="Audience" value={announcementDraft.audience} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.currentTarget.value }))} />
+                <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} />
+              </div>
+              <label className="check-row">
+                <input type="checkbox" checked={announcementDraft.pinned} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, pinned: event.currentTarget.checked }))} />
+                Pin announcement
+              </label>
+              <div className="toolbar-right">
+                {editingAnnouncementId ? <Button type="button" variant="secondary" onClick={() => { setEditingAnnouncementId(''); setAnnouncementDraft(emptyAnnouncementDraft()); }}>Cancel edit</Button> : null}
+                <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editingAnnouncementId ? 'Save announcement' : 'Publish announcement'}</Button>
+                <ActionFeedback
+                  message={messageTarget === 'announcement' ? message : null}
+                  tone={message?.includes('Could') ? 'error' : 'success'}
+                />
+              </div>
+            </form>
+            <div className="staff-list">
+              {payload.announcements.map((announcement) => (
+                <div key={announcement.id} className="staff-expiry-row">
+                  <span>
+                    <strong>{announcement.title}</strong>
+                    <span className="subtle">{announcement.venue || 'All venues'} · {announcement.pinned ? 'Pinned' : 'Standard'} · {formatDateTime(announcement.createdAt)}</span>
+                    <span>{announcement.body}</span>
+                  </span>
+                  <span className="invite-row-actions">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => startEditAnnouncement(announcement)}>Edit</Button>
+                    <Button type="button" size="sm" variant="ghost" onClick={() => void deleteAnnouncement(announcement)}>Delete</Button>
+                    <ActionFeedback
+                      message={messageTarget === `announcement:${announcement.id}:delete` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card title="Group chats" subtitle="Create venue-level and group-level chats like Kitchen, Bar, Floor, and Management.">
+            <form
+              className="staff-profile-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveChannel();
+              }}
+            >
+              <div className="form-grid two">
+                <Input label="Group name" value={channelDraft.name} onChange={(event) => setChannelDraft((current) => ({ ...current, name: event.currentTarget.value }))} placeholder="Kitchen" />
+                <Select label="Type" value={channelDraft.type} onChange={(event) => setChannelDraft((current) => ({ ...current, type: event.currentTarget.value as SuiteChatChannel['type'] }))} options={['GENERAL', 'VENUE', 'AREA', 'GROUP'].map((value) => ({ label: value, value }))} />
+                <Select label="Venue" value={channelDraft.venue} onChange={(event) => setChannelDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
+                <Input label="Group key" value={channelDraft.groupKey} onChange={(event) => setChannelDraft((current) => ({ ...current, groupKey: event.currentTarget.value }))} placeholder="kitchen" />
+              </div>
+              <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => setChannelDraft((current) => ({ ...current, description: event.currentTarget.value }))} />
+              <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => setChannelDraft((current) => ({ ...current, postPermission: event.currentTarget.value }))} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
+              <label className="check-row">
+                <input type="checkbox" checked={channelDraft.directMessagesAllowed} onChange={(event) => setChannelDraft((current) => ({ ...current, directMessagesAllowed: event.currentTarget.checked }))} />
+                Allow this group to use direct messaging
+              </label>
+              <div className="toolbar-right">
+                {editingChannelId ? <Button type="button" variant="secondary" onClick={() => { setEditingChannelId(''); setChannelDraft(emptyChannelDraft()); }}>Cancel edit</Button> : null}
+                <Button type="submit" disabled={saving}>{saving ? 'Saving…' : editingChannelId ? 'Save chat group' : 'Create chat group'}</Button>
+                <ActionFeedback
+                  message={messageTarget === 'channel' ? message : null}
+                  tone={message?.includes('Could') ? 'error' : 'success'}
+                />
+              </div>
+            </form>
+            <div className="staff-list">
+              {payload.channels.map((channel) => (
+                <div key={channel.id} className="staff-expiry-row">
+                  <span>
+                    <strong>{channel.name}</strong>
+                    <span className="subtle">{channel.type} · {channel.venue || 'All venues'} · {channel.postPermission || 'Staff access'} posting</span>
+                    {channel.description ? <span>{channel.description}</span> : null}
+                  </span>
+                  <span className="invite-row-actions">
+                    <Badge tone={channel.isActive ? 'positive' : 'muted'}>{channel.isActive ? 'Active' : 'Archived'}</Badge>
+                    <Button type="button" size="sm" variant="secondary" onClick={() => startEditChannel(channel)}>Edit</Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={!channel.isActive} onClick={() => void deleteChannel(channel)}>Archive</Button>
+                    <ActionFeedback
+                      message={messageTarget === `channel:${channel.id}:delete` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </span>
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      <Card title={conversationTitle} subtitle="Pick a group chat or direct-message an approved staff member.">
+        <div className="comms-layout">
+          <div className="comms-sidebar">
+            <strong>Group chats</strong>
+            {activeChannels.map((channel) => (
+              <button key={channel.id} type="button" className={`staff-list-button ${selectedChannelId === channel.id ? 'is-selected' : ''}`} onClick={() => void openChannel(channel)}>
+                <span>
+                  <strong>{channel.name}</strong>
+                  <span className="subtle">{channel.type} · {channel.venue || 'All venues'}</span>
+                </span>
+              </button>
+            ))}
+            {canDirect ? (
+              <>
+                <strong>Direct messages</strong>
+                {recipients.map((member) => (
+                  <button key={member.id} type="button" className={`staff-list-button ${directRecipientId === member.id ? 'is-selected' : ''}`} onClick={() => void openDirect(member.id)}>
+                    <span>
+                      <strong>{member.firstName} {member.lastName}</strong>
+                      <span className="subtle">{member.roleTitle} · {member.venue || 'No venue'}</span>
+                    </span>
+                  </button>
+                ))}
+              </>
+            ) : null}
+          </div>
+          <div className="staff-mobile-chat">
+            <div className="staff-mobile-comms-list">
+              {payload.chat.length === 0 ? (
+                <div>
+                  <strong>No messages yet</strong>
+                  <span className="subtle">Start the conversation when you are ready.</span>
+                </div>
+              ) : (
+                payload.chat.map((item) => (
+                  <div key={item.id}>
+                    <strong>{item.createdByName || 'Team'}{item.recipientName ? ` to ${item.recipientName}` : ''}</strong>
+                    <span>{item.body}</span>
+                    <small>{formatDateTime(item.createdAt)}{item.editedAt ? ' · edited' : ''}</small>
+                    {(canManage || item.createdById === user?.id) ? (
+                      <>
+                        <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void deleteMessage(item)}>Delete</Button>
+                        <ActionFeedback
+                          message={messageTarget === `chat:${item.id}:delete` ? message : null}
+                          tone={message?.includes('Could') ? 'error' : 'success'}
+                        />
+                      </>
+                    ) : null}
+                  </div>
+                ))
+              )}
+            </div>
+            <div className="staff-mobile-chat-form">
+              <Input label="Message" value={chatText} onChange={(event) => setChatText(event.currentTarget.value)} placeholder={directRecipientId ? 'Write a direct message' : 'Message this group'} />
+              <Button type="button" disabled={saving || !chatText.trim() || (!selectedChannel && !directRecipientId)} onClick={() => void sendMessage()}>
+                Send
+              </Button>
+              <ActionFeedback
+                message={messageTarget === 'chat-send' ? message : null}
+                tone={message?.includes('Could') ? 'error' : 'success'}
+              />
+            </div>
+          </div>
+        </div>
+      </Card>
+
+      {canManage ? (
+        <Card title="Chatting permissions" subtitle="Grant direct messaging, moderation, announcements, and admin communications from one place.">
+          <div className="staff-list">
+            {staff.map((member) => {
+              const permissions = permissionsForMember(member);
+              return (
+                <div key={member.id} className="staff-expiry-row">
+                  <span>
+                    <strong>{member.firstName} {member.lastName}</strong>
+                    <span className="subtle">{member.roleTitle} · {member.venue || 'No venue'}</span>
+                  </span>
+                  <span className="communication-permission-grid">
+                    {COMMUNICATION_PERMISSION_KEYS.map((permission) => (
+                      <label key={permission.key} className="check-row">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(permissions[permission.key] || permissions.admin)}
+                          disabled={saving || Boolean(permissions.admin && permission.key !== 'communicationsManage')}
+                          onChange={(event) => void setChatPermission(member, permission.key, event.currentTarget.checked)}
+                        />
+                        {permission.label}
+                      </label>
+                    ))}
+                    <ActionFeedback
+                      message={messageTarget === `chat-permission:${member.id}` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
 function AdminPage({
   staff,
   selectedId,
@@ -1398,18 +3171,62 @@ function AdminPage({
     primaryContactName: '',
     primaryContactEmail: '',
     primaryContactPhone: '',
+    venues: [],
     notifyEmail: '',
+    notifyOverdueIssues: true,
+    notifyExpiringStaff: true,
+    notifyOutOfRangeTemp: true,
+    goveeApiKey: '',
+    goveeBaseUrl: 'https://openapi.api.govee.com',
     onboardingSettings: DEFAULT_ONBOARDING_SETTINGS
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [rosterSettingsWeekStart, setRosterSettingsWeekStart] = useState(() => startOfWeek(new Date()));
+  const [rosterSettingsBoardDays, setRosterSettingsBoardDays] = useState<7 | 14>(7);
+  const [rosterSettingsVenue, setRosterSettingsVenue] = useState('Alma Avalon');
+  const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
+  const [rosterAreaSettings, setRosterAreaSettings] = useState(loadRosterAreaSettings);
+  const [newRosterAreaName, setNewRosterAreaName] = useState('');
   const enabledAccessCount = staff.flatMap((member) => member.appAccess).filter((access) => access.status === 'ENABLED').length;
   const adminCount = staff.filter((member) => member.isAdmin).length;
   const venueCount = new Set(staff.map((member) => member.venue).filter(Boolean)).size;
-  const venueNames = settings?.venues.length
-    ? settings.venues.map((venue) => venue.name)
+  const venueNames = draft.venues.length
+    ? draft.venues.map((venue) => venue.name)
     : VENUE_OPTIONS.filter((item) => item.value && item.value !== 'Both').map((item) => item.value);
+  const rosterSettingsDays = useMemo(
+    () => weekDays(rosterSettingsWeekStart, rosterSettingsBoardDays),
+    [rosterSettingsBoardDays, rosterSettingsWeekStart]
+  );
+  const rosterVenueValues = uniqueValues(venueNames.filter((venue) => venue && venue !== 'Both'));
+  const effectiveRosterSettingsVenue = rosterVenueValues.includes(rosterSettingsVenue)
+    ? rosterSettingsVenue
+    : rosterVenueValues[0] ?? '';
+  const rosterSettingsScopeKey = rosterClosedDaysScopeKey(
+    rosterSettingsWeekStart,
+    rosterSettingsBoardDays,
+    effectiveRosterSettingsVenue
+  );
+  const rosterSettingsClosedDayKeys = useMemo(
+    () => new Set(closedDaysByScope[rosterSettingsScopeKey] ?? []),
+    [closedDaysByScope, rosterSettingsScopeKey]
+  );
+  const rosterAreaSource = useMemo(
+    () => staff.flatMap((member) => (member.rosterShifts ?? []).map((shift) => shift.area || 'Shift')),
+    [staff]
+  );
+  const adminRosterAreas = useMemo(
+    () => mergeRosterAreas(rosterAreaSettings, rosterAreaSource),
+    [rosterAreaSettings, rosterAreaSource]
+  );
+  const adminHiddenAreaNames = useMemo(
+    () => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)),
+    [rosterAreaSettings.hidden]
+  );
+  const adminHiddenAreaCount = adminRosterAreas.filter((areaName) => adminHiddenAreaNames.has(normaliseRosterAreaKey(areaName))).length;
+  const rosterVenueOptions = rosterVenueValues.map((venue) => ({ label: venue, value: venue }));
 
   const appRows = STAFF_APPS.map((app) => {
     const access = staff.flatMap((member) => member.appAccess.filter((item) => item.appId === app.id));
@@ -1446,6 +3263,12 @@ function AdminPage({
     };
   }, []);
 
+  useEffect(() => {
+    if (effectiveRosterSettingsVenue && effectiveRosterSettingsVenue !== rosterSettingsVenue) {
+      setRosterSettingsVenue(effectiveRosterSettingsVenue);
+    }
+  }, [effectiveRosterSettingsVenue, rosterSettingsVenue]);
+
   function update<K extends keyof AdminSettingsDraft>(key: K, value: AdminSettingsDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
@@ -1466,7 +3289,170 @@ function AdminPage({
     }));
   }
 
-  async function saveSettings() {
+  function updateVenue(index: number, patch: Partial<AppSettingsPayload['venues'][number]>) {
+    setDraft((current) => ({
+      ...current,
+      venues: current.venues.map((venue, venueIndex) => (
+        venueIndex === index ? { ...venue, ...patch } : venue
+      ))
+    }));
+  }
+
+  function addVenue() {
+    setDraft((current) => ({ ...current, venues: [...current.venues, blankAdminVenue()] }));
+  }
+
+  function removeVenue(index: number) {
+    setDraft((current) => ({
+      ...current,
+      venues: current.venues.filter((_, venueIndex) => venueIndex !== index)
+    }));
+  }
+
+  function persistRosterClosedDays(next: Record<string, string[]>, text: string) {
+    setClosedDaysByScope(next);
+    window.localStorage.setItem(ROSTER_CLOSED_DAYS_STORAGE_KEY, JSON.stringify(next));
+    setMessageTarget('roster-closed-days');
+    setMessage(text);
+  }
+
+  function persistRosterAreaSettings(next: RosterAreaSettings, target: string, text: string) {
+    setRosterAreaSettings(next);
+    window.localStorage.setItem(ROSTER_AREA_SETTINGS_STORAGE_KEY, JSON.stringify(next));
+    setMessageTarget(target);
+    setMessage(text);
+  }
+
+  function toggleAdminClosedDay(day: Date) {
+    if (!user?.isAdmin) {
+      setMessageTarget('roster-closed-days');
+      setMessage('Only admin users can update roster closed days.');
+      return;
+    }
+    if (!effectiveRosterSettingsVenue) {
+      setMessageTarget('roster-closed-days');
+      setMessage('Add a venue before setting closed days.');
+      return;
+    }
+
+    const key = toDateInput(day);
+    const existing = new Set(closedDaysByScope[rosterSettingsScopeKey] ?? []);
+    if (existing.has(key)) {
+      existing.delete(key);
+    } else {
+      existing.add(key);
+    }
+
+    persistRosterClosedDays(
+      {
+        ...closedDaysByScope,
+        [rosterSettingsScopeKey]: Array.from(existing).sort()
+      },
+      `${effectiveRosterSettingsVenue} ${day.toLocaleDateString(undefined, { weekday: 'long' })} ${existing.has(key) ? 'closed' : 're-opened'}.`
+    );
+  }
+
+  function addAdminRosterArea() {
+    setMessageTarget('roster-area-add');
+    if (!user?.isAdmin) {
+      setMessage('Only admin users can add roster areas.');
+      return;
+    }
+
+    const name = normaliseRosterAreaName(newRosterAreaName);
+    if (!name) {
+      setMessage('Enter an area name first.');
+      return;
+    }
+    if (adminRosterAreas.some((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(name))) {
+      setMessage(`${name} already exists in roster areas.`);
+      return;
+    }
+
+    persistRosterAreaSettings(
+      {
+        order: uniqueRosterAreaNames([...rosterAreaSettings.order, name]),
+        hidden: rosterAreaSettings.hidden.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name)),
+        deleted: rosterAreaSettings.deleted.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name))
+      },
+      'roster-area-add',
+      `${name} added to roster areas.`
+    );
+    setNewRosterAreaName('');
+  }
+
+  function toggleAdminRosterAreaHidden(areaName: string) {
+    const target = `roster-area:${areaName}`;
+    if (!user?.isAdmin) {
+      setMessageTarget(target);
+      setMessage('Only admin users can update roster areas.');
+      return;
+    }
+
+    const key = normaliseRosterAreaKey(areaName);
+    const isHidden = rosterAreaSettings.hidden.some((item) => normaliseRosterAreaKey(item) === key);
+    persistRosterAreaSettings(
+      {
+        ...rosterAreaSettings,
+        hidden: isHidden
+          ? rosterAreaSettings.hidden.filter((item) => normaliseRosterAreaKey(item) !== key)
+          : uniqueRosterAreaNames([...rosterAreaSettings.hidden, areaName])
+      },
+      target,
+      `${areaName} ${isHidden ? 'shown on' : 'hidden from'} roster boards.`
+    );
+  }
+
+  function moveAdminRosterArea(areaName: string, direction: -1 | 1) {
+    const target = `roster-area:${areaName}`;
+    if (!user?.isAdmin) {
+      setMessageTarget(target);
+      setMessage('Only admin users can reorder roster areas.');
+      return;
+    }
+
+    const ordered = mergeRosterAreas(rosterAreaSettings, rosterAreaSource);
+    const index = ordered.findIndex((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(areaName));
+    const nextIndex = index + direction;
+    if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return;
+    const nextOrder = [...ordered];
+    [nextOrder[index], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[index]];
+    persistRosterAreaSettings(
+      { ...rosterAreaSettings, order: nextOrder },
+      target,
+      `${areaName} moved ${direction < 0 ? 'up' : 'down'}.`
+    );
+  }
+
+  function deleteAdminRosterArea(areaName: string) {
+    const target = `roster-area:${areaName}`;
+    if (!user?.isAdmin) {
+      setMessageTarget(target);
+      setMessage('Only admin users can delete roster areas.');
+      return;
+    }
+
+    const key = normaliseRosterAreaKey(areaName);
+    const hasShifts = rosterAreaSource.some((item) => normaliseRosterAreaKey(item) === key);
+    if (hasShifts) {
+      setMessageTarget(target);
+      setMessage(`${areaName} has rostered shifts. Hide it first or move those shifts before deleting.`);
+      return;
+    }
+
+    persistRosterAreaSettings(
+      {
+        order: rosterAreaSettings.order.filter((item) => normaliseRosterAreaKey(item) !== key),
+        hidden: rosterAreaSettings.hidden.filter((item) => normaliseRosterAreaKey(item) !== key),
+        deleted: uniqueRosterAreaNames([...rosterAreaSettings.deleted, areaName])
+      },
+      target,
+      `${areaName} removed from roster areas.`
+    );
+  }
+
+  async function saveSettings(target: string) {
+    setMessageTarget(target);
     if (!user?.isAdmin) {
       setMessage('Only admin users can save organisation settings.');
       return;
@@ -1483,7 +3469,18 @@ function AdminPage({
           primaryContactEmail: draft.primaryContactEmail.trim(),
           primaryContactPhone: draft.primaryContactPhone.trim(),
           notifyEmail: draft.notifyEmail.trim(),
-          venues: settings?.venues ?? [],
+          notifyOverdueIssues: draft.notifyOverdueIssues,
+          notifyExpiringStaff: draft.notifyExpiringStaff,
+          notifyOutOfRangeTemp: draft.notifyOutOfRangeTemp,
+          goveeApiKey: draft.goveeApiKey.trim(),
+          goveeBaseUrl: draft.goveeBaseUrl.trim(),
+          venues: draft.venues
+            .map((venue) => ({
+              name: venue.name.trim(),
+              address: venue.address?.trim() ?? '',
+              phone: venue.phone?.trim() ?? ''
+            }))
+            .filter((venue) => venue.name),
           onboardingSettings: draft.onboardingSettings
         })
       });
@@ -1500,9 +3497,9 @@ function AdminPage({
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="ALMA Settings"
-        title="Onboarding, controls and access"
-        description="Settings is the control surface for staff onboarding, organisation details, venue readiness, and who can access each ALMA app."
+        eyebrow="ALMA Admin"
+        title="Suite settings and access"
+        description="Admin is the control surface for staff onboarding, organisation details, venues, integrations, notifications, and who can access each ALMA app."
       />
 
       <div className="stats-grid">
@@ -1518,7 +3515,7 @@ function AdminPage({
             className="staff-profile-form"
             onSubmit={(event) => {
               event.preventDefault();
-              void saveSettings();
+              void saveSettings('organisation');
             }}
           >
             <Input label="Organisation name" value={draft.orgName} onChange={(event) => update('orgName', event.currentTarget.value)} />
@@ -1528,37 +3525,248 @@ function AdminPage({
               <Input label="Contact email" type="email" value={draft.primaryContactEmail} onChange={(event) => update('primaryContactEmail', event.currentTarget.value)} />
               <Input label="Notification email" type="email" value={draft.notifyEmail} onChange={(event) => update('notifyEmail', event.currentTarget.value)} />
             </div>
-            {message ? <p className={message.includes('saved') ? 'subtle' : 'error-text'}>{message}</p> : null}
+            <div className="onboarding-toggle-row">
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={draft.notifyOverdueIssues}
+                  onChange={(event) => update('notifyOverdueIssues', event.currentTarget.checked)}
+                />
+                Overdue compliance issues
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={draft.notifyExpiringStaff}
+                  onChange={(event) => update('notifyExpiringStaff', event.currentTarget.checked)}
+                />
+                Expiring staff documents
+              </label>
+              <label className="check-row">
+                <input
+                  type="checkbox"
+                  checked={draft.notifyOutOfRangeTemp}
+                  onChange={(event) => update('notifyOutOfRangeTemp', event.currentTarget.checked)}
+                />
+                Temperature alerts
+              </label>
+            </div>
             <div className="toolbar-right">
               <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save settings'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'organisation' ? message : null}
+                tone={message?.includes('saved') ? 'success' : 'error'}
+              />
             </div>
           </form>
         </Card>
 
-        <Card title="Venues" subtitle="Read from settings and staff records">
-          <div className="staff-list">
-            {venueNames.map((name) => {
-              const members = staff.filter((member) => member.venue === name).length;
+        <Card title="Integrations" subtitle="Shared API keys and service endpoints">
+          <form
+            className="staff-profile-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveSettings('integrations');
+            }}
+          >
+            <Input
+              label="Govee API key"
+              value={draft.goveeApiKey}
+              onChange={(event) => update('goveeApiKey', event.currentTarget.value)}
+              placeholder="Paste a new key to replace"
+              hint="Masked keys are preserved. Paste a real key only when replacing it."
+            />
+            <Input
+              label="Govee API base URL"
+              value={draft.goveeBaseUrl}
+              onChange={(event) => update('goveeBaseUrl', event.currentTarget.value)}
+            />
+            <div className="toolbar-right">
+              <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save integrations'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'integrations' ? message : null}
+                tone={message?.includes('saved') ? 'success' : 'error'}
+              />
+            </div>
+          </form>
+        </Card>
+      </div>
+
+      <Card
+        title="Venues"
+        subtitle="Shared venue list used by Staff, Compliance, Stock, Reports, and Reserve"
+        action={<Button type="button" size="sm" variant="secondary" onClick={addVenue}>Add venue</Button>}
+      >
+        <form
+          className="staff-profile-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveSettings('venues');
+          }}
+        >
+          {draft.venues.length === 0 ? <p className="subtle">No venues configured yet.</p> : null}
+          {draft.venues.map((venue, index) => {
+            const members = staff.filter((member) => member.venue === venue.name).length;
+            return (
+              <div key={index} className="venue-row">
+                <Input
+                  label={index === 0 ? 'Name' : ''}
+                  value={venue.name}
+                  placeholder="Alma Avalon"
+                  onChange={(event) => updateVenue(index, { name: event.currentTarget.value })}
+                />
+                <Input
+                  label={index === 0 ? 'Address' : ''}
+                  value={venue.address ?? ''}
+                  onChange={(event) => updateVenue(index, { address: event.currentTarget.value })}
+                />
+                <Input
+                  label={index === 0 ? 'Phone' : ''}
+                  value={venue.phone ?? ''}
+                  onChange={(event) => updateVenue(index, { phone: event.currentTarget.value })}
+                />
+                <span className="subtle">{members} staff</span>
+                <Button type="button" size="sm" variant="ghost" onClick={() => removeVenue(index)}>Remove</Button>
+              </div>
+            );
+          })}
+          <div className="toolbar-right">
+            <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save venues'}</Button>
+            <ActionFeedback
+              message={messageTarget === 'venues' ? message : null}
+              tone={message?.includes('saved') ? 'success' : 'error'}
+            />
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Roster settings" subtitle="Closed days are saved separately for each venue. Area rows still control the roster board order.">
+        <div className="roster-area-manager">
+          <div className="roster-week-controls" aria-label="Roster settings week controls">
+            <Button type="button" variant="secondary" size="sm" onClick={() => setRosterSettingsWeekStart(addDays(rosterSettingsWeekStart, -7))}>
+              Prev
+            </Button>
+            <div className="roster-week-label">
+              <strong>{formatRange(rosterSettingsWeekStart, addDays(rosterSettingsWeekStart, rosterSettingsBoardDays - 1))}</strong>
+              <span>{effectiveRosterSettingsVenue || 'No venue selected'}</span>
+            </div>
+            <Button type="button" variant="secondary" size="sm" onClick={() => setRosterSettingsWeekStart(addDays(rosterSettingsWeekStart, 7))}>
+              Next
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => setRosterSettingsWeekStart(startOfWeek(new Date()))}
+            >
+              Today
+            </Button>
+          </div>
+
+          <div className="form-grid two">
+            <Select
+              label="Venue closed days"
+              value={effectiveRosterSettingsVenue}
+              onChange={(event) => setRosterSettingsVenue(event.currentTarget.value)}
+              options={rosterVenueOptions}
+            />
+            <Select
+              label="Roster range"
+              value={String(rosterSettingsBoardDays)}
+              onChange={(event) => setRosterSettingsBoardDays(Number(event.currentTarget.value) === 14 ? 14 : 7)}
+              options={[
+                { label: 'Week', value: '7' },
+                { label: '2 weeks', value: '14' }
+              ]}
+            />
+          </div>
+
+          <div className="roster-closed-days" aria-label="Admin roster closed days">
+            <strong>Closed days</strong>
+            {rosterSettingsDays.map((day) => {
+              const key = toDateInput(day);
+              const isClosed = rosterSettingsClosedDayKeys.has(key);
               return (
-                <div key={name} className="staff-expiry-row">
-                  <span>
-                    <strong>{name}</strong>
-                    <span className="subtle">{members} staff profiles linked</span>
+                <button
+                  key={key}
+                  type="button"
+                  className={isClosed ? 'is-closed' : ''}
+                  disabled={!user?.isAdmin || !effectiveRosterSettingsVenue}
+                  onClick={() => toggleAdminClosedDay(day)}
+                  aria-pressed={isClosed}
+                >
+                  <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+                  <small>{isClosed ? 'Closed' : 'Open'}</small>
+                </button>
+              );
+            })}
+            <ActionFeedback
+              message={messageTarget === 'roster-closed-days' ? message : null}
+              tone={message?.includes('Only') || message?.includes('Add a venue') ? 'error' : 'success'}
+            />
+          </div>
+
+          <div className="roster-area-create">
+            <Input
+              label="New roster area"
+              value={newRosterAreaName}
+              onChange={(event) => setNewRosterAreaName(event.currentTarget.value)}
+              placeholder="Example: Host, Pass, Prep"
+            />
+            <Button type="button" variant="secondary" disabled={!user?.isAdmin} onClick={addAdminRosterArea}>
+              Add area
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'roster-area-add' ? message : null}
+              tone={message?.includes('Enter') || message?.includes('exists') || message?.includes('Only') ? 'error' : 'success'}
+            />
+          </div>
+
+          <div className="roster-area-manager-list">
+            {adminRosterAreas.map((areaName, index) => {
+              const isHidden = adminHiddenAreaNames.has(normaliseRosterAreaKey(areaName));
+              const shiftCount = rosterAreaSource.filter((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(areaName)).length;
+              return (
+                <div key={areaName} className={`roster-area-manager-row ${isHidden ? 'is-hidden' : ''}`}>
+                  <span className="roster-area-chip" style={areaStyle(areaName)}>
+                    <i aria-hidden="true" />
+                    <strong>{areaName}</strong>
+                    <small>{shiftCount} shifts</small>
                   </span>
-                  <Badge tone="muted">Venue</Badge>
+                  <span className="roster-area-manager-actions">
+                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin || index === 0} onClick={() => moveAdminRosterArea(areaName, -1)}>
+                      Up
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin || index === adminRosterAreas.length - 1} onClick={() => moveAdminRosterArea(areaName, 1)}>
+                      Down
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={!user?.isAdmin} onClick={() => toggleAdminRosterAreaHidden(areaName)}>
+                      {isHidden ? 'Show' : 'Hide'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin} onClick={() => deleteAdminRosterArea(areaName)}>
+                      Delete
+                    </Button>
+                    <ActionFeedback
+                      message={messageTarget === `roster-area:${areaName}` ? message : null}
+                      tone={message?.includes('Only') || message?.includes('has rostered') ? 'error' : 'success'}
+                    />
+                  </span>
                 </div>
               );
             })}
           </div>
-        </Card>
-      </div>
+          <p className="subtle">
+            {adminHiddenAreaCount ? `${adminHiddenAreaCount} hidden area${adminHiddenAreaCount === 1 ? '' : 's'} are excluded from area view and forecast guidance.` : 'All areas are visible.'}
+          </p>
+        </div>
+      </Card>
 
       <Card title="Onboarding process" subtitle="Control what new staff complete before managers approve them.">
         <form
           className="staff-profile-form"
           onSubmit={(event) => {
             event.preventDefault();
-            void saveSettings();
+            void saveSettings('onboarding');
           }}
         >
           <div className="onboarding-settings-grid">
@@ -1612,11 +3820,15 @@ function AdminPage({
           </p>
           <div className="toolbar-right">
             <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save onboarding'}</Button>
+            <ActionFeedback
+              message={messageTarget === 'onboarding' ? message : null}
+              tone={message?.includes('saved') ? 'success' : 'error'}
+            />
           </div>
         </form>
       </Card>
 
-      <Card title="App access matrix" subtitle="Manage access here or jump into the detailed access workflow." padding="none">
+      <Card title="App access matrix" subtitle="Manage access here or jump into the detailed profile workflow." padding="none">
         <div className="staff-list" style={{ padding: 12 }}>
           {appRows.map(({ app, enabled, pending, disabled }) => (
             <div key={app.id} className="staff-expiry-row">
@@ -1663,6 +3875,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [moduleDraft, setModuleDraft] = useState<TrainingModuleDraft>({
     title: '',
     category: 'Venue standards',
@@ -1736,6 +3949,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
   }
 
   async function createModule() {
+    setMessageTarget('module');
     if (!moduleDraft.title.trim()) {
       setMessage('Module title is required.');
       return;
@@ -1766,6 +3980,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
   }
 
   async function savePayRule() {
+    setMessageTarget('pay-rule');
     const payRate = Number(ruleDraft.payRate.replace(/[^0-9.]/g, ''));
     if (!ruleDraft.label.trim() || !Number.isFinite(payRate)) {
       setMessage('Pay rule needs a label and pay rate.');
@@ -1794,6 +4009,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
   }
 
   async function assignTraining() {
+    setMessageTarget('assign');
     if (!selectedStaffId || !selectedModuleId) {
       setMessage('Choose staff and a module before assigning Academy training.');
       return;
@@ -1822,6 +4038,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
   async function updateTrainingRecord(record: StaffTrainingRecord, status: StaffTrainingRecord['status']) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`record:${record.id}:${status}`);
     try {
       await api(`/api/training/records/${record.id}`, {
         method: 'PATCH',
@@ -1873,6 +4090,10 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
             <Textarea label="Description" rows={2} value={moduleDraft.description} onChange={(event) => updateModuleDraft('description', event.currentTarget.value)} />
             <div className="toolbar-right">
               <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Create Academy module'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'module' ? message : null}
+                tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'}
+              />
             </div>
           </form>
         </Card>
@@ -1893,6 +4114,10 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
             <Textarea label="Notes" rows={2} value={ruleDraft.notes} onChange={(event) => updateRuleDraft('notes', event.currentTarget.value)} />
             <div className="toolbar-right">
               <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save pay rule'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'pay-rule' ? message : null}
+                tone={message?.includes('Could') || message?.includes('needs') ? 'error' : 'success'}
+              />
             </div>
           </form>
           <div className="app-access-grid">
@@ -1915,9 +4140,13 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
             <Button type="button" disabled={saving || modules.length === 0} onClick={() => void assignTraining()}>
               Assign module
             </Button>
+            <ActionFeedback
+              message={messageTarget === 'assign' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
           </div>
         </div>
-        {message ? <p className={message.includes('Could') || message.includes('required') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('required') ? 'error-text' : 'subtle'}>{message}</p> : null}
       </Card>
 
       <Card title="Academy board" subtitle="Complete modules here. Completed levels update StaffProfile training level and pay.">
@@ -1946,9 +4175,17 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
                     <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void updateTrainingRecord(record, 'IN_PROGRESS')}>
                       Start
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `record:${record.id}:IN_PROGRESS` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
                     <Button type="button" size="sm" disabled={saving} onClick={() => void updateTrainingRecord(record, 'COMPLETED')}>
                       Complete
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `record:${record.id}:COMPLETED` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
                   </>
                 ) : null}
               </span>
@@ -1990,20 +4227,19 @@ function RosterPage({
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
   const [publishPreviewOpen, setPublishPreviewOpen] = useState(false);
+  const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
+  const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [forecastDraft] = useState(loadRosterForecastDraft);
   const [forecastSales, setForecastSales] = useState(forecastDraft.forecastSales);
   const [dailyForecastSales, setDailyForecastSales] = useState<Record<string, string>>(forecastDraft.dailyForecastSales);
   const [targetWagePercent, setTargetWagePercent] = useState(forecastDraft.targetWagePercent);
-  const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
-  const [rosterAreaSettings, setRosterAreaSettings] = useState(loadRosterAreaSettings);
-  const [newAreaName, setNewAreaName] = useState('');
+  const [closedDaysByScope] = useState(loadRosterClosedDays);
+  const [rosterAreaSettings] = useState(loadRosterAreaSettings);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
-  const closedScopeKey = `${toDateInput(weekStart)}:${boardDays}:${venueFilter}`;
-  const closedDayKeys = useMemo(() => new Set(closedDaysByScope[closedScopeKey] ?? []), [closedDaysByScope, closedScopeKey]);
-  const closedDayCount = closedDayKeys.size;
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const venueRoster = roster
@@ -2031,6 +4267,28 @@ function RosterPage({
     ? venues.filter((venue) => venue === 'Alma Avalon' || venue === 'St Alma')
     : venues;
   const forecastVenues = venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both');
+  const rosterClosedVenueScope = venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both');
+  const isVenueClosedOnDate = useCallback((venue: string | null | undefined, day: Date) => {
+    const selectedVenue = normaliseRosterAreaName(venue ?? '');
+    const scopedVenue =
+      selectedVenue && selectedVenue !== 'all' && selectedVenue !== 'Both'
+        ? selectedVenue
+        : venueFilter !== 'all' && venueFilter !== 'Both'
+          ? venueFilter
+          : '';
+    if (!scopedVenue) return false;
+    const scopeKey = rosterClosedDaysScopeKey(weekStart, boardDays, scopedVenue);
+    return (closedDaysByScope[scopeKey] ?? []).includes(toDateInput(day));
+  }, [boardDays, closedDaysByScope, venueFilter, weekStart]);
+  const closedVenuesForDay = useCallback(
+    (day: Date) => rosterClosedVenueScope.filter((venue) => isVenueClosedOnDate(venue, day)),
+    [isVenueClosedOnDate, rosterClosedVenueScope]
+  );
+  const isDayClosedForCurrentView = useCallback(
+    (day: Date) => rosterClosedVenueScope.length > 0 && rosterClosedVenueScope.every((venue) => isVenueClosedOnDate(venue, day)),
+    [isVenueClosedOnDate, rosterClosedVenueScope]
+  );
+  const closedDayCount = days.reduce((sum, day) => sum + closedVenuesForDay(day).length, 0);
   const historicalDailyForecast = days.reduce((map, day) => {
     const cents = Math.round(
       forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
@@ -2085,7 +4343,6 @@ function RosterPage({
   const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
   const activeAreas = allRosterAreas.filter((areaName) => !hiddenAreaNames.has(normaliseRosterAreaKey(areaName)));
   const areaSelectOptions = uniqueValues([...allRosterAreas, area || 'Floor']).map((item) => ({ label: item, value: item }));
-  const hiddenAreaCount = allRosterAreas.length - activeAreas.length;
   const areaVenues = uniqueValues([
     ...(venueFilter === 'all' ? operationalVenues : [venueFilter]),
     ...visibleRoster.map((shift) => shift.venue || shift.staffProfile?.venue || '').filter(Boolean)
@@ -2214,7 +4471,7 @@ function RosterPage({
   }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
   const canSaveShift = Boolean(staffProfileId && date && startTime && endTime && selectedShiftHours);
   const rowSearch = search.trim().toLowerCase();
-  const scheduleRows =
+  const scheduleRows: RosterScheduleRow[] =
     viewMode === 'team'
       ? activeStaff
           .filter((member) =>
@@ -2234,25 +4491,49 @@ function RosterPage({
           }))
       : splitAreaRows.filter((row) =>
           `${row.venue} ${row.label} ${row.sublabel}`.toLowerCase().includes(rowSearch)
-        );
+        )
+          .reduce<RosterScheduleRow[]>((rows, row, index, sourceRows) => {
+            const previous = sourceRows[index - 1];
+            if (!previous || previous.venue !== row.venue) {
+              rows.push({
+                id: `venue-header:${row.venue}`,
+                label: row.venue,
+                sublabel: 'Venue section',
+                initials: row.venue.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+                shifts: visibleRoster.filter((shift) => shift.venue === row.venue || shift.staffProfile?.venue === row.venue),
+                member: null,
+                venue: row.venue,
+                area: '',
+                isVenueHeader: true
+              });
+            }
+            rows.push(row);
+            return rows;
+          }, []);
+  const activeSidePanelMode: RosterSidePanelMode =
+    sidePanelMode === 'shift' && !editorOpen ? 'staff' : sidePanelMode;
+  const sidePanelStaff = activeStaff
+    .filter((member) => venueFilter === 'all' || member.venue === venueFilter)
+    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
   const scheduleGridStyle = useMemo<CSSProperties>(() => {
-    const labelColumn = editorOpen ? 'minmax(136px, 0.78fr)' : 'minmax(150px, 0.72fr)';
+    const sideRailOpen = !sidePanelCollapsed;
+    const labelColumn = sideRailOpen ? 'minmax(136px, 0.78fr)' : 'minmax(150px, 0.72fr)';
     const openColumn =
       boardDays === 14
-        ? editorOpen
+        ? sideRailOpen
           ? 'minmax(82px, 1fr)'
           : 'minmax(96px, 1fr)'
-        : editorOpen
+        : sideRailOpen
           ? 'minmax(112px, 1fr)'
           : 'minmax(132px, 1fr)';
     const closedColumn = boardDays === 14 ? 'minmax(38px, 0.18fr)' : 'minmax(46px, 0.22fr)';
     return {
       gridTemplateColumns: [
         labelColumn,
-        ...days.map((day) => (closedDayKeys.has(toDateInput(day)) ? closedColumn : openColumn))
+        ...days.map((day) => (isDayClosedForCurrentView(day) ? closedColumn : openColumn))
       ].join(' ')
     };
-  }, [boardDays, closedDayKeys, days, editorOpen]);
+  }, [boardDays, days, isDayClosedForCurrentView, sidePanelCollapsed]);
 
   useEffect(() => {
     if (!staffProfileId && activeStaff[0]) setStaffProfileId(activeStaff[0].id);
@@ -2270,14 +4551,6 @@ function RosterPage({
   }, [dailyForecastSales, forecastSales, targetWagePercent]);
 
   useEffect(() => {
-    window.localStorage.setItem(ROSTER_CLOSED_DAYS_STORAGE_KEY, JSON.stringify(closedDaysByScope));
-  }, [closedDaysByScope]);
-
-  useEffect(() => {
-    window.localStorage.setItem(ROSTER_AREA_SETTINGS_STORAGE_KEY, JSON.stringify(rosterAreaSettings));
-  }, [rosterAreaSettings]);
-
-  useEffect(() => {
     if (!shiftContextMenu) return undefined;
     const close = () => setShiftContextMenu(null);
     const closeOnEscape = (event: KeyboardEvent) => {
@@ -2293,6 +4566,15 @@ function RosterPage({
     };
   }, [shiftContextMenu]);
 
+  useEffect(() => {
+    if (!publishPreviewOpen) return undefined;
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setPublishPreviewOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [publishPreviewOpen]);
+
   function setRosterWeek(nextWeekStart: Date) {
     setWeekStart(nextWeekStart);
     const selectedDate = new Date(`${date}T00:00:00`);
@@ -2301,9 +4583,21 @@ function RosterPage({
     }
   }
 
+  function openShiftPanel() {
+    setEditorOpen(true);
+    setSidePanelCollapsed(false);
+    setSidePanelMode('shift');
+  }
+
+  function closeShiftPanel() {
+    setEditingShift(null);
+    setEditorOpen(false);
+    setSidePanelMode('staff');
+  }
+
   function newShift() {
     setEditingShift(null);
-    setEditorOpen(true);
+    openShiftPanel();
     setDate((current) => {
       const selectedDate = new Date(`${current}T00:00:00`);
       return isDateInRange(selectedDate, weekStart, weekEnd) ? current : toDateInput(weekStart);
@@ -2323,6 +4617,7 @@ function RosterPage({
   }
 
   function applyHistoricalForecast() {
+    setMessageTarget('forecast');
     const nextDailyForecast = days.reduce((draft, day) => {
       const cents = Math.round(
         forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
@@ -2336,82 +4631,6 @@ function RosterPage({
     setMessage('Historical sales forecast applied to this roster view.');
   }
 
-  function toggleClosedDay(day: Date) {
-    const key = toDateInput(day);
-    setClosedDaysByScope((current) => {
-      const existing = new Set(current[closedScopeKey] ?? []);
-      if (existing.has(key)) {
-        existing.delete(key);
-      } else {
-        existing.add(key);
-      }
-      return {
-        ...current,
-        [closedScopeKey]: Array.from(existing).sort()
-      };
-    });
-  }
-
-  function addRosterArea() {
-    const name = normaliseRosterAreaName(newAreaName);
-    if (!name) {
-      setMessage('Enter an area name first.');
-      return;
-    }
-    if (allRosterAreas.some((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(name))) {
-      setMessage(`${name} already exists in roster areas.`);
-      return;
-    }
-    setRosterAreaSettings((current) => ({
-      order: [...current.order, name],
-      hidden: current.hidden.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name)),
-      deleted: current.deleted.filter((item) => normaliseRosterAreaKey(item) !== normaliseRosterAreaKey(name))
-    }));
-    setArea(name);
-    setNewAreaName('');
-    setMessage(`${name} added to roster areas.`);
-  }
-
-  function toggleRosterAreaHidden(areaName: string) {
-    const key = normaliseRosterAreaKey(areaName);
-    setRosterAreaSettings((current) => {
-      const isHidden = current.hidden.some((item) => normaliseRosterAreaKey(item) === key);
-      return {
-        ...current,
-        hidden: isHidden
-          ? current.hidden.filter((item) => normaliseRosterAreaKey(item) !== key)
-          : uniqueValues([...current.hidden, areaName])
-      };
-    });
-  }
-
-  function moveRosterArea(areaName: string, direction: -1 | 1) {
-    setRosterAreaSettings((current) => {
-      const ordered = mergeRosterAreas(current, visibleRoster.map((shift) => shift.area || 'Shift'));
-      const index = ordered.findIndex((item) => normaliseRosterAreaKey(item) === normaliseRosterAreaKey(areaName));
-      const nextIndex = index + direction;
-      if (index < 0 || nextIndex < 0 || nextIndex >= ordered.length) return current;
-      const nextOrder = [...ordered];
-      [nextOrder[index], nextOrder[nextIndex]] = [nextOrder[nextIndex], nextOrder[index]];
-      return { ...current, order: nextOrder };
-    });
-  }
-
-  function deleteRosterArea(areaName: string) {
-    const key = normaliseRosterAreaKey(areaName);
-    const hasShifts = roster.some((shift) => normaliseRosterAreaKey(shift.area || 'Shift') === key);
-    if (hasShifts) {
-      setMessage(`${areaName} has rostered shifts. Hide it for this board or move those shifts before deleting.`);
-      return;
-    }
-    setRosterAreaSettings((current) => ({
-      order: current.order.filter((item) => normaliseRosterAreaKey(item) !== key),
-      hidden: current.hidden.filter((item) => normaliseRosterAreaKey(item) !== key),
-      deleted: uniqueValues([...current.deleted, areaName])
-    }));
-    if (normaliseRosterAreaKey(area) === key) setArea('Floor');
-    setMessage(`${areaName} removed from roster areas.`);
-  }
 
   useEffect(() => {
     if (!editingShift) {
@@ -2422,6 +4641,7 @@ function RosterPage({
   }, [editingShift, roleTitle, shiftVenue, staff, staffProfileId]);
 
   async function saveShift() {
+    setMessageTarget('shift-save');
     const effectiveStaffProfileId = staffProfileId || activeStaff[0]?.id || '';
     if (!effectiveStaffProfileId) {
       setMessage('Choose a team member before adding the shift.');
@@ -2461,7 +4681,7 @@ function RosterPage({
       await reload(weekStart, weekEnd);
       setMessage(editingShift ? 'Shift updated.' : 'Shift added to the draft roster.');
       setEditingShift(null);
-      setEditorOpen(false);
+      closeShiftPanel();
       setRoleTitle('');
       setShiftNotes('');
     } catch (err) {
@@ -2474,7 +4694,7 @@ function RosterPage({
   function startEditShift(shift: RosterShift) {
     setShiftContextMenu(null);
     setEditingShift(shift);
-    setEditorOpen(true);
+    openShiftPanel();
     setStaffProfileId(shift.staffProfileId);
     setShiftVenue(shift.venue ?? shift.staffProfile?.venue ?? '');
     setDate(toDateInput(new Date(shift.startsAt)));
@@ -2486,6 +4706,7 @@ function RosterPage({
     setShiftStatus(shift.status);
     setShiftNotes(shift.notes ?? '');
     setMessage(null);
+    setMessageTarget(null);
   }
 
   async function deleteShift(shift: RosterShift) {
@@ -2493,12 +4714,12 @@ function RosterPage({
     if (!window.confirm('Delete this roster shift? This cannot be undone.')) return;
     setSaving(true);
     setMessage(null);
+    setMessageTarget('shift-delete');
     try {
       await api(`/api/staff/roster/${shift.id}`, { method: 'DELETE' });
       await reload(weekStart, weekEnd);
       if (editingShift?.id === shift.id) {
-        setEditingShift(null);
-        setEditorOpen(false);
+        closeShiftPanel();
       }
       setMessage('Shift deleted.');
     } catch (err) {
@@ -2517,6 +4738,7 @@ function RosterPage({
     }
     setSaving(true);
     setMessage(null);
+    setMessageTarget('publish');
     try {
       await api('/api/staff/roster/publish', {
         method: 'POST',
@@ -2564,6 +4786,7 @@ function RosterPage({
     setShiftContextMenu(null);
     setSaving(true);
     setMessage(null);
+    setMessageTarget('shift-copy');
     try {
       await api('/api/staff/roster', {
         method: 'POST',
@@ -2608,6 +4831,7 @@ function RosterPage({
   async function copyPreviousWeek() {
     setSaving(true);
     setMessage(null);
+    setMessageTarget('copy-week');
     try {
       const previousStart = addDays(weekStart, -7);
       const previousEnd = addDays(previousStart, boardDays);
@@ -2653,13 +4877,23 @@ function RosterPage({
     }
   }
 
+  function scheduleRowVenue(row: (typeof scheduleRows)[number]) {
+    if ('isVenueHeader' in row && row.isVenueHeader) return row.venue;
+    return row.venue || row.member?.venue || (venueFilter !== 'all' ? venueFilter : '');
+  }
+
   function prefillCell(row: (typeof scheduleRows)[number], day: Date) {
-    if (closedDayKeys.has(toDateInput(day))) {
-      setMessage('This day is marked closed. Re-open the day before adding shifts.');
+    if ('isVenueHeader' in row && row.isVenueHeader) {
+      setMessage('Choose an area row under this venue before adding a shift.');
+      return;
+    }
+    const targetVenue = scheduleRowVenue(row);
+    if (isVenueClosedOnDate(targetVenue, day)) {
+      setMessage(`${targetVenue || 'This venue'} is marked closed. Re-open that venue day before adding shifts.`);
       return;
     }
     setEditingShift(null);
-    setEditorOpen(true);
+    openShiftPanel();
     setDate(toDateInput(day));
     if (viewMode === 'team' && row.member) {
       setStaffProfileId(row.member.id);
@@ -2702,7 +4936,7 @@ function RosterPage({
     const endHour = Number(start.slice(0, 2)) + recommendedLength;
 
     setEditingShift(null);
-    setEditorOpen(true);
+    openShiftPanel();
     setDate(toDateInput(targetDay));
     setStartTime(start);
     setEndTime(`${String(Math.floor(endHour) % 24).padStart(2, '0')}:${endHour % 1 ? '30' : '00'}`);
@@ -2716,19 +4950,19 @@ function RosterPage({
   }
 
   async function moveShiftToCell(shift: RosterShift, row: (typeof scheduleRows)[number], day: Date) {
-    if (closedDayKeys.has(toDateInput(day))) {
-      setMessage('This day is marked closed. Re-open the day before moving shifts here.');
-      setDraggingShiftId(null);
-      return;
-    }
-    const startsAt = moveDateKeepingTime(shift.startsAt, day);
-    const endsAt = moveDateKeepingTime(shift.endsAt, day);
     const targetMember =
       viewMode === 'team' && row.member
         ? row.member
         : staff.find((member) => member.id === shift.staffProfileId);
     const targetArea = viewMode === 'area' ? row.area || row.label : shift.area ?? area;
     const targetVenue = viewMode === 'area' ? row.venue : targetMember?.venue ?? shift.venue ?? '';
+    if (isVenueClosedOnDate(targetVenue, day)) {
+      setMessage(`${targetVenue || 'This venue'} is marked closed. Re-open that venue day before moving shifts here.`);
+      setDraggingShiftId(null);
+      return;
+    }
+    const startsAt = moveDateKeepingTime(shift.startsAt, day);
+    const endsAt = moveDateKeepingTime(shift.endsAt, day);
     const movedEndsAt =
       endsAt <= startsAt ? addDays(endsAt, 1) : endsAt;
 
@@ -2788,11 +5022,15 @@ function RosterPage({
           <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
             Copy last week
           </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen((open) => !open)}>
+          <ActionFeedback
+            message={messageTarget === 'copy-week' ? message : null}
+            tone={message?.includes('Could') ? 'error' : 'success'}
+          />
+          <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
             Review drafts
           </Button>
           <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-            Publish preview
+            Publish shifts
           </Button>
         </div>
       </div>
@@ -2870,227 +5108,8 @@ function RosterPage({
         <span><strong>{closedDayCount}</strong> closed</span>
         <span><strong>{visibleRoster.filter(isDeputyImportedShift).length}</strong> Deputy import</span>
         <span><strong>{visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length}</strong> unallocated</span>
-        {message ? <span className="deputy-roster-message">{message}</span> : null}
+        {message && !messageTarget ? <span className="deputy-roster-message">{message}</span> : null}
       </div>
-
-      <div className="roster-closed-days" aria-label="Weekly closed days">
-        <strong>Closed days</strong>
-        {days.map((day) => {
-          const key = toDateInput(day);
-          const isClosed = closedDayKeys.has(key);
-          return (
-            <button
-              key={key}
-              type="button"
-              className={isClosed ? 'is-closed' : ''}
-              onClick={() => toggleClosedDay(day)}
-              aria-pressed={isClosed}
-            >
-              <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
-              <small>{isClosed ? 'Closed' : 'Open'}</small>
-            </button>
-          );
-        })}
-      </div>
-
-      <Card title="Roster areas" subtitle="Choose which area rows show on the board, and move sections into the order managers expect.">
-        <div className="roster-area-manager">
-          <div className="roster-area-create">
-            <Input
-              label="New area"
-              value={newAreaName}
-              onChange={(event) => setNewAreaName(event.currentTarget.value)}
-              placeholder="Example: Host, Pass, Prep"
-            />
-            <Button type="button" variant="secondary" onClick={addRosterArea}>
-              Add area
-            </Button>
-          </div>
-          <div className="roster-area-manager-list">
-            {allRosterAreas.map((areaName, index) => {
-              const isHidden = hiddenAreaNames.has(normaliseRosterAreaKey(areaName));
-              const shiftCount = visibleRoster.filter((shift) => (shift.area || 'Shift') === areaName).length;
-              return (
-                <div key={areaName} className={`roster-area-manager-row ${isHidden ? 'is-hidden' : ''}`}>
-                  <span className="roster-area-chip" style={areaStyle(areaName)}>
-                    <i aria-hidden="true" />
-                    <strong>{areaName}</strong>
-                    <small>{shiftCount} shifts</small>
-                  </span>
-                  <span className="roster-area-manager-actions">
-                    <Button type="button" size="sm" variant="ghost" disabled={index === 0} onClick={() => moveRosterArea(areaName, -1)}>
-                      Up
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={index === allRosterAreas.length - 1} onClick={() => moveRosterArea(areaName, 1)}>
-                      Down
-                    </Button>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => toggleRosterAreaHidden(areaName)}>
-                      {isHidden ? 'Show' : 'Hide'}
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => deleteRosterArea(areaName)}>
-                      Delete
-                    </Button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-          <p className="subtle">
-            {hiddenAreaCount ? `${hiddenAreaCount} hidden area${hiddenAreaCount === 1 ? '' : 's'} are excluded from area view and guidance.` : 'All areas are visible.'}
-          </p>
-        </div>
-      </Card>
-
-      {publishPreviewOpen ? (
-        <div className="roster-publish-grid">
-          <Card
-            title="Publish preview"
-            subtitle="Draft shifts that will be published for this week and venue filter"
-            action={
-              <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => void publishWeek()}>
-                Publish {draftCount} shifts
-              </Button>
-            }
-          >
-            {publishableDrafts.length === 0 ? (
-              <EmptyState title="No draft shifts" description="There are no draft shifts ready to publish for the current week." />
-            ) : (
-              <div className="publish-preview-list">
-                {publishableDrafts.map((shift) => (
-                  <button key={shift.id} type="button" className="publish-preview-row" onClick={() => startEditShift(shift)}>
-                    <span>
-                      <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
-                      <small>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || 'Shift'}</small>
-                    </span>
-                    <span>
-                      <strong>{shift.staffProfile?.firstName} {shift.staffProfile?.lastName}</strong>
-                      <small>{shift.venue || shift.staffProfile?.venue || 'No venue'}</small>
-                    </span>
-                    <Badge tone="warning">Draft</Badge>
-                  </button>
-                ))}
-              </div>
-            )}
-          </Card>
-
-          <Card
-            title="Forecast guidance"
-            subtitle={`${venueFilter === 'all' ? 'All venues' : venueFilter} · ${formatRange(weekStart, addDays(weekEnd, -1))}`}
-            action={
-              <Button type="button" size="sm" variant="secondary" disabled={historicalForecastSalesCents <= 0} onClick={applyHistoricalForecast}>
-                Use historical
-              </Button>
-            }
-          >
-            <div className="form-grid two">
-              <Input label="Weekly sales override" value={forecastSales} onChange={(event) => setForecastSales(event.currentTarget.value)} placeholder={historicalForecastSalesCents > 0 ? String(Math.round(historicalForecastSalesCents / 100)) : '32000'} />
-              <Input label="Target wage %" value={targetWagePercent} onChange={(event) => setTargetWagePercent(event.currentTarget.value)} placeholder="32" />
-            </div>
-            <p className="subtle roster-forecast-source">
-              Baseline: {historicalForecastSalesCents > 0 ? `${formatCents(historicalForecastSalesCents)} from previous-year sales` : 'No historical match for this venue'}.
-              {forecastHasManualDailyInputs ? ' Daily overrides are active.' : ' Daily sales are currently using the historical baseline.'}
-            </p>
-            <div className="roster-daily-forecast">
-              {days.map((day) => {
-                const summary = dailySummaries.find((item) => sameDay(item.day, day));
-                const dayKey = toDateInput(day);
-                return (
-                  <label key={dayKey} className={summary?.forecastCents ? summary.wagePercent > parsePercent(targetWagePercent) ? 'is-over' : 'is-under' : ''}>
-                    <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
-                    <input
-                      value={dailyForecastSales[dayKey] ?? ''}
-                      onChange={(event) => updateDailyForecast(day, event.currentTarget.value)}
-                      placeholder={historicalDailyForecast[dayKey] ? String(Math.round(historicalDailyForecast[dayKey] / 100)) : '$ sales'}
-                    />
-                    <small>{summary?.forecastCents ? `${summary.wagePercent.toFixed(1)}% wages` : `${roundHours(summary?.hours ?? 0)} planned`}</small>
-                  </label>
-                );
-              })}
-            </div>
-            <div className="roster-venue-forecast">
-              {venueForecastRows.map((row) => (
-                <div key={row.venue}>
-                  <span>
-                    <strong>{row.venue}</strong>
-                    <small>{row.source ? `${row.source} historical baseline` : 'No historical source'}</small>
-                  </span>
-                  <span>
-                    <small>Sales</small>
-                    <strong>{formatCents(row.salesCents)}</strong>
-                  </span>
-                  <span>
-                    <small>Wage budget</small>
-                    <strong>{formatCents(row.budgetCents)}</strong>
-                  </span>
-                  <Badge tone={row.costGapCents >= 0 ? 'positive' : 'warning'}>
-                    {row.costGapCents >= 0 ? `${formatCents(row.costGapCents)} under` : `${formatCents(Math.abs(row.costGapCents))} over`}
-                  </Badge>
-                </div>
-              ))}
-            </div>
-            <div className="roster-forecast-metrics">
-              <div>
-                <span>Wage budget</span>
-                <strong>{formatCents(wageBudgetCents)}</strong>
-              </div>
-              <div>
-                <span>Roster cost</span>
-                <strong>{formatCents(rosterCostCents)}</strong>
-              </div>
-              <div>
-                <span>Recommended</span>
-                <strong>{roundHours(recommendedHours)}</strong>
-              </div>
-              <div>
-                <span>Planned</span>
-                <strong>{roundHours(totalHours)}</strong>
-              </div>
-            </div>
-            <div className={`roster-forecast-callout ${forecastCostGapCents >= 0 ? 'is-under' : 'is-over'}`}>
-              <strong>{forecastCostGapCents >= 0 ? 'Under forecast' : 'Over forecast'}</strong>
-              <span>
-                {formatCents(Math.abs(forecastCostGapCents))} {forecastCostGapCents >= 0 ? 'under budget' : 'over budget'} · {Math.abs(forecastHoursGap).toFixed(1)}h {forecastHoursGap >= 0 ? 'available' : 'over recommended'}
-              </span>
-            </div>
-            {missingRateStaff.length ? (
-              <div className="roster-forecast-callout is-over">
-                <strong>{missingRateStaff.length} rostered staff missing pay rates</strong>
-                <span>{missingRateStaff.slice(0, 4).map((member) => `${member.firstName} ${member.lastName}`).join(', ')}{missingRateStaff.length > 4 ? '...' : ''}</span>
-              </div>
-            ) : null}
-            {publishWarnings.length ? (
-              <div className="roster-publish-guardrails">
-                <strong>Publish guardrails</strong>
-                {publishWarnings.map((warning) => (
-                  <span key={warning}>{warning}</span>
-                ))}
-              </div>
-            ) : (
-              <div className="roster-publish-guardrails is-clear">
-                <strong>Publish guardrails</strong>
-                <span>No forecast, rate, venue or overlap warnings for this view.</span>
-              </div>
-            )}
-            <div className="roster-area-guidance">
-              <strong>Area guidance</strong>
-              {areaGuidanceRows.map((row) => (
-                <div key={`${row.venue}:${row.area}`}>
-                  <span>{row.area}</span>
-                  <small>
-                    {row.day.toLocaleDateString(undefined, { weekday: 'short' })} · {row.venue || 'Any venue'} · {roundHours(row.plannedHours)} planned · {roundHours(row.recommendedHours)} rec
-                  </small>
-                  <span className="roster-area-actions">
-                    <Badge tone={row.dayGap >= 0 ? 'positive' : 'warning'}>{row.dayGap >= 0 ? '+' : ''}{row.dayGap.toFixed(1)}h</Badge>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => applyRosterRecommendation(row)}>
-                      Apply
-                    </Button>
-                  </span>
-                </div>
-              ))}
-            </div>
-          </Card>
-        </div>
-      ) : null}
 
       <div className="deputy-day-summary-strip">
         {dailySummaries.map((summary) => (
@@ -3112,7 +5131,7 @@ function RosterPage({
         ))}
       </div>
 
-      <div className={`deputy-roster-layout ${editorOpen ? 'is-editor-open' : 'is-editor-closed'}`}>
+      <div className={`deputy-roster-layout ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
@@ -3121,15 +5140,19 @@ function RosterPage({
             {days.map((day) => {
               const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
               const hours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
-              const isClosed = closedDayKeys.has(toDateInput(day));
+              const closedVenues = closedVenuesForDay(day);
+              const isClosed = isDayClosedForCurrentView(day);
               return (
                 <div key={day.toISOString()} className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}>
                   <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                   <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-                  <small>{isClosed ? 'Closed' : roundHours(hours)}</small>
-                  <button type="button" className="deputy-close-day-button" onClick={() => toggleClosedDay(day)}>
-                    {isClosed ? 'Open' : 'Close'}
-                  </button>
+                  <small>
+                    {isClosed
+                      ? 'Closed'
+                      : closedVenues.length
+                        ? `${closedVenues.length} venue closed`
+                        : roundHours(hours)}
+                  </small>
                 </div>
               );
             })}
@@ -3139,6 +5162,30 @@ function RosterPage({
             ) : (
               scheduleRows.map((row) => {
                 const rowHours = row.shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                if ('isVenueHeader' in row && row.isVenueHeader) {
+                  return (
+                    <div className="deputy-schedule-row deputy-venue-row" key={row.id}>
+                      <div className="deputy-row-label deputy-venue-label">
+                        <span className="roster-avatar">{row.initials}</span>
+                        <span>
+                          <strong>{row.label}</strong>
+                          <small>{roundHours(rowHours)} · {row.shifts.length} shifts</small>
+                        </span>
+                      </div>
+                      {days.map((day) => {
+                        const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
+                        const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                        const isClosed = isVenueClosedOnDate(row.venue, day);
+                        return (
+                          <div key={`${row.id}-${day.toISOString()}`} className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''}`}>
+                            <strong>{isClosed ? 'Closed' : dayShifts.length}</strong>
+                            <small>{isClosed && dayShifts.length ? `${dayShifts.length} shifts` : roundHours(dayHours)}</small>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                }
                 return (
                   <div className="deputy-schedule-row" key={row.id}>
                     <div className="deputy-row-label">
@@ -3151,7 +5198,7 @@ function RosterPage({
                     </div>
                     {days.map((day) => {
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
-                      const isClosed = closedDayKeys.has(toDateInput(day));
+                      const isClosed = isVenueClosedOnDate(scheduleRowVenue(row), day);
                       return (
                         <button
                           key={`${row.id}-${day.toISOString()}`}
@@ -3207,105 +5254,418 @@ function RosterPage({
           </div>
         </section>
 
-        {editorOpen ? (
-        <aside className="deputy-shift-editor">
-          <Card
-            title={editingShift ? 'Edit shift' : 'Add shift'}
-            subtitle={editingShift ? 'Selected shift details' : 'Click a grid cell to prefill the day and row'}
-            action={
-              <Button
+        <aside className={`roster-right-rail ${sidePanelCollapsed ? 'is-collapsed' : ''}`}>
+          {sidePanelCollapsed ? (
+            <div className="roster-right-rail-collapsed">
+              <button
                 type="button"
-                size="sm"
-                variant="ghost"
                 onClick={() => {
-                  setEditingShift(null);
-                  setEditorOpen(false);
+                  setSidePanelCollapsed(false);
+                  setSidePanelMode('staff');
                 }}
               >
-                Close
-              </Button>
-            }
-          >
-            <div className="staff-profile-form">
-              <Select
-                label="Team member"
-                value={staffProfileId}
-                onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-                options={activeStaff.map((member) => ({
-                  label: `${member.firstName} ${member.lastName}`,
-                  value: member.id
-                }))}
-              />
-              <Select
-                label="Venue"
-                value={shiftVenue}
-                onChange={(event) => setShiftVenue(event.currentTarget.value)}
-                options={venues.map((venue) => ({ label: venue, value: venue }))}
-              />
-              <div className="form-grid two">
-                <Select
-                  label="Area"
-                  value={area}
-                  onChange={(event) => setArea(event.currentTarget.value)}
-                  options={areaSelectOptions}
-                />
-                <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
-              </div>
-              <Select
-                label="Status"
-                value={shiftStatus}
-                onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
-                options={[
-                  { label: 'Draft', value: 'DRAFT' },
-                  { label: 'Published', value: 'PUBLISHED' },
-                  { label: 'Completed', value: 'COMPLETED' },
-                  { label: 'Cancelled', value: 'CANCELLED' }
-                ]}
-              />
-              <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
-              <div className="form-grid two">
-                <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
-                <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
-              </div>
-              {selectedShiftHours ? (
-                <p className="subtle roster-duration-hint">
-                  {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
-                  {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
-                </p>
-              ) : null}
-              {shiftConflicts.length > 0 ? (
-                <div className="roster-conflict-warning">
-                  <strong>{shiftConflicts.length} overlap warning</strong>
-                  <span>
-                    {shiftConflicts
-                      .slice(0, 2)
-                      .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
-                      .join(', ')}
-                  </span>
+                Staff
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setSidePanelCollapsed(false);
+                  setSidePanelMode('history');
+                }}
+              >
+                History
+              </button>
+            </div>
+          ) : (
+            <>
+              <div className="roster-right-rail-head">
+                <div className={`deputy-view-toggle roster-side-toggle ${editorOpen ? 'has-three' : ''}`} aria-label="Roster side panel">
+                  <button type="button" className={activeSidePanelMode === 'staff' ? 'is-active' : ''} onClick={() => setSidePanelMode('staff')}>
+                    Staff
+                  </button>
+                  <button type="button" className={activeSidePanelMode === 'history' ? 'is-active' : ''} onClick={() => setSidePanelMode('history')}>
+                    History
+                  </button>
+                  {editorOpen ? (
+                    <button type="button" className={activeSidePanelMode === 'shift' ? 'is-active' : ''} onClick={() => setSidePanelMode('shift')}>
+                      Shift
+                    </button>
+                  ) : null}
                 </div>
-              ) : null}
-              <Input label="Meal break" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
-              <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
-              <div className="deputy-editor-actions">
-                {editingShift ? (
-                  <>
-                    <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
-                      Duplicate
-                    </Button>
-                    <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
-                      Delete
-                    </Button>
-                  </>
-                ) : null}
-                <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
-                  {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSidePanelCollapsed(true)}>
+                  Collapse
                 </Button>
               </div>
-            </div>
-          </Card>
+
+              {activeSidePanelMode === 'shift' && editorOpen ? (
+                <Card
+                  className="roster-side-card"
+                  title={editingShift ? 'Edit shift' : 'Add shift'}
+                  subtitle={editingShift ? 'Selected shift details' : 'Click a grid cell to prefill the day and row'}
+                  action={
+                    <Button type="button" size="sm" variant="ghost" onClick={closeShiftPanel}>
+                      Close
+                    </Button>
+                  }
+                >
+                  <div className="staff-profile-form">
+                    <Select
+                      label="Team member"
+                      value={staffProfileId}
+                      onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+                      options={activeStaff.map((member) => ({
+                        label: `${member.firstName} ${member.lastName}`,
+                        value: member.id
+                      }))}
+                    />
+                    <Select
+                      label="Venue"
+                      value={shiftVenue}
+                      onChange={(event) => setShiftVenue(event.currentTarget.value)}
+                      options={venues.map((venue) => ({ label: venue, value: venue }))}
+                    />
+                    <div className="form-grid two">
+                      <Select
+                        label="Area"
+                        value={area}
+                        onChange={(event) => setArea(event.currentTarget.value)}
+                        options={areaSelectOptions}
+                      />
+                      <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
+                    </div>
+                    <Select
+                      label="Status"
+                      value={shiftStatus}
+                      onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
+                      options={[
+                        { label: 'Draft', value: 'DRAFT' },
+                        { label: 'Published', value: 'PUBLISHED' },
+                        { label: 'Completed', value: 'COMPLETED' },
+                        { label: 'Cancelled', value: 'CANCELLED' }
+                      ]}
+                    />
+                    <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+                    <div className="form-grid two">
+                      <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
+                      <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
+                    </div>
+                    {selectedShiftHours ? (
+                      <p className="subtle roster-duration-hint">
+                        {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
+                        {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
+                      </p>
+                    ) : null}
+                    {shiftConflicts.length > 0 ? (
+                      <div className="roster-conflict-warning">
+                        <strong>{shiftConflicts.length} overlap warning</strong>
+                        <span>
+                          {shiftConflicts
+                            .slice(0, 2)
+                            .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
+                            .join(', ')}
+                        </span>
+                      </div>
+                    ) : null}
+                    <Input label="Meal break" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
+                    <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
+                    <div className="deputy-editor-actions">
+                      {editingShift ? (
+                        <>
+                          <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
+                            Duplicate
+                          </Button>
+                          <ActionFeedback
+                            message={messageTarget === 'shift-copy' ? message : null}
+                            tone={message?.includes('Could') ? 'error' : 'success'}
+                          />
+                          <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
+                            Delete
+                          </Button>
+                          <ActionFeedback
+                            message={messageTarget === 'shift-delete' ? message : null}
+                            tone={message?.includes('Could') ? 'error' : 'success'}
+                          />
+                        </>
+                      ) : null}
+                      <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
+                        {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
+                      </Button>
+                      <ActionFeedback
+                        message={messageTarget === 'shift-save' ? message : null}
+                        tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Check') ? 'error' : 'success'}
+                      />
+                    </div>
+                  </div>
+                </Card>
+              ) : activeSidePanelMode === 'history' ? (
+                <Card
+                  className="roster-side-card roster-history-panel"
+                  title="Historical data"
+                  subtitle="Forecast inputs, wage budget and suggested roster gaps."
+                >
+                  <div className="roster-history-actions">
+                    <Button type="button" size="sm" variant="secondary" onClick={applyHistoricalForecast}>
+                      Use historical
+                    </Button>
+                    <ActionFeedback
+                      message={messageTarget === 'forecast' ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </div>
+                  <Input
+                    label="Weekly sales override"
+                    value={forecastSales}
+                    onChange={(event) => setForecastSales(event.currentTarget.value)}
+                    placeholder="$85,000"
+                  />
+                  <Input
+                    label="Target wage %"
+                    value={targetWagePercent}
+                    onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
+                    placeholder="28"
+                  />
+                  <p className="subtle roster-forecast-source">
+                    Baseline from previous years: {formatCents(historicalForecastSalesCents)} across {forecastVenues.length || 1} venue{forecastVenues.length === 1 ? '' : 's'}.
+                  </p>
+                  <div className="roster-forecast-metrics roster-forecast-metrics-compact">
+                    <div>
+                      <span>Forecast sales</span>
+                      <strong>{formatCents(forecastSalesCents)}</strong>
+                    </div>
+                    <div>
+                      <span>Wage budget</span>
+                      <strong>{formatCents(wageBudgetCents)}</strong>
+                    </div>
+                    <div>
+                      <span>Roster cost</span>
+                      <strong>{formatCents(rosterCostCents)}</strong>
+                    </div>
+                    <div>
+                      <span>Guidance</span>
+                      <strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}` : roundHours(forecastHoursGap)}</strong>
+                    </div>
+                  </div>
+                  <div className={`roster-forecast-callout ${forecastCostGapCents >= 0 ? 'is-under' : ''}`}>
+                    <strong>{forecastCostGapCents >= 0 ? 'Inside wage guide' : 'Over wage guide'}</strong>
+                    <span>
+                      {forecastCostGapCents >= 0
+                        ? `${formatCents(forecastCostGapCents)} remaining against forecast.`
+                        : `${formatCents(Math.abs(forecastCostGapCents))} over the current wage guide.`}
+                    </span>
+                  </div>
+                  <div className="roster-history-day-list">
+                    {dailySummaries.map((summary) => (
+                      <label
+                        key={summary.day.toISOString()}
+                        className={summary.forecastCents > 0 && summary.plannedCostCents > summary.budgetCents ? 'is-over' : summary.forecastCents > 0 ? 'is-under' : ''}
+                      >
+                        <span>{summary.day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>
+                        <input
+                          value={dailyForecastSales[toDateInput(summary.day)] ?? ''}
+                          onChange={(event) => updateDailyForecast(summary.day, event.currentTarget.value)}
+                          placeholder={String(Math.round((historicalDailyForecast[toDateInput(summary.day)] ?? 0) / 100))}
+                        />
+                        <small>{roundHours(summary.hours)} · {summary.wagePercent ? `${summary.wagePercent.toFixed(1)}%` : 'No sales'}</small>
+                      </label>
+                    ))}
+                  </div>
+                  {venueForecastRows.length ? (
+                    <div className="roster-venue-forecast roster-venue-forecast-compact">
+                      {venueForecastRows.map((row) => (
+                        <div key={row.venue}>
+                          <span>
+                            <strong>{row.venue}</strong>
+                            <small>{row.source ? `Historical source: ${row.source}` : 'No historical source'}</small>
+                          </span>
+                          <span>
+                            <strong>{roundHours(row.plannedHours)}</strong>
+                            <small>planned</small>
+                          </span>
+                          <span>
+                            <strong>{row.hoursGap >= 0 ? `+${roundHours(row.hoursGap)}` : roundHours(row.hoursGap)}</strong>
+                            <small>gap</small>
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {missingRateStaff.length ? (
+                    <div className="roster-publish-guardrails">
+                      <strong>Pay rates missing</strong>
+                      <span>{missingRateStaff.map((member) => `${member.firstName} ${member.lastName}`).join(', ')}</span>
+                    </div>
+                  ) : null}
+                  {areaGuidanceRows.length ? (
+                    <div className="roster-area-guidance roster-area-guidance-compact">
+                      <strong>Area guidance</strong>
+                      {areaGuidanceRows.map((row) => (
+                        <div key={`${row.venue}:${row.area}`}>
+                          <span>
+                            <strong>{row.area}</strong>
+                            <small>{row.venue} · {row.gap >= 0 ? `add ${roundHours(row.gap)}` : `review ${roundHours(Math.abs(row.gap))}`}</small>
+                          </span>
+                          <small>{row.day.toLocaleDateString(undefined, { weekday: 'short' })}</small>
+                          <Button type="button" size="sm" variant="secondary" onClick={() => applyRosterRecommendation(row)}>
+                            Apply
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </Card>
+              ) : (
+                <Card
+                  className="roster-side-card"
+                  title="Staff list"
+                  subtitle={`${sidePanelStaff.length} active ${venueFilter === 'all' ? 'across all venues' : `for ${venueFilter}`}`}
+                >
+                  <div className="roster-side-staff-list">
+                    {sidePanelStaff.length ? sidePanelStaff.map((member) => {
+                      const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
+                      const memberHours = memberShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                      const memberRate = member.trainingPayRateCents ?? member.payRateCents;
+                      return (
+                        <button
+                          type="button"
+                          key={member.id}
+                          className={`roster-side-staff-row ${staffProfileId === member.id ? 'is-selected' : ''}`}
+                          onClick={() => {
+                            setStaffProfileId(member.id);
+                            setShiftVenue(member.venue ?? '');
+                            setRoleTitle(member.roleTitle ?? '');
+                          }}
+                        >
+                          <span className="roster-avatar small">{initials(member)}</span>
+                          <span>
+                            <strong>{member.firstName} {member.lastName}</strong>
+                            <small>{member.roleTitle || 'Team member'} · {member.venue || 'No venue'}</small>
+                          </span>
+                          <span className="roster-side-staff-meta">
+                            <Badge tone={memberShifts.length ? 'info' : 'muted'}>{roundHours(memberHours)}</Badge>
+                            <small>{memberRate ? `${formatCents(memberRate)}/h` : 'Rate missing'}</small>
+                          </span>
+                        </button>
+                      );
+                    }) : (
+                      <EmptyState title="No staff match this venue" description="Switch venue filters to see the full team." />
+                    )}
+                  </div>
+                </Card>
+              )}
+            </>
+          )}
         </aside>
-        ) : null}
       </div>
+      {publishPreviewOpen ? (
+        <div
+          className="roster-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setPublishPreviewOpen(false);
+          }}
+        >
+          <section
+            className="roster-publish-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="roster-publish-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="roster-publish-modal-header">
+              <div>
+                <p className="eyebrow">Publish shifts</p>
+                <h2 id="roster-publish-title">Publish roster</h2>
+                <p className="subtle">
+                  Review draft shifts and guardrails before staff see this roster.
+                </p>
+              </div>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setPublishPreviewOpen(false)}>
+                Close
+              </Button>
+            </header>
+            <div className="roster-publish-modal-summary">
+              <div>
+                <span>Draft shifts</span>
+                <strong>{draftCount}</strong>
+              </div>
+              <div>
+                <span>Roster cost</span>
+                <strong>{formatCents(rosterCostCents)}</strong>
+              </div>
+              <div>
+                <span>Wage guide</span>
+                <strong>{formatCents(wageBudgetCents)}</strong>
+              </div>
+              <div>
+                <span>Hours gap</span>
+                <strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}` : roundHours(forecastHoursGap)}</strong>
+              </div>
+            </div>
+            <div className="roster-publish-modal-body">
+              <div>
+                <div className="roster-modal-section-head">
+                  <h3>Draft shifts</h3>
+                  <span>{formatRange(weekStart, addDays(weekStart, boardDays - 1))}</span>
+                </div>
+                <div className="publish-preview-list">
+                  {publishableDrafts.length ? publishableDrafts.map((shift) => (
+                    <button
+                      key={shift.id}
+                      type="button"
+                      className="publish-preview-row"
+                      onClick={() => {
+                        setPublishPreviewOpen(false);
+                        startEditShift(shift);
+                      }}
+                    >
+                      <span>
+                        <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</strong>
+                        <small>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'}</small>
+                      </span>
+                      <span>
+                        <strong>{shift.staffProfile?.firstName ?? 'Unallocated'} {shift.staffProfile?.lastName ?? ''}</strong>
+                        <small>{shift.venue || shift.staffProfile?.venue || 'No venue set'}</small>
+                      </span>
+                      <Badge tone={isUnallocatedProfile(shift.staffProfile) ? 'warning' : 'info'}>
+                        {roundHours(shiftHours(shift))}
+                      </Badge>
+                    </button>
+                  )) : (
+                    <EmptyState title="No draft shifts" description="There is nothing ready to publish in this roster view." />
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className={`roster-publish-guardrails ${publishWarnings.length ? '' : 'is-clear'}`}>
+                  <strong>{publishWarnings.length ? 'Check before publishing' : 'Ready to publish'}</strong>
+                  {publishWarnings.length ? publishWarnings.map((warning) => (
+                    <span key={warning}>{warning}</span>
+                  )) : (
+                    <span>No roster warnings for this view.</span>
+                  )}
+                </div>
+                <div className={`roster-forecast-callout ${forecastCostGapCents >= 0 ? 'is-under' : ''}`}>
+                  <strong>{forecastCostGapCents >= 0 ? 'Inside forecast' : 'Over forecast'}</strong>
+                  <span>
+                    {forecastCostGapCents >= 0
+                      ? `${formatCents(forecastCostGapCents)} wage budget remaining.`
+                      : `${formatCents(Math.abs(forecastCostGapCents))} above the wage guide.`}
+                  </span>
+                </div>
+                <div className="roster-publish-modal-actions">
+                  <Button type="button" disabled={saving || draftCount === 0} onClick={() => void publishWeek()}>
+                    {saving ? 'Publishing…' : 'Publish shifts'}
+                  </Button>
+                  <ActionFeedback
+                    message={messageTarget === 'publish' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
       {shiftContextMenu ? (
         <div
           className="roster-shift-context-menu"
@@ -3452,6 +5812,10 @@ function roundHours(hours: number) {
 
 function uniqueValues(values: string[]) {
   return [...new Set(values.filter(Boolean))];
+}
+
+function rosterClosedDaysScopeKey(weekStart: Date, boardDays: number, venue: string) {
+  return `${toDateInput(weekStart)}:${boardDays}:${normaliseRosterAreaName(venue)}`;
 }
 
 function loadRosterForecastDraft(): RosterForecastDraft {
@@ -3607,12 +5971,14 @@ function ApprovalRecordRow({
   member,
   record,
   saving,
-  onApprove
+  onApprove,
+  feedback
 }: {
   member: StaffProfile;
   record: StaffComplianceRecord;
   saving: boolean;
   onApprove: (memberId: string, recordId: string) => void;
+  feedback?: string | null;
 }) {
   return (
     <div className="invite-row">
@@ -3639,6 +6005,10 @@ function ApprovalRecordRow({
         >
           Approve document
         </Button>
+        <ActionFeedback
+          message={feedback}
+          tone={feedback?.includes('Could') ? 'error' : 'success'}
+        />
       </span>
     </div>
   );
@@ -3647,6 +6017,7 @@ function ApprovalRecordRow({
 function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () => Promise<void> }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
   const pendingRecords = staff.flatMap((member) =>
     member.records
@@ -3657,6 +6028,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   async function approveRecord(memberId: string, recordId: string) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`record:${recordId}`);
     try {
       await api(`/api/staff/${memberId}/records/${recordId}/approve`, {
         method: 'POST',
@@ -3674,6 +6046,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   async function approveProfile(memberId: string) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`profile:${memberId}`);
     try {
       await api<StaffProfile>(`/api/staff/${memberId}/onboarding/approve`, {
         method: 'POST',
@@ -3701,7 +6074,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
         <StatCard label="Pending documents" value={pendingRecords.length} hint="Uploaded or waiting" />
       </div>
 
-      {message ? <p className={message.includes('Could not') || message.includes('Missing') ? 'error-text' : 'subtle'}>{message}</p> : null}
+      {message && !messageTarget ? <p className={message.includes('Could not') || message.includes('Missing') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
       <Card title="Pending onboarding profiles" subtitle="Approve once details and required uploads have been checked." padding="none">
         {pendingProfiles.length === 0 ? (
@@ -3726,6 +6099,10 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <Button type="button" size="sm" disabled={saving || !readyToApprove} onClick={() => void approveProfile(member.id)}>
                       {readyToApprove ? 'Approve onboarding' : 'Approve documents first'}
                     </Button>
+                    <ActionFeedback
+                      message={messageTarget === `profile:${member.id}` ? message : null}
+                      tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
                   </span>
                 </div>
               );
@@ -3746,6 +6123,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                 record={record}
                 saving={saving}
                 onApprove={(memberId, recordId) => void approveRecord(memberId, recordId)}
+                feedback={messageTarget === `record:${record.id}` ? message : null}
               />
             ))}
           </div>
@@ -3769,6 +6147,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const venueOptions = useMemo(
     () => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((value) => ({ label: value, value })),
@@ -3844,6 +6223,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   async function saveCashTips() {
+    setMessageTarget('cash');
     if (!venue) {
       setMessage('Choose a venue before adding cash tips.');
       return;
@@ -3868,6 +6248,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   async function importCardTips() {
+    setMessageTarget('import');
     if (!venue) {
       setMessage('Choose a venue before importing card tips.');
       return;
@@ -3895,6 +6276,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   async function exportTips() {
+    setMessageTarget('export');
     if (!venue) {
       setMessage('Choose a venue before exporting tips.');
       return;
@@ -3916,6 +6298,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   async function markPaid() {
+    setMessageTarget('paid');
     if (!venue) {
       setMessage('Choose a venue before marking tips paid.');
       return;
@@ -3963,8 +6346,20 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => void loadTips()} disabled={loading}>Refresh</Button>
-            <Button type="button" variant="secondary" onClick={() => void exportTips()} disabled={saving || !summary?.entitlements.length}>Export CSV</Button>
-            <Button type="button" onClick={() => void markPaid()} disabled={saving || !summary?.entitlements.length || payoutVarianceCents !== 0}>Mark paid</Button>
+            <span className="inline-actions">
+              <Button type="button" variant="secondary" onClick={() => void exportTips()} disabled={saving || !summary?.entitlements.length}>Export CSV</Button>
+              <ActionFeedback
+                message={messageTarget === 'export' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+              />
+            </span>
+            <span className="inline-actions">
+              <Button type="button" onClick={() => void markPaid()} disabled={saving || !summary?.entitlements.length || payoutVarianceCents !== 0}>Mark paid</Button>
+              <ActionFeedback
+                message={messageTarget === 'paid' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('variance') ? 'error' : 'success'}
+              />
+            </span>
           </>
         }
       />
@@ -4003,6 +6398,10 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             <Button type="button" disabled={saving || !venue} onClick={() => void saveCashTips()}>
               {saving ? 'Saving...' : 'Save cash tips'}
             </Button>
+            <ActionFeedback
+              message={messageTarget === 'cash' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
           </div>
         </Card>
 
@@ -4042,6 +6441,10 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
               {saving ? 'Importing...' : 'Import card tips'}
             </Button>
+            <ActionFeedback
+              message={messageTarget === 'import' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+            />
           </div>
         </Card>
 
@@ -4051,7 +6454,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             <strong>{formatRange(weekStart, addDays(weekEnd, -1))}</strong>
             <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>Next</Button>
           </div>
-          {message ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
+          {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
           {loading ? <Spinner label="Loading tips..." /> : null}
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>
@@ -4278,6 +6681,234 @@ function StaffMemberTipsPage() {
   );
 }
 
+function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
+  const navigate = useNavigate();
+  const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
+  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [venue, setVenue] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const venueOptions = useMemo(
+    () => [
+      { label: 'All venues', value: '' },
+      ...uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((item) => ({
+        label: item,
+        value: item
+      }))
+    ],
+    [staff]
+  );
+
+  const loadDashboard = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const query = new URLSearchParams({ date });
+      if (venue) query.set('venue', venue);
+      setDashboard(await api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${query.toString()}`));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load manager dashboard.');
+    } finally {
+      setLoading(false);
+    }
+  }, [date, venue]);
+
+  useEffect(() => {
+    void loadDashboard();
+  }, [loadDashboard]);
+
+  async function approveTimesheet(id: string) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`approve:${id}`);
+    try {
+      await api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
+      setMessage('Timesheet approved.');
+      await loadDashboard();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not approve timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rejectTimesheet(id: string) {
+    const reason = window.prompt('Reason for rejection?') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`reject:${id}`);
+    try {
+      await api(`/api/staff/timesheets/${id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      setMessage('Timesheet rejected.');
+      await loadDashboard();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reject timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const wagePercent = dashboard?.totals.wagePercent;
+  const updatedAt = dashboard ? new Date(dashboard.generatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+
+  return (
+    <div className="page-stack manager-mobile-page">
+      <PageHeader
+        eyebrow="Manager"
+        title="Today at a glance"
+        description="Approve hours, check live sales and wages, and catch stock or compliance issues before service gets away."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadDashboard()}>Refresh</Button>}
+      />
+
+      <Card className="manager-mobile-filter-card">
+        <div className="manager-mobile-filters">
+          <Input label="Day" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+        </div>
+        <p className="subtle">{updatedAt ? `Last refreshed ${updatedAt}` : 'Pulls from live Alma Suite data.'}</p>
+      </Card>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <div className="manager-mobile-stats">
+        <StatCard label="Sales today" value={formatCents(dashboard?.totals.salesCents ?? 0)} hint={dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue signal${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales imported yet'} loading={loading} />
+        <StatCard label="Live wages" value={formatCents(dashboard?.totals.actualWageCents ?? 0)} hint={`${roundHours(dashboard?.totals.actualHours ?? 0)} actual hours`} loading={loading} />
+        <StatCard label="Wage %" value={wagePercent === null || wagePercent === undefined ? 'No sales' : `${wagePercent.toFixed(1)}%`} hint={`Roster ${formatCents(dashboard?.totals.rosterWageCents ?? 0)}`} loading={loading} />
+        <StatCard label="Approvals" value={dashboard?.totals.pendingTimesheets ?? 0} hint="Submitted timesheets" loading={loading} />
+      </div>
+
+      <div className="manager-mobile-alert-strip">
+        <button type="button" onClick={() => navigate('/timesheets')}>
+          <strong>{dashboard?.totals.pendingTimesheets ?? 0}</strong>
+          <span>Timesheets</span>
+        </button>
+        <button type="button" onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>
+          <strong>{dashboard?.totals.lowStockItems ?? 0}</strong>
+          <span>Low stock</span>
+        </button>
+        <button type="button" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
+          <strong>{dashboard?.totals.openIssues ?? 0}</strong>
+          <span>Compliance</span>
+        </button>
+        <button type="button" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
+          <strong>{dashboard?.totals.criticalIssues ?? 0}</strong>
+          <span>Critical</span>
+        </button>
+      </div>
+
+      {loading && !dashboard ? <Spinner label="Loading manager dashboard..." /> : null}
+
+      <div className="manager-mobile-grid">
+        <Card
+          title="Approve timesheets"
+          subtitle="Submitted hours waiting for manager approval"
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>All</Button>}
+        >
+          {dashboard && dashboard.pendingTimesheets.length === 0 ? (
+            <EmptyState title="No timesheets waiting" description="Submitted hours will appear here for quick approval." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {dashboard?.pendingTimesheets.map((entry) => (
+              <article key={entry.id} className="manager-mobile-row">
+                <span>
+                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
+                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}-{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}</span>
+                  <span className="subtle">{entry.venue ?? 'No venue'} · {entry.area ?? entry.roleTitle ?? 'Shift'} · {entry.paymentMethod}</span>
+                </span>
+                <span className="manager-mobile-row-actions">
+                  <Button type="button" size="sm" disabled={saving} onClick={() => void approveTimesheet(entry.id)}>Approve</Button>
+                  <ActionFeedback
+                    message={messageTarget === `approve:${entry.id}` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void rejectTimesheet(entry.id)}>Reject</Button>
+                  <ActionFeedback
+                    message={messageTarget === `reject:${entry.id}` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card title="Quick reporting" subtitle="Today only, from imported sales and current wage records">
+          <div className="manager-mobile-report-list">
+            {(dashboard?.salesByVenue.length ? dashboard.salesByVenue : [{ venue: venue || 'No sales imported', salesCents: 0 }]).map((row) => {
+              const wages = dashboard?.wagesByVenue.find((item) => item.venue === row.venue);
+              const percent = row.salesCents > 0 && wages ? (wages.actualWageCents / row.salesCents) * 100 : null;
+              return (
+                <div key={row.venue} className="manager-mobile-report-row">
+                  <span>
+                    <strong>{row.venue}</strong>
+                    <small>{wages ? `${roundHours(wages.actualHours)} actual hours · ${roundHours(wages.rosterHours)} roster hours` : 'No wage records yet'}</small>
+                  </span>
+                  <span>
+                    <strong>{formatCents(row.salesCents)}</strong>
+                    <small>{percent === null ? 'No wage %' : `${percent.toFixed(1)}% wages`}</small>
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card
+          title="Low stock warnings"
+          subtitle="Active stock items at or below reorder/par level"
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>Stock</Button>}
+        >
+          {dashboard && dashboard.lowStock.length === 0 ? (
+            <EmptyState title="No low stock warnings" description="Items with reorder levels will appear here when they need attention." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {dashboard?.lowStock.map((item) => {
+              const threshold = item.reorderPoint ?? item.parLevel;
+              return (
+                <article key={item.id} className="manager-mobile-row">
+                  <span>
+                    <strong>{item.name}</strong>
+                    <span className="subtle">{item.categoryName ?? 'Uncategorised'} · {item.unit}</span>
+                  </span>
+                  <Badge tone="warning">{item.onHand} / {threshold}</Badge>
+                </article>
+              );
+            })}
+          </div>
+        </Card>
+
+        <Card
+          title="Compliance issues"
+          subtitle="Open, blocked, and in-progress issues"
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>Compliance</Button>}
+        >
+          {dashboard && dashboard.complianceIssues.length === 0 ? (
+            <EmptyState title="No open compliance issues" description="Critical or open compliance items will appear here." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {dashboard?.complianceIssues.map((issue) => (
+              <article key={issue.id} className="manager-mobile-row">
+                <span>
+                  <strong>{issue.title}</strong>
+                  <span className="subtle">{issue.category} · {issue.assignee ?? 'Unassigned'}</span>
+                  <span className="subtle">{issue.dueDate ? `Due ${new Date(issue.dueDate).toLocaleDateString()}` : 'No due date'}</span>
+                </span>
+                <Badge tone={issue.severity === 'CRITICAL' ? 'danger' : issue.severity === 'HIGH' ? 'warning' : 'info'}>{issue.severity}</Badge>
+              </article>
+            ))}
+          </div>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?: RosterShift[] }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
   const [statusFilter, setStatusFilter] = useState<'all' | Timesheet['status']>('all');
@@ -4297,6 +6928,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const selectedMember = staff.find((member) => member.id === staffProfileId);
   const venueOptions = useMemo(
@@ -4354,6 +6986,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   }, [loadTimesheets]);
 
   async function submitTimesheet() {
+    setMessageTarget('submit');
     const range = shiftTimeRange(workDate, startTime, endTime);
     if (!selectedMember || !range) {
       setMessage('Choose a staff member and valid times.');
@@ -4396,6 +7029,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     const notes = window.prompt('Cash payment notes (optional)') ?? '';
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`cash:${id}`);
     try {
       await api(`/api/staff/timesheets/${id}/cash-paid`, {
         method: 'POST',
@@ -4411,6 +7045,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   }
 
   function prefillFromShift(shift: RosterShift) {
+    setMessageTarget(`prefill:${shift.id}`);
     setSelectedRosterShiftId(shift.id);
     setStaffProfileId(shift.staffProfileId);
     setWorkDate(toDateInput(new Date(shift.startsAt)));
@@ -4425,6 +7060,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   async function approve(id: string) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`approve:${id}`);
     try {
       await api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
       setMessage('Timesheet approved.');
@@ -4440,6 +7076,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     const reason = window.prompt('Reason for rejection?') ?? '';
     setSaving(true);
     setMessage(null);
+    setMessageTarget(`reject:${id}`);
     try {
       await api(`/api/staff/timesheets/${id}/reject`, {
         method: 'POST',
@@ -4457,6 +7094,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   async function exportXero(markExported: boolean) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(markExported ? 'export' : 'preview');
     try {
       const result = await api<{ exportBatchId: string; count: number; csv: string; markedExported: boolean }>(
         '/api/staff/timesheets/export/xero',
@@ -4507,6 +7145,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                 >
                   <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
                   <span>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || 'Shift'}</span>
+                  <ActionFeedback
+                    message={messageTarget === `prefill:${shift.id}` ? message : null}
+                    tone="success"
+                  />
                 </button>
               ))}
             </div>
@@ -4548,6 +7190,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             <Button type="button" disabled={saving} onClick={() => void submitTimesheet()}>
               {saving ? 'Saving…' : 'Submit timesheet'}
             </Button>
+            <ActionFeedback
+              message={messageTarget === 'submit' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
           </div>
         </Card>
 
@@ -4559,9 +7205,17 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
                 Preview CSV
               </Button>
+              <ActionFeedback
+                message={messageTarget === 'preview' ? message : null}
+                tone={message?.includes('Could') ? 'error' : 'success'}
+              />
               <Button type="button" size="sm" disabled={saving} onClick={() => void exportXero(true)}>
                 Export to Xero
               </Button>
+              <ActionFeedback
+                message={messageTarget === 'export' ? message : null}
+                tone={message?.includes('Could') ? 'error' : 'success'}
+              />
             </div>
           }
         >
@@ -4582,7 +7236,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               options={['all', 'DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED'].map((value) => ({ label: value, value }))}
             />
           </div>
-          {message ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+          {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
           {loading ? <Spinner label="Loading timesheets…" /> : null}
           {!loading && timesheets.length === 0 ? (
             <EmptyState title="No timesheets yet" description="Submitted timesheets for this week will appear here." />
@@ -4600,13 +7254,31 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
                   <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>{entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash pay') : 'Xero'}</Badge>
                   {entry.status === 'SUBMITTED' || entry.status === 'REJECTED' ? (
-                    <Button type="button" size="sm" disabled={saving} onClick={() => void approve(entry.id)}>Approve</Button>
+                    <>
+                      <Button type="button" size="sm" disabled={saving} onClick={() => void approve(entry.id)}>Approve</Button>
+                      <ActionFeedback
+                        message={messageTarget === `approve:${entry.id}` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </>
                   ) : null}
                   {entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
-                    <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>Mark cash paid</Button>
+                    <>
+                      <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>Mark cash paid</Button>
+                      <ActionFeedback
+                        message={messageTarget === `cash:${entry.id}` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </>
                   ) : null}
                   {entry.status !== 'EXPORTED' ? (
-                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void reject(entry.id)}>Reject</Button>
+                    <>
+                      <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void reject(entry.id)}>Reject</Button>
+                      <ActionFeedback
+                        message={messageTarget === `reject:${entry.id}` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </>
                   ) : null}
                 </span>
               </article>
@@ -5253,6 +7925,8 @@ function StaffShell() {
   const { staff, roster, loading, error, reload } = useStaffData();
   const [selectedId, setSelectedId] = useState('');
   const isStaffUser = user?.role === 'STAFF';
+  const canOpenSettings = canAccessSettings(user);
+  const navItems = navItemsForUser(user);
 
   useEffect(() => {
     if (!selectedId && staff[0]) setSelectedId(staff[0].id);
@@ -5261,7 +7935,7 @@ function StaffShell() {
   return (
     <AppShell
       brand={<ProductLogo appId="staff" size="md" showBrandMark={false} />}
-      sidebar={<SidebarNav items={isStaffUser ? STAFF_MEMBER_NAV_ITEMS : NAV_ITEMS} />}
+      sidebar={<SidebarNav items={navItems} />}
       topBar={<TopBarWithContext />}
     >
       {error ? (
@@ -5276,21 +7950,26 @@ function StaffShell() {
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<StaffMemberTipsPage />} />
+          <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
+          <Route path="/settings" element={<Navigate to="/" replace />} />
+          <Route path="/admin" element={<Navigate to="/" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       ) : (
         <Routes>
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
+          <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
-          <Route path="/settings" element={<AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/admin" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<TipsPage staff={staff} />} />
+          <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
         </Routes>
       )}
     </AppShell>

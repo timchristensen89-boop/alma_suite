@@ -45,7 +45,11 @@ const configuredCorsOrigins = unique([
   ...parseCorsOrigins(process.env.COMPLIANCE_WEB_URL),
   ...parseCorsOrigins(process.env.STOCK_WEB_URL),
   ...parseCorsOrigins(process.env.STAFF_WEB_URL),
-  ...parseCorsOrigins(process.env.REPORTS_WEB_URL)
+  ...parseCorsOrigins(process.env.REPORTS_WEB_URL),
+  ...parseCorsOrigins(process.env.RESERVE_WEB_URL),
+  ...parseCorsOrigins(process.env.MARKETING_WEB_URL),
+  ...parseCorsOrigins(process.env.GIFTCARDS_WEB_URL),
+  ...parseCorsOrigins(process.env.GIFT_CARDS_WEB_URL)
 ]);
 
 if (isProduction) {
@@ -54,7 +58,7 @@ if (isProduction) {
   }
   if (configuredCorsOrigins.length === 0) {
     throw new Error(
-      'At least one production frontend origin is required via STOCK_CORS_ORIGIN, STOCK_FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, or REPORTS_WEB_URL'
+      'At least one production frontend origin is required via STOCK_CORS_ORIGIN, STOCK_FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, or GIFTCARDS_WEB_URL'
     );
   }
   const localOrigin = configuredCorsOrigins.find(isLocalHttpUrl);

@@ -9,6 +9,7 @@ import type {
 } from '@alma/shared';
 import {
   AppShell,
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -24,6 +25,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   Textarea,
   TopBar
 } from '@alma/ui';
@@ -290,12 +292,13 @@ function SidebarNav() {
   );
 }
 
-function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [venue, setVenue] = useState('Alma Avalon');
   const [selectedDate, setSelectedDate] = useState(todayInput());
   const [data, setData] = useState<ReserveDiarySummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [reservationForm, setReservationForm] = useState(() => defaultReservationForm(venue));
   const [tableForm, setTableForm] = useState(() => defaultTableForm(venue));
 
@@ -314,6 +317,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
       });
       setData(await api<ReserveDiarySummary>(`/api/reserve/diary?${query.toString()}`));
     } catch (error) {
+      setMessageTarget(null);
       setMessage(error instanceof Error ? error.message : 'Could not load Reserve diary');
     } finally {
       setLoading(false);
@@ -343,6 +347,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
   async function saveReservation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('reservation');
     const startsAt = dateTime(reservationForm.serviceDate, reservationForm.time);
     const endsAt = new Date(startsAt.getTime() + Number(reservationForm.durationMinutes || 120) * 60_000);
     try {
@@ -370,8 +375,9 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
         })
       });
       setReservationForm(defaultReservationForm(venue));
-      setMessage('Reservation saved.');
       await load();
+      setMessageTarget('reservation');
+      setMessage('Reservation saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save reservation.');
     }
@@ -380,6 +386,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
   async function saveTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('table');
     try {
       await api<ReserveTable>('/api/reserve/tables', {
         method: 'POST',
@@ -394,8 +401,9 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
         })
       });
       setTableForm(defaultTableForm(venue));
-      setMessage('Table saved.');
       await load();
+      setMessageTarget('table');
+      setMessage('Table saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not save table.');
     }
@@ -403,12 +411,15 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
 
   async function updateStatus(reservation: ReserveReservation, status: ReserveReservationStatus) {
     setMessage(null);
+    setMessageTarget(`reservation:${reservation.id}`);
     try {
       await api(`/api/reserve/reservations/${reservation.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status })
       });
       await load();
+      setMessageTarget(`reservation:${reservation.id}`);
+      setMessage('Reservation updated.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not update reservation.');
     }
@@ -425,6 +436,13 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
           right={
             <>
               <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
+              <SuiteCommsWidget
+                appId="RESERVE"
+                api={api}
+                venue={user.venue}
+                userName={`${user.firstName} ${user.lastName}`}
+                canAnnounce={user.role !== 'STAFF'}
+              />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }
@@ -445,7 +463,7 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
           }
         />
 
-        {message ? <p className={message.includes('Could') || message.includes('invalid') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('invalid') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
         <div className="stats-grid">
           <StatCard label="Covers" value={data?.totals.covers ?? 0} hint="Live covers forecast" loading={loading} />
@@ -485,6 +503,10 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
                               onChange={(event) => void updateStatus(reservation, event.currentTarget.value as ReserveReservationStatus)}
                               options={STATUSES.map((status) => ({ label: status.replace('_', ' '), value: status }))}
                             />
+                            <ActionFeedback
+                              message={messageTarget === `reservation:${reservation.id}` ? message : null}
+                              tone={message?.includes('Could') ? 'error' : 'success'}
+                            />
                           </div>
                         </article>
                       ))}
@@ -517,7 +539,13 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
                 <Input label="Occasion" value={reservationForm.occasion} onChange={(event) => setReservationForm({ ...reservationForm, occasion: event.currentTarget.value })} />
                 <Textarea label="Allergy notes" rows={2} value={reservationForm.allergyNotes} onChange={(event) => setReservationForm({ ...reservationForm, allergyNotes: event.currentTarget.value })} />
                 <Textarea label="Booking notes" rows={2} value={reservationForm.notes} onChange={(event) => setReservationForm({ ...reservationForm, notes: event.currentTarget.value })} />
-                <Button type="submit">Save booking</Button>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={messageTarget === 'reservation' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="submit">Save booking</Button>
+                </div>
               </form>
             </Card>
             </div>
@@ -533,7 +561,13 @@ function ReserveDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promis
                   <Input label="Max covers" type="number" min="1" value={tableForm.maxCovers} onChange={(event) => setTableForm({ ...tableForm, maxCovers: event.currentTarget.value })} />
                   <Input label="Sort" type="number" value={tableForm.sortOrder} onChange={(event) => setTableForm({ ...tableForm, sortOrder: event.currentTarget.value })} />
                 </div>
-                <Button type="submit" variant="secondary">Save table</Button>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={messageTarget === 'table' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="submit" variant="secondary">Save table</Button>
+                </div>
               </form>
               <div className="reserve-table-list">
                 {tables.map((table) => (

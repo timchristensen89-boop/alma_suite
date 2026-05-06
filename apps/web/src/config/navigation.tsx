@@ -78,8 +78,8 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/settings',
-    label: 'Settings',
-    description: 'Organisation, venues, integrations, account',
+    label: 'Admin',
+    description: 'Suite settings and account',
     icon: <IconSettings />,
     minimumRole: 'ADMIN'
   }

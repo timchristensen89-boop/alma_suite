@@ -5,7 +5,7 @@ import type {
   StockCategory,
   StockItemsPayload
 } from '@alma/shared';
-import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
+import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { IconItems, IconRecipes, IconSettings } from '../lib/icons';
 import { ApiError, api } from '../lib/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -64,6 +64,9 @@ export function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [feedbackTarget, setFeedbackTarget] = useState<string | null>(null);
+  const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
+  const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
 
   async function loadSettings() {
     setLoading(true);
@@ -136,6 +139,8 @@ export function SettingsPage() {
 
   async function createStockCategory() {
     setSavingKey('stock:new');
+    setFeedbackTarget('stock:new');
+    setFeedbackMessage(null);
     try {
       const created = await api<StockCategory>('/api/items/categories', {
         method: 'POST',
@@ -153,8 +158,13 @@ export function SettingsPage() {
       }));
       setNewStockCategory({ name: '', description: '' });
       setError(null);
+      setFeedbackMessage('Stock category added.');
+      setFeedbackTone('success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not create stock category');
+      const message = err instanceof ApiError ? err.message : 'Could not create stock category';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
     } finally {
       setSavingKey(null);
     }
@@ -163,6 +173,8 @@ export function SettingsPage() {
   async function saveStockCategory(category: StockCategory) {
     const draft = stockDrafts[category.id] ?? stockDraftFromCategory(category);
     setSavingKey(`stock:${category.id}`);
+    setFeedbackTarget(`stock:${category.id}`);
+    setFeedbackMessage(null);
     try {
       const saved = await api<StockCategory>(`/api/items/categories/${category.id}`, {
         method: 'PATCH',
@@ -181,8 +193,13 @@ export function SettingsPage() {
         [saved.id]: stockDraftFromCategory(saved)
       }));
       setError(null);
+      setFeedbackMessage('Stock category saved.');
+      setFeedbackTone('success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save stock category');
+      const message = err instanceof ApiError ? err.message : 'Could not save stock category';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
     } finally {
       setSavingKey(null);
     }
@@ -190,6 +207,8 @@ export function SettingsPage() {
 
   async function createRecipeCategory() {
     setSavingKey('recipe:new');
+    setFeedbackTarget('recipe:new');
+    setFeedbackMessage(null);
     try {
       const created = await api<RecipeCategory>('/api/recipes/categories', {
         method: 'POST',
@@ -208,8 +227,13 @@ export function SettingsPage() {
       }));
       setNewRecipeCategory({ name: '', kind: 'FOOD', description: '' });
       setError(null);
+      setFeedbackMessage('Recipe category added.');
+      setFeedbackTone('success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not create recipe category');
+      const message = err instanceof ApiError ? err.message : 'Could not create recipe category';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
     } finally {
       setSavingKey(null);
     }
@@ -218,6 +242,8 @@ export function SettingsPage() {
   async function saveRecipeCategory(category: RecipeCategory) {
     const draft = recipeDrafts[category.id] ?? recipeDraftFromCategory(category);
     setSavingKey(`recipe:${category.id}`);
+    setFeedbackTarget(`recipe:${category.id}`);
+    setFeedbackMessage(null);
     try {
       const saved = await api<RecipeCategory>(`/api/recipes/categories/${category.id}`, {
         method: 'PATCH',
@@ -237,8 +263,13 @@ export function SettingsPage() {
         [saved.id]: recipeDraftFromCategory(saved)
       }));
       setError(null);
+      setFeedbackMessage('Recipe category saved.');
+      setFeedbackTone('success');
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : 'Could not save recipe category');
+      const message = err instanceof ApiError ? err.message : 'Could not save recipe category';
+      setError(message);
+      setFeedbackMessage(message);
+      setFeedbackTone('error');
     } finally {
       setSavingKey(null);
     }
@@ -246,7 +277,7 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack">
-      {error ? <p className="error-text">{error}</p> : null}
+      {error && !feedbackTarget ? <p className="error-text">{error}</p> : null}
 
       <Card
         title="Stock categories"
@@ -298,6 +329,10 @@ export function SettingsPage() {
               >
                 {savingKey === 'stock:new' ? 'Adding...' : 'Add'}
               </Button>
+              <ActionFeedback
+                message={feedbackTarget === 'stock:new' ? feedbackMessage : null}
+                tone={feedbackTone}
+              />
             </div>
 
             {stockCategories.map((category) => {
@@ -334,6 +369,10 @@ export function SettingsPage() {
                   >
                     {savingKey === `stock:${category.id}` ? 'Saving...' : 'Save'}
                   </Button>
+                  <ActionFeedback
+                    message={feedbackTarget === `stock:${category.id}` ? feedbackMessage : null}
+                    tone={feedbackTone}
+                  />
                 </div>
               );
             })}
@@ -407,6 +446,10 @@ export function SettingsPage() {
               >
                 {savingKey === 'recipe:new' ? 'Adding...' : 'Add'}
               </Button>
+              <ActionFeedback
+                message={feedbackTarget === 'recipe:new' ? feedbackMessage : null}
+                tone={feedbackTone}
+              />
             </div>
 
             {recipeCategories.map((category) => {
@@ -459,6 +502,10 @@ export function SettingsPage() {
                   >
                     {savingKey === `recipe:${category.id}` ? 'Saving...' : 'Save'}
                   </Button>
+                  <ActionFeedback
+                    message={feedbackTarget === `recipe:${category.id}` ? feedbackMessage : null}
+                    tone={feedbackTone}
+                  />
                 </div>
               );
             })}

@@ -2,6 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Issue, IssueFormInput, IssueSeverity, IssueStatus } from '@alma/shared';
 import {
+  ActionFeedback,
   Button,
   Card,
   EmptyState,
@@ -337,8 +338,6 @@ export function IssueForm({
         </div>
       </Card>
 
-      {error ? <p className="error-text">{error}</p> : null}
-
       <div className="toolbar-right">
         <Link to="/issues">
           <Button type="button" variant="ghost">
@@ -352,6 +351,7 @@ export function IssueForm({
               ? 'Create issue'
               : 'Save changes'}
         </Button>
+        <ActionFeedback message={error} tone="error" />
       </div>
     </form>
   );

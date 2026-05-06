@@ -53,6 +53,16 @@ export const IconSuppliers = (props: IconProps) => (
   </svg>
 );
 
+/** Invoices — receipt with scan lines for Xero imports and supplier bills. */
+export const IconInvoices = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M6 3h12v18l-2-1.2-2 1.2-2-1.2-2 1.2-2-1.2L6 21V3z" />
+    <path d="M9 8h6" />
+    <path d="M9 12h6" />
+    <path d="M9 16h3" />
+  </svg>
+);
+
 /** Recipes — stacked plates / wine glass hybrid — two layered ovals + a base. */
 export const IconRecipes = (props: IconProps) => (
   <svg {...base(props)}>

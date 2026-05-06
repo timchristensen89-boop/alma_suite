@@ -668,6 +668,26 @@ p {
   margin-top: 16px;
 }
 
+.action-feedback {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  max-width: min(360px, 100%);
+  color: #27705d;
+  font-size: 13px;
+  font-weight: 650;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.action-feedback-error {
+  color: var(--tone-danger-fg);
+}
+
+.action-feedback-info {
+  color: var(--color-text-muted);
+}
+
 .check-row {
   display: flex;
   align-items: center;

@@ -49,12 +49,9 @@ if (isProduction) {
   if (!process.env.DATABASE_URL) {
     throw new Error('DATABASE_URL is required in production');
   }
-  if (!process.env.CORS_ORIGIN) {
-    throw new Error('CORS_ORIGIN is required in production');
-  }
   if (configuredCorsOrigins.length === 0) {
     throw new Error(
-      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, or REPORTS_WEB_URL'
+      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, or GIFTCARDS_WEB_URL'
     );
   }
   const localOrigin = configuredCorsOrigins.find(isLocalHttpUrl);

@@ -1,7 +1,19 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import type { AuthUser, GiftCard, GiftCardCheckoutResult, GiftCardOverview, GiftCardPublic } from '@alma/shared';
+import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  DEFAULT_GIFT_CARD_SETTINGS,
+  type AuthUser,
+  type GiftCard,
+  type GiftCardAdminSettingsResponse,
+  type GiftCardCheckoutResult,
+  type GiftCardOverview,
+  type GiftCardPromoCode,
+  type GiftCardPromoQuote,
+  type GiftCardPublic,
+  type GiftCardSettings
+} from '@alma/shared';
 import {
   AppShell,
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -17,6 +29,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   Textarea,
   TopBar
 } from '@alma/ui';
@@ -45,6 +58,12 @@ const GIFTCARD_NAV_ITEMS = [
     icon: <DocumentIcon />
   },
   {
+    href: '#settings',
+    label: 'Settings',
+    description: 'Promo codes and artwork',
+    icon: <ChartIcon />
+  },
+  {
     href: '/',
     label: 'Public shop',
     description: 'Buy gift card page',
@@ -54,6 +73,25 @@ const GIFTCARD_NAV_ITEMS = [
 
 function formatCents(cents: number) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
+}
+
+function themeStyle(settings: GiftCardSettings): CSSProperties {
+  return {
+    '--giftcards-primary': settings.primaryColor,
+    '--giftcards-accent': settings.accentColor
+  } as CSSProperties;
+}
+
+function imageToDataUrl(file: File) {
+  if (file.size > 4 * 1024 * 1024) {
+    return Promise.reject(new Error('Use an image smaller than 4MB.'));
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(new Error('Could not read image.'));
+    reader.readAsDataURL(file);
+  });
 }
 
 function statusTone(status: GiftCard['status']) {
@@ -159,8 +197,13 @@ function useGiftCardAuth() {
 }
 
 function PublicGiftCardShop() {
+  const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
   const [amountCents, setAmountCents] = useState(10000);
   const [customAmount, setCustomAmount] = useState('');
+  const [promoCode, setPromoCode] = useState('');
+  const [promoQuote, setPromoQuote] = useState<GiftCardPromoQuote | null>(null);
+  const [promoMessage, setPromoMessage] = useState<string | null>(null);
+  const [applyingPromo, setApplyingPromo] = useState(false);
   const [purchaserName, setPurchaserName] = useState('');
   const [purchaserEmail, setPurchaserEmail] = useState('');
   const [recipientName, setRecipientName] = useState('');
@@ -171,9 +214,16 @@ function PublicGiftCardShop() {
   const sessionId = new URLSearchParams(window.location.search).get('session_id');
   const [paidCard, setPaidCard] = useState<GiftCardPublic | null>(null);
   const selectedGift = AMOUNTS.find((gift) => gift.amountCents === amountCents);
+  const amountDueCents = promoQuote ? promoQuote.amountDueCents : amountCents;
   const amountError = amountCents < 1000 || amountCents > 200000
     ? 'Choose an amount between $10 and $2,000.'
     : null;
+
+  useEffect(() => {
+    api<GiftCardSettings>('/api/gift-cards/settings/public')
+      .then(setSettings)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -195,6 +245,7 @@ function PublicGiftCardShop() {
         method: 'POST',
         body: JSON.stringify({
           amountCents,
+          promoCode: promoQuote?.code ?? promoCode.trim(),
           purchaserName,
           purchaserEmail,
           recipientName,
@@ -215,18 +266,47 @@ function PublicGiftCardShop() {
   function chooseAmount(cents: number) {
     setAmountCents(cents);
     setCustomAmount('');
+    setPromoQuote(null);
+    setPromoMessage(null);
   }
 
   function updateCustomAmount(value: string) {
     setCustomAmount(value);
+    setPromoQuote(null);
+    setPromoMessage(null);
     const dollars = Number(value);
     if (Number.isFinite(dollars)) {
       setAmountCents(Math.round(dollars * 100));
     }
   }
 
+  async function applyPromoCode() {
+    const code = promoCode.trim();
+    if (!code) {
+      setPromoQuote(null);
+      setPromoMessage('Enter a promo code first.');
+      return;
+    }
+    setApplyingPromo(true);
+    setPromoMessage(null);
+    try {
+      const quote = await api<GiftCardPromoQuote>('/api/gift-cards/promo/quote', {
+        method: 'POST',
+        body: JSON.stringify({ code, amountCents })
+      });
+      setPromoQuote(quote);
+      setPromoCode(quote.code);
+      setPromoMessage(`${quote.code} applied: ${formatCents(quote.discountCents)} off.`);
+    } catch (error) {
+      setPromoQuote(null);
+      setPromoMessage(error instanceof Error ? error.message : 'Promo code could not be applied.');
+    } finally {
+      setApplyingPromo(false);
+    }
+  }
+
   return (
-    <main className="giftcards-public-page">
+    <main className="giftcards-public-page" style={themeStyle(settings)}>
       <header className="giftcards-public-header">
         <a href="https://almagroup.com.au/" aria-label="Alma Group home">
           <img src="/images/alma-group-logo.png" alt="Alma Group" />
@@ -241,16 +321,18 @@ function PublicGiftCardShop() {
         {paidCard ? (
           <section className="giftcards-public-panel giftcards-public-success" aria-label="Gift card payment received">
             <div>
-              <p className="giftcards-public-eyebrow">Payment received</p>
+              <p className="giftcards-public-eyebrow">{paidCard.testMode ? 'Test checkout complete' : 'Payment received'}</p>
               <h2>Your gift card is ready.</h2>
-              <p>Stripe has confirmed the payment. The code below is ready to use at Alma Avalon and St Alma.</p>
+              <p>{paidCard.testMode ? 'Test mode created this card without taking a Stripe payment.' : 'Stripe has confirmed the payment. The code below is ready to use at Alma Avalon and St Alma.'}</p>
             </div>
             <div className="giftcards-paid-card">
               <strong>{paidCard.code}</strong>
               <span>{formatCents(paidCard.balanceCents)} available</span>
               <Badge tone={paidCard.status === 'ACTIVE' ? 'positive' : 'warning'}>{paidCard.status.replace('_', ' ')}</Badge>
+              {paidCard.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
               {paidCard.emailedAt ? <small>Email sent to the purchaser and recipient.</small> : null}
               {paidCard.emailError ? <small>Email needs attention: {paidCard.emailError}</small> : null}
+              <img className="giftcards-qr" src={paidCard.qrCodeUrl} alt="Gift card redemption QR code" />
               <div className="giftcards-inline-actions">
                 <button type="button" className="giftcards-public-secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</button>
               </div>
@@ -261,20 +343,26 @@ function PublicGiftCardShop() {
         <section className="giftcards-public-hero">
           <div className="giftcards-public-copy">
             <p className="giftcards-public-eyebrow">Alma Group gift cards</p>
-            <h1>Gift a good table.</h1>
+            <h1>{settings.publicHeadline}</h1>
             <p>
-              Send lunch, dinner, margaritas or a celebration across Alma Avalon and St Alma.
-              Choose a set amount or enter your own.
+              {settings.publicSubheading}
             </p>
             <div className="giftcards-public-links">
+              <a href="#checkout">Buy gift card</a>
               <a href="https://almagroup.com.au/book">Book a table</a>
-              <a href="https://almagroup.com.au/menu">View menus</a>
             </div>
           </div>
           <div className="giftcards-public-image" aria-hidden="true">
-            <img src="/images/alma-avalon-margaritas.jpg" alt="" />
+            <img src={settings.heroImageUrl || DEFAULT_GIFT_CARD_SETTINGS.heroImageUrl} alt="" />
           </div>
         </section>
+
+        {settings.testCheckoutEnabled ? (
+          <section className="giftcards-test-banner">
+            <strong>Test checkout is on.</strong>
+            <span>Stripe is disabled for gift card checkout and no real payment will be taken.</span>
+          </section>
+        ) : null}
 
         <section className="giftcards-public-grid">
           <div className="giftcards-public-amounts" aria-label="Gift card amounts">
@@ -307,12 +395,21 @@ function PublicGiftCardShop() {
             </label>
           </div>
 
-          <form className="giftcards-public-form" onSubmit={checkout}>
+          <form id="checkout" className="giftcards-public-form" onSubmit={checkout}>
             <div className="giftcards-form-heading">
               <p className="giftcards-public-eyebrow">Secure checkout</p>
               <h2>{selectedGift ? selectedGift.title : 'Custom gift card'}</h2>
               <p>{selectedGift?.note ?? 'A flexible Alma Group gift card for whatever table they choose.'}</p>
-              <strong>{formatCents(amountCents)}</strong>
+              <div className="giftcards-checkout-total">
+                <span>Total today</span>
+                <strong>{formatCents(amountDueCents)}</strong>
+              </div>
+              {promoQuote ? (
+                <div className="giftcards-discount-line">
+                  <span>{promoQuote.code}</span>
+                  <strong>-{formatCents(promoQuote.discountCents)}</strong>
+                </div>
+              ) : null}
             </div>
             <div className="giftcards-public-fields">
               <label>
@@ -335,10 +432,20 @@ function PublicGiftCardShop() {
                 <span>Message</span>
                 <textarea rows={3} value={message} onChange={(event) => setMessage(event.currentTarget.value)} />
               </label>
+              <label className="giftcards-promo-field">
+                <span>Promo code</span>
+                <div>
+                  <input value={promoCode} onChange={(event) => { setPromoCode(event.currentTarget.value.toUpperCase()); setPromoQuote(null); setPromoMessage(null); }} placeholder="ALMA10" />
+                  <button type="button" onClick={() => void applyPromoCode()} disabled={applyingPromo || Boolean(amountError)}>
+                    {applyingPromo ? 'Checking...' : 'Apply'}
+                  </button>
+                </div>
+              </label>
             </div>
+            {promoMessage ? <p className={promoQuote ? 'giftcards-public-note' : 'giftcards-public-error'}>{promoMessage}</p> : null}
             {feedback || amountError ? <p className="giftcards-public-error">{feedback ?? amountError}</p> : null}
             <button className="giftcards-public-submit" type="submit" disabled={submitting || Boolean(amountError)}>
-              {submitting ? 'Opening Stripe...' : `Pay ${formatCents(amountCents)}`}
+              {submitting ? (settings.testCheckoutEnabled ? 'Creating test card...' : 'Opening Stripe...') : settings.testCheckoutEnabled ? `Create test card (${formatCents(amountDueCents)})` : `Pay ${formatCents(amountDueCents)}`}
             </button>
           </form>
         </section>
@@ -370,7 +477,14 @@ function PrintableGiftCardPage() {
   const code = params.get('code') ?? '';
   const sessionId = params.get('session_id') ?? '';
   const [card, setCard] = useState<GiftCardPublic | null>(null);
+  const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
   const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    api<GiftCardSettings>('/api/gift-cards/settings/public')
+      .then(setSettings)
+      .catch(() => undefined);
+  }, []);
 
   useEffect(() => {
     const endpoint = sessionId
@@ -386,7 +500,7 @@ function PrintableGiftCardPage() {
   }, [code, sessionId]);
 
   return (
-    <main className="giftcards-print-page">
+    <main className="giftcards-print-page" style={themeStyle(settings)}>
       <div className="giftcards-print-actions">
         <Button type="button" variant="secondary" onClick={() => window.location.assign('/')}>Back</Button>
         <Button type="button" onClick={() => window.print()} disabled={!card}>Print / save PDF</Button>
@@ -395,9 +509,11 @@ function PrintableGiftCardPage() {
       {card ? (
         <section className="giftcards-print-card">
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
+          {settings.artworkUrl ? <img className="giftcards-print-artwork" src={settings.artworkUrl} alt="" /> : null}
           <h1>{formatCents(card.balanceCents)}</h1>
           <p>Redeemable at ALMA venues</p>
           <div className="giftcards-print-code">{card.code}</div>
+          <img className="giftcards-print-qr" src={card.qrCodeUrl} alt="Gift card redemption QR code" />
           {card.recipientName ? <p>For {card.recipientName}</p> : null}
           {card.message ? <blockquote>{card.message}</blockquote> : null}
           <footer>
@@ -501,7 +617,240 @@ function SidebarNav() {
   );
 }
 
-function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+function GiftCardAdminSettings({ user }: { user: AuthUser }) {
+  type PromoDraft = {
+    code: string;
+    description: string;
+    discountType: 'PERCENT' | 'FIXED_AMOUNT';
+    percentOff: number;
+    expiresAt: string;
+    maxRedemptions: string;
+  };
+
+  const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
+  const [canManagePromoCodes, setCanManagePromoCodes] = useState(false);
+  const [promoCodes, setPromoCodes] = useState<GiftCardPromoCode[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [promoAmount, setPromoAmount] = useState('10');
+  const [promoDraft, setPromoDraft] = useState<PromoDraft>({
+    code: '',
+    description: '',
+    discountType: 'PERCENT' as const,
+    percentOff: 10,
+    expiresAt: '',
+    maxRedemptions: ''
+  });
+
+  const canEdit = canManagePromoCodes && user.email?.toLowerCase() === 'tim@almagroup.com.au';
+
+  const load = useCallback(async () => {
+    try {
+      const [settingsResponse, promos] = await Promise.all([
+        api<GiftCardAdminSettingsResponse>('/api/gift-cards/settings'),
+        api<GiftCardPromoCode[]>('/api/gift-cards/promo-codes')
+      ]);
+      setSettings(settingsResponse.settings);
+      setCanManagePromoCodes(settingsResponse.canManagePromoCodes);
+      setPromoCodes(promos);
+    } catch (error) {
+      setMessageTarget(null);
+      setMessage(error instanceof Error ? error.message : 'Could not load gift card settings.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function saveSettings(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('settings');
+    try {
+      setSettings(await api<GiftCardSettings>('/api/gift-cards/settings', {
+        method: 'PATCH',
+        body: JSON.stringify(settings)
+      }));
+      setMessage('Gift card settings saved.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not save gift card settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateImage(field: 'heroImageUrl' | 'artworkUrl', file: File | undefined) {
+    if (!file) return;
+    setMessage(null);
+    setMessageTarget('settings');
+    try {
+      const dataUrl = await imageToDataUrl(file);
+      setSettings((current) => ({ ...current, [field]: dataUrl }));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not upload artwork.');
+    }
+  }
+
+  async function createPromoCode(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('promo');
+    try {
+      const body = {
+        code: promoDraft.code,
+        description: promoDraft.description,
+        discountType: promoDraft.discountType,
+        percentOff: promoDraft.discountType === 'PERCENT' ? promoDraft.percentOff : undefined,
+        amountOffCents: promoDraft.discountType === 'FIXED_AMOUNT' ? Math.round(Number(promoAmount) * 100) : undefined,
+        expiresAt: promoDraft.expiresAt,
+        maxRedemptions: promoDraft.maxRedemptions ? Number(promoDraft.maxRedemptions) : undefined,
+        isActive: true
+      };
+      await api<GiftCardPromoCode>('/api/gift-cards/promo-codes', {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      setPromoDraft({ code: '', description: '', discountType: 'PERCENT', percentOff: 10, expiresAt: '', maxRedemptions: '' });
+      setPromoAmount('10');
+      setMessage('Promo code created.');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not create promo code.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removePromoCode(promo: GiftCardPromoCode) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`promo:${promo.id}`);
+    try {
+      await api<GiftCardPromoCode>(`/api/gift-cards/promo-codes/${encodeURIComponent(promo.id)}`, { method: 'DELETE' });
+      setMessage(`${promo.code} removed.`);
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not remove promo code.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="giftcards-settings-grid">
+      <Card title="Client checkout and email" subtitle="Controls the public gift card page, printable card, email artwork, and test checkout.">
+        <form className="giftcards-form" onSubmit={(event) => void saveSettings(event)}>
+          {!canEdit ? <p className="subtle">Only Tim can change gift card checkout settings.</p> : null}
+          <label className="toggle-row">
+            <input
+              type="checkbox"
+              checked={settings.testCheckoutEnabled}
+              onChange={(event) => setSettings((current) => ({ ...current, testCheckoutEnabled: event.currentTarget.checked }))}
+              disabled={!canEdit}
+            />
+            <span>Test checkout mode. Stripe is disabled and cards are created as test cards.</span>
+          </label>
+          <div className="form-grid two">
+            <Input label="Public headline" value={settings.publicHeadline} onChange={(event) => setSettings((current) => ({ ...current, publicHeadline: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Email subject" value={settings.emailSubject} onChange={(event) => setSettings((current) => ({ ...current, emailSubject: event.currentTarget.value }))} disabled={!canEdit} />
+          </div>
+          <Textarea label="Public subheading" rows={2} value={settings.publicSubheading} onChange={(event) => setSettings((current) => ({ ...current, publicSubheading: event.currentTarget.value }))} disabled={!canEdit} />
+          <Textarea label="Email intro" rows={2} value={settings.emailIntro} onChange={(event) => setSettings((current) => ({ ...current, emailIntro: event.currentTarget.value }))} disabled={!canEdit} />
+          <div className="form-grid two">
+            <Input label="Primary colour" type="color" value={settings.primaryColor} onChange={(event) => setSettings((current) => ({ ...current, primaryColor: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Accent colour" type="color" value={settings.accentColor} onChange={(event) => setSettings((current) => ({ ...current, accentColor: event.currentTarget.value }))} disabled={!canEdit} />
+          </div>
+          <div className="giftcards-artwork-grid">
+            <label>
+              <span>Public hero image</span>
+              <input type="file" accept="image/*" onChange={(event) => void updateImage('heroImageUrl', event.currentTarget.files?.[0])} disabled={!canEdit} />
+              {settings.heroImageUrl ? <img src={settings.heroImageUrl} alt="" /> : null}
+            </label>
+            <label>
+              <span>Email / printable artwork</span>
+              <input type="file" accept="image/*" onChange={(event) => void updateImage('artworkUrl', event.currentTarget.files?.[0])} disabled={!canEdit} />
+              {settings.artworkUrl ? <img src={settings.artworkUrl} alt="" /> : null}
+            </label>
+          </div>
+          <div className="toolbar-right">
+            <ActionFeedback
+              message={messageTarget === 'settings' ? message : null}
+              tone={message?.includes('Could') ? 'error' : 'success'}
+            />
+            <Button type="submit" disabled={saving || !canEdit}>{saving ? 'Saving...' : 'Save gift card settings'}</Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Promo codes" subtitle="Only Tim can add or remove promo codes. Managers can see what is active.">
+        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Only') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        <form className="giftcards-form" onSubmit={(event) => void createPromoCode(event)}>
+          <div className="form-grid two">
+            <Input label="Code" required value={promoDraft.code} onChange={(event) => setPromoDraft((current) => ({ ...current, code: event.currentTarget.value.toUpperCase() }))} placeholder="ALMA10" disabled={!canEdit} />
+            <Input label="Description" value={promoDraft.description} onChange={(event) => setPromoDraft((current) => ({ ...current, description: event.currentTarget.value }))} placeholder="Opening week offer" disabled={!canEdit} />
+          </div>
+          <div className="form-grid two">
+            <Select
+              label="Discount"
+              value={promoDraft.discountType}
+              onChange={(event) => setPromoDraft((current) => ({ ...current, discountType: event.currentTarget.value as 'PERCENT' | 'FIXED_AMOUNT' }))}
+              options={[
+                { label: 'Percent off', value: 'PERCENT' },
+                { label: 'Fixed amount off', value: 'FIXED_AMOUNT' }
+              ]}
+              disabled={!canEdit}
+            />
+            {promoDraft.discountType === 'PERCENT' ? (
+              <Input label="Percent off" type="number" min="1" max="95" value={promoDraft.percentOff} onChange={(event) => setPromoDraft((current) => ({ ...current, percentOff: Number(event.currentTarget.value) }))} disabled={!canEdit} />
+            ) : (
+              <Input label="Amount off" type="number" min="1" step="1" value={promoAmount} onChange={(event) => setPromoAmount(event.currentTarget.value)} disabled={!canEdit} />
+            )}
+          </div>
+          <div className="form-grid two">
+            <Input label="Expiry" type="date" value={promoDraft.expiresAt} onChange={(event) => setPromoDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Max redemptions" type="number" min="1" value={promoDraft.maxRedemptions} onChange={(event) => setPromoDraft((current) => ({ ...current, maxRedemptions: event.currentTarget.value }))} disabled={!canEdit} />
+          </div>
+          <div className="toolbar-right">
+            <ActionFeedback
+              message={messageTarget === 'promo' ? message : null}
+              tone={message?.includes('Could') ? 'error' : 'success'}
+            />
+            <Button type="submit" disabled={saving || !canEdit}>{saving ? 'Saving...' : 'Add promo code'}</Button>
+          </div>
+        </form>
+        <div className="giftcards-promo-list">
+          {promoCodes.map((promo) => (
+            <div key={promo.id}>
+              <span>
+                <strong>{promo.code}</strong>
+                <small>
+                  {promo.discountType === 'PERCENT' ? `${promo.percentOff}% off` : `${formatCents(promo.amountOffCents ?? 0)} off`}
+                  {promo.expiresAt ? ` · expires ${new Date(promo.expiresAt).toLocaleDateString('en-AU')}` : ''}
+                  {promo.maxRedemptions ? ` · ${promo.confirmedRedemptions}/${promo.maxRedemptions} used` : ` · ${promo.confirmedRedemptions} used`}
+                </small>
+              </span>
+              <span>
+                <Badge tone={promo.isActive ? 'positive' : 'neutral'}>{promo.isActive ? 'ACTIVE' : 'REMOVED'}</Badge>
+                <Button type="button" variant="secondary" disabled={saving || !canEdit || !promo.isActive} onClick={() => void removePromoCode(promo)}>Remove</Button>
+                <ActionFeedback
+                  message={messageTarget === `promo:${promo.id}` ? message : null}
+                  tone={message?.includes('Could') ? 'error' : 'success'}
+                />
+              </span>
+            </div>
+          ))}
+          {promoCodes.length === 0 ? <EmptyState title="No promo codes yet" description="Create the first code when you are ready." /> : null}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const [data, setData] = useState<GiftCardOverview | null>(null);
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
@@ -511,6 +860,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
   const [notes, setNotes] = useState('');
   const [selectedCard, setSelectedCard] = useState<GiftCard | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [cancelReason, setCancelReason] = useState('');
   const [refundNote, setRefundNote] = useState('');
 
@@ -527,6 +877,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
       const params = query.trim() ? `?query=${encodeURIComponent(query.trim())}` : '';
       setData(await api<GiftCardOverview>(`/api/gift-cards/cards${params}`));
     } catch (error) {
+      setMessageTarget(null);
       setMessage(error instanceof Error ? error.message : 'Could not load gift cards.');
     } finally {
       setLoading(false);
@@ -537,11 +888,21 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
     void load();
   }, [load]);
 
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const scannedCode = params.get('code');
+    if (!scannedCode) return;
+    setCode(scannedCode.toUpperCase());
+    window.location.hash = '#redeem';
+  }, []);
+
   async function lookup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('lookup');
     try {
       setSelectedCard(await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(code.trim())}`));
+      setMessage('Balance loaded.');
     } catch (error) {
       setSelectedCard(null);
       setMessage(error instanceof Error ? error.message : 'Gift card not found.');
@@ -551,6 +912,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
   async function redeem(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setMessage(null);
+    setMessageTarget('redeem');
     try {
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
@@ -564,8 +926,9 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
       setSelectedCard(updated);
       setAmount('');
       setNotes('');
-      setMessage(`Redeemed ${formatCents(updated.initialValueCents - updated.balanceCents)} total. Remaining balance ${formatCents(updated.balanceCents)}.`);
       await load();
+      setMessageTarget('redeem');
+      setMessage(`Redeemed ${formatCents(updated.initialValueCents - updated.balanceCents)} total. Remaining balance ${formatCents(updated.balanceCents)}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not redeem gift card.');
     }
@@ -575,6 +938,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
     event.preventDefault();
     if (!card) return;
     setMessage(null);
+    setMessageTarget('cancel');
     try {
       const updated = await api<GiftCard>(`/api/gift-cards/cards/${encodeURIComponent(card.code)}/cancel`, {
         method: 'POST',
@@ -586,8 +950,9 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
       setSelectedCard(updated);
       setCancelReason('');
       setRefundNote('');
-      setMessage('Gift card cancelled. Stripe refund, if needed, still needs to be handled in Stripe.');
       await load();
+      setMessageTarget('cancel');
+      setMessage('Gift card cancelled. Stripe refund, if needed, still needs to be handled in Stripe.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not cancel gift card.');
     }
@@ -606,6 +971,13 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
           right={
             <>
               <SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="topbar" />
+              <SuiteCommsWidget
+                appId="GIFTCARDS"
+                api={api}
+                venue={user.venue}
+                userName={`${user.firstName} ${user.lastName}`}
+                canAnnounce={user.role !== 'STAFF'}
+              />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }
@@ -619,19 +991,25 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
           description="Stripe-confirmed cards become active here. Staff can check the code, confirm the balance, and redeem against a venue."
           actions={<Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />}
         />
-        {message ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         <div className="stats-grid">
           <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
           <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
           <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
-          <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint="Stripe-confirmed value" loading={loading} />
+          <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
         </div>
         <div className="giftcards-layout">
           <div id="redeem">
           <Card title="Redeem gift card" subtitle="Enter the customer code and redeem only the amount used.">
             <form className="giftcards-form" onSubmit={(event) => void lookup(event)}>
               <Input label="Gift card code" required value={code} onChange={(event) => setCode(event.currentTarget.value.toUpperCase())} placeholder="ALMA-XXXXXXXX" />
-              <Button type="submit" variant="secondary">Check balance</Button>
+              <div className="toolbar-right">
+                <ActionFeedback
+                  message={messageTarget === 'lookup' ? message : null}
+                  tone={message?.includes('not') || message?.includes('Could') ? 'error' : 'success'}
+                />
+                <Button type="submit" variant="secondary">Check balance</Button>
+              </div>
             </form>
             {card ? (
               <form className="giftcards-form" onSubmit={(event) => void redeem(event)}>
@@ -639,6 +1017,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
                   <strong>{card.code}</strong>
                   <span>{formatCents(card.balanceCents)} remaining of {formatCents(card.initialValueCents)}</span>
                   <Badge tone={statusTone(card.status)}>{card.status.replace('_', ' ')}</Badge>
+                  {card.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
                   {card.emailedAt ? <small>Email sent {new Date(card.emailedAt).toLocaleString('en-AU')}</small> : null}
                   {card.emailError ? <small>Email issue: {card.emailError}</small> : null}
                   {card.cancelReason ? <small>Cancel note: {card.cancelReason}</small> : null}
@@ -649,6 +1028,10 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
                 </div>
                 <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
                 <div className="giftcards-inline-actions">
+                  <ActionFeedback
+                    message={messageTarget === 'redeem' ? message : null}
+                    tone={message?.includes('Could') || message?.includes('low') ? 'error' : 'success'}
+                  />
                   <Button type="submit" disabled={!card || card.status !== 'ACTIVE'}>Redeem</Button>
                   <Button type="button" variant="secondary" onClick={() => window.open(giftCardPrintUrl(card.code), '_blank')}>Print</Button>
                 </div>
@@ -658,7 +1041,13 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
               <form className="giftcards-form giftcards-cancel-form" onSubmit={(event) => void cancelCard(event)}>
                 <Textarea label="Void / cancellation reason" required rows={2} value={cancelReason} onChange={(event) => setCancelReason(event.currentTarget.value)} />
                 <Textarea label="Refund note" rows={2} value={refundNote} onChange={(event) => setRefundNote(event.currentTarget.value)} placeholder="Example: refunded in Stripe dashboard, left as store credit, manager comp" />
-                <Button type="submit" variant="danger">Cancel card</Button>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={messageTarget === 'cancel' ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                  <Button type="submit" variant="danger">Cancel card</Button>
+                </div>
               </form>
             ) : null}
           </Card>
@@ -672,7 +1061,7 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
                 <button key={item.id} type="button" onClick={() => { setCode(item.code); setSelectedCard(item); }}>
                   <span>
                     <strong>{item.code}</strong>
-                    <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}</small>
+                    <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}{item.promoCodeSnapshot ? ` · ${item.promoCodeSnapshot}` : ''}{item.testMode ? ' · TEST' : ''}</small>
                   </span>
                   <span>
                     <strong>{formatCents(item.balanceCents)}</strong>
@@ -684,19 +1073,27 @@ function GiftCardDashboard({ onLogout }: { user: AuthUser; onLogout: () => Promi
           </Card>
           </div>
         </div>
+        <div id="settings">
+          <GiftCardAdminSettings user={user} />
+        </div>
       </div>
     </AppShell>
   );
 }
 
-export function App() {
+function GiftCardAdminApp() {
   const auth = useGiftCardAuth();
+
+  if (auth.loading) return <div className="login-page"><Spinner label="Checking session" /></div>;
+  if (!auth.user) return <LoginScreen onLogin={auth.login} />;
+  return <GiftCardDashboard user={auth.user} onLogout={auth.logout} />;
+}
+
+export function App() {
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
   const isPrintPath = window.location.pathname.startsWith('/print');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (!isRedeemPath) return <PublicGiftCardShop />;
-  if (auth.loading) return <div className="login-page"><Spinner label="Checking session" /></div>;
-  if (!auth.user) return <LoginScreen onLogin={auth.login} />;
-  return <GiftCardDashboard user={auth.user} onLogout={auth.logout} />;
+  return <GiftCardAdminApp />;
 }

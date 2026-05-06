@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { TemperatureAsset, TemperatureIntegration, TemperatureSensor, TemperatureSummary } from '@alma/shared';
-import { Button, Card, Input, Select } from '@alma/ui';
+import { ActionFeedback, Button, Card, Input, Select } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -59,6 +59,7 @@ export function TemperaturesPage() {
   });
   const [apiKey, setApiKey] = useState('');
   const [message, setMessage] = useState('');
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [discovering, setDiscovering] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -125,6 +126,7 @@ export function TemperaturesPage() {
     event.preventDefault();
     setSubmitting(true);
     setMessage('');
+    setMessageTarget('asset');
 
     try {
       await api('/api/temperatures/assets', {
@@ -143,8 +145,8 @@ export function TemperaturesPage() {
         name: '',
         venue: ''
       });
-      setMessage('Temperature asset saved.');
       await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      setMessage('Temperature asset saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save temperature asset.');
     } finally {
@@ -156,6 +158,7 @@ export function TemperaturesPage() {
     event.preventDefault();
     setLogging(true);
     setMessage('');
+    setMessageTarget('manual');
 
     if (!manualLog.assetId || !manualLog.temperatureC.trim()) {
       setLogging(false);
@@ -182,8 +185,8 @@ export function TemperaturesPage() {
         recordedAt: toDateTimeLocal(new Date()),
         temperatureC: ''
       }));
-      setMessage('Manual temperature log saved.');
       await Promise.all([assets.reload(), summary.reload()]);
+      setMessage('Manual temperature log saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save manual temperature log.');
     } finally {
@@ -194,6 +197,7 @@ export function TemperaturesPage() {
   async function handleSync() {
     setSyncing(true);
     setMessage('');
+    setMessageTarget('sync');
 
     try {
       const result = await api<SyncResult>('/api/temperatures/sync/govee', {
@@ -205,8 +209,8 @@ export function TemperaturesPage() {
         throw new Error('govee sync did not return success.');
       }
 
-      setMessage(`govee sync ran across ${result.assetsScanned} assets and synced ${result.synced}.`);
       await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      setMessage(`govee sync ran across ${result.assetsScanned} assets and synced ${result.synced}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'govee sync failed.');
     } finally {
@@ -217,6 +221,7 @@ export function TemperaturesPage() {
   async function handleDiscover() {
     setDiscovering(true);
     setMessage('');
+    setMessageTarget('discover');
 
     try {
       const result = await api<DiscoveryResult>('/api/temperatures/integrations/govee/discover', {
@@ -224,9 +229,9 @@ export function TemperaturesPage() {
         body: JSON.stringify({ apiKey: apiKey || undefined })
       });
 
-      setMessage(`govee discovery found ${result.importedCount} sensors.`);
       setApiKey('');
       await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      setMessage(`govee discovery found ${result.importedCount} sensors.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'govee discovery failed.');
     } finally {
@@ -236,6 +241,7 @@ export function TemperaturesPage() {
 
   async function handleMapSensor(sensorId: string, assetId: string) {
     setMessage('');
+    setMessageTarget(`sensor:${sensorId}`);
 
     try {
       await api(`/api/temperatures/sensors/${sensorId}`, {
@@ -243,8 +249,8 @@ export function TemperaturesPage() {
         body: JSON.stringify({ assetId })
       });
 
-      setMessage('Sensor mapping saved.');
       await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      setMessage('Sensor mapping saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to map sensor.');
     }
@@ -270,6 +276,10 @@ export function TemperaturesPage() {
             options={venueOptions}
           />
           <Button onClick={() => void handleSync()} disabled={syncing}>{syncing ? 'Syncing...' : 'Sync govee now'}</Button>
+          <ActionFeedback
+            message={messageTarget === 'sync' ? message : null}
+            tone={message.includes('failed') || message.includes('not') ? 'error' : 'success'}
+          />
         </div>
       </header>
 
@@ -345,6 +355,10 @@ export function TemperaturesPage() {
               <Button type="submit" disabled={logging || !filteredAssets.length}>
                 {logging ? 'Saving log...' : 'Save manual log'}
               </Button>
+              <ActionFeedback
+                message={messageTarget === 'manual' ? message : null}
+                tone={message.includes('Failed') || message.includes('Choose') ? 'error' : 'success'}
+              />
               {manualAsset ? (
                 <span className="muted">
                   Range {manualAsset.minTempC.toFixed(1)}°C to {manualAsset.maxTempC.toFixed(1)}°C
@@ -370,10 +384,14 @@ export function TemperaturesPage() {
 
             <div className="inline-actions">
               <Button type="submit" disabled={submitting}>{submitting ? 'Saving...' : 'Save asset'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'asset' ? message : null}
+                tone={message.includes('Failed') ? 'error' : 'success'}
+              />
             </div>
           </form>
 
-          {message ? <p className={message.includes('saved') || message.includes('synced') ? 'muted' : 'error-text'}>{message}</p> : null}
+          {message && !messageTarget ? <p className={message.includes('saved') || message.includes('synced') ? 'muted' : 'error-text'}>{message}</p> : null}
         </Card>
       </div>
 
@@ -393,6 +411,10 @@ export function TemperaturesPage() {
 
             <div className="inline-actions">
               <Button onClick={() => void handleDiscover()} disabled={discovering}>{discovering ? 'Discovering...' : 'Discover govee sensors'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'discover' ? message : null}
+                tone={message.includes('failed') ? 'error' : 'success'}
+              />
             </div>
 
             {goveeIntegration?.lastError ? <p className="error-text">{goveeIntegration.lastError}</p> : null}
@@ -425,6 +447,10 @@ export function TemperaturesPage() {
                       { label: 'Not mapped', value: '' },
                       ...filteredAssets.map((asset) => ({ label: asset.name, value: asset.id }))
                     ]}
+                  />
+                  <ActionFeedback
+                    message={messageTarget === `sensor:${sensor.id}` ? message : null}
+                    tone={message.includes('Failed') ? 'error' : 'success'}
                   />
                 </div>
               </article>

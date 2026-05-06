@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { IncidentReport, IncidentStatus, IncidentSummary } from '@alma/shared';
 import {
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -52,6 +53,7 @@ export function IncidentsPage() {
   });
   const [severity, setSeverity] = useState('MEDIUM');
   const [message, setMessage] = useState('');
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -62,6 +64,7 @@ export function IncidentsPage() {
     event.preventDefault();
     setSubmitting(true);
     setMessage('');
+    setMessageTarget('incident');
 
     try {
       await api('/api/incidents', {
@@ -90,9 +93,9 @@ export function IncidentsPage() {
         venue: ''
       });
       setSeverity('MEDIUM');
-      setMessage('Incident report saved.');
-      setShowForm(false);
       await Promise.all([incidents.reload(), summary.reload()]);
+      setMessage('Incident report saved.');
+      window.setTimeout(() => setShowForm(false), 700);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save incident.');
     } finally {
@@ -107,6 +110,8 @@ export function IncidentsPage() {
   ) {
     try {
       setSavingStatus(incident.id);
+      setMessage('');
+      setMessageTarget(`incident:${incident.id}`);
       const patch: Record<string, unknown> = { status: nextStatus };
       if (resolutionNotes !== undefined) {
         patch.followUpNotes =
@@ -117,9 +122,12 @@ export function IncidentsPage() {
         method: 'PATCH',
         body: JSON.stringify(patch)
       });
-      setActiveId(null);
-      setResolution('');
       await Promise.all([incidents.reload(), summary.reload()]);
+      setMessage(nextStatus === 'CLOSED' ? 'Incident closed.' : 'Incident updated.');
+      window.setTimeout(() => {
+        setActiveId(null);
+        setResolution('');
+      }, 700);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to update incident.');
     } finally {
@@ -270,8 +278,12 @@ export function IncidentsPage() {
               <Button type="submit" disabled={submitting}>
                 {submitting ? 'Saving…' : 'Save incident'}
               </Button>
+              <ActionFeedback
+                message={messageTarget === 'incident' ? message : null}
+                tone={message.includes('Failed') ? 'error' : 'success'}
+              />
             </div>
-            {message && !message.includes('saved') ? (
+            {message && !message.includes('saved') && !messageTarget ? (
               <p className="error-text">{message}</p>
             ) : null}
           </form>
@@ -434,6 +446,10 @@ export function IncidentsPage() {
                               >
                                 {busy ? 'Saving…' : 'Mark closed'}
                               </Button>
+                              <ActionFeedback
+                                message={messageTarget === `incident:${incident.id}` ? message : null}
+                                tone={message.includes('Failed') ? 'error' : 'success'}
+                              />
                             </div>
                           </div>
                         </td>

@@ -2,6 +2,38 @@
 
 This repo is a pnpm monorepo. Production is split into API services, static frontend apps, and one managed Postgres database. Do not run the normal demo/local seed against production.
 
+## Local Dev Baseline
+
+From the repo root:
+
+```bash
+cp .env.example .env
+pnpm install
+pnpm db:up
+pnpm db:generate
+pnpm db:migrate
+pnpm db:seed
+pnpm typecheck
+pnpm build
+```
+
+Run app pairs as needed:
+
+```bash
+pnpm dev
+pnpm dev:stock
+pnpm dev:staff
+```
+
+Local health checks:
+
+```bash
+curl http://localhost:3018/health
+curl http://localhost:3019/health
+```
+
+Both should return `{ "ok": true }`.
+
 ## Deployable Apps
 
 | Package | Path | Type | Production build | Production start |
@@ -77,7 +109,7 @@ Required production API settings:
 - `NODE_ENV=production`
 - `DATABASE_URL`
 - `JWT_SECRET` or `SESSION_SECRET` for `@alma/api`
-- `CORS_ORIGIN` for `@alma/api`
+- Production frontend origins for `@alma/api` via `CORS_ORIGIN`, `FRONTEND_URL`, or app URL vars
 - `RESEND_API_KEY` and `RESEND_FROM` for onboarding invite emails
 - `STRIPE_SECRET_KEY` for gift card checkout payments
 - `STRIPE_WEBHOOK_SECRET` for the gift card checkout webhook
@@ -165,6 +197,28 @@ Required production frontend settings:
 
 Production frontends refuse to boot if required URLs are missing or point to localhost.
 
+## Stocktake Approval Safety
+
+Stocktake submission is review-only and must not update `StockItem.onHand`.
+
+The safe live flow is:
+
+1. Manager creates a stocktake and saves counted lines.
+2. Manager marks it ready for review.
+3. A manager/admin approves the submitted stocktake.
+4. The Stock API creates `InventoryMovement` rows for each linked line variance.
+5. `StockItem.onHand` updates only inside the same approval transaction.
+
+Approval endpoints:
+
+- `POST /api/stocktake/:id/approve`
+- `POST /api/stocktake/:id/apply` for older clients
+- `GET /api/stocktake/:id/movements` to review approval, correction and reversal history
+- `POST /api/stocktake/:id/corrections` to write a ledger-backed manager correction
+- `POST /api/stocktake/:id/reverse` to write reversal movements before editing or deleting an approved stocktake
+
+Double approval returns a conflict. Applied stocktakes cannot be edited or bulk-deleted until reversal movements exist.
+
 ## Suite Sign-In Handoff
 
 The app switcher shares sign-in between the separate Firebase apps using a short-lived suite handoff token. Set the same `SUITE_AUTH_SECRET` on both API services:
@@ -227,9 +281,19 @@ After domains are assigned:
 
 Do not use demo seed data in production.
 
-After migrations are applied, create the initial admin only:
+After migrations are applied, prefer the non-destructive production bootstrap:
 
 ```bash
+NODE_ENV=production \
+PROD_ADMIN_EMAIL=admin@yourdomain.com \
+PROD_ADMIN_PASSWORD='use-a-strong-one-time-password' \
+pnpm db:seed:prod
+```
+
+If you need to repair or recreate only the master user, pass explicit credentials:
+
+```bash
+NODE_ENV=production \
 MASTER_USER_EMAIL=admin@yourdomain.com \
 MASTER_USER_PASSWORD='use-a-strong-one-time-password' \
 MASTER_USER_FIRST_NAME='Admin' \
@@ -251,3 +315,22 @@ Then log in and change the password from the app.
 8. Open Gift Cards, confirm the public purchase page loads, and confirm the manager redemption area requires login.
 9. With Stripe configured, create a test checkout, complete payment in Stripe test mode, and confirm the card becomes active only after the webhook completes.
 10. Confirm no local/demo seed users are present unless deliberately created.
+
+## Common API Access Fixes
+
+If a frontend shows `Cannot reach the ALMA API` or `Cannot reach the ALMA Stock API`:
+
+1. Confirm the correct API service is running and healthy:
+   - Main API: `GET https://<api-domain>/health`
+   - Stock API: `GET https://<stock-api-domain>/health`
+2. Confirm the frontend build env points at the correct API:
+   - Compliance, Staff, and Reports: `VITE_API_URL` or `VITE_API_BASE_URL`
+   - Stock: `VITE_STOCK_API_URL` or `VITE_STOCK_API_BASE_URL`
+3. Do not include a double `/api` in frontend env values. The clean value is the API origin, such as `https://stock-api.example.com`.
+4. Confirm API CORS includes the deployed frontend origin:
+   - Main API: `CORS_ORIGIN` or app URL vars such as `STAFF_WEB_URL`
+   - Stock API: `STOCK_CORS_ORIGIN`, `STOCK_FRONTEND_URL`, or app URL vars
+5. Confirm production CORS and frontend env vars do not point to localhost.
+6. On phones, use the deployed HTTPS frontend URL, not `localhost`. Localhost on a phone is the phone itself.
+7. For cross-app sign-in, set the same `SUITE_AUTH_SECRET` on both API services and redeploy both.
+8. If login works on desktop but not mobile, check HTTPS, cookie settings, and whether the app is using bearer token handoff from the suite switcher.
