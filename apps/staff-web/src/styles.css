@@ -59,6 +59,50 @@
   white-space: nowrap;
 }
 
+.staff-readiness-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.staff-readiness-item {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.staff-readiness-item > span {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.staff-readiness-item strong {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.staff-readiness-item small {
+  color: var(--color-text-muted);
+}
+
+.staff-readiness-item.is-warning {
+  border-color: rgba(180, 83, 9, 0.28);
+  background: #fff7ed;
+}
+
+.staff-readiness-item.is-positive {
+  border-color: rgba(34, 197, 94, 0.24);
+  background: #f0fdf4;
+}
+
+.staff-readiness-actions {
+  margin-top: 14px;
+}
+
 .staff-member-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));

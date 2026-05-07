@@ -286,9 +286,9 @@ const NAV_ITEMS = [
     icon: <ChartIcon />
   },
   {
-    to: '/settings',
-    label: 'Settings',
-    description: 'Admin-only suite settings, venues, integrations, and access',
+    to: '/admin',
+    label: 'Staff Admin',
+    description: 'Settings, integrations, venues, onboarding and access',
     icon: <GearIcon />
   },
   {
@@ -582,6 +582,56 @@ function StaffHome({
     member.appAccess.some((access) => access.appId === 'STAFF' && access.status === 'ENABLED')
   );
   const lightweightDeputyProfiles = staff.filter(isDeputyImportedProfile);
+  const staffForReadiness = activeStaff.filter((member) => !isUnallocatedProfile(member));
+  const missingPayRate = staffForReadiness.filter((member) => !member.payRateCents && !member.trainingPayRateCents);
+  const missingPayType = staffForReadiness.filter((member) => !member.payType);
+  const pendingRecords = staff.flatMap((member) => member.records.filter((record) => record.status === 'PENDING'));
+  const duplicateProfileGroups = duplicateStaffProfileGroups(staffForReadiness);
+  const duplicateAdminGroups = duplicateStaffProfileGroups(staffForReadiness.filter((member) => member.isAdmin));
+  const readinessWarnings = [
+    {
+      label: 'Deputy roster profiles',
+      value: lightweightDeputyProfiles.length,
+      detail: 'Need re-onboarding before payroll use.',
+      tone: lightweightDeputyProfiles.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Missing pay rate',
+      value: missingPayRate.length,
+      detail: 'Active staff without a base or Academy rate.',
+      tone: missingPayRate.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Missing pay type',
+      value: missingPayType.length,
+      detail: 'Active staff without payroll type.',
+      tone: missingPayType.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Pending onboarding',
+      value: pending.length,
+      detail: 'Profiles still waiting for completion or approval.',
+      tone: pending.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Pending documents',
+      value: pendingRecords.length,
+      detail: 'Uploaded or required records awaiting review.',
+      tone: pendingRecords.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Duplicate profiles',
+      value: duplicateProfileGroups.length,
+      detail: 'Same email or same name appears more than once.',
+      tone: duplicateProfileGroups.length ? 'warning' : 'positive'
+    },
+    {
+      label: 'Duplicate admin profiles',
+      value: duplicateAdminGroups.length,
+      detail: 'Admin records with matching identity need review.',
+      tone: duplicateAdminGroups.length ? 'warning' : 'positive'
+    }
+  ];
   const expiringSoon = staff.flatMap((member) =>
     member.records
       .filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate))
@@ -644,6 +694,30 @@ function StaffHome({
         <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
         <StatCard label="Expiring records" value={expiringSoon.length} hint="Next 30 days" loading={loading} />
       </div>
+
+      <Card title="Staff readiness" subtitle="Read-only checks for the live Staff register. Nothing here changes payroll, roster or profile data.">
+        <div className="staff-readiness-grid">
+          {readinessWarnings.map((item) => (
+            <div key={item.label} className={`staff-readiness-item is-${item.tone}`}>
+              <span>
+                <strong>{item.value}</strong>
+                <span>{item.label}</span>
+              </span>
+              <small>{item.detail}</small>
+            </div>
+          ))}
+        </div>
+        <div className="staff-action-strip staff-readiness-actions">
+          <span>
+            <strong>Resolve cleanup inside existing Staff screens</strong>
+            <span className="subtle">Use Profiles, Invites and Approvals to clean these records up when you are ready.</span>
+          </span>
+          <span className="staff-row-actions">
+            <NavLink to="/access"><Button type="button" size="sm" variant="secondary">Open profiles</Button></NavLink>
+            <NavLink to="/approvals"><Button type="button" size="sm" variant="ghost">Open approvals</Button></NavLink>
+          </span>
+        </div>
+      </Card>
 
       {lightweightDeputyProfiles.length ? (
         <Card title="Deputy roster profiles" subtitle="These were created from Deputy so the roster has names. Re-onboard them before payroll use.">
@@ -2975,23 +3049,27 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               </div>
             </form>
             <div className="staff-list">
-              {payload.announcements.map((announcement) => (
-                <div key={announcement.id} className="staff-expiry-row">
-                  <span>
-                    <strong>{announcement.title}</strong>
-                    <span className="subtle">{announcement.venue || 'All venues'} · {announcement.pinned ? 'Pinned' : 'Standard'} · {formatDateTime(announcement.createdAt)}</span>
-                    <span>{announcement.body}</span>
-                  </span>
-                  <span className="invite-row-actions">
-                    <Button type="button" size="sm" variant="secondary" onClick={() => startEditAnnouncement(announcement)}>Edit</Button>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void deleteAnnouncement(announcement)}>Delete</Button>
-                    <ActionFeedback
-                      message={messageTarget === `announcement:${announcement.id}:delete` ? message : null}
-                      tone={message?.includes('Could') ? 'error' : 'success'}
-                    />
-                  </span>
-                </div>
-              ))}
+              {payload.announcements.length === 0 ? (
+                <EmptyState title="No announcements yet" description="Publish a real staff announcement when there is something the team needs to see." />
+              ) : (
+                payload.announcements.map((announcement) => (
+                  <div key={announcement.id} className="staff-expiry-row">
+                    <span>
+                      <strong>{announcement.title}</strong>
+                      <span className="subtle">{announcement.venue || 'All venues'} · {announcement.pinned ? 'Pinned' : 'Standard'} · {formatDateTime(announcement.createdAt)}</span>
+                      <span>{announcement.body}</span>
+                    </span>
+                    <span className="invite-row-actions">
+                      <Button type="button" size="sm" variant="secondary" onClick={() => startEditAnnouncement(announcement)}>Edit</Button>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => void deleteAnnouncement(announcement)}>Delete</Button>
+                      <ActionFeedback
+                        message={messageTarget === `announcement:${announcement.id}:delete` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
 
@@ -3025,24 +3103,28 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               </div>
             </form>
             <div className="staff-list">
-              {payload.channels.map((channel) => (
-                <div key={channel.id} className="staff-expiry-row">
-                  <span>
-                    <strong>{channel.name}</strong>
-                    <span className="subtle">{channel.type} · {channel.venue || 'All venues'} · {channel.postPermission || 'Staff access'} posting</span>
-                    {channel.description ? <span>{channel.description}</span> : null}
-                  </span>
-                  <span className="invite-row-actions">
-                    <Badge tone={channel.isActive ? 'positive' : 'muted'}>{channel.isActive ? 'Active' : 'Archived'}</Badge>
-                    <Button type="button" size="sm" variant="secondary" onClick={() => startEditChannel(channel)}>Edit</Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={!channel.isActive} onClick={() => void deleteChannel(channel)}>Archive</Button>
-                    <ActionFeedback
-                      message={messageTarget === `channel:${channel.id}:delete` ? message : null}
-                      tone={message?.includes('Could') ? 'error' : 'success'}
-                    />
-                  </span>
-                </div>
-              ))}
+              {payload.channels.length === 0 ? (
+                <EmptyState title="No chat groups yet" description="Create real venue, area or group chats when the team is ready to use them." />
+              ) : (
+                payload.channels.map((channel) => (
+                  <div key={channel.id} className="staff-expiry-row">
+                    <span>
+                      <strong>{channel.name}</strong>
+                      <span className="subtle">{channel.type} · {channel.venue || 'All venues'} · {channel.postPermission || 'Staff access'} posting</span>
+                      {channel.description ? <span>{channel.description}</span> : null}
+                    </span>
+                    <span className="invite-row-actions">
+                      <Badge tone={channel.isActive ? 'positive' : 'muted'}>{channel.isActive ? 'Active' : 'Archived'}</Badge>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => startEditChannel(channel)}>Edit</Button>
+                      <Button type="button" size="sm" variant="ghost" disabled={!channel.isActive} onClick={() => void deleteChannel(channel)}>Archive</Button>
+                      <ActionFeedback
+                        message={messageTarget === `channel:${channel.id}:delete` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                    </span>
+                  </div>
+                ))
+              )}
             </div>
           </Card>
         </div>
@@ -3052,14 +3134,18 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
         <div className="comms-layout">
           <div className="comms-sidebar">
             <strong>Group chats</strong>
-            {activeChannels.map((channel) => (
-              <button key={channel.id} type="button" className={`staff-list-button ${selectedChannelId === channel.id ? 'is-selected' : ''}`} onClick={() => void openChannel(channel)}>
-                <span>
-                  <strong>{channel.name}</strong>
-                  <span className="subtle">{channel.type} · {channel.venue || 'All venues'}</span>
-                </span>
-              </button>
-            ))}
+            {activeChannels.length === 0 ? (
+              <p className="subtle">No active group chats yet.</p>
+            ) : (
+              activeChannels.map((channel) => (
+                <button key={channel.id} type="button" className={`staff-list-button ${selectedChannelId === channel.id ? 'is-selected' : ''}`} onClick={() => void openChannel(channel)}>
+                  <span>
+                    <strong>{channel.name}</strong>
+                    <span className="subtle">{channel.type} · {channel.venue || 'All venues'}</span>
+                  </span>
+                </button>
+              ))
+            )}
             {canDirect ? (
               <>
                 <strong>Direct messages</strong>
@@ -3497,9 +3583,9 @@ function AdminPage({
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="ALMA Admin"
-        title="Suite settings and access"
-        description="Admin is the control surface for staff onboarding, organisation details, venues, integrations, notifications, and who can access each ALMA app."
+        eyebrow="ALMA Staff"
+        title="Staff Admin"
+        description="Settings, integrations, venues, onboarding and access for the Staff app."
       />
 
       <div className="stats-grid">
@@ -5967,6 +6053,23 @@ function isUnallocatedProfile(member: { firstName?: string | null; notes?: strin
   return Boolean(member?.firstName === 'Unallocated' || member?.notes?.includes('Deputy unallocated placeholder'));
 }
 
+function duplicateStaffProfileGroups(staff: StaffProfile[]) {
+  const groups = new Map<string, StaffProfile[]>();
+  for (const member of staff) {
+    const keys = new Set<string>();
+    const email = member.email?.trim().toLowerCase();
+    if (email) keys.add(`email:${email}`);
+    const name = `${member.firstName} ${member.lastName}`.trim().toLowerCase().replace(/\s+/g, ' ');
+    if (name) keys.add(`name:${name}`);
+    for (const key of keys) {
+      const current = groups.get(key) ?? [];
+      current.push(member);
+      groups.set(key, current);
+    }
+  }
+  return [...groups.values()].filter((group) => group.length > 1);
+}
+
 function ApprovalRecordRow({
   member,
   record,
@@ -7961,8 +8064,8 @@ function StaffShell() {
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
-          <Route path="/admin" element={<Navigate to="/settings" replace />} />
-          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
+          <Route path="/admin" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
+          <Route path="/settings" element={<Navigate to="/admin" replace />} />
           <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
