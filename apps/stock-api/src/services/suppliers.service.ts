@@ -102,6 +102,25 @@ export const suppliersService = {
   async deleteSuppliers(input: unknown): Promise<{ deleted: number }> {
     const { ids } = supplierBulkDeleteInputSchema.parse(input);
     const uniqueIds = Array.from(new Set(ids));
+    const invoiceLinks = await prisma.supplierInvoice.findMany({
+      where: { supplierId: { in: uniqueIds } },
+      select: { supplierId: true },
+      distinct: ['supplierId']
+    });
+    const referencedIds = invoiceLinks.flatMap((row) => (row.supplierId ? [row.supplierId] : []));
+    if (referencedIds.length > 0) {
+      const referencedSuppliers = await prisma.supplier.findMany({
+        where: { id: { in: referencedIds } },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+        take: 3
+      });
+      const sample = referencedSuppliers.map((supplier) => supplier.name).join(', ');
+      throw new HttpError(
+        409,
+        `Cannot delete ${referencedIds.length} supplier${referencedIds.length === 1 ? '' : 's'} because ${referencedIds.length === 1 ? 'it has' : 'they have'} imported invoices. Archive suppliers instead.${sample ? ` Affected: ${sample}${referencedIds.length > 3 ? ', ...' : ''}` : ''}`
+      );
+    }
     const result = await prisma.supplier.deleteMany({
       where: { id: { in: uniqueIds } }
     });

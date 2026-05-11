@@ -8,6 +8,8 @@ import type {
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { IconItems, IconRecipes, IconSettings } from '../lib/icons';
 import { ApiError, api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 type StockCategoryDraft = {
@@ -44,6 +46,8 @@ function recipeDraftFromCategory(category: RecipeCategory): RecipeCategoryDraft 
 
 export function SettingsPage() {
   useDocumentTitle('Settings');
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
 
   const [stockCategories, setStockCategories] = useState<StockCategory[]>([]);
   const [stockItemCounts, setStockItemCounts] = useState<Record<string, number>>({});
@@ -138,6 +142,12 @@ export function SettingsPage() {
   }
 
   async function createStockCategory() {
+    if (!canManage) {
+      setFeedbackTarget('stock:new');
+      setFeedbackMessage('Manager access is required to add stock categories.');
+      setFeedbackTone('error');
+      return;
+    }
     setSavingKey('stock:new');
     setFeedbackTarget('stock:new');
     setFeedbackMessage(null);
@@ -171,6 +181,12 @@ export function SettingsPage() {
   }
 
   async function saveStockCategory(category: StockCategory) {
+    if (!canManage) {
+      setFeedbackTarget(`stock:${category.id}`);
+      setFeedbackMessage('Manager access is required to save stock categories.');
+      setFeedbackTone('error');
+      return;
+    }
     const draft = stockDrafts[category.id] ?? stockDraftFromCategory(category);
     setSavingKey(`stock:${category.id}`);
     setFeedbackTarget(`stock:${category.id}`);
@@ -206,6 +222,12 @@ export function SettingsPage() {
   }
 
   async function createRecipeCategory() {
+    if (!canManage) {
+      setFeedbackTarget('recipe:new');
+      setFeedbackMessage('Manager access is required to add recipe categories.');
+      setFeedbackTone('error');
+      return;
+    }
     setSavingKey('recipe:new');
     setFeedbackTarget('recipe:new');
     setFeedbackMessage(null);
@@ -240,6 +262,12 @@ export function SettingsPage() {
   }
 
   async function saveRecipeCategory(category: RecipeCategory) {
+    if (!canManage) {
+      setFeedbackTarget(`recipe:${category.id}`);
+      setFeedbackMessage('Manager access is required to save recipe categories.');
+      setFeedbackTone('error');
+      return;
+    }
     const draft = recipeDrafts[category.id] ?? recipeDraftFromCategory(category);
     setSavingKey(`recipe:${category.id}`);
     setFeedbackTarget(`recipe:${category.id}`);
@@ -325,9 +353,18 @@ export function SettingsPage() {
               <Button
                 type="button"
                 onClick={() => void createStockCategory()}
-                disabled={savingKey === 'stock:new' || newStockCategory.name.trim().length < 2}
+                disabled={
+                  savingKey === 'stock:new' ||
+                  newStockCategory.name.trim().length < 2 ||
+                  !canManage
+                }
+                title={canManage ? undefined : 'Manager access required'}
               >
-                {savingKey === 'stock:new' ? 'Adding...' : 'Add'}
+                {savingKey === 'stock:new'
+                  ? 'Adding...'
+                  : canManage
+                    ? 'Add'
+                    : 'Manager required'}
               </Button>
               <ActionFeedback
                 message={feedbackTarget === 'stock:new' ? feedbackMessage : null}
@@ -365,9 +402,18 @@ export function SettingsPage() {
                     type="button"
                     variant="secondary"
                     onClick={() => void saveStockCategory(category)}
-                    disabled={savingKey === `stock:${category.id}` || draft.name.trim().length < 2}
+                    disabled={
+                      savingKey === `stock:${category.id}` ||
+                      draft.name.trim().length < 2 ||
+                      !canManage
+                    }
+                    title={canManage ? undefined : 'Manager access required'}
                   >
-                    {savingKey === `stock:${category.id}` ? 'Saving...' : 'Save'}
+                    {savingKey === `stock:${category.id}`
+                      ? 'Saving...'
+                      : canManage
+                        ? 'Save'
+                        : 'Manager required'}
                   </Button>
                   <ActionFeedback
                     message={feedbackTarget === `stock:${category.id}` ? feedbackMessage : null}
@@ -441,10 +487,17 @@ export function SettingsPage() {
                 type="button"
                 onClick={() => void createRecipeCategory()}
                 disabled={
-                  savingKey === 'recipe:new' || newRecipeCategory.name.trim().length < 2
+                  savingKey === 'recipe:new' ||
+                  newRecipeCategory.name.trim().length < 2 ||
+                  !canManage
                 }
+                title={canManage ? undefined : 'Manager access required'}
               >
-                {savingKey === 'recipe:new' ? 'Adding...' : 'Add'}
+                {savingKey === 'recipe:new'
+                  ? 'Adding...'
+                  : canManage
+                    ? 'Add'
+                    : 'Manager required'}
               </Button>
               <ActionFeedback
                 message={feedbackTarget === 'recipe:new' ? feedbackMessage : null}
@@ -497,10 +550,17 @@ export function SettingsPage() {
                     variant="secondary"
                     onClick={() => void saveRecipeCategory(category)}
                     disabled={
-                      savingKey === `recipe:${category.id}` || draft.name.trim().length < 2
+                      savingKey === `recipe:${category.id}` ||
+                      draft.name.trim().length < 2 ||
+                      !canManage
                     }
+                    title={canManage ? undefined : 'Manager access required'}
                   >
-                    {savingKey === `recipe:${category.id}` ? 'Saving...' : 'Save'}
+                    {savingKey === `recipe:${category.id}`
+                      ? 'Saving...'
+                      : canManage
+                        ? 'Save'
+                        : 'Manager required'}
                   </Button>
                   <ActionFeedback
                     message={feedbackTarget === `recipe:${category.id}` ? feedbackMessage : null}
@@ -516,8 +576,8 @@ export function SettingsPage() {
       <Card title="Other settings" subtitle="Venue, units of measure and account preferences.">
         <EmptyState
           icon={<IconSettings size={24} />}
-          title="More settings coming soon"
-          description="Venue defaults, preferred units, and account preferences can be added here next."
+          title="Additional settings are not active yet"
+          description="Category settings above are available now. Venue defaults, preferred units, and account preferences are deferred so there are no dead setup actions."
         />
       </Card>
     </div>

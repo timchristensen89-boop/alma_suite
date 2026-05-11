@@ -227,16 +227,49 @@ export const itemsService = {
     const { ids } = stockItemBulkDeleteInputSchema.parse(input);
     const uniqueIds = Array.from(new Set(ids));
 
-    const result = await prisma.$transaction(async (tx) => {
-      await tx.recipeLine.updateMany({
+    const [recipeLines, stocktakeLines, movements, invoiceLines] = await Promise.all([
+      prisma.recipeLine.findMany({
         where: { itemId: { in: uniqueIds } },
-        data: { itemId: null }
-      });
-      await tx.stocktakeLine.updateMany({
+        select: { itemId: true },
+        distinct: ['itemId']
+      }),
+      prisma.stocktakeLine.findMany({
         where: { itemId: { in: uniqueIds } },
-        data: { itemId: null }
+        select: { itemId: true },
+        distinct: ['itemId']
+      }),
+      prisma.inventoryMovement.findMany({
+        where: { itemId: { in: uniqueIds } },
+        select: { itemId: true },
+        distinct: ['itemId']
+      }),
+      prisma.supplierInvoiceLine.findMany({
+        where: { itemId: { in: uniqueIds } },
+        select: { itemId: true },
+        distinct: ['itemId']
+      })
+    ]);
+
+    const referencedIds = new Set<string>();
+    for (const row of [...recipeLines, ...stocktakeLines, ...movements, ...invoiceLines]) {
+      if (row.itemId) referencedIds.add(row.itemId);
+    }
+    if (referencedIds.size > 0) {
+      const referencedItems = await prisma.stockItem.findMany({
+        where: { id: { in: Array.from(referencedIds) } },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+        take: 3
       });
-      return tx.stockItem.deleteMany({ where: { id: { in: uniqueIds } } });
+      const sample = referencedItems.map((item) => item.name).join(', ');
+      throw new HttpError(
+        409,
+        `Cannot delete ${referencedIds.size} item${referencedIds.size === 1 ? '' : 's'} because ${referencedIds.size === 1 ? 'it is' : 'they are'} used by recipes, stocktakes, inventory movements, or invoices. Archive items instead.${sample ? ` Affected: ${sample}${referencedIds.size > 3 ? ', ...' : ''}` : ''}`
+      );
+    }
+
+    const result = await prisma.stockItem.deleteMany({
+      where: { id: { in: uniqueIds } }
     });
 
     return { deleted: result.count };

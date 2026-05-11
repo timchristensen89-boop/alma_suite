@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireStockManager } from '../lib/stock-permissions.js';
 import { suppliersService } from '../services/suppliers.service.js';
 
 export const suppliersRouter = Router();
@@ -29,6 +30,7 @@ suppliersRouter.post('/', async (req, res, next) => {
 
 suppliersRouter.delete('/', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.json(await suppliersService.deleteSuppliers(req.body));
   } catch (error) {
     next(error);

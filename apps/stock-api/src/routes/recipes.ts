@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireStockManager } from '../lib/stock-permissions.js';
 import { recipesService } from '../services/recipes.service.js';
 
 export const recipesRouter = Router();
@@ -29,6 +30,7 @@ recipesRouter.get('/categories', async (_req, res, next) => {
 
 recipesRouter.post('/categories', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.status(201).json(await recipesService.createCategory(req.body));
   } catch (error) {
     next(error);
@@ -37,6 +39,7 @@ recipesRouter.post('/categories', async (req, res, next) => {
 
 recipesRouter.patch('/categories/:id', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.json(await recipesService.updateCategory(String(req.params.id), req.body));
   } catch (error) {
     next(error);
@@ -61,6 +64,7 @@ recipesRouter.post('/', async (req, res, next) => {
 
 recipesRouter.delete('/', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.json(await recipesService.deleteRecipes(req.body));
   } catch (error) {
     next(error);

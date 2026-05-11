@@ -2024,7 +2024,10 @@ export const stockItemCreateInputSchema = z.object({
 
 export const stockItemUpdateInputSchema = stockItemCreateInputSchema.partial();
 export const stockItemBulkDeleteInputSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Select at least one item')
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one item'),
+  confirmationText: z.literal('DELETE ITEMS', {
+    errorMap: () => ({ message: 'Type DELETE ITEMS to confirm catalogue deletion' })
+  })
 });
 
 export type StockCategoryCreateInput = z.infer<
@@ -2091,7 +2094,10 @@ export const supplierCreateInputSchema = z.object({
 
 export const supplierUpdateInputSchema = supplierCreateInputSchema.partial();
 export const supplierBulkDeleteInputSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Select at least one supplier')
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one supplier'),
+  confirmationText: z.literal('DELETE SUPPLIERS', {
+    errorMap: () => ({ message: 'Type DELETE SUPPLIERS to confirm supplier deletion' })
+  })
 });
 
 export type SupplierCreateInput = z.infer<typeof supplierCreateInputSchema>;
@@ -2187,7 +2193,10 @@ export const stockInvoiceImportInputSchema = z.object({
   sourceFileName: z.string().optional().or(z.literal('')),
   sourceFileType: z.string().optional().or(z.literal('')),
   sourceMetadata: z.record(z.unknown()).optional(),
-  invoices: z.array(z.record(z.unknown())).min(1, 'At least one invoice is required')
+  invoices: z.array(z.record(z.unknown())).min(1, 'At least one invoice is required'),
+  confirmationText: z.literal('IMPORT INVOICES', {
+    errorMap: () => ({ message: 'Type IMPORT INVOICES to confirm invoice import' })
+  })
 });
 
 export const stockInvoiceRipInputSchema = z.object({
@@ -2299,7 +2308,10 @@ export const recipeCreateInputSchema = z.object({
 
 export const recipeUpdateInputSchema = recipeCreateInputSchema.partial();
 export const recipeBulkDeleteInputSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Select at least one recipe')
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one recipe'),
+  confirmationText: z.literal('DELETE RECIPES', {
+    errorMap: () => ({ message: 'Type DELETE RECIPES to confirm recipe deletion' })
+  })
 });
 
 export type RecipeLineInput = z.infer<typeof recipeLineInputSchema>;
@@ -2386,7 +2398,10 @@ export const stocktakeCreateInputSchema = z.object({
 
 export const stocktakeUpdateInputSchema = stocktakeCreateInputSchema.partial();
 export const stocktakeBulkDeleteInputSchema = z.object({
-  ids: z.array(z.string().min(1)).min(1, 'Select at least one stocktake')
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one stocktake'),
+  confirmationText: z.literal('DELETE STOCKTAKES', {
+    errorMap: () => ({ message: 'Type DELETE STOCKTAKES to confirm stocktake deletion' })
+  })
 });
 
 export const inventoryMovementTypeSchema = z.enum([

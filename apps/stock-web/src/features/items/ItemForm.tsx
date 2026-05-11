@@ -17,6 +17,7 @@ type Props = {
   initial?: StockItem;
   onSaved: (item: StockItem) => void;
   onCategoryCreated: (category: StockCategory) => void;
+  canManageCategories?: boolean;
   onCancel: () => void;
 };
 
@@ -79,6 +80,7 @@ export function ItemForm({
   initial,
   onSaved,
   onCategoryCreated,
+  canManageCategories = true,
   onCancel
 }: Props) {
   const [draft, setDraft] = useState<Draft>(() =>
@@ -106,6 +108,10 @@ export function ItemForm({
   );
 
   async function handleCreateCategory() {
+    if (!canManageCategories) {
+      setCategoryError('Manager access is required to add categories.');
+      return;
+    }
     const trimmed = newCategoryName.trim();
     if (trimmed.length < 2) {
       setCategoryError('Name must be at least 2 characters');
@@ -285,15 +291,23 @@ export function ItemForm({
             value={newCategoryName}
             onChange={(event) => setNewCategoryName(event.currentTarget.value)}
             placeholder="Type a new category name"
-            hint={categoryError ?? 'Optional — creates a category you can pick above.'}
+            hint={
+              categoryError ??
+              (canManageCategories
+                ? 'Optional — creates a category you can pick above.'
+                : 'Manager access is required to add categories.')
+            }
           />
           <Button
             type="button"
             variant="ghost"
-            disabled={creatingCategory || newCategoryName.trim().length < 2}
+            disabled={
+              creatingCategory || newCategoryName.trim().length < 2 || !canManageCategories
+            }
+            title={canManageCategories ? undefined : 'Manager access required'}
             onClick={() => void handleCreateCategory()}
           >
-            {creatingCategory ? 'Adding…' : 'Add category'}
+            {creatingCategory ? 'Adding…' : canManageCategories ? 'Add category' : 'Manager required'}
           </Button>
           <ActionFeedback message={feedback?.includes('Category') || feedback?.includes('category') ? feedback : null} tone={feedbackTone} />
         </div>

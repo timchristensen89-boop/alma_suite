@@ -1,16 +1,8 @@
 import { Router } from 'express';
-import type { AuthUser } from '@alma/shared';
-import { HttpError } from '../lib/http.js';
+import { requireStockManager } from '../lib/stock-permissions.js';
 import { stocktakesService } from '../services/stocktakes.service.js';
 
 export const stocktakeRouter = Router();
-
-function requireManager(user: AuthUser | undefined) {
-  if (!user) throw new HttpError(401, 'Not authenticated');
-  if (!user.isAdmin && user.role !== 'ADMIN' && user.role !== 'MANAGER') {
-    throw new HttpError(403, 'Manager access required');
-  }
-}
 
 stocktakeRouter.get('/', async (_req, res, next) => {
   try {
@@ -30,7 +22,7 @@ stocktakeRouter.get('/summary', async (_req, res, next) => {
 
 stocktakeRouter.post('/:id/apply', async (req, res, next) => {
   try {
-    requireManager(req.user);
+    requireStockManager(req.user);
     res.json(await stocktakesService.applyStocktake(String(req.params.id), req.user));
   } catch (error) {
     next(error);
@@ -39,7 +31,7 @@ stocktakeRouter.post('/:id/apply', async (req, res, next) => {
 
 stocktakeRouter.post('/:id/approve', async (req, res, next) => {
   try {
-    requireManager(req.user);
+    requireStockManager(req.user);
     res.json(await stocktakesService.applyStocktake(String(req.params.id), req.user));
   } catch (error) {
     next(error);
@@ -56,7 +48,7 @@ stocktakeRouter.get('/:id/movements', async (req, res, next) => {
 
 stocktakeRouter.post('/:id/corrections', async (req, res, next) => {
   try {
-    requireManager(req.user);
+    requireStockManager(req.user);
     res.json(await stocktakesService.createCorrection(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
@@ -65,7 +57,7 @@ stocktakeRouter.post('/:id/corrections', async (req, res, next) => {
 
 stocktakeRouter.post('/:id/reverse', async (req, res, next) => {
   try {
-    requireManager(req.user);
+    requireStockManager(req.user);
     res.json(await stocktakesService.reverseStocktake(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
@@ -90,6 +82,7 @@ stocktakeRouter.post('/', async (req, res, next) => {
 
 stocktakeRouter.delete('/', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.json(await stocktakesService.deleteStocktakes(req.body));
   } catch (error) {
     next(error);

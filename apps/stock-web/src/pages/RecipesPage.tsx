@@ -14,6 +14,9 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 
 type FormState =
   | { mode: 'closed' }
@@ -120,6 +123,8 @@ function duplicateRecipeKey(recipe: Recipe) {
 
 export function RecipesPage() {
   useDocumentTitle('Recipes');
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
 
   const [data, setData] = useState<RecipesPayload | null>(null);
   const [summary, setSummary] = useState<RecipesSummary | null>(null);
@@ -365,23 +370,29 @@ export function RecipesPage() {
 
   async function deleteSelectedRecipes() {
     if (selectedIds.size === 0) return;
+    if (!canManage) {
+      setError('Manager access is required to delete recipes.');
+      return;
+    }
     const ids = Array.from(selectedIds);
     const sampleTitles = selectedRecipes
       .slice(0, 3)
       .map((recipe) => recipe.title)
       .join(', ');
-    const confirmed = window.confirm(
-      `Delete ${ids.length} recipe${ids.length === 1 ? '' : 's'}?` +
-        (sampleTitles ? `\n\n${sampleTitles}${ids.length > 3 ? ', ...' : ''}` : '') +
-        '\n\nIngredient lines for deleted recipes will also be removed. This cannot be undone.'
-    );
+    const confirmed = confirmDangerousAction({
+      title: `Delete ${ids.length} recipe${ids.length === 1 ? '' : 's'}?`,
+      message:
+        `${sampleTitles ? `${sampleTitles}${ids.length > 3 ? ', ...' : ''}\n\n` : ''}` +
+        'Ingredient lines for deleted recipes are also removed. This cannot be undone.',
+      confirmationText: 'DELETE RECIPES'
+    });
     if (!confirmed) return;
 
     setDeleting(true);
     try {
       await api<{ deleted: number }>('/api/recipes', {
         method: 'DELETE',
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids, confirmationText: 'DELETE RECIPES' })
       });
       setSelectedIds(new Set());
       setExpandedId((current) => (current && ids.includes(current) ? null : current));
@@ -669,9 +680,14 @@ export function RecipesPage() {
                         variant="danger"
                         size="sm"
                         onClick={() => void deleteSelectedRecipes()}
-                        disabled={deleting}
+                        disabled={deleting || !canManage}
+                        title={canManage ? undefined : 'Manager access required'}
                       >
-                        {deleting ? 'Deleting...' : 'Delete selected'}
+                        {deleting
+                          ? 'Deleting...'
+                          : canManage
+                            ? 'Delete selected'
+                            : 'Manager required'}
                       </Button>
                     </>
                   ) : duplicateGroups.length > 0 ? (

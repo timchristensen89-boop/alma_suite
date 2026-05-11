@@ -17,7 +17,9 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 
 type FormState =
   | { mode: 'closed' }
@@ -66,14 +68,22 @@ function formatDateTimeInput(iso: string) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function formatQuantity(qty: number, unit: string | null) {
-  const value = Number.isInteger(qty) ? String(qty) : qty.toFixed(2);
+function normalQuantity(qty: number | null | undefined) {
+  return typeof qty === 'number' && Number.isFinite(qty) ? qty : null;
+}
+
+function formatQuantity(qty: number | null | undefined, unit: string | null) {
+  const safeQty = normalQuantity(qty);
+  if (safeQty === null) return '—';
+  const value = Number.isInteger(safeQty) ? String(safeQty) : safeQty.toFixed(2);
   return unit ? `${value} ${unit}` : value;
 }
 
-function formatSignedQuantity(qty: number, unit: string | null) {
-  const sign = qty > 0 ? '+' : '';
-  return `${sign}${formatQuantity(qty, unit)}`;
+function formatSignedQuantity(qty: number | null | undefined, unit: string | null) {
+  const safeQty = normalQuantity(qty);
+  if (safeQty === null) return '—';
+  const sign = safeQty > 0 ? '+' : '';
+  return `${sign}${formatQuantity(safeQty, unit)}`;
 }
 
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
@@ -98,8 +108,11 @@ function varianceSummary(detail: StocktakeWithLines) {
   return detail.lines.reduce(
     (summary, line) => {
       if (!line.item) return summary;
-      const variance = line.countedQty - line.item.onHand;
+      const countedQty = normalQuantity(line.countedQty);
+      const onHand = normalQuantity(line.item.onHand);
       summary.linkedLines += 1;
+      if (countedQty === null || onHand === null) return summary;
+      const variance = countedQty - onHand;
       if (Math.abs(variance) > 0.0001) summary.varianceLines += 1;
       if (variance > 0) summary.positiveAdjustments += variance;
       if (variance < 0) summary.negativeAdjustments += variance;
@@ -190,7 +203,7 @@ export function StocktakePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
-  const canManageReview = Boolean(user && (user.isAdmin || user.role === 'ADMIN' || user.role === 'MANAGER'));
+  const canManageReview = canManageStock(user);
 
   async function load() {
     setLoading(true);
@@ -297,9 +310,16 @@ export function StocktakePage() {
   }
 
   async function applyStocktake(stocktake: Stocktake) {
-    const confirmed = window.confirm(
-      `Approve "${stocktake.name}" and apply variances to inventory balances?\n\nThis creates ledger movements and cannot be run twice.`
-    );
+    if (!canManageReview) {
+      setError('Manager access is required to approve stocktakes.');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Approve "${stocktake.name}"?`,
+      message:
+        'This creates InventoryMovement ledger records and updates item balances inside that transaction. It cannot be run twice.',
+      confirmationText: 'APPROVE LEDGER'
+    });
     if (!confirmed) return;
 
     setApplyingId(stocktake.id);
@@ -346,23 +366,29 @@ export function StocktakePage() {
 
   async function deleteSelectedStocktakes() {
     if (selectedIds.size === 0) return;
+    if (!canManageReview) {
+      setError('Manager access is required to delete stocktakes.');
+      return;
+    }
     const ids = Array.from(selectedIds);
     const sampleNames = selectedStocktakes
       .slice(0, 3)
       .map((stocktake) => stocktake.name)
       .join(', ');
-    const confirmed = window.confirm(
-      `Delete ${ids.length} stocktake${ids.length === 1 ? '' : 's'}?` +
-        (sampleNames ? `\n\n${sampleNames}${ids.length > 3 ? ', ...' : ''}` : '') +
-        '\n\nDraft and review count lines will also be removed. Applied stocktakes must be reversed instead of deleted.'
-    );
+    const confirmed = confirmDangerousAction({
+      title: `Delete ${ids.length} stocktake${ids.length === 1 ? '' : 's'}?`,
+      message:
+        `${sampleNames ? `${sampleNames}${ids.length > 3 ? ', ...' : ''}\n\n` : ''}` +
+        'Draft and review count lines will also be removed. Applied stocktakes must be reversed before deletion.',
+      confirmationText: 'DELETE STOCKTAKES'
+    });
     if (!confirmed) return;
 
     setDeleting(true);
     try {
       await api<{ deleted: number }>('/api/stocktake', {
         method: 'DELETE',
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids, confirmationText: 'DELETE STOCKTAKES' })
       });
       setSelectedIds(new Set());
       setExpandedId((current) => (current && ids.includes(current) ? null : current));
@@ -398,8 +424,8 @@ export function StocktakePage() {
         title={cardTitle}
         subtitle={
           form.mode === 'closed'
-            ? 'Start a count, save drafts, submit for review, then apply it to inventory through ledger movements.'
-            : 'Count lines are saved to stocktake history. Product balances change only when a submitted stocktake is applied.'
+            ? 'Start a count, save drafts, submit for review, then approve ledger-backed inventory adjustments.'
+            : 'Count lines are saved to stocktake history. Submitting sends the count for review and does not update stock balances.'
         }
         action={
           form.mode === 'closed' ? (
@@ -451,9 +477,14 @@ export function StocktakePage() {
                         variant="danger"
                         size="sm"
                         onClick={() => void deleteSelectedStocktakes()}
-                        disabled={deleting}
+                        disabled={deleting || !canManageReview}
+                        title={canManageReview ? undefined : 'Manager access required'}
                       >
-                        {deleting ? 'Deleting...' : 'Delete selected'}
+                        {deleting
+                          ? 'Deleting...'
+                          : canManageReview
+                            ? 'Delete selected'
+                            : 'Manager required'}
                       </Button>
                     </>
                   ) : (
@@ -521,7 +552,7 @@ export function StocktakePage() {
                               <td>
                                 <Badge tone={stocktake.appliedAt ? 'info' : stocktake.status === 'SUBMITTED' ? 'positive' : 'warning'} dot>
                                   {stocktake.appliedAt
-                                    ? 'Applied'
+                                    ? 'Applied and locked'
                                     : stocktake.status === 'SUBMITTED'
                                       ? 'Ready for review'
                                       : 'In progress'}
@@ -533,13 +564,18 @@ export function StocktakePage() {
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    disabled={applyingId === stocktake.id}
+                                    disabled={applyingId === stocktake.id || !canManageReview}
+                                    title={canManageReview ? undefined : 'Manager access required'}
                                     onClick={(event) => {
                                       event.stopPropagation();
                                       void applyStocktake(stocktake);
                                     }}
                                   >
-                                    {applyingId === stocktake.id ? 'Approving…' : 'Approve'}
+                                    {applyingId === stocktake.id
+                                      ? 'Approving…'
+                                      : canManageReview
+                                        ? 'Approve ledger adjustment'
+                                        : 'Manager required'}
                                   </Button>
                                 ) : null}
                                 <Button
@@ -547,6 +583,7 @@ export function StocktakePage() {
                                   variant="ghost"
                                   size="sm"
                                   disabled={Boolean(stocktake.appliedAt)}
+                                  title={stocktake.appliedAt ? 'Applied stocktakes are locked until a ledger reversal exists.' : undefined}
                                   onClick={(event) => {
                                     event.stopPropagation();
                                     void editStocktake(stocktake);
@@ -737,12 +774,14 @@ function StocktakeForm({
         ))}
       </div>
 
+      <p className="subtle">Submitting sends this count for review. It does not update stock balances.</p>
+
       <div className="toolbar-right">
         <Button type="button" variant="ghost" onClick={onCancel}>Cancel</Button>
         <Button type="submit" variant="secondary" disabled={saving}>{saving ? 'Saving…' : 'Save draft'}</Button>
         <ActionFeedback message={feedbackTarget === 'draft' ? feedback : null} tone={feedbackTone} />
         <Button type="button" disabled={saving} onClick={() => void submit('SUBMITTED', 'review')}>
-          {saving ? 'Submitting…' : 'Mark ready for review'}
+          {saving ? 'Submitting…' : 'Submit for review'}
         </Button>
         <ActionFeedback message={feedbackTarget === 'review' ? feedback : null} tone={feedbackTone} />
       </div>
@@ -813,7 +852,9 @@ function StocktakeLinesTable({
             </thead>
             <tbody>
               {lines.map((line) => {
-                const variance = line.item ? line.countedQty - line.item.onHand : null;
+                const countedQty = normalQuantity(line.countedQty);
+                const currentQty = line.item ? normalQuantity(line.item.onHand) : null;
+                const variance = line.item && countedQty !== null && currentQty !== null ? countedQty - currentQty : null;
                 return (
                   <tr key={line.id}>
                     <td>
@@ -822,8 +863,8 @@ function StocktakeLinesTable({
                         <span className="subtle">{line.item ? `Linked to ${line.item.name}` : 'Unlinked count'}</span>
                       </span>
                     </td>
-                    <td>{formatQuantity(line.countedQty, line.unit)}</td>
-                    <td>{line.item ? formatQuantity(line.item.onHand, line.unit ?? line.item.unit) : '—'}</td>
+                    <td>{formatQuantity(countedQty, line.unit)}</td>
+                    <td>{line.item ? formatQuantity(currentQty, line.unit ?? line.item.unit) : '—'}</td>
                     <td>
                       {variance === null ? (
                         '—'
@@ -933,6 +974,14 @@ function StocktakeMovementReview({
   async function submitCorrection(line: StocktakeWithLines['lines'][number]) {
     const draft = corrections[line.id];
     if (!draft) return;
+    const confirmed = confirmDangerousAction({
+      title: `Save ledger correction for ${line.label}?`,
+      message:
+        'This creates a STOCKTAKE_CORRECTION movement and updates the linked item balance through the ledger-backed correction flow.',
+      confirmationText: 'SAVE CORRECTION'
+    });
+    if (!confirmed) return;
+
     updateCorrection(line.id, { feedback: null, saving: true });
     try {
       await api<StocktakeMovementResult>(`/api/stocktake/${detail.id}/corrections`, {
@@ -964,9 +1013,12 @@ function StocktakeMovementReview({
   }
 
   async function reverseStocktake() {
-    const confirmed = window.confirm(
-      `Reverse "${detail.name}"?\n\nThis writes reversal movements and returns the stocktake to draft so it can be edited or deleted safely.`
-    );
+    const confirmed = confirmDangerousAction({
+      title: `Reverse "${detail.name}"?`,
+      message:
+        'This writes ledger reversal movements and returns the stocktake to draft so it can be edited or deleted safely.',
+      confirmationText: 'REVERSE LEDGER'
+    });
     if (!confirmed) return;
 
     setReversing(true);
@@ -997,7 +1049,7 @@ function StocktakeMovementReview({
       <div className="stocktake-review-header">
         <div>
           <h4>Movement history</h4>
-          <p className="subtle">Ledger records created from approval, corrections and reversals.</p>
+          <p className="subtle">Ledger-backed records created from approval, corrections and reversals.</p>
         </div>
         {history?.hasReversal ? (
           <Badge tone="danger" dot>Reversed</Badge>
@@ -1092,7 +1144,7 @@ function StocktakeMovementReview({
                         disabled={!canChangeLedger || draft?.saving}
                         onClick={() => void submitCorrection(line)}
                       >
-                        {draft?.saving ? 'Saving...' : 'Save correction'}
+                        {draft?.saving ? 'Saving...' : 'Save ledger correction'}
                       </Button>
                       <ActionFeedback message={draft?.feedback} tone={draft?.feedbackTone} />
                     </div>
@@ -1103,7 +1155,7 @@ function StocktakeMovementReview({
           </div>
 
           <div className="stocktake-reversal-box">
-            <h4>Reverse approval</h4>
+            <h4>Ledger-backed reversal</h4>
             <p className="subtle">Use this when the approved count needs to be edited or deleted. It creates reversal movements first.</p>
             <Input
               label="Reason"
@@ -1119,7 +1171,7 @@ function StocktakeMovementReview({
                 disabled={!canChangeLedger || reversing}
                 onClick={() => void reverseStocktake()}
               >
-                {reversing ? 'Reversing...' : 'Create reversal'}
+                {reversing ? 'Reversing...' : 'Create ledger reversal'}
               </Button>
               <ActionFeedback message={reversalFeedback} tone={reversalTone} />
             </div>

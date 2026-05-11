@@ -13,6 +13,9 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconInvoices } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 
 type FeedbackTone = 'success' | 'error' | 'info';
 
@@ -84,6 +87,8 @@ function replaceLine(
 
 export function InvoicesPage() {
   useDocumentTitle('Invoices');
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
   const [payload, setPayload] = useState<StockInvoicesPayload | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
   const [summary, setSummary] = useState<StockInvoicesSummary | null>(null);
@@ -158,10 +163,21 @@ export function InvoicesPage() {
   async function importPaste() {
     const text = pasteText.trim();
     const target = 'invoice-import';
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to import invoices.', 'error');
+      return;
+    }
     if (!text) {
       showFeedback(target, 'Paste Xero invoice JSON or invoice text first.', 'error');
       return;
     }
+    const confirmed = confirmDangerousAction({
+      title: 'Import supplier invoices?',
+      message:
+        'This creates or updates supplier invoices and may create missing supplier records. It does not change stock balances.',
+      confirmationText: 'IMPORT INVOICES'
+    });
+    if (!confirmed) return;
 
     setBusyTarget(target);
     setFeedbackTarget(target);
@@ -195,6 +211,7 @@ export function InvoicesPage() {
           sourceFileName: sourceFileName || (source === 'XERO' ? 'Xero invoice paste' : 'Ripped invoice text'),
           sourceFileType: source === 'XERO' ? 'application/json' : 'text/plain',
           sourceMetadata: { ripWarnings },
+          confirmationText: 'IMPORT INVOICES',
           invoices
         })
       });
@@ -234,6 +251,10 @@ export function InvoicesPage() {
 
   async function saveLineMatch(line: StockSupplierInvoiceLine) {
     const target = `match:${line.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to save invoice matches.', 'error');
+      return;
+    }
     const itemId = lineDrafts[line.id] ?? line.itemId ?? '';
     setBusyTarget(target);
     setFeedbackTarget(target);
@@ -270,12 +291,25 @@ export function InvoicesPage() {
 
   async function applyCost(line: StockSupplierInvoiceLine) {
     const target = `cost:${line.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to apply invoice costs.', 'error');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: 'Apply supplier invoice cost?',
+      message:
+        'This updates the matched stock item average cost from this invoice line. It does not change on-hand balances.',
+      confirmationText: 'APPLY COST'
+    });
+    if (!confirmed) return;
+
     setBusyTarget(target);
     setFeedbackTarget(target);
     setFeedbackMessage(null);
     try {
       const updated = await api<StockSupplierInvoiceLine>(`/api/invoices/lines/${line.id}/apply-cost`, {
-        method: 'POST'
+        method: 'POST',
+        body: JSON.stringify({ confirmationText: 'APPLY COST' })
       });
       setPayload((current) => {
         if (!current) return current;
@@ -365,9 +399,14 @@ export function InvoicesPage() {
               <Button
                 type="button"
                 onClick={() => void importPaste()}
-                disabled={busyTarget === 'invoice-import'}
+                disabled={busyTarget === 'invoice-import' || !canManage}
+                title={canManage ? undefined : 'Manager access required'}
               >
-                {busyTarget === 'invoice-import' ? 'Importing...' : 'Rip / import'}
+                {busyTarget === 'invoice-import'
+                  ? 'Importing...'
+                  : canManage
+                    ? 'Rip / import'
+                    : 'Manager required'}
               </Button>
               <ActionFeedback
                 message={feedbackTarget === 'invoice-import' ? feedbackMessage : null}
@@ -457,6 +496,7 @@ export function InvoicesPage() {
               }
               onSaveMatch={saveLineMatch}
               onApplyCost={applyCost}
+              canManage={canManage}
             />
           ) : (
             <EmptyState
@@ -482,6 +522,7 @@ type InvoiceLineReviewProps = {
   onDraftChange: (lineId: string, itemId: string) => void;
   onSaveMatch: (line: StockSupplierInvoiceLine) => Promise<void>;
   onApplyCost: (line: StockSupplierInvoiceLine) => Promise<void>;
+  canManage: boolean;
 };
 
 function InvoiceLineReview({
@@ -494,7 +535,8 @@ function InvoiceLineReview({
   busyTarget,
   onDraftChange,
   onSaveMatch,
-  onApplyCost
+  onApplyCost,
+  canManage
 }: InvoiceLineReviewProps) {
   const lines = invoice.lines ?? [];
   if (lines.length === 0) {
@@ -534,15 +576,21 @@ function InvoiceLineReview({
                 value={draftValue}
                 onChange={(event) => onDraftChange(line.id, event.currentTarget.value)}
                 options={itemOptions}
+                disabled={!canManage}
               />
               <div className="stock-invoice-button-stack">
                 <Button
                   type="button"
                   size="sm"
                   onClick={() => void onSaveMatch(line)}
-                  disabled={busyTarget === matchTarget}
+                  disabled={busyTarget === matchTarget || !canManage}
+                  title={canManage ? undefined : 'Manager access required'}
                 >
-                  {busyTarget === matchTarget ? 'Saving...' : 'Save match'}
+                  {busyTarget === matchTarget
+                    ? 'Saving...'
+                    : canManage
+                      ? 'Save match'
+                      : 'Manager required'}
                 </Button>
                 <ActionFeedback
                   message={feedbackTarget === matchTarget ? feedbackMessage : null}
@@ -555,9 +603,20 @@ function InvoiceLineReview({
                   size="sm"
                   variant="ghost"
                   onClick={() => void onApplyCost(line)}
-                  disabled={busyTarget === costTarget || costDisabled}
+                  disabled={busyTarget === costTarget || costDisabled || !canManage}
+                  title={
+                    !canManage
+                      ? 'Manager access required'
+                      : costDisabled
+                        ? 'Match a stock item with a positive unit cost first'
+                        : undefined
+                  }
                 >
-                  {busyTarget === costTarget ? 'Updating...' : 'Apply cost'}
+                  {busyTarget === costTarget
+                    ? 'Updating...'
+                    : canManage
+                      ? 'Apply cost'
+                      : 'Manager required'}
                 </Button>
                 <ActionFeedback
                   message={feedbackTarget === costTarget ? feedbackMessage : null}

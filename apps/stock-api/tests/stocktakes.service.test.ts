@@ -1,7 +1,16 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { prisma } from '@alma/db';
+import {
+  recipeBulkDeleteInputSchema,
+  stockInvoiceImportInputSchema,
+  stockItemBulkDeleteInputSchema,
+  stocktakeBulkDeleteInputSchema,
+  supplierBulkDeleteInputSchema
+} from '@alma/shared';
+import { itemsService } from '../src/services/items.service.js';
 import { stocktakesService } from '../src/services/stocktakes.service.js';
+import { suppliersService } from '../src/services/suppliers.service.js';
 
 async function createItem(name: string, onHand: number, unit = 'ea') {
   return prisma.stockItem.create({
@@ -148,7 +157,11 @@ test('applying submitted stocktakes creates movement deltas and updates balances
     assert.equal(movementCount, 3);
 
     await assert.rejects(
-      () => stocktakesService.deleteStocktakes({ ids: [stocktake.id] }),
+      () =>
+        stocktakesService.deleteStocktakes({
+          ids: [stocktake.id],
+          confirmationText: 'DELETE STOCKTAKES'
+        }),
       /Applied stocktakes cannot be deleted/
     );
 
@@ -177,9 +190,107 @@ test('applying submitted stocktakes creates movement deltas and updates balances
       /Only applied stocktakes can be reversed/
     );
 
-    const deleted = await stocktakesService.deleteStocktakes({ ids: [stocktake.id] });
+    const deleted = await stocktakesService.deleteStocktakes({
+      ids: [stocktake.id],
+      confirmationText: 'DELETE STOCKTAKES'
+    });
     assert.equal(deleted.deleted, 1);
   } finally {
     await cleanup({ stocktakeIds, itemIds: [itemA.id, itemB.id] });
+  }
+});
+
+test('bulk destructive inputs require typed confirmation text', () => {
+  assert.throws(
+    () => stockItemBulkDeleteInputSchema.parse({ ids: ['item-1'] }),
+    /DELETE ITEMS/
+  );
+  assert.throws(
+    () => supplierBulkDeleteInputSchema.parse({ ids: ['supplier-1'] }),
+    /DELETE SUPPLIERS/
+  );
+  assert.throws(
+    () => recipeBulkDeleteInputSchema.parse({ ids: ['recipe-1'] }),
+    /DELETE RECIPES/
+  );
+  assert.throws(
+    () => stocktakeBulkDeleteInputSchema.parse({ ids: ['stocktake-1'] }),
+    /DELETE STOCKTAKES/
+  );
+  assert.throws(
+    () => stockInvoiceImportInputSchema.parse({ invoices: [{ invoiceNumber: '1' }] }),
+    /IMPORT INVOICES/
+  );
+
+  assert.doesNotThrow(() =>
+    stockItemBulkDeleteInputSchema.parse({
+      ids: ['item-1'],
+      confirmationText: 'DELETE ITEMS'
+    })
+  );
+});
+
+test('catalogue item deletion is blocked when records reference the item', async () => {
+  const suffix = `delete-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const item = await createItem(`Referenced item ${suffix}`, 1, 'ea');
+  const recipe = await prisma.recipe.create({
+    data: {
+      title: `Referenced recipe ${suffix}`,
+      estimatedCost: 0,
+      lines: {
+        create: {
+          position: 1,
+          ingredientName: item.name,
+          itemId: item.id
+        }
+      }
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        itemsService.deleteItems({
+          ids: [item.id],
+          confirmationText: 'DELETE ITEMS'
+        }),
+      /Cannot delete 1 item/
+    );
+  } finally {
+    await prisma.recipe.deleteMany({ where: { id: recipe.id } });
+    await cleanup({ itemIds: [item.id] });
+  }
+});
+
+test('supplier deletion is blocked when imported invoices reference the supplier', async () => {
+  const suffix = `delete-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const supplier = await prisma.supplier.create({
+    data: {
+      name: `Referenced supplier ${suffix}`,
+      status: 'ACTIVE'
+    }
+  });
+  const invoice = await prisma.supplierInvoice.create({
+    data: {
+      source: 'TEST',
+      invoiceKey: suffix,
+      supplierId: supplier.id,
+      supplierName: supplier.name,
+      currencyCode: 'AUD'
+    }
+  });
+
+  try {
+    await assert.rejects(
+      () =>
+        suppliersService.deleteSuppliers({
+          ids: [supplier.id],
+          confirmationText: 'DELETE SUPPLIERS'
+        }),
+      /imported invoices/
+    );
+  } finally {
+    await prisma.supplierInvoice.deleteMany({ where: { id: invoice.id } });
+    await prisma.supplier.deleteMany({ where: { id: supplier.id } });
   }
 });

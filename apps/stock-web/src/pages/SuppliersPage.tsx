@@ -4,6 +4,9 @@ import { Badge, Button, Card, EmptyState, Spinner, StatCard } from '@alma/ui';
 import { IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 import { SupplierForm } from '../features/suppliers/SupplierForm';
 
 type FormState =
@@ -13,6 +16,8 @@ type FormState =
 
 export function SuppliersPage() {
   useDocumentTitle('Suppliers');
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
   const [data, setData] = useState<SuppliersPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -114,24 +119,30 @@ export function SuppliersPage() {
 
   async function deleteSelectedSuppliers() {
     if (selectedIds.size === 0) return;
+    if (!canManage) {
+      setError('Manager access is required to delete suppliers.');
+      return;
+    }
     const ids = Array.from(selectedIds);
     const idSet = new Set(ids);
     const sampleNames = selectedSuppliers
       .slice(0, 3)
       .map((supplier) => supplier.name)
       .join(', ');
-    const confirmed = window.confirm(
-      `Delete ${ids.length} supplier${ids.length === 1 ? '' : 's'}?` +
-        (sampleNames ? `\n\n${sampleNames}${ids.length > 3 ? ', ...' : ''}` : '') +
-        '\n\nThis cannot be undone.'
-    );
+    const confirmed = confirmDangerousAction({
+      title: `Delete ${ids.length} supplier${ids.length === 1 ? '' : 's'}?`,
+      message:
+        `${sampleNames ? `${sampleNames}${ids.length > 3 ? ', ...' : ''}\n\n` : ''}` +
+        'This removes supplier records only when they are not linked to imported invoices. Archive active suppliers instead.',
+      confirmationText: 'DELETE SUPPLIERS'
+    });
     if (!confirmed) return;
 
     setDeleting(true);
     try {
       await api<{ deleted: number }>('/api/suppliers', {
         method: 'DELETE',
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids, confirmationText: 'DELETE SUPPLIERS' })
       });
       setData((current) =>
         current
@@ -242,9 +253,14 @@ export function SuppliersPage() {
                       variant="danger"
                       size="sm"
                       onClick={() => void deleteSelectedSuppliers()}
-                      disabled={deleting}
+                      disabled={deleting || !canManage}
+                      title={canManage ? undefined : 'Manager access required'}
                     >
-                      {deleting ? 'Deleting...' : 'Delete selected'}
+                      {deleting
+                        ? 'Deleting...'
+                        : canManage
+                          ? 'Delete selected'
+                          : 'Manager required'}
                     </Button>
                   </>
                 ) : (

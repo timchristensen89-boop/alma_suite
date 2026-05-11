@@ -4,6 +4,9 @@ import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } fro
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { confirmDangerousAction } from '../lib/confirmDangerousAction';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 import { ItemForm } from '../features/items/ItemForm';
 
 const UNCATEGORISED_FILTER = '__uncategorised';
@@ -35,6 +38,8 @@ type FormState =
 
 export function ItemsPage() {
   useDocumentTitle('Items');
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
   const [data, setData] = useState<StockItemsPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -230,16 +235,22 @@ export function ItemsPage() {
 
   async function deleteSelectedItems() {
     if (selectedIds.size === 0) return;
+    if (!canManage) {
+      setError('Manager access is required to delete stock items.');
+      return;
+    }
     const ids = Array.from(selectedIds);
     const sampleNames = selectedItems
       .slice(0, 3)
       .map((item) => item.name)
       .join(', ');
-    const confirmed = window.confirm(
-      `Delete ${ids.length} stock item${ids.length === 1 ? '' : 's'}?` +
-        (sampleNames ? `\n\n${sampleNames}${ids.length > 3 ? ', ...' : ''}` : '') +
-        '\n\nThis cannot be undone.'
-    );
+    const confirmed = confirmDangerousAction({
+      title: `Delete ${ids.length} catalogue item${ids.length === 1 ? '' : 's'}?`,
+      message:
+        `${sampleNames ? `${sampleNames}${ids.length > 3 ? ', ...' : ''}\n\n` : ''}` +
+        'This removes catalogue records only when they are not used by recipes, stocktakes, inventory movements, or invoices. Use Archive for live or referenced items.',
+      confirmationText: 'DELETE ITEMS'
+    });
     if (!confirmed) return;
 
     setDeleting(true);
@@ -247,7 +258,7 @@ export function ItemsPage() {
       const idSet = new Set(ids);
       await api<{ deleted: number }>('/api/items', {
         method: 'DELETE',
-        body: JSON.stringify({ ids })
+        body: JSON.stringify({ ids, confirmationText: 'DELETE ITEMS' })
       });
       setData((current) =>
         current
@@ -406,6 +417,7 @@ export function ItemsPage() {
             categories={data?.categories ?? []}
             onSaved={handleItemCreated}
             onCategoryCreated={handleCategoryCreated}
+            canManageCategories={canManage}
             onCancel={() => setForm({ mode: 'closed' })}
           />
         ) : form.mode === 'edit' ? (
@@ -415,6 +427,7 @@ export function ItemsPage() {
             categories={data?.categories ?? []}
             onSaved={handleItemUpdated}
             onCategoryCreated={handleCategoryCreated}
+            canManageCategories={canManage}
             onCancel={() => setForm({ mode: 'closed' })}
           />
         ) : loading ? (
@@ -479,9 +492,14 @@ export function ItemsPage() {
                       variant="danger"
                       size="sm"
                       onClick={() => void deleteSelectedItems()}
-                      disabled={deleting}
+                      disabled={deleting || !canManage}
+                      title={canManage ? undefined : 'Manager access required'}
                     >
-                      {deleting ? 'Deleting...' : 'Delete selected'}
+                      {deleting
+                        ? 'Deleting...'
+                        : canManage
+                          ? 'Delete selected'
+                          : 'Manager required'}
                     </Button>
                   </>
                 ) : stats.lowStock > 0 ? (
