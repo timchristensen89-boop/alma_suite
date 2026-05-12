@@ -345,6 +345,16 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
   return profile;
 }
 
+function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
+  const where: Prisma.StaffProfileWhereInput = { employmentStatus: { not: 'ARCHIVED' } };
+
+  if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.role !== 'STAFF' && actor.venue) {
+    where.venue = actor.venue;
+  }
+
+  return where;
+}
+
 function actorName(actor: AuthUser) {
   return `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email || actor.roleTitle || 'Unknown manager';
 }
@@ -601,9 +611,9 @@ export const staffService = {
     return AWARD_RATE_SETS;
   },
 
-  async list() {
+  async list(actor?: AuthUser) {
     const profiles = await prisma.staffProfile.findMany({
-      where: { employmentStatus: { not: 'ARCHIVED' } },
+      where: staffProfileScope(actor),
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       include: {
         payProfile: true,
@@ -630,7 +640,11 @@ export const staffService = {
     return profiles.map(attachDefaultPayProfile);
   },
 
-  async getById(id: string) {
+  async getById(id: string, actor?: AuthUser) {
+    if (actor && actor.role !== 'STAFF') {
+      await assertManagerCanAccessStaffProfile(id, actor);
+    }
+
     const profile = await prisma.staffProfile.findUnique({
       where: { id },
       include: {
@@ -844,8 +858,8 @@ export const staffService = {
     });
   },
 
-  async addRecord(staffProfileId: string, input: unknown) {
-    await this.getById(staffProfileId);
+  async addRecord(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    await this.getById(staffProfileId, actor);
     const data = staffComplianceRecordInputSchema.parse(input);
 
     return prisma.staffComplianceRecord.create({
@@ -865,8 +879,8 @@ export const staffService = {
     });
   },
 
-  async deleteRecord(staffProfileId: string, recordId: string) {
-    await this.getById(staffProfileId);
+  async deleteRecord(staffProfileId: string, recordId: string, actor?: AuthUser) {
+    await this.getById(staffProfileId, actor);
     const record = await prisma.staffComplianceRecord.findFirst({
       where: { id: recordId, staffProfileId }
     });
@@ -2566,8 +2580,8 @@ export const staffService = {
     });
   },
 
-  async approveRecord(staffProfileId: string, recordId: string) {
-    await this.getById(staffProfileId);
+  async approveRecord(staffProfileId: string, recordId: string, actor?: AuthUser) {
+    await this.getById(staffProfileId, actor);
     const record = await prisma.staffComplianceRecord.findFirst({
       where: { id: recordId, staffProfileId }
     });
@@ -2586,8 +2600,8 @@ export const staffService = {
     });
   },
 
-  async approveOnboarding(staffProfileId: string) {
-    const profile = await this.getById(staffProfileId);
+  async approveOnboarding(staffProfileId: string, actor?: AuthUser) {
+    const profile = await this.getById(staffProfileId, actor);
     const onboardingSettings = await getOnboardingSettings();
     const missingDocuments = requiredOnboardingDocumentTitles(onboardingSettings).filter((title) => {
       const record = profile.records.find(
@@ -2620,14 +2634,16 @@ export const staffService = {
     });
   },
 
-  async summary() {
+  async summary(actor?: AuthUser) {
     const now = new Date();
     const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+    const profileScope = staffProfileScope(actor);
 
     const [totalProfiles, expired, expiringSoon, pendingApproval] = await Promise.all([
-      prisma.staffProfile.count({ where: { employmentStatus: { not: 'ARCHIVED' } } }),
+      prisma.staffProfile.count({ where: profileScope }),
       prisma.staffComplianceRecord.count({
         where: {
+          staffProfile: profileScope,
           OR: [
             { status: 'EXPIRED' },
             { expiryDate: { lt: now } }
@@ -2636,13 +2652,19 @@ export const staffService = {
       }),
       prisma.staffComplianceRecord.count({
         where: {
+          staffProfile: profileScope,
           expiryDate: {
             gte: now,
             lte: soon
           }
         }
       }),
-      prisma.staffComplianceRecord.count({ where: { status: 'PENDING' } })
+      prisma.staffComplianceRecord.count({
+        where: {
+          staffProfile: profileScope,
+          status: 'PENDING'
+        }
+      })
     ]);
 
     return { totalProfiles, expired, expiringSoon, pendingApproval };

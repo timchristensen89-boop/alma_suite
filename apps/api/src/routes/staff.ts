@@ -65,7 +65,7 @@ staffRouter.get('/', async (_req, res, next) => {
       res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
       return;
     }
-    res.json(await staffService.list());
+    res.json(await staffService.list(_req.user));
   } catch (error) {
     next(error);
   }
@@ -81,7 +81,7 @@ staffRouter.post('/', requireManager, async (req, res, next) => {
 
 staffRouter.get('/meta', async (_req, res, next) => {
   try {
-    res.json(await staffService.summary());
+    res.json(await staffService.summary(_req.user));
   } catch (error) {
     next(error);
   }
@@ -101,7 +101,7 @@ staffRouter.get('/profiles', async (_req, res, next) => {
       res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
       return;
     }
-    res.json(await staffService.list());
+    res.json(await staffService.list(_req.user));
   } catch (error) {
     next(error);
   }
@@ -435,7 +435,7 @@ staffRouter.post('/:id/manager-notes', requireManager, async (req, res, next) =>
 
 staffRouter.post('/:id/records', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.addRecord(String(req.params.id), req.body));
+    res.status(201).json(await staffService.addRecord(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -443,7 +443,7 @@ staffRouter.post('/:id/records', requireManager, async (req, res, next) => {
 
 staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.approveRecord(String(req.params.id), String(req.params.recordId)));
+    res.json(await staffService.approveRecord(String(req.params.id), String(req.params.recordId), req.user));
   } catch (error) {
     next(error);
   }
@@ -451,7 +451,7 @@ staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, r
 
 staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.deleteRecord(String(req.params.id), String(req.params.recordId)));
+    res.json(await staffService.deleteRecord(String(req.params.id), String(req.params.recordId), req.user));
   } catch (error) {
     next(error);
   }
@@ -459,7 +459,7 @@ staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, ne
 
 staffRouter.post('/:id/onboarding/approve', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.approveOnboarding(String(req.params.id)));
+    res.json(await staffService.approveOnboarding(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -474,7 +474,7 @@ staffRouter.get('/:id', async (req, res, next) => {
       res.json(redactManagerOnlyPay(await staffService.getById(String(req.params.id))));
       return;
     }
-    res.json(await staffService.getById(String(req.params.id)));
+    res.json(await staffService.getById(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
