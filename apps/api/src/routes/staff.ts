@@ -34,10 +34,14 @@ function grantsSettingsAccess(input: unknown) {
   });
 }
 
+function redactManagerOnlyPay<T extends { payProfile?: unknown }>(profile: T): T & { payProfile: null } {
+  return { ...profile, payProfile: null };
+}
+
 staffRouter.get('/', async (_req, res, next) => {
   try {
     if (_req.user?.role === 'STAFF') {
-      res.json([await staffService.getById(_req.user.id)]);
+      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
       return;
     }
     res.json(await staffService.list());
@@ -48,7 +52,7 @@ staffRouter.get('/', async (_req, res, next) => {
 
 staffRouter.post('/', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.create(req.body));
+    res.status(201).json(await staffService.create(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -62,10 +66,18 @@ staffRouter.get('/meta', async (_req, res, next) => {
   }
 });
 
+staffRouter.get('/award-rates', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await staffService.listAwardRates());
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/profiles', async (_req, res, next) => {
   try {
     if (_req.user?.role === 'STAFF') {
-      res.json([await staffService.getById(_req.user.id)]);
+      res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
       return;
     }
     res.json(await staffService.list());
@@ -76,7 +88,16 @@ staffRouter.get('/profiles', async (_req, res, next) => {
 
 staffRouter.post('/profiles', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.create(req.body));
+    res.status(201).json(await staffService.create(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/merge', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.mergeDuplicateStaff(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -344,7 +365,7 @@ staffRouter.post('/tips/mark-paid', requireManager, async (req, res, next) => {
 
 staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.delete(String(req.params.id)));
+    res.json(await staffService.delete(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -355,7 +376,16 @@ staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
     if (grantsSettingsAccess(req.body) && !canManageSettingsAccess(req)) {
       throw new HttpError(403, 'Settings access required to change Admin access.');
     }
-    res.json(await staffService.updateAppAccess(String(req.params.id), req.body));
+    res.json(await staffService.updateAppAccess(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.put('/:id/pay-profile', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.updatePayProfile(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -413,6 +443,13 @@ staffRouter.post('/:id/onboarding/approve', requireManager, async (req, res, nex
 
 staffRouter.get('/:id', async (req, res, next) => {
   try {
+    if (req.user?.role === 'STAFF') {
+      if (String(req.params.id) !== req.user.id) {
+        throw new HttpError(403, 'Staff profiles are limited to your own account.');
+      }
+      res.json(redactManagerOnlyPay(await staffService.getById(String(req.params.id))));
+      return;
+    }
     res.json(await staffService.getById(String(req.params.id)));
   } catch (error) {
     next(error);
@@ -421,7 +458,7 @@ staffRouter.get('/:id', async (req, res, next) => {
 
 staffRouter.patch('/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.update(String(req.params.id), req.body));
+    res.json(await staffService.update(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -429,7 +466,7 @@ staffRouter.patch('/:id', requireManager, async (req, res, next) => {
 
 staffRouter.delete('/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.delete(String(req.params.id)));
+    res.json(await staffService.delete(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }

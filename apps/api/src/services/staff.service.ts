@@ -1,14 +1,17 @@
 import { randomBytes } from 'node:crypto';
 import { prisma } from '@alma/db';
+import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
   normaliseOnboardingSettings,
   rosterShiftInputSchema,
   rosterPublishInputSchema,
   rosterShiftUpdateInputSchema,
+  staffMergeInputSchema,
   staffAppAccessInputSchema,
   staffComplianceRecordInputSchema,
   staffManagerNoteInputSchema,
+  staffPayProfileInputSchema,
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
   staffProfileCreateInputSchema,
@@ -24,7 +27,12 @@ import {
   tipsMarkPaidInputSchema,
   tipsPayoutInputSchema,
   tipsQuerySchema,
-  timesheetUpdateInputSchema
+  timesheetUpdateInputSchema,
+  AWARD_RATE_SETS,
+  DEFAULT_STAFF_AWARD_CLASSIFICATION,
+  DEFAULT_STAFF_AWARD_CODE,
+  getAwardClassification,
+  getAwardRateSet
 } from '@alma/shared';
 import type { AuthUser, OnboardingSettings } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -331,10 +339,156 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
   }
 
   if (actor.venue && profile.venue && actor.venue !== profile.venue) {
-    throw new HttpError(403, 'Manager notes are limited to staff in your venue.');
+    throw new HttpError(403, 'Staff management actions are limited to staff in your venue.');
   }
 
   return profile;
+}
+
+function actorName(actor: AuthUser) {
+  return `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email || actor.roleTitle || 'Unknown manager';
+}
+
+function hasLegacyPaySetup(profile: {
+  payRateCents?: number | null;
+  payAward?: string | null;
+  payType?: string | null;
+}) {
+  return Boolean(profile.payRateCents || profile.payAward || profile.payType);
+}
+
+function buildDefaultPayProfile(staffProfileId: string) {
+  const award = getAwardRateSet(DEFAULT_STAFF_AWARD_CODE);
+  const classification = getAwardClassification(DEFAULT_STAFF_AWARD_CODE, DEFAULT_STAFF_AWARD_CLASSIFICATION);
+  if (!award || !classification) return null;
+  return {
+    id: null,
+    staffProfileId,
+    awardCode: award.awardCode,
+    awardName: award.awardName,
+    awardClassification: classification.id,
+    employmentType: 'CASUAL',
+    payMode: 'AWARD',
+    awardRateSource: award.sourceLabel,
+    awardRateEffectiveFrom: award.rateEffectiveFrom,
+    payGuidePublishedAt: award.payGuidePublishedAt,
+    rateSetVersion: award.rateSetVersion,
+    ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+    casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+    manualFullTimePayAmountCents: null,
+    manualFullTimePayFrequency: null,
+    manualFullTimePayNote: null,
+    payUpdatedAt: null,
+    payUpdatedByUserId: null,
+    createdAt: null,
+    updatedAt: null,
+    isDefaulted: true,
+    sourceUrl: award.sourceUrl
+  };
+}
+
+function defaultPayProfileCreateData(actorId?: string) {
+  const award = getAwardRateSet(DEFAULT_STAFF_AWARD_CODE);
+  const classification = getAwardClassification(DEFAULT_STAFF_AWARD_CODE, DEFAULT_STAFF_AWARD_CLASSIFICATION);
+  if (!award || !classification) return undefined;
+  return {
+    awardCode: award.awardCode,
+    awardName: award.awardName,
+    awardClassification: classification.id,
+    employmentType: 'CASUAL',
+    payMode: 'AWARD',
+    awardRateSource: award.sourceLabel,
+    awardRateEffectiveFrom: new Date(`${award.rateEffectiveFrom}T00:00:00.000Z`),
+    payGuidePublishedAt: new Date(`${award.payGuidePublishedAt}T00:00:00.000Z`),
+    rateSetVersion: award.rateSetVersion,
+    ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+    casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+    manualFullTimePayAmountCents: null,
+    manualFullTimePayFrequency: null,
+    manualFullTimePayNote: null,
+    payUpdatedByUserId: actorId ?? null
+  };
+}
+
+function dateOnlyUtc(value: string) {
+  return new Date(`${value}T00:00:00.000Z`);
+}
+
+function employmentTypeLabel(value: string) {
+  switch (value) {
+    case 'CASUAL':
+      return 'Casual';
+    case 'PART_TIME':
+      return 'Part-time';
+    case 'FULL_TIME':
+      return 'Full-time';
+    default:
+      return value;
+  }
+}
+
+function payTypeForProfile(input: {
+  employmentType: string;
+  payMode: string;
+  manualFullTimePayFrequency?: string | null;
+}) {
+  if (input.employmentType === 'FULL_TIME' && input.payMode === 'MANUAL_FULL_TIME') {
+    return input.manualFullTimePayFrequency === 'ANNUAL_SALARY' ? 'Salary' : 'Hourly';
+  }
+  return 'Hourly';
+}
+
+function payRateForProfile(input: {
+  employmentType: string;
+  payMode: string;
+  ordinaryHourlyRateCents: number;
+  casualLoadedHourlyRateCents?: number | null;
+  manualFullTimePayAmountCents?: number | null;
+  manualFullTimePayFrequency?: string | null;
+}) {
+  if (input.employmentType === 'FULL_TIME' && input.payMode === 'MANUAL_FULL_TIME') {
+    return input.manualFullTimePayFrequency === 'HOURLY_FULL_TIME'
+      ? input.manualFullTimePayAmountCents ?? null
+      : null;
+  }
+  if (input.employmentType === 'CASUAL') {
+    return input.casualLoadedHourlyRateCents ?? input.ordinaryHourlyRateCents;
+  }
+  return input.ordinaryHourlyRateCents;
+}
+
+function attachDefaultPayProfile<T extends {
+  id: string;
+  payRateCents?: number | null;
+  payAward?: string | null;
+  payType?: string | null;
+  payProfile?: unknown | null;
+}>(profile: T): T {
+  if (profile.payProfile || hasLegacyPaySetup(profile)) return profile;
+  return {
+    ...profile,
+    payProfile: buildDefaultPayProfile(profile.id)
+  };
+}
+
+async function recordStaffManagementEvent(input: {
+  staffProfileId: string;
+  eventType: string;
+  summary: string;
+  actor?: AuthUser;
+  metadata?: Prisma.InputJsonValue;
+}) {
+  await prisma.staffManagementEvent.create({
+    data: {
+      staffProfileId: input.staffProfileId,
+      eventType: input.eventType,
+      summary: input.summary,
+      metadata: input.metadata ?? {},
+      createdById: input.actor?.id ?? null,
+      createdByName: input.actor ? actorName(input.actor) : null,
+      createdByEmail: input.actor?.email ?? null
+    }
+  });
 }
 
 function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number; status: string }, now: Date) {
@@ -443,11 +597,16 @@ function tipImportKey(input: {
 }
 
 export const staffService = {
+  listAwardRates() {
+    return AWARD_RATE_SETS;
+  },
+
   async list() {
-    return prisma.staffProfile.findMany({
+    const profiles = await prisma.staffProfile.findMany({
       where: { employmentStatus: { not: 'ARCHIVED' } },
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       include: {
+        payProfile: true,
         appAccess: {
           orderBy: [{ appId: 'asc' }]
         },
@@ -468,12 +627,14 @@ export const staffService = {
         }
       }
     });
+    return profiles.map(attachDefaultPayProfile);
   },
 
   async getById(id: string) {
     const profile = await prisma.staffProfile.findUnique({
       where: { id },
       include: {
+        payProfile: true,
         appAccess: {
           orderBy: [{ appId: 'asc' }]
         },
@@ -494,12 +655,23 @@ export const staffService = {
       throw new HttpError(404, 'Staff profile not found');
     }
 
-    return profile;
+    return attachDefaultPayProfile(profile);
   },
 
-  async create(input: unknown) {
+  async create(input: unknown, actor?: AuthUser) {
     const data = staffProfileCreateInputSchema.parse(input);
     const email = normaliseEmail(data.email);
+
+    if (
+      actor &&
+      !actor.isAdmin &&
+      actor.role !== 'ADMIN' &&
+      actor.venue &&
+      data.venue &&
+      data.venue !== actor.venue
+    ) {
+      throw new HttpError(403, 'Managers cannot create staff profiles outside their venue.');
+    }
 
     if (email) {
       const existing = await prisma.staffProfile.findUnique({ where: { email } });
@@ -520,6 +692,9 @@ export const staffService = {
         startDate: data.startDate ? new Date(data.startDate) : null,
         ...onboardingDetailCreateData(data),
         notes: data.notes || null,
+        payProfile: !hasLegacyPaySetup(data)
+          ? { create: defaultPayProfileCreateData(actor?.id) }
+          : undefined,
         records: data.records?.length
           ? {
               create: data.records.map((record) => ({
@@ -542,17 +717,31 @@ export const staffService = {
           orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }]
         },
         appAccess: { orderBy: [{ appId: 'asc' }] },
+        payProfile: true,
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
-    });
+    }).then(attachDefaultPayProfile);
   },
 
-  async update(id: string, input: unknown) {
+  async update(id: string, input: unknown, actor?: AuthUser) {
+    if (actor) await assertManagerCanAccessStaffProfile(id, actor);
     const existing = await this.getById(id);
     const data = staffProfileUpdateInputSchema.parse(input);
     const email =
       data.email !== undefined ? normaliseEmail(data.email) : existing.email;
+
+    if (
+      actor &&
+      !actor.isAdmin &&
+      actor.role !== 'ADMIN' &&
+      data.venue !== undefined &&
+      actor.venue &&
+      data.venue &&
+      data.venue !== actor.venue
+    ) {
+      throw new HttpError(403, 'Managers cannot move staff profiles outside their venue.');
+    }
 
     if (email && email !== existing.email) {
       const conflict = await prisma.staffProfile.findUnique({ where: { email } });
@@ -561,7 +750,7 @@ export const staffService = {
       }
     }
 
-    return prisma.staffProfile.update({
+    const updated = await prisma.staffProfile.update({
       where: { id },
       data: {
         ...(data.firstName !== undefined && { firstName: data.firstName }),
@@ -580,15 +769,29 @@ export const staffService = {
         ...(data.notes !== undefined && { notes: data.notes || null })
       },
       include: {
+        payProfile: true,
         appAccess: { orderBy: [{ appId: 'asc' }] },
         records: { orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }] },
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
     });
+
+    if (actor && data.roleTitle !== undefined && data.roleTitle !== existing.roleTitle) {
+      await recordStaffManagementEvent({
+        staffProfileId: id,
+        eventType: 'ROLE_UPDATED',
+        summary: `Role changed from "${existing.roleTitle}" to "${data.roleTitle}".`,
+        actor,
+        metadata: { previousRoleTitle: existing.roleTitle, nextRoleTitle: data.roleTitle }
+      });
+    }
+
+    return attachDefaultPayProfile(updated);
   },
 
-  async delete(id: string) {
+  async delete(id: string, actor?: AuthUser) {
+    if (actor) await assertManagerCanAccessStaffProfile(id, actor);
     const existing = await this.getById(id);
     if (existing.isAdmin) {
       throw new HttpError(400, 'Admin staff profiles cannot be deleted');
@@ -603,6 +806,15 @@ export const staffService = {
           .join('\n')
       }
     });
+
+    if (actor) {
+      await recordStaffManagementEvent({
+        staffProfileId: id,
+        eventType: 'STAFF_ARCHIVED',
+        summary: 'Staff profile archived.',
+        actor
+      });
+    }
 
     return { id: archived.id, archived: true };
   },
@@ -667,7 +879,8 @@ export const staffService = {
     return { id: recordId, deleted: true };
   },
 
-  async updateAppAccess(staffProfileId: string, input: unknown) {
+  async updateAppAccess(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    if (actor) await assertManagerCanAccessStaffProfile(staffProfileId, actor);
     await this.getById(staffProfileId);
     const data = staffAppAccessInputSchema.parse(input);
 
@@ -698,7 +911,308 @@ export const staffService = {
       )
     );
 
+    if (actor) {
+      await recordStaffManagementEvent({
+        staffProfileId,
+        eventType: 'APP_ACCESS_UPDATED',
+        summary: 'Staff app access updated.',
+        actor,
+        metadata: {
+          apps: data.apps.map((app) => ({
+            appId: app.appId,
+            status: app.status,
+            role: app.role
+          }))
+        }
+      });
+    }
+
     return this.getById(staffProfileId);
+  },
+
+  async updatePayProfile(staffProfileId: string, input: unknown, actor: AuthUser) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const data = staffPayProfileInputSchema.parse(input);
+    const award = getAwardRateSet(data.awardCode);
+    const classification = getAwardClassification(data.awardCode, data.awardClassification);
+
+    if (!award) throw new HttpError(400, 'Award code is not supported.');
+    if (!classification) {
+      throw new HttpError(400, 'Classification is not available for the selected award.');
+    }
+
+    const payMode = data.employmentType === 'FULL_TIME' ? 'MANUAL_FULL_TIME' : 'AWARD';
+    const manualFullTimePayAmountCents =
+      payMode === 'MANUAL_FULL_TIME' ? data.manualFullTimePayAmountCents ?? null : null;
+    const manualFullTimePayFrequency =
+      payMode === 'MANUAL_FULL_TIME' ? data.manualFullTimePayFrequency ?? null : null;
+    const manualFullTimePayNote =
+      payMode === 'MANUAL_FULL_TIME' ? data.manualFullTimePayNote?.trim() || null : null;
+
+    const profilePayRateCents = payRateForProfile({
+      employmentType: data.employmentType,
+      payMode,
+      ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+      casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+      manualFullTimePayAmountCents,
+      manualFullTimePayFrequency
+    });
+
+    await prisma.$transaction(async (tx) => {
+      await tx.staffPayProfile.upsert({
+        where: { staffProfileId },
+        create: {
+          staffProfileId,
+          awardCode: award.awardCode,
+          awardName: award.awardName,
+          awardClassification: classification.id,
+          employmentType: data.employmentType,
+          payMode,
+          awardRateSource: award.sourceLabel,
+          awardRateEffectiveFrom: dateOnlyUtc(award.rateEffectiveFrom),
+          payGuidePublishedAt: dateOnlyUtc(award.payGuidePublishedAt),
+          rateSetVersion: award.rateSetVersion,
+          ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+          casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+          manualFullTimePayAmountCents,
+          manualFullTimePayFrequency,
+          manualFullTimePayNote,
+          payUpdatedAt: new Date(),
+          payUpdatedByUserId: actor.id
+        },
+        update: {
+          awardCode: award.awardCode,
+          awardName: award.awardName,
+          awardClassification: classification.id,
+          employmentType: data.employmentType,
+          payMode,
+          awardRateSource: award.sourceLabel,
+          awardRateEffectiveFrom: dateOnlyUtc(award.rateEffectiveFrom),
+          payGuidePublishedAt: dateOnlyUtc(award.payGuidePublishedAt),
+          rateSetVersion: award.rateSetVersion,
+          ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+          casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+          manualFullTimePayAmountCents,
+          manualFullTimePayFrequency,
+          manualFullTimePayNote,
+          payUpdatedAt: new Date(),
+          payUpdatedByUserId: actor.id
+        }
+      });
+
+      await tx.staffProfile.update({
+        where: { id: staffProfileId },
+        data: {
+          employmentType: employmentTypeLabel(data.employmentType),
+          payType: payTypeForProfile({
+            employmentType: data.employmentType,
+            payMode,
+            manualFullTimePayFrequency
+          }),
+          payRateCents: profilePayRateCents,
+          payAward: `${award.awardName} [${award.awardCode}] - ${classification.label}`
+        }
+      });
+
+      await tx.staffManagementEvent.create({
+        data: {
+          staffProfileId,
+          eventType: 'PAY_SETUP_UPDATED',
+          summary: `Award pay setup updated to ${award.awardName} [${award.awardCode}], ${classification.label}.`,
+          metadata: {
+            awardCode: award.awardCode,
+            awardClassification: classification.id,
+            employmentType: data.employmentType,
+            payMode,
+            rateSetVersion: award.rateSetVersion,
+            manualFullTimePayFrequency,
+            hasManualFullTimePay: manualFullTimePayAmountCents !== null
+          },
+          createdById: actor.id,
+          createdByName: actorName(actor),
+          createdByEmail: actor.email || null
+        }
+      });
+    });
+
+    return this.getById(staffProfileId);
+  },
+
+  async mergeDuplicateStaff(input: unknown, actor: AuthUser) {
+    const data = staffMergeInputSchema.parse(input);
+    const allIds = [data.canonicalStaffProfileId, ...data.duplicateStaffProfileIds];
+    if (new Set(allIds).size < 2) {
+      throw new HttpError(400, 'Choose at least two different staff profiles to merge.');
+    }
+
+    for (const staffProfileId of allIds) {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    }
+
+    const profiles = await prisma.staffProfile.findMany({
+      where: { id: { in: allIds } },
+      include: {
+        appAccess: true,
+        trainingRecords: true,
+        payProfile: true,
+        records: { select: { id: true } },
+        managerNotes: { select: { id: true } },
+        rosterShifts: { select: { id: true } },
+        timesheets: { select: { id: true } },
+        tipPaymentRunLines: { select: { id: true } }
+      }
+    });
+
+    if (profiles.length !== allIds.length) {
+      throw new HttpError(404, 'One or more selected staff profiles could not be found.');
+    }
+
+    const canonical = profiles.find((profile) => profile.id === data.canonicalStaffProfileId);
+    if (!canonical) throw new HttpError(404, 'Profile to keep was not found.');
+    if (canonical.employmentStatus === 'ARCHIVED') {
+      throw new HttpError(400, 'Choose an active staff profile to keep.');
+    }
+
+    const duplicates = profiles.filter((profile) => data.duplicateStaffProfileIds.includes(profile.id));
+    if (duplicates.some((profile) => profile.isAdmin)) {
+      throw new HttpError(400, 'Admin staff profiles cannot be merged as duplicates.');
+    }
+
+    const summary = await prisma.$transaction(async (tx) => {
+      const targetAccess = await tx.staffAppAccess.findMany({
+        where: { staffProfileId: canonical.id },
+        select: { appId: true }
+      });
+      const targetAccessApps = new Set(targetAccess.map((access) => access.appId));
+
+      const targetTraining = await tx.staffTrainingRecord.findMany({
+        where: { staffProfileId: canonical.id },
+        select: { moduleId: true }
+      });
+      const targetTrainingModules = new Set(targetTraining.map((record) => record.moduleId));
+      let targetHasPayProfile = Boolean(canonical.payProfile);
+
+      const moved = {
+        complianceRecords: 0,
+        managerNotes: 0,
+        appAccess: 0,
+        trainingRecords: 0,
+        payProfile: 0
+      };
+      const preserved = {
+        appAccessConflicts: 0,
+        trainingConflicts: 0,
+        rosterShifts: 0,
+        timesheets: 0,
+        tipPaymentLines: 0
+      };
+
+      for (const duplicate of duplicates) {
+        moved.complianceRecords += duplicate.records.length;
+        await tx.staffComplianceRecord.updateMany({
+          where: { staffProfileId: duplicate.id },
+          data: { staffProfileId: canonical.id }
+        });
+
+        moved.managerNotes += duplicate.managerNotes.length;
+        await tx.staffManagerNote.updateMany({
+          where: { staffProfileId: duplicate.id },
+          data: { staffProfileId: canonical.id }
+        });
+
+        for (const access of duplicate.appAccess) {
+          if (targetAccessApps.has(access.appId)) {
+            preserved.appAccessConflicts += 1;
+            continue;
+          }
+          await tx.staffAppAccess.update({
+            where: { id: access.id },
+            data: { staffProfileId: canonical.id }
+          });
+          targetAccessApps.add(access.appId);
+          moved.appAccess += 1;
+        }
+
+        for (const record of duplicate.trainingRecords) {
+          if (targetTrainingModules.has(record.moduleId)) {
+            preserved.trainingConflicts += 1;
+            continue;
+          }
+          await tx.staffTrainingRecord.update({
+            where: { id: record.id },
+            data: { staffProfileId: canonical.id }
+          });
+          targetTrainingModules.add(record.moduleId);
+          moved.trainingRecords += 1;
+        }
+
+        if (!targetHasPayProfile && duplicate.payProfile) {
+          await tx.staffPayProfile.update({
+            where: { id: duplicate.payProfile.id },
+            data: { staffProfileId: canonical.id }
+          });
+          targetHasPayProfile = true;
+          moved.payProfile += 1;
+        }
+
+        preserved.rosterShifts += duplicate.rosterShifts.length;
+        preserved.timesheets += duplicate.timesheets.length;
+        preserved.tipPaymentLines += duplicate.tipPaymentRunLines.length;
+
+        await tx.staffProfile.update({
+          where: { id: duplicate.id },
+          data: {
+            employmentStatus: 'ARCHIVED',
+            mergedIntoStaffProfileId: canonical.id,
+            mergedAt: new Date(),
+            mergedByUserId: actor.id,
+            notes: [
+              duplicate.notes,
+              `Merged into ${canonical.firstName} ${canonical.lastName} (${canonical.id}) on ${new Date().toISOString()}. Roster, timesheet and tip payment history remains attached to this archived duplicate for audit history.`
+            ].filter(Boolean).join('\n')
+          }
+        });
+
+        await tx.staffManagementEvent.create({
+          data: {
+            staffProfileId: duplicate.id,
+            eventType: 'STAFF_DUPLICATE_ARCHIVED',
+            summary: `Duplicate staff profile archived and linked to ${canonical.firstName} ${canonical.lastName}.`,
+            metadata: { canonicalStaffProfileId: canonical.id },
+            createdById: actor.id,
+            createdByName: actorName(actor),
+            createdByEmail: actor.email || null
+          }
+        });
+      }
+
+      await tx.staffManagementEvent.create({
+        data: {
+          staffProfileId: canonical.id,
+          eventType: 'STAFF_DUPLICATES_MERGED',
+          summary: `${duplicates.length} duplicate staff profile${duplicates.length === 1 ? '' : 's'} merged into this profile.`,
+          metadata: {
+            duplicateStaffProfileIds: duplicates.map((profile) => profile.id),
+            moved,
+            preserved
+          },
+          createdById: actor.id,
+          createdByName: actorName(actor),
+          createdByEmail: actor.email || null
+        }
+      });
+
+      return {
+        duplicateStaffProfileIds: duplicates.map((profile) => profile.id),
+        moved,
+        preserved
+      };
+    });
+
+    return {
+      canonicalStaffProfile: await this.getById(canonical.id),
+      ...summary
+    };
   },
 
   async listRoster(start?: string, end?: string, staffProfileId?: string) {
@@ -1706,7 +2220,8 @@ export const staffService = {
           email,
           venue: data.venue || null,
           employmentStatus: 'PENDING',
-          notes: data.note || null
+          notes: data.note || null,
+          payProfile: { create: defaultPayProfileCreateData() }
         }
       });
 
@@ -1783,7 +2298,8 @@ export const staffService = {
               email,
               venue: data.venue || null,
               employmentStatus: 'PENDING',
-              notes: data.note || null
+              notes: data.note || null,
+              payProfile: { create: defaultPayProfileCreateData() }
             }
           });
 
@@ -1962,6 +2478,9 @@ export const staffService = {
             ...onboardingDetailCreateData(data),
             notes: data.notes || null,
             passwordHash,
+            payProfile: !hasLegacyPaySetup(data)
+              ? { create: defaultPayProfileCreateData() }
+              : undefined,
             records: data.records?.length
               ? {
                   create: data.records.map((record) => ({

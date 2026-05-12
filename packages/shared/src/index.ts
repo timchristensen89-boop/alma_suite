@@ -1,4 +1,13 @@
 import { z } from 'zod';
+import {
+  AWARD_RATE_SETS,
+  DEFAULT_STAFF_AWARD_CLASSIFICATION,
+  DEFAULT_STAFF_AWARD_CODE,
+  type AustralianAwardCode,
+  type ManualFullTimePayFrequency,
+  type StaffAwardEmploymentType,
+  type StaffPayMode
+} from './awardRates.js';
 
 export {
   ALMA_COMPLIANCE_DOCUMENTS,
@@ -6,6 +15,22 @@ export {
   type ImportedChecklistTemplate,
   type ImportedComplianceDocument
 } from './complianceImports.js';
+
+export {
+  AWARD_RATE_EFFECTIVE_FROM,
+  AWARD_RATE_SET_VERSION,
+  AWARD_RATE_SETS,
+  DEFAULT_STAFF_AWARD_CLASSIFICATION,
+  DEFAULT_STAFF_AWARD_CODE,
+  getAwardClassification,
+  getAwardRateSet,
+  type AustralianAwardCode,
+  type AwardClassificationRate,
+  type AwardRateSet,
+  type ManualFullTimePayFrequency,
+  type StaffAwardEmploymentType,
+  type StaffPayMode
+} from './awardRates.js';
 
 export const issueStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED']);
 export const issueSeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
@@ -112,6 +137,89 @@ export const staffComplianceRecordInputSchema = z.object({
 
 export const staffManagerNoteInputSchema = z.object({
   body: z.string().trim().min(1).max(2000)
+});
+
+const awardCodes = AWARD_RATE_SETS.map((award) => award.awardCode) as [AustralianAwardCode, ...AustralianAwardCode[]];
+const staffAwardEmploymentTypes = ['CASUAL', 'PART_TIME', 'FULL_TIME'] as const satisfies readonly StaffAwardEmploymentType[];
+const staffPayModes = ['AWARD', 'MANUAL_FULL_TIME'] as const satisfies readonly StaffPayMode[];
+const manualFullTimePayFrequencies = ['ANNUAL_SALARY', 'HOURLY_FULL_TIME'] as const satisfies readonly ManualFullTimePayFrequency[];
+
+export const staffAwardCodeSchema = z.enum(awardCodes);
+export const staffAwardEmploymentTypeSchema = z.enum(staffAwardEmploymentTypes);
+export const staffPayModeSchema = z.enum(staffPayModes);
+export const manualFullTimePayFrequencySchema = z.enum(manualFullTimePayFrequencies);
+
+export const staffPayProfileInputSchema = z.object({
+  awardCode: staffAwardCodeSchema.default(DEFAULT_STAFF_AWARD_CODE),
+  awardClassification: z.string().min(1).default(DEFAULT_STAFF_AWARD_CLASSIFICATION),
+  employmentType: staffAwardEmploymentTypeSchema.default('CASUAL'),
+  payMode: staffPayModeSchema.default('AWARD'),
+  manualFullTimePayAmountCents: z.coerce.number().int().nonnegative().optional().nullable(),
+  manualFullTimePayFrequency: manualFullTimePayFrequencySchema.optional().nullable(),
+  manualFullTimePayNote: z.string().trim().max(1000).optional().or(z.literal(''))
+}).superRefine((data, ctx) => {
+  const isManual = data.employmentType === 'FULL_TIME' || data.payMode === 'MANUAL_FULL_TIME';
+  if (isManual) {
+    if (data.payMode !== 'MANUAL_FULL_TIME') {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['payMode'],
+        message: 'Full-time staff require manual full-time pay mode.'
+      });
+    }
+    if (!data.manualFullTimePayAmountCents || data.manualFullTimePayAmountCents <= 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['manualFullTimePayAmountCents'],
+        message: 'Manual full-time pay amount is required.'
+      });
+    }
+    if (!data.manualFullTimePayFrequency) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['manualFullTimePayFrequency'],
+        message: 'Manual full-time pay frequency is required.'
+      });
+    }
+  }
+
+  if (!isManual && (data.manualFullTimePayAmountCents || data.manualFullTimePayFrequency || data.manualFullTimePayNote)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['manualFullTimePayAmountCents'],
+      message: 'Manual full-time pay fields are only available for full-time manual pay.'
+    });
+  }
+});
+
+export const staffMergeInputSchema = z.object({
+  canonicalStaffProfileId: z.string().min(1),
+  duplicateStaffProfileIds: z.array(z.string().min(1)).min(1),
+  confirmation: z.string().trim()
+}).superRefine((data, ctx) => {
+  if (data.confirmation !== 'MERGE STAFF') {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['confirmation'],
+      message: 'Type MERGE STAFF to confirm this staff merge.'
+    });
+  }
+
+  if (data.duplicateStaffProfileIds.includes(data.canonicalStaffProfileId)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['duplicateStaffProfileIds'],
+      message: 'Duplicate profiles cannot include the profile being kept.'
+    });
+  }
+
+  if (new Set(data.duplicateStaffProfileIds).size !== data.duplicateStaffProfileIds.length) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['duplicateStaffProfileIds'],
+      message: 'Choose each duplicate profile only once.'
+    });
+  }
 });
 
 export const staffProfileCreateInputSchema = z.object({
@@ -928,6 +1036,8 @@ export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
 export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
+export type StaffPayProfileInput = z.infer<typeof staffPayProfileInputSchema>;
+export type StaffMergeInput = z.infer<typeof staffMergeInputSchema>;
 export type RosterShiftInput = z.infer<typeof rosterShiftInputSchema>;
 export type RosterShiftUpdateInput = z.infer<typeof rosterShiftUpdateInputSchema>;
 export type TimesheetCreateInput = z.infer<typeof timesheetCreateInputSchema>;
@@ -1004,6 +1114,9 @@ export type StaffComplianceRecord = {
   documentName: string | null;
   documentUrl: string | null;
   notes: string | null;
+  mergedIntoStaffProfileId: string | null;
+  mergedAt: string | null;
+  mergedByUserId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1014,6 +1127,43 @@ export type StaffManagerNote = {
   body: string;
   createdById: string;
   createdByName: string;
+  createdByEmail: string | null;
+  createdAt: string;
+};
+
+export type StaffPayProfile = {
+  id: string | null;
+  staffProfileId: string;
+  awardCode: AustralianAwardCode;
+  awardName: string;
+  awardClassification: string;
+  employmentType: StaffAwardEmploymentType;
+  payMode: StaffPayMode;
+  awardRateSource: string;
+  awardRateEffectiveFrom: string;
+  payGuidePublishedAt: string;
+  rateSetVersion: string;
+  ordinaryHourlyRateCents: number;
+  casualLoadedHourlyRateCents: number | null;
+  manualFullTimePayAmountCents: number | null;
+  manualFullTimePayFrequency: ManualFullTimePayFrequency | null;
+  manualFullTimePayNote: string | null;
+  payUpdatedAt: string | null;
+  payUpdatedByUserId: string | null;
+  createdAt: string | null;
+  updatedAt: string | null;
+  isDefaulted: boolean;
+  sourceUrl?: string;
+};
+
+export type StaffManagementEvent = {
+  id: string;
+  staffProfileId: string;
+  eventType: string;
+  summary: string;
+  metadata: Record<string, unknown>;
+  createdById: string | null;
+  createdByName: string | null;
   createdByEmail: string | null;
   createdAt: string;
 };
@@ -1643,6 +1793,7 @@ export type StaffProfile = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  payProfile: StaffPayProfile | null;
   records: StaffComplianceRecord[];
   appAccess: StaffAppAccess[];
   rosterShifts: RosterShift[];

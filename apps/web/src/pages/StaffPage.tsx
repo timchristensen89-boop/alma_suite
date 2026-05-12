@@ -1,4 +1,16 @@
 import { useState } from 'react';
+import {
+  AWARD_RATE_SETS,
+  DEFAULT_STAFF_AWARD_CLASSIFICATION,
+  DEFAULT_STAFF_AWARD_CODE,
+  type AlmaAppId,
+  type AustralianAwardCode,
+  type ManualFullTimePayFrequency,
+  type StaffAppAccess,
+  type StaffAwardEmploymentType,
+  type StaffPayProfile,
+  type StaffPayProfileInput
+} from '@alma/shared';
 import type {
   StaffComplianceRecord,
   StaffManagerNote,
@@ -39,7 +51,38 @@ export function StaffPage() {
   const [message, setMessage] = useState('');
   const [addingRecordFor, setAddingRecordFor] = useState<string | null>(null);
   const [notesFor, setNotesFor] = useState<string | null>(null);
+  const [accessFor, setAccessFor] = useState<string | null>(null);
+  const [payFor, setPayFor] = useState<string | null>(null);
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+  const [mergeOpen, setMergeOpen] = useState(false);
   const visibleStaff = staff.data ?? [];
+  const selectedStaff = visibleStaff.filter((member) => selectedStaffIds.includes(member.id));
+  const roleOptions = Array.from(
+    new Set(
+      [
+        'Team member',
+        'Food and beverage attendant',
+        'Supervisor',
+        'Manager',
+        'Chef',
+        'Cook',
+        'Kitchen hand',
+        ...visibleStaff.map((member) => member.roleTitle).filter(Boolean)
+      ].sort((a, b) => a.localeCompare(b))
+    )
+  ).map((role) => ({ label: role, value: role }));
+
+  async function reloadStaff() {
+    await Promise.all([staff.reload(), summary.reload()]);
+  }
+
+  function toggleSelected(staffId: string) {
+    setSelectedStaffIds((current) =>
+      current.includes(staffId)
+        ? current.filter((id) => id !== staffId)
+        : [...current, staffId]
+    );
+  }
 
   return (
     <div className="page-stack">
@@ -54,8 +97,7 @@ export function StaffPage() {
               size="sm"
               leftIcon={<IconRefresh size={14} />}
               onClick={() => {
-                void staff.reload();
-                void summary.reload();
+                void reloadStaff();
               }}
             >
               Refresh
@@ -117,7 +159,34 @@ export function StaffPage() {
                 </>
               )}
             </span>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+              {selectedStaffIds.length > 0 ? (
+                <span className="subtle">{selectedStaffIds.length} selected</span>
+              ) : null}
+              <Button
+                type="button"
+                size="sm"
+                variant="secondary"
+                disabled={selectedStaffIds.length < 2}
+                onClick={() => setMergeOpen((current) => !current)}
+              >
+                Merge duplicates
+              </Button>
+            </div>
           </div>
+
+          {mergeOpen ? (
+            <MergeDuplicatesPanel
+              selectedStaff={selectedStaff}
+              onCancel={() => setMergeOpen(false)}
+              onDone={async (summaryMessage) => {
+                setMessage(summaryMessage);
+                setMergeOpen(false);
+                setSelectedStaffIds([]);
+                await reloadStaff();
+              }}
+            />
+          ) : null}
 
           {!staff.loading && visibleStaff.length === 0 ? (
             <EmptyState
@@ -144,17 +213,46 @@ export function StaffPage() {
                     alignItems: 'flex-start'
                   }}
                 >
-                  <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <strong style={{ fontSize: 14 }}>
-                      {member.firstName} {member.lastName}
-                    </strong>
-                    <span className="subtle">
-                      {member.roleTitle} · {member.venue || 'Unassigned venue'}
-                      {member.email ? ` · ${member.email}` : ''}
-                    </span>
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${member.firstName} ${member.lastName} for duplicate merge`}
+                      checked={selectedStaffIds.includes(member.id)}
+                      onChange={() => toggleSelected(member.id)}
+                      style={{ marginTop: 2 }}
+                    />
+                    <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                      <strong style={{ fontSize: 14 }}>
+                        {member.firstName} {member.lastName}
+                      </strong>
+                      <span className="subtle">
+                        {member.roleTitle} · {member.venue || 'Unassigned venue'}
+                        {member.email ? ` · ${member.email}` : ''}
+                      </span>
+                    </div>
                   </div>
-                  <div style={{ display: 'flex', gap: 6 }}>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Badge tone="muted">{member.records.length} records</Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={accessFor === member.id}
+                      aria-controls={`role-access-${member.id}`}
+                      onClick={() => setAccessFor(accessFor === member.id ? null : member.id)}
+                    >
+                      Role/access
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      aria-expanded={payFor === member.id}
+                      aria-controls={`award-pay-${member.id}`}
+                      onClick={() => setPayFor(payFor === member.id ? null : member.id)}
+                    >
+                      Award pay
+                    </Button>
                     <Button
                       type="button"
                       size="sm"
@@ -201,12 +299,35 @@ export function StaffPage() {
                   )}
                 </div>
 
+                {accessFor === member.id ? (
+                  <RoleAccessPanel
+                    staff={member}
+                    roleOptions={roleOptions}
+                    onDone={async (summaryMessage) => {
+                      setMessage(summaryMessage);
+                      setAccessFor(null);
+                      await reloadStaff();
+                    }}
+                  />
+                ) : null}
+
+                {payFor === member.id ? (
+                  <AwardPaySetupPanel
+                    staff={member}
+                    onDone={async (summaryMessage) => {
+                      setMessage(summaryMessage);
+                      setPayFor(null);
+                      await reloadStaff();
+                    }}
+                  />
+                ) : null}
+
                 {addingRecordFor === member.id ? (
                   <AddRecordPanel
                     staffId={member.id}
                     onDone={async () => {
                       setAddingRecordFor(null);
-                      await Promise.all([staff.reload(), summary.reload()]);
+                      await reloadStaff();
                     }}
                   />
                 ) : null}
@@ -226,6 +347,35 @@ export function StaffPage() {
 }
 
 const NOTE_MAX_LENGTH = 2000;
+const STAFF_PAY_NOTE_MAX_LENGTH = 1000;
+const APP_ACCESS_OPTIONS: Array<{ appId: AlmaAppId; label: string }> = [
+  { appId: 'COMPLIANCE', label: 'Compliance' },
+  { appId: 'STAFF', label: 'Staff' },
+  { appId: 'STOCK', label: 'Stock' },
+  { appId: 'REPORTS', label: 'Reports' },
+  { appId: 'RESERVE', label: 'Reserve' },
+  { appId: 'MARKETING', label: 'Marketing' },
+  { appId: 'GIFTCARDS', label: 'Gift Cards' },
+  { appId: 'TRAINING', label: 'Academy' },
+  { appId: 'SETTINGS', label: 'Settings' }
+];
+
+const APP_ACCESS_ROLE_OPTIONS = [
+  { label: 'User', value: 'USER' },
+  { label: 'Manager', value: 'MANAGER' },
+  { label: 'Admin', value: 'ADMIN' }
+];
+
+const EMPLOYMENT_TYPE_OPTIONS: Array<{ label: string; value: StaffAwardEmploymentType }> = [
+  { label: 'Casual', value: 'CASUAL' },
+  { label: 'Part-time', value: 'PART_TIME' },
+  { label: 'Full-time', value: 'FULL_TIME' }
+];
+
+const MANUAL_PAY_FREQUENCY_OPTIONS: Array<{ label: string; value: ManualFullTimePayFrequency }> = [
+  { label: 'Annual salary', value: 'ANNUAL_SALARY' },
+  { label: 'Hourly full-time rate', value: 'HOURLY_FULL_TIME' }
+];
 
 function formatDateTime(value: string) {
   const date = new Date(value);
@@ -235,6 +385,476 @@ function formatDateTime(value: string) {
     dateStyle: 'medium',
     timeStyle: 'short'
   });
+}
+
+function formatMoney(cents: number | null | undefined) {
+  if (cents === null || cents === undefined) return 'Not available';
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: 'AUD'
+  }).format(cents / 100);
+}
+
+function dateLabel(value: string | null | undefined) {
+  if (!value) return 'Not set';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleDateString('en-AU', { dateStyle: 'medium' });
+}
+
+function currentPayProfile(staff: StaffProfile): StaffPayProfile {
+  const award = AWARD_RATE_SETS.find((item) => item.awardCode === DEFAULT_STAFF_AWARD_CODE)!;
+  const classification = award.classifications.find(
+    (item) => item.id === DEFAULT_STAFF_AWARD_CLASSIFICATION
+  ) ?? award.classifications[0]!;
+
+  return staff.payProfile ?? {
+    id: null,
+    staffProfileId: staff.id,
+    awardCode: award.awardCode,
+    awardName: award.awardName,
+    awardClassification: classification.id,
+    employmentType: 'CASUAL',
+    payMode: 'AWARD',
+    awardRateSource: award.sourceLabel,
+    awardRateEffectiveFrom: award.rateEffectiveFrom,
+    payGuidePublishedAt: award.payGuidePublishedAt,
+    rateSetVersion: award.rateSetVersion,
+    ordinaryHourlyRateCents: classification.ordinaryHourlyRateCents,
+    casualLoadedHourlyRateCents: classification.casualLoadedHourlyRateCents,
+    manualFullTimePayAmountCents: null,
+    manualFullTimePayFrequency: null,
+    manualFullTimePayNote: null,
+    payUpdatedAt: null,
+    payUpdatedByUserId: null,
+    createdAt: null,
+    updatedAt: null,
+    isDefaulted: true,
+    sourceUrl: award.sourceUrl
+  };
+}
+
+function accessRows(appAccess: StaffAppAccess[]) {
+  const existing = new Map(appAccess.map((access) => [access.appId, access]));
+  return APP_ACCESS_OPTIONS.map(({ appId }) => {
+    const row = existing.get(appId);
+    return {
+      appId,
+      status: row?.status ?? 'DISABLED',
+      role: row?.role ?? 'USER',
+      permissions: row?.permissions ?? {},
+      notes: row?.notes ?? ''
+    };
+  });
+}
+
+function RoleAccessPanel({
+  staff,
+  roleOptions,
+  onDone
+}: {
+  staff: StaffProfile;
+  roleOptions: Array<{ label: string; value: string }>;
+  onDone: (message: string) => void | Promise<void>;
+}) {
+  const [roleTitle, setRoleTitle] = useState(staff.roleTitle);
+  const [apps, setApps] = useState(accessRows(staff.appAccess));
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function save() {
+    if (saving || roleTitle.trim().length < 2) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api<StaffProfile>(`/api/staff/${staff.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ roleTitle: roleTitle.trim() })
+      });
+      await api<StaffProfile>(`/api/staff/${staff.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({ apps })
+      });
+      await onDone(`Role and app access updated for ${staff.firstName} ${staff.lastName}.`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to update role/access.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section
+      id={`role-access-${staff.id}`}
+      aria-label={`Role and app access for ${staff.firstName} ${staff.lastName}`}
+      style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        background: 'var(--color-surface-muted)',
+        border: '1px solid var(--color-border)'
+      }}
+    >
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ fontSize: 13 }}>Role and access</strong>
+        <p className="subtle" style={{ margin: '4px 0 0' }}>
+          Manager-only controls for the staff role and Alma app access.
+        </p>
+      </div>
+
+      <div className="form-grid two">
+        <Select
+          label="Role"
+          value={roleTitle}
+          onChange={(event) => setRoleTitle(event.target.value)}
+          options={roleOptions}
+        />
+        <Input
+          label="Custom role"
+          value={roleTitle}
+          onChange={(event) => setRoleTitle(event.target.value)}
+          hint="Use an existing role or type the exact role title to store on this staff profile."
+        />
+      </div>
+
+      <div style={{ display: 'grid', gap: 8, marginTop: 12 }}>
+        {apps.map((row, index) => {
+          const appLabel = APP_ACCESS_OPTIONS.find((item) => item.appId === row.appId)?.label ?? row.appId;
+          return (
+            <div
+              key={row.appId}
+              style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                gap: 8,
+                alignItems: 'end',
+                padding: 8,
+                border: '1px solid var(--color-border)',
+                borderRadius: 10,
+                background: 'var(--color-surface)'
+              }}
+            >
+              <strong style={{ fontSize: 13 }}>{appLabel}</strong>
+              <Select
+                label="Status"
+                value={row.status}
+                onChange={(event) =>
+                  setApps((current) =>
+                    current.map((item, rowIndex) =>
+                      rowIndex === index
+                        ? { ...item, status: event.target.value as StaffAppAccess['status'] }
+                        : item
+                    )
+                  )
+                }
+                options={[
+                  { label: 'Enabled', value: 'ENABLED' },
+                  { label: 'Pending', value: 'PENDING' },
+                  { label: 'Disabled', value: 'DISABLED' }
+                ]}
+              />
+              <Select
+                label="Role"
+                value={row.role}
+                onChange={(event) =>
+                  setApps((current) =>
+                    current.map((item, rowIndex) =>
+                      rowIndex === index ? { ...item, role: event.target.value } : item
+                    )
+                  )
+                }
+                options={APP_ACCESS_ROLE_OPTIONS}
+              />
+            </div>
+          );
+        })}
+      </div>
+
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="toolbar-right">
+        <Button type="button" onClick={() => void save()} disabled={saving || roleTitle.trim().length < 2}>
+          {saving ? 'Saving…' : 'Save role/access'}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function AwardPaySetupPanel({
+  staff,
+  onDone
+}: {
+  staff: StaffProfile;
+  onDone: (message: string) => void | Promise<void>;
+}) {
+  const initialProfile = currentPayProfile(staff);
+  const [awardCode, setAwardCode] = useState<AustralianAwardCode>(initialProfile.awardCode);
+  const [classificationId, setClassificationId] = useState(initialProfile.awardClassification);
+  const [employmentType, setEmploymentType] = useState<StaffAwardEmploymentType>(initialProfile.employmentType);
+  const [manualPay, setManualPay] = useState(
+    initialProfile.manualFullTimePayAmountCents
+      ? String(initialProfile.manualFullTimePayAmountCents / 100)
+      : ''
+  );
+  const [manualFrequency, setManualFrequency] = useState<ManualFullTimePayFrequency>(
+    initialProfile.manualFullTimePayFrequency ?? 'ANNUAL_SALARY'
+  );
+  const [manualNote, setManualNote] = useState(initialProfile.manualFullTimePayNote ?? '');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const award = AWARD_RATE_SETS.find((item) => item.awardCode === awardCode) ?? AWARD_RATE_SETS[0]!;
+  const classification = award.classifications.find((item) => item.id === classificationId) ?? award.classifications[0]!;
+  const manualPayCents = Math.round(Number(manualPay) * 100);
+  const fullTime = employmentType === 'FULL_TIME';
+  const manualPayInvalid = fullTime && (!Number.isFinite(manualPayCents) || manualPayCents <= 0);
+
+  function changeAward(nextAwardCode: AustralianAwardCode) {
+    const nextAward = AWARD_RATE_SETS.find((item) => item.awardCode === nextAwardCode) ?? AWARD_RATE_SETS[0]!;
+    setAwardCode(nextAward.awardCode);
+    setClassificationId(nextAward.classifications[0]?.id ?? '');
+  }
+
+  async function save() {
+    if (saving || manualPayInvalid) return;
+    const payload: StaffPayProfileInput = {
+      awardCode,
+      awardClassification: classification.id,
+      employmentType,
+      payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
+      manualFullTimePayAmountCents: fullTime ? manualPayCents : null,
+      manualFullTimePayFrequency: fullTime ? manualFrequency : null,
+      manualFullTimePayNote: fullTime ? manualNote.trim() : ''
+    };
+
+    setSaving(true);
+    setError(null);
+    try {
+      await api<StaffProfile>(`/api/staff/${staff.id}/pay-profile`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      await onDone(`Award pay setup updated for ${staff.firstName} ${staff.lastName}.`);
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : 'Failed to update award pay setup.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section
+      id={`award-pay-${staff.id}`}
+      aria-label={`Award pay setup for ${staff.firstName} ${staff.lastName}`}
+      style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        background: 'var(--color-surface-muted)',
+        border: '1px solid var(--color-border)'
+      }}
+    >
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ fontSize: 13 }}>Award pay setup</strong>
+        <p className="subtle" style={{ margin: '4px 0 0' }}>
+          Default staff to current Fair Work award rates. Full-time staff can have an agreed manual pay amount recorded while retaining the award classification as a compliance reference.
+        </p>
+      </div>
+
+      <div className="form-grid two">
+        <Select
+          label="Award"
+          value={awardCode}
+          onChange={(event) => changeAward(event.target.value as AustralianAwardCode)}
+          options={AWARD_RATE_SETS.map((item) => ({
+            label: `${item.awardName} [${item.awardCode}]`,
+            value: item.awardCode
+          }))}
+        />
+        <Select
+          label="Classification"
+          value={classification.id}
+          onChange={(event) => setClassificationId(event.target.value)}
+          options={award.classifications.map((item) => ({
+            label: item.label,
+            value: item.id
+          }))}
+        />
+        <Select
+          label="Employment type"
+          value={employmentType}
+          onChange={(event) => setEmploymentType(event.target.value as StaffAwardEmploymentType)}
+          options={EMPLOYMENT_TYPE_OPTIONS}
+        />
+      </div>
+
+      <div
+        style={{
+          marginTop: 12,
+          padding: 10,
+          borderRadius: 10,
+          border: '1px solid var(--color-border)',
+          background: 'var(--color-surface)'
+        }}
+      >
+        <strong style={{ fontSize: 13 }}>Award rate reference</strong>
+        <p className="subtle" style={{ margin: '6px 0 0' }}>
+          Base ordinary hourly rate: {formatMoney(classification.ordinaryHourlyRateCents)}
+          {employmentType === 'CASUAL'
+            ? ` · Casual loaded hourly rate: ${formatMoney(classification.casualLoadedHourlyRateCents)}`
+            : ''}
+        </p>
+        <p className="subtle" style={{ margin: '4px 0 0' }}>
+          {award.sourceLabel}. Effective from {dateLabel(award.rateEffectiveFrom)}. Version {award.rateSetVersion}.
+        </p>
+        <p className="subtle" style={{ margin: '4px 0 0' }}>
+          Penalty rates, overtime, allowances and public holiday rules may still apply.
+        </p>
+        {initialProfile.isDefaulted ? (
+          <p className="subtle" style={{ margin: '4px 0 0' }}>
+            This profile is using the visible default until a manager saves explicit pay setup.
+          </p>
+        ) : null}
+      </div>
+
+      {fullTime ? (
+        <div className="form-grid two" style={{ marginTop: 12 }}>
+          <Input
+            label="Agreed full-time pay"
+            type="number"
+            min="0"
+            step="0.01"
+            value={manualPay}
+            onChange={(event) => setManualPay(event.target.value)}
+            hint="Required for full-time manual pay. Enter dollars, not cents."
+          />
+          <Select
+            label="Pay frequency"
+            value={manualFrequency}
+            onChange={(event) => setManualFrequency(event.target.value as ManualFullTimePayFrequency)}
+            options={MANUAL_PAY_FREQUENCY_OPTIONS}
+          />
+          <Textarea
+            label="Manual pay note"
+            rows={3}
+            maxLength={STAFF_PAY_NOTE_MAX_LENGTH}
+            value={manualNote}
+            onChange={(event) => setManualNote(event.target.value)}
+            hint={`${manualNote.trim().length}/${STAFF_PAY_NOTE_MAX_LENGTH} characters`}
+          />
+        </div>
+      ) : null}
+
+      {manualPayInvalid ? <p className="error-text">Enter a positive manual full-time pay amount.</p> : null}
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="toolbar-right">
+        <Button type="button" onClick={() => void save()} disabled={saving || manualPayInvalid}>
+          {saving ? 'Saving…' : 'Save award pay setup'}
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function MergeDuplicatesPanel({
+  selectedStaff,
+  onCancel,
+  onDone
+}: {
+  selectedStaff: StaffProfile[];
+  onCancel: () => void;
+  onDone: (message: string) => void | Promise<void>;
+}) {
+  const [canonicalId, setCanonicalId] = useState(selectedStaff[0]?.id ?? '');
+  const [confirmation, setConfirmation] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const duplicates = selectedStaff.filter((member) => member.id !== canonicalId);
+  const canMerge = selectedStaff.length >= 2 && canonicalId && confirmation.trim() === 'MERGE STAFF';
+
+  async function merge() {
+    if (!canMerge || saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await api('/api/staff/merge', {
+        method: 'POST',
+        body: JSON.stringify({
+          canonicalStaffProfileId: canonicalId,
+          duplicateStaffProfileIds: duplicates.map((member) => member.id),
+          confirmation
+        })
+      });
+      await onDone(`${duplicates.length} duplicate staff profile${duplicates.length === 1 ? '' : 's'} merged and archived.`);
+    } catch (mergeError) {
+      setError(mergeError instanceof Error ? mergeError.message : 'Failed to merge staff profiles.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section
+      style={{
+        margin: 12,
+        padding: 12,
+        borderRadius: 10,
+        border: '1px solid var(--color-border)',
+        background: 'var(--color-surface-muted)'
+      }}
+    >
+      <div style={{ marginBottom: 10 }}>
+        <strong style={{ fontSize: 13 }}>Merge duplicate staff profiles</strong>
+        <p className="subtle" style={{ margin: '4px 0 0' }}>
+          Choose the profile to keep. The selected duplicate profiles will be linked to the kept profile and removed from the active staff list where possible.
+        </p>
+      </div>
+
+      {selectedStaff.length < 2 ? (
+        <p className="error-text">Select at least two staff profiles before merging duplicates.</p>
+      ) : (
+        <>
+          <Select
+            label="Profile to keep"
+            value={canonicalId}
+            onChange={(event) => setCanonicalId(event.target.value)}
+            options={selectedStaff.map((member) => ({
+              label: `${member.firstName} ${member.lastName} · ${member.email ?? 'no email'} · ${member.venue ?? 'unassigned venue'}`,
+              value: member.id
+            }))}
+          />
+          <div style={{ marginTop: 10 }}>
+            <strong style={{ fontSize: 13 }}>Profiles to archive/link</strong>
+            <ul className="subtle" style={{ marginTop: 6 }}>
+              {duplicates.map((member) => (
+                <li key={member.id}>
+                  {member.firstName} {member.lastName} · {member.email ?? 'no email'} · {member.venue ?? 'unassigned venue'}
+                </li>
+              ))}
+            </ul>
+            <p className="subtle" style={{ marginTop: 8 }}>
+              Compliance records, manager notes and non-conflicting app/training access are moved to the kept profile. Roster, timesheet and tip payment history stays attached to archived duplicates for audit history.
+            </p>
+          </div>
+          <Input
+            label="Type MERGE STAFF to confirm"
+            value={confirmation}
+            onChange={(event) => setConfirmation(event.target.value)}
+          />
+        </>
+      )}
+
+      {error ? <p className="error-text">{error}</p> : null}
+      <div className="toolbar-right">
+        <Button type="button" variant="ghost" onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" onClick={() => void merge()} disabled={!canMerge || saving}>
+          {saving ? 'Merging…' : 'Merge duplicates'}
+        </Button>
+      </div>
+    </section>
+  );
 }
 
 function ManagerNotesPanel({

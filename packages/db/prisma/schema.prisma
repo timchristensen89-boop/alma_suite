@@ -402,6 +402,9 @@ model StaffProfile {
   trainingLevel    Int                     @default(0)
   trainingPayRateCents Int?
   notes            String?
+  mergedIntoStaffProfileId String?
+  mergedAt         DateTime?
+  mergedByUserId   String?
   passwordHash     String?
   isAdmin          Boolean                 @default(false)
   lastLoginAt      DateTime?
@@ -409,6 +412,8 @@ model StaffProfile {
   updatedAt        DateTime                @updatedAt
   records          StaffComplianceRecord[]
   managerNotes     StaffManagerNote[]
+  payProfile       StaffPayProfile?
+  managementEvents StaffManagementEvent[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
   timesheets       Timesheet[]
@@ -416,6 +421,7 @@ model StaffProfile {
   tipPaymentRunLines StaffTipPaymentRunLine[]
 
   @@index([venue])
+  @@index([mergedIntoStaffProfileId])
   @@index([xeroEmployeeId])
 }
 
@@ -431,6 +437,49 @@ model StaffManagerNote {
 
   @@index([staffProfileId, createdAt])
   @@index([createdById])
+}
+
+model StaffPayProfile {
+  id                            String       @id @default(cuid())
+  staffProfileId                String       @unique
+  awardCode                     String
+  awardName                     String
+  awardClassification           String
+  employmentType                String
+  payMode                       String       @default("AWARD")
+  awardRateSource               String
+  awardRateEffectiveFrom        DateTime
+  payGuidePublishedAt           DateTime
+  rateSetVersion                String
+  ordinaryHourlyRateCents       Int
+  casualLoadedHourlyRateCents   Int?
+  manualFullTimePayAmountCents  Int?
+  manualFullTimePayFrequency    String?
+  manualFullTimePayNote         String?
+  payUpdatedAt                  DateTime     @default(now())
+  payUpdatedByUserId            String?
+  createdAt                     DateTime     @default(now())
+  updatedAt                     DateTime     @updatedAt
+  staffProfile                  StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([awardCode, awardClassification])
+  @@index([payUpdatedAt])
+}
+
+model StaffManagementEvent {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  eventType      String
+  summary        String
+  metadata       Json         @default("{}")
+  createdById    String?
+  createdByName  String?
+  createdByEmail String?
+  createdAt      DateTime     @default(now())
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, createdAt])
+  @@index([eventType, createdAt])
 }
 
 model StaffAppAccess {
