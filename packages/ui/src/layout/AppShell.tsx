@@ -22,6 +22,8 @@ export function AppShell({ children, sidebar, topBar, brand, footer }: Props) {
           type="button"
           className="app-shell-sidebar-toggle"
           aria-label={sidebarPinned ? 'Collapse sidebar' : 'Pin sidebar open'}
+          aria-controls="app-shell-primary-nav"
+          aria-expanded={sidebarPinned}
           aria-pressed={sidebarPinned}
           onClick={() => setSidebarPinned((pinned) => !pinned)}
         >
@@ -32,7 +34,7 @@ export function AppShell({ children, sidebar, topBar, brand, footer }: Props) {
             <ProductLogo appId="compliance" size="md" showBrandMark={false} />
           )}
         </div>
-        <nav className="app-shell-nav">{sidebar}</nav>
+        <nav id="app-shell-primary-nav" className="app-shell-nav">{sidebar}</nav>
         {footer ? <div className="app-shell-sidebar-footer">{footer}</div> : null}
       </aside>
       <div className="app-shell-body">
