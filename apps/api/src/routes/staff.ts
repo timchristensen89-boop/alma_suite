@@ -1,5 +1,5 @@
 import { Router, type Request } from 'express';
-import { requireManager } from '../lib/auth-middleware.js';
+import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { staffService } from '../services/staff.service.js';
 
@@ -410,6 +410,15 @@ staffRouter.put('/:id/pay-profile', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
     res.json(await staffService.updatePayProfile(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/:id/management-events', requireAdmin, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listManagementEvents(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }

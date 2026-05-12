@@ -13,6 +13,7 @@ import {
 } from '@alma/shared';
 import type {
   StaffComplianceRecord,
+  StaffManagementEvent,
   StaffManagerNote,
   StaffProfile,
   StaffRecordType,
@@ -43,8 +44,10 @@ import { PhotoField } from '../features/staff/PhotoField';
 import {
   recordTypeOptions
 } from '../features/staff/StaffProfileForm';
+import { useAuth } from '../lib/auth';
 
 export function StaffPage() {
+  const auth = useAuth();
   const staff = useAsync<StaffProfile[]>(() => api('/api/staff'), []);
   const summary = useAsync<StaffSummary>(() => api('/api/staff/meta'), []);
 
@@ -53,10 +56,17 @@ export function StaffPage() {
   const [notesFor, setNotesFor] = useState<string | null>(null);
   const [accessFor, setAccessFor] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<string | null>(null);
+  const [historyFor, setHistoryFor] = useState<string | null>(null);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false);
   const visibleStaff = staff.data ?? [];
   const selectedStaff = visibleStaff.filter((member) => selectedStaffIds.includes(member.id));
+  const canManageStaff = Boolean(
+    auth.user?.isAdmin ||
+      auth.user?.role === 'ADMIN' ||
+      auth.user?.role === 'MANAGER'
+  );
+  const canViewManagementHistory = Boolean(auth.user?.isAdmin || auth.user?.role === 'ADMIN');
   const roleOptions = Array.from(
     new Set(
       [
@@ -159,23 +169,25 @@ export function StaffPage() {
                 </>
               )}
             </span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-              {selectedStaffIds.length > 0 ? (
-                <span className="subtle">{selectedStaffIds.length} selected</span>
-              ) : null}
-              <Button
-                type="button"
-                size="sm"
-                variant="secondary"
-                disabled={selectedStaffIds.length < 2}
-                onClick={() => setMergeOpen((current) => !current)}
-              >
-                Merge duplicates
-              </Button>
-            </div>
+            {canManageStaff ? (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {selectedStaffIds.length > 0 ? (
+                  <span className="subtle">{selectedStaffIds.length} selected</span>
+                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  disabled={selectedStaffIds.length < 2}
+                  onClick={() => setMergeOpen((current) => !current)}
+                >
+                  Merge duplicates
+                </Button>
+              </div>
+            ) : null}
           </div>
 
-          {mergeOpen ? (
+          {mergeOpen && canManageStaff ? (
             <MergeDuplicatesPanel
               selectedStaff={selectedStaff}
               onCancel={() => setMergeOpen(false)}
@@ -214,13 +226,15 @@ export function StaffPage() {
                   }}
                 >
                   <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', minWidth: 0 }}>
-                    <input
-                      type="checkbox"
-                      aria-label={`Select ${member.firstName} ${member.lastName} for duplicate merge`}
-                      checked={selectedStaffIds.includes(member.id)}
-                      onChange={() => toggleSelected(member.id)}
-                      style={{ marginTop: 2 }}
-                    />
+                    {canManageStaff ? (
+                      <input
+                        type="checkbox"
+                        aria-label={`Select ${member.firstName} ${member.lastName} for duplicate merge`}
+                        checked={selectedStaffIds.includes(member.id)}
+                        onChange={() => toggleSelected(member.id)}
+                        style={{ marginTop: 2 }}
+                      />
+                    ) : null}
                     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
                       <strong style={{ fontSize: 14 }}>
                         {member.firstName} {member.lastName}
@@ -233,52 +247,68 @@ export function StaffPage() {
                   </div>
                   <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                     <Badge tone="muted">{member.records.length} records</Badge>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={accessFor === member.id}
-                      aria-controls={`role-access-${member.id}`}
-                      onClick={() => setAccessFor(accessFor === member.id ? null : member.id)}
-                    >
-                      Role/access
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={payFor === member.id}
-                      aria-controls={`award-pay-${member.id}`}
-                      onClick={() => setPayFor(payFor === member.id ? null : member.id)}
-                    >
-                      Award pay
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      aria-expanded={notesFor === member.id}
-                      aria-controls={`manager-notes-${member.id}`}
-                      aria-label={`Manager notes for ${member.firstName} ${member.lastName}`}
-                      onClick={() =>
-                        setNotesFor(notesFor === member.id ? null : member.id)
-                      }
-                    >
-                      Manager notes
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      leftIcon={<IconPlus size={14} />}
-                      onClick={() =>
-                        setAddingRecordFor(
-                          addingRecordFor === member.id ? null : member.id
-                        )
-                      }
-                    >
-                      Add record
-                    </Button>
+                    {canManageStaff ? (
+                      <>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={accessFor === member.id}
+                          aria-controls={`role-access-${member.id}`}
+                          onClick={() => setAccessFor(accessFor === member.id ? null : member.id)}
+                        >
+                          Role/access
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={payFor === member.id}
+                          aria-controls={`award-pay-${member.id}`}
+                          onClick={() => setPayFor(payFor === member.id ? null : member.id)}
+                        >
+                          Award pay
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          aria-expanded={notesFor === member.id}
+                          aria-controls={`manager-notes-${member.id}`}
+                          aria-label={`Manager notes for ${member.firstName} ${member.lastName}`}
+                          onClick={() =>
+                            setNotesFor(notesFor === member.id ? null : member.id)
+                          }
+                        >
+                          Manager notes
+                        </Button>
+                        {canViewManagementHistory ? (
+                          <Button
+                            type="button"
+                            size="sm"
+                            variant="ghost"
+                            aria-expanded={historyFor === member.id}
+                            aria-controls={`management-history-${member.id}`}
+                            onClick={() => setHistoryFor(historyFor === member.id ? null : member.id)}
+                          >
+                            Audit trail
+                          </Button>
+                        ) : null}
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          leftIcon={<IconPlus size={14} />}
+                          onClick={() =>
+                            setAddingRecordFor(
+                              addingRecordFor === member.id ? null : member.id
+                            )
+                          }
+                        >
+                          Add record
+                        </Button>
+                      </>
+                    ) : null}
                   </div>
                 </div>
 
@@ -299,7 +329,7 @@ export function StaffPage() {
                   )}
                 </div>
 
-                {accessFor === member.id ? (
+                {accessFor === member.id && canManageStaff ? (
                   <RoleAccessPanel
                     staff={member}
                     roleOptions={roleOptions}
@@ -311,7 +341,7 @@ export function StaffPage() {
                   />
                 ) : null}
 
-                {payFor === member.id ? (
+                {payFor === member.id && canManageStaff ? (
                   <AwardPaySetupPanel
                     staff={member}
                     onDone={async (summaryMessage) => {
@@ -322,7 +352,7 @@ export function StaffPage() {
                   />
                 ) : null}
 
-                {addingRecordFor === member.id ? (
+                {addingRecordFor === member.id && canManageStaff ? (
                   <AddRecordPanel
                     staffId={member.id}
                     onDone={async () => {
@@ -332,8 +362,15 @@ export function StaffPage() {
                   />
                 ) : null}
 
-                {notesFor === member.id ? (
+                {notesFor === member.id && canManageStaff ? (
                   <ManagerNotesPanel
+                    staffId={member.id}
+                    staffName={`${member.firstName} ${member.lastName}`}
+                  />
+                ) : null}
+
+                {historyFor === member.id && canViewManagementHistory ? (
+                  <ManagementHistoryPanel
                     staffId={member.id}
                     staffName={`${member.firstName} ${member.lastName}`}
                   />
@@ -980,6 +1017,99 @@ function ManagerNotesPanel({
           </div>
         ) : null}
       </div>
+    </section>
+  );
+}
+
+function ManagementHistoryPanel({
+  staffId,
+  staffName
+}: {
+  staffId: string;
+  staffName: string;
+}) {
+  const events = useAsync<StaffManagementEvent[]>(
+    () => api(`/api/staff/${staffId}/management-events`),
+    [staffId]
+  );
+
+  return (
+    <section
+      id={`management-history-${staffId}`}
+      aria-label={`Management audit trail for ${staffName}`}
+      style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        background: 'var(--color-surface-muted)',
+        border: '1px solid var(--color-border)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+          marginBottom: 10
+        }}
+      >
+        <div>
+          <strong style={{ fontSize: 13 }}>Management audit trail for {staffName}</strong>
+          <p className="subtle" style={{ margin: '4px 0 0' }}>
+            Admin-only history for role, access, pay setup and duplicate merge changes.
+          </p>
+        </div>
+        <Badge tone="muted">{events.data?.length ?? 0} events</Badge>
+      </div>
+
+      {events.loading ? <Spinner label="Loading management audit trail…" /> : null}
+      {events.error ? <p className="error-text">{events.error}</p> : null}
+      {!events.loading && !events.error && (events.data?.length ?? 0) === 0 ? (
+        <EmptyState
+          icon={<IconStaff size={20} />}
+          title="No management events yet"
+          description="Role, access, pay setup and duplicate merge events will appear here."
+        />
+      ) : null}
+      {!events.loading && !events.error && events.data?.length ? (
+        <div style={{ display: 'grid', gap: 8 }}>
+          {events.data.map((event) => (
+            <article
+              key={event.id}
+              style={{
+                padding: 10,
+                borderRadius: 10,
+                border: '1px solid var(--color-border)',
+                background: 'var(--color-surface)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', gap: 8, flexWrap: 'wrap' }}>
+                <strong style={{ fontSize: 13 }}>{event.eventType.replaceAll('_', ' ')}</strong>
+                <span className="subtle" style={{ fontSize: 12 }}>{formatDateTime(event.createdAt)}</span>
+              </div>
+              <p style={{ margin: '6px 0 0' }}>{event.summary}</p>
+              <p className="subtle" style={{ margin: '8px 0 0', fontSize: 12 }}>
+                {event.createdByName ?? 'Unknown admin'}
+                {event.createdByEmail ? ` · ${event.createdByEmail}` : ''}
+              </p>
+              {Object.keys(event.metadata ?? {}).length > 0 ? (
+                <pre
+                  style={{
+                    margin: '8px 0 0',
+                    whiteSpace: 'pre-wrap',
+                    overflowWrap: 'anywhere',
+                    fontSize: 12,
+                    color: 'var(--color-text-subtle)'
+                  }}
+                >
+                  {JSON.stringify(event.metadata, null, 2)}
+                </pre>
+              ) : null}
+            </article>
+          ))}
+        </div>
+      ) : null}
     </section>
   );
 }

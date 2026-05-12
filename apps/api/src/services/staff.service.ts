@@ -338,7 +338,7 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
     return profile;
   }
 
-  if (actor.venue && profile.venue && actor.venue !== profile.venue) {
+  if (!actor.venue || profile.venue !== actor.venue) {
     throw new HttpError(403, 'Staff management actions are limited to staff in your venue.');
   }
 
@@ -348,8 +348,14 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
 function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
   const where: Prisma.StaffProfileWhereInput = { employmentStatus: { not: 'ARCHIVED' } };
 
-  if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.role !== 'STAFF' && actor.venue) {
-    where.venue = actor.venue;
+  if (actor && !actor.isAdmin && actor.role !== 'ADMIN') {
+    if (actor.role === 'STAFF') {
+      where.id = actor.id;
+    } else if (actor.venue) {
+      where.venue = actor.venue;
+    } else {
+      where.id = '__no_manager_venue__';
+    }
   }
 
   return where;
@@ -839,6 +845,16 @@ export const staffService = {
     return prisma.staffManagerNote.findMany({
       where: { staffProfileId },
       orderBy: [{ createdAt: 'desc' }]
+    });
+  },
+
+  async listManagementEvents(staffProfileId: string, actor: AuthUser) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+
+    return prisma.staffManagementEvent.findMany({
+      where: { staffProfileId },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 50
     });
   },
 
