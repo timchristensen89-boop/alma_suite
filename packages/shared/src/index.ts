@@ -110,6 +110,10 @@ export const staffComplianceRecordInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const staffManagerNoteInputSchema = z.object({
+  body: z.string().trim().min(1).max(2000)
+});
+
 export const staffProfileCreateInputSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
@@ -923,6 +927,7 @@ export type GiftCardRedemptionStatus = z.infer<typeof giftCardRedemptionStatusSc
 export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
+export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
 export type RosterShiftInput = z.infer<typeof rosterShiftInputSchema>;
 export type RosterShiftUpdateInput = z.infer<typeof rosterShiftUpdateInputSchema>;
 export type TimesheetCreateInput = z.infer<typeof timesheetCreateInputSchema>;
@@ -1001,6 +1006,16 @@ export type StaffComplianceRecord = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+};
+
+export type StaffManagerNote = {
+  id: string;
+  staffProfileId: string;
+  body: string;
+  createdById: string;
+  createdByName: string;
+  createdByEmail: string | null;
+  createdAt: string;
 };
 
 export type StaffAppAccess = {

@@ -408,6 +408,7 @@ model StaffProfile {
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   records          StaffComplianceRecord[]
+  managerNotes     StaffManagerNote[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
   timesheets       Timesheet[]
@@ -416,6 +417,20 @@ model StaffProfile {
 
   @@index([venue])
   @@index([xeroEmployeeId])
+}
+
+model StaffManagerNote {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  body           String
+  createdById    String
+  createdByName  String
+  createdByEmail String?
+  createdAt      DateTime     @default(now())
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, createdAt])
+  @@index([createdById])
 }
 
 model StaffAppAccess {

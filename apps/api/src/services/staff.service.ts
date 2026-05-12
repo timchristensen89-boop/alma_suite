@@ -8,6 +8,7 @@ import {
   rosterShiftUpdateInputSchema,
   staffAppAccessInputSchema,
   staffComplianceRecordInputSchema,
+  staffManagerNoteInputSchema,
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
   staffProfileCreateInputSchema,
@@ -25,7 +26,7 @@ import {
   tipsQuerySchema,
   timesheetUpdateInputSchema
 } from '@alma/shared';
-import type { OnboardingSettings } from '@alma/shared';
+import type { AuthUser, OnboardingSettings } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 import { mailService } from './mail.service.js';
@@ -315,6 +316,27 @@ function timesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes
   return Math.max(0, (entry.clockOutAt.getTime() - entry.clockInAt.getTime()) / 36e5 - entry.breakMinutes / 60);
 }
 
+async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor: AuthUser) {
+  const profile = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: { id: true, venue: true }
+  });
+
+  if (!profile) {
+    throw new HttpError(404, 'Staff profile not found');
+  }
+
+  if (actor.isAdmin || actor.role === 'ADMIN') {
+    return profile;
+  }
+
+  if (actor.venue && profile.venue && actor.venue !== profile.venue) {
+    throw new HttpError(403, 'Manager notes are limited to staff in your venue.');
+  }
+
+  return profile;
+}
+
 function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number; status: string }, now: Date) {
   const effectiveOut = entry.status === 'DRAFT' && now > entry.clockInAt ? now : entry.clockOutAt;
   if (effectiveOut <= entry.clockInAt) return 0;
@@ -583,6 +605,31 @@ export const staffService = {
     });
 
     return { id: archived.id, archived: true };
+  },
+
+  async listManagerNotes(staffProfileId: string, actor: AuthUser) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+
+    return prisma.staffManagerNote.findMany({
+      where: { staffProfileId },
+      orderBy: [{ createdAt: 'desc' }]
+    });
+  },
+
+  async addManagerNote(staffProfileId: string, input: unknown, actor: AuthUser) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const data = staffManagerNoteInputSchema.parse(input);
+    const actorName = `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim();
+
+    return prisma.staffManagerNote.create({
+      data: {
+        staffProfileId,
+        body: data.body,
+        createdById: actor.id,
+        createdByName: actorName || actor.email || 'Unknown manager',
+        createdByEmail: actor.email || null
+      }
+    });
   },
 
   async addRecord(staffProfileId: string, input: unknown) {

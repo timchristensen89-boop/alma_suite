@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type {
   StaffComplianceRecord,
+  StaffManagerNote,
   StaffProfile,
   StaffRecordType,
   StaffSummary
@@ -14,7 +15,8 @@ import {
   PageHeader,
   Select,
   Spinner,
-  StatCard
+  StatCard,
+  Textarea
 } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
@@ -36,6 +38,7 @@ export function StaffPage() {
 
   const [message, setMessage] = useState('');
   const [addingRecordFor, setAddingRecordFor] = useState<string | null>(null);
+  const [notesFor, setNotesFor] = useState<string | null>(null);
   const visibleStaff = staff.data ?? [];
 
   return (
@@ -156,6 +159,19 @@ export function StaffPage() {
                       type="button"
                       size="sm"
                       variant="ghost"
+                      aria-expanded={notesFor === member.id}
+                      aria-controls={`manager-notes-${member.id}`}
+                      aria-label={`Manager notes for ${member.firstName} ${member.lastName}`}
+                      onClick={() =>
+                        setNotesFor(notesFor === member.id ? null : member.id)
+                      }
+                    >
+                      Manager notes
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
                       leftIcon={<IconPlus size={14} />}
                       onClick={() =>
                         setAddingRecordFor(
@@ -194,11 +210,157 @@ export function StaffPage() {
                     }}
                   />
                 ) : null}
+
+                {notesFor === member.id ? (
+                  <ManagerNotesPanel
+                    staffId={member.id}
+                    staffName={`${member.firstName} ${member.lastName}`}
+                  />
+                ) : null}
               </article>
             ))}
           </div>
       </Card>
     </div>
+  );
+}
+
+const NOTE_MAX_LENGTH = 2000;
+
+function formatDateTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Unknown time';
+
+  return date.toLocaleString('en-AU', {
+    dateStyle: 'medium',
+    timeStyle: 'short'
+  });
+}
+
+function ManagerNotesPanel({
+  staffId,
+  staffName
+}: {
+  staffId: string;
+  staffName: string;
+}) {
+  const notes = useAsync<StaffManagerNote[]>(
+    () => api(`/api/staff/${staffId}/manager-notes`),
+    [staffId]
+  );
+  const [body, setBody] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+
+  const trimmedBody = body.trim();
+  const tooLong = trimmedBody.length > NOTE_MAX_LENGTH;
+
+  async function saveNote() {
+    if (saving || !trimmedBody || tooLong) return;
+
+    setSaving(true);
+    setSaveError(null);
+    try {
+      await api<StaffManagerNote>(`/api/staff/${staffId}/manager-notes`, {
+        method: 'POST',
+        body: JSON.stringify({ body: trimmedBody })
+      });
+      setBody('');
+      await notes.reload();
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : 'Failed to save note.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <section
+      id={`manager-notes-${staffId}`}
+      aria-label={`Manager notes for ${staffName}`}
+      style={{
+        marginTop: 12,
+        padding: 12,
+        borderRadius: 10,
+        background: 'var(--color-surface-muted)',
+        border: '1px solid var(--color-border)'
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          gap: 12,
+          marginBottom: 10
+        }}
+      >
+        <div>
+          <strong style={{ fontSize: 13 }}>Manager notes for {staffName}</strong>
+          <p className="subtle" style={{ margin: '4px 0 0' }}>
+            Keep notes factual, relevant, and work-related.
+          </p>
+        </div>
+        <Badge tone="muted">{notes.data?.length ?? 0} notes</Badge>
+      </div>
+
+      <Textarea
+        id={`manager-note-${staffId}`}
+        label="Add a note"
+        rows={3}
+        maxLength={NOTE_MAX_LENGTH}
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+        hint={`${trimmedBody.length}/${NOTE_MAX_LENGTH} characters`}
+      />
+      {tooLong ? (
+        <p className="error-text">Manager notes must be {NOTE_MAX_LENGTH} characters or fewer.</p>
+      ) : null}
+      {saveError ? <p className="error-text">{saveError}</p> : null}
+      <div className="toolbar-right">
+        <Button
+          type="button"
+          onClick={() => void saveNote()}
+          disabled={saving || !trimmedBody || tooLong}
+        >
+          {saving ? 'Saving…' : 'Add note'}
+        </Button>
+      </div>
+
+      <div style={{ marginTop: 12 }}>
+        {notes.loading ? <Spinner label="Loading manager notes…" /> : null}
+        {notes.error ? <p className="error-text">{notes.error}</p> : null}
+        {!notes.loading && !notes.error && (notes.data?.length ?? 0) === 0 ? (
+          <EmptyState
+            icon={<IconStaff size={20} />}
+            title="No manager notes yet"
+            description="Internal staff notes added by managers will appear here."
+          />
+        ) : null}
+        {!notes.loading && !notes.error && notes.data?.length ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            {notes.data.map((note) => (
+              <article
+                key={note.id}
+                style={{
+                  padding: 10,
+                  borderRadius: 10,
+                  border: '1px solid var(--color-border)',
+                  background: 'var(--color-surface)'
+                }}
+              >
+                <p style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{note.body}</p>
+                <p className="subtle" style={{ margin: '8px 0 0', fontSize: 12 }}>
+                  {note.createdByName}
+                  {note.createdByEmail ? ` · ${note.createdByEmail}` : ''} ·{' '}
+                  {formatDateTime(note.createdAt)}
+                </p>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </section>
   );
 }
 

@@ -361,6 +361,24 @@ staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/:id/manager-notes', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listManagerNotes(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/manager-notes', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.addManagerNote(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/:id/records', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await staffService.addRecord(String(req.params.id), req.body));
