@@ -414,6 +414,7 @@ model StaffProfile {
   managerNotes     StaffManagerNote[]
   payProfile       StaffPayProfile?
   managementEvents StaffManagementEvent[]
+  passwordResetTokens StaffPasswordResetToken[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
   timesheets       Timesheet[]
@@ -480,6 +481,24 @@ model StaffManagementEvent {
 
   @@index([staffProfileId, createdAt])
   @@index([eventType, createdAt])
+}
+
+model StaffPasswordResetToken {
+  id              String       @id @default(cuid())
+  staffProfileId  String
+  tokenHash       String       @unique
+  requestedById   String?
+  requestedByName String?
+  requestedByEmail String?
+  requestIp       String?
+  userAgent       String?
+  expiresAt       DateTime
+  usedAt          DateTime?
+  createdAt       DateTime     @default(now())
+  staffProfile    StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, createdAt])
+  @@index([expiresAt])
 }
 
 model StaffAppAccess {

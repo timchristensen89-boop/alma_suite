@@ -1,11 +1,9 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Button, Card, Input, ProductLogo, SUITE_APPS, SuiteAppSwitcher } from '@alma/ui';
 import { useAuth } from '../lib/auth';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { withSuiteAppLinks } from '../config/suiteLinks';
-
-const SUPPORT_EMAIL = 'tim@almagroup.com.au';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -36,12 +34,8 @@ export function LoginPage() {
     }
   }
 
-  const forgotPasswordHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
-    'ALMA Compliance password reset'
-  )}&body=${encodeURIComponent(
-    `Hi, I need help resetting my ALMA Compliance password.\n\nEmail: ${email.trim()}`
-  )}`;
-  const requestAccessHref = `mailto:${SUPPORT_EMAIL}?subject=${encodeURIComponent(
+  const supportEmail = 'tim@almagroup.com.au';
+  const requestAccessHref = `mailto:${supportEmail}?subject=${encodeURIComponent(
     'ALMA Compliance access request'
   )}&body=${encodeURIComponent(
     `Hi, I need access to ALMA Compliance.\n\nEmail: ${email.trim()}\nVenue:\nRole:`
@@ -73,7 +67,7 @@ export function LoginPage() {
               onChange={(event) => setPassword(event.currentTarget.value)}
             />
             <div className="login-help-row">
-              <a href={forgotPasswordHref}>Forgot password?</a>
+              <Link to="/forgot-password">Forgot password?</Link>
             </div>
             {error ? <p className="error-text">{error}</p> : null}
             <Button type="submit" disabled={submitting}>

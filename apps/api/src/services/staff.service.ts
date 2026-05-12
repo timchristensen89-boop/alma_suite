@@ -11,6 +11,7 @@ import {
   staffAppAccessInputSchema,
   staffComplianceRecordInputSchema,
   staffManagerNoteInputSchema,
+  staffPasswordResetRequestSchema,
   staffPayProfileInputSchema,
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
@@ -872,6 +873,55 @@ export const staffService = {
         createdByEmail: actor.email || null
       }
     });
+  },
+
+  async requestPasswordReset(
+    staffProfileId: string,
+    input: unknown,
+    actor: AuthUser,
+    context: { requestOrigin?: string | null; requestIp?: string | null; userAgent?: string | null } = {}
+  ) {
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const data = staffPasswordResetRequestSchema.parse(input);
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { id: true, firstName: true, lastName: true, email: true }
+    });
+
+    if (!profile) throw new HttpError(404, 'Staff profile not found');
+
+    const hasLoginEmail = Boolean(profile.email);
+    const result = hasLoginEmail
+      ? await authService.requestPasswordResetForEmail(profile.email!, {
+          resetBaseUrl: data.resetBaseUrl || undefined,
+          appName: data.appName || undefined,
+          requestOrigin: context.requestOrigin,
+          requestIp: context.requestIp,
+          userAgent: context.userAgent,
+          requestedBy: actor
+        })
+      : { accountExists: false, deliveryStatus: 'no_email' as const };
+
+    await recordStaffManagementEvent({
+      staffProfileId,
+      eventType: 'PASSWORD_RESET_REQUESTED',
+      summary: hasLoginEmail
+        ? 'Password reset email requested.'
+        : 'Password reset requested but no login email is linked to this profile.',
+      actor,
+      metadata: {
+        targetEmail: profile.email,
+        deliveryStatus: result.deliveryStatus,
+        hasLoginAccount: result.accountExists
+      }
+    });
+
+    return {
+      ok: true,
+      message: hasLoginEmail
+        ? 'If this staff member has a login account, a reset link has been sent.'
+        : 'No login email is linked to this profile.'
+    };
   },
 
   async addRecord(staffProfileId: string, input: unknown, actor?: AuthUser) {

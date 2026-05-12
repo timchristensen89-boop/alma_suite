@@ -11,6 +11,7 @@ import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopB
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
+import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordRecoveryPages';
 import { SuiteAppLoginPage } from './pages/SuiteAppLoginPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { IssuesListPage } from './pages/issues/IssuesListPage';
@@ -314,6 +315,8 @@ export default function App() {
       <Routes>
         <Route path="/onboarding/:token" element={<OnboardingPage />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/apps/:appId/login" element={<SuiteAppLoginPage />} />
         <Route
           path="*"

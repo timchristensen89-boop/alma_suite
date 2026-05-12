@@ -21,6 +21,8 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/auth/handoff/consume',
   '/api/auth/me',
   '/api/auth/logout',
+  '/api/auth/password-reset/request',
+  '/api/auth/password-reset/complete',
   '/api/gift-cards/checkout',
   '/api/gift-cards/settings/public',
   '/api/gift-cards/promo/quote'

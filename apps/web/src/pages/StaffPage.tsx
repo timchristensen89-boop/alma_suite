@@ -57,6 +57,7 @@ export function StaffPage() {
   const [accessFor, setAccessFor] = useState<string | null>(null);
   const [payFor, setPayFor] = useState<string | null>(null);
   const [historyFor, setHistoryFor] = useState<string | null>(null);
+  const [resettingPasswordFor, setResettingPasswordFor] = useState<string | null>(null);
   const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
   const [mergeOpen, setMergeOpen] = useState(false);
   const visibleStaff = staff.data ?? [];
@@ -92,6 +93,29 @@ export function StaffPage() {
         ? current.filter((id) => id !== staffId)
         : [...current, staffId]
     );
+  }
+
+  async function requestStaffPasswordReset(member: StaffProfile) {
+    if (!member.email) {
+      setMessage('No login email is linked to this profile.');
+      return;
+    }
+
+    try {
+      setResettingPasswordFor(member.id);
+      const result = await api<{ message: string }>(`/api/staff/${member.id}/password-reset`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resetBaseUrl: `${window.location.origin}/reset-password`,
+          appName: 'ALMA Compliance'
+        })
+      });
+      setMessage(result.message);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request password reset.');
+    } finally {
+      setResettingPasswordFor(null);
+    }
   }
 
   return (
@@ -281,6 +305,15 @@ export function StaffPage() {
                           }
                         >
                           Manager notes
+                        </Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={resettingPasswordFor === member.id}
+                          onClick={() => void requestStaffPasswordReset(member)}
+                        >
+                          {resettingPasswordFor === member.id ? 'Sending…' : 'Send password reset'}
                         </Button>
                         {canViewManagementHistory ? (
                           <Button

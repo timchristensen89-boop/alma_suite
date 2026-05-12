@@ -52,6 +52,7 @@ import {
   TopBar
 } from '@alma/ui';
 import { LoginPage } from './LoginPage';
+import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
@@ -8103,6 +8104,8 @@ export default function App() {
     <AuthProvider>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/onboarding/:token" element={<PublicOnboardingPage />} />
         <Route
           path="*"

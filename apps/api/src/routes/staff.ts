@@ -433,6 +433,19 @@ staffRouter.get('/:id/manager-notes', requireManager, async (req, res, next) => 
   }
 });
 
+staffRouter.post('/:id/password-reset', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.requestPasswordReset(String(req.params.id), req.body, req.user, {
+      requestOrigin: req.header('origin'),
+      requestIp: req.ip,
+      userAgent: req.header('user-agent')
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/:id/manager-notes', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

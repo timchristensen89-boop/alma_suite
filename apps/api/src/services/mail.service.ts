@@ -32,6 +32,14 @@ type GiftCardEmailInput = {
   };
 };
 
+type PasswordResetEmailInput = {
+  to: string;
+  firstName?: string | null;
+  resetLink: string;
+  expiresAt: Date;
+  appName?: string | null;
+};
+
 type EmailDeliveryResult =
   | { status: 'sent'; to: string; provider: 'resend' | 'smtp' }
   | { status: 'skipped'; reason: string }
@@ -215,6 +223,53 @@ export const mailService = {
         <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
           If the button doesn't work, paste this link into your browser:<br>
           <span style="word-break:break-all;color:#475569">${safeInviteLink}</span>
+        </p>
+      </div>
+    `;
+
+    return deliverEmail({ to: input.to, subject, text, html });
+  },
+
+  async sendPasswordReset(input: PasswordResetEmailInput): Promise<EmailDeliveryResult> {
+    const appName = input.appName?.trim() || 'ALMA';
+    const firstName = input.firstName?.trim() || 'there';
+    const expiry = input.expiresAt.toLocaleString('en-AU', {
+      dateStyle: 'medium',
+      timeStyle: 'short'
+    });
+    const safeAppName = escapeHtml(appName);
+    const safeFirstName = escapeHtml(firstName);
+    const safeResetLink = escapeHtml(input.resetLink);
+    const subject = `${appName} password reset`;
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      `We received a request to reset your ${appName} password.`,
+      'Open this private link to choose a new password:',
+      input.resetLink,
+      '',
+      `This link expires at ${expiry}. If you did not request this reset, you can ignore this email.`
+    ].join('\n');
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ${safeAppName}
+        </div>
+        <p style="font-size:16px;margin:0 0 12px">Hi ${safeFirstName},</p>
+        <p style="font-size:14px;margin:0 0 18px">
+          We received a request to reset your <strong>${safeAppName}</strong> password.
+        </p>
+        <p style="margin:0 0 22px">
+          <a href="${safeResetLink}" style="display:inline-block;background:${BRAND_ACCENT};color:#ffffff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;font-size:14px;letter-spacing:0.02em">
+            Reset password
+          </a>
+        </p>
+        <p style="font-size:13px;color:#475569;margin:0 0 6px">
+          This private link expires at ${escapeHtml(expiry)}. If you did not request this reset, you can ignore this email.
+        </p>
+        <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
+          If the button doesn't work, paste this link into your browser:<br>
+          <span style="word-break:break-all;color:#475569">${safeResetLink}</span>
         </p>
       </div>
     `;

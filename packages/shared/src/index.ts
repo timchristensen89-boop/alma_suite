@@ -817,6 +817,22 @@ export const authChangePasswordSchema = z.object({
   newPassword: z.string().min(8, 'Password must be at least 8 characters')
 });
 
+export const authPasswordResetRequestSchema = z.object({
+  email: z.string().email(),
+  resetBaseUrl: z.string().url().optional().or(z.literal('')),
+  appName: z.string().trim().min(1).max(80).optional().or(z.literal(''))
+});
+
+export const authPasswordResetCompleteSchema = z.object({
+  token: z.string().min(32).max(200),
+  newPassword: z.string().min(8, 'Password must be at least 8 characters')
+});
+
+export const staffPasswordResetRequestSchema = z.object({
+  resetBaseUrl: z.string().url().optional().or(z.literal('')),
+  appName: z.string().trim().min(1).max(80).optional().or(z.literal(''))
+});
+
 export const websiteMenuItemInputSchema = z.object({
   name: z.string().min(1),
   price: z.string().optional().or(z.literal('')),
@@ -1038,6 +1054,9 @@ export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSche
 export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
 export type StaffPayProfileInput = z.infer<typeof staffPayProfileInputSchema>;
 export type StaffMergeInput = z.infer<typeof staffMergeInputSchema>;
+export type AuthPasswordResetRequestInput = z.infer<typeof authPasswordResetRequestSchema>;
+export type AuthPasswordResetCompleteInput = z.infer<typeof authPasswordResetCompleteSchema>;
+export type StaffPasswordResetRequestInput = z.infer<typeof staffPasswordResetRequestSchema>;
 export type RosterShiftInput = z.infer<typeof rosterShiftInputSchema>;
 export type RosterShiftUpdateInput = z.infer<typeof rosterShiftUpdateInputSchema>;
 export type TimesheetCreateInput = z.infer<typeof timesheetCreateInputSchema>;

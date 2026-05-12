@@ -1,5 +1,5 @@
 import { FormEvent, useState } from 'react';
-import { Navigate, useLocation } from 'react-router-dom';
+import { Link, Navigate, useLocation } from 'react-router-dom';
 import { Button, Card, Input, ProductLogo, SuiteAppSwitcher, SUITE_APPS } from '@alma/ui';
 import { useAuth } from './lib/auth';
 import { withSuiteAppLinks } from './config/suiteLinks';
@@ -57,6 +57,9 @@ export function LoginPage() {
               value={password}
               onChange={(event) => setPassword(event.currentTarget.value)}
             />
+            <p className="login-help">
+              <Link to="/forgot-password">Forgot password?</Link>
+            </p>
             {message ? <p className="error-text">{message}</p> : null}
             <Button type="submit" disabled={submitting}>
               {submitting ? 'Signing in…' : 'Sign in'}

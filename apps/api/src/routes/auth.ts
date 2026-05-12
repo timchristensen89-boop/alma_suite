@@ -7,7 +7,7 @@ import {
   parseSuiteHandoffToken,
   setSessionCookie
 } from '../lib/session.js';
-import { authService } from '../services/auth.service.js';
+import { authService, PASSWORD_RESET_GENERIC_MESSAGE } from '../services/auth.service.js';
 
 export const authRouter = Router();
 
@@ -50,6 +50,28 @@ authRouter.post('/handoff/consume', async (req, res, next) => {
     const sessionToken = createSessionToken(user.id);
     setSessionCookie(res, sessionToken);
     res.json({ user, token: sessionToken });
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post('/password-reset/request', async (req, res, next) => {
+  try {
+    await authService.requestPasswordReset(req.body, {
+      requestOrigin: req.header('origin'),
+      requestIp: req.ip,
+      userAgent: req.header('user-agent')
+    });
+    res.json({ ok: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+  } catch (error) {
+    next(error);
+  }
+});
+
+authRouter.post('/password-reset/complete', async (req, res, next) => {
+  try {
+    await authService.completePasswordReset(req.body);
+    res.json({ ok: true });
   } catch (error) {
     next(error);
   }
