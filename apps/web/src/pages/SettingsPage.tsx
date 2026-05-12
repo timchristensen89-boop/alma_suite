@@ -566,6 +566,7 @@ function AccountTab() {
             value={currentPassword}
             onChange={(e) => setCurrentPassword(e.currentTarget.value)}
             required
+            maxLength={256}
           />
           <Input
             label="New password"
@@ -573,6 +574,7 @@ function AccountTab() {
             value={newPassword}
             onChange={(e) => setNewPassword(e.currentTarget.value)}
             required
+            maxLength={256}
             hint="At least 8 characters."
           />
           <Input
@@ -581,6 +583,7 @@ function AccountTab() {
             value={confirm}
             onChange={(e) => setConfirm(e.currentTarget.value)}
             required
+            maxLength={256}
           />
           <div className="inline-actions">
             <Button type="submit" disabled={submitting}>

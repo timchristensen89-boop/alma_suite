@@ -5,6 +5,7 @@ import { api } from '../lib/api';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 
 const GENERIC_RESET_MESSAGE = 'If an account exists for that email, a reset link has been sent.';
+const PASSWORD_MAX_LENGTH = 256;
 
 function resetBaseUrl() {
   return `${window.location.origin}/reset-password`;
@@ -127,6 +128,7 @@ export function ResetPasswordPage() {
               autoComplete="new-password"
               required
               minLength={8}
+              maxLength={PASSWORD_MAX_LENGTH}
               value={password}
               onChange={(event) => setPassword(event.currentTarget.value)}
             />
@@ -136,6 +138,7 @@ export function ResetPasswordPage() {
               autoComplete="new-password"
               required
               minLength={8}
+              maxLength={PASSWORD_MAX_LENGTH}
               value={confirmPassword}
               onChange={(event) => setConfirmPassword(event.currentTarget.value)}
             />

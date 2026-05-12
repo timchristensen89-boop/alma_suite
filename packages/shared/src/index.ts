@@ -32,6 +32,13 @@ export {
   type StaffPayMode
 } from './awardRates.js';
 
+const PASSWORD_MAX_LENGTH = 256;
+
+const passwordSchema = z
+  .string()
+  .min(8, 'Password must be at least 8 characters')
+  .max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer');
+
 export const issueStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED']);
 export const issueSeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 export const checklistRunStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'COMPLETED']);
@@ -297,7 +304,7 @@ export const staffProfileReonboardInputSchema = z.object({
 });
 
 export const staffInviteCompleteInputSchema = staffProfileCreateInputSchema.extend({
-  password: z.string().min(8, 'Password must be at least 8 characters')
+  password: passwordSchema
 });
 
 const onboardingStepInputSchema = z.object({
@@ -809,12 +816,12 @@ export const staffTrainingUpdateInputSchema = z.object({
 
 export const authLoginSchema = z.object({
   email: z.string().email(),
-  password: z.string().min(1)
+  password: z.string().min(1).max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer')
 });
 
 export const authChangePasswordSchema = z.object({
-  currentPassword: z.string().min(1),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters')
+  currentPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer'),
+  newPassword: passwordSchema
 });
 
 export const authPasswordResetRequestSchema = z.object({
@@ -825,7 +832,7 @@ export const authPasswordResetRequestSchema = z.object({
 
 export const authPasswordResetCompleteSchema = z.object({
   token: z.string().min(32).max(200),
-  newPassword: z.string().min(8, 'Password must be at least 8 characters')
+  newPassword: passwordSchema
 });
 
 export const staffPasswordResetRequestSchema = z.object({
