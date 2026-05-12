@@ -1104,7 +1104,8 @@ export const staffService = {
         trainingConflicts: 0,
         rosterShifts: 0,
         timesheets: 0,
-        tipPaymentLines: 0
+        tipPaymentLines: 0,
+        staffInvites: 0
       };
 
       for (const duplicate of duplicates) {
@@ -1158,6 +1159,9 @@ export const staffService = {
         preserved.rosterShifts += duplicate.rosterShifts.length;
         preserved.timesheets += duplicate.timesheets.length;
         preserved.tipPaymentLines += duplicate.tipPaymentRunLines.length;
+        preserved.staffInvites += await tx.staffInvite.count({
+          where: { staffProfileId: duplicate.id }
+        });
 
         await tx.staffProfile.update({
           where: { id: duplicate.id },
@@ -1168,7 +1172,7 @@ export const staffService = {
             mergedByUserId: actor.id,
             notes: [
               duplicate.notes,
-              `Merged into ${canonical.firstName} ${canonical.lastName} (${canonical.id}) on ${new Date().toISOString()}. Roster, timesheet and tip payment history remains attached to this archived duplicate for audit history.`
+              `Merged into ${canonical.firstName} ${canonical.lastName} (${canonical.id}) on ${new Date().toISOString()}. Roster, timesheet, tip payment and onboarding invite history remains attached to this archived duplicate for audit history.`
             ].filter(Boolean).join('\n')
           }
         });

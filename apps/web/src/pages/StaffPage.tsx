@@ -708,7 +708,7 @@ function AwardPaySetupPanel({
           {award.sourceLabel}. Effective from {dateLabel(award.rateEffectiveFrom)}. Version {award.rateSetVersion}.
         </p>
         <p className="subtle" style={{ margin: '4px 0 0' }}>
-          Penalty rates, overtime, allowances and public holiday rules may still apply.
+          Penalty rates, overtime, allowances, public holiday rules, juniors, apprentices and supported wage arrangements are not calculated in this pass.
         </p>
         {initialProfile.isDefaulted ? (
           <p className="subtle" style={{ margin: '4px 0 0' }}>
@@ -833,7 +833,7 @@ function MergeDuplicatesPanel({
               ))}
             </ul>
             <p className="subtle" style={{ marginTop: 8 }}>
-              Compliance records, manager notes and non-conflicting app/training access are moved to the kept profile. Roster, timesheet and tip payment history stays attached to archived duplicates for audit history.
+              Compliance records, manager notes and non-conflicting app/training access are moved to the kept profile. Roster, timesheet, tip payment and onboarding invite history stays attached to archived duplicates for audit history.
             </p>
           </div>
           <Input

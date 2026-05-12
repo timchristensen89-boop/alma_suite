@@ -34,6 +34,27 @@ function grantsSettingsAccess(input: unknown) {
   });
 }
 
+function grantsAdminAppAccess(input: unknown) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) return false;
+  const apps = (input as { apps?: unknown }).apps;
+  if (!Array.isArray(apps)) return false;
+
+  return apps.some((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return false;
+    const app = entry as { role?: unknown; permissions?: unknown };
+    const permissions =
+      app.permissions && typeof app.permissions === 'object' && !Array.isArray(app.permissions)
+        ? (app.permissions as Record<string, unknown>)
+        : {};
+    return String(app.role ?? '').toUpperCase() === 'ADMIN' || Boolean(permissions.admin);
+  });
+}
+
+function canGrantAdminAppAccess(req: Request) {
+  const user = req.user;
+  return Boolean(user?.isAdmin || user?.role === 'ADMIN');
+}
+
 function redactManagerOnlyPay<T extends { payProfile?: unknown }>(profile: T): T & { payProfile: null } {
   return { ...profile, payProfile: null };
 }
@@ -373,6 +394,9 @@ staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
 
 staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
   try {
+    if (grantsAdminAppAccess(req.body) && !canGrantAdminAppAccess(req)) {
+      throw new HttpError(403, 'Admin access is required to grant app admin access.');
+    }
     if (grantsSettingsAccess(req.body) && !canManageSettingsAccess(req)) {
       throw new HttpError(403, 'Settings access required to change Admin access.');
     }
