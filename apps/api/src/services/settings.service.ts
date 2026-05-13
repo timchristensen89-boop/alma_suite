@@ -3,6 +3,7 @@ import { prisma } from '@alma/db';
 import {
   appSettingsUpdateSchema,
   normaliseOnboardingSettings,
+  normaliseStaffDefaults,
   type AppSettingsPayload
 } from '@alma/shared';
 
@@ -25,6 +26,7 @@ function toPayload(row: {
   venues: unknown;
   handbookContent?: unknown;
   onboardingSettings?: unknown;
+  staffDefaults?: unknown;
   goveeApiKey: string | null;
   goveeBaseUrl: string | null;
   notifyEmail: string | null;
@@ -50,6 +52,7 @@ function toPayload(row: {
     venues,
     handbookContent: row.handbookContent && typeof row.handbookContent === 'object' ? (row.handbookContent as Record<string, unknown>) : {},
     onboardingSettings: normaliseOnboardingSettings(row.onboardingSettings),
+    staffDefaults: normaliseStaffDefaults(row.staffDefaults),
     // Don't leak the key — only a hint.
     goveeApiKey: row.goveeApiKey ? maskKey(row.goveeApiKey) : null,
     goveeBaseUrl: normaliseGoveeBaseUrl(row.goveeBaseUrl),
@@ -92,6 +95,9 @@ export const settingsService = {
       }),
       ...(data.onboardingSettings !== undefined && {
         onboardingSettings: normaliseOnboardingSettings(data.onboardingSettings) as Prisma.InputJsonValue
+      }),
+      ...(data.staffDefaults !== undefined && {
+        staffDefaults: normaliseStaffDefaults(data.staffDefaults) as unknown as Prisma.InputJsonValue
       }),
       // Only update the Govee key if it's a real value, not the masked "••••" echo.
       ...(data.goveeApiKey !== undefined &&

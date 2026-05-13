@@ -15,6 +15,8 @@ import {
   staffPayProfileInputSchema,
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
+  staffLeaveRequestInputSchema,
+  staffLeaveRequestUpdateSchema,
   staffProfileCreateInputSchema,
   staffProfileReonboardInputSchema,
   staffProfileUpdateInputSchema,
@@ -30,12 +32,12 @@ import {
   tipsQuerySchema,
   timesheetUpdateInputSchema,
   AWARD_RATE_SETS,
-  DEFAULT_STAFF_AWARD_CLASSIFICATION,
-  DEFAULT_STAFF_AWARD_CODE,
+  DEFAULT_STAFF_DEFAULTS,
   getAwardClassification,
-  getAwardRateSet
+  getAwardRateSet,
+  normaliseStaffDefaults
 } from '@alma/shared';
-import type { AuthUser, OnboardingSettings } from '@alma/shared';
+import type { AuthUser, OnboardingSettings, StaffDefaults, StaffLeaveStatus, StaffLeaveType } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 import { mailService } from './mail.service.js';
@@ -261,6 +263,14 @@ async function getOnboardingSettings() {
   return normaliseOnboardingSettings(settings?.onboardingSettings);
 }
 
+async function getStaffDefaults() {
+  const settings = await prisma.appSettings.findUnique({
+    where: { id: 'singleton' },
+    select: { staffDefaults: true }
+  });
+  return normaliseStaffDefaults(settings?.staffDefaults);
+}
+
 function validateCompleteOnboarding(
   data: ReturnType<typeof staffInviteCompleteInputSchema.parse>,
   settings: OnboardingSettings
@@ -374,9 +384,9 @@ function hasLegacyPaySetup(profile: {
   return Boolean(profile.payRateCents || profile.payAward || profile.payType);
 }
 
-function buildDefaultPayProfile(staffProfileId: string) {
-  const award = getAwardRateSet(DEFAULT_STAFF_AWARD_CODE);
-  const classification = getAwardClassification(DEFAULT_STAFF_AWARD_CODE, DEFAULT_STAFF_AWARD_CLASSIFICATION);
+function buildDefaultPayProfile(staffProfileId: string, defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS) {
+  const award = getAwardRateSet(defaults.defaultAwardCode);
+  const classification = getAwardClassification(defaults.defaultAwardCode, defaults.defaultAwardClassification);
   if (!award || !classification) return null;
   return {
     id: null,
@@ -384,7 +394,7 @@ function buildDefaultPayProfile(staffProfileId: string) {
     awardCode: award.awardCode,
     awardName: award.awardName,
     awardClassification: classification.id,
-    employmentType: 'CASUAL',
+    employmentType: defaults.defaultEmploymentType,
     payMode: 'AWARD',
     awardRateSource: award.sourceLabel,
     awardRateEffectiveFrom: award.rateEffectiveFrom,
@@ -404,15 +414,15 @@ function buildDefaultPayProfile(staffProfileId: string) {
   };
 }
 
-function defaultPayProfileCreateData(actorId?: string) {
-  const award = getAwardRateSet(DEFAULT_STAFF_AWARD_CODE);
-  const classification = getAwardClassification(DEFAULT_STAFF_AWARD_CODE, DEFAULT_STAFF_AWARD_CLASSIFICATION);
+function defaultPayProfileCreateData(actorId?: string, defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS) {
+  const award = getAwardRateSet(defaults.defaultAwardCode);
+  const classification = getAwardClassification(defaults.defaultAwardCode, defaults.defaultAwardClassification);
   if (!award || !classification) return undefined;
   return {
     awardCode: award.awardCode,
     awardName: award.awardName,
     awardClassification: classification.id,
-    employmentType: 'CASUAL',
+    employmentType: defaults.defaultEmploymentType,
     payMode: 'AWARD',
     awardRateSource: award.sourceLabel,
     awardRateEffectiveFrom: new Date(`${award.rateEffectiveFrom}T00:00:00.000Z`),
@@ -424,6 +434,31 @@ function defaultPayProfileCreateData(actorId?: string) {
     manualFullTimePayFrequency: null,
     manualFullTimePayNote: null,
     payUpdatedByUserId: actorId ?? null
+  };
+}
+
+function defaultStaffAppAccessCreateData(defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS) {
+  const managerPermissions = {
+    staffView: true,
+    rosterView: true,
+    rosterManage: true,
+    timesheetsApprove: true,
+    chatTeam: true,
+    chatDirect: true
+  };
+  const staffPermissions = {
+    staffSelfView: true,
+    timesheetsSubmit: true,
+    tipsViewOwn: true,
+    chatTeam: true
+  };
+
+  return {
+    appId: 'STAFF' as const,
+    status: 'ENABLED' as const,
+    role: defaults.defaultStaffAppRole,
+    permissions: defaults.defaultStaffAppRole === 'MANAGER' ? managerPermissions : staffPermissions,
+    notes: 'Created from Staff Settings defaults.'
   };
 }
 
@@ -480,11 +515,11 @@ function attachDefaultPayProfile<T extends {
   payAward?: string | null;
   payType?: string | null;
   payProfile?: unknown | null;
-}>(profile: T): T {
+}>(profile: T, defaults: StaffDefaults = DEFAULT_STAFF_DEFAULTS): T {
   if (profile.payProfile || hasLegacyPaySetup(profile)) return profile;
   return {
     ...profile,
-    payProfile: buildDefaultPayProfile(profile.id)
+    payProfile: buildDefaultPayProfile(profile.id, defaults)
   };
 }
 
@@ -506,6 +541,66 @@ async function recordStaffManagementEvent(input: {
       createdByEmail: input.actor?.email ?? null
     }
   });
+}
+
+const staffLeaveQuerySchema = z.object({
+  start: z.string().optional().or(z.literal('')),
+  end: z.string().optional().or(z.literal('')),
+  status: z.enum(['PENDING', 'APPROVED', 'DECLINED', 'CANCELLED']).optional().or(z.literal('')),
+  type: z.enum(['ANNUAL', 'SICK', 'PERSONAL', 'UNPAID', 'OTHER']).optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal('')),
+  staffProfileId: z.string().optional().or(z.literal(''))
+});
+
+function leaveDateOnly(value: string, label: string) {
+  const raw = value.slice(0, 10);
+  const date = new Date(`${raw}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpError(400, `${label} is invalid.`);
+  }
+  return date;
+}
+
+function leaveDateRange(startDate: string, endDate: string) {
+  const start = leaveDateOnly(startDate, 'Leave start date');
+  const end = leaveDateOnly(endDate, 'Leave end date');
+  if (end < start) {
+    throw new HttpError(400, 'Leave end date must be on or after the start date.');
+  }
+  return { start, end };
+}
+
+function formatLeaveDate(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function staffName(profile: { firstName: string; lastName: string }) {
+  return `${profile.firstName} ${profile.lastName}`.trim();
+}
+
+function toStaffLeaveRequest(row: Prisma.StaffLeaveRequestGetPayload<{
+  include: {
+    staffProfile: {
+      select: { id: true; firstName: true; lastName: true; roleTitle: true; venue: true };
+    };
+  };
+}>) {
+  return {
+    id: row.id,
+    staffProfileId: row.staffProfileId,
+    type: row.type as StaffLeaveType,
+    status: row.status as StaffLeaveStatus,
+    startDate: row.startDate.toISOString(),
+    endDate: row.endDate.toISOString(),
+    notes: row.notes,
+    managerNote: row.managerNote,
+    requestedByUserId: row.requestedByUserId,
+    reviewedByUserId: row.reviewedByUserId,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    staffProfile: row.staffProfile
+  };
 }
 
 function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number; status: string }, now: Date) {
@@ -619,6 +714,7 @@ export const staffService = {
   },
 
   async list(actor?: AuthUser) {
+    const staffDefaults = await getStaffDefaults();
     const profiles = await prisma.staffProfile.findMany({
       where: staffProfileScope(actor),
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
@@ -644,7 +740,7 @@ export const staffService = {
         }
       }
     });
-    return profiles.map(attachDefaultPayProfile);
+    return profiles.map((profile) => attachDefaultPayProfile(profile, staffDefaults));
   },
 
   async getById(id: string, actor?: AuthUser) {
@@ -676,20 +772,20 @@ export const staffService = {
       throw new HttpError(404, 'Staff profile not found');
     }
 
-    return attachDefaultPayProfile(profile);
+    return attachDefaultPayProfile(profile, await getStaffDefaults());
   },
 
   async create(input: unknown, actor?: AuthUser) {
     const data = staffProfileCreateInputSchema.parse(input);
+    const staffDefaults = await getStaffDefaults();
     const email = normaliseEmail(data.email);
+    const targetVenue = data.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
 
     if (
       actor &&
       !actor.isAdmin &&
       actor.role !== 'ADMIN' &&
-      actor.venue &&
-      data.venue &&
-      data.venue !== actor.venue
+      (!actor.venue || targetVenue !== actor.venue)
     ) {
       throw new HttpError(403, 'Managers cannot create staff profiles outside their venue.');
     }
@@ -705,17 +801,18 @@ export const staffService = {
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
-        roleTitle: data.roleTitle,
+        roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
         email,
         phone: data.phone || null,
-        venue: data.venue || null,
+        venue: targetVenue || null,
         employmentStatus: data.employmentStatus || 'ACTIVE',
         startDate: data.startDate ? new Date(data.startDate) : null,
         ...onboardingDetailCreateData(data),
         notes: data.notes || null,
         payProfile: !hasLegacyPaySetup(data)
-          ? { create: defaultPayProfileCreateData(actor?.id) }
+          ? { create: defaultPayProfileCreateData(actor?.id, staffDefaults) }
           : undefined,
+        appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) },
         records: data.records?.length
           ? {
               create: data.records.map((record) => ({
@@ -742,7 +839,7 @@ export const staffService = {
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
-    }).then(attachDefaultPayProfile);
+    }).then((profile) => attachDefaultPayProfile(profile, staffDefaults));
   },
 
   async update(id: string, input: unknown, actor?: AuthUser) {
@@ -849,7 +946,7 @@ export const staffService = {
     });
   },
 
-  async listManagementEvents(staffProfileId: string, actor: AuthUser) {
+  async listStaffManagementEvents(staffProfileId: string, actor: AuthUser) {
     await assertManagerCanAccessStaffProfile(staffProfileId, actor);
 
     return prisma.staffManagementEvent.findMany({
@@ -857,6 +954,179 @@ export const staffService = {
       orderBy: [{ createdAt: 'desc' }],
       take: 50
     });
+  },
+
+  async listManagementEvents(input: unknown, actor: AuthUser) {
+    const query = z.object({
+      eventType: z.string().optional().or(z.literal('')),
+      staffProfileId: z.string().optional().or(z.literal('')),
+      take: z.coerce.number().int().min(1).max(100).optional()
+    }).parse(input ?? {});
+
+    if (query.staffProfileId) {
+      await assertManagerCanAccessStaffProfile(query.staffProfileId, actor);
+    }
+
+    return prisma.staffManagementEvent.findMany({
+      where: {
+        ...(query.eventType ? { eventType: query.eventType } : {}),
+        ...(query.staffProfileId ? { staffProfileId: query.staffProfileId } : {}),
+        staffProfile: staffProfileScope(actor)
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      },
+      orderBy: [{ createdAt: 'desc' }],
+      take: query.take ?? 50
+    });
+  },
+
+  async listLeaveRequests(input: unknown, actor: AuthUser) {
+    const query = staffLeaveQuerySchema.parse(input ?? {});
+    if (query.staffProfileId) {
+      await assertManagerCanAccessStaffProfile(query.staffProfileId, actor);
+    }
+
+    const where: Prisma.StaffLeaveRequestWhereInput = {
+      staffProfile: staffProfileScope(actor)
+    };
+
+    if (query.staffProfileId) where.staffProfileId = query.staffProfileId;
+    if (query.status) where.status = query.status;
+    if (query.type) where.type = query.type;
+    if (query.venue && (actor.isAdmin || actor.role === 'ADMIN')) {
+      where.staffProfile = { ...staffProfileScope(actor), venue: query.venue };
+    }
+
+    if (query.start || query.end) {
+      const start = query.start ? leaveDateOnly(query.start, 'Leave calendar start') : new Date('1970-01-01T00:00:00.000Z');
+      const end = query.end ? leaveDateOnly(query.end, 'Leave calendar end') : new Date('9999-12-31T00:00:00.000Z');
+      where.startDate = { lte: end };
+      where.endDate = { gte: start };
+    }
+
+    const rows = await prisma.staffLeaveRequest.findMany({
+      where,
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      },
+      orderBy: [{ startDate: 'asc' }, { createdAt: 'desc' }]
+    });
+
+    return rows.map(toStaffLeaveRequest);
+  },
+
+  async createLeaveRequest(input: unknown, actor: AuthUser) {
+    const data = staffLeaveRequestInputSchema.parse(input);
+    const { start, end } = leaveDateRange(data.startDate, data.endDate);
+    const profile = await assertManagerCanAccessStaffProfile(data.staffProfileId, actor);
+    const reviewed = ['APPROVED', 'DECLINED', 'CANCELLED'].includes(data.status);
+
+    const row = await prisma.staffLeaveRequest.create({
+      data: {
+        staffProfileId: data.staffProfileId,
+        type: data.type,
+        status: data.status,
+        startDate: start,
+        endDate: end,
+        notes: data.notes?.trim() || null,
+        managerNote: data.managerNote?.trim() || null,
+        requestedByUserId: actor.id,
+        reviewedByUserId: reviewed ? actor.id : null,
+        reviewedAt: reviewed ? new Date() : null
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: data.staffProfileId,
+      eventType: 'STAFF_LEAVE_CREATED',
+      summary: `Leave ${data.status.toLowerCase()} for ${formatLeaveDate(start)} to ${formatLeaveDate(end)}.`,
+      actor,
+      metadata: {
+        leaveRequestId: row.id,
+        type: data.type,
+        status: data.status,
+        startDate: formatLeaveDate(start),
+        endDate: formatLeaveDate(end),
+        venue: profile.venue
+      }
+    });
+
+    return toStaffLeaveRequest(row);
+  },
+
+  async updateLeaveRequest(id: string, input: unknown, actor: AuthUser) {
+    const existing = await prisma.staffLeaveRequest.findUnique({
+      where: { id },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+    if (!existing) throw new HttpError(404, 'Leave request not found.');
+    await assertManagerCanAccessStaffProfile(existing.staffProfileId, actor);
+
+    const data = staffLeaveRequestUpdateSchema.parse(input);
+    const nextStaffProfileId = data.staffProfileId ?? existing.staffProfileId;
+    if (nextStaffProfileId !== existing.staffProfileId) {
+      await assertManagerCanAccessStaffProfile(nextStaffProfileId, actor);
+    }
+
+    const startInput = data.startDate ?? formatLeaveDate(existing.startDate);
+    const endInput = data.endDate ?? formatLeaveDate(existing.endDate);
+    const { start, end } = leaveDateRange(startInput, endInput);
+    const nextStatus = data.status ?? existing.status;
+    const statusChanged = nextStatus !== existing.status;
+    const reviewed = statusChanged && ['APPROVED', 'DECLINED', 'CANCELLED'].includes(nextStatus);
+
+    const row = await prisma.staffLeaveRequest.update({
+      where: { id },
+      data: {
+        staffProfileId: nextStaffProfileId,
+        ...(data.type !== undefined && { type: data.type }),
+        status: nextStatus,
+        startDate: start,
+        endDate: end,
+        ...(data.notes !== undefined && { notes: data.notes.trim() || null }),
+        ...(data.managerNote !== undefined && { managerNote: data.managerNote.trim() || null }),
+        ...(reviewed && { reviewedByUserId: actor.id, reviewedAt: new Date() }),
+        ...(statusChanged && nextStatus === 'PENDING' && { reviewedByUserId: null, reviewedAt: null })
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: statusChanged ? 'STAFF_LEAVE_STATUS_UPDATED' : 'STAFF_LEAVE_UPDATED',
+      summary: statusChanged
+        ? `Leave status changed from ${existing.status} to ${nextStatus}.`
+        : `Leave updated for ${staffName(row.staffProfile)}.`,
+      actor,
+      metadata: {
+        leaveRequestId: row.id,
+        previousStatus: existing.status,
+        nextStatus,
+        type: row.type,
+        startDate: formatLeaveDate(row.startDate),
+        endDate: formatLeaveDate(row.endDate)
+      }
+    });
+
+    return toStaffLeaveRequest(row);
   },
 
   async addManagerNote(staffProfileId: string, input: unknown, actor: AuthUser) {
@@ -2278,12 +2548,23 @@ export const staffService = {
    * onboarding form updates the existing profile rather than creating a new
    * one.
    */
-  async createInvite(input: unknown) {
+  async createInvite(input: unknown, actor?: AuthUser) {
     const data = staffInviteCreateInputSchema.parse(input);
+    const staffDefaults = await getStaffDefaults();
     const days = data.expiresInDays ?? 30;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const email = normaliseEmail(data.email);
     const onboardingBaseUrl = normaliseBaseUrl(data.onboardingBaseUrl);
+    const targetVenue = data.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
+
+    if (
+      actor &&
+      !actor.isAdmin &&
+      actor.role !== 'ADMIN' &&
+      (!actor.venue || targetVenue !== actor.venue)
+    ) {
+      throw new HttpError(403, 'Managers cannot create staff invites outside their venue.');
+    }
 
     if (email) {
       const existing = await prisma.staffProfile.findUnique({ where: { email } });
@@ -2300,12 +2581,13 @@ export const staffService = {
         data: {
           firstName: data.firstName,
           lastName: data.lastName,
-          roleTitle: data.roleTitle,
+          roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
           email,
-          venue: data.venue || null,
+          venue: targetVenue || null,
           employmentStatus: 'PENDING',
           notes: data.note || null,
-          payProfile: { create: defaultPayProfileCreateData() }
+          payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
+          appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) }
         }
       });
 
@@ -2326,8 +2608,8 @@ export const staffService = {
         ? await mailService.sendStaffInvite({
             to: email,
             firstName: data.firstName,
-            roleTitle: data.roleTitle,
-            venue: data.venue || null,
+            roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
+            venue: targetVenue || null,
             note: data.note || null,
             inviteLink,
             expiresAt
@@ -2340,13 +2622,28 @@ export const staffService = {
     return { ...invite, inviteLink, emailDelivery };
   },
 
-  async reonboardStaff(input: unknown) {
+  async reonboardStaff(input: unknown, actor?: AuthUser) {
     const data = staffReonboardInputSchema.parse(input);
+    const staffDefaults = await getStaffDefaults();
     const days = data.expiresInDays ?? 30;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const email = normaliseEmail(data.email);
     if (!email) throw new HttpError(400, 'Email is required');
     const onboardingBaseUrl = normaliseBaseUrl(data.onboardingBaseUrl);
+    const existingForScope = await prisma.staffProfile.findUnique({
+      where: { email },
+      select: { id: true, venue: true }
+    });
+    const targetVenue = data.venue || (existingForScope ? existingForScope.venue ?? '' : staffDefaults.defaultVenue) || '';
+
+    if (
+      actor &&
+      !actor.isAdmin &&
+      actor.role !== 'ADMIN' &&
+      (!actor.venue || targetVenue !== actor.venue)
+    ) {
+      throw new HttpError(403, 'Managers cannot re-onboard staff outside their venue.');
+    }
 
     const invite = await prisma.$transaction(async (tx) => {
       const existing = await tx.staffProfile.findUnique({ where: { email } });
@@ -2378,12 +2675,13 @@ export const staffService = {
             data: {
               firstName: data.firstName?.trim() || 'Pending',
               lastName: data.lastName?.trim() || 'Staff',
-              roleTitle: data.roleTitle?.trim() || 'Team member',
+              roleTitle: data.roleTitle?.trim() || staffDefaults.defaultRoleTitle,
               email,
-              venue: data.venue || null,
+              venue: targetVenue || null,
               employmentStatus: 'PENDING',
               notes: data.note || null,
-              payProfile: { create: defaultPayProfileCreateData() }
+              payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
+              appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) }
             }
           });
 
@@ -2432,7 +2730,8 @@ export const staffService = {
     return { ...invite, inviteLink, emailDelivery, reonboarded: true };
   },
 
-  async reonboardProfile(id: string, input: unknown) {
+  async reonboardProfile(id: string, input: unknown, actor?: AuthUser) {
+    if (actor) await assertManagerCanAccessStaffProfile(id, actor);
     const data = staffProfileReonboardInputSchema.parse(input ?? {});
     const profile = await prisma.staffProfile.findUnique({ where: { id } });
     if (!profile) throw new HttpError(404, 'Staff profile not found');
@@ -2449,7 +2748,7 @@ export const staffService = {
       note: data.note?.trim() || 'Please complete your ALMA Staff onboarding details.',
       expiresInDays: data.expiresInDays,
       onboardingBaseUrl: data.onboardingBaseUrl
-    });
+    }, actor);
   },
 
   async resendInvite(id: string, input: unknown) {
@@ -2540,7 +2839,7 @@ export const staffService = {
   async completeInvite(token: string, input: unknown) {
     const invite = await this.getInviteByToken(token);
     const data = staffInviteCompleteInputSchema.parse(input);
-    const onboardingSettings = await getOnboardingSettings();
+    const [onboardingSettings, staffDefaults] = await Promise.all([getOnboardingSettings(), getStaffDefaults()]);
     validateCompleteOnboarding(data, onboardingSettings);
     const email = normaliseEmail(data.email) ?? invite.email ?? null;
     const passwordHash = await authService.hashPassword(data.password);
@@ -2553,18 +2852,19 @@ export const staffService = {
           data: {
             firstName: data.firstName,
             lastName: data.lastName,
-            roleTitle: data.roleTitle,
+            roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
             email,
             phone: data.phone || null,
-            venue: data.venue || null,
+            venue: data.venue || staffDefaults.defaultVenue || null,
             employmentStatus: 'PENDING',
             startDate: data.startDate ? new Date(data.startDate) : null,
             ...onboardingDetailCreateData(data),
             notes: data.notes || null,
             passwordHash,
             payProfile: !hasLegacyPaySetup(data)
-              ? { create: defaultPayProfileCreateData() }
+              ? { create: defaultPayProfileCreateData(undefined, staffDefaults) }
               : undefined,
+            appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) },
             records: data.records?.length
               ? {
                   create: data.records.map((record) => ({
@@ -2597,7 +2897,7 @@ export const staffService = {
 
       const existingProfile = await tx.staffProfile.findUnique({
         where: { id: invite.staffProfileId },
-        select: { venue: true }
+        select: { roleTitle: true, venue: true }
       });
 
       // Normal flow — fill in the pending profile.
@@ -2606,10 +2906,10 @@ export const staffService = {
         data: {
           firstName: data.firstName,
           lastName: data.lastName,
-          roleTitle: data.roleTitle,
+          roleTitle: data.roleTitle || existingProfile?.roleTitle || staffDefaults.defaultRoleTitle,
           email,
           phone: data.phone || null,
-          venue: data.venue || existingProfile?.venue || null,
+          venue: data.venue || existingProfile?.venue || staffDefaults.defaultVenue || null,
           employmentStatus: 'PENDING',
           startDate: data.startDate ? new Date(data.startDate) : null,
           ...onboardingDetailCreateData(data),

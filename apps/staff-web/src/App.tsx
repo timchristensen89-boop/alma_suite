@@ -12,6 +12,11 @@ import type {
   StaffTipHistory,
   StaffProfile,
   StaffRecordType,
+  StaffDefaults,
+  StaffLeaveRequest,
+  StaffLeaveStatus,
+  StaffLeaveType,
+  StaffManagementEvent,
   StaffManagerDashboardPayload,
   StaffTrainingStatus,
   SuiteAnnouncement,
@@ -24,8 +29,11 @@ import type {
   TrainingOverview
 } from '@alma/shared';
 import {
+  AWARD_RATE_SETS,
+  DEFAULT_STAFF_DEFAULTS,
   DEFAULT_ONBOARDING_SETTINGS,
-  normaliseOnboardingSettings
+  normaliseOnboardingSettings,
+  normaliseStaffDefaults
 } from '@alma/shared';
 import {
   ActionFeedback,
@@ -269,6 +277,12 @@ const NAV_ITEMS = [
     icon: <ChartIcon />
   },
   {
+    to: '/leave',
+    label: 'Leave',
+    description: 'Manager leave calendar',
+    icon: <DocumentIcon />
+  },
+  {
     to: '/academy',
     label: 'Academy',
     description: 'Modules, levels and pay rules',
@@ -287,8 +301,8 @@ const NAV_ITEMS = [
     icon: <ChartIcon />
   },
   {
-    to: '/admin',
-    label: 'Staff Admin',
+    to: '/settings',
+    label: 'Settings',
     description: 'Settings, integrations, venues, onboarding and access',
     icon: <GearIcon />
   },
@@ -345,6 +359,19 @@ const ROSTER_FORECAST_STORAGE_KEY = 'alma.staff.roster.forecast.v1';
 const ROSTER_CLOSED_DAYS_STORAGE_KEY = 'alma.staff.roster.closedDays.v1';
 const ROSTER_AREA_SETTINGS_STORAGE_KEY = 'alma.staff.roster.areas.v1';
 const DEFAULT_ROSTER_AREAS = ['Floor', 'Bar', 'Kitchen', 'Management', 'Events', 'Training'];
+const LEAVE_TYPE_OPTIONS: Array<{ label: string; value: StaffLeaveType }> = [
+  { label: 'Annual leave', value: 'ANNUAL' },
+  { label: 'Sick leave', value: 'SICK' },
+  { label: 'Personal leave', value: 'PERSONAL' },
+  { label: 'Unpaid leave', value: 'UNPAID' },
+  { label: 'Other leave', value: 'OTHER' }
+];
+const LEAVE_STATUS_OPTIONS: Array<{ label: string; value: StaffLeaveStatus }> = [
+  { label: 'Pending', value: 'PENDING' },
+  { label: 'Approved', value: 'APPROVED' },
+  { label: 'Declined', value: 'DECLINED' },
+  { label: 'Cancelled', value: 'CANCELLED' }
+];
 
 type RosterShiftContextMenu = {
   shift: RosterShift;
@@ -2624,6 +2651,7 @@ type AdminSettingsDraft = {
   goveeApiKey: string;
   goveeBaseUrl: string;
   onboardingSettings: OnboardingSettings;
+  staffDefaults: StaffDefaults;
 };
 
 function draftFromSettings(settings: AppSettingsPayload): AdminSettingsDraft {
@@ -2639,7 +2667,8 @@ function draftFromSettings(settings: AppSettingsPayload): AdminSettingsDraft {
     notifyOutOfRangeTemp: settings.notifyOutOfRangeTemp,
     goveeApiKey: settings.goveeApiKey ?? '',
     goveeBaseUrl: settings.goveeBaseUrl ?? 'https://openapi.api.govee.com',
-    onboardingSettings: normaliseOnboardingSettings(settings.onboardingSettings)
+    onboardingSettings: normaliseOnboardingSettings(settings.onboardingSettings),
+    staffDefaults: normaliseStaffDefaults(settings.staffDefaults)
   };
 }
 
@@ -3265,7 +3294,8 @@ function AdminPage({
     notifyOutOfRangeTemp: true,
     goveeApiKey: '',
     goveeBaseUrl: 'https://openapi.api.govee.com',
-    onboardingSettings: DEFAULT_ONBOARDING_SETTINGS
+    onboardingSettings: DEFAULT_ONBOARDING_SETTINGS,
+    staffDefaults: DEFAULT_STAFF_DEFAULTS
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -3314,6 +3344,14 @@ function AdminPage({
   );
   const adminHiddenAreaCount = adminRosterAreas.filter((areaName) => adminHiddenAreaNames.has(normaliseRosterAreaKey(areaName))).length;
   const rosterVenueOptions = rosterVenueValues.map((venue) => ({ label: venue, value: venue }));
+  const staffDefaultsAward = AWARD_RATE_SETS.find((award) => award.awardCode === draft.staffDefaults.defaultAwardCode) ?? AWARD_RATE_SETS[0];
+  const staffDefaultClassificationOptions = staffDefaultsAward.classifications.map((classification) => ({
+    label: classification.label,
+    value: classification.id
+  }));
+  const [managementEvents, setManagementEvents] = useState<StaffManagementEvent[]>([]);
+  const [eventsLoading, setEventsLoading] = useState(false);
+  const [eventFilter, setEventFilter] = useState('');
 
   const appRows = STAFF_APPS.map((app) => {
     const access = staff.flatMap((member) => member.appAccess.filter((item) => item.appId === app.id));
@@ -3324,6 +3362,13 @@ function AdminPage({
       disabled: access.filter((item) => item.status === 'DISABLED').length
     };
   });
+  const managementEventOptions = [
+    { label: 'All event types', value: '' },
+    ...Array.from(new Set(managementEvents.map((event) => event.eventType))).sort().map((eventType) => ({
+      label: eventType.replace(/_/g, ' '),
+      value: eventType
+    }))
+  ];
 
   useEffect(() => {
     let cancelled = false;
@@ -3375,6 +3420,43 @@ function AdminPage({
       }
     }));
   }
+
+  function updateStaffDefaults(patch: Partial<StaffDefaults>) {
+    setDraft((current) => {
+      const nextAwardCode = patch.defaultAwardCode ?? current.staffDefaults.defaultAwardCode;
+      const award = AWARD_RATE_SETS.find((item) => item.awardCode === nextAwardCode) ?? AWARD_RATE_SETS[0];
+      const nextClassification = patch.defaultAwardClassification ?? current.staffDefaults.defaultAwardClassification;
+      return {
+        ...current,
+        staffDefaults: normaliseStaffDefaults({
+          ...current.staffDefaults,
+          ...patch,
+          defaultAwardCode: nextAwardCode,
+          defaultAwardClassification: award.classifications.some((item) => item.id === nextClassification)
+            ? nextClassification
+            : award.classifications[0]?.id
+        })
+      };
+    });
+  }
+
+  const loadManagementEvents = useCallback(async () => {
+    setEventsLoading(true);
+    try {
+      const params = new URLSearchParams({ take: '30' });
+      if (eventFilter) params.set('eventType', eventFilter);
+      setManagementEvents(await api<StaffManagementEvent[]>(`/api/staff/management-events?${params.toString()}`));
+    } catch (err) {
+      setMessageTarget('management-events');
+      setMessage(err instanceof Error ? err.message : 'Could not load management events.');
+    } finally {
+      setEventsLoading(false);
+    }
+  }, [eventFilter]);
+
+  useEffect(() => {
+    void loadManagementEvents();
+  }, [loadManagementEvents]);
 
   function updateVenue(index: number, patch: Partial<AppSettingsPayload['venues'][number]>) {
     setDraft((current) => ({
@@ -3568,7 +3650,8 @@ function AdminPage({
               phone: venue.phone?.trim() ?? ''
             }))
             .filter((venue) => venue.name),
-          onboardingSettings: draft.onboardingSettings
+          onboardingSettings: draft.onboardingSettings,
+          staffDefaults: draft.staffDefaults
         })
       });
       setSettings(updated);
@@ -3585,8 +3668,8 @@ function AdminPage({
     <div className="page-stack">
       <PageHeader
         eyebrow="ALMA Staff"
-        title="Staff Admin"
-        description="Settings, integrations, venues, onboarding and access for the Staff app."
+        title="Staff settings"
+        description="Defaults, integrations, venues, onboarding, app access and staff-management audit history."
       />
 
       <div className="stats-grid">
@@ -3678,6 +3761,75 @@ function AdminPage({
           </form>
         </Card>
       </div>
+
+      <Card title="Staff defaults" subtitle="Defaults used for new staff profiles and onboarding invites. Individual staff pay and access can still be edited on their profile.">
+        <form
+          className="staff-profile-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveSettings('staff-defaults');
+          }}
+        >
+          <div className="form-grid two">
+            <Input
+              label="Default role title"
+              value={draft.staffDefaults.defaultRoleTitle}
+              onChange={(event) => updateStaffDefaults({ defaultRoleTitle: event.currentTarget.value })}
+            />
+            <Select
+              label="Default venue"
+              value={draft.staffDefaults.defaultVenue}
+              onChange={(event) => updateStaffDefaults({ defaultVenue: event.currentTarget.value })}
+              options={[{ label: 'No default venue', value: '' }, ...rosterVenueOptions]}
+            />
+            <Select
+              label="Default Staff app role"
+              value={draft.staffDefaults.defaultStaffAppRole}
+              onChange={(event) => updateStaffDefaults({ defaultStaffAppRole: event.currentTarget.value as StaffDefaults['defaultStaffAppRole'] })}
+              options={[
+                { label: 'User', value: 'USER' },
+                { label: 'Manager', value: 'MANAGER' }
+              ]}
+            />
+            <Select
+              label="Default employment type"
+              value={draft.staffDefaults.defaultEmploymentType}
+              onChange={(event) => updateStaffDefaults({ defaultEmploymentType: event.currentTarget.value as StaffDefaults['defaultEmploymentType'] })}
+              options={[
+                { label: 'Casual', value: 'CASUAL' },
+                { label: 'Part-time', value: 'PART_TIME' }
+              ]}
+            />
+            <Select
+              label="Default award"
+              value={draft.staffDefaults.defaultAwardCode}
+              onChange={(event) => updateStaffDefaults({ defaultAwardCode: event.currentTarget.value as StaffDefaults['defaultAwardCode'] })}
+              options={AWARD_RATE_SETS.map((award) => ({
+                label: `${award.awardName} [${award.awardCode}]`,
+                value: award.awardCode
+              }))}
+            />
+            <Select
+              label="Default classification"
+              value={draft.staffDefaults.defaultAwardClassification}
+              onChange={(event) => updateStaffDefaults({ defaultAwardClassification: event.currentTarget.value })}
+              options={staffDefaultClassificationOptions}
+            />
+          </div>
+          <p className="subtle">
+            Award source: {staffDefaultsAward.sourceLabel}. Effective from first full pay period on or after {staffDefaultsAward.rateEffectiveFrom}; version {staffDefaultsAward.rateSetVersion}.
+            Full-time manual pay is recorded on the individual staff profile once the agreed amount is known.
+            Penalty rates, overtime, allowances, public holidays, juniors, apprentices and supported wage rules are not calculated here.
+          </p>
+          <div className="toolbar-right">
+            <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save staff defaults'}</Button>
+            <ActionFeedback
+              message={messageTarget === 'staff-defaults' ? message : null}
+              tone={message?.includes('saved') ? 'success' : 'error'}
+            />
+          </div>
+        </form>
+      </Card>
 
       <Card
         title="Venues"
@@ -3915,6 +4067,41 @@ function AdminPage({
         </form>
       </Card>
 
+      <div className="tips-entry-grid">
+        <Card title="Password and email status" subtitle="Staff password recovery is email-only. Managers can request a reset but cannot set or view passwords.">
+          <div className="staff-expiry-list">
+            <div className="staff-expiry-row">
+              <span>
+                <strong>Staff reset URL</strong>
+                <span className="subtle">{window.location.origin}/reset-password</span>
+              </span>
+              <Badge tone="positive">Configured route</Badge>
+            </div>
+            <div className="staff-expiry-row">
+              <span>
+                <strong>Email service</strong>
+                <span className="subtle">API mail service sends reset and onboarding emails. Secrets and reset tokens are never exposed here.</span>
+              </span>
+              <Badge tone="info">Server managed</Badge>
+            </div>
+          </div>
+        </Card>
+
+        <Card title="Roles and access" subtitle="Available role presets and permission groups. Elevated Settings/admin access remains admin-only.">
+          <div className="staff-expiry-list">
+            {STAFF_PROFILE_PRESETS.map((preset) => (
+              <div key={preset.id} className="staff-expiry-row">
+                <span>
+                  <strong>{preset.label}</strong>
+                  <span className="subtle">{preset.roleTitle} · {preset.employmentType}</span>
+                </span>
+                <Badge tone={preset.id === 'admin' ? 'warning' : 'muted'}>{preset.id === 'admin' ? 'Admin-only' : 'Preset'}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+      </div>
+
       <Card title="App access matrix" subtitle="Manage access here or jump into the detailed profile workflow." padding="none">
         <div className="staff-list" style={{ padding: 12 }}>
           {appRows.map(({ app, enabled, pending, disabled }) => (
@@ -3936,6 +4123,42 @@ function AdminPage({
               </Button>
             </div>
           ))}
+        </div>
+      </Card>
+
+      <Card title="Staff management audit" subtitle="Recent role, access, pay setup, password reset, leave and duplicate-merge events.">
+        <div className="toolbar-right">
+          <Select
+            label="Event type"
+            value={eventFilter}
+            onChange={(event) => setEventFilter(event.currentTarget.value)}
+            options={managementEventOptions}
+          />
+          <Button type="button" variant="secondary" disabled={eventsLoading} onClick={() => void loadManagementEvents()}>
+            {eventsLoading ? 'Loading…' : 'Refresh'}
+          </Button>
+        </div>
+        <div className="staff-expiry-list">
+          {eventsLoading ? <Spinner label="Loading audit events…" /> : null}
+          {!eventsLoading && managementEvents.length === 0 ? (
+            <EmptyState title="No management events yet" description="Role, access, pay, password reset, leave and merge events will appear here." />
+          ) : null}
+          {managementEvents.map((event) => (
+            <div key={event.id} className="staff-expiry-row">
+              <span>
+                <strong>{event.eventType.replace(/_/g, ' ')}</strong>
+                <span className="subtle">
+                  {event.staffProfile ? `${event.staffProfile.firstName} ${event.staffProfile.lastName}` : 'Staff profile'} · {formatDateTime(event.createdAt)}
+                </span>
+                <span>{event.summary}</span>
+              </span>
+              <Badge tone="muted">{event.createdByName || 'System'}</Badge>
+            </div>
+          ))}
+          <ActionFeedback
+            message={messageTarget === 'management-events' ? message : null}
+            tone="error"
+          />
         </div>
       </Card>
     </div>
@@ -4275,6 +4498,312 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
                     />
                   </>
                 ) : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+type LeaveDraft = {
+  staffProfileId: string;
+  type: StaffLeaveType;
+  status: StaffLeaveStatus;
+  startDate: string;
+  endDate: string;
+  notes: string;
+  managerNote: string;
+};
+
+function leaveDraftFor(staff: StaffProfile[]): LeaveDraft {
+  const today = toDateInput(new Date());
+  return {
+    staffProfileId: staff.find((member) => member.employmentStatus !== 'ARCHIVED')?.id ?? '',
+    type: 'ANNUAL',
+    status: 'APPROVED',
+    startDate: today,
+    endDate: today,
+    notes: '',
+    managerNote: ''
+  };
+}
+
+function leaveStatusTone(status: StaffLeaveStatus): 'positive' | 'warning' | 'danger' | 'muted' {
+  if (status === 'APPROVED') return 'positive';
+  if (status === 'PENDING') return 'warning';
+  if (status === 'DECLINED') return 'danger';
+  return 'muted';
+}
+
+function leaveTypeLabel(value: StaffLeaveType) {
+  return LEAVE_TYPE_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function leaveStatusLabel(value: StaffLeaveStatus) {
+  return LEAVE_STATUS_OPTIONS.find((option) => option.value === value)?.label ?? value;
+}
+
+function leaveOverlapsDay(leave: StaffLeaveRequest, day: Date) {
+  const start = new Date(leave.startDate);
+  const end = new Date(leave.endDate);
+  const target = new Date(day);
+  target.setHours(0, 0, 0, 0);
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  return target >= start && target <= end;
+}
+
+function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
+  const { user } = useAuth();
+  const [monthStart, setMonthStart] = useState(() => new Date(new Date().getFullYear(), new Date().getMonth(), 1));
+  const [leave, setLeave] = useState<StaffLeaveRequest[]>([]);
+  const [draft, setDraft] = useState<LeaveDraft>(() => leaveDraftFor(staff));
+  const [venueFilter, setVenueFilter] = useState('');
+  const [staffFilter, setStaffFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
+  const venueOptions = [
+    { label: 'All permitted venues', value: '' },
+    ...uniqueValues(activeStaff.map((member) => member.venue).filter(Boolean) as string[]).map((venue) => ({ label: venue, value: venue }))
+  ];
+  const staffOptions = [
+    { label: 'All staff', value: '' },
+    ...activeStaff.map((member) => ({
+      label: `${member.firstName} ${member.lastName}`,
+      value: member.id
+    }))
+  ];
+  const recordStaffOptions = [
+    { label: 'Choose staff', value: '' },
+    ...activeStaff.map((member) => ({
+      label: `${member.firstName} ${member.lastName} · ${member.venue || 'No venue'}`,
+      value: member.id
+    }))
+  ];
+  const calendarStart = useMemo(() => startOfWeek(monthStart), [monthStart]);
+  const calendarDays = useMemo(() => weekDays(calendarStart, 42), [calendarStart]);
+  const calendarEnd = useMemo(() => addDays(calendarStart, 42), [calendarStart]);
+  const approvedCount = leave.filter((item) => item.status === 'APPROVED').length;
+  const pendingCount = leave.filter((item) => item.status === 'PENDING').length;
+
+  const loadLeave = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const params = new URLSearchParams({
+        start: toDateInput(calendarStart),
+        end: toDateInput(calendarEnd)
+      });
+      if (venueFilter) params.set('venue', venueFilter);
+      if (staffFilter) params.set('staffProfileId', staffFilter);
+      if (statusFilter) params.set('status', statusFilter);
+      if (typeFilter) params.set('type', typeFilter);
+      setLeave(await api<StaffLeaveRequest[]>(`/api/staff/leave?${params.toString()}`));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load leave calendar.');
+    } finally {
+      setLoading(false);
+    }
+  }, [calendarEnd, calendarStart, staffFilter, statusFilter, typeFilter, venueFilter]);
+
+  useEffect(() => {
+    void loadLeave();
+  }, [loadLeave]);
+
+  useEffect(() => {
+    if (!draft.staffProfileId && activeStaff[0]) {
+      setDraft((current) => ({ ...current, staffProfileId: activeStaff[0].id }));
+    }
+  }, [activeStaff, draft.staffProfileId]);
+
+  function updateDraft<K extends keyof LeaveDraft>(key: K, value: LeaveDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveLeave() {
+    setMessageTarget('leave-save');
+    if (!draft.staffProfileId) {
+      setMessage('Choose a staff member before recording leave.');
+      return;
+    }
+    if (!draft.startDate || !draft.endDate || draft.endDate < draft.startDate) {
+      setMessage('Use a valid date range for leave.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffLeaveRequest>('/api/staff/leave', {
+        method: 'POST',
+        body: JSON.stringify(draft)
+      });
+      setDraft(leaveDraftFor(activeStaff));
+      setMessage('Leave recorded.');
+      await loadLeave();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not record leave.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function changeStatus(item: StaffLeaveRequest, status: StaffLeaveStatus) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`leave:${item.id}:${status}`);
+    try {
+      await api<StaffLeaveRequest>(`/api/staff/leave/${item.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      });
+      setMessage(`Leave ${status.toLowerCase()}.`);
+      await loadLeave();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update leave.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack leave-page">
+      <PageHeader
+        eyebrow="Leave calendar"
+        title="Staff leave"
+        description="Record, approve and review pending or approved staff leave across your permitted venues."
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Leave records" value={leave.length} hint="Visible range" loading={loading} />
+        <StatCard label="Approved" value={approvedCount} hint="Roster-impacting" loading={loading} />
+        <StatCard label="Pending" value={pendingCount} hint="Needs review" loading={loading} />
+        <StatCard label="Staff in scope" value={activeStaff.length} hint={user?.venue || 'Permitted venues'} loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <div className="tips-entry-grid">
+        <Card title="Record leave" subtitle="Managers can record leave for staff in their permitted venue.">
+          <form
+            className="staff-profile-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void saveLeave();
+            }}
+          >
+            <Select label="Staff member" value={draft.staffProfileId} onChange={(event) => updateDraft('staffProfileId', event.currentTarget.value)} options={recordStaffOptions} />
+            <div className="form-grid two">
+              <Select label="Leave type" value={draft.type} onChange={(event) => updateDraft('type', event.currentTarget.value as StaffLeaveType)} options={LEAVE_TYPE_OPTIONS} />
+              <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffLeaveStatus)} options={LEAVE_STATUS_OPTIONS} />
+              <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => updateDraft('startDate', event.currentTarget.value)} />
+              <Input label="End date" type="date" value={draft.endDate} onChange={(event) => updateDraft('endDate', event.currentTarget.value)} />
+            </div>
+            <Textarea label="Staff note" rows={2} value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
+            <Textarea label="Manager note" rows={2} value={draft.managerNote} onChange={(event) => updateDraft('managerNote', event.currentTarget.value)} />
+            <div className="toolbar-right">
+              <Button type="submit" disabled={saving || !draft.staffProfileId}>{saving ? 'Saving…' : 'Record leave'}</Button>
+              <ActionFeedback
+                message={messageTarget === 'leave-save' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('valid') ? 'error' : 'success'}
+              />
+            </div>
+          </form>
+        </Card>
+
+        <Card title="Filters" subtitle="Narrow the calendar and mobile list without changing the saved records.">
+          <div className="staff-profile-form">
+            <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={venueOptions} />
+            <Select label="Staff member" value={staffFilter} onChange={(event) => setStaffFilter(event.currentTarget.value)} options={staffOptions} />
+            <Select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)} options={[{ label: 'All statuses', value: '' }, ...LEAVE_STATUS_OPTIONS]} />
+            <Select label="Leave type" value={typeFilter} onChange={(event) => setTypeFilter(event.currentTarget.value)} options={[{ label: 'All leave types', value: '' }, ...LEAVE_TYPE_OPTIONS]} />
+            <Button type="button" variant="secondary" disabled={loading} onClick={() => void loadLeave()}>
+              {loading ? 'Refreshing…' : 'Refresh'}
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      <Card title="Month view" subtitle="Approved and pending leave are visible at a glance.">
+        <div className="roster-week-controls">
+          <Button type="button" variant="secondary" size="sm" onClick={() => setMonthStart(new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1))}>
+            Previous
+          </Button>
+          <strong>{monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
+          <Button type="button" variant="secondary" size="sm" onClick={() => setMonthStart(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1))}>
+            Next
+          </Button>
+          <Button type="button" variant="ghost" size="sm" onClick={() => setMonthStart(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>
+            Today
+          </Button>
+        </div>
+        <div className="leave-calendar-grid" role="grid" aria-label="Staff leave calendar">
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+            <strong key={day} className="leave-calendar-heading">{day}</strong>
+          ))}
+          {calendarDays.map((day) => {
+            const dayLeave = leave.filter((item) => leaveOverlapsDay(item, day));
+            const outsideMonth = day.getMonth() !== monthStart.getMonth();
+            return (
+              <div key={toDateInput(day)} className={`leave-calendar-day${outsideMonth ? ' is-muted' : ''}`}>
+                <span className="leave-calendar-date">{day.getDate()}</span>
+                {dayLeave.slice(0, 3).map((item) => (
+                  <span key={item.id} className={`leave-pill is-${item.status.toLowerCase()}`}>
+                    {item.staffProfile?.firstName ?? 'Staff'} · {leaveStatusLabel(item.status)}
+                  </span>
+                ))}
+                {dayLeave.length > 3 ? <small className="subtle">+{dayLeave.length - 3} more</small> : null}
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <Card title="Leave list" subtitle="Mobile-friendly list with review actions.">
+        <div className="staff-expiry-list">
+          {loading ? <Spinner label="Loading leave…" /> : null}
+          {!loading && leave.length === 0 ? (
+            <EmptyState title="No leave in this range" description="Record leave when a staff member is away, or adjust the filters." />
+          ) : null}
+          {leave.map((item) => (
+            <div key={item.id} className="staff-expiry-row">
+              <span>
+                <strong>{item.staffProfile ? `${item.staffProfile.firstName} ${item.staffProfile.lastName}` : 'Staff member'}</strong>
+                <span className="subtle">
+                  {leaveTypeLabel(item.type)} · {formatRange(new Date(item.startDate), new Date(item.endDate))} · {item.staffProfile?.venue || 'No venue'}
+                </span>
+                {item.notes ? <span>{item.notes}</span> : null}
+                {item.managerNote ? <span className="subtle">Manager note: {item.managerNote}</span> : null}
+              </span>
+              <span className="invite-row-actions">
+                <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
+                {item.status === 'PENDING' ? (
+                  <>
+                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void changeStatus(item, 'APPROVED')}>
+                      Approve
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'DECLINED')}>
+                      Decline
+                    </Button>
+                  </>
+                ) : null}
+                {item.status !== 'CANCELLED' ? (
+                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'CANCELLED')}>
+                    Cancel
+                  </Button>
+                ) : null}
+                <ActionFeedback
+                  message={messageTarget?.startsWith(`leave:${item.id}:`) ? message : null}
+                  tone={message?.includes('Could') ? 'error' : 'success'}
+                />
               </span>
             </div>
           ))}
@@ -8065,10 +8594,11 @@ function StaffShell() {
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
-          <Route path="/admin" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
-          <Route path="/settings" element={<Navigate to="/admin" replace />} />
+          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
+          <Route path="/admin" element={<Navigate to="/settings" replace />} />
           <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
+          <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
           <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />

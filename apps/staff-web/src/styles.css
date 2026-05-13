@@ -614,6 +614,73 @@
   display: block;
 }
 
+.leave-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.leave-calendar-heading {
+  padding: 0 4px;
+  color: var(--color-text-subtle);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.leave-calendar-day {
+  min-height: 112px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  overflow: hidden;
+}
+
+.leave-calendar-day.is-muted {
+  opacity: 0.58;
+}
+
+.leave-calendar-date {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text-subtle);
+}
+
+.leave-pill {
+  display: block;
+  min-width: 0;
+  padding: 4px 6px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+}
+
+.leave-pill.is-approved {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-text);
+}
+
+.leave-pill.is-pending {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-text);
+}
+
+.leave-pill.is-declined,
+.leave-pill.is-cancelled {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-text);
+}
+
 .invites-layout {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(280px, 0.85fr);
@@ -2605,6 +2672,18 @@
 
   .roster-shift-detail {
     flex-wrap: wrap;
+  }
+
+  .leave-calendar-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .leave-calendar-heading {
+    display: none;
+  }
+
+  .leave-calendar-day {
+    min-height: auto;
   }
 
   .staff-list-button,

@@ -55,7 +55,7 @@ export function SettingsPage() {
     () => TABS.filter((t) => !t.adminOnly || user?.isAdmin),
     [user?.isAdmin]
   );
-  const adminHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/admin` : '';
+  const adminHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/settings` : '';
 
   async function save(patch: Partial<AppSettingsPayload>, target: string) {
     if (!settings) return;
@@ -115,12 +115,12 @@ export function SettingsPage() {
         <div className="hero-text">
           <p className="page-header-eyebrow">Settings</p>
           <h1>{settings.orgName}</h1>
-          <p>Major suite settings now live in ALMA Admin. Compliance keeps account access and compliance-specific handbook/document links here.</p>
+          <p>Staff defaults, access, onboarding, leave settings and management audit history live in ALMA Staff Settings. Compliance keeps account access and compliance-specific handbook/document links here.</p>
         </div>
         <div className="hero-actions">
           {user?.isAdmin && adminHref ? (
             <Button type="button" onClick={() => { window.location.href = adminHref; }}>
-              Open ALMA Admin
+              Open Staff Settings
             </Button>
           ) : null}
           {ok && !feedbackTarget ? <Badge tone="positive" dot>{ok}</Badge> : null}
@@ -130,18 +130,18 @@ export function SettingsPage() {
 
       {user?.isAdmin ? (
         <Card
-          title="Suite settings moved to ALMA Admin"
-          subtitle="Organisation details, venues, notifications, integrations, onboarding rules, and app access are managed from one admin surface."
+          title="Staff settings live in ALMA Staff"
+          subtitle="Staff defaults, venues, onboarding rules, access, leave, and staff-management audit events are managed from Staff Settings."
           action={
             adminHref ? (
               <Button type="button" variant="secondary" onClick={() => { window.location.href = adminHref; }}>
-                Open Admin
+                Open Staff Settings
               </Button>
             ) : undefined
           }
         >
           <p className="subtle">
-            This page remains available for your account password and Compliance handbook/document shortcuts while the shared settings are centralised.
+            This page remains available for your account password and Compliance handbook/document shortcuts while staff configuration stays in the Staff app.
           </p>
         </Card>
       ) : null}

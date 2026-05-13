@@ -3,6 +3,7 @@ import {
   AWARD_RATE_SETS,
   DEFAULT_STAFF_AWARD_CLASSIFICATION,
   DEFAULT_STAFF_AWARD_CODE,
+  getAwardClassification,
   type AustralianAwardCode,
   type ManualFullTimePayFrequency,
   type StaffAwardEmploymentType,
@@ -60,6 +61,8 @@ export const stockInvoiceMatchingStatusSchema = z.enum([
 export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);
+export const staffLeaveTypeSchema = z.enum(['ANNUAL', 'SICK', 'PERSONAL', 'UNPAID', 'OTHER']);
+export const staffLeaveStatusSchema = z.enum(['PENDING', 'APPROVED', 'DECLINED', 'CANCELLED']);
 export const timesheetStatusSchema = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED']);
 export const trainingModuleStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const staffTrainingStatusSchema = z.enum(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED']);
@@ -199,6 +202,55 @@ export const staffPayProfileInputSchema = z.object({
   }
 });
 
+export const staffDefaultsInputSchema = z.object({
+  defaultAwardCode: staffAwardCodeSchema.optional(),
+  defaultAwardClassification: z.string().trim().optional().or(z.literal('')),
+  defaultEmploymentType: staffAwardEmploymentTypeSchema.optional(),
+  defaultRoleTitle: z.string().trim().max(80).optional().or(z.literal('')),
+  defaultVenue: z.string().trim().max(120).optional().or(z.literal('')),
+  defaultStaffAppRole: z.enum(['USER', 'MANAGER']).optional()
+});
+
+export type StaffDefaults = {
+  defaultAwardCode: AustralianAwardCode;
+  defaultAwardClassification: string;
+  defaultEmploymentType: StaffAwardEmploymentType;
+  defaultRoleTitle: string;
+  defaultVenue: string;
+  defaultStaffAppRole: 'USER' | 'MANAGER';
+};
+
+export const DEFAULT_STAFF_DEFAULTS: StaffDefaults = {
+  defaultAwardCode: DEFAULT_STAFF_AWARD_CODE,
+  defaultAwardClassification: DEFAULT_STAFF_AWARD_CLASSIFICATION,
+  defaultEmploymentType: 'CASUAL',
+  defaultRoleTitle: 'Staff',
+  defaultVenue: '',
+  defaultStaffAppRole: 'USER'
+};
+
+export function normaliseStaffDefaults(input: unknown): StaffDefaults {
+  const parsed = staffDefaultsInputSchema.safeParse(input);
+  const data = parsed.success ? parsed.data : {};
+  const awardCode = data.defaultAwardCode ?? DEFAULT_STAFF_DEFAULTS.defaultAwardCode;
+  const classification = getAwardClassification(
+    awardCode,
+    data.defaultAwardClassification || DEFAULT_STAFF_DEFAULTS.defaultAwardClassification
+  );
+
+  return {
+    defaultAwardCode: awardCode,
+    defaultAwardClassification: classification?.id ?? DEFAULT_STAFF_DEFAULTS.defaultAwardClassification,
+    defaultEmploymentType:
+      data.defaultEmploymentType && data.defaultEmploymentType !== 'FULL_TIME'
+        ? data.defaultEmploymentType
+        : DEFAULT_STAFF_DEFAULTS.defaultEmploymentType,
+    defaultRoleTitle: data.defaultRoleTitle?.trim() || DEFAULT_STAFF_DEFAULTS.defaultRoleTitle,
+    defaultVenue: data.defaultVenue?.trim() || '',
+    defaultStaffAppRole: data.defaultStaffAppRole ?? DEFAULT_STAFF_DEFAULTS.defaultStaffAppRole
+  };
+}
+
 export const staffMergeInputSchema = z.object({
   canonicalStaffProfileId: z.string().min(1),
   duplicateStaffProfileIds: z.array(z.string().min(1)).min(1),
@@ -229,10 +281,59 @@ export const staffMergeInputSchema = z.object({
   }
 });
 
+function leaveDate(value: string) {
+  const date = new Date(`${value.slice(0, 10)}T00:00:00.000Z`);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function validateLeaveRange(
+  data: { startDate?: string; endDate?: string },
+  ctx: z.RefinementCtx
+) {
+  if (!data.startDate || !data.endDate) return;
+  const start = leaveDate(data.startDate);
+  const end = leaveDate(data.endDate);
+  if (!start || !end) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: !start ? ['startDate'] : ['endDate'],
+      message: 'Use a valid leave date.'
+    });
+    return;
+  }
+  if (end < start) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endDate'],
+      message: 'Leave end date must be on or after the start date.'
+    });
+  }
+}
+
+export const staffLeaveRequestInputSchema = z.object({
+  staffProfileId: z.string().min(1),
+  type: staffLeaveTypeSchema.default('ANNUAL'),
+  status: staffLeaveStatusSchema.default('PENDING'),
+  startDate: z.string().min(4),
+  endDate: z.string().min(4),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+  managerNote: z.string().trim().max(1000).optional().or(z.literal(''))
+}).superRefine(validateLeaveRange);
+
+export const staffLeaveRequestUpdateSchema = z.object({
+  staffProfileId: z.string().min(1).optional(),
+  type: staffLeaveTypeSchema.optional(),
+  status: staffLeaveStatusSchema.optional(),
+  startDate: z.string().min(4).optional(),
+  endDate: z.string().min(4).optional(),
+  notes: z.string().trim().max(1000).optional().or(z.literal('')),
+  managerNote: z.string().trim().max(1000).optional().or(z.literal(''))
+}).superRefine(validateLeaveRange);
+
 export const staffProfileCreateInputSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
-  roleTitle: z.string().min(2),
+  roleTitle: z.string().min(2).optional().or(z.literal('')),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
@@ -278,7 +379,7 @@ export const staffProfileUpdateInputSchema = staffProfileCreateInputSchema.parti
 export const staffInviteCreateInputSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
-  roleTitle: z.string().min(2),
+  roleTitle: z.string().min(2).optional().or(z.literal('')),
   email: z.string().email().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
   note: z.string().optional().or(z.literal('')),
@@ -884,6 +985,7 @@ export const appSettingsUpdateSchema = z.object({
   })).optional(),
   handbookContent: z.record(z.string(), z.unknown()).optional(),
   onboardingSettings: onboardingSettingsInputSchema.optional(),
+  staffDefaults: staffDefaultsInputSchema.optional(),
   goveeApiKey: z.string().optional().or(z.literal('')),
   goveeBaseUrl: z.string().url().optional().or(z.literal('')),
   notifyEmail: z.string().email().optional().or(z.literal('')),
@@ -913,6 +1015,7 @@ export type AppSettingsPayload = {
   venues: Array<{ name: string; address?: string; phone?: string }>;
   handbookContent: Record<string, unknown>;
   onboardingSettings: OnboardingSettings;
+  staffDefaults: StaffDefaults;
   goveeApiKey: string | null;
   goveeBaseUrl: string | null;
   notifyEmail: string | null;
@@ -1046,6 +1149,8 @@ export type StockInvoiceMatchingStatus = z.infer<
 export type AlmaAppId = z.infer<typeof almaAppIdSchema>;
 export type StaffAppAccessStatus = z.infer<typeof staffAppAccessStatusSchema>;
 export type RosterShiftStatus = z.infer<typeof rosterShiftStatusSchema>;
+export type StaffLeaveType = z.infer<typeof staffLeaveTypeSchema>;
+export type StaffLeaveStatus = z.infer<typeof staffLeaveStatusSchema>;
 export type TimesheetStatus = z.infer<typeof timesheetStatusSchema>;
 export type TrainingModuleStatus = z.infer<typeof trainingModuleStatusSchema>;
 export type StaffTrainingStatus = z.infer<typeof staffTrainingStatusSchema>;
@@ -1061,6 +1166,8 @@ export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSche
 export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
 export type StaffPayProfileInput = z.infer<typeof staffPayProfileInputSchema>;
 export type StaffMergeInput = z.infer<typeof staffMergeInputSchema>;
+export type StaffLeaveRequestInput = z.infer<typeof staffLeaveRequestInputSchema>;
+export type StaffLeaveRequestUpdateInput = z.infer<typeof staffLeaveRequestUpdateSchema>;
 export type AuthPasswordResetRequestInput = z.infer<typeof authPasswordResetRequestSchema>;
 export type AuthPasswordResetCompleteInput = z.infer<typeof authPasswordResetCompleteSchema>;
 export type StaffPasswordResetRequestInput = z.infer<typeof staffPasswordResetRequestSchema>;
@@ -1192,6 +1299,24 @@ export type StaffManagementEvent = {
   createdByName: string | null;
   createdByEmail: string | null;
   createdAt: string;
+  staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'>;
+};
+
+export type StaffLeaveRequest = {
+  id: string;
+  staffProfileId: string;
+  type: StaffLeaveType;
+  status: StaffLeaveStatus;
+  startDate: string;
+  endDate: string;
+  notes: string | null;
+  managerNote: string | null;
+  requestedByUserId: string | null;
+  reviewedByUserId: string | null;
+  reviewedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'>;
 };
 
 export type StaffAppAccess = {

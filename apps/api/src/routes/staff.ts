@@ -124,6 +124,42 @@ staffRouter.post('/merge', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/management-events', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listManagementEvents(req.query, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/leave', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listLeaveRequests(req.query, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/leave', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.createLeaveRequest(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/leave/:id', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.updateLeaveRequest(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Invite endpoints — declared BEFORE /:id so /invites isn't read as an id
 staffRouter.get('/invites', async (_req, res, next) => {
   try {
@@ -135,7 +171,7 @@ staffRouter.get('/invites', async (_req, res, next) => {
 
 staffRouter.post('/invites', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.createInvite(req.body));
+    res.status(201).json(await staffService.createInvite(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -143,7 +179,7 @@ staffRouter.post('/invites', requireManager, async (req, res, next) => {
 
 staffRouter.post('/invites/reonboard', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.reonboardStaff(req.body));
+    res.status(201).json(await staffService.reonboardStaff(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -159,7 +195,7 @@ staffRouter.post('/invites/:id/resend', requireManager, async (req, res, next) =
 
 staffRouter.post('/profiles/:id/reonboard', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.reonboardProfile(String(req.params.id), req.body));
+    res.status(201).json(await staffService.reonboardProfile(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -418,7 +454,7 @@ staffRouter.put('/:id/pay-profile', requireManager, async (req, res, next) => {
 staffRouter.get('/:id/management-events', requireAdmin, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
-    res.json(await staffService.listManagementEvents(String(req.params.id), req.user));
+    res.json(await staffService.listStaffManagementEvents(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }

@@ -414,6 +414,7 @@ model StaffProfile {
   managerNotes     StaffManagerNote[]
   payProfile       StaffPayProfile?
   managementEvents StaffManagementEvent[]
+  leaveRequests    StaffLeaveRequest[]
   passwordResetTokens StaffPasswordResetToken[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
@@ -481,6 +482,27 @@ model StaffManagementEvent {
 
   @@index([staffProfileId, createdAt])
   @@index([eventType, createdAt])
+}
+
+model StaffLeaveRequest {
+  id                String       @id @default(cuid())
+  staffProfileId    String
+  type              String
+  status            String       @default("PENDING")
+  startDate         DateTime
+  endDate           DateTime
+  notes             String?
+  managerNote       String?
+  requestedByUserId String?
+  reviewedByUserId  String?
+  reviewedAt        DateTime?
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  staffProfile      StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, startDate])
+  @@index([status, startDate])
+  @@index([startDate, endDate])
 }
 
 model StaffPasswordResetToken {
@@ -1033,6 +1055,7 @@ model AppSettings {
   venues               Json     @default("[]")
   handbookContent      Json     @default("{}")
   onboardingSettings   Json     @default("{}")
+  staffDefaults        Json     @default("{}")
   giftCardSettings     Json     @default("{}")
   goveeApiKey          String?
   goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
