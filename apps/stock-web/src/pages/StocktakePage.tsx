@@ -86,6 +86,10 @@ function formatSignedQuantity(qty: number | null | undefined, unit: string | nul
   return `${sign}${formatQuantity(safeQty, unit)}`;
 }
 
+function effectiveItemOnHand(item: StockItem) {
+  return item.venueStock?.onHand ?? item.onHand;
+}
+
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
   switch (type) {
     case 'STOCKTAKE_CORRECTION':
@@ -129,11 +133,12 @@ function varianceSummary(detail: StocktakeWithLines) {
 }
 
 function emptyLine(item?: StockItem): LineDraft {
-  const value = item?.avgCostCents ? Math.round(item.avgCostCents * (item.onHand || 0)) : '';
+  const onHand = item ? effectiveItemOnHand(item) : 0;
+  const value = item?.avgCostCents ? Math.round(item.avgCostCents * onHand) : '';
   return {
     itemId: item?.id ?? '',
     label: item?.name ?? '',
-    countedQty: item ? String(item.onHand) : '0',
+    countedQty: item ? String(onHand) : '0',
     unit: item?.unit ?? '',
     location: item?.category?.name ?? '',
     stockValueCents: value === '' ? '' : String(value),
@@ -203,6 +208,7 @@ export function StocktakePage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [reopeningId, setReopeningId] = useState<string | null>(null);
   const canManageReview = canManageStock(user);
 
   async function load() {
@@ -240,6 +246,17 @@ export function StocktakePage() {
   const selectedStocktakes = useMemo(
     () => (data?.stocktakes ?? []).filter((stocktake) => selectedIds.has(stocktake.id)),
     [data, selectedIds]
+  );
+
+  const readyForReview = useMemo(
+    () =>
+      (data?.stocktakes ?? [])
+        .filter((stocktake) => stocktake.status === 'SUBMITTED' && !stocktake.appliedAt)
+        .sort((a, b) =>
+          new Date(b.submittedAt ?? b.updatedAt).getTime() -
+          new Date(a.submittedAt ?? a.updatedAt).getTime()
+        ),
+    [data]
   );
 
   const selectableStocktakes = useMemo(
@@ -338,6 +355,35 @@ export function StocktakePage() {
     }
   }
 
+  async function reopenStocktake(stocktake: Stocktake) {
+    if (!canManageReview) {
+      setError('Manager access is required to reopen stocktakes.');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Reopen "${stocktake.name}"?`,
+      message:
+        'This returns the submitted count to draft/in-progress so it can be corrected. It does not change item balances.',
+      confirmationText: 'REOPEN STOCKTAKE'
+    });
+    if (!confirmed) return;
+
+    setReopeningId(stocktake.id);
+    setError(null);
+    try {
+      await api<Stocktake>(`/api/stocktake/${stocktake.id}/reopen`, {
+        method: 'POST'
+      });
+      setExpandedId(null);
+      setDetail(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not reopen stocktake');
+    } finally {
+      setReopeningId(null);
+    }
+  }
+
   function toggleSelected(id: string) {
     const stocktake = data?.stocktakes.find((item) => item.id === id);
     if (stocktake?.appliedAt) return;
@@ -417,8 +463,75 @@ export function StocktakePage() {
         <StatCard icon={<IconStocktake size={18} />} label="Stocktakes" value={loading ? '—' : String(summary?.totalStocktakes ?? 0)} hint="On record across venues" />
         <StatCard label="Last counted" value={loading ? '—' : summary?.lastCountedAt ? formatDate(summary.lastCountedAt) : 'Never'} hint="Most recent count" />
         <StatCard label="In progress" value={loading ? '—' : String(summary?.inProgress ?? 0)} hint="Counts not yet submitted" tone={summary && summary.inProgress > 0 ? 'warning' : 'neutral'} />
-        <StatCard label="Total counted value" value={loading ? '—' : summary ? formatCurrency(summary.totalValueCents) : '—'} hint="Sum of stock value" />
+        <StatCard label="Ready for review" value={loading ? '—' : String(summary?.submitted ?? 0)} hint="Submitted counts" tone={summary && summary.submitted > 0 ? 'warning' : 'neutral'} />
       </div>
+
+      <Card
+        title="Review queue"
+        subtitle="Submitted stocktakes are reviewed here before any ledger-backed inventory adjustment is approved."
+        padding="none"
+      >
+        <div className="stocktake-table-scroll">
+          <table>
+            <thead>
+              <tr>
+                <th>Stocktake</th>
+                <th>Venue</th>
+                <th>Submitted</th>
+                <th>Lines</th>
+                <th>Value</th>
+                <th aria-label="Review actions" />
+              </tr>
+            </thead>
+            <tbody>
+              {readyForReview.length ? (
+                readyForReview.map((stocktake) => (
+                  <tr key={stocktake.id}>
+                    <td>
+                      <span className="cell-stack">
+                        <strong>{stocktake.name}</strong>
+                        <span className="subtle">{stocktake.template ?? 'No template'}</span>
+                      </span>
+                    </td>
+                    <td>{stocktake.venue ?? 'Unassigned'}</td>
+                    <td>{stocktake.submittedAt ? formatDate(stocktake.submittedAt) : formatDate(stocktake.updatedAt)}</td>
+                    <td>{stocktake.lineCount}</td>
+                    <td>{formatCurrency(stocktake.totalValueCents)}</td>
+                    <td className="cell-actions">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={applyingId === stocktake.id || !canManageReview}
+                        title={canManageReview ? undefined : 'Manager access required'}
+                        onClick={() => void applyStocktake(stocktake)}
+                      >
+                        {applyingId === stocktake.id ? 'Approving…' : 'Approve ledger adjustment'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={reopeningId === stocktake.id || !canManageReview}
+                        title={canManageReview ? undefined : 'Manager access required'}
+                        onClick={() => void reopenStocktake(stocktake)}
+                      >
+                        {reopeningId === stocktake.id ? 'Reopening…' : 'Reopen draft'}
+                      </Button>
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="table-empty-cell">
+                    No submitted stocktakes are waiting for review.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </Card>
 
       <Card
         title={cardTitle}
@@ -429,8 +542,14 @@ export function StocktakePage() {
         }
         action={
           form.mode === 'closed' ? (
-            <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
-              New stocktake
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canManageReview}
+              title={canManageReview ? undefined : 'Manager access required'}
+              onClick={() => setForm({ mode: 'create' })}
+            >
+              {canManageReview ? 'New stocktake' : 'Manager required'}
             </Button>
           ) : null
         }
@@ -582,14 +701,20 @@ export function StocktakePage() {
                                   type="button"
                                   variant="ghost"
                                   size="sm"
-                                  disabled={Boolean(stocktake.appliedAt)}
-                                  title={stocktake.appliedAt ? 'Applied stocktakes are locked until a ledger reversal exists.' : undefined}
+                                  disabled={Boolean(stocktake.appliedAt) || !canManageReview}
+                                  title={
+                                    !canManageReview
+                                      ? 'Manager access required'
+                                      : stocktake.appliedAt
+                                        ? 'Applied stocktakes are locked until a ledger reversal exists.'
+                                        : undefined
+                                  }
                                   onClick={(event) => {
                                     event.stopPropagation();
-                                    void editStocktake(stocktake);
+                                    if (canManageReview) void editStocktake(stocktake);
                                   }}
                                 >
-                                  Edit
+                                  {canManageReview ? 'Edit' : 'View only'}
                                 </Button>
                               </td>
                             </tr>
@@ -622,7 +747,16 @@ export function StocktakePage() {
             icon={<IconStocktake size={24} />}
             title="No counts yet"
             description="Start with a full count from the current item catalogue."
-            action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>Start stocktake</Button>}
+            action={
+              <Button
+                type="button"
+                disabled={!canManageReview}
+                title={canManageReview ? undefined : 'Manager access required'}
+                onClick={() => setForm({ mode: 'create' })}
+              >
+                {canManageReview ? 'Start stocktake' : 'Manager required'}
+              </Button>
+            }
           />
         )}
       </Card>

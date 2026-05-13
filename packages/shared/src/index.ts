@@ -2304,20 +2304,83 @@ export type StockItem = {
   notes: string | null;
   createdAt: string;
   updatedAt: string;
+  venueStock?: VenueStockItem | null;
+};
+
+export type VenueStockItem = {
+  id: string;
+  venue: string;
+  stockItemId: string;
+  parLevel: number | null;
+  reorderPoint: number | null;
+  onHand: number | null;
+  unitOverride: string | null;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  stockItem?: Pick<
+    StockItem,
+    'id' | 'sku' | 'name' | 'unit' | 'category' | 'status' | 'avgCostCents' | 'parLevel' | 'reorderPoint'
+  >;
 };
 
 export type StockItemsPayload = {
   items: StockItem[];
   categories: StockCategory[];
+  venueStockItems?: VenueStockItem[];
+  venues?: string[];
+  scope?: {
+    venue: string | null;
+    admin: boolean;
+    stockItemsVenueScoped: boolean;
+  };
 };
 
 export type StockItemsSummary = {
   totalItems: number;
   activeItems: number;
   lowStockItems: number;
+  outOfStockItems?: number;
   categories: number;
   totalOnHand: number;
+  venueStockItems?: number;
+  unconfiguredVenueStockItems?: number;
+  stockItemsVenueScoped?: boolean;
 };
+
+export type StockLowStockItem = {
+  id: string;
+  venueStockItemId: string | null;
+  venue: string | null;
+  sku: string | null;
+  name: string;
+  category: Pick<StockCategory, 'id' | 'name'> | null;
+  unit: string;
+  onHand: number | null;
+  parLevel: number | null;
+  reorderPoint: number | null;
+  status: StockItemStatus;
+  updatedAt: string;
+  threshold: number;
+  stockStatus: 'OUT_OF_STOCK' | 'LOW_STOCK' | 'BELOW_PAR';
+  suggestedAction: string;
+};
+
+const emptyStringToUndefined = (value: unknown) => (value === '' || value === null ? undefined : value);
+
+export const venueStockItemUpdateInputSchema = z.object({
+  venue: z.string().min(1, 'Venue is required'),
+  parLevel: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().nonnegative('Par level cannot be negative').optional()
+  ),
+  reorderPoint: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().nonnegative('Reorder point cannot be negative').optional()
+  ),
+  unitOverride: z.string().optional().or(z.literal('')),
+  active: z.boolean().optional()
+});
 
 export const stockCategoryCreateInputSchema = z.object({
   name: z.string().min(2, 'Category name is required'),
@@ -2332,8 +2395,8 @@ export const stockItemCreateInputSchema = z.object({
   name: z.string().min(2, 'Item name is required'),
   categoryId: z.string().optional().or(z.literal('')),
   unit: z.string().min(1, 'Unit is required'),
-  parLevel: z.coerce.number().default(0),
-  reorderPoint: z.coerce.number().optional(),
+  parLevel: z.coerce.number().nonnegative('Par level cannot be negative').default(0),
+  reorderPoint: z.coerce.number().nonnegative('Reorder point cannot be negative').optional(),
   avgCostCents: z.coerce.number().int().nonnegative().optional(),
   status: stockItemStatusSchema.default('ACTIVE'),
   notes: z.string().optional().or(z.literal(''))
@@ -2358,6 +2421,7 @@ export type StockItemUpdateInput = z.infer<typeof stockItemUpdateInputSchema>;
 export type StockItemBulkDeleteInput = z.infer<
   typeof stockItemBulkDeleteInputSchema
 >;
+export type VenueStockItemUpdateInput = z.infer<typeof venueStockItemUpdateInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Suppliers                                                                  */
@@ -2673,6 +2737,10 @@ export type Stocktake = {
   status: StocktakeStatus;
   notes: string | null;
   appliedAt: string | null;
+  submittedAt: string | null;
+  submittedByUserId: string | null;
+  reviewedAt: string | null;
+  reviewedByUserId: string | null;
   lineCount: number;
   totalValueCents: number;
   createdAt: string;
@@ -2689,8 +2757,100 @@ export type StocktakesSummary = {
   totalStocktakes: number;
   inProgress: number;
   submitted: number;
+  applied?: number;
   lastCountedAt: string | null;
   totalValueCents: number;
+};
+
+export type StocktakeReviewItem = Stocktake & {
+  varianceLineCount: number;
+  totalVarianceQuantity: number;
+  positiveVarianceQuantity: number;
+  negativeVarianceQuantity: number;
+};
+
+export type StockDashboardPayload = {
+  generatedAt: string;
+  scope: {
+    venue: string | null;
+    admin?: boolean;
+    stockItemsVenueScoped: boolean;
+  };
+  venues?: string[];
+  summary: StockItemsSummary & {
+    openStocktakes: number;
+    readyForReviewStocktakes: number;
+  };
+  lowStockItems: StockLowStockItem[];
+  recentItems: StockItem[];
+  readyForReviewStocktakes: StocktakeReviewItem[];
+  recentSubmittedStocktakes: StocktakeReviewItem[];
+};
+
+export type ReportsRangeDays = 7 | 30 | 90;
+
+export type ReportsStaffSummary = {
+  totalActiveStaff: number;
+  staffByVenue: Array<{ venue: string; count: number }>;
+  missingRequiredCompliance: number;
+  pendingLeaveCount: number;
+  approvedLeaveNext30Days: number;
+  recentManagementEvents: StaffManagementEvent[];
+};
+
+export type ReportsComplianceSummary = {
+  pendingStaffRecords: number;
+  expiredStaffRecords: number;
+  expiringStaffRecordsNext30Days: number;
+  outOfRangeTemperatureAssets: number;
+  missingTemperatureReadingsToday: number;
+  activeLicences: number;
+  expiringLicencesNext30Days: number;
+  topAttentionItems: Array<{
+    id: string;
+    label: string;
+    venue: string | null;
+    status: string;
+    dueDate: string | null;
+    source: 'STAFF_RECORD' | 'TEMPERATURE' | 'LICENCE';
+  }>;
+};
+
+export type ReportsStockSummary = {
+  activeStockItems: number;
+  activeCatalogueItems?: number;
+  venueStockItems?: number;
+  unconfiguredVenueStockItems?: number;
+  lowStockCount: number;
+  outOfStockCount: number;
+  stocktakesReadyForReview: number;
+  recentlySubmittedStocktakes: StocktakeReviewItem[];
+  highestVarianceLines: Array<{
+    stocktakeId: string;
+    stocktakeName: string;
+    venue: string | null;
+    itemName: string;
+    countedQty: number;
+    onHand: number;
+    unit: string | null;
+    variance: number;
+    submittedAt: string | null;
+  }>;
+  stockItemsVenueScoped: boolean;
+};
+
+export type ReportsOverviewPayload = {
+  generatedAt: string;
+  rangeDays: ReportsRangeDays;
+  start: string;
+  end: string;
+  scope: {
+    venue: string | null;
+    admin: boolean;
+  };
+  staff: ReportsStaffSummary;
+  compliance: ReportsComplianceSummary;
+  stock: ReportsStockSummary;
 };
 
 export const stocktakeLineInputSchema = z.object({

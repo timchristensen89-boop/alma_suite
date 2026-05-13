@@ -155,14 +155,29 @@ export function ItemForm({
       setFeedbackTone('error');
       return;
     }
+    const parLevel = Number(draft.parLevel || 0);
+    const reorderPoint =
+      draft.reorderPoint === '' ? undefined : Number(draft.reorderPoint);
+    if (!Number.isFinite(parLevel) || parLevel < 0) {
+      setError('Par level cannot be negative');
+      setFeedback('Par level cannot be negative');
+      setFeedbackTone('error');
+      return;
+    }
+    if (reorderPoint !== undefined && (!Number.isFinite(reorderPoint) || reorderPoint < 0)) {
+      setError('Reorder point cannot be negative');
+      setFeedback('Reorder point cannot be negative');
+      setFeedbackTone('error');
+      return;
+    }
 
     const payload: StockItemCreateInput = {
       name: draft.name.trim(),
       sku: draft.sku.trim(),
       categoryId: draft.categoryId,
       unit: draft.unit.trim(),
-      parLevel: Number(draft.parLevel || 0),
-      reorderPoint: draft.reorderPoint === '' ? undefined : Number(draft.reorderPoint),
+      parLevel,
+      reorderPoint,
       status: draft.status,
       notes: draft.notes.trim()
     };

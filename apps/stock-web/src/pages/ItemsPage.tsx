@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
-import type { StockCategory, StockItem, StockItemsPayload } from '@alma/shared';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -18,9 +18,39 @@ function formatQuantity(value: number, unit: string) {
   return `${formatted} ${unit}`;
 }
 
+function formatOptionalQuantity(value: number | null | undefined, unit: string) {
+  if (value === null || value === undefined) return 'Not counted';
+  return formatQuantity(value, unit);
+}
+
+function effectivePar(item: StockItem) {
+  return item.venueStock?.parLevel ?? item.parLevel;
+}
+
+function effectiveReorder(item: StockItem) {
+  return item.venueStock?.reorderPoint ?? item.reorderPoint;
+}
+
+function effectiveUnit(item: StockItem) {
+  return item.venueStock?.unitOverride ?? item.unit;
+}
+
 function isLowStock(item: StockItem) {
-  const threshold = item.reorderPoint ?? item.parLevel;
-  return item.status === 'ACTIVE' && threshold > 0 && item.onHand <= threshold;
+  const venueStock = item.venueStock;
+  if (!venueStock?.active || venueStock.onHand === null) return false;
+  const threshold = effectiveReorder(item) ?? effectivePar(item);
+  return item.status === 'ACTIVE' && threshold > 0 && venueStock.onHand <= threshold;
+}
+
+function isLowVenueStockConfig(row: VenueStockItem) {
+  const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem?.reorderPoint ?? row.stockItem?.parLevel ?? 0;
+  return Boolean(
+    row.active &&
+      row.stockItem?.status === 'ACTIVE' &&
+      row.onHand !== null &&
+      threshold > 0 &&
+      row.onHand <= threshold
+  );
 }
 
 function duplicateItemKey(item: StockItem) {
@@ -36,6 +66,95 @@ type FormState =
   | { mode: 'create' }
   | { mode: 'edit'; item: StockItem };
 
+function VenueStockSettingsForm({
+  item,
+  venue,
+  canManage,
+  onSaved
+}: {
+  item: StockItem;
+  venue: string;
+  canManage: boolean;
+  onSaved: (venueStock: VenueStockItem) => void;
+}) {
+  const [parLevel, setParLevel] = useState(() => item.venueStock?.parLevel?.toString() ?? item.parLevel.toString());
+  const [reorderPoint, setReorderPoint] = useState(() => item.venueStock?.reorderPoint?.toString() ?? item.reorderPoint?.toString() ?? '');
+  const [unitOverride, setUnitOverride] = useState(() => item.venueStock?.unitOverride ?? '');
+  const [active, setActive] = useState(() => item.venueStock?.active ?? (item.status === 'ACTIVE'));
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    setParLevel(item.venueStock?.parLevel?.toString() ?? item.parLevel.toString());
+    setReorderPoint(item.venueStock?.reorderPoint?.toString() ?? item.reorderPoint?.toString() ?? '');
+    setUnitOverride(item.venueStock?.unitOverride ?? '');
+    setActive(item.venueStock?.active ?? (item.status === 'ACTIVE'));
+    setMessage(null);
+  }, [item]);
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    if (!canManage) {
+      setMessage('Manager access is required to update venue stock settings.');
+      return;
+    }
+    const par = parLevel.trim() === '' ? undefined : Number(parLevel);
+    const reorder = reorderPoint.trim() === '' ? undefined : Number(reorderPoint);
+    if ((par !== undefined && (Number.isNaN(par) || par < 0)) || (reorder !== undefined && (Number.isNaN(reorder) || reorder < 0))) {
+      setMessage('Par level and reorder point cannot be negative.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const venueStock = await api<VenueStockItem>(`/api/items/${item.id}/venue-stock`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          venue,
+          parLevel: parLevel.trim(),
+          reorderPoint: reorderPoint.trim(),
+          unitOverride: unitOverride.trim(),
+          active
+        })
+      });
+      onSaved(venueStock);
+      setMessage('Venue stock settings saved.');
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Could not save venue stock settings.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <form className="venue-stock-settings" onSubmit={handleSubmit}>
+      <div>
+        <strong>Venue stock settings</strong>
+        <p className="subtle">
+          {venue}. These controls set local par and reorder levels for this venue without changing the shared catalogue item.
+        </p>
+      </div>
+      <div className="stock-filter-toolbar stock-filter-toolbar-four">
+        <Input label="Par level" type="number" min="0" step="0.01" value={parLevel} onChange={(event) => setParLevel(event.currentTarget.value)} />
+        <Input label="Reorder point" type="number" min="0" step="0.01" value={reorderPoint} onChange={(event) => setReorderPoint(event.currentTarget.value)} />
+        <Input label="Unit override" value={unitOverride} onChange={(event) => setUnitOverride(event.currentTarget.value)} placeholder={item.unit} />
+        <label className="venue-stock-toggle">
+          <input type="checkbox" checked={active} onChange={(event) => setActive(event.currentTarget.checked)} />
+          Active at venue
+        </label>
+      </div>
+      <p className="subtle">
+        Current on-hand is {formatOptionalQuantity(item.venueStock?.onHand, effectiveUnit(item))}. On-hand is set through approved stocktake movements, not this form.
+      </p>
+      {message ? <p className="form-message">{message}</p> : null}
+      <Button type="submit" size="sm" disabled={!canManage || saving}>
+        {saving ? 'Saving...' : 'Save venue settings'}
+      </Button>
+    </form>
+  );
+}
+
 export function ItemsPage() {
   useDocumentTitle('Items');
   const { user } = useAuth();
@@ -48,6 +167,7 @@ export function ItemsPage() {
   const [deleting, setDeleting] = useState(false);
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
+  const [selectedVenue, setSelectedVenue] = useState('');
   const [viewMode, setViewMode] = useState<ItemViewMode>('category');
 
   useEffect(() => {
@@ -55,9 +175,13 @@ export function ItemsPage() {
 
     async function loadItems() {
       try {
-        const payload = await api<StockItemsPayload>('/api/items');
+        const query = selectedVenue ? `?venue=${encodeURIComponent(selectedVenue)}` : '';
+        const payload = await api<StockItemsPayload>(`/api/items${query}`);
         if (!cancelled) {
           setData(payload);
+          if (!selectedVenue && payload.scope?.venue) {
+            setSelectedVenue(payload.scope.venue);
+          }
           setError(null);
         }
       } catch (err) {
@@ -73,16 +197,19 @@ export function ItemsPage() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [selectedVenue]);
+
+  const activeVenue = selectedVenue || data?.scope?.venue || '';
 
   const stats = useMemo(() => {
     const items = data?.items ?? [];
+    const venueRows = data?.venueStockItems ?? [];
     return {
       active: items.filter((item) => item.status === 'ACTIVE').length,
-      lowStock: items.filter(isLowStock).length,
+      lowStock: activeVenue ? items.filter(isLowStock).length : venueRows.filter(isLowVenueStockConfig).length,
       categories: data?.categories.length ?? 0
     };
-  }, [data]);
+  }, [activeVenue, data]);
 
   const duplicateGroups = useMemo(() => {
     const groups = new Map<string, StockItem[]>();
@@ -116,6 +243,13 @@ export function ItemsPage() {
         label: category.name,
         value: category.id
       }))
+    ],
+    [data]
+  );
+  const venueOptions = useMemo(
+    () => [
+      ...(data?.scope?.admin ? [{ label: 'All venues', value: '' }] : []),
+      ...(data?.venues ?? []).map((venue) => ({ label: venue, value: venue }))
     ],
     [data]
   );
@@ -196,6 +330,28 @@ export function ItemsPage() {
       return { ...existing, items: nextItems };
     });
     setForm({ mode: 'closed' });
+  }
+
+  function handleVenueStockSaved(venueStock: VenueStockItem) {
+    setData((current) => {
+      if (!current) return current;
+      const nextItems = current.items.map((item) =>
+        item.id === venueStock.stockItemId
+          ? {
+              ...item,
+              venueStock: venueStock.venue === activeVenue ? venueStock : item.venueStock
+            }
+          : item
+      );
+      const existingRows = current.venueStockItems ?? [];
+      const nextVenueRows = existingRows.some((row) => row.id === venueStock.id)
+        ? existingRows.map((row) => (row.id === venueStock.id ? venueStock : row))
+        : [...existingRows, venueStock];
+      return { ...current, items: nextItems, venueStockItems: nextVenueRows };
+    });
+    if (form.mode === 'edit' && form.item.id === venueStock.stockItemId && venueStock.venue === activeVenue) {
+      setForm({ mode: 'edit', item: { ...form.item, venueStock } });
+    }
   }
 
   function handleCategoryCreated(category: StockCategory) {
@@ -287,8 +443,10 @@ export function ItemsPage() {
     return items.map((item) => (
       <tr
         key={item.id}
-        className={`row-interactive ${selectedIds.has(item.id) ? 'stock-selected-row' : ''}`}
-        onClick={() => setForm({ mode: 'edit', item })}
+        className={`${canManage ? 'row-interactive' : ''} ${selectedIds.has(item.id) ? 'stock-selected-row' : ''}`}
+        onClick={() => {
+          if (canManage) setForm({ mode: 'edit', item });
+        }}
       >
         <td className="select-cell">
           <input
@@ -311,8 +469,20 @@ export function ItemsPage() {
           </span>
         </td>
         <td>{item.category?.name ?? 'Uncategorised'}</td>
-        <td>{formatQuantity(item.onHand, item.unit)}</td>
-        <td>{formatQuantity(item.parLevel, item.unit)}</td>
+        <td>
+          <span className="cell-stack">
+            <span>{formatOptionalQuantity(item.venueStock?.onHand, effectiveUnit(item))}</span>
+            <span className="subtle">
+              {item.venueStock
+                ? activeVenue
+                : activeVenue
+                  ? 'No venue setup'
+                  : 'Choose a venue for local levels'}
+            </span>
+          </span>
+        </td>
+        <td>{formatQuantity(effectivePar(item), effectiveUnit(item))}</td>
+        <td>{effectiveReorder(item) === null ? '—' : formatQuantity(effectiveReorder(item) ?? 0, effectiveUnit(item))}</td>
         <td>
           <Badge
             tone={isLowStock(item) ? 'warning' : item.status === 'ACTIVE' ? 'positive' : 'muted'}
@@ -326,12 +496,14 @@ export function ItemsPage() {
             type="button"
             variant="ghost"
             size="sm"
+            disabled={!canManage}
+            title={canManage ? undefined : 'Manager access required'}
             onClick={(event) => {
               event.stopPropagation();
-              setForm({ mode: 'edit', item });
+              if (canManage) setForm({ mode: 'edit', item });
             }}
           >
-            Edit
+            {canManage ? 'Edit' : 'View only'}
           </Button>
         </td>
       </tr>
@@ -359,6 +531,7 @@ export function ItemsPage() {
             <th>Category</th>
             <th>On hand</th>
             <th>Par</th>
+            <th>Reorder</th>
             <th>Status</th>
             <th aria-label="Actions" />
           </tr>
@@ -368,7 +541,7 @@ export function ItemsPage() {
             renderItemRows(items)
           ) : (
             <tr>
-              <td colSpan={7} className="table-empty-cell">
+              <td colSpan={8} className="table-empty-cell">
                 {emptyMessage}
               </td>
             </tr>
@@ -385,18 +558,32 @@ export function ItemsPage() {
           icon={<IconItems size={18} />}
           label="Active items"
           value={loading ? '—' : String(stats.active)}
-          hint="Tracked in the catalogue"
+          hint="Catalogue items"
         />
         <StatCard
           label="Low stock"
           value={loading ? '—' : String(stats.lowStock)}
-          hint="At or below reorder point"
+          hint={
+            activeVenue
+              ? `Venue levels for ${activeVenue}`
+              : data?.scope?.admin
+                ? 'Venue rows across all venues'
+                : 'Choose a venue for local levels'
+          }
           tone={stats.lowStock > 0 ? 'warning' : 'neutral'}
         />
         <StatCard
-          label="Categories"
-          value={loading ? '—' : String(stats.categories)}
-          hint="Catalogue groupings"
+          label="Venue stock"
+          value={
+            loading
+              ? '—'
+              : String(
+                  activeVenue
+                    ? (data?.venueStockItems ?? []).filter((row) => row.venue === activeVenue).length
+                    : data?.venueStockItems?.length ?? 0
+                )
+          }
+          hint={activeVenue ? 'Configured at selected venue' : 'Configured venue rows'}
         />
       </div>
 
@@ -405,8 +592,14 @@ export function ItemsPage() {
         subtitle={cardSubtitle}
         action={
           form.mode === 'closed' ? (
-            <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
-              New item
+            <Button
+              type="button"
+              size="sm"
+              disabled={!canManage}
+              title={canManage ? undefined : 'Manager access required'}
+              onClick={() => setForm({ mode: 'create' })}
+            >
+              {canManage ? 'New item' : 'Manager required'}
             </Button>
           ) : null
         }
@@ -421,22 +614,38 @@ export function ItemsPage() {
             onCancel={() => setForm({ mode: 'closed' })}
           />
         ) : form.mode === 'edit' ? (
-          <ItemForm
-            mode="edit"
-            initial={form.item}
-            categories={data?.categories ?? []}
-            onSaved={handleItemUpdated}
-            onCategoryCreated={handleCategoryCreated}
-            canManageCategories={canManage}
-            onCancel={() => setForm({ mode: 'closed' })}
-          />
+          <div className="stock-edit-stack">
+            <ItemForm
+              mode="edit"
+              initial={form.item}
+              categories={data?.categories ?? []}
+              onSaved={handleItemUpdated}
+              onCategoryCreated={handleCategoryCreated}
+              canManageCategories={canManage}
+              onCancel={() => setForm({ mode: 'closed' })}
+            />
+            {activeVenue ? (
+              <VenueStockSettingsForm
+                item={form.item}
+                venue={activeVenue}
+                canManage={canManage}
+                onSaved={handleVenueStockSaved}
+              />
+            ) : (
+              <EmptyState
+                icon={<IconItems size={24} />}
+                title="Choose a venue"
+                description="Select a venue to edit local par, reorder and active settings for this catalogue item."
+              />
+            )}
+          </div>
         ) : loading ? (
           <Spinner label="Loading items" />
         ) : error ? (
           <EmptyState icon={<IconItems size={24} />} title="Items unavailable" description={error} />
         ) : data && data.items.length > 0 ? (
           <div className="table-card stock-items-table">
-            <div className="stock-filter-toolbar stock-filter-toolbar-three">
+            <div className="stock-filter-toolbar stock-filter-toolbar-four">
               <Input
                 label="Search"
                 value={search}
@@ -448,6 +657,12 @@ export function ItemsPage() {
                 value={categoryFilter}
                 onChange={(event) => setCategoryFilter(event.currentTarget.value)}
                 options={categoryOptions}
+              />
+              <Select
+                label="Venue stock"
+                value={selectedVenue}
+                onChange={(event) => setSelectedVenue(event.currentTarget.value)}
+                options={venueOptions}
               />
               <Select
                 label="View"
@@ -546,8 +761,13 @@ export function ItemsPage() {
             title="No items yet"
             description="Add products, group them into categories and set par levels here."
             action={
-              <Button type="button" onClick={() => setForm({ mode: 'create' })}>
-                Add the first item
+              <Button
+                type="button"
+                disabled={!canManage}
+                title={canManage ? undefined : 'Manager access required'}
+                onClick={() => setForm({ mode: 'create' })}
+              >
+                {canManage ? 'Add the first item' : 'Manager required'}
               </Button>
             }
           />

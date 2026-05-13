@@ -4,17 +4,26 @@ import { stocktakesService } from '../services/stocktakes.service.js';
 
 export const stocktakeRouter = Router();
 
-stocktakeRouter.get('/', async (_req, res, next) => {
+stocktakeRouter.get('/', async (req, res, next) => {
   try {
-    res.json(await stocktakesService.list());
+    res.json(await stocktakesService.list(req.user));
   } catch (error) {
     next(error);
   }
 });
 
-stocktakeRouter.get('/summary', async (_req, res, next) => {
+stocktakeRouter.get('/summary', async (req, res, next) => {
   try {
-    res.json(await stocktakesService.summary());
+    res.json(await stocktakesService.summary(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+stocktakeRouter.get('/review', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await stocktakesService.reviewQueue(req.user));
   } catch (error) {
     next(error);
   }
@@ -40,7 +49,7 @@ stocktakeRouter.post('/:id/approve', async (req, res, next) => {
 
 stocktakeRouter.get('/:id/movements', async (req, res, next) => {
   try {
-    res.json(await stocktakesService.getMovementHistory(String(req.params.id)));
+    res.json(await stocktakesService.getMovementHistory(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -66,7 +75,7 @@ stocktakeRouter.post('/:id/reverse', async (req, res, next) => {
 
 stocktakeRouter.get('/:id', async (req, res, next) => {
   try {
-    res.json(await stocktakesService.get(String(req.params.id)));
+    res.json(await stocktakesService.get(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -74,7 +83,8 @@ stocktakeRouter.get('/:id', async (req, res, next) => {
 
 stocktakeRouter.post('/', async (req, res, next) => {
   try {
-    res.status(201).json(await stocktakesService.createStocktake(req.body));
+    requireStockManager(req.user);
+    res.status(201).json(await stocktakesService.createStocktake(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -83,7 +93,16 @@ stocktakeRouter.post('/', async (req, res, next) => {
 stocktakeRouter.delete('/', async (req, res, next) => {
   try {
     requireStockManager(req.user);
-    res.json(await stocktakesService.deleteStocktakes(req.body));
+    res.json(await stocktakesService.deleteStocktakes(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+stocktakeRouter.post('/:id/reopen', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await stocktakesService.reopenStocktake(String(req.params.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -91,7 +110,8 @@ stocktakeRouter.delete('/', async (req, res, next) => {
 
 stocktakeRouter.patch('/:id', async (req, res, next) => {
   try {
-    res.json(await stocktakesService.updateStocktake(String(req.params.id), req.body));
+    requireStockManager(req.user);
+    res.json(await stocktakesService.updateStocktake(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }

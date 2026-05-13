@@ -30,6 +30,19 @@
   border-bottom: 1px solid var(--color-border);
 }
 
+.report-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.report-overview-grid-wide {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  border-bottom: none;
+  border-top: 1px solid var(--color-border);
+}
+
 .report-panel {
   display: flex;
   flex-direction: column;
@@ -309,7 +322,9 @@
 }
 
 @media (max-width: 760px) {
-  .report-split {
+  .report-split,
+  .report-overview-grid,
+  .report-overview-grid-wide {
     grid-template-columns: 1fr;
   }
 

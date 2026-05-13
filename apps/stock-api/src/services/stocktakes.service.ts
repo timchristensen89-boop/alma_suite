@@ -11,6 +11,7 @@ import {
   type StocktakeMovement,
   type StocktakeMovementHistoryPayload,
   type StocktakeMovementResult,
+  type StocktakeReviewItem,
   type Stocktake,
   type StocktakeLine,
   type StocktakeWithLines,
@@ -48,6 +49,20 @@ type InventoryMovementWithContextRow = Prisma.InventoryMovementGetPayload<{
   };
 }>;
 
+type StocktakeReviewRow = Prisma.StocktakeGetPayload<{
+  include: {
+    _count: { select: { lines: true } };
+    lines: {
+      select: {
+        countedQty: true;
+        stockValueCents: true;
+        unit: true;
+        item: { select: { id: true; onHand: true } };
+      };
+    };
+  };
+}>;
+
 function normaliseOptionalText(value: string | undefined) {
   if (value === undefined) return undefined;
   return value.trim() || null;
@@ -68,6 +83,10 @@ function toStocktakePayload(row: StocktakeRow): Stocktake {
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,
+    submittedAt: row.submittedAt?.toISOString() ?? null,
+    submittedByUserId: row.submittedByUserId,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewedByUserId: row.reviewedByUserId,
     lineCount: row._count.lines,
     totalValueCents: sumLineValueCents(row.lines),
     createdAt: row.createdAt.toISOString(),
@@ -109,6 +128,10 @@ function toStocktakeWithLinesPayload(row: StocktakeWithLinesRow): StocktakeWithL
     status: row.status,
     notes: row.notes,
     appliedAt: row.appliedAt?.toISOString() ?? null,
+    submittedAt: row.submittedAt?.toISOString() ?? null,
+    submittedByUserId: row.submittedByUserId,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewedByUserId: row.reviewedByUserId,
     lineCount: row.lines.length,
     totalValueCents,
     createdAt: row.createdAt.toISOString(),
@@ -164,9 +187,244 @@ function reversalSinceAppliedWhere(stocktakeId: string, appliedAt: Date | null) 
   };
 }
 
+function isAdminActor(actor?: AuthUser | null) {
+  return Boolean(actor?.isAdmin || actor?.role === 'ADMIN');
+}
+
+function stocktakeScope(actor?: AuthUser | null): Prisma.StocktakeWhereInput {
+  if (!actor || isAdminActor(actor)) return {};
+  if (!actor.venue) return { id: '__no_stocktake_scope__' };
+  return { OR: [{ venue: actor.venue }, { venue: null }] };
+}
+
+function scopedStocktakeWhere(id: string, actor?: AuthUser | null): Prisma.StocktakeWhereInput {
+  return { AND: [{ id }, stocktakeScope(actor)] };
+}
+
+function targetVenueForActor(requestedVenue: string | null | undefined, actor?: AuthUser | null) {
+  if (!actor || isAdminActor(actor)) return requestedVenue ?? null;
+  if (!actor.venue) throw new HttpError(403, 'Stocktake actions require a venue-scoped manager.');
+  if (requestedVenue && requestedVenue !== actor.venue) {
+    throw new HttpError(403, 'Stocktake actions are limited to your venue.');
+  }
+  return actor.venue;
+}
+
+function assertVenueChangeAllowed(
+  requestedVenue: string | null | undefined,
+  existingVenue: string | null,
+  actor?: AuthUser | null
+) {
+  if (!actor || isAdminActor(actor)) return requestedVenue ?? existingVenue;
+  return targetVenueForActor(requestedVenue ?? existingVenue, actor);
+}
+
+async function balanceTargetForItem(
+  tx: Prisma.TransactionClient,
+  itemId: string,
+  venue: string | null
+) {
+  const item = await tx.stockItem.findUnique({
+    where: { id: itemId },
+    select: { id: true, unit: true, onHand: true, parLevel: true, reorderPoint: true }
+  });
+  if (!item) return null;
+
+  if (!venue) {
+    return {
+      item,
+      quantityBefore: item.onHand,
+      updateQuantityAfter: (quantityAfter: number) =>
+        tx.stockItem.update({
+          where: { id: item.id },
+          data: { onHand: quantityAfter }
+        })
+    };
+  }
+
+  const venueStock = await tx.venueStockItem.upsert({
+    where: { venue_stockItemId: { venue, stockItemId: item.id } },
+    create: {
+      venue,
+      stockItemId: item.id,
+      parLevel: item.parLevel,
+      reorderPoint: item.reorderPoint,
+      onHand: null,
+      active: true
+    },
+    update: {}
+  });
+
+  return {
+    item,
+    quantityBefore: venueStock.onHand ?? item.onHand,
+    updateQuantityAfter: (quantityAfter: number) =>
+      tx.venueStockItem.update({
+        where: { id: venueStock.id },
+        data: { onHand: quantityAfter, active: true }
+      })
+  };
+}
+
+async function ensureVenueStockRowsForLines(
+  tx: Prisma.TransactionClient,
+  venue: string | null,
+  itemIds: Array<string | null | undefined>
+) {
+  if (!venue) return;
+  const uniqueItemIds = Array.from(new Set(itemIds.filter((id): id is string => Boolean(id))));
+  if (uniqueItemIds.length === 0) return;
+  const items = await tx.stockItem.findMany({
+    where: { id: { in: uniqueItemIds } },
+    select: { id: true, parLevel: true, reorderPoint: true, status: true }
+  });
+  for (const item of items) {
+    await tx.venueStockItem.upsert({
+      where: { venue_stockItemId: { venue, stockItemId: item.id } },
+      create: {
+        venue,
+        stockItemId: item.id,
+        parLevel: item.parLevel,
+        reorderPoint: item.reorderPoint,
+        onHand: null,
+        active: item.status === 'ACTIVE'
+      },
+      update: {}
+    });
+  }
+}
+
+async function venueOnHandLookup(
+  rows: Array<{
+    venue: string | null;
+    lines: Array<{ itemId?: string | null; item: { id: string } | null }>;
+  }>
+) {
+  const venues = Array.from(
+    new Set(rows.map((row) => row.venue?.trim()).filter((venue): venue is string => Boolean(venue)))
+  );
+  const itemIds = Array.from(
+    new Set(
+      rows.flatMap((row) =>
+        row.lines.flatMap((line) => {
+          const itemId = line.itemId ?? line.item?.id ?? null;
+          return itemId ? [itemId] : [];
+        })
+      )
+    )
+  );
+
+  if (venues.length === 0 || itemIds.length === 0) {
+    return new Map<string, number | null>();
+  }
+
+  const venueRows = await prisma.venueStockItem.findMany({
+    where: {
+      venue: { in: venues },
+      stockItemId: { in: itemIds }
+    },
+    select: { venue: true, stockItemId: true, onHand: true }
+  });
+
+  return new Map(venueRows.map((row) => [`${row.venue}:${row.stockItemId}`, row.onHand] as const));
+}
+
+function effectiveVenueOnHand(
+  venue: string | null,
+  itemId: string | null | undefined,
+  fallback: number,
+  venueOnHandByKey?: Map<string, number | null>
+) {
+  if (!venue || !itemId) return fallback;
+  const venueOnHand = venueOnHandByKey?.get(`${venue}:${itemId}`);
+  return venueOnHand ?? fallback;
+}
+
+async function hydrateStocktakeWithVenueOnHand(row: StocktakeWithLinesRow) {
+  const venueOnHandByKey = await venueOnHandLookup([row]);
+  return {
+    ...row,
+    lines: row.lines.map((line) =>
+      line.item
+        ? {
+            ...line,
+            item: {
+              ...line.item,
+              onHand: effectiveVenueOnHand(row.venue, line.itemId ?? line.item.id, line.item.onHand, venueOnHandByKey)
+            }
+          }
+        : line
+    )
+  };
+}
+
+async function loadStocktakeWithVenueOnHand(id: string, actor?: AuthUser | null): Promise<StocktakeWithLines> {
+  const row = await prisma.stocktake.findFirst({
+    where: scopedStocktakeWhere(id, actor),
+    include: {
+      lines: {
+        include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
+      }
+    }
+  });
+  if (!row) throw new HttpError(404, 'Stocktake not found');
+  const hydrated = await hydrateStocktakeWithVenueOnHand(row);
+  return toStocktakeWithLinesPayload(hydrated);
+}
+
+function reviewLineValue(lines: StocktakeReviewRow['lines']) {
+  return lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
+}
+
+function toStocktakeReviewPayload(
+  row: StocktakeReviewRow,
+  venueOnHandByKey?: Map<string, number | null>
+): StocktakeReviewItem {
+  const variance = row.lines.reduce(
+    (summary, line) => {
+      if (!line.item) return summary;
+      const onHand = effectiveVenueOnHand(row.venue, line.item.id, line.item.onHand, venueOnHandByKey);
+      const delta = line.countedQty - onHand;
+      if (Math.abs(delta) > 0.0001) summary.varianceLineCount += 1;
+      summary.totalVarianceQuantity += delta;
+      if (delta > 0) summary.positiveVarianceQuantity += delta;
+      if (delta < 0) summary.negativeVarianceQuantity += delta;
+      return summary;
+    },
+    {
+      varianceLineCount: 0,
+      totalVarianceQuantity: 0,
+      positiveVarianceQuantity: 0,
+      negativeVarianceQuantity: 0
+    }
+  );
+
+  return {
+    id: row.id,
+    legacyId: row.legacyId,
+    name: row.name,
+    venue: row.venue,
+    template: row.template,
+    countedAt: row.countedAt.toISOString(),
+    status: row.status,
+    notes: row.notes,
+    appliedAt: row.appliedAt?.toISOString() ?? null,
+    submittedAt: row.submittedAt?.toISOString() ?? null,
+    submittedByUserId: row.submittedByUserId,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewedByUserId: row.reviewedByUserId,
+    lineCount: row._count.lines,
+    totalValueCents: reviewLineValue(row.lines),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    ...variance
+  };
+}
+
 export const stocktakesService = {
-  async list(): Promise<StocktakesPayload> {
+  async list(actor?: AuthUser | null): Promise<StocktakesPayload> {
     const stocktakes = await prisma.stocktake.findMany({
+      where: stocktakeScope(actor),
       include: {
         _count: { select: { lines: true } },
         lines: { select: { stockValueCents: true } }
@@ -176,55 +434,58 @@ export const stocktakesService = {
     return { stocktakes: stocktakes.map(toStocktakePayload) };
   },
 
-  async summary(): Promise<StocktakesSummary> {
-    const [total, inProgress, submitted, latest, valueAgg] = await Promise.all([
-      prisma.stocktake.count(),
-      prisma.stocktake.count({ where: { status: 'IN_PROGRESS' } }),
-      prisma.stocktake.count({ where: { status: 'SUBMITTED' } }),
+  async summary(actor?: AuthUser | null): Promise<StocktakesSummary> {
+    const scope = stocktakeScope(actor);
+    const [total, inProgress, submitted, applied, latest, valueAgg] = await Promise.all([
+      prisma.stocktake.count({ where: scope }),
+      prisma.stocktake.count({ where: { AND: [scope, { status: 'IN_PROGRESS' }] } }),
+      prisma.stocktake.count({ where: { AND: [scope, { status: 'SUBMITTED' }] } }),
+      prisma.stocktake.count({ where: { AND: [scope, { appliedAt: { not: null } }] } }),
       prisma.stocktake.findFirst({
+        where: scope,
         orderBy: { countedAt: 'desc' },
         select: { countedAt: true }
       }),
-      prisma.stocktakeLine.aggregate({ _sum: { stockValueCents: true } })
+      prisma.stocktakeLine.aggregate({
+        where: { stocktake: scope },
+        _sum: { stockValueCents: true }
+      })
     ]);
 
     return {
       totalStocktakes: total,
       inProgress,
       submitted,
+      applied,
       lastCountedAt: latest?.countedAt.toISOString() ?? null,
       totalValueCents: valueAgg._sum.stockValueCents ?? 0
     };
   },
 
-  async get(id: string): Promise<StocktakeWithLines> {
-    const row = await prisma.stocktake.findUnique({
-      where: { id },
-      include: {
-        lines: {
-          include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
-        }
-      }
-    });
-    if (!row) throw new HttpError(404, 'Stocktake not found');
-    return toStocktakeWithLinesPayload(row);
+  async get(id: string, actor?: AuthUser | null): Promise<StocktakeWithLines> {
+    return loadStocktakeWithVenueOnHand(id, actor);
   },
 
-  async createStocktake(input: unknown): Promise<StocktakeWithLines> {
+  async createStocktake(input: unknown, actor?: AuthUser | null): Promise<StocktakeWithLines> {
     const data = stocktakeCreateInputSchema.parse(input);
     const countedAt = new Date(data.countedAt);
     if (Number.isNaN(countedAt.getTime())) {
       throw new HttpError(400, 'countedAt is not a valid date');
     }
+    const requestedVenue = normaliseOptionalText(data.venue);
+    const venue = targetVenueForActor(requestedVenue, actor);
+    const submittedAt = data.status === 'SUBMITTED' ? new Date() : null;
 
     const row = await prisma.$transaction(async (tx) => {
       const created = await tx.stocktake.create({
         data: {
           name: data.name.trim(),
-          venue: normaliseOptionalText(data.venue) ?? null,
+          venue,
           template: normaliseOptionalText(data.template) ?? null,
           countedAt,
           status: data.status,
+          submittedAt,
+          submittedByUserId: submittedAt ? actor?.id ?? null : null,
           notes: normaliseOptionalText(data.notes) ?? null,
           lines: data.lines
             ? {
@@ -248,14 +509,23 @@ export const stocktakesService = {
           }
         }
       });
+      await ensureVenueStockRowsForLines(
+        tx,
+        venue,
+        created.lines.map((line) => line.itemId)
+      );
       return created;
     });
-    return toStocktakeWithLinesPayload(row);
+    return loadStocktakeWithVenueOnHand(row.id, actor);
   },
 
-  async updateStocktake(id: string, input: unknown): Promise<StocktakeWithLines> {
+  async updateStocktake(
+    id: string,
+    input: unknown,
+    actor?: AuthUser | null
+  ): Promise<StocktakeWithLines> {
     const data = stocktakeUpdateInputSchema.parse(input);
-    const existing = await prisma.stocktake.findUnique({ where: { id } });
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
     if (!existing) throw new HttpError(404, 'Stocktake not found');
     let reversedAfterApply = false;
     if (existing.appliedAt) {
@@ -275,6 +545,13 @@ export const stocktakesService = {
       }
     }
 
+    const requestedVenue =
+      data.venue !== undefined ? normaliseOptionalText(data.venue) : existing.venue;
+    const venue = assertVenueChangeAllowed(requestedVenue, existing.venue, actor);
+    const statusChanged = data.status !== undefined && data.status !== existing.status;
+    const nextStatus = data.status ?? existing.status;
+    const now = new Date();
+
     const row = await prisma.$transaction(async (tx) => {
       if (data.lines !== undefined) {
         await tx.stocktakeLine.deleteMany({ where: { stocktakeId: id } });
@@ -284,12 +561,22 @@ export const stocktakesService = {
         where: { id },
         data: {
           ...(data.name !== undefined && { name: data.name.trim() }),
-          ...(data.venue !== undefined && { venue: normaliseOptionalText(data.venue) }),
+          ...(data.venue !== undefined && { venue }),
           ...(data.template !== undefined && {
             template: normaliseOptionalText(data.template)
           }),
           ...(countedAt !== undefined && { countedAt }),
           ...(data.status !== undefined && { status: data.status }),
+          ...(statusChanged && nextStatus === 'SUBMITTED' && {
+            submittedAt: now,
+            submittedByUserId: actor?.id ?? null
+          }),
+          ...(statusChanged && nextStatus === 'IN_PROGRESS' && {
+            submittedAt: null,
+            submittedByUserId: null,
+            reviewedAt: null,
+            reviewedByUserId: null
+          }),
           ...(data.notes !== undefined && { notes: normaliseOptionalText(data.notes) }),
           ...(reversedAfterApply && {
             appliedAt: null,
@@ -317,9 +604,14 @@ export const stocktakesService = {
           }
         }
       });
+      await ensureVenueStockRowsForLines(
+        tx,
+        venue,
+        updated.lines.map((line) => line.itemId)
+      );
       return updated;
     });
-    return toStocktakeWithLinesPayload(row);
+    return loadStocktakeWithVenueOnHand(row.id, actor);
   },
 
   async applyStocktake(id: string, reviewer?: AuthUser | null): Promise<ApplyStocktakeResult> {
@@ -336,6 +628,13 @@ export const stocktakesService = {
       });
 
       if (!stocktake) throw new HttpError(404, 'Stocktake not found');
+      if (
+        reviewer &&
+        !isAdminActor(reviewer) &&
+        (!reviewer.venue || (stocktake.venue !== reviewer.venue && stocktake.venue !== null))
+      ) {
+        throw new HttpError(403, 'Stocktake review is limited to your venue.');
+      }
       if (stocktake.status !== 'SUBMITTED') {
         throw new HttpError(400, 'Only submitted stocktakes can be applied');
       }
@@ -346,7 +645,11 @@ export const stocktakesService = {
       const appliedAt = new Date();
       const applied = await tx.stocktake.updateMany({
         where: { id, status: 'SUBMITTED', appliedAt: null },
-        data: { appliedAt }
+        data: {
+          appliedAt,
+          reviewedAt: appliedAt,
+          reviewedByUserId: reviewer?.id ?? null
+        }
       });
       if (applied.count !== 1) {
         throw new HttpError(409, 'Stocktake has already been applied');
@@ -355,24 +658,21 @@ export const stocktakesService = {
       const movements: InventoryMovementRow[] = [];
       for (const line of stocktake.lines) {
         if (!line.itemId) continue;
-        const item = await tx.stockItem.findUnique({
-          where: { id: line.itemId },
-          select: { id: true, unit: true, onHand: true }
-        });
-        if (!item) continue;
+        const balanceTarget = await balanceTargetForItem(tx, line.itemId, stocktake.venue);
+        if (!balanceTarget) continue;
 
-        const quantityBefore = item.onHand;
+        const quantityBefore = balanceTarget.quantityBefore;
         const quantityAfter = line.countedQty;
         const quantityDelta = quantityAfter - quantityBefore;
 
         const movement = await tx.inventoryMovement.create({
           data: {
-            itemId: item.id,
+            itemId: balanceTarget.item.id,
             movementType: 'STOCKTAKE_ADJUSTMENT',
             quantityDelta,
             quantityBefore,
             quantityAfter,
-            unit: line.unit ?? item.unit,
+            unit: line.unit ?? balanceTarget.item.unit,
             sourceStocktakeId: stocktake.id,
             sourceStocktakeLineId: line.id,
             notes: notesWithContext([
@@ -385,10 +685,7 @@ export const stocktakesService = {
         });
         movements.push(movement);
 
-        await tx.stockItem.update({
-          where: { id: item.id },
-          data: { onHand: quantityAfter }
-        });
+        await balanceTarget.updateQuantityAfter(quantityAfter);
       }
 
       const appliedStocktake = await tx.stocktake.findUniqueOrThrow({
@@ -404,14 +701,17 @@ export const stocktakesService = {
     });
 
     return {
-      stocktake: toStocktakeWithLinesPayload(result.stocktake),
+      stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
       movements: result.movements.map(toMovementPayload)
     };
   },
 
-  async getMovementHistory(id: string): Promise<StocktakeMovementHistoryPayload> {
-    const stocktake = await prisma.stocktake.findUnique({
-      where: { id },
+  async getMovementHistory(
+    id: string,
+    actor?: AuthUser | null
+  ): Promise<StocktakeMovementHistoryPayload> {
+    const stocktake = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
       include: {
         _count: { select: { lines: true } },
         lines: { select: { stockValueCents: true } }
@@ -453,8 +753,8 @@ export const stocktakesService = {
     const reviewedBy = reviewerLabel(reviewer);
 
     const result = await prisma.$transaction(async (tx) => {
-      const stocktake = await tx.stocktake.findUnique({
-        where: { id },
+      const stocktake = await tx.stocktake.findFirst({
+        where: scopedStocktakeWhere(id, reviewer),
         include: {
           lines: {
             include: { item: { select: { id: true, name: true, unit: true, onHand: true } } }
@@ -483,25 +783,22 @@ export const stocktakesService = {
           throw new HttpError(400, 'Correction line must be linked to a stock item');
         }
 
-        const item = await tx.stockItem.findUnique({
-          where: { id: line.itemId },
-          select: { id: true, unit: true, onHand: true }
-        });
-        if (!item) throw new HttpError(404, `Stock item not found for ${line.label}`);
+        const balanceTarget = await balanceTargetForItem(tx, line.itemId, stocktake.venue);
+        if (!balanceTarget) throw new HttpError(404, `Stock item not found for ${line.label}`);
 
-        const quantityBefore = item.onHand;
+        const quantityBefore = balanceTarget.quantityBefore;
         const quantityAfter = correction.quantityAfter;
         const quantityDelta = quantityAfter - quantityBefore;
         if (Math.abs(quantityDelta) <= 0.0001) continue;
 
         const movement = await tx.inventoryMovement.create({
           data: {
-            itemId: item.id,
+            itemId: balanceTarget.item.id,
             movementType: 'STOCKTAKE_CORRECTION',
             quantityDelta,
             quantityBefore,
             quantityAfter,
-            unit: line.unit ?? item.unit,
+            unit: line.unit ?? balanceTarget.item.unit,
             sourceStocktakeId: stocktake.id,
             sourceStocktakeLineId: line.id,
             notes: notesWithContext([
@@ -521,10 +818,7 @@ export const stocktakesService = {
         });
         movements.push(movement);
 
-        await tx.stockItem.update({
-          where: { id: item.id },
-          data: { onHand: quantityAfter }
-        });
+        await balanceTarget.updateQuantityAfter(quantityAfter);
       }
 
       if (movements.length === 0) {
@@ -544,7 +838,7 @@ export const stocktakesService = {
     });
 
     return {
-      stocktake: toStocktakeWithLinesPayload(result.stocktake),
+      stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
       movements: result.movements.map(toMovementWithContextPayload)
     };
   },
@@ -559,7 +853,7 @@ export const stocktakesService = {
     const reason = data.reason?.trim() || 'Manager reversal';
 
     const result = await prisma.$transaction(async (tx) => {
-      const stocktake = await tx.stocktake.findUnique({ where: { id } });
+      const stocktake = await tx.stocktake.findFirst({ where: scopedStocktakeWhere(id, reviewer) });
       if (!stocktake) throw new HttpError(404, 'Stocktake not found');
       if (!stocktake.appliedAt) {
         throw new HttpError(409, 'Only applied stocktakes can be reversed');
@@ -605,24 +899,21 @@ export const stocktakesService = {
       const movements: InventoryMovementWithContextRow[] = [];
       for (const group of netByLine.values()) {
         if (Math.abs(group.quantityDelta) <= 0.0001) continue;
-        const item = await tx.stockItem.findUnique({
-          where: { id: group.itemId },
-          select: { id: true, unit: true, onHand: true }
-        });
-        if (!item) continue;
+        const balanceTarget = await balanceTargetForItem(tx, group.itemId, stocktake.venue);
+        if (!balanceTarget) continue;
 
-        const quantityBefore = item.onHand;
+        const quantityBefore = balanceTarget.quantityBefore;
         const quantityDelta = -group.quantityDelta;
         const quantityAfter = quantityBefore + quantityDelta;
 
         const movement = await tx.inventoryMovement.create({
           data: {
-            itemId: item.id,
+            itemId: balanceTarget.item.id,
             movementType: 'STOCKTAKE_REVERSAL',
             quantityDelta,
             quantityBefore,
             quantityAfter,
-            unit: group.unit ?? item.unit,
+            unit: group.unit ?? balanceTarget.item.unit,
             sourceStocktakeId: stocktake.id,
             sourceStocktakeLineId: group.sourceStocktakeLineId,
             notes: notesWithContext([
@@ -641,10 +932,7 @@ export const stocktakesService = {
         });
         movements.push(movement);
 
-        await tx.stockItem.update({
-          where: { id: item.id },
-          data: { onHand: quantityAfter }
-        });
+        await balanceTarget.updateQuantityAfter(quantityAfter);
       }
 
       if (movements.length === 0) {
@@ -665,16 +953,78 @@ export const stocktakesService = {
     });
 
     return {
-      stocktake: toStocktakeWithLinesPayload(result.stocktake),
+      stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
       movements: result.movements.map(toMovementWithContextPayload)
     };
   },
 
-  async deleteStocktakes(input: unknown): Promise<{ deleted: number }> {
+  async reviewQueue(actor?: AuthUser | null): Promise<{ stocktakes: StocktakeReviewItem[] }> {
+    const rows = await prisma.stocktake.findMany({
+      where: { AND: [stocktakeScope(actor), { status: 'SUBMITTED', appliedAt: null }] },
+      include: {
+        _count: { select: { lines: true } },
+        lines: {
+          select: {
+            countedQty: true,
+            stockValueCents: true,
+            unit: true,
+            item: { select: { id: true, onHand: true } }
+          }
+        }
+      },
+      orderBy: [{ submittedAt: 'desc' }, { updatedAt: 'desc' }],
+      take: 50
+    });
+    const venueOnHandByKey = await venueOnHandLookup(rows);
+    return { stocktakes: rows.map((row) => toStocktakeReviewPayload(row, venueOnHandByKey)) };
+  },
+
+  async reopenStocktake(id: string, actor?: AuthUser | null): Promise<Stocktake> {
+    const existing = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    if (existing.appliedAt) {
+      throw new HttpError(409, 'Applied stocktakes must be reversed before reopening.');
+    }
+    if (existing.status !== 'SUBMITTED') {
+      throw new HttpError(400, 'Only submitted stocktakes can be reopened.');
+    }
+
+    const row = await prisma.stocktake.update({
+      where: { id },
+      data: {
+        status: 'IN_PROGRESS',
+        submittedAt: null,
+        submittedByUserId: null,
+        reviewedAt: new Date(),
+        reviewedByUserId: actor?.id ?? null
+      },
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    return toStocktakePayload(row);
+  },
+
+  async deleteStocktakes(input: unknown, actor?: AuthUser | null): Promise<{ deleted: number }> {
     const { ids } = stocktakeBulkDeleteInputSchema.parse(input);
     const uniqueIds = Array.from(new Set(ids));
+    const visible = await prisma.stocktake.findMany({
+      where: { AND: [stocktakeScope(actor), { id: { in: uniqueIds } }] },
+      select: { id: true }
+    });
+    if (visible.length !== uniqueIds.length) {
+      throw new HttpError(403, 'Stocktake deletion is limited to your venue.');
+    }
+
     const applied = await prisma.stocktake.findMany({
-      where: { id: { in: uniqueIds }, appliedAt: { not: null } },
+      where: { AND: [stocktakeScope(actor), { id: { in: uniqueIds }, appliedAt: { not: null } }] },
       select: { id: true, name: true, appliedAt: true }
     });
     const blocked: string[] = [];
@@ -691,7 +1041,7 @@ export const stocktakesService = {
       );
     }
     const result = await prisma.stocktake.deleteMany({
-      where: { id: { in: uniqueIds } }
+      where: { AND: [stocktakeScope(actor), { id: { in: uniqueIds } }] }
     });
     return { deleted: result.count };
   }

@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthUser,
   RecipesSummary,
+  ReportsOverviewPayload,
   RosterForecastSnapshot,
   RosterShift,
   SalesActualSummary,
@@ -22,6 +23,7 @@ import {
   Input,
   PageHeader,
   ProductLogo,
+  Select,
   Spinner,
   StatCard,
   SUITE_APPS,
@@ -50,6 +52,7 @@ type SuiteSummary = {
 };
 
 type ReportsData = {
+  overview: ReportsOverviewPayload | null;
   summary: SuiteSummary | null;
   staff: StaffProfile[];
   timesheets: Timesheet[];
@@ -170,6 +173,18 @@ function formatMoney(value: number) {
     currency: 'AUD',
     maximumFractionDigits: 2
   }).format(value);
+}
+
+function formatDateTime(value: string | null | undefined) {
+  if (!value) return '—';
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date.toLocaleString(undefined, {
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
 }
 
 function roundHours(value: number) {
@@ -442,8 +457,9 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
 
 function SidebarNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState(() => window.location.hash || '#wages');
+  const [activeHash, setActiveHash] = useState(() => window.location.hash || '#overview');
   const navItems = [
+    { href: '#overview', label: 'Overview', icon: <ChartIcon /> },
     { href: '#forecast', label: 'Forecast', icon: <ChartIcon /> },
     { href: '#wages', label: 'Wages', icon: <ChartIcon /> },
     { href: '#cogs', label: 'COGS', icon: <DocumentIcon /> },
@@ -453,7 +469,7 @@ function SidebarNav() {
 
   useEffect(() => {
     const handleHashChange = () => {
-      setActiveHash(window.location.hash || '#wages');
+      setActiveHash(window.location.hash || '#overview');
       setMobileMenuOpen(false);
     };
     window.addEventListener('hashchange', handleHashChange);
@@ -504,7 +520,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
+  const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
   const [data, setData] = useState<ReportsData>({
+    overview: null,
     summary: null,
     staff: [],
     timesheets: [],
@@ -537,7 +555,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setMessage(null);
     setStockMessage(null);
     try {
-      const [summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips] = await Promise.all([
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips] = await Promise.all([
+        staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
         staffApi<Timesheet[]>(`/api/staff/timesheets?start=${isoDate(weekStart)}&end=${isoDate(weekEnd)}&status=all`),
@@ -563,13 +582,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
       setLoading(false);
     }
-  }, [weekEnd, weekStart]);
+  }, [overviewRange, weekEnd, weekStart]);
 
   useEffect(() => {
     void load();
@@ -678,13 +697,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     if (!venues.length) return;
     setForecastInputs((current) => {
       const next = { ...current };
+      let changed = false;
       for (const venue of venues) {
         if (!next[venue]) {
           const historical = historicalSalesForWeek(venue, weekStart);
           next[venue] = { sales: centsInput(Math.round(historical.total * 100)), targetWagePercent: '32' };
+          changed = true;
         }
       }
-      return next;
+      return changed ? next : current;
     });
   }, [venues, weekStart]);
 
@@ -928,6 +949,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setExportMessage('Weekly payroll CSV downloaded with wages and tips.');
   }
 
+  function exportOverviewCsv() {
+    setExportMessage(null);
+    const overview = data.overview;
+    if (!overview) {
+      setExportMessage('Overview data is still loading.');
+      return;
+    }
+    const rows = [
+      ['Section', 'Metric', 'Value'],
+      ['Staff', 'Active staff', overview.staff.totalActiveStaff],
+      ['Staff', 'Missing / pending compliance', overview.staff.missingRequiredCompliance],
+      ['Staff', 'Pending leave', overview.staff.pendingLeaveCount],
+      ['Staff', 'Approved leave next 30 days', overview.staff.approvedLeaveNext30Days],
+      ['Compliance', 'Pending staff records', overview.compliance.pendingStaffRecords],
+      ['Compliance', 'Expired staff records', overview.compliance.expiredStaffRecords],
+      ['Compliance', 'Expiring records next 30 days', overview.compliance.expiringStaffRecordsNext30Days],
+      ['Compliance', 'Missing temperature readings today', overview.compliance.missingTemperatureReadingsToday],
+      ['Stock', 'Active catalogue items', overview.stock.activeStockItems],
+      ['Stock', 'Low stock venue rows', overview.stock.lowStockCount],
+      ['Stock', 'Out of stock venue rows', overview.stock.outOfStockCount],
+      ['Stock', 'Stocktakes ready for review', overview.stock.stocktakesReadyForReview]
+    ];
+    downloadTextFile(`alma-management-overview-${overview.rangeDays}d.csv`, csvRows(rows));
+    setExportMessage('Management overview CSV downloaded.');
+  }
+
   async function exportApprovedXeroTimesheets() {
     const approvedXeroCount = data.timesheets.filter((timesheet) => timesheet.status === 'APPROVED' && timesheet.paymentMethod !== 'CASH').length;
     if (!approvedXeroCount) {
@@ -1124,22 +1171,60 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     };
   });
 
-  const stockValueCents =
-    data.stockItems?.items.reduce((sum, item) => sum + Math.round(item.onHand * (item.avgCostCents ?? 0)), 0) ?? 0;
+  const venueStockValueRows = (data.stockItems?.venueStockItems ?? []).filter(
+    (row) => row.active && row.stockItem?.status === 'ACTIVE'
+  );
+  const stockCostUsesVenueRows = venueStockValueRows.length > 0;
+  const stockValueCents = stockCostUsesVenueRows
+    ? venueStockValueRows.reduce(
+        (sum, row) => sum + Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0)),
+        0
+      )
+    : data.stockItems?.items.reduce(
+        (sum, item) => sum + Math.round(item.onHand * (item.avgCostCents ?? 0)),
+        0
+      ) ?? 0;
 
-  const categoryValueRows = Array.from(
-    (data.stockItems?.items ?? []).reduce((map, item) => {
-      const category = item.category?.name ?? 'Uncategorised';
-      const current = map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
-      current.itemCount += 1;
-      current.valueCents += Math.round(item.onHand * (item.avgCostCents ?? 0));
-      const threshold = item.reorderPoint ?? item.parLevel;
-      if (threshold > 0 && item.onHand <= threshold) current.lowStock += 1;
-      map.set(category, current);
-      return map;
-    }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
-      .values()
+  const categoryValueRows = (
+    stockCostUsesVenueRows
+      ? Array.from(
+          venueStockValueRows
+            .reduce((map, row) => {
+              const category = row.stockItem?.category?.name ?? 'Uncategorised';
+              const current =
+                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
+              const threshold =
+                row.reorderPoint ??
+                row.parLevel ??
+                row.stockItem?.reorderPoint ??
+                row.stockItem?.parLevel ??
+                0;
+              current.itemCount += 1;
+              current.valueCents += Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0));
+              if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) {
+                current.lowStock += 1;
+              }
+              map.set(category, current);
+              return map;
+            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
+            .values()
+        )
+      : Array.from(
+          (data.stockItems?.items ?? [])
+            .reduce((map, item) => {
+              const category = item.category?.name ?? 'Uncategorised';
+              const current =
+                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
+              current.itemCount += 1;
+              current.valueCents += Math.round(item.onHand * (item.avgCostCents ?? 0));
+              map.set(category, current);
+              return map;
+            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
+            .values()
+        )
   ).sort((a, b) => b.valueCents - a.valueCents);
+  const stockCategoryCountLabel = stockCostUsesVenueRows ? 'Venue rows' : 'Items';
+  const stockLowStockLabel = stockCostUsesVenueRows ? 'Low stock venue rows' : 'Low stock';
 
   function moveWeek(days: number) {
     setSelectedWeekStart(isoDate(addDays(weekStart, days)));
@@ -1178,6 +1263,16 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           description={`Signed in as ${user.firstName}. This app keeps management reporting separate from Staff admin screens.`}
           actions={
             <div className="reports-week-controls">
+              <Select
+                label="Overview"
+                value={overviewRange}
+                onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
+                options={[
+                  { label: 'Last 7 days', value: '7' },
+                  { label: 'Last 30 days', value: '30' },
+                  { label: 'Last 90 days', value: '90' }
+                ]}
+              />
               <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
                 Prev
               </Button>
@@ -1209,6 +1304,164 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <StatCard label="Weekly wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={roundHours(wageTotals.hours)} loading={loading} />
           <StatCard label="Stock value" value={formatCurrency(stockValueCents)} hint={`${data.stockSummary?.activeItems ?? 0} active items`} loading={loading} />
         </div>
+
+        <section id="overview" className="reports-section">
+          <Card
+            title="Management overview"
+            subtitle={`Read-only suite signals for the last ${data.overview?.rangeDays ?? overviewRange} days. Manager views are limited to their venue.`}
+            action={
+              <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
+                Export CSV
+              </Button>
+            }
+          >
+            <div className="report-overview-grid">
+              <div className="report-panel">
+                <h4>Staff</h4>
+                <div className="metric-row">
+                  <span>Active staff</span>
+                  <Badge tone="info">{data.overview?.staff.totalActiveStaff ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Pending leave</span>
+                  <Badge tone={(data.overview?.staff.pendingLeaveCount ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.staff.pendingLeaveCount ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Approved leave next 30 days</span>
+                  <Badge tone="neutral">{data.overview?.staff.approvedLeaveNext30Days ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Missing or pending compliance</span>
+                  <Badge tone={(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.staff.missingRequiredCompliance ?? 0}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Compliance</h4>
+                <div className="metric-row">
+                  <span>Pending records</span>
+                  <Badge tone={(data.overview?.compliance.pendingStaffRecords ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.compliance.pendingStaffRecords ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Expired records</span>
+                  <Badge tone={(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? 'danger' : 'positive'}>
+                    {data.overview?.compliance.expiredStaffRecords ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Temp readings missing today</span>
+                  <Badge tone={(data.overview?.compliance.missingTemperatureReadingsToday ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.compliance.missingTemperatureReadingsToday ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Licences expiring next 30 days</span>
+                  <Badge tone={(data.overview?.compliance.expiringLicencesNext30Days ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.compliance.expiringLicencesNext30Days ?? 0}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Stock</h4>
+                <div className="metric-row">
+                  <span>Catalogue items</span>
+                  <Badge tone="info">{data.overview?.stock.activeStockItems ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Low stock venue rows</span>
+                  <Badge tone={(data.overview?.stock.lowStockCount ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.stock.lowStockCount ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Out of stock venue rows</span>
+                  <Badge tone={(data.overview?.stock.outOfStockCount ?? 0) > 0 ? 'danger' : 'positive'}>
+                    {data.overview?.stock.outOfStockCount ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Stocktakes ready for review</span>
+                  <Badge tone={(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.stock.stocktakesReadyForReview ?? 0}
+                  </Badge>
+                </div>
+              </div>
+            </div>
+
+            <div className="report-overview-grid report-overview-grid-wide">
+              <div className="report-panel">
+                <h4>Recent staff management events</h4>
+                <div className="table-scroll">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>When</th>
+                        <th>Staff</th>
+                        <th>Event</th>
+                        <th>Summary</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.overview?.staff.recentManagementEvents.length ? (
+                        data.overview.staff.recentManagementEvents.map((event) => (
+                          <tr key={event.id}>
+                            <td>{formatDateTime(event.createdAt)}</td>
+                            <td>{event.staffProfile ? `${event.staffProfile.firstName} ${event.staffProfile.lastName}` : 'Staff profile'}</td>
+                            <td>{event.eventType}</td>
+                            <td>{event.summary}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4}>No recent management events in this range.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Stocktake variance attention</h4>
+                <div className="table-scroll">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Stocktake</th>
+                        <th>Item</th>
+                        <th>Venue</th>
+                        <th>Variance</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {data.overview?.stock.highestVarianceLines.length ? (
+                        data.overview.stock.highestVarianceLines.map((line, index) => (
+                          <tr key={`${line.stocktakeId}:${line.itemName}:${index}`}>
+                            <td>{line.stocktakeName}</td>
+                            <td>{line.itemName}</td>
+                            <td>{line.venue ?? 'Unassigned'}</td>
+                            <td>{line.variance > 0 ? '+' : ''}{line.variance.toFixed(2)} {line.unit ?? ''}</td>
+                          </tr>
+                        ))
+                      ) : (
+                        <tr>
+                          <td colSpan={4}>No submitted stocktake variances in this range.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </Card>
+        </section>
 
         <section id="forecast" className="reports-section">
           <Card
@@ -1646,7 +1899,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         <section id="cogs" className="reports-section">
           <Card
             title="COGS signals"
-            subtitle="Stock value and recipe cost indicators. True COGS will need POS sales mapped into the ledger."
+            subtitle="Stock value and recipe cost indicators. Venue stock rows are used where configured; true COGS will still need POS sales mapped into the ledger."
             padding="none"
           >
             {stockMessage ? <p className="error-text report-error">{stockMessage}</p> : null}
@@ -1658,7 +1911,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <Badge tone="info">{formatCurrency(stockValueCents)}</Badge>
                 </div>
                 <div className="metric-row">
-                  <span>Low stock items</span>
+                  <span>{stockLowStockLabel}</span>
                   <Badge tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}>
                     {data.stockSummary?.lowStockItems ?? 0}
                   </Badge>
@@ -1691,8 +1944,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <thead>
                   <tr>
                     <th>Category</th>
-                    <th>Items</th>
-                    <th>Low stock</th>
+                    <th>{stockCategoryCountLabel}</th>
+                    <th>{stockLowStockLabel}</th>
                     <th>Value</th>
                   </tr>
                 </thead>

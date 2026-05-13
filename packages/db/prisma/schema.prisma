@@ -1259,6 +1259,7 @@ model StockItem {
   createdAt      DateTime        @default(now())
   updatedAt      DateTime        @updatedAt
   category       StockCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  venueStock     VenueStockItem[]
   recipeLines    RecipeLine[]
   stocktakeLines StocktakeLine[]
   movements      InventoryMovement[]
@@ -1269,23 +1270,51 @@ model StockItem {
   @@index([name])
 }
 
+model VenueStockItem {
+  id           String    @id @default(cuid())
+  venue        String
+  stockItemId  String
+  parLevel     Float?
+  reorderPoint Float?
+  onHand       Float?
+  unitOverride String?
+  active       Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  stockItem    StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@unique([venue, stockItemId])
+  @@index([venue])
+  @@index([stockItemId])
+  @@index([venue, active])
+  @@index([venue, reorderPoint])
+  @@index([updatedAt])
+}
+
 model Stocktake {
-  id        String          @id @default(cuid())
-  legacyId  String?         @unique
-  name      String
-  venue     String?
-  template  String?
-  countedAt DateTime
-  status    StocktakeStatus @default(IN_PROGRESS)
-  notes     String?
-  appliedAt DateTime?
-  createdAt DateTime        @default(now())
-  updatedAt DateTime        @updatedAt
-  lines     StocktakeLine[]
-  movements InventoryMovement[]
+  id                String          @id @default(cuid())
+  legacyId          String?         @unique
+  name              String
+  venue             String?
+  template          String?
+  countedAt         DateTime
+  status            StocktakeStatus @default(IN_PROGRESS)
+  notes             String?
+  appliedAt         DateTime?
+  submittedAt       DateTime?
+  submittedByUserId String?
+  reviewedAt        DateTime?
+  reviewedByUserId  String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  lines             StocktakeLine[]
+  movements         InventoryMovement[]
 
   @@index([countedAt])
   @@index([status])
+  @@index([venue, status])
+  @@index([submittedAt])
+  @@index([reviewedAt])
 }
 
 model StocktakeLine {
