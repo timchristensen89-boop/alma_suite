@@ -122,6 +122,26 @@
   max-width: 1120px;
 }
 
+.staff-daily-home {
+  max-width: 1120px;
+}
+
+.staff-quick-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.staff-quick-links .btn {
+  min-width: 140px;
+}
+
+.staff-daily-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
 .staff-clock-card {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2339,6 +2359,10 @@
     grid-template-columns: 1fr;
   }
 
+  .staff-daily-grid {
+    grid-template-columns: 1fr;
+  }
+
   .manager-mobile-stats,
   .manager-mobile-alert-strip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -2372,6 +2396,10 @@
 
   .staff-mobile-actions {
     justify-content: stretch;
+  }
+
+  .staff-quick-links .btn {
+    flex: 1 1 180px;
   }
 
   .lightweight-profile-row {

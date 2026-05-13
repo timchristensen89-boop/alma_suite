@@ -8,6 +8,7 @@ import {
   type GiftCardOverview,
   type GiftCardPromoCode,
   type GiftCardPromoQuote,
+  type GiftCardPublicConfig,
   type GiftCardPublic,
   type GiftCardSettings
 } from '@alma/shared';
@@ -198,6 +199,8 @@ function useGiftCardAuth() {
 
 function PublicGiftCardShop() {
   const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
+  const [checkoutMode, setCheckoutMode] = useState<'live' | 'test' | 'setup_required'>('setup_required');
+  const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [amountCents, setAmountCents] = useState(10000);
   const [customAmount, setCustomAmount] = useState('');
   const [promoCode, setPromoCode] = useState('');
@@ -218,10 +221,15 @@ function PublicGiftCardShop() {
   const amountError = amountCents < 1000 || amountCents > 200000
     ? 'Choose an amount between $10 and $2,000.'
     : null;
+  const checkoutBlocked = checkoutMode === 'setup_required';
 
   useEffect(() => {
-    api<GiftCardSettings>('/api/gift-cards/settings/public')
-      .then(setSettings)
+    api<GiftCardPublicConfig>('/api/gift-cards/public/config')
+      .then((config) => {
+        setSettings(config.settings);
+        setCheckoutMode(config.checkoutMode);
+        setCheckoutNotice(config.checkoutNotice);
+      })
       .catch(() => undefined);
   }, []);
 
@@ -234,6 +242,10 @@ function PublicGiftCardShop() {
 
   async function checkout(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (checkoutBlocked) {
+      setFeedback(checkoutNotice ?? 'Payment setup is required before gift card checkout can go live.');
+      return;
+    }
     if (amountError) {
       setFeedback(amountError);
       return;
@@ -241,7 +253,7 @@ function PublicGiftCardShop() {
     setSubmitting(true);
     setFeedback(null);
     try {
-      const result = await api<GiftCardCheckoutResult>('/api/gift-cards/checkout', {
+      const result = await api<GiftCardCheckoutResult>('/api/gift-cards/public/orders', {
         method: 'POST',
         body: JSON.stringify({
           amountCents,
@@ -257,7 +269,7 @@ function PublicGiftCardShop() {
       });
       window.location.assign(result.checkoutUrl);
     } catch (error) {
-      setFeedback(error instanceof Error ? error.message : 'Could not start Stripe checkout.');
+      setFeedback(error instanceof Error ? error.message : 'Could not start gift card checkout.');
     } finally {
       setSubmitting(false);
     }
@@ -357,10 +369,10 @@ function PublicGiftCardShop() {
           </div>
         </section>
 
-        {settings.testCheckoutEnabled ? (
+        {checkoutNotice ? (
           <section className="giftcards-test-banner">
-            <strong>Test checkout is on.</strong>
-            <span>Stripe is disabled for gift card checkout and no real payment will be taken.</span>
+            <strong>{checkoutMode === 'test' ? 'Test checkout is on.' : 'Payment setup required.'}</strong>
+            <span>{checkoutNotice}</span>
           </section>
         ) : null}
 
@@ -444,8 +456,14 @@ function PublicGiftCardShop() {
             </div>
             {promoMessage ? <p className={promoQuote ? 'giftcards-public-note' : 'giftcards-public-error'}>{promoMessage}</p> : null}
             {feedback || amountError ? <p className="giftcards-public-error">{feedback ?? amountError}</p> : null}
-            <button className="giftcards-public-submit" type="submit" disabled={submitting || Boolean(amountError)}>
-              {submitting ? (settings.testCheckoutEnabled ? 'Creating test card...' : 'Opening Stripe...') : settings.testCheckoutEnabled ? `Create test card (${formatCents(amountDueCents)})` : `Pay ${formatCents(amountDueCents)}`}
+            <button className="giftcards-public-submit" type="submit" disabled={submitting || Boolean(amountError) || checkoutBlocked}>
+              {checkoutBlocked
+                ? 'Payment setup required'
+                : submitting
+                  ? (checkoutMode === 'test' ? 'Creating test card...' : 'Opening checkout...')
+                  : checkoutMode === 'test'
+                    ? `Create test card (${formatCents(amountDueCents)})`
+                    : `Pay ${formatCents(amountDueCents)}`}
             </button>
           </form>
         </section>
@@ -749,7 +767,10 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
             <input
               type="checkbox"
               checked={settings.testCheckoutEnabled}
-              onChange={(event) => setSettings((current) => ({ ...current, testCheckoutEnabled: event.currentTarget.checked }))}
+              onChange={(event) => {
+                const checked = event.currentTarget.checked;
+                setSettings((current) => ({ ...current, testCheckoutEnabled: checked }));
+              }}
               disabled={!canEdit}
             />
             <span>Test checkout mode. Stripe is disabled and cards are created as test cards.</span>

@@ -160,6 +160,147 @@ staffRouter.patch('/leave/:id', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/me/home', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getMyHome(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/me/roster', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getMyRoster(req.user, {
+      start: typeof req.query.start === 'string' ? req.query.start : undefined,
+      end: typeof req.query.end === 'string' ? req.query.end : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/me/shifts', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getMyRoster(req.user, {
+      start: typeof req.query.start === 'string' ? req.query.start : undefined,
+      end: typeof req.query.end === 'string' ? req.query.end : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/shifts/:id/confirm', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.confirmMyShift(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/me/clock', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getMyClockStatus(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock/in', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.clockIn(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock-in', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.clockIn(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock/out', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.clockOut(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock-out', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.clockOut(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock/break/start', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.startBreak(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/break-start', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.startBreak(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/clock/break/end', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.endBreak(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/break-end', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.endBreak(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/me/leave', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listMyLeaveRequests(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/leave', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.createMyLeaveRequest(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Invite endpoints — declared BEFORE /:id so /invites isn't read as an id
 staffRouter.get('/invites', async (_req, res, next) => {
   try {
@@ -236,7 +377,7 @@ staffRouter.get('/roster', async (req, res, next) => {
     const start = typeof req.query.start === 'string' ? req.query.start : undefined;
     const end = typeof req.query.end === 'string' ? req.query.end : undefined;
     const staffProfileId = req.user?.role === 'STAFF' ? req.user.id : undefined;
-    res.json(await staffService.listRoster(start, end, staffProfileId));
+    res.json(await staffService.listRoster(start, end, staffProfileId, req.user));
   } catch (error) {
     next(error);
   }
@@ -244,7 +385,7 @@ staffRouter.get('/roster', async (req, res, next) => {
 
 staffRouter.post('/roster', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await staffService.createRosterShift(req.body));
+    res.status(201).json(await staffService.createRosterShift(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -252,7 +393,7 @@ staffRouter.post('/roster', requireManager, async (req, res, next) => {
 
 staffRouter.patch('/roster/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.updateRosterShift(String(req.params.id), req.body));
+    res.json(await staffService.updateRosterShift(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -260,7 +401,7 @@ staffRouter.patch('/roster/:id', requireManager, async (req, res, next) => {
 
 staffRouter.delete('/roster/:id', requireManager, async (req, res, next) => {
   try {
-    await staffService.deleteRosterShift(String(req.params.id));
+    await staffService.deleteRosterShift(String(req.params.id), req.user);
     res.status(204).send();
   } catch (error) {
     next(error);
@@ -269,7 +410,7 @@ staffRouter.delete('/roster/:id', requireManager, async (req, res, next) => {
 
 staffRouter.post('/roster/publish', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.publishRoster(req.body, req.user?.id));
+    res.json(await staffService.publishRoster(req.body, req.user?.id, req.user));
   } catch (error) {
     next(error);
   }
@@ -281,7 +422,7 @@ staffRouter.get('/roster/forecast-snapshots', requireManager, async (req, res, n
       start: typeof req.query.start === 'string' ? req.query.start : undefined,
       end: typeof req.query.end === 'string' ? req.query.end : undefined,
       venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
-    }));
+    }, req.user));
   } catch (error) {
     next(error);
   }
@@ -292,7 +433,31 @@ staffRouter.get('/manager-dashboard', requireManager, async (req, res, next) => 
     res.json(await staffService.getManagerDashboard({
       date: typeof req.query.date === 'string' ? req.query.date : '',
       venue: typeof req.query.venue === 'string' ? req.query.venue : ''
-    }));
+    }, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/manager-operations', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getManagerOperations({
+      date: typeof req.query.date === 'string' ? req.query.date : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/manager/today', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.getManagerOperations({
+      date: typeof req.query.date === 'string' ? req.query.date : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user));
   } catch (error) {
     next(error);
   }
@@ -305,7 +470,7 @@ staffRouter.get('/timesheets', async (req, res, next) => {
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     const venue = typeof req.query.venue === 'string' ? req.query.venue : undefined;
     const staffProfileId = req.user?.role === 'STAFF' ? req.user.id : undefined;
-    res.json(await staffService.listTimesheets(start, end, status, venue, staffProfileId));
+    res.json(await staffService.listTimesheets(start, end, status, venue, staffProfileId, req.user));
   } catch (error) {
     next(error);
   }
@@ -316,7 +481,7 @@ staffRouter.post('/timesheets', async (req, res, next) => {
     if (req.user?.role === 'STAFF' && req.body?.staffProfileId !== req.user.id) {
       req.body = { ...req.body, staffProfileId: req.user.id };
     }
-    res.status(201).json(await staffService.createTimesheet(req.body, req.user?.id));
+    res.status(201).json(await staffService.createTimesheet(req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -324,7 +489,7 @@ staffRouter.post('/timesheets', async (req, res, next) => {
 
 staffRouter.patch('/timesheets/:id', async (req, res, next) => {
   try {
-    res.json(await staffService.updateTimesheet(String(req.params.id), req.body));
+    res.json(await staffService.updateTimesheet(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -332,7 +497,7 @@ staffRouter.patch('/timesheets/:id', async (req, res, next) => {
 
 staffRouter.post('/timesheets/:id/approve', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.approveTimesheet(String(req.params.id), String(req.user?.id)));
+    res.json(await staffService.approveTimesheet(String(req.params.id), String(req.user?.id), req.user));
   } catch (error) {
     next(error);
   }
@@ -340,7 +505,7 @@ staffRouter.post('/timesheets/:id/approve', requireManager, async (req, res, nex
 
 staffRouter.post('/timesheets/:id/reject', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.rejectTimesheet(String(req.params.id), req.body));
+    res.json(await staffService.rejectTimesheet(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -348,7 +513,7 @@ staffRouter.post('/timesheets/:id/reject', requireManager, async (req, res, next
 
 staffRouter.post('/timesheets/:id/cash-paid', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.markTimesheetCashPaid(String(req.params.id), String(req.user?.id), req.body));
+    res.json(await staffService.markTimesheetCashPaid(String(req.params.id), String(req.user?.id), req.body, req.user));
   } catch (error) {
     next(error);
   }
@@ -356,7 +521,7 @@ staffRouter.post('/timesheets/:id/cash-paid', requireManager, async (req, res, n
 
 staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, next) => {
   try {
-    const result = await staffService.exportTimesheetsForXero(req.body);
+    const result = await staffService.exportTimesheetsForXero(req.body, req.user);
     res.json(result);
   } catch (error) {
     next(error);

@@ -6,7 +6,7 @@ export const marketingRouter = Router();
 
 marketingRouter.get('/overview', requireManager, async (req, res, next) => {
   try {
-    res.json(await marketingService.overview({
+    res.json(await marketingService.overview(req.user!, {
       venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
     }));
   } catch (error) {
@@ -14,25 +14,307 @@ marketingRouter.get('/overview', requireManager, async (req, res, next) => {
   }
 });
 
-marketingRouter.post('/contacts', requireManager, async (req, res, next) => {
+marketingRouter.get('/dashboard', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await marketingService.createContact(req.body));
+    res.json(await marketingService.overview(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
   } catch (error) {
     next(error);
   }
 });
 
-marketingRouter.patch('/contacts/:id', requireManager, async (req, res, next) => {
+marketingRouter.get('/content/dashboard', requireManager, async (req, res, next) => {
   try {
-    res.json(await marketingService.updateContact(String(req.params.id), req.body));
+    res.json(await marketingService.contentDashboard(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
   } catch (error) {
     next(error);
   }
 });
 
-marketingRouter.post('/sync-reserve-guests', requireManager, async (_req, res, next) => {
+marketingRouter.get('/content/upload-config', requireManager, async (_req, res, next) => {
   try {
-    res.json(await marketingService.syncReserveGuests());
+    res.json(await marketingService.contentUploadConfig());
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/assets', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listContentAssets(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      search: typeof req.query.search === 'string' ? req.query.search : undefined,
+      type: typeof req.query.type === 'string' ? req.query.type : undefined,
+      status: typeof req.query.status === 'string' ? req.query.status : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/assets', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createContentAsset(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/assets/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.getContentAsset(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/content/assets/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateContentAsset(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.delete('/content/assets/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.archiveContentAsset(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/posts', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listContentPosts(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      status: typeof req.query.status === 'string' ? req.query.status : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createContentPost(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/posts/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.getContentPost(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/content/posts/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateContentPost(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/assets', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.attachContentAsset(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.delete('/content/posts/:id/assets/:assetId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.detachContentAsset(req.user!, String(req.params.id), String(req.params.assetId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/submit-review', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.submitContentPostForReview(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/approve', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.approveContentPost(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/schedule', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.scheduleContentPost(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/cancel', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.cancelContentPost(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/calendar', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.contentCalendar(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      from: typeof req.query.from === 'string' ? req.query.from : undefined,
+      to: typeof req.query.to === 'string' ? req.query.to : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/preview-publish', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.previewContentPublish(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/simulate-publish', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.simulateContentPublish(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/publish', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.publishContentPost(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/content/social-accounts', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listSocialAccounts(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/social-accounts', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createSocialAccount(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/content/social-accounts/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateSocialAccount(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/social-accounts/:id/validate-readiness', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.validateSocialAccountReadiness(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/guests', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listGuests(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      search: typeof req.query.search === 'string' ? req.query.search : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/guests/:guestId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.getGuest(req.user!, String(req.params.guestId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/tags', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listTags(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/tags', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createTag(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/tags/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateTag(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/guests/:guestId/tags', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await marketingService.assignGuestTag(
+        req.user!,
+        String(req.params.guestId),
+        String(req.body?.tagId ?? '')
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.delete('/guests/:guestId/tags/:tagId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.removeGuestTag(req.user!, String(req.params.guestId), String(req.params.tagId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/auto-tags/recalculate', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await marketingService.recalculateAutoTags(req.user!, {
+        venue: typeof req.body?.venue === 'string' ? req.body.venue : undefined,
+        guestId: typeof req.body?.guestId === 'string' ? req.body.guestId : undefined
+      })
+    );
   } catch (error) {
     next(error);
   }
@@ -40,7 +322,51 @@ marketingRouter.post('/sync-reserve-guests', requireManager, async (_req, res, n
 
 marketingRouter.post('/segments', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await marketingService.createSegment(req.body));
+    res.status(201).json(await marketingService.createSegment(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/segments/preview', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.previewSegment(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/templates', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listTemplates(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/templates', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createTemplate(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/templates/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateTemplate(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/campaigns', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listCampaigns(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
   } catch (error) {
     next(error);
   }
@@ -48,7 +374,15 @@ marketingRouter.post('/segments', requireManager, async (req, res, next) => {
 
 marketingRouter.post('/campaigns', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await marketingService.createCampaign(req.body, req.user?.id));
+    res.status(201).json(await marketingService.createCampaign(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/campaigns/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.getCampaign(req.user!, String(req.params.id)));
   } catch (error) {
     next(error);
   }
@@ -56,7 +390,57 @@ marketingRouter.post('/campaigns', requireManager, async (req, res, next) => {
 
 marketingRouter.patch('/campaigns/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await marketingService.updateCampaign(String(req.params.id), req.body));
+    res.json(await marketingService.updateCampaign(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/campaigns/:id/preview-recipients', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.previewCampaignRecipients(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/campaigns/:id/simulate-send', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.simulateCampaignSend(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/automations', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listAutomations(req.user!, {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/automations', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createAutomation(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.patch('/automations/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.updateAutomation(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/automations/:id/simulate', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.simulateAutomation(req.user!, String(req.params.id)));
   } catch (error) {
     next(error);
   }

@@ -30,6 +30,30 @@
   gap: 16px;
 }
 
+.reserve-stack,
+.reserve-main section,
+.reserve-side section,
+.reserve-widget-stack {
+  display: grid;
+  gap: 16px;
+}
+
+.reserve-section-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.8fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.reserve-section-heading,
+.reserve-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
 .reserve-periods {
   display: grid;
 }
@@ -79,6 +103,70 @@
   justify-items: end;
 }
 
+.reserve-action-row,
+.reserve-note-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.reserve-summary-card,
+.reserve-guest-row,
+.reserve-slot-button,
+.reserve-slot-chip {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.reserve-summary-list {
+  display: grid;
+  gap: 6px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.reserve-guest-row {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease, transform 120ms ease;
+}
+
+.reserve-guest-row:hover,
+.reserve-slot-button:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 8px 18px rgba(14, 116, 144, 0.08);
+}
+
+.reserve-guest-row.active,
+.reserve-slot-button.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.reserve-inline-check {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--color-text-muted);
+  font-size: 14px;
+}
+
+.reserve-inline-check input {
+  margin-top: 3px;
+  accent-color: var(--color-accent);
+}
+
+.reserve-day-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 .reserve-table-list {
   display: grid;
   gap: 8px;
@@ -91,8 +179,53 @@
   background: var(--color-surface-muted);
 }
 
+.reserve-widget-page {
+  padding: 32px 20px;
+}
+
+.reserve-widget-shell {
+  width: min(840px, 100%);
+  margin: 0 auto;
+  display: grid;
+  gap: 18px;
+}
+
+.reserve-slot-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.reserve-slot-button {
+  text-align: left;
+  cursor: pointer;
+}
+
+.reserve-slot-grid.compact {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+
+.reserve-slot-chip strong,
+.reserve-slot-button strong,
+.reserve-summary-card strong,
+.reserve-guest-row strong {
+  color: var(--color-text);
+}
+
+.reserve-slot-chip span,
+.reserve-slot-button span,
+.reserve-summary-card span,
+.reserve-guest-row span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
 @media (max-width: 960px) {
   .reserve-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .reserve-section-grid {
     grid-template-columns: 1fr;
   }
 }
@@ -104,5 +237,10 @@
 
   .reserve-booking-actions {
     justify-items: stretch;
+  }
+
+  .reserve-toolbar {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }

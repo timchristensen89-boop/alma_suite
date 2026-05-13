@@ -32,6 +32,20 @@
   gap: 16px;
 }
 
+.marketing-stack,
+.marketing-main section,
+.marketing-side section {
+  display: grid;
+  gap: 16px;
+}
+
+.marketing-section-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
 .marketing-contact,
 .marketing-campaign {
   display: grid;
@@ -86,6 +100,53 @@
   min-width: 120px;
 }
 
+.marketing-summary-card,
+.marketing-preview-frame {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.marketing-summary-card {
+  display: grid;
+  gap: 4px;
+  padding: 12px 14px;
+}
+
+.marketing-summary-card span,
+.marketing-summary-list span {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.marketing-summary-list {
+  display: grid;
+  gap: 6px;
+}
+
+.marketing-section-heading,
+.marketing-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.marketing-tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.marketing-tag-chip button {
+  border: 0;
+  background: transparent;
+  color: var(--color-accent-text);
+  cursor: pointer;
+  font-size: 14px;
+}
+
 .marketing-consent-row {
   display: flex;
   flex-wrap: wrap;
@@ -100,8 +161,137 @@
   font-size: 14px;
 }
 
+.marketing-preview-frame {
+  width: 100%;
+  min-height: 220px;
+}
+
+.stats-grid.compact {
+  grid-template-columns: repeat(4, minmax(150px, 1fr));
+}
+
+.content-studio-grid,
+.content-bottom-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.9fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.content-bottom-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr) minmax(300px, 0.8fr);
+  margin-top: 16px;
+}
+
+.content-asset-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.content-asset-card,
+.content-post-card,
+.social-account-card,
+.content-channel-preview,
+.content-calendar-row {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.content-asset-card,
+.content-post-card,
+.social-account-card,
+.content-channel-preview {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+
+.content-asset-card img,
+.content-asset-thumb {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #f5f0ec;
+}
+
+.content-asset-thumb {
+  display: grid;
+  place-items: center;
+  color: var(--color-text-muted);
+  font-weight: 700;
+}
+
+.content-asset-thumb.video {
+  background: #133d32;
+  color: #fff;
+}
+
+.content-asset-card span,
+.content-post-card span,
+.social-account-card span,
+.social-account-card small,
+.content-channel-preview span,
+.content-channel-preview small {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.content-post-card p,
+.content-channel-preview p {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.content-preview-tabs,
+.social-account-grid,
+.content-calendar-list {
+  display: grid;
+  gap: 10px;
+}
+
+.content-preview-tabs {
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+}
+
+.social-account-grid {
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+}
+
+.content-calendar-row {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 12px;
+  padding: 10px 12px;
+  align-items: start;
+}
+
+.content-calendar-row time {
+  color: var(--color-accent-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.content-calendar-row span {
+  display: grid;
+  gap: 3px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
 @media (max-width: 960px) {
   .marketing-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .marketing-section-grid,
+  .content-studio-grid,
+  .content-bottom-grid,
+  .stats-grid.compact {
     grid-template-columns: 1fr;
   }
 }
@@ -115,5 +305,9 @@
   .marketing-badges,
   .marketing-campaign-actions {
     justify-content: flex-start;
+  }
+
+  .content-calendar-row {
+    grid-template-columns: 1fr;
   }
 }

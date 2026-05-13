@@ -24,6 +24,8 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/auth/password-reset/request',
   '/api/auth/password-reset/complete',
   '/api/gift-cards/checkout',
+  '/api/gift-cards/public/config',
+  '/api/gift-cards/public/orders',
   '/api/gift-cards/settings/public',
   '/api/gift-cards/promo/quote'
 ]);
@@ -34,7 +36,9 @@ const PUBLIC_PREFIXES = [
   '/api/gift-cards/qr/',
   '/api/gift-cards/wallet/apple/',
   '/api/gift-cards/wallet/google/',
-  '/api/staff/invites/by-token/'
+  '/api/staff/invites/by-token/',
+  '/api/reserve/public-widget/',
+  '/api/reserve/public/'
 ];
 
 function isPublic(path: string) {
@@ -46,6 +50,10 @@ function hasEnabledAppAccess(user: AuthUser, appId: AuthUser['appAccess'][number
   if (user.isAdmin) return true;
   if (appId === 'COMPLIANCE' && user.appAccess.length === 0) return true;
   return user.appAccess.some((access) => access.appId === appId && access.status === 'ENABLED');
+}
+
+function hasAnyEnabledAppAccess(user: AuthUser, appIds: AuthUser['appAccess'][number]['appId'][]) {
+  return appIds.some((appId) => hasEnabledAppAccess(user, appId));
 }
 
 function isManager(user: AuthUser) {
@@ -69,6 +77,16 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path.startsWith('/api/checklists/runs')) return true;
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
   if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock/out' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock-in' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock-out' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock/break/start' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/clock/break/end' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/break-start' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/break-end' && req.method === 'POST') return true;
+  if (/^\/api\/staff\/me\/shifts\/[^/]+\/confirm$/.test(req.path) && req.method === 'POST') return true;
   if (req.path === '/api/staff/timesheets' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/staff/timesheets/') && req.method === 'PATCH') return true;
   return false;
@@ -107,16 +125,30 @@ export async function authMiddleware(
     return next(new HttpError(403, 'Settings access required'));
   }
 
-  if (!settingsRequest && !hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
-    return next(new HttpError(403, 'Compliance access disabled'));
-  }
-
-  if (
-    req.path.startsWith('/api/staff') &&
-    !hasEnabledAppAccess(req.user, 'STAFF') &&
-    !hasEnabledAppAccess(req.user, 'COMPLIANCE')
-  ) {
-    return next(new HttpError(403, 'Staff access disabled'));
+  if (!settingsRequest) {
+    if (req.path.startsWith('/api/staff')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Staff access disabled'));
+      }
+    } else if (req.path.startsWith('/api/reports')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['REPORTS', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Reports access disabled'));
+      }
+    } else if (req.path.startsWith('/api/reserve')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['RESERVE', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Reserve access disabled'));
+      }
+    } else if (req.path.startsWith('/api/marketing')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['MARKETING', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Marketing access disabled'));
+      }
+    } else if (req.path.startsWith('/api/gift-cards')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Gift cards access disabled'));
+      }
+    } else if (!hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
+      return next(new HttpError(403, 'Compliance access disabled'));
+    }
   }
 
   if (!isManager(req.user) && !isStaffWriteAllowed(req)) {

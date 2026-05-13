@@ -152,6 +152,20 @@ enum TimesheetStatus {
   EXPORTED
 }
 
+enum StaffClockSessionStatus {
+  OPEN
+  CLOSED
+  EXCEPTION
+}
+
+enum StaffClockEventType {
+  CLOCK_IN
+  START_BREAK
+  END_BREAK
+  CLOCK_OUT
+  MANAGER_REVIEW
+}
+
 enum TrainingModuleStatus {
   ACTIVE
   ARCHIVED
@@ -188,8 +202,120 @@ enum MarketingChannel {
 enum MarketingCampaignStatus {
   DRAFT
   READY
+  SCHEDULED
+  SENDING
   SENT
+  CANCELLED
   ARCHIVED
+}
+
+enum GuestTagType {
+  MANUAL
+  AUTOMATIC
+  SYSTEM
+  CUSTOM
+}
+
+enum GuestTagAssignmentSource {
+  MANUAL
+  AUTOMATIC
+  SYSTEM
+}
+
+enum MarketingEmailTemplateStatus {
+  DRAFT
+  ACTIVE
+  ARCHIVED
+}
+
+enum MarketingAutomationTriggerType {
+  FIRST_VISIT_COMPLETED
+  REPEAT_VISIT
+  LAPSED_GUEST
+  BIRTHDAY_UPCOMING
+  RESERVATION_CREATED
+  RESERVATION_CANCELLED
+  NO_SHOW
+  BIG_SPENDER
+}
+
+enum MarketingAutomationRunStatus {
+  PENDING
+  SKIPPED
+  SENT
+  FAILED
+  SIMULATED
+}
+
+enum MarketingContentAssetType {
+  IMAGE
+  VIDEO
+  DOCUMENT
+}
+
+enum MarketingContentAssetStorageProvider {
+  LOCAL
+  CLOUD_STORAGE
+  EXTERNAL_URL
+}
+
+enum MarketingContentAssetStatus {
+  DRAFT
+  READY
+  ARCHIVED
+}
+
+enum MarketingContentAssetSource {
+  UPLOAD
+  IMPORT
+  GENERATED
+}
+
+enum MarketingContentPostStatus {
+  IDEA
+  DRAFT
+  NEEDS_REVIEW
+  APPROVED
+  SCHEDULED
+  PUBLISHING
+  PUBLISHED
+  FAILED
+  CANCELLED
+  ARCHIVED
+}
+
+enum MarketingSocialPlatform {
+  FACEBOOK
+  INSTAGRAM
+  TIKTOK
+}
+
+enum MarketingSocialAccountStatus {
+  SETUP_REQUIRED
+  CONNECTED
+  EXPIRED
+  DISABLED
+  ERROR
+}
+
+enum MarketingContentPublishStatus {
+  SIMULATED
+  QUEUED
+  SKIPPED
+  PUBLISHED
+  FAILED
+}
+
+enum MarketingContentPublishMode {
+  SIMULATION
+  LIVE
+}
+
+enum GoogleReserveIntegrationStatus {
+  SETUP_REQUIRED
+  PENDING
+  ACTIVE
+  ERROR
 }
 
 enum GiftCardStatus {
@@ -418,6 +544,9 @@ model StaffProfile {
   passwordResetTokens StaffPasswordResetToken[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
+  shiftConfirmations StaffShiftConfirmation[]
+  clockSessions    StaffClockSession[]
+  clockEvents      StaffClockEvent[]
   timesheets       Timesheet[]
   trainingRecords  StaffTrainingRecord[]
   tipPaymentRunLines StaffTipPaymentRunLine[]
@@ -676,9 +805,75 @@ model RosterShift {
   createdAt      DateTime          @default(now())
   updatedAt      DateTime          @updatedAt
   staffProfile   StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  shiftConfirmations StaffShiftConfirmation[]
+  clockSessions  StaffClockSession[]
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
+}
+
+model StaffShiftConfirmation {
+  id             String      @id @default(cuid())
+  rosterShiftId  String
+  staffProfileId String
+  note           String?
+  confirmedAt    DateTime    @default(now())
+  createdById    String?
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
+  rosterShift    RosterShift @relation(fields: [rosterShiftId], references: [id], onDelete: Cascade)
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([rosterShiftId, staffProfileId])
+  @@index([staffProfileId, confirmedAt])
+  @@index([rosterShiftId, confirmedAt])
+}
+
+model StaffClockSession {
+  id                    String                  @id @default(cuid())
+  staffProfileId        String
+  rosterShiftId         String?
+  venue                 String?
+  area                  String?
+  roleTitle             String?
+  clockInAt             DateTime
+  clockOutAt            DateTime?
+  status                StaffClockSessionStatus @default(OPEN)
+  currentBreakStartedAt DateTime?
+  accumulatedBreakMinutes Int                  @default(0)
+  managerNote           String?
+  reviewedAt            DateTime?
+  reviewedById          String?
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
+  staffProfile          StaffProfile           @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  rosterShift           RosterShift?           @relation(fields: [rosterShiftId], references: [id], onDelete: SetNull)
+  events                StaffClockEvent[]
+
+  @@index([staffProfileId, clockInAt])
+  @@index([status, clockInAt])
+  @@index([venue, status, clockInAt])
+  @@index([rosterShiftId])
+}
+
+model StaffClockEvent {
+  id             String             @id @default(cuid())
+  sessionId      String
+  staffProfileId String
+  rosterShiftId  String?
+  venue          String?
+  eventType      StaffClockEventType
+  occurredAt     DateTime
+  createdById    String?
+  metadata       Json               @default("{}")
+  createdAt      DateTime           @default(now())
+  session        StaffClockSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  staffProfile   StaffProfile       @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, occurredAt])
+  @@index([staffProfileId, occurredAt])
+  @@index([venue, occurredAt])
+  @@index([eventType, occurredAt])
 }
 
 model RosterForecastSnapshot {
@@ -723,19 +918,37 @@ model SalesActualEntry {
 }
 
 model ReserveGuest {
-  id             String                @id @default(cuid())
-  firstName      String
-  lastName       String
-  email          String?
-  phone          String?
-  tags           String[]              @default([])
-  allergyNotes   String?
-  visitNotes     String?
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  reservations   ReserveReservation[]
+  id               String                  @id @default(cuid())
+  venue            String?
+  firstName        String
+  lastName         String
+  email            String?
+  phone            String?
+  birthday         DateTime?
+  tags             String[]                @default([])
+  allergyNotes     String?
+  visitNotes       String?
+  notes            String?
+  preferences      Json                    @default("{}")
+  dietaryNotes     String?
+  marketingOptIn   Boolean                 @default(false)
+  emailUnsubscribedAt DateTime?
+  smsUnsubscribedAt DateTime?
+  source           String                  @default("staff_created")
+  totalVisits      Int                     @default(0)
+  totalSpendCents  Int                     @default(0)
+  noShowCount      Int                     @default(0)
+  lastVisitAt      DateTime?
+  firstVisitAt     DateTime?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  reservations     ReserveReservation[]
   marketingContact MarketingContact?
+  tagAssignments   GuestTagAssignment[]
+  automationRuns   MarketingAutomationRun[]
+  campaignRecipients MarketingCampaignRecipient[]
 
+  @@index([venue])
   @@index([lastName, firstName])
   @@index([email])
   @@index([phone])
@@ -760,30 +973,125 @@ model ReserveTable {
 }
 
 model ReserveReservation {
-  id             String                   @id @default(cuid())
-  venue          String
-  serviceDate    DateTime
-  servicePeriod  ReserveServicePeriod
-  startsAt       DateTime
-  endsAt         DateTime
-  covers         Int
-  status         ReserveReservationStatus @default(PENDING)
-  source         String                   @default("manager")
-  tableId        String?
-  guestId        String
-  occasion       String?
-  notes          String?
-  createdById    String?
-  createdAt      DateTime                 @default(now())
-  updatedAt      DateTime                 @updatedAt
-  guest          ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
-  table          ReserveTable?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  id               String                   @id @default(cuid())
+  venue            String
+  serviceDate      DateTime
+  servicePeriod    ReserveServicePeriod
+  startsAt         DateTime
+  endsAt           DateTime
+  covers           Int
+  status           ReserveReservationStatus @default(PENDING)
+  source           String                   @default("manager")
+  tableId          String?
+  guestId          String
+  availabilityRuleId String?
+  guestName        String?
+  guestEmail       String?
+  guestPhone       String?
+  occasion         String?
+  notes            String?
+  specialRequests  String?
+  internalNotes    String?
+  marketingOptIn   Boolean                  @default(false)
+  createdById      String?
+  cancelledAt      DateTime?
+  completedAt      DateTime?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  guest            ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  table            ReserveTable?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  availabilityRule ReserveAvailabilityRule? @relation(fields: [availabilityRuleId], references: [id], onDelete: SetNull)
+  automationRuns   MarketingAutomationRun[]
 
   @@index([venue, serviceDate, servicePeriod])
   @@index([startsAt, endsAt])
   @@index([status, serviceDate])
   @@index([guestId])
   @@index([tableId])
+  @@index([availabilityRuleId])
+}
+
+model ReserveAvailabilityRule {
+  id                     String                   @id @default(cuid())
+  venue                  String
+  name                   String
+  servicePeriod          ReserveServicePeriod?
+  active                 Boolean                  @default(true)
+  defaultDurationMinutes Int                      @default(120)
+  minPartySize           Int                      @default(1)
+  maxPartySize           Int
+  daysOfWeek             Int[]
+  startTime              String
+  endTime                String
+  intervalMinutes        Int                      @default(30)
+  capacity               Int
+  onlineEnabled          Boolean                  @default(true)
+  googleReserveEnabled   Boolean                  @default(false)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  reservations           ReserveReservation[]
+
+  @@index([venue, active])
+  @@index([venue, onlineEnabled])
+}
+
+model ReserveBlackout {
+  id        String   @id @default(cuid())
+  venue     String
+  name      String
+  reason    String?
+  startAt   DateTime
+  endAt     DateTime
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([venue, startAt, endAt])
+}
+
+model GoogleReserveIntegrationSetting {
+  id                String                        @id @default(cuid())
+  venue             String                        @unique
+  enabled           Boolean                       @default(false)
+  merchantId        String?
+  integrationStatus GoogleReserveIntegrationStatus @default(SETUP_REQUIRED)
+  lastSyncAt        DateTime?
+  lastError         String?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+}
+
+model GuestTag {
+  id             String                  @id @default(cuid())
+  venue          String?
+  name           String
+  slug           String                  @unique
+  description    String?
+  type           GuestTagType            @default(MANUAL)
+  color          String?
+  ruleDefinition Json                    @default("{}")
+  active         Boolean                 @default(true)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
+  assignments    GuestTagAssignment[]
+
+  @@index([venue, active])
+  @@index([type])
+}
+
+model GuestTagAssignment {
+  id                String                    @id @default(cuid())
+  guestId           String
+  tagId             String
+  source            GuestTagAssignmentSource  @default(MANUAL)
+  assignedAt        DateTime                  @default(now())
+  assignedByStaffId String?
+  metadata          Json                      @default("{}")
+  guest             ReserveGuest              @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  tag               GuestTag                  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([guestId, tagId])
+  @@index([tagId])
+  @@index([source])
 }
 
 model MarketingContact {
@@ -829,21 +1137,26 @@ model MarketingSegment {
 }
 
 model MarketingCampaign {
-  id           String                       @id @default(cuid())
-  name         String
-  channel      MarketingChannel
-  status       MarketingCampaignStatus      @default(DRAFT)
-  audienceName String?
-  subject      String?
-  previewText  String?
-  body         String
-  scheduledFor DateTime?
-  sentAt       DateTime?
-  createdById  String?
-  createdAt    DateTime                     @default(now())
-  updatedAt    DateTime                     @updatedAt
-  recipients   MarketingCampaignRecipient[]
+  id                String                       @id @default(cuid())
+  venue             String?
+  name              String
+  channel           MarketingChannel
+  status            MarketingCampaignStatus      @default(DRAFT)
+  audienceName      String?
+  subject           String?
+  previewText       String?
+  body              String
+  textBody          String?
+  segmentDefinition Json                         @default("{}")
+  scheduledFor      DateTime?
+  sentAt            DateTime?
+  simulatedAt       DateTime?
+  createdById       String?
+  createdAt         DateTime                     @default(now())
+  updatedAt         DateTime                     @updatedAt
+  recipients        MarketingCampaignRecipient[]
 
+  @@index([venue, status])
   @@index([status, channel])
   @@index([scheduledFor])
 }
@@ -852,16 +1165,189 @@ model MarketingCampaignRecipient {
   id         String            @id @default(cuid())
   campaignId String
   contactId  String
+  guestId    String?
+  email      String?
   status     String            @default("QUEUED")
+  skipReason String?
   sentAt     DateTime?
+  openedAt   DateTime?
+  clickedAt  DateTime?
   error      String?
   createdAt  DateTime          @default(now())
   campaign   MarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   contact    MarketingContact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  guest      ReserveGuest?     @relation(fields: [guestId], references: [id], onDelete: SetNull)
 
   @@unique([campaignId, contactId])
   @@index([contactId])
+  @@index([guestId])
+  @@index([email])
   @@index([status])
+}
+
+model MarketingEmailTemplate {
+  id               String                     @id @default(cuid())
+  venue            String?
+  name             String
+  subject          String
+  previewText      String?
+  htmlBody         String
+  textBody         String?
+  status           MarketingEmailTemplateStatus @default(DRAFT)
+  createdByStaffId String?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  automations      MarketingAutomation[]
+
+  @@index([venue, status])
+}
+
+model MarketingAutomation {
+  id                String                         @id @default(cuid())
+  venue             String
+  name              String
+  triggerType       MarketingAutomationTriggerType
+  segmentDefinition Json                           @default("{}")
+  emailTemplateId   String?
+  delayHours        Int                            @default(0)
+  active            Boolean                        @default(false)
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
+  emailTemplate     MarketingEmailTemplate?        @relation(fields: [emailTemplateId], references: [id], onDelete: SetNull)
+  runs              MarketingAutomationRun[]
+
+  @@index([venue, active])
+  @@index([triggerType])
+}
+
+model MarketingAutomationRun {
+  id            String                     @id @default(cuid())
+  automationId  String
+  guestId       String
+  reservationId String?
+  status        MarketingAutomationRunStatus @default(PENDING)
+  reason        String?
+  createdAt     DateTime                   @default(now())
+  processedAt   DateTime?
+  automation    MarketingAutomation        @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  guest         ReserveGuest               @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  reservation   ReserveReservation?        @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+
+  @@index([automationId, status])
+  @@index([guestId])
+  @@index([reservationId])
+}
+
+model MarketingContentAsset {
+  id              String                               @id @default(cuid())
+  venue           String
+  uploadedByStaffId String?
+  title           String
+  description     String?
+  assetType       MarketingContentAssetType
+  mimeType        String
+  fileName        String
+  fileSizeBytes   Int
+  storageProvider MarketingContentAssetStorageProvider @default(EXTERNAL_URL)
+  storagePath     String?
+  publicUrl       String?
+  thumbnailUrl    String?
+  width           Int?
+  height          Int?
+  durationSeconds Int?
+  status          MarketingContentAssetStatus          @default(DRAFT)
+  tags            Json                                 @default("[]")
+  source          MarketingContentAssetSource          @default(UPLOAD)
+  createdAt       DateTime                             @default(now())
+  updatedAt       DateTime                             @updatedAt
+  postAssets      MarketingContentPostAsset[]
+
+  @@index([venue, status])
+  @@index([venue, createdAt])
+  @@index([assetType])
+}
+
+model MarketingContentPost {
+  id                String                        @id @default(cuid())
+  venue             String
+  createdByStaffId  String?
+  title             String
+  caption           String
+  status            MarketingContentPostStatus    @default(DRAFT)
+  scheduledAt       DateTime?
+  publishedAt       DateTime?
+  campaignId        String?
+  targetChannels    Json                          @default("[]")
+  contentPillar     String?
+  approvalRequired  Boolean                       @default(true)
+  approvedByStaffId String?
+  approvedAt        DateTime?
+  failureReason     String?
+  createdAt         DateTime                      @default(now())
+  updatedAt         DateTime                      @updatedAt
+  assets            MarketingContentPostAsset[]
+  publishAttempts   MarketingContentPublishAttempt[]
+
+  @@index([venue, status])
+  @@index([venue, scheduledAt])
+  @@index([venue, createdAt])
+  @@index([campaignId])
+}
+
+model MarketingContentPostAsset {
+  id        String                @id @default(cuid())
+  postId    String
+  assetId   String
+  sortOrder Int                   @default(0)
+  createdAt DateTime              @default(now())
+  post      MarketingContentPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
+  asset     MarketingContentAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([postId, assetId])
+  @@index([postId])
+  @@index([assetId])
+}
+
+model MarketingSocialAccount {
+  id                String                     @id @default(cuid())
+  venue             String
+  platform          MarketingSocialPlatform
+  displayName       String
+  handle            String?
+  externalAccountId String?
+  status            MarketingSocialAccountStatus @default(SETUP_REQUIRED)
+  scopes            Json                       @default("[]")
+  tokenSecretRef    String?
+  lastConnectedAt   DateTime?
+  lastError         String?
+  createdAt         DateTime                   @default(now())
+  updatedAt         DateTime                   @updatedAt
+  publishAttempts   MarketingContentPublishAttempt[]
+
+  @@index([venue, platform])
+  @@index([venue, status])
+  @@index([platform, status])
+}
+
+model MarketingContentPublishAttempt {
+  id              String                         @id @default(cuid())
+  postId          String
+  platform        MarketingSocialPlatform
+  socialAccountId String?
+  status          MarketingContentPublishStatus  @default(SIMULATED)
+  mode            MarketingContentPublishMode    @default(SIMULATION)
+  requestPreview  Json?
+  responsePreview Json?
+  errorMessage    String?
+  createdAt       DateTime                       @default(now())
+  processedAt     DateTime?
+  post            MarketingContentPost           @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount   MarketingSocialAccount?        @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+
+  @@index([postId])
+  @@index([platform])
+  @@index([socialAccountId])
+  @@index([mode, status])
 }
 
 model GiftCard {
@@ -1280,7 +1766,7 @@ model VenueStockItem {
   unitOverride String?
   active       Boolean   @default(true)
   createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  updatedAt    DateTime  @default(now()) @updatedAt
   stockItem    StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
   @@unique([venue, stockItemId])

@@ -12,6 +12,7 @@ import {
   giftCardSettingsInputSchema,
   normaliseGiftCardSettings,
   type AuthUser,
+  type GiftCardPublicConfig,
   type GiftCardSettings
 } from '@alma/shared';
 import Stripe from 'stripe';
@@ -299,6 +300,31 @@ export const giftCardService = {
     return getGiftCardSettings();
   },
 
+  async getPublicConfig(): Promise<GiftCardPublicConfig> {
+    const settings = await getGiftCardSettings();
+    if (settings.testCheckoutEnabled) {
+      return {
+        settings,
+        checkoutMode: 'test',
+        checkoutNotice: 'Test checkout is enabled. No real payment will be taken.'
+      };
+    }
+
+    if (!stripe) {
+      return {
+        settings,
+        checkoutMode: 'setup_required',
+        checkoutNotice: 'Payment setup is required before gift card checkout can go live.'
+      };
+    }
+
+    return {
+      settings,
+      checkoutMode: 'live',
+      checkoutNotice: null
+    };
+  },
+
   async getAdminSettings(user?: AuthUser | null) {
     return {
       settings: await getGiftCardSettings(),
@@ -438,7 +464,7 @@ export const giftCardService = {
       };
     }
 
-    if (!stripe) throw new HttpError(503, 'Stripe is not configured yet. Add STRIPE_SECRET_KEY before taking gift card payments.');
+    if (!stripe) throw new HttpError(503, 'Payment setup is required before gift card checkout can go live.');
 
     const card = await prisma.giftCard.create({
       data: {
@@ -593,6 +619,41 @@ export const giftCardService = {
         test,
         activeBalanceCents: totals._sum.balanceCents ?? 0,
         soldValueCents: totals._sum.initialValueCents ?? 0
+      }
+    };
+  },
+
+  async listOrders(input: { query?: string }) {
+    const query = input.query?.trim();
+    const orders = await prisma.giftCard.findMany({
+      where: {
+        ...(query
+          ? {
+              OR: [
+                { code: { contains: query, mode: 'insensitive' } },
+                { purchaserEmail: { contains: query, mode: 'insensitive' } },
+                { purchaserName: { contains: query, mode: 'insensitive' } },
+                { recipientEmail: { contains: query, mode: 'insensitive' } },
+                { recipientName: { contains: query, mode: 'insensitive' } }
+              ]
+            }
+          : {})
+      },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 100
+    });
+
+    return {
+      orders: orders.map(toGiftCardPayload),
+      totals: {
+        draft: 0,
+        pendingPayment: orders.filter((order) => order.status === 'PENDING_PAYMENT').length,
+        active: orders.filter((order) => order.status === 'ACTIVE').length,
+        redeemed: orders.filter((order) => order.status === 'REDEEMED').length,
+        cancelled: orders.filter((order) => order.status === 'CANCELLED').length,
+        expired: orders.filter((order) => order.status === 'EXPIRED').length,
+        test: orders.filter((order) => order.testMode).length
       }
     };
   },

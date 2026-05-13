@@ -1,15 +1,23 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthUser,
+  GoogleReserveIntegrationSetting,
+  ReserveAvailabilityRule,
+  ReserveBlackout,
+  ReserveDashboardPayload,
   ReserveDiarySummary,
+  ReserveGuest,
+  ReservePublicAvailabilityResponse,
+  ReservePublicBookingConfirmation,
+  ReservePublicWidgetConfig,
   ReserveReservation,
   ReserveReservationStatus,
   ReserveServicePeriod,
   ReserveTable
 } from '@alma/shared';
 import {
-  AppShell,
   ActionFeedback,
+  AppShell,
   Badge,
   Button,
   Card,
@@ -29,33 +37,30 @@ import {
   Textarea,
   TopBar
 } from '@alma/ui';
-import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { withSuiteAppLinks } from './config/suiteLinks';
+import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
-const VENUES = ['Alma Avalon', 'St Alma'];
-const PERIODS: ReserveServicePeriod[] = ['LUNCH', 'DINNER', 'EVENT'];
-const STATUSES: ReserveReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
-const RESERVE_NAV_ITEMS = [
-  {
-    href: '#diary',
-    label: 'Diary',
-    description: 'Bookings by service',
-    icon: <DocumentIcon />
-  },
-  {
-    href: '#new-reservation',
-    label: 'New booking',
-    description: 'Create a reservation',
-    icon: <SearchIcon />
-  },
-  {
-    href: '#tables',
-    label: 'Tables',
-    description: 'Venue table map',
-    icon: <GearIcon />
-  }
+const ALL_VENUES = 'All venues';
+const KNOWN_VENUES = ['Alma Avalon', 'St Alma'];
+const SERVICE_PERIODS: ReserveServicePeriod[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT'];
+const RESERVATION_STATUSES: ReserveReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
+const GOOGLE_STATUSES = ['SETUP_REQUIRED', 'PENDING', 'ACTIVE', 'ERROR'] as const;
+const MANAGER_NAV_ITEMS = [
+  { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
+  { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
+  { href: '#availability', label: 'Availability', description: 'Rules and blackouts', icon: <GearIcon /> },
+  { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
+  { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
 ];
+
+type FeedbackTone = 'success' | 'error';
+
+type FeedbackState = {
+  target: string | null;
+  message: string | null;
+  tone: FeedbackTone;
+};
 
 type ReservationForm = {
   venue: string;
@@ -65,15 +70,16 @@ type ReservationForm = {
   durationMinutes: string;
   covers: string;
   tableId: string;
+  availabilityRuleId: string;
   status: ReserveReservationStatus;
   firstName: string;
   lastName: string;
   email: string;
   phone: string;
-  tags: string;
-  allergyNotes: string;
+  marketingOptIn: boolean;
   occasion: string;
-  notes: string;
+  specialRequests: string;
+  internalNotes: string;
 };
 
 type TableForm = {
@@ -85,12 +91,62 @@ type TableForm = {
   sortOrder: string;
 };
 
+type RuleForm = {
+  venue: string;
+  name: string;
+  servicePeriod: ReserveServicePeriod;
+  startTime: string;
+  endTime: string;
+  intervalMinutes: string;
+  defaultDurationMinutes: string;
+  minPartySize: string;
+  maxPartySize: string;
+  capacity: string;
+  daysOfWeek: number[];
+  onlineEnabled: boolean;
+  googleReserveEnabled: boolean;
+};
+
+type BlackoutForm = {
+  venue: string;
+  name: string;
+  reason: string;
+  startAt: string;
+  endAt: string;
+};
+
+type WidgetSearchForm = {
+  venue: string;
+  date: string;
+  partySize: string;
+  servicePeriod: ReserveServicePeriod | '';
+};
+
+type WidgetBookingForm = {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  occasion: string;
+  specialRequests: string;
+  marketingOptIn: boolean;
+};
+
+type MarketingGuestDetail = {
+  guest: ReserveGuest;
+  reservations: ReserveReservation[];
+};
+
 function todayInput() {
   return toDateInput(new Date());
 }
 
 function toDateInput(value: Date) {
   return `${value.getFullYear()}-${String(value.getMonth() + 1).padStart(2, '0')}-${String(value.getDate()).padStart(2, '0')}`;
+}
+
+function toDateTimeInput(value: Date) {
+  return `${toDateInput(value)}T${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
 }
 
 function addDays(value: Date, days: number) {
@@ -100,15 +156,7 @@ function addDays(value: Date, days: number) {
 }
 
 function dateTime(date: string, time: string) {
-  return new Date(`${date}T${time || '18:00'}:00`);
-}
-
-function timeOf(value: string) {
-  return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-}
-
-function fullName(reservation: ReserveReservation) {
-  return `${reservation.guest.firstName} ${reservation.guest.lastName}`.trim();
+  return new Date(`${date}T${time}:00`);
 }
 
 function statusTone(status: ReserveReservationStatus) {
@@ -126,7 +174,54 @@ function statusTone(status: ReserveReservationStatus) {
   }
 }
 
-function defaultReservationForm(venue = 'Alma Avalon'): ReservationForm {
+function fullName(guest: ReserveGuest | null | undefined) {
+  if (!guest) return 'Walk-in guest';
+  return `${guest.firstName} ${guest.lastName}`.trim();
+}
+
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+    hour: 'numeric',
+    minute: '2-digit'
+  });
+}
+
+function shortDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short'
+  });
+}
+
+function timeLabel(value: string) {
+  return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function isAdmin(user: AuthUser) {
+  return Boolean(user.isAdmin || user.role === 'ADMIN');
+}
+
+function effectiveVenueOptions(user: AuthUser) {
+  return isAdmin(user)
+    ? [{ label: ALL_VENUES, value: ALL_VENUES }, ...KNOWN_VENUES.map((venue) => ({ label: venue, value: venue }))]
+    : [{ label: user.venue || KNOWN_VENUES[0]!, value: user.venue || KNOWN_VENUES[0]! }];
+}
+
+function firstManagerVenue(user: AuthUser, preferred?: string | null) {
+  if (preferred && preferred !== ALL_VENUES) return preferred;
+  if (user.venue) return user.venue;
+  return KNOWN_VENUES[0]!;
+}
+
+function defaultFeedback(): FeedbackState {
+  return { target: null, message: null, tone: 'success' };
+}
+
+function defaultReservationForm(venue: string): ReservationForm {
   return {
     venue,
     serviceDate: todayInput(),
@@ -135,19 +230,20 @@ function defaultReservationForm(venue = 'Alma Avalon'): ReservationForm {
     durationMinutes: '120',
     covers: '2',
     tableId: '',
+    availabilityRuleId: '',
     status: 'CONFIRMED',
     firstName: '',
     lastName: '',
     email: '',
     phone: '',
-    tags: '',
-    allergyNotes: '',
+    marketingOptIn: false,
     occasion: '',
-    notes: ''
+    specialRequests: '',
+    internalNotes: ''
   };
 }
 
-function defaultTableForm(venue = 'Alma Avalon'): TableForm {
+function defaultTableForm(venue: string): TableForm {
   return {
     venue,
     area: 'Dining room',
@@ -155,6 +251,58 @@ function defaultTableForm(venue = 'Alma Avalon'): TableForm {
     minCovers: '1',
     maxCovers: '4',
     sortOrder: '0'
+  };
+}
+
+function defaultRuleForm(venue: string): RuleForm {
+  return {
+    venue,
+    name: 'Dinner online bookings',
+    servicePeriod: 'DINNER',
+    startTime: '17:30',
+    endTime: '21:30',
+    intervalMinutes: '30',
+    defaultDurationMinutes: '120',
+    minPartySize: '1',
+    maxPartySize: '6',
+    capacity: '30',
+    daysOfWeek: [3, 4, 5, 6],
+    onlineEnabled: true,
+    googleReserveEnabled: false
+  };
+}
+
+function defaultBlackoutForm(venue: string): BlackoutForm {
+  const start = new Date();
+  start.setHours(17, 0, 0, 0);
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  return {
+    venue,
+    name: 'Private event hold',
+    reason: '',
+    startAt: toDateTimeInput(start),
+    endAt: toDateTimeInput(end)
+  };
+}
+
+function defaultWidgetSearch(venue: string): WidgetSearchForm {
+  return {
+    venue,
+    date: todayInput(),
+    partySize: '2',
+    servicePeriod: 'DINNER'
+  };
+}
+
+function defaultWidgetBooking(): WidgetBookingForm {
+  return {
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    occasion: '',
+    specialRequests: '',
+    marketingOptIn: false
   };
 }
 
@@ -241,16 +389,16 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
 
 function SidebarNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState('#diary');
+  const [activeHash, setActiveHash] = useState('#dashboard');
 
   useEffect(() => {
-    const syncHash = () => setActiveHash(window.location.hash || '#diary');
+    const syncHash = () => setActiveHash(window.location.hash || '#dashboard');
     syncHash();
     window.addEventListener('hashchange', syncHash);
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
-  const active = RESERVE_NAV_ITEMS.find((item) => item.href === activeHash) ?? RESERVE_NAV_ITEMS[0]!;
+  const active = MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ?? MANAGER_NAV_ITEMS[0]!;
 
   return (
     <>
@@ -267,12 +415,9 @@ function SidebarNav() {
         </span>
         <span className="mobile-nav-toggle-caret" aria-hidden="true">⌄</span>
       </button>
-      <ul
-        id="reserve-mobile-nav"
-        className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
-      >
+      <ul id="reserve-mobile-nav" className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
         <li className="sidebar-nav-section">Reserve</li>
-        {RESERVE_NAV_ITEMS.map((item) => (
+        {MANAGER_NAV_ITEMS.map((item) => (
           <li key={item.href}>
             <a
               href={item.href}
@@ -292,62 +437,376 @@ function SidebarNav() {
   );
 }
 
-function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
-  const [venue, setVenue] = useState('Alma Avalon');
-  const [selectedDate, setSelectedDate] = useState(todayInput());
-  const [data, setData] = useState<ReserveDiarySummary | null>(null);
+function PublicBookingWidget() {
+  const [config, setConfig] = useState<ReservePublicWidgetConfig | null>(null);
+  const [availability, setAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
   const [loading, setLoading] = useState(true);
-  const [message, setMessage] = useState<string | null>(null);
-  const [messageTarget, setMessageTarget] = useState<string | null>(null);
-  const [reservationForm, setReservationForm] = useState(() => defaultReservationForm(venue));
-  const [tableForm, setTableForm] = useState(() => defaultTableForm(venue));
+  const [searching, setSearching] = useState(false);
+  const [booking, setBooking] = useState(false);
+  const [feedback, setFeedback] = useState<FeedbackState>(defaultFeedback());
+  const [search, setSearch] = useState<WidgetSearchForm>(() => defaultWidgetSearch(KNOWN_VENUES[0]!));
+  const [bookingForm, setBookingForm] = useState<WidgetBookingForm>(defaultWidgetBooking);
+  const [selectedSlot, setSelectedSlot] = useState<ReservePublicAvailabilityResponse['slots'][number] | null>(null);
+  const [reservation, setReservation] = useState<ReservePublicBookingConfirmation | null>(null);
 
-  const selectedDay = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
-  const start = useMemo(() => selectedDay, [selectedDay]);
-  const end = useMemo(() => addDays(selectedDay, 1), [selectedDay]);
-
-  const load = useCallback(async () => {
+  const loadConfig = useCallback(async () => {
     setLoading(true);
-    setMessage(null);
+    setFeedback(defaultFeedback());
     try {
-      const query = new URLSearchParams({
-        venue,
-        start: start.toISOString(),
-        end: end.toISOString()
-      });
-      setData(await api<ReserveDiarySummary>(`/api/reserve/diary?${query.toString()}`));
+      const nextConfig = await api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config');
+      setConfig(nextConfig);
+      const firstVenue = nextConfig.venues.find((venue) => venue.onlineEnabled)?.name ?? nextConfig.venues[0]?.name ?? KNOWN_VENUES[0]!;
+      setSearch(defaultWidgetSearch(firstVenue));
     } catch (error) {
-      setMessageTarget(null);
-      setMessage(error instanceof Error ? error.message : 'Could not load Reserve diary');
+      setFeedback({
+        target: 'widget',
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not load booking widget'
+      });
     } finally {
       setLoading(false);
     }
-  }, [end, start, venue]);
+  }, []);
+
+  useEffect(() => {
+    void loadConfig();
+  }, [loadConfig]);
+
+  async function checkAvailability(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSearching(true);
+    setFeedback(defaultFeedback());
+    setSelectedSlot(null);
+    setReservation(null);
+    try {
+      setAvailability(
+        await api<ReservePublicAvailabilityResponse>('/api/reserve/public-widget/availability', {
+          method: 'POST',
+          body: JSON.stringify({
+            venue: search.venue,
+            date: `${search.date}T00:00:00`,
+            partySize: Number(search.partySize || 1),
+            servicePeriod: search.servicePeriod
+          })
+        })
+      );
+    } catch (error) {
+      setFeedback({
+        target: 'widget-search',
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not check availability'
+      });
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function submitBooking(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedSlot) return;
+    setBooking(true);
+    setFeedback(defaultFeedback());
+    try {
+      const created = await api<ReservePublicBookingConfirmation>('/api/reserve/public-widget/book', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue: search.venue,
+          availabilityRuleId: selectedSlot.availabilityRuleId || '',
+          serviceDate: `${search.date}T00:00:00`,
+          startsAt: selectedSlot.startsAt,
+          partySize: Number(search.partySize || 1),
+          durationMinutes: Math.round((new Date(selectedSlot.endsAt).getTime() - new Date(selectedSlot.startsAt).getTime()) / 60_000),
+          ...bookingForm
+        })
+      });
+      setReservation(created);
+      setFeedback({
+        target: 'widget-booking',
+        tone: 'success',
+        message: 'Booking confirmed. A venue manager can see it in the Reserve diary straight away.'
+      });
+    } catch (error) {
+      setFeedback({
+        target: 'widget-booking',
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not confirm booking'
+      });
+    } finally {
+      setBooking(false);
+    }
+  }
+
+  const venueOptions = (config?.venues ?? [])
+    .filter((venue) => venue.onlineEnabled)
+    .map((venue) => ({ label: `${venue.name} · ${venue.activeRules} active rules`, value: venue.name }));
+
+  return (
+    <main className="login-page reserve-widget-page">
+      <div className="reserve-widget-shell">
+        <ProductLogo appId="reserve" size="lg" />
+        <Card
+          title="Book a table"
+          subtitle="Reserve is using capacity-based availability rules for this first public booking pass."
+        >
+          {loading ? <Spinner label="Loading booking widget..." /> : null}
+          {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
+          {!loading && config ? (
+            <div className="reserve-widget-stack">
+              <form className="reserve-form" onSubmit={(event) => void checkAvailability(event)}>
+                <div className="form-grid two">
+                  <Select
+                    label="Venue"
+                    value={search.venue}
+                    onChange={(event) => setSearch((current) => ({ ...current, venue: event.currentTarget.value }))}
+                    options={venueOptions}
+                  />
+                  <Input
+                    label="Date"
+                    type="date"
+                    value={search.date}
+                    onChange={(event) => setSearch((current) => ({ ...current, date: event.currentTarget.value }))}
+                  />
+                  <Input
+                    label="Party size"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value={search.partySize}
+                    onChange={(event) => setSearch((current) => ({ ...current, partySize: event.currentTarget.value }))}
+                  />
+                  <Select
+                    label="Service"
+                    value={search.servicePeriod}
+                    onChange={(event) => setSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))}
+                    options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: value, value }))]}
+                  />
+                </div>
+                <div className="toolbar-right">
+                  <ActionFeedback
+                    message={feedback.target === 'widget-search' ? feedback.message : null}
+                    tone={feedback.tone}
+                  />
+                  <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Check availability'}</Button>
+                </div>
+              </form>
+
+              <div className="reserve-note-list">
+                {config.limitations.map((limitation) => (
+                  <Badge key={limitation} tone="warning">{limitation}</Badge>
+                ))}
+              </div>
+
+              {availability ? (
+                <Card title="Available times" subtitle={`${availability.partySize} guests on ${shortDate(availability.serviceDate)}`}>
+                  {availability.slots.length === 0 ? (
+                    <EmptyState title="No online slots available" description="Try a different time, party size, or venue." />
+                  ) : (
+                    <div className="reserve-slot-grid">
+                      {availability.slots.map((slot) => (
+                        <button
+                          key={`${slot.startsAt}-${slot.availabilityRuleId ?? 'any'}`}
+                          type="button"
+                          className={`reserve-slot-button ${selectedSlot?.startsAt === slot.startsAt ? 'active' : ''}`}
+                          onClick={() => setSelectedSlot(slot)}
+                        >
+                          <strong>{slot.label}</strong>
+                          <span>{slot.capacityRemaining} covers left</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </Card>
+              ) : null}
+
+              {selectedSlot ? (
+                <Card title="Guest details" subtitle={`Selected ${timeLabel(selectedSlot.startsAt)} · ${search.venue}`}>
+                  <form className="reserve-form" onSubmit={(event) => void submitBooking(event)}>
+                    <div className="form-grid two">
+                      <Input label="First name" required value={bookingForm.firstName} onChange={(event) => setBookingForm((current) => ({ ...current, firstName: event.currentTarget.value }))} />
+                      <Input label="Last name" required value={bookingForm.lastName} onChange={(event) => setBookingForm((current) => ({ ...current, lastName: event.currentTarget.value }))} />
+                      <Input label="Email" type="email" value={bookingForm.email} onChange={(event) => setBookingForm((current) => ({ ...current, email: event.currentTarget.value }))} />
+                      <Input label="Phone" required value={bookingForm.phone} onChange={(event) => setBookingForm((current) => ({ ...current, phone: event.currentTarget.value }))} />
+                    </div>
+                    <Input label="Occasion" value={bookingForm.occasion} onChange={(event) => setBookingForm((current) => ({ ...current, occasion: event.currentTarget.value }))} />
+                    <Textarea label="Special requests" rows={3} value={bookingForm.specialRequests} onChange={(event) => setBookingForm((current) => ({ ...current, specialRequests: event.currentTarget.value }))} />
+                    <label className="reserve-inline-check">
+                      <input
+                        type="checkbox"
+                        checked={bookingForm.marketingOptIn}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setBookingForm((current) => ({ ...current, marketingOptIn: checked }));
+                        }}
+                      />
+                      <span>Send me future restaurant updates for this venue.</span>
+                    </label>
+                    <div className="toolbar-right">
+                      <ActionFeedback
+                        message={feedback.target === 'widget-booking' ? feedback.message : null}
+                        tone={feedback.tone}
+                      />
+                      <Button type="submit" disabled={booking}>{booking ? 'Confirming...' : 'Confirm booking'}</Button>
+                    </div>
+                  </form>
+                  {reservation ? (
+                    <div className="reserve-summary-card">
+                      <strong>{reservation.guestName}</strong>
+                      <span>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests</span>
+                    </div>
+                  ) : null}
+                </Card>
+              ) : null}
+            </div>
+          ) : null}
+        </Card>
+      </div>
+    </main>
+  );
+}
+
+function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+  const venueOptions = useMemo(() => effectiveVenueOptions(user), [user]);
+  const initialVenue = firstManagerVenue(user, isAdmin(user) ? ALL_VENUES : user.venue);
+  const [venueFilter, setVenueFilter] = useState(isAdmin(user) ? ALL_VENUES : initialVenue);
+  const [selectedDate, setSelectedDate] = useState(todayInput());
+  const [guestSearch, setGuestSearch] = useState('');
+  const [feedback, setFeedback] = useState<FeedbackState>(defaultFeedback());
+  const [loading, setLoading] = useState(true);
+  const [dashboard, setDashboard] = useState<ReserveDashboardPayload | null>(null);
+  const [diary, setDiary] = useState<ReserveDiarySummary | null>(null);
+  const [guests, setGuests] = useState<ReserveGuest[]>([]);
+  const [tables, setTables] = useState<ReserveTable[]>([]);
+  const [rules, setRules] = useState<ReserveAvailabilityRule[]>([]);
+  const [blackouts, setBlackouts] = useState<ReserveBlackout[]>([]);
+  const [integration, setIntegration] = useState<GoogleReserveIntegrationSetting | null>(null);
+  const [widgetConfig, setWidgetConfig] = useState<ReservePublicWidgetConfig | null>(null);
+  const [widgetAvailability, setWidgetAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
+  const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  const [guestDetail, setGuestDetail] = useState<MarketingGuestDetail | null>(null);
+
+  const defaultVenue = firstManagerVenue(user, venueFilter);
+  const [reservationForm, setReservationForm] = useState<ReservationForm>(() => defaultReservationForm(defaultVenue));
+  const [tableForm, setTableForm] = useState<TableForm>(() => defaultTableForm(defaultVenue));
+  const [ruleForm, setRuleForm] = useState<RuleForm>(() => defaultRuleForm(defaultVenue));
+  const [blackoutForm, setBlackoutForm] = useState<BlackoutForm>(() => defaultBlackoutForm(defaultVenue));
+  const [integrationForm, setIntegrationForm] = useState<GoogleReserveIntegrationSetting>(() => ({
+    id: `virtual:${defaultVenue}`,
+    venue: defaultVenue,
+    enabled: false,
+    merchantId: null,
+    integrationStatus: 'SETUP_REQUIRED',
+    lastSyncAt: null,
+    lastError: null,
+    createdAt: new Date(0).toISOString(),
+    updatedAt: new Date(0).toISOString()
+  }));
+  const [widgetSearch, setWidgetSearch] = useState<WidgetSearchForm>(() => defaultWidgetSearch(defaultVenue));
+
+  const scopedVenueParam = venueFilter === ALL_VENUES ? null : venueFilter;
+  const diaryStart = useMemo(() => new Date(`${selectedDate}T00:00:00`), [selectedDate]);
+  const diaryEnd = useMemo(() => addDays(diaryStart, 1), [diaryStart]);
+  const currentReservations = diary?.reservations ?? [];
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setFeedback(defaultFeedback());
+    try {
+      const venueQuery = scopedVenueParam ? `venue=${encodeURIComponent(scopedVenueParam)}` : '';
+      const join = (path: string, params: string[]) => `${path}${params.filter(Boolean).length ? `?${params.filter(Boolean).join('&')}` : ''}`;
+
+      const [nextDashboard, nextDiary, nextGuests, nextTables, nextRules, nextBlackouts, nextWidgetConfig, nextIntegration] =
+        await Promise.all([
+          api<ReserveDashboardPayload>(join('/api/reserve/dashboard', [venueQuery, `date=${encodeURIComponent(`${selectedDate}T00:00:00`)}`])),
+          api<ReserveDiarySummary>(
+            join('/api/reserve/diary', [
+              venueQuery,
+              `start=${encodeURIComponent(diaryStart.toISOString())}`,
+              `end=${encodeURIComponent(diaryEnd.toISOString())}`
+            ])
+          ),
+          api<ReserveGuest[]>(join('/api/reserve/guests', [venueQuery, guestSearch ? `search=${encodeURIComponent(guestSearch)}` : ''])),
+          api<ReserveTable[]>(join('/api/reserve/tables', [venueQuery])),
+          api<ReserveAvailabilityRule[]>(join('/api/reserve/availability-rules', [venueQuery])),
+          api<ReserveBlackout[]>(join('/api/reserve/blackouts', [venueQuery])),
+          api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config'),
+          scopedVenueParam ? api<GoogleReserveIntegrationSetting>(join('/api/reserve/google-reserve-settings', [venueQuery])) : Promise.resolve(null)
+        ]);
+
+      setDashboard(nextDashboard);
+      setDiary(nextDiary);
+      setGuests(nextGuests);
+      setTables(nextTables);
+      setRules(nextRules);
+      setBlackouts(nextBlackouts);
+      setWidgetConfig(nextWidgetConfig);
+      setIntegration(nextIntegration);
+      if (nextIntegration) setIntegrationForm(nextIntegration);
+    } catch (error) {
+      setFeedback({
+        target: 'page',
+        tone: 'error',
+        message: error instanceof Error ? error.message : 'Could not load Reserve workspace'
+      });
+    } finally {
+      setLoading(false);
+    }
+  }, [diaryEnd, diaryStart, guestSearch, scopedVenueParam, selectedDate]);
 
   useEffect(() => {
     void load();
   }, [load]);
 
   useEffect(() => {
-    setReservationForm((current) => ({ ...current, venue, serviceDate: selectedDate }));
-    setTableForm((current) => ({ ...current, venue }));
-  }, [selectedDate, venue]);
+    const nextVenue = firstManagerVenue(user, scopedVenueParam);
+    setReservationForm(defaultReservationForm(nextVenue));
+    setTableForm(defaultTableForm(nextVenue));
+    setRuleForm(defaultRuleForm(nextVenue));
+    setBlackoutForm(defaultBlackoutForm(nextVenue));
+    setWidgetSearch(defaultWidgetSearch(nextVenue));
+  }, [scopedVenueParam, user]);
 
-  const reservations = data?.reservations ?? [];
-  const tables = data?.tables ?? [];
-  const tableOptions = [
-    { label: 'Unassigned', value: '' },
-    ...tables.map((table) => ({ label: `${table.label} · ${table.area} · ${table.minCovers}-${table.maxCovers}`, value: table.id }))
-  ];
-  const reservationsByPeriod = PERIODS.map((period) => ({
-    period,
-    reservations: reservations.filter((reservation) => reservation.servicePeriod === period)
-  }));
+  useEffect(() => {
+    if (!selectedGuestId) {
+      setGuestDetail(null);
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      try {
+        const [guest, reservations] = await Promise.all([
+          api<ReserveGuest>(`/api/reserve/guests/${selectedGuestId}`),
+          api<ReserveReservation[]>(`/api/reserve/guests/${selectedGuestId}/reservations`)
+        ]);
+        if (!cancelled) setGuestDetail({ guest, reservations });
+      } catch {
+        if (!cancelled) setGuestDetail(null);
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedGuestId]);
+
+  const tableOptions = [{ label: 'Unassigned', value: '' }, ...tables.map((table) => ({ label: `${table.label} · ${table.area}`, value: table.id }))];
+  const ruleOptions = [{ label: 'None', value: '' }, ...rules.map((rule) => ({ label: `${rule.name} · ${rule.venue}`, value: rule.id }))];
+
+  function setSuccess(target: string, message: string) {
+    setFeedback({ target, message, tone: 'success' });
+  }
+
+  function setError(target: string, error: unknown, fallback: string) {
+    setFeedback({
+      target,
+      message: error instanceof Error ? error.message : fallback,
+      tone: 'error'
+    });
+  }
 
   async function saveReservation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
-    setMessageTarget('reservation');
     const startsAt = dateTime(reservationForm.serviceDate, reservationForm.time);
     const endsAt = new Date(startsAt.getTime() + Number(reservationForm.durationMinutes || 120) * 60_000);
     try {
@@ -361,32 +820,43 @@ function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           endsAt: endsAt.toISOString(),
           covers: Number(reservationForm.covers || 1),
           tableId: reservationForm.tableId,
+          availabilityRuleId: reservationForm.availabilityRuleId,
           status: reservationForm.status,
           guest: {
+            venue: reservationForm.venue,
             firstName: reservationForm.firstName,
             lastName: reservationForm.lastName,
             email: reservationForm.email,
             phone: reservationForm.phone,
-            tags: reservationForm.tags.split(',').map((tag) => tag.trim()).filter(Boolean),
-            allergyNotes: reservationForm.allergyNotes
+            marketingOptIn: reservationForm.marketingOptIn,
+            tags: [],
+            allergyNotes: '',
+            visitNotes: '',
+            notes: '',
+            dietaryNotes: '',
+            preferences: {},
+            source: 'staff_created',
+            birthday: ''
           },
+          guestName: `${reservationForm.firstName} ${reservationForm.lastName}`.trim(),
+          guestEmail: reservationForm.email,
+          guestPhone: reservationForm.phone,
           occasion: reservationForm.occasion,
-          notes: reservationForm.notes
+          specialRequests: reservationForm.specialRequests,
+          internalNotes: reservationForm.internalNotes,
+          marketingOptIn: reservationForm.marketingOptIn
         })
       });
-      setReservationForm(defaultReservationForm(venue));
+      setReservationForm(defaultReservationForm(reservationForm.venue));
+      setSuccess('reservation', 'Booking saved to the live Reserve diary.');
       await load();
-      setMessageTarget('reservation');
-      setMessage('Reservation saved.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not save reservation.');
+      setError('reservation', error, 'Could not save booking.');
     }
   }
 
   async function saveTable(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setMessage(null);
-    setMessageTarget('table');
     try {
       await api<ReserveTable>('/api/reserve/tables', {
         method: 'POST',
@@ -400,30 +870,106 @@ function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           isActive: true
         })
       });
-      setTableForm(defaultTableForm(venue));
+      setTableForm(defaultTableForm(tableForm.venue));
+      setSuccess('table', 'Table saved.');
       await load();
-      setMessageTarget('table');
-      setMessage('Table saved.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not save table.');
+      setError('table', error, 'Could not save table.');
     }
   }
 
-  async function updateStatus(reservation: ReserveReservation, status: ReserveReservationStatus) {
-    setMessage(null);
-    setMessageTarget(`reservation:${reservation.id}`);
+  async function updateReservationStatus(reservation: ReserveReservation, status: ReserveReservationStatus) {
     try {
       await api(`/api/reserve/reservations/${reservation.id}`, {
         method: 'PATCH',
         body: JSON.stringify({ status })
       });
+      setSuccess(`reservation:${reservation.id}`, 'Reservation updated.');
       await load();
-      setMessageTarget(`reservation:${reservation.id}`);
-      setMessage('Reservation updated.');
     } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not update reservation.');
+      setError(`reservation:${reservation.id}`, error, 'Could not update reservation.');
     }
   }
+
+  async function saveRule(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await api<ReserveAvailabilityRule>('/api/reserve/availability-rules', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...ruleForm,
+          intervalMinutes: Number(ruleForm.intervalMinutes || 30),
+          defaultDurationMinutes: Number(ruleForm.defaultDurationMinutes || 120),
+          minPartySize: Number(ruleForm.minPartySize || 1),
+          maxPartySize: Number(ruleForm.maxPartySize || 1),
+          capacity: Number(ruleForm.capacity || 1)
+        })
+      });
+      setRuleForm(defaultRuleForm(ruleForm.venue));
+      setSuccess('rule', 'Availability rule saved.');
+      await load();
+    } catch (error) {
+      setError('rule', error, 'Could not save availability rule.');
+    }
+  }
+
+  async function saveBlackout(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await api<ReserveBlackout>('/api/reserve/blackouts', {
+        method: 'POST',
+        body: JSON.stringify(blackoutForm)
+      });
+      setBlackoutForm(defaultBlackoutForm(blackoutForm.venue));
+      setSuccess('blackout', 'Blackout saved.');
+      await load();
+    } catch (error) {
+      setError('blackout', error, 'Could not save blackout.');
+    }
+  }
+
+  async function previewWidgetAvailability(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      setWidgetAvailability(
+        await api<ReservePublicAvailabilityResponse>('/api/reserve/public-widget/availability', {
+          method: 'POST',
+          body: JSON.stringify({
+            venue: widgetSearch.venue,
+            date: `${widgetSearch.date}T00:00:00`,
+            partySize: Number(widgetSearch.partySize || 1),
+            servicePeriod: widgetSearch.servicePeriod
+          })
+        })
+      );
+      setSuccess('widget-preview', 'Public availability preview refreshed.');
+    } catch (error) {
+      setError('widget-preview', error, 'Could not preview availability.');
+    }
+  }
+
+  async function saveGoogleReserve(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      const next = await api<GoogleReserveIntegrationSetting>(`/api/reserve/google-reserve-settings/${encodeURIComponent(integrationForm.venue)}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          venue: integrationForm.venue,
+          enabled: integrationForm.enabled,
+          merchantId: integrationForm.merchantId || '',
+          integrationStatus: integrationForm.integrationStatus,
+          lastError: integrationForm.lastError || ''
+        })
+      });
+      setIntegration(next);
+      setIntegrationForm(next);
+      setSuccess('google-reserve', 'Google Reserve setup state saved. Live feed submission is still disabled in this pass.');
+    } catch (error) {
+      setError('google-reserve', error, 'Could not save Google Reserve settings.');
+    }
+  }
+
+  const publicWidgetUrl = useMemo(() => new URL('/widget', window.location.origin).toString(), []);
 
   return (
     <AppShell
@@ -432,7 +978,7 @@ function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       topBar={
         <TopBar
           title="ALMA Reserve"
-          subtitle="Reservations, guests, tables, and covers pacing"
+          subtitle="Reservations, guest CRM, availability, and public booking"
           right={
             <>
               <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
@@ -452,130 +998,443 @@ function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <div className="reserve-page">
         <PageHeader
           eyebrow="ALMA Reserve"
-          title="Booking diary"
-          description="Original ALMA reservations software for venues, tables, guest profiles, and covers forecasting."
+          title="Reservation control centre"
+          description="Build the guest book, keep bookings venue-scoped, and preview online booking safely before any live partner integration."
           actions={
             <>
-              <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((value) => ({ label: value, value }))} />
-              <Input label="Date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.currentTarget.value)} />
+              <Select
+                label="Venue"
+                value={venueFilter}
+                onChange={(event) => setVenueFilter(event.currentTarget.value)}
+                options={venueOptions}
+              />
+              <Input label="Service date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.currentTarget.value)} />
               <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>Refresh</Button>
             </>
           }
         />
 
-        {message && !messageTarget ? <p className={message.includes('Could') || message.includes('invalid') ? 'error-text' : 'subtle'}>{message}</p> : null}
+        {feedback.target === 'page' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
 
         <div className="stats-grid">
-          <StatCard label="Covers" value={data?.totals.covers ?? 0} hint="Live covers forecast" loading={loading} />
-          <StatCard label="Confirmed" value={data?.totals.confirmed ?? 0} hint="Ready for service" loading={loading} />
-          <StatCard label="Seated" value={data?.totals.seated ?? 0} hint="Currently in venue" loading={loading} />
-          <StatCard label="Tables" value={tables.length} hint="Active table map" loading={loading} />
+          <StatCard label="Today bookings" value={dashboard?.totals.todayBookings ?? 0} hint="Current venue scope" loading={loading} />
+          <StatCard label="Covers today" value={dashboard?.totals.coversToday ?? 0} hint="Confirmed, seated, and completed" loading={loading} />
+          <StatCard label="No-shows" value={dashboard?.totals.noShowsToday ?? 0} hint="Today" loading={loading} />
+          <StatCard label="Repeat guests" value={dashboard?.totals.repeatGuests30Days ?? 0} hint="Last 30 days" loading={loading} />
         </div>
 
         <div className="reserve-layout">
-          <section id="diary" className="reserve-main">
-            <Card title={`${venue} diary`} subtitle={`${selectedDay.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}`} padding="none">
-              {loading ? <Spinner label="Loading diary..." /> : null}
-              {!loading && reservations.length === 0 ? (
-                <EmptyState title="No bookings yet" description="Create the first reservation for this service day." />
-              ) : null}
-              <div className="reserve-periods">
-                {reservationsByPeriod.map((group) => (
-                  <div key={group.period} className="reserve-period">
-                    <div className="reserve-period-header">
-                      <strong>{group.period}</strong>
-                      <Badge tone="neutral">{group.reservations.reduce((sum, reservation) => sum + reservation.covers, 0)} covers</Badge>
+          <section className="reserve-main">
+            <section id="dashboard">
+              <Card title="Today and upcoming" subtitle={scopedVenueParam ?? 'All venues'}>
+              {loading ? <Spinner label="Loading reserve dashboard..." /> : null}
+              {!loading && dashboard ? (
+                <div className="reserve-section-grid">
+                  <div className="reserve-stack">
+                    <div className="reserve-section-heading">
+                      <strong>Today’s bookings</strong>
+                      <Badge tone="neutral">{dashboard.todayReservations.length}</Badge>
                     </div>
-                    <div className="reserve-booking-list">
-                      {group.reservations.map((reservation) => (
-                        <article key={reservation.id} className="reserve-booking">
-                          <div>
-                            <strong>{timeOf(reservation.startsAt)} · {fullName(reservation)}</strong>
-                            <span>{reservation.covers} guests · {reservation.table?.label ?? 'No table'} · {reservation.occasion || 'Standard booking'}</span>
-                            {reservation.guest.allergyNotes ? <em>Allergy: {reservation.guest.allergyNotes}</em> : null}
-                            {reservation.notes ? <em>{reservation.notes}</em> : null}
-                          </div>
-                          <div className="reserve-booking-actions">
-                            <Badge tone={statusTone(reservation.status)}>{reservation.status.replace('_', ' ')}</Badge>
-                            <Select
-                              label="Status"
-                              value={reservation.status}
-                              onChange={(event) => void updateStatus(reservation, event.currentTarget.value as ReserveReservationStatus)}
-                              options={STATUSES.map((status) => ({ label: status.replace('_', ' '), value: status }))}
-                            />
-                            <ActionFeedback
-                              message={messageTarget === `reservation:${reservation.id}` ? message : null}
-                              tone={message?.includes('Could') ? 'error' : 'success'}
-                            />
-                          </div>
-                        </article>
-                      ))}
-                    </div>
+                    {dashboard.todayReservations.length === 0 ? (
+                      <EmptyState title="No bookings for this day" description="Use the booking form to add a reservation or preview online slots." />
+                    ) : (
+                      <div className="reserve-timeline">
+                        {dashboard.todayReservations.map((reservation) => (
+                          <article key={reservation.id} className="reserve-booking">
+                            <div>
+                              <strong>{timeLabel(reservation.startsAt)} · {reservation.guestName || fullName(reservation.guest)}</strong>
+                              <span>{reservation.venue} · {reservation.covers} guests · {reservation.table?.label ?? 'No table'} </span>
+                              {reservation.specialRequests ? <em>{reservation.specialRequests}</em> : null}
+                            </div>
+                            <div className="reserve-booking-actions">
+                              <Badge tone={statusTone(reservation.status)}>{reservation.status.replace('_', ' ')}</Badge>
+                              <div className="reserve-action-row">
+                                {['CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status) => (
+                                  <Button
+                                    key={status}
+                                    type="button"
+                                    size="sm"
+                                    variant={reservation.status === status ? 'primary' : 'secondary'}
+                                    onClick={() => void updateReservationStatus(reservation, status as ReserveReservationStatus)}
+                                  >
+                                    {status === 'NO_SHOW' ? 'No-show' : status.toLowerCase()}
+                                  </Button>
+                                ))}
+                              </div>
+                              <ActionFeedback
+                                message={feedback.target === `reservation:${reservation.id}` ? feedback.message : null}
+                                tone={feedback.tone}
+                              />
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                ))}
+
+                  <div className="reserve-stack">
+                    <div className="reserve-section-heading">
+                      <strong>Upcoming bookings</strong>
+                      <Badge tone="neutral">{dashboard.upcomingReservations.length}</Badge>
+                    </div>
+                    {dashboard.upcomingReservations.slice(0, 6).map((reservation) => (
+                      <div key={reservation.id} className="reserve-summary-card">
+                        <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
+                        <span>{reservation.venue} · {formatDateTime(reservation.startsAt)} · {reservation.covers} guests</span>
+                      </div>
+                    ))}
+                    <div className="reserve-section-heading">
+                      <strong>Recent no-shows</strong>
+                      <Badge tone="warning">{dashboard.recentNoShows.length}</Badge>
+                    </div>
+                    {dashboard.recentNoShows.length === 0 ? (
+                      <p className="subtle">No recent no-shows in this venue scope.</p>
+                    ) : (
+                      dashboard.recentNoShows.map((reservation) => (
+                        <div key={reservation.id} className="reserve-summary-card">
+                          <strong>{reservation.guestName || fullName(reservation.guest)}</strong>
+                          <span>{reservation.venue} · {formatDateTime(reservation.startsAt)}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              ) : null}
+              </Card>
+            </section>
+
+            <section id="guests">
+              <Card title="Guest CRM" subtitle="Searchable venue guests, consent, and reservation history">
+              <div className="reserve-toolbar">
+                <Input
+                  label="Search guests"
+                  value={guestSearch}
+                  onChange={(event) => setGuestSearch(event.currentTarget.value)}
+                  placeholder="Name, email, or phone"
+                />
+                <Button type="button" variant="secondary" onClick={() => void load()}>Search</Button>
               </div>
-            </Card>
+              <div className="reserve-section-grid">
+                <div className="reserve-stack">
+                  {guests.length === 0 ? (
+                    <EmptyState title="No guests yet" description="Bookings and staff-created reservations will start building the guest book." />
+                  ) : (
+                    guests.map((guest) => (
+                      <button
+                        key={guest.id}
+                        type="button"
+                        className={`reserve-guest-row ${selectedGuestId === guest.id ? 'active' : ''}`}
+                        onClick={() => setSelectedGuestId(guest.id)}
+                      >
+                        <div>
+                          <strong>{fullName(guest)}</strong>
+                          <span>{guest.email || guest.phone || 'No contact'} · {guest.venue || 'Cross-venue guest'} · {guest.totalVisits} visits</span>
+                        </div>
+                        <div className="reserve-note-list">
+                          {guest.marketingOptIn ? <Badge tone="positive">Opted in</Badge> : <Badge tone="neutral">No consent</Badge>}
+                          {guest.tagAssignments?.slice(0, 2).map((assignment) => (
+                            <Badge key={assignment.id} tone="neutral">{assignment.tag.name}</Badge>
+                          ))}
+                        </div>
+                      </button>
+                    ))
+                  )}
+                </div>
+                <div className="reserve-stack">
+                  {guestDetail ? (
+                    <>
+                      <Card title={fullName(guestDetail.guest)} subtitle={guestDetail.guest.venue || 'Venue not set'}>
+                        <div className="reserve-summary-list">
+                          <span>{guestDetail.guest.email || 'No email'}</span>
+                          <span>{guestDetail.guest.phone || 'No phone'}</span>
+                          <span>{guestDetail.guest.totalVisits} visits · ${(
+                            guestDetail.guest.totalSpendCents / 100
+                          ).toFixed(2)} tracked spend</span>
+                          {guestDetail.guest.notes ? <span>{guestDetail.guest.notes}</span> : null}
+                        </div>
+                      </Card>
+                      <Card title="Reservation history" subtitle={`${guestDetail.reservations.length} bookings`}>
+                        {guestDetail.reservations.length === 0 ? (
+                          <EmptyState title="No bookings yet" description="This guest will build history after the first reservation is completed." />
+                        ) : (
+                          <div className="reserve-timeline">
+                            {guestDetail.reservations.slice(0, 8).map((reservation) => (
+                              <div key={reservation.id} className="reserve-summary-card">
+                                <strong>{reservation.status.replace('_', ' ')}</strong>
+                                <span>{formatDateTime(reservation.startsAt)} · {reservation.covers} guests · {reservation.venue}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </Card>
+                    </>
+                  ) : (
+                    <EmptyState title="Select a guest" description="See tags, consent, and booking history in one place." />
+                  )}
+                </div>
+              </div>
+              </Card>
+            </section>
+
+            <section id="availability">
+              <Card title="Availability rules and blackouts" subtitle="The first safe online-booking layer">
+              <div className="reserve-section-grid">
+                <div className="reserve-stack">
+                  <Card title="Availability rules" subtitle="Capacity-based slots, venue scoped">
+                    <form className="reserve-form" onSubmit={(event) => void saveRule(event)}>
+                      <div className="form-grid two">
+                        <Select label="Venue" value={ruleForm.venue} onChange={(event) => setRuleForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                        <Input label="Rule name" required value={ruleForm.name} onChange={(event) => setRuleForm((current) => ({ ...current, name: event.currentTarget.value }))} />
+                        <Select label="Service" value={ruleForm.servicePeriod} onChange={(event) => setRuleForm((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod }))} options={SERVICE_PERIODS.map((value) => ({ label: value, value }))} />
+                        <Input label="Capacity" type="number" min="1" value={ruleForm.capacity} onChange={(event) => setRuleForm((current) => ({ ...current, capacity: event.currentTarget.value }))} />
+                        <Input label="Start" type="time" value={ruleForm.startTime} onChange={(event) => setRuleForm((current) => ({ ...current, startTime: event.currentTarget.value }))} />
+                        <Input label="End" type="time" value={ruleForm.endTime} onChange={(event) => setRuleForm((current) => ({ ...current, endTime: event.currentTarget.value }))} />
+                        <Input label="Interval mins" type="number" min="15" value={ruleForm.intervalMinutes} onChange={(event) => setRuleForm((current) => ({ ...current, intervalMinutes: event.currentTarget.value }))} />
+                        <Input label="Duration mins" type="number" min="30" value={ruleForm.defaultDurationMinutes} onChange={(event) => setRuleForm((current) => ({ ...current, defaultDurationMinutes: event.currentTarget.value }))} />
+                        <Input label="Min party" type="number" min="1" value={ruleForm.minPartySize} onChange={(event) => setRuleForm((current) => ({ ...current, minPartySize: event.currentTarget.value }))} />
+                        <Input label="Max party" type="number" min="1" value={ruleForm.maxPartySize} onChange={(event) => setRuleForm((current) => ({ ...current, maxPartySize: event.currentTarget.value }))} />
+                      </div>
+                      <div className="reserve-day-picker">
+                        {[0, 1, 2, 3, 4, 5, 6].map((day) => (
+                          <label key={day} className="reserve-inline-check">
+                            <input
+                              type="checkbox"
+                              checked={ruleForm.daysOfWeek.includes(day)}
+                              onChange={(event) => {
+                                const checked = event.currentTarget.checked;
+                                setRuleForm((current) => ({
+                                  ...current,
+                                  daysOfWeek: checked
+                                    ? Array.from(new Set([...current.daysOfWeek, day])).sort((a, b) => a - b)
+                                    : current.daysOfWeek.filter((value) => value !== day)
+                                }));
+                              }}
+                            />
+                            <span>{['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][day]}</span>
+                          </label>
+                        ))}
+                      </div>
+                      <div className="reserve-day-picker">
+                        <label className="reserve-inline-check">
+                          <input
+                            type="checkbox"
+                            checked={ruleForm.onlineEnabled}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              setRuleForm((current) => ({ ...current, onlineEnabled: checked }));
+                            }}
+                          />
+                          <span>Online booking enabled</span>
+                        </label>
+                        <label className="reserve-inline-check">
+                          <input
+                            type="checkbox"
+                            checked={ruleForm.googleReserveEnabled}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              setRuleForm((current) => ({ ...current, googleReserveEnabled: checked }));
+                            }}
+                          />
+                          <span>Google Reserve ready when integration is configured</span>
+                        </label>
+                      </div>
+                      <div className="toolbar-right">
+                        <ActionFeedback message={feedback.target === 'rule' ? feedback.message : null} tone={feedback.tone} />
+                        <Button type="submit">Save rule</Button>
+                      </div>
+                    </form>
+                  </Card>
+
+                  <Card title="Active rules" subtitle={`${rules.length} rules in scope`}>
+                    {rules.length === 0 ? (
+                      <EmptyState title="No rules yet" description="Add a rule before turning on the public widget." />
+                    ) : (
+                      <div className="reserve-timeline">
+                        {rules.map((rule) => (
+                          <div key={rule.id} className="reserve-summary-card">
+                            <strong>{rule.name}</strong>
+                            <span>{rule.venue} · {rule.startTime}-{rule.endTime} · cap {rule.capacity} · {rule.daysOfWeek.join(', ')}</span>
+                            <div className="reserve-note-list">
+                              {rule.onlineEnabled ? <Badge tone="positive">Online</Badge> : <Badge tone="neutral">Internal only</Badge>}
+                              {rule.googleReserveEnabled ? <Badge tone="warning">Google-ready</Badge> : null}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+
+                <div className="reserve-stack">
+                  <Card title="Blackouts" subtitle="Protect private events and closures">
+                    <form className="reserve-form" onSubmit={(event) => void saveBlackout(event)}>
+                      <div className="form-grid two">
+                        <Select label="Venue" value={blackoutForm.venue} onChange={(event) => setBlackoutForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                        <Input label="Name" required value={blackoutForm.name} onChange={(event) => setBlackoutForm((current) => ({ ...current, name: event.currentTarget.value }))} />
+                        <Input label="Start" type="datetime-local" value={blackoutForm.startAt} onChange={(event) => setBlackoutForm((current) => ({ ...current, startAt: event.currentTarget.value }))} />
+                        <Input label="End" type="datetime-local" value={blackoutForm.endAt} onChange={(event) => setBlackoutForm((current) => ({ ...current, endAt: event.currentTarget.value }))} />
+                      </div>
+                      <Textarea label="Reason" rows={3} value={blackoutForm.reason} onChange={(event) => setBlackoutForm((current) => ({ ...current, reason: event.currentTarget.value }))} />
+                      <div className="toolbar-right">
+                        <ActionFeedback message={feedback.target === 'blackout' ? feedback.message : null} tone={feedback.tone} />
+                        <Button type="submit" variant="secondary">Save blackout</Button>
+                      </div>
+                    </form>
+                  </Card>
+
+                  <Card title="Blocked periods" subtitle={`${blackouts.length} blackout windows`}>
+                    {blackouts.length === 0 ? (
+                      <EmptyState title="No blackout windows" description="Add blackout periods for full-buyouts, closures, or service pauses." />
+                    ) : (
+                      <div className="reserve-timeline">
+                        {blackouts.map((blackout) => (
+                          <div key={blackout.id} className="reserve-summary-card">
+                            <strong>{blackout.name}</strong>
+                            <span>{blackout.venue} · {formatDateTime(blackout.startAt)} to {formatDateTime(blackout.endAt)}</span>
+                            {blackout.reason ? <span>{blackout.reason}</span> : null}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </Card>
+                </div>
+              </div>
+              </Card>
+            </section>
           </section>
 
           <aside className="reserve-side">
-            <div id="new-reservation">
-            <Card title="New reservation" subtitle="Create a manager-entered booking. Public widget comes later.">
+            <Card title="Quick create booking" subtitle="Manager-entered reservation with guest consent capture">
               <form className="reserve-form" onSubmit={(event) => void saveReservation(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={reservationForm.venue} onChange={(event) => setReservationForm({ ...reservationForm, venue: event.currentTarget.value })} options={VENUES.map((value) => ({ label: value, value }))} />
-                  <Select label="Service" value={reservationForm.servicePeriod} onChange={(event) => setReservationForm({ ...reservationForm, servicePeriod: event.currentTarget.value as ReserveServicePeriod })} options={PERIODS.map((value) => ({ label: value, value }))} />
-                  <Input label="Date" type="date" value={reservationForm.serviceDate} onChange={(event) => setReservationForm({ ...reservationForm, serviceDate: event.currentTarget.value })} />
-                  <Input label="Time" type="time" value={reservationForm.time} onChange={(event) => setReservationForm({ ...reservationForm, time: event.currentTarget.value })} />
-                  <Input label="Covers" type="number" min="1" value={reservationForm.covers} onChange={(event) => setReservationForm({ ...reservationForm, covers: event.currentTarget.value })} />
-                  <Input label="Duration minutes" type="number" min="30" step="15" value={reservationForm.durationMinutes} onChange={(event) => setReservationForm({ ...reservationForm, durationMinutes: event.currentTarget.value })} />
-                  <Select label="Table" value={reservationForm.tableId} onChange={(event) => setReservationForm({ ...reservationForm, tableId: event.currentTarget.value })} options={tableOptions} />
-                  <Select label="Status" value={reservationForm.status} onChange={(event) => setReservationForm({ ...reservationForm, status: event.currentTarget.value as ReserveReservationStatus })} options={STATUSES.map((value) => ({ label: value.replace('_', ' '), value }))} />
-                  <Input label="First name" required value={reservationForm.firstName} onChange={(event) => setReservationForm({ ...reservationForm, firstName: event.currentTarget.value })} />
-                  <Input label="Last name" required value={reservationForm.lastName} onChange={(event) => setReservationForm({ ...reservationForm, lastName: event.currentTarget.value })} />
-                  <Input label="Email" type="email" value={reservationForm.email} onChange={(event) => setReservationForm({ ...reservationForm, email: event.currentTarget.value })} />
-                  <Input label="Phone" value={reservationForm.phone} onChange={(event) => setReservationForm({ ...reservationForm, phone: event.currentTarget.value })} />
+                  <Select label="Venue" value={reservationForm.venue} onChange={(event) => setReservationForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Service" value={reservationForm.servicePeriod} onChange={(event) => setReservationForm((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod }))} options={SERVICE_PERIODS.map((value) => ({ label: value, value }))} />
+                  <Input label="Date" type="date" value={reservationForm.serviceDate} onChange={(event) => setReservationForm((current) => ({ ...current, serviceDate: event.currentTarget.value }))} />
+                  <Input label="Time" type="time" value={reservationForm.time} onChange={(event) => setReservationForm((current) => ({ ...current, time: event.currentTarget.value }))} />
+                  <Input label="Guests" type="number" min="1" value={reservationForm.covers} onChange={(event) => setReservationForm((current) => ({ ...current, covers: event.currentTarget.value }))} />
+                  <Input label="Duration mins" type="number" min="30" value={reservationForm.durationMinutes} onChange={(event) => setReservationForm((current) => ({ ...current, durationMinutes: event.currentTarget.value }))} />
+                  <Select label="Table" value={reservationForm.tableId} onChange={(event) => setReservationForm((current) => ({ ...current, tableId: event.currentTarget.value }))} options={tableOptions} />
+                  <Select label="Rule" value={reservationForm.availabilityRuleId} onChange={(event) => setReservationForm((current) => ({ ...current, availabilityRuleId: event.currentTarget.value }))} options={ruleOptions} />
+                  <Input label="First name" required value={reservationForm.firstName} onChange={(event) => setReservationForm((current) => ({ ...current, firstName: event.currentTarget.value }))} />
+                  <Input label="Last name" required value={reservationForm.lastName} onChange={(event) => setReservationForm((current) => ({ ...current, lastName: event.currentTarget.value }))} />
+                  <Input label="Email" type="email" value={reservationForm.email} onChange={(event) => setReservationForm((current) => ({ ...current, email: event.currentTarget.value }))} />
+                  <Input label="Phone" value={reservationForm.phone} onChange={(event) => setReservationForm((current) => ({ ...current, phone: event.currentTarget.value }))} />
+                  <Select label="Status" value={reservationForm.status} onChange={(event) => setReservationForm((current) => ({ ...current, status: event.currentTarget.value as ReserveReservationStatus }))} options={RESERVATION_STATUSES.map((value) => ({ label: value.replace('_', ' '), value }))} />
+                  <Input label="Occasion" value={reservationForm.occasion} onChange={(event) => setReservationForm((current) => ({ ...current, occasion: event.currentTarget.value }))} />
                 </div>
-                <Input label="Tags" value={reservationForm.tags} onChange={(event) => setReservationForm({ ...reservationForm, tags: event.currentTarget.value })} placeholder="VIP, regular, allergy" />
-                <Input label="Occasion" value={reservationForm.occasion} onChange={(event) => setReservationForm({ ...reservationForm, occasion: event.currentTarget.value })} />
-                <Textarea label="Allergy notes" rows={2} value={reservationForm.allergyNotes} onChange={(event) => setReservationForm({ ...reservationForm, allergyNotes: event.currentTarget.value })} />
-                <Textarea label="Booking notes" rows={2} value={reservationForm.notes} onChange={(event) => setReservationForm({ ...reservationForm, notes: event.currentTarget.value })} />
-                <div className="toolbar-right">
-                  <ActionFeedback
-                    message={messageTarget === 'reservation' ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
+                <Textarea label="Special requests" rows={2} value={reservationForm.specialRequests} onChange={(event) => setReservationForm((current) => ({ ...current, specialRequests: event.currentTarget.value }))} />
+                <Textarea label="Internal notes" rows={2} value={reservationForm.internalNotes} onChange={(event) => setReservationForm((current) => ({ ...current, internalNotes: event.currentTarget.value }))} />
+                <label className="reserve-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={reservationForm.marketingOptIn}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setReservationForm((current) => ({ ...current, marketingOptIn: checked }));
+                    }}
                   />
+                  <span>Guest opted into venue marketing updates.</span>
+                </label>
+                <div className="toolbar-right">
+                  <ActionFeedback message={feedback.target === 'reservation' ? feedback.message : null} tone={feedback.tone} />
                   <Button type="submit">Save booking</Button>
                 </div>
               </form>
             </Card>
-            </div>
 
-            <div id="tables">
-            <Card title="Tables" subtitle="Build the table map base for this venue.">
+            <Card title="Tables" subtitle="Lightweight table map foundation">
               <form className="reserve-form" onSubmit={(event) => void saveTable(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={tableForm.venue} onChange={(event) => setTableForm({ ...tableForm, venue: event.currentTarget.value })} options={VENUES.map((value) => ({ label: value, value }))} />
-                  <Input label="Area" value={tableForm.area} onChange={(event) => setTableForm({ ...tableForm, area: event.currentTarget.value })} />
-                  <Input label="Table" required value={tableForm.label} onChange={(event) => setTableForm({ ...tableForm, label: event.currentTarget.value })} />
-                  <Input label="Min covers" type="number" min="1" value={tableForm.minCovers} onChange={(event) => setTableForm({ ...tableForm, minCovers: event.currentTarget.value })} />
-                  <Input label="Max covers" type="number" min="1" value={tableForm.maxCovers} onChange={(event) => setTableForm({ ...tableForm, maxCovers: event.currentTarget.value })} />
-                  <Input label="Sort" type="number" value={tableForm.sortOrder} onChange={(event) => setTableForm({ ...tableForm, sortOrder: event.currentTarget.value })} />
+                  <Select label="Venue" value={tableForm.venue} onChange={(event) => setTableForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Input label="Area" value={tableForm.area} onChange={(event) => setTableForm((current) => ({ ...current, area: event.currentTarget.value }))} />
+                  <Input label="Label" required value={tableForm.label} onChange={(event) => setTableForm((current) => ({ ...current, label: event.currentTarget.value }))} />
+                  <Input label="Min covers" type="number" min="1" value={tableForm.minCovers} onChange={(event) => setTableForm((current) => ({ ...current, minCovers: event.currentTarget.value }))} />
+                  <Input label="Max covers" type="number" min="1" value={tableForm.maxCovers} onChange={(event) => setTableForm((current) => ({ ...current, maxCovers: event.currentTarget.value }))} />
+                  <Input label="Sort" type="number" value={tableForm.sortOrder} onChange={(event) => setTableForm((current) => ({ ...current, sortOrder: event.currentTarget.value }))} />
                 </div>
                 <div className="toolbar-right">
-                  <ActionFeedback
-                    message={messageTarget === 'table' ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
-                  />
+                  <ActionFeedback message={feedback.target === 'table' ? feedback.message : null} tone={feedback.tone} />
                   <Button type="submit" variant="secondary">Save table</Button>
                 </div>
               </form>
               <div className="reserve-table-list">
                 {tables.map((table) => (
-                  <span key={table.id}>{table.label} · {table.area} · {table.minCovers}-{table.maxCovers}</span>
+                  <span key={table.id}>{table.venue} · {table.label} · {table.area} · {table.minCovers}-{table.maxCovers}</span>
                 ))}
               </div>
             </Card>
-            </div>
+
+            <section id="widget-preview">
+              <Card title="Public widget preview" subtitle="Safe slot preview with no internal notes exposed">
+              <form className="reserve-form" onSubmit={(event) => void previewWidgetAvailability(event)}>
+                <div className="form-grid two">
+                  <Select label="Venue" value={widgetSearch.venue} onChange={(event) => setWidgetSearch((current) => ({ ...current, venue: event.currentTarget.value }))} options={(widgetConfig?.venues ?? KNOWN_VENUES.map((name) => ({ name, onlineEnabled: true, activeRules: 0, googleReserveReady: false }))).map((venue) => ({ label: typeof venue === 'string' ? venue : `${venue.name} · ${venue.activeRules} active rules`, value: typeof venue === 'string' ? venue : venue.name }))} />
+                  <Input label="Date" type="date" value={widgetSearch.date} onChange={(event) => setWidgetSearch((current) => ({ ...current, date: event.currentTarget.value }))} />
+                  <Input label="Party size" type="number" min="1" max="20" value={widgetSearch.partySize} onChange={(event) => setWidgetSearch((current) => ({ ...current, partySize: event.currentTarget.value }))} />
+                  <Select label="Service" value={widgetSearch.servicePeriod} onChange={(event) => setWidgetSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))} options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: value, value }))]} />
+                </div>
+                <div className="toolbar-right">
+                  <ActionFeedback message={feedback.target === 'widget-preview' ? feedback.message : null} tone={feedback.tone} />
+                  <Button type="submit" variant="secondary">Preview availability</Button>
+                </div>
+              </form>
+              <div className="reserve-note-list">
+                {(widgetConfig?.limitations ?? []).map((limitation) => (
+                  <Badge key={limitation} tone="warning">{limitation}</Badge>
+                ))}
+              </div>
+              {widgetAvailability ? (
+                <div className="reserve-slot-grid compact">
+                  {widgetAvailability.slots.slice(0, 12).map((slot) => (
+                    <div key={slot.startsAt} className="reserve-slot-chip">
+                      <strong>{slot.label}</strong>
+                      <span>{slot.capacityRemaining} covers</span>
+                    </div>
+                  ))}
+                  {widgetAvailability.slots.length === 0 ? <p className="subtle">No public slots for that request.</p> : null}
+                </div>
+              ) : null}
+              <Button type="button" variant="secondary" onClick={() => window.open(publicWidgetUrl, '_blank', 'noopener,noreferrer')}>
+                Open public booking widget
+              </Button>
+              </Card>
+            </section>
+
+            <section id="google-reserve">
+              <Card title="Google Reserve setup" subtitle="Setup required. No live feed submission in this pass.">
+              <form className="reserve-form" onSubmit={(event) => void saveGoogleReserve(event)}>
+                <div className="form-grid two">
+                  <Select label="Venue" value={integrationForm.venue} onChange={(event) => setIntegrationForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Status" value={integrationForm.integrationStatus} onChange={(event) => setIntegrationForm((current) => ({ ...current, integrationStatus: event.currentTarget.value as GoogleReserveIntegrationSetting['integrationStatus'] }))} options={GOOGLE_STATUSES.map((value) => ({ label: value.replace('_', ' '), value }))} />
+                </div>
+                <Input label="Merchant ID" value={integrationForm.merchantId || ''} onChange={(event) => setIntegrationForm((current) => ({ ...current, merchantId: event.currentTarget.value || null }))} />
+                <Textarea label="Latest integration note" rows={2} value={integrationForm.lastError || ''} onChange={(event) => setIntegrationForm((current) => ({ ...current, lastError: event.currentTarget.value || null }))} />
+                <label className="reserve-inline-check">
+                  <input
+                    type="checkbox"
+                    checked={integrationForm.enabled}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setIntegrationForm((current) => ({ ...current, enabled: checked }));
+                    }}
+                  />
+                  <span>Integration configured internally. Live partner feed remains disabled until explicit rollout.</span>
+                </label>
+                <div className="toolbar-right">
+                  <ActionFeedback message={feedback.target === 'google-reserve' ? feedback.message : null} tone={feedback.tone} />
+                  <Button type="submit">Save setup state</Button>
+                </div>
+              </form>
+              {integration ? (
+                <div className="reserve-summary-card">
+                  <strong>{integration.venue}</strong>
+                  <span>{integration.integrationStatus.replace('_', ' ')} · {integration.enabled ? 'Enabled internally' : 'Disabled'}</span>
+                </div>
+              ) : (
+                <p className="subtle">Choose a specific venue to manage integration readiness.</p>
+              )}
+              </Card>
+            </section>
           </aside>
         </div>
       </div>
@@ -585,6 +1444,9 @@ function ReserveDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
 export function App() {
   const auth = useReserveAuth();
+  const publicMode = typeof window !== 'undefined' && window.location.pathname.includes('/widget');
+
+  if (publicMode) return <PublicBookingWidget />;
 
   if (auth.loading) {
     return (
@@ -596,5 +1458,5 @@ export function App() {
 
   if (!auth.user) return <LoginScreen onLogin={auth.login} />;
 
-  return <ReserveDashboard user={auth.user} onLogout={auth.logout} />;
+  return <ReserveWorkspace user={auth.user} onLogout={auth.logout} />;
 }

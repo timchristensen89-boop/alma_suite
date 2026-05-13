@@ -43,6 +43,32 @@ giftCardsRouter.get('/settings/public', async (_req, res, next) => {
   }
 });
 
+giftCardsRouter.get('/public/config', async (_req, res, next) => {
+  try {
+    res.json(await giftCardService.getPublicConfig());
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.post('/public/orders', async (req, res, next) => {
+  try {
+    res.status(201).json(await giftCardService.createCheckout(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+giftCardsRouter.get('/admin/orders', requireManager, async (req, res, next) => {
+  try {
+    res.json(await giftCardService.listOrders({
+      query: typeof req.query.query === 'string' ? req.query.query : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/promo/quote', async (req, res, next) => {
   try {
     res.json(await giftCardService.quotePromo(req.body));

@@ -9,7 +9,11 @@ import type {
   RosterShift,
   StaffAppAccessStatus,
   StaffComplianceRecord,
+  StaffClockSession,
+  StaffClockStatusPayload,
+  StaffDailyHomePayload,
   StaffTipHistory,
+  StaffManagerOperationsPayload,
   StaffProfile,
   StaffRecordType,
   StaffDefaults,
@@ -18,6 +22,7 @@ import type {
   StaffLeaveType,
   StaffManagementEvent,
   StaffManagerDashboardPayload,
+  StaffMyRosterPayload,
   StaffTrainingStatus,
   SuiteAnnouncement,
   SuiteChatChannel,
@@ -317,10 +322,28 @@ const NAV_ITEMS = [
 const STAFF_MEMBER_NAV_ITEMS = [
   {
     to: '/',
-    label: 'My shifts',
-    description: 'Upcoming shifts and timesheets',
+    label: 'Home',
+    description: 'Today, clocking, reminders and announcements',
     icon: <PeopleIcon />,
     end: true
+  },
+  {
+    to: '/roster',
+    label: 'Roster',
+    description: 'My upcoming and past shifts',
+    icon: <ChartIcon />
+  },
+  {
+    to: '/clock',
+    label: 'Clock',
+    description: 'Clock in, out and breaks',
+    icon: <DocumentIcon />
+  },
+  {
+    to: '/leave',
+    label: 'Leave',
+    description: 'Request leave and view approvals',
+    icon: <DocumentIcon />
   },
   {
     to: '/academy',
@@ -342,7 +365,7 @@ const STAFF_MEMBER_NAV_ITEMS = [
   },
   {
     to: '/communications',
-    label: 'Chat',
+    label: 'Comms',
     description: 'Announcements and team messages',
     icon: <DocumentIcon />
   }
@@ -912,238 +935,94 @@ function StaffHome({
 
 function StaffMemberHome({
   staff,
-  roster,
   loading,
   reload
 }: {
   staff: StaffProfile[];
-  roster: RosterShift[];
   loading: boolean;
   reload: (rosterStart?: Date, rosterEnd?: Date) => Promise<void>;
 }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const member = staff.find((item) => item.id === user?.id) ?? staff[0] ?? null;
+  const [home, setHome] = useState<StaffDailyHomePayload | null>(null);
+  const [loadingHome, setLoadingHome] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
-  const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
-  const [communications, setCommunications] = useState<SuiteCommunicationsPayload>({ announcements: [], channels: [], chat: [] });
-  const [chatText, setChatText] = useState('');
-  const [policyAcknowledged, setPolicyAcknowledged] = useState(() => {
-    return window.localStorage.getItem('alma-staff-policy-ack') === 'yes';
-  });
-  const today = new Date();
-  const mobileStart = useMemo(() => startOfWeek(new Date()), []);
-  const mobileEnd = useMemo(() => addDays(mobileStart, 14), [mobileStart]);
-  const upcomingShifts = roster
-    .filter((shift) => !member || shift.staffProfileId === member.id)
-    .filter((shift) => new Date(shift.endsAt) >= today && shift.status !== 'CANCELLED')
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-  const nextShift = upcomingShifts[0] ?? null;
-  const currentShift =
-    upcomingShifts.find((shift) => {
-      const startsAt = new Date(shift.startsAt).getTime() - 2 * 60 * 60 * 1000;
-      const endsAt = new Date(shift.endsAt).getTime() + 6 * 60 * 60 * 1000;
-      const now = Date.now();
-      return now >= startsAt && now <= endsAt;
-    }) ?? nextShift;
-  const activeTimesheet = timesheets
-    .filter((entry) => entry.staffProfileId === member?.id && entry.status === 'DRAFT')
-    .sort((a, b) => new Date(b.clockInAt).getTime() - new Date(a.clockInAt).getTime())[0] ?? null;
-  const submittedThisWeek = timesheets.filter((entry) => entry.status === 'SUBMITTED').length;
-  const approvedThisWeek = timesheets.filter((entry) => entry.status === 'APPROVED').length;
 
-  const loadMobileData = useCallback(async () => {
-    if (!member) return;
-    const timesheetQuery = new URLSearchParams({
-      start: mobileStart.toISOString(),
-      end: mobileEnd.toISOString(),
-      status: 'all',
-      venue: 'all'
-    });
-    const commsQuery = new URLSearchParams({ appId: 'STAFF', channel: 'general' });
-    if (member.venue) commsQuery.set('venue', member.venue);
-    const [timesheetData, commsData] = await Promise.all([
-      api<Timesheet[]>(`/api/staff/timesheets?${timesheetQuery.toString()}`),
-      api<SuiteCommunicationsPayload>(`/api/communications?${commsQuery.toString()}`)
-    ]);
-    setTimesheets(timesheetData);
-    setCommunications(commsData);
-  }, [member?.id, member?.venue, mobileEnd, mobileStart]);
+  const loadHome = useCallback(async () => {
+    setLoadingHome(true);
+    setMessage(null);
+    try {
+      setHome(await api<StaffDailyHomePayload>('/api/staff/me/home'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your staff home.');
+    } finally {
+      setLoadingHome(false);
+    }
+  }, []);
 
   useEffect(() => {
-    void reload(mobileStart, mobileEnd);
-    void loadMobileData().catch((err) => setMessage(err instanceof Error ? err.message : 'Could not load staff mobile data.'));
-  }, [loadMobileData, mobileEnd, mobileStart, reload]);
+    void loadHome();
+  }, [loadHome]);
 
-  function acknowledgePolicy() {
-    setMessageTarget('policy');
-    window.localStorage.setItem('alma-staff-policy-ack', 'yes');
-    setPolicyAcknowledged(true);
-    setMessage('Policy acknowledgement saved on this device.');
-  }
+  const activeSession = home?.clock.activeSession ?? null;
+  const todayShift = home?.todayShift ?? null;
+  const nextShift = home?.nextShift ?? null;
+  const reminderCount = home?.complianceReminders.length ?? 0;
+  const pendingLeave = (home?.upcomingLeave ?? []).filter((item) => item.status === 'PENDING').length;
 
-  async function submitFromShift(shift: RosterShift) {
-    setMessageTarget(`timesheet:${shift.id}`);
-    if (!member) {
-      setMessage('Could not find your staff profile.');
-      return;
-    }
+  async function confirmShift(shift: RosterShift, target: string) {
     setSaving(true);
     setMessage(null);
+    setMessageTarget(target);
     try {
-      await api('/api/staff/timesheets', {
-        method: 'POST',
-        body: JSON.stringify({
-          staffProfileId: member.id,
-          rosterShiftId: shift.id,
-          venue: shift.venue ?? member.venue ?? '',
-          area: shift.area ?? '',
-          roleTitle: shift.roleTitle ?? member.roleTitle ?? '',
-          workDate: toDateInput(new Date(shift.startsAt)),
-          clockInAt: shift.startsAt,
-          clockOutAt: shift.endsAt,
-          breakMinutes: shift.breakMinutes,
-          notes: `Submitted from rostered shift ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)}.`,
-          status: 'SUBMITTED',
-          xeroEmployeeId: member.xeroEmployeeId ?? '',
-          xeroEarningsRateId: member.xeroEarningsRateId ?? ''
-        })
-      });
-      await loadMobileData();
-      setMessage('Timesheet submitted. A manager can now approve it.');
+      await api(`/api/staff/me/shifts/${shift.id}/confirm`, { method: 'POST', body: JSON.stringify({}) });
+      await Promise.all([loadHome(), reload()]);
+      setMessage('Shift confirmed.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not submit timesheet.');
+      setMessage(err instanceof Error ? err.message : 'Could not confirm shift.');
     } finally {
       setSaving(false);
     }
   }
 
-  async function clockIn() {
+  async function runClockAction(action: 'clock-in' | 'clock-out' | 'break-start' | 'break-end') {
+    setSaving(true);
+    setMessage(null);
     setMessageTarget('clock');
-    if (!member) {
-      setMessage('Could not find your staff profile.');
-      return;
-    }
-    if (activeTimesheet) {
-      setMessage('You are already clocked in.');
-      return;
-    }
-    const clockInAt = new Date();
-    const placeholderClockOut = new Date(clockInAt.getTime() + 60 * 1000);
-    const shift = currentShift;
-    setSaving(true);
-    setMessage(null);
     try {
-      await api('/api/staff/timesheets', {
-        method: 'POST',
-        body: JSON.stringify({
-          staffProfileId: member.id,
-          rosterShiftId: shift?.id ?? '',
-          venue: shift?.venue ?? member.venue ?? '',
-          area: shift?.area ?? '',
-          roleTitle: shift?.roleTitle ?? member.roleTitle ?? '',
-          workDate: toDateInput(clockInAt),
-          clockInAt: clockInAt.toISOString(),
-          clockOutAt: placeholderClockOut.toISOString(),
-          breakMinutes: shift?.breakMinutes ?? 0,
-          notes: shift
-            ? `Clocked in from Staff mobile for ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} shift.`
-            : 'Clocked in from Staff mobile without a rostered shift.',
-          status: 'DRAFT',
-          xeroEmployeeId: member.xeroEmployeeId ?? '',
-          xeroEarningsRateId: member.xeroEarningsRateId ?? ''
-        })
-      });
-      await loadMobileData();
-      setMessage('Clocked in. Remember to clock out after your shift.');
+      if (action === 'clock-in') {
+        await api('/api/staff/me/clock/in', {
+          method: 'POST',
+          body: JSON.stringify({ rosterShiftId: todayShift?.id || nextShift?.id || '' })
+        });
+      } else if (action === 'clock-out') {
+        await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
+      } else if (action === 'break-start') {
+        await api('/api/staff/me/clock/break/start', { method: 'POST', body: JSON.stringify({}) });
+      } else {
+        await api('/api/staff/me/clock/break/end', { method: 'POST', body: JSON.stringify({}) });
+      }
+      await Promise.all([loadHome(), reload()]);
+      setMessage(
+        action === 'clock-in'
+          ? 'Clocked in.'
+          : action === 'clock-out'
+            ? 'Clocked out.'
+            : action === 'break-start'
+              ? 'Break started.'
+              : 'Break ended.'
+      );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not clock in.');
+      setMessage(err instanceof Error ? err.message : 'Could not update clock status.');
     } finally {
       setSaving(false);
     }
   }
 
-  async function clockOut() {
-    setMessageTarget('clock');
-    if (!activeTimesheet) {
-      setMessage('No active clock-in found.');
-      return;
-    }
-    const clockInAt = new Date(activeTimesheet.clockInAt);
-    const clockOutAt = new Date();
-    if (clockOutAt <= clockInAt) clockOutAt.setTime(clockInAt.getTime() + 60 * 1000);
-    setSaving(true);
-    setMessage(null);
-    try {
-      await api(`/api/staff/timesheets/${activeTimesheet.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          clockOutAt: clockOutAt.toISOString(),
-          status: 'SUBMITTED',
-          notes: `${activeTimesheet.notes ?? 'Clocked in from Staff mobile.'} Clocked out ${timeOf(clockOutAt.toISOString())}.`
-        })
-      });
-      await loadMobileData();
-      setMessage('Clocked out and submitted for manager approval.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not clock out.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function requestShiftSwitch(shift: RosterShift) {
-    if (!member) return;
-    setSaving(true);
-    setMessage(null);
-    setMessageTarget(`switch:${shift.id}`);
-    try {
-      await api('/api/communications/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          appId: 'STAFF',
-          venue: shift.venue ?? member.venue ?? '',
-          channel: 'general',
-          body: `${member.firstName} ${member.lastName} is asking to switch or cover ${new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || shift.roleTitle || 'shift'} at ${shift.venue || member.venue || 'ALMA'}.`
-        })
-      });
-      await loadMobileData();
-      setMessage('Shift switch request posted to team chat.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not request a shift switch.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function sendChatMessage() {
-    if (!member || !chatText.trim()) return;
-    const body = chatText.trim();
-    setSaving(true);
-    setMessage(null);
-    setMessageTarget('chat');
-    try {
-      await api('/api/communications/chat', {
-        method: 'POST',
-        body: JSON.stringify({
-          appId: 'STAFF',
-          venue: member.venue ?? '',
-          channel: 'general',
-          body
-        })
-      });
-      setChatText('');
-      await loadMobileData();
-      setMessage('Message sent.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not send chat message.');
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  if (loading && !member) {
+  if ((loading || loadingHome) && !member && !home?.member) {
     return (
       <Card>
         <Spinner label="Loading your staff home…" />
@@ -1151,142 +1030,558 @@ function StaffMemberHome({
     );
   }
 
+  const displayMember = home?.member ?? (member
+    ? { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue }
+    : null);
+  const isOnBreak = Boolean(activeSession?.currentBreakStartedAt);
+
   return (
-    <div className="page-stack staff-mobile-home">
+    <div className="page-stack staff-daily-home">
       <PageHeader
-        eyebrow="My staff home"
-        title={member ? `Hi ${member.firstName}` : 'My shifts'}
-        description="Your shifts, clock-in, team chat, announcements and shift-switch requests."
+        eyebrow="Staff daily"
+        title={displayMember ? `Hi ${displayMember.firstName}` : 'Staff home'}
+        description="Your shift, clock status, leave, compliance reminders, and venue announcements."
+        actions={<Button type="button" variant="secondary" disabled={loadingHome} onClick={() => void loadHome()}>{loadingHome ? 'Refreshing…' : 'Refresh'}</Button>}
       />
 
       <div className="stats-grid">
-        <StatCard label="Upcoming shifts" value={upcomingShifts.length} hint="Next two weeks" loading={loading} />
-        <StatCard label="Next shift" value={nextShift ? new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'None'} hint={nextShift ? `${timeOf(nextShift.startsAt)}-${timeOf(nextShift.endsAt)}` : 'No rostered shift'} loading={loading} />
-        <StatCard label="Submitted" value={submittedThisWeek} hint="Waiting approval" loading={loading} />
-        <StatCard label="Approved" value={approvedThisWeek} hint="This fortnight" loading={loading} />
-        <StatCard label="Policy" value={policyAcknowledged ? 'Done' : 'Needed'} hint="Device acknowledgement" loading={loading} />
+        <StatCard label="Today" value={todayShift ? timeOf(todayShift.startsAt) : 'Off'} hint={todayShift ? `${todayShift.area || todayShift.roleTitle || 'Shift'} · ${todayShift.venue || displayMember?.venue || 'No venue'}` : 'No shift rostered'} loading={loadingHome} />
+        <StatCard label="Next shift" value={nextShift ? new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'None'} hint={nextShift ? `${timeOf(nextShift.startsAt)}-${timeOf(nextShift.endsAt)}` : 'No upcoming shift'} loading={loadingHome} />
+        <StatCard label="Clock" value={activeSession ? (isOnBreak ? 'On break' : 'Clocked in') : 'Off'} hint={activeSession ? `${timeOf(activeSession.clockInAt)} · ${activeSession.venue || displayMember?.venue || 'No venue'}` : 'Ready when you are'} loading={loadingHome} />
+        <StatCard label="Leave" value={pendingLeave} hint={`${home?.upcomingLeave.length ?? 0} upcoming requests`} loading={loadingHome} />
+        <StatCard label="Reminders" value={reminderCount} hint="Compliance and training" loading={loadingHome} />
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <Card title={activeTimesheet ? 'You are clocked in' : 'Clock in'} subtitle={currentShift ? `${timeOf(currentShift.startsAt)}-${timeOf(currentShift.endsAt)} · ${currentShift.area || currentShift.roleTitle || 'Shift'}` : 'No current shift selected'}>
-        <div className="staff-clock-card">
+      <Card title="Quick actions" subtitle="Everything you’ll use most days lives here.">
+        <div className="staff-quick-links">
+          <Button type="button" onClick={() => navigate('/roster')}>Open roster</Button>
+          <Button type="button" variant="secondary" onClick={() => navigate('/clock')}>Open clock</Button>
+          <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
+          <Button type="button" variant="ghost" onClick={() => navigate('/communications')}>Announcements</Button>
+        </div>
+      </Card>
+
+      <Card title={activeSession ? 'Clock status' : 'Ready to start'} subtitle={todayShift ? `${timeOf(todayShift.startsAt)}-${timeOf(todayShift.endsAt)} · ${todayShift.area || todayShift.roleTitle || 'Shift'}` : nextShift ? `Next: ${new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} ${timeOf(nextShift.startsAt)}` : 'No shift linked right now'}>
+        <div className="staff-clock-card staff-daily-clock-card">
           <span>
-            <strong>{activeTimesheet ? `Started ${timeOf(activeTimesheet.clockInAt)}` : currentShift ? 'Ready for your shift' : 'Clock in without rostered shift'}</strong>
+            <strong>
+              {activeSession
+                ? isOnBreak
+                  ? `On break since ${timeOf(activeSession.currentBreakStartedAt ?? activeSession.clockInAt)}`
+                  : `Clocked in at ${timeOf(activeSession.clockInAt)}`
+                : todayShift
+                  ? 'Ready for today’s shift'
+                  : 'Clock in when you arrive'}
+            </strong>
             <span className="subtle">
-              {activeTimesheet
-                ? `${activeTimesheet.venue || member?.venue || 'No venue'} · ${activeTimesheet.area || activeTimesheet.roleTitle || 'Shift'}`
-                : currentShift
-                  ? `${currentShift.venue || member?.venue || 'No venue'} · ${roundHours(shiftHours(currentShift))}`
-                  : 'A manager can reconcile it from Timesheets.'}
+              {activeSession
+                ? `${activeSession.venue || displayMember?.venue || 'No venue'} · ${activeSession.area || activeSession.roleTitle || 'Shift'} · ${activeSession.accumulatedBreakMinutes}m break logged`
+                : todayShift
+                  ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))}h rostered`
+                  : 'You can still clock in without a linked shift if needed.'}
             </span>
           </span>
-          <Button type="button" size="sm" disabled={saving} onClick={() => void (activeTimesheet ? clockOut() : clockIn())}>
-            {saving ? 'Saving…' : activeTimesheet ? 'Clock out' : 'Clock in'}
-          </Button>
+          <span className="staff-row-actions">
+            {!activeSession ? (
+              <Button type="button" size="sm" disabled={saving} onClick={() => void runClockAction('clock-in')}>
+                {saving ? 'Saving…' : 'Clock in'}
+              </Button>
+            ) : (
+              <>
+                {isOnBreak ? (
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void runClockAction('break-end')}>
+                    {saving ? 'Saving…' : 'End break'}
+                  </Button>
+                ) : (
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void runClockAction('break-start')}>
+                    {saving ? 'Saving…' : 'Start break'}
+                  </Button>
+                )}
+                <Button type="button" size="sm" disabled={saving} onClick={() => void runClockAction('clock-out')}>
+                  {saving ? 'Saving…' : 'Clock out'}
+                </Button>
+              </>
+            )}
+          </span>
           <ActionFeedback
             message={messageTarget === 'clock' ? message : null}
-            tone={message?.includes('Could') || message?.includes('already') || message?.includes('No active') ? 'error' : 'success'}
+            tone={message?.includes('Could') || message?.includes('No active') || message?.includes('already') ? 'error' : 'success'}
           />
         </div>
       </Card>
 
-      <Card title="My shifts" subtitle="Clock in, submit actual hours, or ask the team to switch a shift." padding="none">
-        {upcomingShifts.length === 0 ? (
-          <EmptyState title="No upcoming shifts" description="Published roster shifts will appear here once your manager assigns them." />
-        ) : (
-          <div className="staff-mobile-shift-list">
-            {upcomingShifts.map((shift) => (
-              <div key={shift.id} className="staff-mobile-shift-card">
-                <span>
-                  <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
-                  <span className="subtle">
-                    {timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || member?.venue || 'No venue'}
-                  </span>
-                  <span className="subtle">{shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break recorded'} · {roundHours(shiftHours(shift))}</span>
-                </span>
-                <span className="staff-mobile-actions">
-                  <Badge tone={statusTone(shift.status)}>{shift.status}</Badge>
-                  <Button type="button" size="sm" disabled={saving || isUnallocatedProfile(shift.staffProfile)} onClick={() => void submitFromShift(shift)}>
-                    Submit timesheet
+      <div className="staff-daily-grid">
+        <Card title="Today’s shift" subtitle="Confirm it before service if your manager needs acknowledgement.">
+          {todayShift ? (
+            <div className="staff-mobile-shift-card staff-daily-shift-card">
+              <span>
+                <strong>{new Date(todayShift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+                <span className="subtle">{timeOf(todayShift.startsAt)}-{timeOf(todayShift.endsAt)} · {todayShift.area || todayShift.roleTitle || 'Shift'} · {todayShift.venue || displayMember?.venue || 'No venue'}</span>
+                <span className="subtle">{todayShift.breakMinutes ? `${todayShift.breakMinutes}m break` : 'No break planned'} · {todayShift.confirmation ? 'Confirmed' : 'Needs confirmation'}</span>
+              </span>
+              <span className="staff-row-actions">
+                <Badge tone={statusTone(todayShift.status)}>{todayShift.status}</Badge>
+                {!todayShift.confirmation && todayShift.status === 'PUBLISHED' ? (
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void confirmShift(todayShift, 'confirm:today')}>
+                    {saving ? 'Saving…' : 'Confirm shift'}
                   </Button>
-                  <ActionFeedback
-                    message={messageTarget === `timesheet:${shift.id}` ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
-                  />
-                  <Button type="button" size="sm" variant="secondary" disabled={saving || isUnallocatedProfile(shift.staffProfile)} onClick={() => void requestShiftSwitch(shift)}>
-                    Switch shift
-                  </Button>
-                  <ActionFeedback
-                    message={messageTarget === `switch:${shift.id}` ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
-                  />
-                </span>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
-
-      <Card title="Announcements" subtitle="Manager updates for your venue">
-        <div className="staff-mobile-comms-list">
-          {communications.announcements.length === 0 ? (
-            <div>
-              <strong>No announcements yet</strong>
-              <span className="subtle">Team updates will appear here when managers publish them.</span>
+                ) : null}
+                <ActionFeedback message={messageTarget === 'confirm:today' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </span>
             </div>
           ) : (
-            communications.announcements.map((announcement) => (
+            <EmptyState title="No shift today" description="Your next published shift will still appear below." />
+          )}
+        </Card>
+
+        <Card title="Next shift" subtitle="Your next upcoming rostered shift.">
+          {nextShift ? (
+            <div className="staff-mobile-shift-card staff-daily-shift-card">
+              <span>
+                <strong>{new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+                <span className="subtle">{timeOf(nextShift.startsAt)}-{timeOf(nextShift.endsAt)} · {nextShift.area || nextShift.roleTitle || 'Shift'} · {nextShift.venue || displayMember?.venue || 'No venue'}</span>
+              </span>
+              <span className="staff-row-actions">
+                <Badge tone={statusTone(nextShift.status)}>{nextShift.status}</Badge>
+                {!nextShift.confirmation && nextShift.status === 'PUBLISHED' ? (
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void confirmShift(nextShift, 'confirm:next')}>
+                    {saving ? 'Saving…' : 'Confirm shift'}
+                  </Button>
+                ) : null}
+                <ActionFeedback message={messageTarget === 'confirm:next' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </span>
+            </div>
+          ) : (
+            <EmptyState title="Nothing upcoming yet" description="Published shifts will appear as soon as your manager assigns them." />
+          )}
+        </Card>
+      </div>
+
+      <Card title="Compliance reminders" subtitle="The things most likely to block your next shift.">
+        <div className="staff-expiry-list">
+          {home?.complianceReminders.length ? home.complianceReminders.map((item) => (
+            <div key={item.id} className="staff-expiry-row">
+              <span>
+                <strong>{item.title}</strong>
+                <span className="subtle">{item.detail}</span>
+                {item.dueAt ? <span className="subtle">{new Date(item.dueAt).toLocaleDateString()}</span> : null}
+              </span>
+              <Badge tone={item.status === 'EXPIRED' ? 'danger' : item.status === 'PENDING' || item.status === 'IN_PROGRESS' ? 'warning' : 'info'}>
+                {item.status.replaceAll('_', ' ')}
+              </Badge>
+            </div>
+          )) : (
+            <EmptyState title="Nothing urgent" description="Your records and training look clear right now." />
+          )}
+        </div>
+      </Card>
+
+      <div className="staff-daily-grid">
+        <Card title="Leave" subtitle="Quick view of approved and pending leave.">
+          {(home?.upcomingLeave.length ?? 0) > 0 ? (
+            <div className="staff-expiry-list">
+              {home?.upcomingLeave.map((item) => (
+                <div key={item.id} className="staff-expiry-row">
+                  <span>
+                    <strong>{leaveTypeLabel(item.type)}</strong>
+                    <span className="subtle">{formatRange(new Date(item.startDate), new Date(item.endDate))}</span>
+                    {item.notes ? <span>{item.notes}</span> : null}
+                  </span>
+                  <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <EmptyState title="No leave booked" description="Use the leave page when you need time away approved." />
+          )}
+        </Card>
+
+        <Card title="Announcements" subtitle="Venue updates and team notices for Staff.">
+          <div className="staff-mobile-comms-list">
+            {home?.announcements.length ? home.announcements.map((announcement) => (
               <div key={announcement.id}>
                 <strong>{announcement.title}</strong>
                 <span>{announcement.body}</span>
                 <small>{announcement.createdByName || 'ALMA'} · {formatDateTime(announcement.createdAt)}</small>
               </div>
-            ))
-          )}
-        </div>
-      </Card>
-
-      <Card title="Team chat" subtitle="Send a note to the staff channel">
-        <div className="staff-mobile-chat">
-          <div className="staff-mobile-comms-list">
-            {communications.chat.slice(-8).map((item) => (
-              <div key={item.id}>
-                <strong>{item.createdByName || 'Team'}</strong>
-                <span>{item.body}</span>
-                <small>{formatDateTime(item.createdAt)}</small>
-              </div>
-            ))}
-            {communications.chat.length === 0 ? (
+            )) : (
               <div>
-                <strong>No chat yet</strong>
-                <span className="subtle">Switch requests and staff messages will appear here.</span>
+                <strong>No announcements right now</strong>
+                <span className="subtle">Manager announcements will appear here when they’re published.</span>
               </div>
-            ) : null}
+            )}
           </div>
-          <div className="staff-mobile-chat-form">
-            <Input label="Message" value={chatText} onChange={(event) => setChatText(event.currentTarget.value)} placeholder="Message the team" />
-            <Button type="button" disabled={saving || !chatText.trim()} onClick={() => void sendChatMessage()}>
-              Send
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'chat' ? message : null}
-              tone={message?.includes('Could') ? 'error' : 'success'}
+        </Card>
+      </div>
+    </div>
+  );
+}
+
+function StaffMemberRosterPage() {
+  const [payload, setPayload] = useState<StaffMyRosterPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const loadRoster = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const start = new Date();
+      start.setDate(start.getDate() - 30);
+      const end = new Date();
+      end.setDate(end.getDate() + 45);
+      setPayload(await api<StaffMyRosterPayload>(`/api/staff/me/roster?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your roster.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRoster();
+  }, [loadRoster]);
+
+  const now = new Date();
+  const upcoming = (payload?.shifts ?? []).filter((shift) => new Date(shift.endsAt) >= now && shift.status !== 'CANCELLED');
+  const past = (payload?.shifts ?? [])
+    .filter((shift) => new Date(shift.endsAt) < now)
+    .slice()
+    .sort((a, b) => new Date(b.startsAt).getTime() - new Date(a.startsAt).getTime());
+
+  async function confirmShift(shift: RosterShift) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/shifts/${shift.id}/confirm`, { method: 'POST', body: JSON.stringify({}) });
+      await loadRoster();
+      setMessage('Shift confirmed.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not confirm shift.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Roster"
+        title="My shifts"
+        description="See your upcoming shifts, confirm them, and review recent past shifts."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadRoster()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Upcoming" value={payload?.upcomingCount ?? 0} hint="Published and current" loading={loading} />
+        <StatCard label="Past" value={payload?.pastCount ?? 0} hint="Recent history" loading={loading} />
+        <StatCard label="Need confirmation" value={payload?.pendingConfirmationCount ?? 0} hint="Published future shifts" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card title="Upcoming shifts" subtitle="Your next rostered shifts and confirmations." padding="none">
+        {loading ? <Spinner label="Loading roster…" /> : null}
+        {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
+        <div className="staff-mobile-shift-list">
+          {upcoming.map((shift) => (
+            <div key={shift.id} className="staff-mobile-shift-card">
+              <span>
+                <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+                <span className="subtle">{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || shift.staffProfile?.venue || 'No venue'}</span>
+                <span className="subtle">{shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break planned'} · {shift.notes || 'No extra notes'}</span>
+              </span>
+              <span className="staff-row-actions">
+                <Badge tone={statusTone(shift.status)}>{shift.status}</Badge>
+                <Badge tone={shift.confirmation ? 'positive' : 'warning'}>{shift.confirmation ? 'Confirmed' : 'Pending'}</Badge>
+                {!shift.confirmation && shift.status === 'PUBLISHED' ? (
+                  <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void confirmShift(shift)}>
+                    {saving ? 'Saving…' : 'Confirm'}
+                  </Button>
+                ) : null}
+                <ActionFeedback message={messageTarget === shift.id ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+
+      <Card title="Past shifts" subtitle="Recent completed or past rostered shifts." padding="none">
+        {!loading && past.length === 0 ? <EmptyState title="No past shifts yet" description="Recent shifts will move here once they’ve passed." /> : null}
+        <div className="staff-mobile-shift-list">
+          {past.slice(0, 20).map((shift) => (
+            <div key={shift.id} className="staff-mobile-shift-card">
+              <span>
+                <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+                <span className="subtle">{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || shift.staffProfile?.venue || 'No venue'}</span>
+              </span>
+              <span className="staff-row-actions">
+                <Badge tone={statusTone(shift.status)}>{shift.status}</Badge>
+                {shift.confirmation ? <Badge tone="positive">Confirmed</Badge> : null}
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function StaffMemberClockPage() {
+  const [payload, setPayload] = useState<StaffClockStatusPayload | null>(null);
+  const [selectedShiftId, setSelectedShiftId] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const loadClock = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      const next = await api<StaffClockStatusPayload>('/api/staff/me/clock');
+      setPayload(next);
+      setSelectedShiftId((current) => current || next.currentShift?.id || next.nextShift?.id || '');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your clock status.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadClock();
+  }, [loadClock]);
+
+  const activeSession = payload?.activeSession ?? null;
+  const shiftOptions = uniqueValues([payload?.currentShift?.id, payload?.nextShift?.id].filter(Boolean) as string[])
+    .map((id) => {
+      const shift = [payload?.currentShift, payload?.nextShift].find((item) => item?.id === id);
+      return {
+        label: shift
+          ? `${new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })} ${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} · ${shift.area || shift.roleTitle || 'Shift'}`
+          : 'Linked shift',
+        value: id
+      };
+    });
+
+  async function runClockAction(action: 'clock-in' | 'clock-out' | 'break-start' | 'break-end') {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(action);
+    try {
+      if (action === 'clock-in') {
+        await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({ rosterShiftId: selectedShiftId }) });
+      } else if (action === 'clock-out') {
+        await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
+      } else if (action === 'break-start') {
+        await api('/api/staff/me/clock/break/start', { method: 'POST', body: JSON.stringify({}) });
+      } else {
+        await api('/api/staff/me/clock/break/end', { method: 'POST', body: JSON.stringify({}) });
+      }
+      await loadClock();
+      setMessage(
+        action === 'clock-in'
+          ? 'Clocked in.'
+          : action === 'clock-out'
+            ? 'Clocked out.'
+            : action === 'break-start'
+              ? 'Break started.'
+              : 'Break ended.'
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update your clock status.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Clock"
+        title="Clock in and breaks"
+        description="Use shift-linked clocking when possible. Breaks and open sessions are tracked separately from approved payroll timesheets."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadClock()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Status" value={activeSession ? (activeSession.currentBreakStartedAt ? 'On break' : 'Clocked in') : 'Off'} hint={activeSession ? timeOf(activeSession.clockInAt) : 'Not clocked in'} loading={loading} />
+        <StatCard label="Breaks" value={activeSession?.accumulatedBreakMinutes ?? 0} hint="Minutes logged" loading={loading} />
+        <StatCard label="Current shift" value={payload?.currentShift ? timeOf(payload.currentShift.startsAt) : 'None'} hint={payload?.currentShift ? `${payload.currentShift.area || payload.currentShift.roleTitle || 'Shift'}` : 'No active shift'} loading={loading} />
+        <StatCard label="Recent sessions" value={payload?.recentSessions.length ?? 0} hint="Last 10 sessions" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card title="Clock controls" subtitle="Linked shifts help managers review exceptions faster.">
+        <div className="staff-profile-form">
+          {!activeSession ? (
+            <Select
+              label="Clock against shift"
+              value={selectedShiftId}
+              onChange={(event) => setSelectedShiftId(event.currentTarget.value)}
+              options={[{ label: 'No linked shift', value: '' }, ...shiftOptions]}
             />
+          ) : null}
+          <div className="staff-row-actions">
+            {!activeSession ? (
+              <Button type="button" disabled={saving} onClick={() => void runClockAction('clock-in')}>
+                {saving ? 'Saving…' : 'Clock in'}
+              </Button>
+            ) : (
+              <>
+                {activeSession.currentBreakStartedAt ? (
+                  <Button type="button" variant="secondary" disabled={saving} onClick={() => void runClockAction('break-end')}>
+                    {saving ? 'Saving…' : 'End break'}
+                  </Button>
+                ) : (
+                  <Button type="button" variant="secondary" disabled={saving} onClick={() => void runClockAction('break-start')}>
+                    {saving ? 'Saving…' : 'Start break'}
+                  </Button>
+                )}
+                <Button type="button" disabled={saving} onClick={() => void runClockAction('clock-out')}>
+                  {saving ? 'Saving…' : 'Clock out'}
+                </Button>
+              </>
+            )}
+            <ActionFeedback message={messageTarget ? message : null} tone={message?.includes('Could') || message?.includes('No active') || message?.includes('already') ? 'error' : 'success'} />
           </div>
         </div>
       </Card>
 
-      <Card title="Policies" subtitle="Quick acknowledgement for beta testing">
-        <div className="staff-action-strip">
-          <span>
-            <strong>Venue handbook and compliance policies</strong>
-            <span className="subtle">Follow RSA, food safety, WHS, harassment, privacy, cash handling, and venue procedures for every shift.</span>
-          </span>
-          <Button type="button" variant={policyAcknowledged ? 'secondary' : 'primary'} onClick={acknowledgePolicy}>
-            {policyAcknowledged ? 'Acknowledged' : 'Acknowledge'}
-          </Button>
-          <ActionFeedback message={messageTarget === 'policy' ? message : null} tone="success" />
+      <Card title="Recent sessions" subtitle="Managers review exceptions from this clock session history.">
+        {loading ? <Spinner label="Loading sessions…" /> : null}
+        {!loading && !(payload?.recentSessions.length) ? <EmptyState title="No clock sessions yet" description="Your future clock-ins will appear here." /> : null}
+        <div className="staff-expiry-list">
+          {payload?.recentSessions.map((session) => (
+            <div key={session.id} className="staff-expiry-row">
+              <span>
+                <strong>{new Date(session.clockInAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
+                <span className="subtle">{timeOf(session.clockInAt)}{session.clockOutAt ? `-${timeOf(session.clockOutAt)}` : ' · Open'} · {session.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || 'No venue'}</span>
+                <span className="subtle">{session.rosterShift ? `${session.rosterShift.area || session.rosterShift.roleTitle || 'Shift'} · ` : ''}{session.accumulatedBreakMinutes}m break</span>
+              </span>
+              <span className="staff-row-actions">
+                <Badge tone={session.status === 'OPEN' ? 'warning' : session.status === 'EXCEPTION' ? 'danger' : 'positive'}>{session.status}</Badge>
+              </span>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function StaffMemberLeavePage() {
+  const [leave, setLeave] = useState<StaffLeaveRequest[]>([]);
+  const [type, setType] = useState<StaffLeaveType>('ANNUAL');
+  const [startDate, setStartDate] = useState('');
+  const [endDate, setEndDate] = useState('');
+  const [notes, setNotes] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const loadLeave = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setLeave(await api<StaffLeaveRequest[]>('/api/staff/me/leave'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your leave requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadLeave();
+  }, [loadLeave]);
+
+  async function submitLeave() {
+    setMessageTarget('leave');
+    if (!startDate || !endDate || endDate < startDate) {
+      setMessage('Use a valid leave date range.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api('/api/staff/me/leave', {
+        method: 'POST',
+        body: JSON.stringify({ type, startDate, endDate, notes })
+      });
+      setType('ANNUAL');
+      setStartDate('');
+      setEndDate('');
+      setNotes('');
+      await loadLeave();
+      setMessage('Leave request submitted.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not submit leave.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const pendingCount = leave.filter((item) => item.status === 'PENDING').length;
+  const approvedCount = leave.filter((item) => item.status === 'APPROVED').length;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Leave"
+        title="My leave"
+        description="Request leave and keep track of what’s approved, pending, or declined."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadLeave()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Pending" value={pendingCount} hint="Awaiting manager review" loading={loading} />
+        <StatCard label="Approved" value={approvedCount} hint="Upcoming and past" loading={loading} />
+        <StatCard label="Total" value={leave.length} hint="Saved requests" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') || message.includes('valid') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card title="Request leave" subtitle="Leave requests stay visible here once a manager reviews them.">
+        <div className="staff-profile-form">
+          <div className="form-grid two">
+            <Select label="Leave type" value={type} onChange={(event) => setType(event.currentTarget.value as StaffLeaveType)} options={LEAVE_TYPE_OPTIONS} />
+            <Input label="Start date" type="date" value={startDate} onChange={(event) => setStartDate(event.currentTarget.value)} />
+            <Input label="End date" type="date" value={endDate} onChange={(event) => setEndDate(event.currentTarget.value)} />
+          </div>
+          <Textarea label="Note" rows={3} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
+          <div className="toolbar-right">
+            <Button type="button" disabled={saving} onClick={() => void submitLeave()}>
+              {saving ? 'Saving…' : 'Submit leave request'}
+            </Button>
+            <ActionFeedback message={messageTarget === 'leave' ? message : null} tone={message?.includes('Could') || message?.includes('valid') ? 'error' : 'success'} />
+          </div>
+        </div>
+      </Card>
+
+      <Card title="Leave requests" subtitle="Your request history and manager notes." padding="none">
+        {loading ? <Spinner label="Loading leave…" /> : null}
+        {!loading && leave.length === 0 ? <EmptyState title="No leave requests yet" description="Your submitted leave will appear here." /> : null}
+        <div className="staff-expiry-list">
+          {leave.map((item) => (
+            <div key={item.id} className="staff-expiry-row">
+              <span>
+                <strong>{leaveTypeLabel(item.type)}</strong>
+                <span className="subtle">{formatRange(new Date(item.startDate), new Date(item.endDate))}</span>
+                {item.notes ? <span>{item.notes}</span> : null}
+                {item.managerNote ? <span className="subtle">Manager note: {item.managerNote}</span> : null}
+              </span>
+              <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
+            </div>
+          ))}
         </div>
       </Card>
     </div>
@@ -3066,7 +3361,7 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
                 <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} />
               </div>
               <label className="check-row">
-                <input type="checkbox" checked={announcementDraft.pinned} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, pinned: event.currentTarget.checked }))} />
+                <input type="checkbox" checked={announcementDraft.pinned} onChange={(event) => { const checked = event.currentTarget.checked; setAnnouncementDraft((current) => ({ ...current, pinned: checked })); }} />
                 Pin announcement
               </label>
               <div className="toolbar-right">
@@ -3120,7 +3415,7 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => setChannelDraft((current) => ({ ...current, description: event.currentTarget.value }))} />
               <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => setChannelDraft((current) => ({ ...current, postPermission: event.currentTarget.value }))} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
               <label className="check-row">
-                <input type="checkbox" checked={channelDraft.directMessagesAllowed} onChange={(event) => setChannelDraft((current) => ({ ...current, directMessagesAllowed: event.currentTarget.checked }))} />
+                <input type="checkbox" checked={channelDraft.directMessagesAllowed} onChange={(event) => { const checked = event.currentTarget.checked; setChannelDraft((current) => ({ ...current, directMessagesAllowed: checked })); }} />
                 Allow this group to use direct messaging
               </label>
               <div className="toolbar-right">
@@ -6583,6 +6878,27 @@ function isUnallocatedProfile(member: { firstName?: string | null; notes?: strin
   return Boolean(member?.firstName === 'Unallocated' || member?.notes?.includes('Deputy unallocated placeholder'));
 }
 
+function staffClockStateTone(state: StaffManagerOperationsPayload['todaysStaff'][number]['state']) {
+  switch (state) {
+    case 'CLOCKED_IN':
+      return 'positive';
+    case 'ON_BREAK':
+    case 'LATE':
+      return 'warning';
+    case 'MISSED':
+      return 'danger';
+    case 'CLOCKED_OUT':
+      return 'neutral';
+    case 'SCHEDULED':
+    default:
+      return 'muted';
+  }
+}
+
+function clockExceptionTone(severity: StaffManagerOperationsPayload['clockExceptions'][number]['severity']) {
+  return severity === 'danger' ? 'danger' : 'warning';
+}
+
 function duplicateStaffProfileGroups(staff: StaffProfile[]) {
   const groups = new Map<string, StaffProfile[]>();
   for (const member of staff) {
@@ -7317,6 +7633,7 @@ function StaffMemberTipsPage() {
 function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
+  const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
   const [date, setDate] = useState(() => toDateInput(new Date()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -7341,7 +7658,12 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const query = new URLSearchParams({ date });
       if (venue) query.set('venue', venue);
-      setDashboard(await api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${query.toString()}`));
+      const [dashboardData, operationsData] = await Promise.all([
+        api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${query.toString()}`),
+        api<StaffManagerOperationsPayload>(`/api/staff/manager-operations?${query.toString()}`)
+      ]);
+      setDashboard(dashboardData);
+      setOperations(operationsData);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not load manager dashboard.');
     } finally {
@@ -7388,7 +7710,10 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   }
 
   const wagePercent = dashboard?.totals.wagePercent;
-  const updatedAt = dashboard ? new Date(dashboard.generatedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' }) : '';
+  const updatedAtSource = operations?.generatedAt ?? dashboard?.generatedAt ?? '';
+  const updatedAt = updatedAtSource
+    ? new Date(updatedAtSource).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    : '';
 
   return (
     <div className="page-stack manager-mobile-page">
@@ -7414,6 +7739,10 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <StatCard label="Live wages" value={formatCents(dashboard?.totals.actualWageCents ?? 0)} hint={`${roundHours(dashboard?.totals.actualHours ?? 0)} actual hours`} loading={loading} />
         <StatCard label="Wage %" value={wagePercent === null || wagePercent === undefined ? 'No sales' : `${wagePercent.toFixed(1)}%`} hint={`Roster ${formatCents(dashboard?.totals.rosterWageCents ?? 0)}`} loading={loading} />
         <StatCard label="Approvals" value={dashboard?.totals.pendingTimesheets ?? 0} hint="Submitted timesheets" loading={loading} />
+        <StatCard label="Clocked in" value={operations?.metrics.clockedIn ?? 0} hint={`${operations?.metrics.onBreak ?? 0} on break`} loading={loading} />
+        <StatCard label="Late / missed" value={`${operations?.metrics.lateClockIns ?? 0}/${operations?.metrics.missedClockIns ?? 0}`} hint="Clock-in exceptions" loading={loading} />
+        <StatCard label="Shift confirms" value={operations?.metrics.pendingConfirmations ?? 0} hint="Still awaiting acknowledgement" loading={loading} />
+        <StatCard label="Ops exceptions" value={operations?.metrics.clockExceptions ?? 0} hint="Open sessions, overdue breaks, missed clock-ins" loading={loading} />
       </div>
 
       <div className="manager-mobile-alert-strip">
@@ -7432,6 +7761,25 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <button type="button" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
           <strong>{dashboard?.totals.criticalIssues ?? 0}</strong>
           <span>Critical</span>
+        </button>
+      </div>
+
+      <div className="manager-mobile-alert-strip">
+        <button type="button" onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.scheduledStaff ?? 0}</strong>
+          <span>Today's staff</span>
+        </button>
+        <button type="button" onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.clockedIn ?? 0}</strong>
+          <span>Clocked in</span>
+        </button>
+        <button type="button" onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.pendingConfirmations ?? 0}</strong>
+          <span>Pending confirms</span>
+        </button>
+        <button type="button" onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.clockExceptions ?? 0}</strong>
+          <span>Clock exceptions</span>
         </button>
       </div>
 
@@ -7465,6 +7813,124 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
                     message={messageTarget === `reject:${entry.id}` ? message : null}
                     tone={message?.includes('Could') ? 'error' : 'success'}
                   />
+                </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          title="Today's staff"
+          subtitle="Rostered staff, confirmations, and live clock state."
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
+        >
+          {operations && operations.todaysStaff.length === 0 ? (
+            <EmptyState title="Nothing scheduled today" description="Published shifts for this date will show up here." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.todaysStaff.map((row) => (
+              <article key={row.shift.id} className="manager-mobile-row">
+                <span>
+                  <strong>{row.staffProfile ? `${row.staffProfile.firstName} ${row.staffProfile.lastName}` : 'Staff member'}</strong>
+                  <span className="subtle">
+                    {new Date(row.shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · {timeOf(row.shift.startsAt)}-{timeOf(row.shift.endsAt)}
+                  </span>
+                  <span className="subtle">
+                    {row.shift.venue || row.staffProfile?.venue || 'No venue'} · {row.shift.area || row.shift.roleTitle || row.staffProfile?.roleTitle || 'Shift'}
+                  </span>
+                  <span className="subtle">
+                    {row.confirmation ? `Confirmed ${formatDateTime(row.confirmation.confirmedAt)}` : 'Awaiting shift confirmation'}
+                    {row.activeSession ? ` · Clocked ${timeOf(row.activeSession.clockInAt)}` : ''}
+                  </span>
+                </span>
+                <span className="manager-mobile-row-actions">
+                  <Badge tone={staffClockStateTone(row.state)}>{row.state.replaceAll('_', ' ')}</Badge>
+                  <Badge tone={row.confirmation ? 'positive' : 'warning'}>
+                    {row.confirmation ? 'Confirmed' : 'Pending'}
+                  </Badge>
+                </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          title="Clock exceptions"
+          subtitle="Late clock-ins, missed shifts, overdue breaks, and open sessions."
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>Timesheets</Button>}
+        >
+          {operations && operations.clockExceptions.length === 0 ? (
+            <EmptyState title="No clock exceptions" description="Late, missed, overdue break, and open-session exceptions will appear here." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.clockExceptions.map((exception) => (
+              <article key={exception.id} className="manager-mobile-row">
+                <span>
+                  <strong>{exception.summary}</strong>
+                  <span className="subtle">{exception.detail}</span>
+                  <span className="subtle">
+                    {exception.venue || exception.staffProfile?.venue || 'No venue'} · {exception.staffProfile ? `${exception.staffProfile.firstName} ${exception.staffProfile.lastName}` : 'Unassigned staff'}
+                  </span>
+                </span>
+                <span className="manager-mobile-row-actions">
+                  <Badge tone={clockExceptionTone(exception.severity)}>{exception.kind.replaceAll('_', ' ')}</Badge>
+                </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          title="Clocked in now"
+          subtitle="Active sessions and current break state."
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
+        >
+          {operations && operations.clockedIn.length === 0 ? (
+            <EmptyState title="Nobody clocked in" description="Open clock sessions will appear here during service." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.clockedIn.map((session) => (
+              <article key={session.id} className="manager-mobile-row">
+                <span>
+                  <strong>{session.rosterShift?.staffProfile ? `${session.rosterShift.staffProfile.firstName} ${session.rosterShift.staffProfile.lastName}` : 'Staff member'}</strong>
+                  <span className="subtle">{timeOf(session.clockInAt)} · {session.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || 'No venue'}</span>
+                  <span className="subtle">
+                    {session.currentBreakStartedAt ? `On break since ${timeOf(session.currentBreakStartedAt)}` : 'Working'}
+                    {` · ${session.area || session.roleTitle || session.rosterShift?.area || session.rosterShift?.roleTitle || 'Shift'}`}
+                  </span>
+                </span>
+                <span className="manager-mobile-row-actions">
+                  <Badge tone={session.currentBreakStartedAt ? 'warning' : 'positive'}>
+                    {session.currentBreakStartedAt ? 'On break' : 'Clocked in'}
+                  </Badge>
+                </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          title="Pending shift confirmations"
+          subtitle="Upcoming published shifts still waiting for acknowledgement."
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
+        >
+          {operations && operations.pendingConfirmations.length === 0 ? (
+            <EmptyState title="No pending confirmations" description="Managers will see outstanding shift acknowledgements here." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.pendingConfirmations.map((entry) => (
+              <article key={entry.shift.id} className="manager-mobile-row">
+                <span>
+                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
+                  <span className="subtle">
+                    {new Date(entry.shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · {timeOf(entry.shift.startsAt)}-{timeOf(entry.shift.endsAt)}
+                  </span>
+                  <span className="subtle">
+                    {entry.shift.venue || entry.staffProfile?.venue || 'No venue'} · {entry.shift.area || entry.shift.roleTitle || entry.staffProfile?.roleTitle || 'Shift'}
+                  </span>
+                </span>
+                <span className="manager-mobile-row-actions">
+                  <Badge tone="warning">Pending</Badge>
                 </span>
               </article>
             ))}
@@ -8578,7 +9044,10 @@ function StaffShell() {
       ) : null}
       {isStaffUser ? (
         <Routes>
-          <Route path="/" element={<StaffMemberHome staff={staff} roster={roster} loading={loading} reload={reload} />} />
+          <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
+          <Route path="/roster" element={<StaffMemberRosterPage />} />
+          <Route path="/clock" element={<StaffMemberClockPage />} />
+          <Route path="/leave" element={<StaffMemberLeavePage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />

@@ -22,6 +22,11 @@ import {
   staffProfileUpdateInputSchema,
   staffReonboardInputSchema,
   timesheetApprovalInputSchema,
+  staffClockBreakInputSchema,
+  staffClockInInputSchema,
+  staffClockOutInputSchema,
+  staffOwnLeaveRequestInputSchema,
+  staffShiftConfirmationInputSchema,
   timesheetCashPaymentInputSchema,
   timesheetCreateInputSchema,
   timesheetExportInputSchema,
@@ -40,6 +45,7 @@ import {
 import type { AuthUser, OnboardingSettings, StaffDefaults, StaffLeaveStatus, StaffLeaveType } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
+import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
 
 function generateToken() {
@@ -336,6 +342,13 @@ function timesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes
 }
 
 async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor: AuthUser) {
+  if (actor.role === 'STAFF' && !actor.isAdmin) {
+    throw new HttpError(403, 'Manager access required');
+  }
+  return assertActorCanAccessStaffProfile(staffProfileId, actor);
+}
+
+async function assertActorCanAccessStaffProfile(staffProfileId: string, actor: AuthUser) {
   const profile = await prisma.staffProfile.findUnique({
     where: { id: staffProfileId },
     select: { id: true, venue: true }
@@ -349,11 +362,127 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
     return profile;
   }
 
+  if (actor.role === 'STAFF') {
+    if (actor.id !== staffProfileId) {
+      throw new HttpError(403, 'You can only access your own staff profile.');
+    }
+    return profile;
+  }
+
   if (!actor.venue || profile.venue !== actor.venue) {
     throw new HttpError(403, 'Staff management actions are limited to staff in your venue.');
   }
 
   return profile;
+}
+
+function actorVenueScope(actor?: AuthUser) {
+  if (!actor || actor.isAdmin || actor.role === 'ADMIN') return null;
+  if (actor.role === 'STAFF') return actor.venue || null;
+  return actor.venue || '__no_manager_venue__';
+}
+
+function scopeVenueForActor(requestedVenue: string | undefined, actor?: AuthUser) {
+  const venue = requestedVenue?.trim() || '';
+  if (!actor || actor.isAdmin || actor.role === 'ADMIN') {
+    return venue || undefined;
+  }
+  if (actor.role === 'STAFF') {
+    return actor.venue || undefined;
+  }
+  if (!actor.venue) {
+    throw new HttpError(403, 'Manager venue access is not configured.');
+  }
+  if (venue && venue !== actor.venue) {
+    throw new HttpError(403, 'Managers cannot access another venue.');
+  }
+  return actor.venue;
+}
+
+async function assertActorCanAccessRosterShift(shiftId: string, actor: AuthUser) {
+  const shift = await prisma.rosterShift.findUnique({
+    where: { id: shiftId },
+    include: {
+      staffProfile: {
+        select: { id: true, venue: true, firstName: true, lastName: true, roleTitle: true, employmentStatus: true }
+      },
+      shiftConfirmations: {
+        orderBy: [{ confirmedAt: 'desc' }],
+        take: 1
+      }
+    }
+  });
+
+  if (!shift) throw new HttpError(404, 'Roster shift not found');
+  if (actor.isAdmin || actor.role === 'ADMIN') return shift;
+  if (actor.role === 'STAFF') {
+    if (shift.staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only access your own shifts.');
+    }
+    return shift;
+  }
+  const shiftVenue = shift.venue || shift.staffProfile?.venue || null;
+  if (!actor.venue || shiftVenue !== actor.venue) {
+    throw new HttpError(403, 'Roster access is limited to your venue.');
+  }
+  return shift;
+}
+
+async function assertActorCanAccessTimesheet(id: string, actor: AuthUser) {
+  const entry = await prisma.timesheet.findUnique({
+    where: { id },
+    include: {
+      staffProfile: {
+        select: { id: true, venue: true, firstName: true, lastName: true, roleTitle: true, email: true }
+      }
+    }
+  });
+  if (!entry) throw new HttpError(404, 'Timesheet not found');
+  if (actor.isAdmin || actor.role === 'ADMIN') return entry;
+  if (actor.role === 'STAFF') {
+    if (entry.staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only access your own timesheets.');
+    }
+    return entry;
+  }
+  const venue = entry.venue || entry.staffProfile?.venue || null;
+  if (!actor.venue || venue !== actor.venue) {
+    throw new HttpError(403, 'Timesheet access is limited to your venue.');
+  }
+  return entry;
+}
+
+async function assertActorCanAccessClockSession(id: string, actor: AuthUser) {
+  const session = await prisma.staffClockSession.findUnique({
+    where: { id },
+    include: {
+      staffProfile: {
+        select: { id: true, venue: true, firstName: true, lastName: true, roleTitle: true }
+      },
+      rosterShift: {
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+          },
+          shiftConfirmations: { orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+        }
+      },
+      events: { orderBy: [{ occurredAt: 'asc' }] }
+    }
+  });
+  if (!session) throw new HttpError(404, 'Clock session not found');
+  if (actor.isAdmin || actor.role === 'ADMIN') return session;
+  if (actor.role === 'STAFF') {
+    if (session.staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only access your own clock sessions.');
+    }
+    return session;
+  }
+  const venue = session.venue || session.staffProfile?.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || null;
+  if (!actor.venue || venue !== actor.venue) {
+    throw new HttpError(403, 'Clocking access is limited to your venue.');
+  }
+  return session;
 }
 
 function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
@@ -603,6 +732,175 @@ function toStaffLeaveRequest(row: Prisma.StaffLeaveRequestGetPayload<{
   };
 }
 
+function toStaffShiftConfirmation(row: {
+  id: string;
+  rosterShiftId: string;
+  staffProfileId: string;
+  note: string | null;
+  confirmedAt: Date;
+  createdById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+} | null | undefined) {
+  if (!row) return null;
+  return {
+    id: row.id,
+    rosterShiftId: row.rosterShiftId,
+    staffProfileId: row.staffProfileId,
+    note: row.note,
+    confirmedAt: row.confirmedAt.toISOString(),
+    createdById: row.createdById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+function toRosterShiftPayload(row: {
+  id: string;
+  staffProfileId: string;
+  venue: string | null;
+  area: string | null;
+  roleTitle: string | null;
+  startsAt: Date;
+  endsAt: Date;
+  breakMinutes: number;
+  status: string;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  staffProfile?: { id: string; firstName: string; lastName: string; roleTitle: string; venue: string | null; employmentStatus: string } | null;
+  shiftConfirmations?: Array<{
+    id: string;
+    rosterShiftId: string;
+    staffProfileId: string;
+    note: string | null;
+    confirmedAt: Date;
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>;
+}) {
+  return {
+    id: row.id,
+    staffProfileId: row.staffProfileId,
+    venue: row.venue,
+    area: row.area,
+    roleTitle: row.roleTitle,
+    startsAt: row.startsAt.toISOString(),
+    endsAt: row.endsAt.toISOString(),
+    breakMinutes: row.breakMinutes,
+    status: row.status,
+    notes: row.notes,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    staffProfile: row.staffProfile ?? undefined,
+    confirmation: toStaffShiftConfirmation(row.shiftConfirmations?.[0])
+  };
+}
+
+function toClockEventPayload(row: {
+  id: string;
+  sessionId: string;
+  staffProfileId: string;
+  rosterShiftId: string | null;
+  venue: string | null;
+  eventType: string;
+  occurredAt: Date;
+  createdById: string | null;
+  metadata: Prisma.JsonValue;
+  createdAt: Date;
+}) {
+  return {
+    id: row.id,
+    sessionId: row.sessionId,
+    staffProfileId: row.staffProfileId,
+    rosterShiftId: row.rosterShiftId,
+    venue: row.venue,
+    eventType: row.eventType,
+    occurredAt: row.occurredAt.toISOString(),
+    createdById: row.createdById,
+    metadata: (row.metadata && typeof row.metadata === 'object' && !Array.isArray(row.metadata) ? row.metadata : {}) as Record<string, unknown>,
+    createdAt: row.createdAt.toISOString()
+  };
+}
+
+function toClockSessionPayload(row: {
+  id: string;
+  staffProfileId: string;
+  rosterShiftId: string | null;
+  venue: string | null;
+  area: string | null;
+  roleTitle: string | null;
+  clockInAt: Date;
+  clockOutAt: Date | null;
+  status: string;
+  currentBreakStartedAt: Date | null;
+  accumulatedBreakMinutes: number;
+  managerNote: string | null;
+  reviewedAt: Date | null;
+  reviewedById: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  events?: Array<{
+    id: string;
+    sessionId: string;
+    staffProfileId: string;
+    rosterShiftId: string | null;
+    venue: string | null;
+    eventType: string;
+    occurredAt: Date;
+    createdById: string | null;
+    metadata: Prisma.JsonValue;
+    createdAt: Date;
+  }>;
+  rosterShift?: {
+    id: string;
+    staffProfileId: string;
+    venue: string | null;
+    area: string | null;
+    roleTitle: string | null;
+    startsAt: Date;
+    endsAt: Date;
+    breakMinutes: number;
+    status: string;
+    notes: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+    staffProfile?: { id: string; firstName: string; lastName: string; roleTitle: string; venue: string | null; employmentStatus: string } | null;
+    shiftConfirmations?: Array<{
+      id: string;
+      rosterShiftId: string;
+      staffProfileId: string;
+      note: string | null;
+      confirmedAt: Date;
+      createdById: string | null;
+      createdAt: Date;
+      updatedAt: Date;
+    }>;
+  } | null;
+}) {
+  return {
+    id: row.id,
+    staffProfileId: row.staffProfileId,
+    rosterShiftId: row.rosterShiftId,
+    venue: row.venue,
+    area: row.area,
+    roleTitle: row.roleTitle,
+    clockInAt: row.clockInAt.toISOString(),
+    clockOutAt: row.clockOutAt?.toISOString() ?? null,
+    status: row.status,
+    currentBreakStartedAt: row.currentBreakStartedAt?.toISOString() ?? null,
+    accumulatedBreakMinutes: row.accumulatedBreakMinutes,
+    managerNote: row.managerNote,
+    reviewedAt: row.reviewedAt?.toISOString() ?? null,
+    reviewedById: row.reviewedById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    events: row.events?.map(toClockEventPayload),
+    rosterShift: row.rosterShift ? toRosterShiftPayload(row.rosterShift) : null
+  };
+}
+
 function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number; status: string }, now: Date) {
   const effectiveOut = entry.status === 'DRAFT' && now > entry.clockInAt ? now : entry.clockOutAt;
   if (effectiveOut <= entry.clockInAt) return 0;
@@ -612,6 +910,41 @@ function liveTimesheetHours(entry: { clockInAt: Date; clockOutAt: Date; breakMin
 function shiftHours(entry: { startsAt: Date; endsAt: Date; breakMinutes: number }) {
   if (entry.endsAt <= entry.startsAt) return 0;
   return Math.max(0, (entry.endsAt.getTime() - entry.startsAt.getTime()) / 36e5 - entry.breakMinutes / 60);
+}
+
+function sameDayUtc(left: Date, right: Date) {
+  return left.getUTCFullYear() === right.getUTCFullYear() &&
+    left.getUTCMonth() === right.getUTCMonth() &&
+    left.getUTCDate() === right.getUTCDate();
+}
+
+function sessionBreakMinutes(session: { currentBreakStartedAt: Date | null; accumulatedBreakMinutes: number }, now = new Date()) {
+  if (!session.currentBreakStartedAt) return session.accumulatedBreakMinutes;
+  return session.accumulatedBreakMinutes + Math.max(0, Math.round((now.getTime() - session.currentBreakStartedAt.getTime()) / 60000));
+}
+
+function openSessionDurationMinutes(session: { clockInAt: Date; clockOutAt: Date | null }, now = new Date()) {
+  const end = session.clockOutAt ?? now;
+  return Math.max(0, Math.round((end.getTime() - session.clockInAt.getTime()) / 60000));
+}
+
+function shiftConfirmationFor(
+  confirmations: Array<{
+    id: string;
+    rosterShiftId: string;
+    staffProfileId: string;
+    note: string | null;
+    confirmedAt: Date;
+    createdById: string | null;
+    createdAt: Date;
+    updatedAt: Date;
+  }>
+) {
+  return toStaffShiftConfirmation(confirmations[0]);
+}
+
+function lateThreshold(shiftStart: Date) {
+  return new Date(shiftStart.getTime() + 10 * 60 * 1000);
 }
 
 function staffRateCents(profile: { payRateCents: number | null; trainingPayRateCents: number | null } | null | undefined) {
@@ -1569,18 +1902,35 @@ export const staffService = {
     };
   },
 
-  async listRoster(start?: string, end?: string, staffProfileId?: string) {
+  async listRoster(
+    start?: string,
+    end?: string,
+    staffProfileId?: string,
+    actor?: AuthUser,
+    options?: { includeConfirmations?: boolean }
+  ) {
     const now = new Date();
     const startDate = start ? new Date(start) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const endDate = end
       ? new Date(end)
       : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
-    return prisma.rosterShift.findMany({
+    if (actor?.role === 'STAFF' && staffProfileId && staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only view your own roster.');
+    }
+
+    if (actor && actor.role !== 'STAFF' && staffProfileId) {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    }
+
+    const scopedVenue = scopeVenueForActor(undefined, actor);
+
+    const rows = await prisma.rosterShift.findMany({
       where: {
         startsAt: { lt: endDate },
         endsAt: { gt: startDate },
-        ...(staffProfileId ? { staffProfileId } : {})
+        ...(staffProfileId ? { staffProfileId } : actor?.role === 'STAFF' ? { staffProfileId: actor.id } : {}),
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
       },
       orderBy: [{ startsAt: 'asc' }],
       include: {
@@ -1593,14 +1943,30 @@ export const staffService = {
             venue: true,
             employmentStatus: true
           }
-        }
+        },
+        ...(options?.includeConfirmations
+          ? {
+              shiftConfirmations: {
+                where: actor?.role === 'STAFF' ? { staffProfileId: actor.id } : undefined,
+                orderBy: [{ confirmedAt: 'desc' }],
+                take: 1
+              }
+            }
+          : {})
       }
     });
+
+    return options?.includeConfirmations ? rows.map((row) => toRosterShiftPayload(row)) : rows;
   },
 
-  async createRosterShift(input: unknown) {
+  async createRosterShift(input: unknown, actor?: AuthUser) {
     const data = rosterShiftInputSchema.parse(input);
-    await this.getById(data.staffProfileId);
+    const profile = actor ? await assertManagerCanAccessStaffProfile(data.staffProfileId, actor) : await this.getById(data.staffProfileId);
+    const targetVenue = data.venue || profile.venue || null;
+
+    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.venue && targetVenue && targetVenue !== actor.venue) {
+      throw new HttpError(403, 'Managers cannot create roster shifts outside their venue.');
+    }
 
     const startsAt = new Date(data.startsAt);
     const endsAt = new Date(data.endsAt);
@@ -1614,7 +1980,7 @@ export const staffService = {
     return prisma.rosterShift.create({
       data: {
         staffProfileId: data.staffProfileId,
-        venue: data.venue || null,
+        venue: targetVenue,
         area: data.area || null,
         roleTitle: data.roleTitle || null,
         startsAt,
@@ -1638,13 +2004,37 @@ export const staffService = {
     });
   },
 
-  async updateRosterShift(id: string, input: unknown) {
+  async updateRosterShift(id: string, input: unknown, actor?: AuthUser) {
     const data = rosterShiftUpdateInputSchema.parse(input);
-    const existing = await prisma.rosterShift.findUnique({ where: { id } });
+    const existing = actor
+      ? await assertActorCanAccessRosterShift(id, actor)
+      : await prisma.rosterShift.findUnique({
+          where: { id },
+          include: {
+            staffProfile: {
+              select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                roleTitle: true,
+                venue: true,
+                employmentStatus: true
+              }
+            },
+            shiftConfirmations: {
+              orderBy: [{ confirmedAt: 'desc' }],
+              take: 1
+            }
+          }
+        });
     if (!existing) throw new HttpError(404, 'Roster shift not found');
 
     if (data.staffProfileId) {
-      await this.getById(data.staffProfileId);
+      if (actor) {
+        await assertManagerCanAccessStaffProfile(data.staffProfileId, actor);
+      } else {
+        await this.getById(data.staffProfileId);
+      }
     }
 
     const startsAt = data.startsAt !== undefined ? new Date(data.startsAt) : undefined;
@@ -1660,12 +2050,16 @@ export const staffService = {
     if (effectiveEnd <= effectiveStart) {
       throw new HttpError(400, 'Roster shift must end after it starts');
     }
+    const targetVenue = data.venue !== undefined ? (data.venue || null) : existing.venue || existing.staffProfile?.venue || null;
+    if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.venue && targetVenue && targetVenue !== actor.venue) {
+      throw new HttpError(403, 'Managers cannot move shifts outside their venue.');
+    }
 
     return prisma.rosterShift.update({
       where: { id },
       data: {
         ...(data.staffProfileId !== undefined && { staffProfileId: data.staffProfileId }),
-        ...(data.venue !== undefined && { venue: data.venue || null }),
+        ...(data.venue !== undefined && { venue: targetVenue }),
         ...(data.area !== undefined && { area: data.area || null }),
         ...(data.roleTitle !== undefined && { roleTitle: data.roleTitle || null }),
         ...(startsAt !== undefined && { startsAt }),
@@ -1689,13 +2083,13 @@ export const staffService = {
     });
   },
 
-  async deleteRosterShift(id: string) {
-    const existing = await prisma.rosterShift.findUnique({ where: { id } });
+  async deleteRosterShift(id: string, actor?: AuthUser) {
+    const existing = actor ? await assertActorCanAccessRosterShift(id, actor) : await prisma.rosterShift.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Roster shift not found');
     await prisma.rosterShift.delete({ where: { id } });
   },
 
-  async publishRoster(input: unknown, publishedById?: string) {
+  async publishRoster(input: unknown, publishedById?: string, actor?: AuthUser) {
     const data = rosterPublishInputSchema.parse(input);
     const startDate = new Date(data.start);
     const endDate = new Date(data.end);
@@ -1705,13 +2099,14 @@ export const staffService = {
     if (endDate <= startDate) {
       throw new HttpError(400, 'Roster publish end date must be after the start date');
     }
+    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
 
     await prisma.rosterShift.updateMany({
       where: {
         status: 'DRAFT',
         startsAt: { lt: endDate },
         endsAt: { gt: startDate },
-        ...(data.venue ? { venue: data.venue } : {})
+        ...(scopedVenue ? { venue: scopedVenue } : {})
       },
       data: { status: 'PUBLISHED' }
     });
@@ -1721,14 +2116,14 @@ export const staffService = {
         where: {
           weekStart: startDate,
           weekEnd: endDate,
-          venue: data.venue || null
+          venue: scopedVenue || null
         }
       });
       await prisma.rosterForecastSnapshot.create({
         data: {
           weekStart: startDate,
           weekEnd: endDate,
-          venue: data.venue || null,
+          venue: scopedVenue || null,
           source: data.forecast.source || null,
           targetWagePercent: data.forecast.targetWagePercent,
           forecastSalesCents: data.forecast.forecastSalesCents,
@@ -1744,12 +2139,13 @@ export const staffService = {
       });
     }
 
-    return this.listRoster(startDate.toISOString(), endDate.toISOString());
+    return this.listRoster(startDate.toISOString(), endDate.toISOString(), undefined, actor);
   },
 
-  async listRosterForecastSnapshots(input: { start?: string; end?: string; venue?: string }) {
+  async listRosterForecastSnapshots(input: { start?: string; end?: string; venue?: string }, actor?: AuthUser) {
     const startDate = input.start ? parseDate(input.start, 'Roster forecast start date') : undefined;
     const endDate = input.end ? parseDate(input.end, 'Roster forecast end date') : undefined;
+    const scopedVenue = scopeVenueForActor(input.venue, actor);
     const snapshots = await prisma.rosterForecastSnapshot.findMany({
       where: {
         ...(startDate && endDate
@@ -1758,7 +2154,7 @@ export const staffService = {
               weekEnd: { lte: endDate }
             }
           : {}),
-        ...(input.venue ? { venue: input.venue } : {})
+        ...(scopedVenue ? { venue: scopedVenue } : {})
       },
       orderBy: [{ weekStart: 'desc' }, { venue: 'asc' }]
     });
@@ -1771,9 +2167,9 @@ export const staffService = {
     }));
   },
 
-  async getManagerDashboard(input: unknown) {
+  async getManagerDashboard(input: unknown, actor?: AuthUser) {
     const data = managerDashboardQuerySchema.parse(input);
-    const venue = data.venue?.trim() || '';
+    const venue = scopeVenueForActor(data.venue?.trim(), actor) ?? '';
     const { start, end, key } = dayRange(data.date);
     const now = new Date();
     const activeIssueStatuses = ['OPEN', 'IN_PROGRESS', 'BLOCKED'] as const;
@@ -2002,17 +2398,673 @@ export const staffService = {
     };
   },
 
-  async listTimesheets(start?: string, end?: string, status?: string, venue?: string, staffProfileId?: string) {
+  async getMyRoster(actor: AuthUser, input?: { start?: string; end?: string }) {
+    const shifts = await this.listRoster(input?.start, input?.end, actor.id, actor, { includeConfirmations: true }) as Array<ReturnType<typeof toRosterShiftPayload>>;
+    const now = new Date();
+    return {
+      shifts,
+      upcomingCount: shifts.filter((shift) => new Date(shift.endsAt) >= now && shift.status !== 'CANCELLED').length,
+      pastCount: shifts.filter((shift) => new Date(shift.endsAt) < now).length,
+      pendingConfirmationCount: shifts.filter((shift) => shift.status === 'PUBLISHED' && !shift.confirmation && new Date(shift.endsAt) >= now).length
+    };
+  },
+
+  async confirmMyShift(shiftId: string, input: unknown, actor: AuthUser) {
+    const data = staffShiftConfirmationInputSchema.parse(input ?? {});
+    const shift = await assertActorCanAccessRosterShift(shiftId, actor);
+    if (shift.staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only confirm your own shifts.');
+    }
+    if (shift.status === 'CANCELLED') {
+      throw new HttpError(400, 'Cancelled shifts cannot be confirmed.');
+    }
+
+    const confirmedAt = new Date();
+    const confirmation = await prisma.staffShiftConfirmation.upsert({
+      where: {
+        rosterShiftId_staffProfileId: {
+          rosterShiftId: shift.id,
+          staffProfileId: actor.id
+        }
+      },
+      create: {
+        rosterShiftId: shift.id,
+        staffProfileId: actor.id,
+        note: data.note?.trim() || null,
+        confirmedAt,
+        createdById: actor.id
+      },
+      update: {
+        note: data.note?.trim() || null,
+        confirmedAt,
+        createdById: actor.id
+      }
+    });
+
+    return toStaffShiftConfirmation(confirmation);
+  },
+
+  async listMyLeaveRequests(actor: AuthUser) {
+    const rows = await prisma.staffLeaveRequest.findMany({
+      where: { staffProfileId: actor.id },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      },
+      orderBy: [{ startDate: 'desc' }, { createdAt: 'desc' }]
+    });
+    return rows.map(toStaffLeaveRequest);
+  },
+
+  async createMyLeaveRequest(input: unknown, actor: AuthUser) {
+    const data = staffOwnLeaveRequestInputSchema.parse(input);
+    const { start, end } = leaveDateRange(data.startDate, data.endDate);
+    const row = await prisma.staffLeaveRequest.create({
+      data: {
+        staffProfileId: actor.id,
+        type: data.type,
+        status: 'PENDING',
+        startDate: start,
+        endDate: end,
+        notes: data.notes?.trim() || null,
+        managerNote: null,
+        requestedByUserId: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: actor.id,
+      eventType: 'STAFF_LEAVE_REQUESTED',
+      summary: `Leave requested for ${formatLeaveDate(start)} to ${formatLeaveDate(end)}.`,
+      actor,
+      metadata: { type: data.type, startDate: formatLeaveDate(start), endDate: formatLeaveDate(end) }
+    });
+
+    return toStaffLeaveRequest(row);
+  },
+
+  async getMyClockStatus(actor: AuthUser) {
+    const today = new Date();
+    const rosterStart = new Date(today.getTime() - 12 * 60 * 60 * 1000);
+    const rosterEnd = new Date(today.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const roster = await this.listRoster(
+      rosterStart.toISOString(),
+      rosterEnd.toISOString(),
+      actor.id,
+      actor,
+      { includeConfirmations: true }
+    ) as Array<ReturnType<typeof toRosterShiftPayload>>;
+
+    const recentSessions = await prisma.staffClockSession.findMany({
+      where: { staffProfileId: actor.id },
+      include: {
+        events: { orderBy: [{ occurredAt: 'asc' }] },
+        rosterShift: {
+          include: {
+            staffProfile: {
+              select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+            },
+            shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+          }
+        }
+      },
+      orderBy: [{ clockInAt: 'desc' }],
+      take: 10
+    });
+
+    const activeSession = recentSessions.find((session) => session.status === 'OPEN' && !session.clockOutAt) ?? null;
+    const upcomingShifts = roster
+      .filter((shift) => shift.status !== 'CANCELLED')
+      .filter((shift) => new Date(shift.endsAt) >= today)
+      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    const currentShift =
+      upcomingShifts.find((shift) => {
+        const start = new Date(shift.startsAt).getTime() - 2 * 60 * 60 * 1000;
+        const end = new Date(shift.endsAt).getTime() + 6 * 60 * 60 * 1000;
+        const now = Date.now();
+        return now >= start && now <= end;
+      }) ?? null;
+
+    return {
+      activeSession: activeSession ? toClockSessionPayload(activeSession) : null,
+      currentShift,
+      nextShift: upcomingShifts[0] ?? null,
+      recentSessions: recentSessions.map(toClockSessionPayload)
+    };
+  },
+
+  async clockIn(actor: AuthUser, input: unknown) {
+    const data = staffClockInInputSchema.parse(input ?? {});
+    const existingOpen = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      orderBy: [{ clockInAt: 'desc' }]
+    });
+    if (existingOpen) {
+      throw new HttpError(400, 'You already have an open clock session.');
+    }
+
+    const profile = await assertActorCanAccessStaffProfile(actor.id, actor);
+    const shift = data.rosterShiftId ? await assertActorCanAccessRosterShift(data.rosterShiftId, actor) : null;
+    if (shift && shift.staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only clock into your own shift.');
+    }
+
+    const clockInAt = new Date();
+    const created = await prisma.$transaction(async (tx) => {
+      const session = await tx.staffClockSession.create({
+        data: {
+          staffProfileId: actor.id,
+          rosterShiftId: shift?.id ?? null,
+          venue: shift?.venue || shift?.staffProfile?.venue || profile.venue || actor.venue || null,
+          area: shift?.area || null,
+          roleTitle: shift?.roleTitle || shift?.staffProfile?.roleTitle || actor.roleTitle || null,
+          clockInAt,
+          status: 'OPEN'
+        }
+      });
+      await tx.staffClockEvent.create({
+        data: {
+          sessionId: session.id,
+          staffProfileId: actor.id,
+          rosterShiftId: shift?.id ?? null,
+          venue: session.venue,
+          eventType: 'CLOCK_IN',
+          occurredAt: clockInAt,
+          createdById: actor.id,
+          metadata: {}
+        }
+      });
+      return tx.staffClockSession.findUniqueOrThrow({
+        where: { id: session.id },
+        include: {
+          events: { orderBy: [{ occurredAt: 'asc' }] },
+          rosterShift: {
+            include: {
+              staffProfile: {
+                select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+              },
+              shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+            }
+          }
+        }
+      });
+    });
+
+    return toClockSessionPayload(created);
+  },
+
+  async clockOut(actor: AuthUser, input: unknown) {
+    const data = staffClockOutInputSchema.parse(input ?? {});
+    const existing = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      include: {
+        events: { orderBy: [{ occurredAt: 'asc' }] },
+        rosterShift: {
+          include: {
+            staffProfile: {
+              select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+            },
+            shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+          }
+        }
+      },
+      orderBy: [{ clockInAt: 'desc' }]
+    });
+    if (!existing) {
+      throw new HttpError(400, 'No active clock session found.');
+    }
+
+    const clockOutAt = new Date();
+    const breakMinutes = sessionBreakMinutes(existing, clockOutAt);
+    const updated = await prisma.$transaction(async (tx) => {
+      const session = await tx.staffClockSession.update({
+        where: { id: existing.id },
+        data: {
+          clockOutAt,
+          status: 'CLOSED',
+          currentBreakStartedAt: null,
+          accumulatedBreakMinutes: breakMinutes,
+          managerNote: data.note?.trim() || existing.managerNote || null
+        }
+      });
+      await tx.staffClockEvent.create({
+        data: {
+          sessionId: existing.id,
+          staffProfileId: actor.id,
+          rosterShiftId: existing.rosterShiftId,
+          venue: existing.venue,
+          eventType: 'CLOCK_OUT',
+          occurredAt: clockOutAt,
+          createdById: actor.id,
+          metadata: existing.currentBreakStartedAt ? { breakClosedOnClockOut: true } : {}
+        }
+      });
+      return tx.staffClockSession.findUniqueOrThrow({
+        where: { id: session.id },
+        include: {
+          events: { orderBy: [{ occurredAt: 'asc' }] },
+          rosterShift: {
+            include: {
+              staffProfile: {
+                select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+              },
+              shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+            }
+          }
+        }
+      });
+    });
+
+    return toClockSessionPayload(updated);
+  },
+
+  async startBreak(actor: AuthUser, input: unknown) {
+    staffClockBreakInputSchema.parse(input ?? {});
+    const existing = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      orderBy: [{ clockInAt: 'desc' }]
+    });
+    if (!existing) {
+      throw new HttpError(400, 'No active clock session found.');
+    }
+    if (existing.currentBreakStartedAt) {
+      throw new HttpError(400, 'A break is already in progress.');
+    }
+
+    const occurredAt = new Date();
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.staffClockSession.update({
+        where: { id: existing.id },
+        data: { currentBreakStartedAt: occurredAt }
+      });
+      await tx.staffClockEvent.create({
+        data: {
+          sessionId: existing.id,
+          staffProfileId: actor.id,
+          rosterShiftId: existing.rosterShiftId,
+          venue: existing.venue,
+          eventType: 'START_BREAK',
+          occurredAt,
+          createdById: actor.id,
+          metadata: {}
+        }
+      });
+      return tx.staffClockSession.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: {
+          events: { orderBy: [{ occurredAt: 'asc' }] },
+          rosterShift: {
+            include: {
+              staffProfile: {
+                select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+              },
+              shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+            }
+          }
+        }
+      });
+    });
+    return toClockSessionPayload(updated);
+  },
+
+  async endBreak(actor: AuthUser, input: unknown) {
+    staffClockBreakInputSchema.parse(input ?? {});
+    const existing = await prisma.staffClockSession.findFirst({
+      where: { staffProfileId: actor.id, status: 'OPEN', clockOutAt: null },
+      orderBy: [{ clockInAt: 'desc' }]
+    });
+    if (!existing) {
+      throw new HttpError(400, 'No active clock session found.');
+    }
+    if (!existing.currentBreakStartedAt) {
+      throw new HttpError(400, 'No active break found.');
+    }
+
+    const occurredAt = new Date();
+    const breakMinutes = sessionBreakMinutes(existing, occurredAt);
+    const updated = await prisma.$transaction(async (tx) => {
+      await tx.staffClockSession.update({
+        where: { id: existing.id },
+        data: {
+          currentBreakStartedAt: null,
+          accumulatedBreakMinutes: breakMinutes
+        }
+      });
+      await tx.staffClockEvent.create({
+        data: {
+          sessionId: existing.id,
+          staffProfileId: actor.id,
+          rosterShiftId: existing.rosterShiftId,
+          venue: existing.venue,
+          eventType: 'END_BREAK',
+          occurredAt,
+          createdById: actor.id,
+          metadata: { breakMinutes }
+        }
+      });
+      return tx.staffClockSession.findUniqueOrThrow({
+        where: { id: existing.id },
+        include: {
+          events: { orderBy: [{ occurredAt: 'asc' }] },
+          rosterShift: {
+            include: {
+              staffProfile: {
+                select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+              },
+              shiftConfirmations: { where: { staffProfileId: actor.id }, orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+            }
+          }
+        }
+      });
+    });
+    return toClockSessionPayload(updated);
+  },
+
+  async getMyHome(actor: AuthUser) {
+    const member = await this.getById(actor.id, actor);
+    const clock = await this.getMyClockStatus(actor);
+    const announcements = await communicationsService.list(
+      { appId: 'STAFF', venue: member.venue ?? '', channel: 'general' },
+      actor
+    );
+    const leave = await prisma.staffLeaveRequest.findMany({
+      where: {
+        staffProfileId: actor.id,
+        endDate: { gte: new Date(new Date().getTime() - 24 * 60 * 60 * 1000) },
+        status: { in: ['PENDING', 'APPROVED'] }
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      },
+      orderBy: [{ startDate: 'asc' }],
+      take: 6
+    });
+    const reminderCutoff = new Date();
+    reminderCutoff.setDate(reminderCutoff.getDate() + 30);
+    const complianceReminders = [
+      ...member.records
+        .filter((record) =>
+          record.status === 'PENDING' ||
+          record.status === 'EXPIRED' ||
+          (record.expiryDate && new Date(record.expiryDate) <= reminderCutoff)
+        )
+        .map((record) => ({
+          id: record.id,
+          kind: 'RECORD' as const,
+          title: record.title,
+          detail: `${record.recordType} · ${record.status}`,
+          dueAt: record.expiryDate,
+          status: record.status
+        })),
+      ...member.trainingRecords
+        .filter((record) => record.status !== 'COMPLETED')
+        .map((record) => ({
+          id: record.id,
+          kind: 'TRAINING' as const,
+          title: record.module?.title ?? 'Training module',
+          detail: `${record.module?.category || 'Training'} · ${record.status.replace('_', ' ')}`,
+          dueAt: record.expiresAt,
+          status: record.status
+        }))
+    ]
+      .sort((left, right) => {
+        const leftAt = left.dueAt ? new Date(left.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+        const rightAt = right.dueAt ? new Date(right.dueAt).getTime() : Number.MAX_SAFE_INTEGER;
+        return leftAt - rightAt;
+      })
+      .slice(0, 8);
+
+    return {
+      member: member
+        ? {
+            id: member.id,
+            firstName: member.firstName,
+            lastName: member.lastName,
+            roleTitle: member.roleTitle,
+            venue: member.venue
+          }
+        : null,
+      todayShift: clock.currentShift,
+      nextShift: clock.nextShift,
+      clock,
+      upcomingLeave: leave.map(toStaffLeaveRequest),
+      complianceReminders,
+      announcements: announcements.announcements
+    };
+  },
+
+  async getManagerOperations(input: unknown, actor: AuthUser) {
+    if (actor.role === 'STAFF' && !actor.isAdmin) {
+      throw new HttpError(403, 'Manager access required');
+    }
+
+    const data = managerDashboardQuerySchema.parse(input);
+    const venue = scopeVenueForActor(data.venue?.trim(), actor) ?? '';
+    const { start, end, key } = dayRange(data.date);
+    const pendingEnd = new Date(end.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const now = new Date();
+    const shiftVenueWhere = venue
+      ? { OR: [{ venue }, { venue: null, staffProfile: { venue } }] }
+      : {};
+    const sessionVenueWhere = venue
+      ? { OR: [{ venue }, { venue: null, staffProfile: { venue } }, { venue: null, rosterShift: { venue } }, { venue: null, rosterShift: { venue: null, staffProfile: { venue } } }] }
+      : {};
+
+    const [todaysShifts, relevantSessions, pendingConfirmations] = await Promise.all([
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
+          ...shiftVenueWhere
+        },
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+          },
+          shiftConfirmations: { orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+        },
+        orderBy: [{ startsAt: 'asc' }]
+      }),
+      prisma.staffClockSession.findMany({
+        where: {
+          clockInAt: { lt: end },
+          OR: [{ clockOutAt: null }, { clockOutAt: { gte: start } }],
+          ...sessionVenueWhere
+        },
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+          },
+          events: { orderBy: [{ occurredAt: 'asc' }] },
+          rosterShift: {
+            include: {
+              staffProfile: {
+                select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+              },
+              shiftConfirmations: { orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+            }
+          }
+        },
+        orderBy: [{ clockInAt: 'desc' }]
+      }),
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { gte: start, lt: pendingEnd },
+          status: 'PUBLISHED',
+          shiftConfirmations: { none: {} },
+          ...shiftVenueWhere
+        },
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
+          },
+          shiftConfirmations: { orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+        },
+        orderBy: [{ startsAt: 'asc' }],
+        take: 20
+      })
+    ]);
+
+    const sessionByShiftId = new Map<string, typeof relevantSessions[number]>();
+    const openSessions = relevantSessions.filter((session) => session.status === 'OPEN' && !session.clockOutAt);
+    for (const session of relevantSessions) {
+      if (session.rosterShiftId && !sessionByShiftId.has(session.rosterShiftId)) {
+        sessionByShiftId.set(session.rosterShiftId, session);
+      }
+    }
+
+    const todaysStaff = todaysShifts.map((shift) => {
+      const session = sessionByShiftId.get(shift.id) ?? null;
+      let state: 'SCHEDULED' | 'CLOCKED_IN' | 'ON_BREAK' | 'LATE' | 'MISSED' | 'CLOCKED_OUT' = 'SCHEDULED';
+      if (session?.status === 'OPEN' && !session.clockOutAt) {
+        state = session.currentBreakStartedAt ? 'ON_BREAK' : 'CLOCKED_IN';
+      } else if (session?.clockOutAt) {
+        state = 'CLOCKED_OUT';
+      } else if (now >= shift.endsAt) {
+        state = 'MISSED';
+      } else if (now >= lateThreshold(shift.startsAt)) {
+        state = 'LATE';
+      }
+
+      return {
+        shift: toRosterShiftPayload(shift),
+        staffProfile: shift.staffProfile,
+        confirmation: shiftConfirmationFor(shift.shiftConfirmations),
+        activeSession: session ? toClockSessionPayload(session) : null,
+        state
+      };
+    });
+
+    const clockExceptions: Array<{
+      id: string;
+      kind: 'OPEN_SESSION' | 'BREAK_OVERDUE' | 'MISSED_CLOCK_IN' | 'LATE_CLOCK_IN';
+      severity: 'warning' | 'danger';
+      summary: string;
+      detail: string;
+      venue: string | null;
+      staffProfile: { id: string; firstName: string; lastName: string; roleTitle: string; venue: string | null } | null;
+      shift: ReturnType<typeof toRosterShiftPayload> | null;
+      session: ReturnType<typeof toClockSessionPayload> | null;
+    }> = [];
+
+    for (const row of todaysStaff) {
+      if (row.state === 'LATE') {
+        clockExceptions.push({
+          id: `late:${row.shift.id}`,
+          kind: 'LATE_CLOCK_IN',
+          severity: 'warning',
+          summary: `${row.staffProfile?.firstName ?? 'Staff'} is late to clock in.`,
+          detail: `${row.shift.startsAt} · ${row.shift.venue || row.staffProfile?.venue || 'No venue'}`,
+          venue: row.shift.venue || row.staffProfile?.venue || null,
+          staffProfile: row.staffProfile,
+          shift: row.shift,
+          session: row.activeSession
+        });
+      } else if (row.state === 'MISSED') {
+        clockExceptions.push({
+          id: `missed:${row.shift.id}`,
+          kind: 'MISSED_CLOCK_IN',
+          severity: 'danger',
+          summary: `${row.staffProfile?.firstName ?? 'Staff'} missed a clock-in.`,
+          detail: `${row.shift.startsAt} · ${row.shift.venue || row.staffProfile?.venue || 'No venue'}`,
+          venue: row.shift.venue || row.staffProfile?.venue || null,
+          staffProfile: row.staffProfile,
+          shift: row.shift,
+          session: null
+        });
+      }
+    }
+
+    for (const session of openSessions) {
+      const sessionPayload = toClockSessionPayload(session);
+      const breakMinutes = sessionBreakMinutes(session, now);
+      const shiftEnd = session.rosterShift?.endsAt ?? null;
+      if (session.currentBreakStartedAt && breakMinutes > 60) {
+        clockExceptions.push({
+          id: `break:${session.id}`,
+          kind: 'BREAK_OVERDUE',
+          severity: 'warning',
+          summary: `${session.staffProfile?.firstName ?? 'Staff'} has an overdue break.`,
+          detail: `${breakMinutes} minutes recorded on break.`,
+          venue: session.venue || session.staffProfile?.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || null,
+          staffProfile: session.staffProfile,
+          shift: session.rosterShift ? toRosterShiftPayload(session.rosterShift) : null,
+          session: sessionPayload
+        });
+      }
+      if ((shiftEnd && now.getTime() > shiftEnd.getTime() + 15 * 60 * 1000) || (!shiftEnd && openSessionDurationMinutes(session, now) > 12 * 60)) {
+        clockExceptions.push({
+          id: `open:${session.id}`,
+          kind: 'OPEN_SESSION',
+          severity: 'danger',
+          summary: `${session.staffProfile?.firstName ?? 'Staff'} still has an open clock session.`,
+          detail: shiftEnd ? `Shift ended at ${shiftEnd.toISOString()}.` : `${openSessionDurationMinutes(session, now)} minutes since clock-in.`,
+          venue: session.venue || session.staffProfile?.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || null,
+          staffProfile: session.staffProfile,
+          shift: session.rosterShift ? toRosterShiftPayload(session.rosterShift) : null,
+          session: sessionPayload
+        });
+      }
+    }
+
+    return {
+      date: key,
+      venue,
+      generatedAt: now.toISOString(),
+      metrics: {
+        scheduledStaff: new Set(todaysStaff.map((row) => row.shift.staffProfileId)).size,
+        clockedIn: todaysStaff.filter((row) => row.state === 'CLOCKED_IN').length,
+        onBreak: todaysStaff.filter((row) => row.state === 'ON_BREAK').length,
+        lateClockIns: todaysStaff.filter((row) => row.state === 'LATE').length,
+        missedClockIns: todaysStaff.filter((row) => row.state === 'MISSED').length,
+        pendingConfirmations: pendingConfirmations.length,
+        clockExceptions: clockExceptions.length
+      },
+      todaysStaff,
+      clockedIn: openSessions.map(toClockSessionPayload),
+      pendingConfirmations: pendingConfirmations.map((shift) => ({
+        shift: toRosterShiftPayload(shift),
+        staffProfile: shift.staffProfile
+      })),
+      clockExceptions
+    };
+  },
+
+  async listTimesheets(
+    start?: string,
+    end?: string,
+    status?: string,
+    venue?: string,
+    staffProfileId?: string,
+    actor?: AuthUser
+  ) {
     const now = new Date();
     const startDate = start ? parseDate(start, 'Timesheet start date') : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
     const endDate = end ? parseDate(end, 'Timesheet end date') : new Date(startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const scopedVenue = scopeVenueForActor(venue, actor);
+
+    if (actor?.role === 'STAFF' && staffProfileId && staffProfileId !== actor.id) {
+      throw new HttpError(403, 'You can only view your own timesheets.');
+    }
+    if (actor && actor.role !== 'STAFF' && staffProfileId) {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    }
 
     return prisma.timesheet.findMany({
       where: {
         workDate: { gte: startDate, lt: endDate },
         ...(status && status !== 'all' ? { status: status as never } : {}),
-        ...(venue && venue !== 'all' ? { venue } : {}),
-        ...(staffProfileId ? { staffProfileId } : {})
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {}),
+        ...(staffProfileId ? { staffProfileId } : actor?.role === 'STAFF' ? { staffProfileId: actor.id } : {})
       },
       orderBy: [{ workDate: 'desc' }, { clockInAt: 'asc' }],
       include: {
@@ -2030,9 +3082,24 @@ export const staffService = {
     });
   },
 
-  async createTimesheet(input: unknown, actorId?: string) {
+  async createTimesheet(input: unknown, actor?: AuthUser) {
     const data = timesheetCreateInputSchema.parse(input);
-    await this.getById(data.staffProfileId);
+    if (actor) {
+      await assertActorCanAccessStaffProfile(data.staffProfileId, actor);
+      if (actor.role === 'STAFF' && !['DRAFT', 'SUBMITTED'].includes(data.status)) {
+        throw new HttpError(403, 'Staff can only create draft or submitted timesheets.');
+      }
+    } else {
+      await this.getById(data.staffProfileId);
+    }
+    if (data.rosterShiftId) {
+      if (actor) {
+        await assertActorCanAccessRosterShift(data.rosterShiftId, actor);
+      } else {
+        const shift = await prisma.rosterShift.findUnique({ where: { id: data.rosterShiftId } });
+        if (!shift) throw new HttpError(404, 'Roster shift not found');
+      }
+    }
     const workDate = parseDate(data.workDate, 'Work date');
     const clockInAt = parseDate(data.clockInAt, 'Clock-in time');
     const clockOutAt = parseDate(data.clockOutAt, 'Clock-out time');
@@ -2055,7 +3122,7 @@ export const staffService = {
         status: data.status,
         submittedAt: data.status === 'SUBMITTED' ? new Date() : null,
         approvedAt: data.status === 'APPROVED' ? new Date() : null,
-        approvedById: data.status === 'APPROVED' ? actorId ?? null : null,
+        approvedById: data.status === 'APPROVED' ? actor?.id ?? null : null,
         xeroEmployeeId: data.xeroEmployeeId || null,
         xeroEarningsRateId: data.xeroEarningsRateId || null,
         paymentMethod: data.paymentMethod
@@ -2068,13 +3135,32 @@ export const staffService = {
     });
   },
 
-  async updateTimesheet(id: string, input: unknown) {
-    const existing = await prisma.timesheet.findUnique({ where: { id } });
+  async updateTimesheet(id: string, input: unknown, actor?: AuthUser) {
+    const existing = actor ? await assertActorCanAccessTimesheet(id, actor) : await prisma.timesheet.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Timesheet not found');
     if (['APPROVED', 'EXPORTED'].includes(existing.status)) {
       throw new HttpError(400, 'Approved or exported timesheets cannot be edited');
     }
     const data = timesheetUpdateInputSchema.parse(input);
+    if (actor?.role === 'STAFF') {
+      if (data.staffProfileId && data.staffProfileId !== actor.id) {
+        throw new HttpError(403, 'You can only edit your own timesheets.');
+      }
+      if (data.status && !['DRAFT', 'SUBMITTED'].includes(data.status)) {
+        throw new HttpError(403, 'Staff cannot change timesheet approval states.');
+      }
+    }
+    if (data.staffProfileId && actor) {
+      await assertActorCanAccessStaffProfile(data.staffProfileId, actor);
+    }
+    if (data.rosterShiftId) {
+      if (actor) {
+        await assertActorCanAccessRosterShift(data.rosterShiftId, actor);
+      } else {
+        const shift = await prisma.rosterShift.findUnique({ where: { id: data.rosterShiftId } });
+        if (!shift) throw new HttpError(404, 'Roster shift not found');
+      }
+    }
     const workDate = data.workDate !== undefined ? parseDate(data.workDate, 'Work date') : undefined;
     const clockInAt = data.clockInAt !== undefined ? parseDate(data.clockInAt, 'Clock-in time') : undefined;
     const clockOutAt = data.clockOutAt !== undefined ? parseDate(data.clockOutAt, 'Clock-out time') : undefined;
@@ -2113,8 +3199,8 @@ export const staffService = {
     });
   },
 
-  async approveTimesheet(id: string, approverId: string) {
-    const existing = await prisma.timesheet.findUnique({ where: { id } });
+  async approveTimesheet(id: string, approverId: string, actor?: AuthUser) {
+    const existing = actor ? await assertActorCanAccessTimesheet(id, actor) : await prisma.timesheet.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Timesheet not found');
     if (!['SUBMITTED', 'REJECTED'].includes(existing.status)) {
       throw new HttpError(400, 'Only submitted or rejected timesheets can be approved');
@@ -2131,9 +3217,9 @@ export const staffService = {
     });
   },
 
-  async markTimesheetCashPaid(id: string, approverId: string, input: unknown) {
+  async markTimesheetCashPaid(id: string, approverId: string, input: unknown, actor?: AuthUser) {
     const data = timesheetCashPaymentInputSchema.parse(input);
-    const existing = await prisma.timesheet.findUnique({ where: { id } });
+    const existing = actor ? await assertActorCanAccessTimesheet(id, actor) : await prisma.timesheet.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Timesheet not found');
     if (existing.status !== 'APPROVED') {
       throw new HttpError(400, 'Only approved timesheets can be marked cash paid');
@@ -2156,8 +3242,8 @@ export const staffService = {
     });
   },
 
-  async rejectTimesheet(id: string, input: unknown) {
-    const existing = await prisma.timesheet.findUnique({ where: { id } });
+  async rejectTimesheet(id: string, input: unknown, actor?: AuthUser) {
+    const existing = actor ? await assertActorCanAccessTimesheet(id, actor) : await prisma.timesheet.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Timesheet not found');
     if (existing.status === 'EXPORTED') {
       throw new HttpError(400, 'Exported timesheets cannot be rejected');
@@ -2175,16 +3261,17 @@ export const staffService = {
     });
   },
 
-  async exportTimesheetsForXero(input: unknown) {
+  async exportTimesheetsForXero(input: unknown, actor?: AuthUser) {
     const data = timesheetExportInputSchema.parse(input);
     const startDate = parseDate(data.start, 'Export start date');
     const endDate = parseDate(data.end, 'Export end date');
+    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
     const entries = await prisma.timesheet.findMany({
       where: {
         status: 'APPROVED',
         paymentMethod: { not: 'CASH' },
         workDate: { gte: startDate, lt: endDate },
-        ...(data.venue ? { venue: data.venue } : {})
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
       },
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
       include: {

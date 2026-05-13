@@ -64,12 +64,49 @@ export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED'
 export const staffLeaveTypeSchema = z.enum(['ANNUAL', 'SICK', 'PERSONAL', 'UNPAID', 'OTHER']);
 export const staffLeaveStatusSchema = z.enum(['PENDING', 'APPROVED', 'DECLINED', 'CANCELLED']);
 export const timesheetStatusSchema = z.enum(['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED']);
+export const staffClockSessionStatusSchema = z.enum(['OPEN', 'CLOSED', 'EXCEPTION']);
+export const staffClockEventTypeSchema = z.enum(['CLOCK_IN', 'START_BREAK', 'END_BREAK', 'CLOCK_OUT', 'MANAGER_REVIEW']);
 export const trainingModuleStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const staffTrainingStatusSchema = z.enum(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED']);
 export const reserveReservationStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
 export const reserveServicePeriodSchema = z.enum(['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT']);
 export const marketingChannelSchema = z.enum(['EMAIL', 'SMS']);
-export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SENT', 'ARCHIVED']);
+export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SCHEDULED', 'SENDING', 'SENT', 'CANCELLED', 'ARCHIVED']);
+export const guestTagTypeSchema = z.enum(['MANUAL', 'AUTOMATIC', 'SYSTEM', 'CUSTOM']);
+export const guestTagAssignmentSourceSchema = z.enum(['MANUAL', 'AUTOMATIC', 'SYSTEM']);
+export const marketingEmailTemplateStatusSchema = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']);
+export const marketingAutomationTriggerTypeSchema = z.enum([
+  'FIRST_VISIT_COMPLETED',
+  'REPEAT_VISIT',
+  'LAPSED_GUEST',
+  'BIRTHDAY_UPCOMING',
+  'RESERVATION_CREATED',
+  'RESERVATION_CANCELLED',
+  'NO_SHOW',
+  'BIG_SPENDER'
+]);
+export const marketingAutomationRunStatusSchema = z.enum(['PENDING', 'SKIPPED', 'SENT', 'FAILED', 'SIMULATED']);
+export const marketingContentAssetTypeSchema = z.enum(['IMAGE', 'VIDEO', 'DOCUMENT']);
+export const marketingContentAssetStorageProviderSchema = z.enum(['LOCAL', 'CLOUD_STORAGE', 'EXTERNAL_URL']);
+export const marketingContentAssetStatusSchema = z.enum(['DRAFT', 'READY', 'ARCHIVED']);
+export const marketingContentAssetSourceSchema = z.enum(['UPLOAD', 'IMPORT', 'GENERATED']);
+export const marketingContentPostStatusSchema = z.enum([
+  'IDEA',
+  'DRAFT',
+  'NEEDS_REVIEW',
+  'APPROVED',
+  'SCHEDULED',
+  'PUBLISHING',
+  'PUBLISHED',
+  'FAILED',
+  'CANCELLED',
+  'ARCHIVED'
+]);
+export const socialPlatformSchema = z.enum(['FACEBOOK', 'INSTAGRAM', 'TIKTOK']);
+export const marketingSocialAccountStatusSchema = z.enum(['SETUP_REQUIRED', 'CONNECTED', 'EXPIRED', 'DISABLED', 'ERROR']);
+export const marketingContentPublishStatusSchema = z.enum(['SIMULATED', 'QUEUED', 'SKIPPED', 'PUBLISHED', 'FAILED']);
+export const marketingContentPublishModeSchema = z.enum(['SIMULATION', 'LIVE']);
+export const googleReserveIntegrationStatusSchema = z.enum(['SETUP_REQUIRED', 'PENDING', 'ACTIVE', 'ERROR']);
 export const giftCardStatusSchema = z.enum(['PENDING_PAYMENT', 'ACTIVE', 'REDEEMED', 'CANCELLED', 'EXPIRED']);
 export const giftCardRedemptionStatusSchema = z.enum(['COMPLETED', 'VOIDED']);
 
@@ -621,6 +658,29 @@ export const timesheetCreateInputSchema = z.object({
 
 export const timesheetUpdateInputSchema = timesheetCreateInputSchema.partial();
 
+export const staffShiftConfirmationInputSchema = z.object({
+  note: z.string().trim().max(500).optional().or(z.literal(''))
+});
+
+export const staffClockInInputSchema = z.object({
+  rosterShiftId: z.string().optional().or(z.literal(''))
+});
+
+export const staffClockOutInputSchema = z.object({
+  note: z.string().trim().max(1000).optional().or(z.literal(''))
+});
+
+export const staffClockBreakInputSchema = z.object({
+  note: z.string().trim().max(1000).optional().or(z.literal(''))
+});
+
+export const staffOwnLeaveRequestInputSchema = z.object({
+  type: staffLeaveTypeSchema.default('ANNUAL'),
+  startDate: z.string().min(4),
+  endDate: z.string().min(4),
+  notes: z.string().trim().max(1000).optional().or(z.literal(''))
+}).superRefine(validateLeaveRange);
+
 export const timesheetApprovalInputSchema = z.object({
   reason: z.string().optional().or(z.literal(''))
 });
@@ -713,13 +773,20 @@ export const trainingPayRuleInputSchema = z.object({
 });
 
 export const reserveGuestInputSchema = z.object({
+  venue: z.string().min(1).optional().or(z.literal('')),
   firstName: z.string().min(1),
   lastName: z.string().min(1),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
+  birthday: z.string().optional().or(z.literal('')),
   tags: z.array(z.string()).default([]),
   allergyNotes: z.string().optional().or(z.literal('')),
-  visitNotes: z.string().optional().or(z.literal(''))
+  visitNotes: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal('')),
+  dietaryNotes: z.string().optional().or(z.literal('')),
+  preferences: z.record(z.string(), z.unknown()).optional(),
+  marketingOptIn: z.boolean().default(false),
+  source: z.string().optional().or(z.literal(''))
 });
 
 export const reserveTableInputSchema = z.object({
@@ -732,6 +799,8 @@ export const reserveTableInputSchema = z.object({
   isActive: z.boolean().default(true)
 });
 
+export const reserveGuestUpdateInputSchema = reserveGuestInputSchema.partial();
+
 export const reserveReservationInputSchema = z.object({
   venue: z.string().min(1),
   serviceDate: z.string().min(4),
@@ -743,12 +812,119 @@ export const reserveReservationInputSchema = z.object({
   source: z.string().optional().or(z.literal('')),
   tableId: z.string().optional().or(z.literal('')),
   guestId: z.string().optional().or(z.literal('')),
+  availabilityRuleId: z.string().optional().or(z.literal('')),
   guest: reserveGuestInputSchema.optional(),
+  guestName: z.string().optional().or(z.literal('')),
+  guestEmail: z.string().email().optional().or(z.literal('')),
+  guestPhone: z.string().optional().or(z.literal('')),
   occasion: z.string().optional().or(z.literal('')),
-  notes: z.string().optional().or(z.literal(''))
+  notes: z.string().optional().or(z.literal('')),
+  specialRequests: z.string().optional().or(z.literal('')),
+  internalNotes: z.string().optional().or(z.literal('')),
+  marketingOptIn: z.boolean().default(false)
 });
 
 export const reserveReservationUpdateInputSchema = reserveReservationInputSchema.partial();
+
+const reserveAvailabilityRuleBaseSchema = z.object({
+  venue: z.string().min(1),
+  name: z.string().min(2),
+  servicePeriod: reserveServicePeriodSchema.optional().nullable().or(z.literal('')),
+  active: z.boolean().default(true),
+  defaultDurationMinutes: z.coerce.number().int().min(30).max(480).default(120),
+  minPartySize: z.coerce.number().int().min(1).max(50).default(1),
+  maxPartySize: z.coerce.number().int().min(1).max(50),
+  daysOfWeek: z.array(z.coerce.number().int().min(0).max(6)).min(1),
+  startTime: z.string().regex(/^\d{2}:\d{2}$/),
+  endTime: z.string().regex(/^\d{2}:\d{2}$/),
+  intervalMinutes: z.coerce.number().int().min(15).max(240).default(30),
+  capacity: z.coerce.number().int().positive(),
+  onlineEnabled: z.boolean().default(true),
+  googleReserveEnabled: z.boolean().default(false)
+});
+
+export const reserveAvailabilityRuleInputSchema = reserveAvailabilityRuleBaseSchema.superRefine((data, ctx) => {
+  if (data.maxPartySize < data.minPartySize) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxPartySize'],
+      message: 'Max party size must be at least the minimum party size.'
+    });
+  }
+  if (data.endTime <= data.startTime) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endTime'],
+      message: 'End time must be after start time.'
+    });
+  }
+});
+
+export const reserveAvailabilityRuleUpdateInputSchema = reserveAvailabilityRuleBaseSchema.partial().superRefine((data, ctx) => {
+  if (
+    data.minPartySize !== undefined &&
+    data.maxPartySize !== undefined &&
+    data.maxPartySize < data.minPartySize
+  ) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['maxPartySize'],
+      message: 'Max party size must be at least the minimum party size.'
+    });
+  }
+  if (data.startTime && data.endTime && data.endTime <= data.startTime) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['endTime'],
+      message: 'End time must be after start time.'
+    });
+  }
+});
+
+export const reserveBlackoutInputSchema = z.object({
+  venue: z.string().min(1),
+  name: z.string().min(2),
+  reason: z.string().optional().or(z.literal('')),
+  startAt: z.string().min(4),
+  endAt: z.string().min(4)
+});
+
+export const reservePublicAvailabilityInputSchema = z.object({
+  venue: z.string().min(1),
+  date: z.string().min(4),
+  partySize: z.coerce.number().int().min(1).max(20),
+  servicePeriod: reserveServicePeriodSchema.optional().nullable().or(z.literal(''))
+});
+
+export const reservePublicBookingInputSchema = z.object({
+  venue: z.string().min(1),
+  availabilityRuleId: z.string().optional().or(z.literal('')),
+  serviceDate: z.string().min(4),
+  startsAt: z.string().min(4),
+  partySize: z.coerce.number().int().min(1).max(20),
+  durationMinutes: z.coerce.number().int().min(30).max(480).default(120),
+  firstName: z.string().min(1),
+  lastName: z.string().min(1),
+  email: z.string().email().optional().or(z.literal('')),
+  phone: z.string().min(6),
+  occasion: z.string().optional().or(z.literal('')),
+  specialRequests: z.string().optional().or(z.literal('')),
+  marketingOptIn: z.boolean().default(false)
+});
+
+export const marketingSegmentDefinitionSchema = z.object({
+  search: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal('')),
+  guestIds: z.array(z.string().min(1)).default([]),
+  tagIds: z.array(z.string().min(1)).default([]),
+  marketingOptInOnly: z.boolean().default(false),
+  emailOnly: z.boolean().default(false),
+  includeUnsubscribed: z.boolean().default(false),
+  minVisits: z.coerce.number().int().nonnegative().optional(),
+  maxDaysSinceVisit: z.coerce.number().int().nonnegative().optional(),
+  birthdaysWithinDays: z.coerce.number().int().positive().max(365).optional(),
+  minSpendCents: z.coerce.number().int().nonnegative().optional()
+});
 
 export const marketingContactInputSchema = z.object({
   firstName: z.string().min(1),
@@ -773,11 +949,41 @@ export const marketingSegmentInputSchema = z.object({
   name: z.string().min(2),
   description: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
-  rules: z.record(z.string(), z.unknown()).default({}),
+  rules: marketingSegmentDefinitionSchema.default({}),
   isActive: z.boolean().default(true)
 });
 
+export const marketingTagInputSchema = z.object({
+  venue: z.string().optional().or(z.literal('')),
+  name: z.string().min(2),
+  slug: z.string().optional().or(z.literal('')),
+  description: z.string().optional().or(z.literal('')),
+  type: guestTagTypeSchema.default('MANUAL'),
+  color: z.string().optional().or(z.literal('')),
+  ruleDefinition: marketingSegmentDefinitionSchema.optional(),
+  active: z.boolean().default(true)
+});
+
+export const marketingTagUpdateInputSchema = marketingTagInputSchema.partial();
+
+export const marketingGuestTagAssignmentInputSchema = z.object({
+  tagId: z.string().min(1)
+});
+
+export const marketingTemplateInputSchema = z.object({
+  venue: z.string().optional().or(z.literal('')),
+  name: z.string().min(2),
+  subject: z.string().min(2),
+  previewText: z.string().optional().or(z.literal('')),
+  htmlBody: z.string().min(5),
+  textBody: z.string().optional().or(z.literal('')),
+  status: marketingEmailTemplateStatusSchema.default('DRAFT')
+});
+
+export const marketingTemplateUpdateInputSchema = marketingTemplateInputSchema.partial();
+
 export const marketingCampaignInputSchema = z.object({
+  venue: z.string().min(1),
   name: z.string().min(2),
   channel: marketingChannelSchema.default('EMAIL'),
   status: marketingCampaignStatusSchema.default('DRAFT'),
@@ -785,11 +991,99 @@ export const marketingCampaignInputSchema = z.object({
   subject: z.string().optional().or(z.literal('')),
   previewText: z.string().optional().or(z.literal('')),
   body: z.string().min(5),
+  textBody: z.string().optional().or(z.literal('')),
   scheduledFor: z.string().optional().or(z.literal('')),
-  contactIds: z.array(z.string().min(1)).default([])
+  guestIds: z.array(z.string().min(1)).default([]),
+  contactIds: z.array(z.string().min(1)).default([]),
+  segmentDefinition: marketingSegmentDefinitionSchema.default({})
 });
 
 export const marketingCampaignUpdateInputSchema = marketingCampaignInputSchema.partial();
+
+export const marketingSegmentPreviewInputSchema = z.object({
+  venue: z.string().optional().or(z.literal('')),
+  channel: marketingChannelSchema.default('EMAIL'),
+  segmentDefinition: marketingSegmentDefinitionSchema.default({})
+});
+
+export const marketingAutomationInputSchema = z.object({
+  venue: z.string().min(1),
+  name: z.string().min(2),
+  triggerType: marketingAutomationTriggerTypeSchema,
+  segmentDefinition: marketingSegmentDefinitionSchema.default({}),
+  emailTemplateId: z.string().optional().or(z.literal('')),
+  delayHours: z.coerce.number().int().min(0).max(24 * 365).default(0),
+  active: z.boolean().default(false)
+});
+
+export const marketingAutomationUpdateInputSchema = marketingAutomationInputSchema.partial();
+
+export const marketingContentAssetInputSchema = z.object({
+  venue: z.string().min(1),
+  title: z.string().trim().min(2).max(140),
+  description: z.string().trim().max(2000).optional().or(z.literal('')),
+  assetType: marketingContentAssetTypeSchema,
+  mimeType: z.string().trim().min(3).max(120),
+  fileName: z.string().trim().min(1).max(240),
+  fileSizeBytes: z.coerce.number().int().nonnegative().max(250 * 1024 * 1024),
+  storageProvider: marketingContentAssetStorageProviderSchema.default('EXTERNAL_URL'),
+  storagePath: z.string().trim().max(1000).optional().or(z.literal('')),
+  publicUrl: z.string().trim().url().optional().or(z.literal('')),
+  thumbnailUrl: z.string().trim().url().optional().or(z.literal('')),
+  width: z.coerce.number().int().positive().optional().nullable(),
+  height: z.coerce.number().int().positive().optional().nullable(),
+  durationSeconds: z.coerce.number().int().positive().optional().nullable(),
+  status: marketingContentAssetStatusSchema.default('READY'),
+  tags: z.array(z.string().trim().min(1).max(50)).default([]),
+  source: marketingContentAssetSourceSchema.default('UPLOAD')
+});
+
+export const marketingContentAssetUpdateInputSchema = marketingContentAssetInputSchema.partial();
+
+export const marketingContentPostInputSchema = z.object({
+  venue: z.string().min(1),
+  title: z.string().trim().min(2).max(160),
+  caption: z.string().trim().min(1).max(2200),
+  status: marketingContentPostStatusSchema.default('DRAFT'),
+  scheduledAt: z.string().optional().or(z.literal('')),
+  campaignId: z.string().optional().or(z.literal('')),
+  targetChannels: z.array(socialPlatformSchema).min(1).default(['FACEBOOK']),
+  contentPillar: z.string().trim().max(80).optional().or(z.literal('')),
+  approvalRequired: z.boolean().default(true)
+});
+
+export const marketingContentPostUpdateInputSchema = marketingContentPostInputSchema.partial();
+
+export const marketingContentPostAssetInputSchema = z.object({
+  assetId: z.string().min(1),
+  sortOrder: z.coerce.number().int().nonnegative().default(0)
+});
+
+export const marketingContentScheduleInputSchema = z.object({
+  scheduledAt: z.string().min(4)
+});
+
+export const marketingSocialAccountInputSchema = z.object({
+  venue: z.string().min(1),
+  platform: socialPlatformSchema,
+  displayName: z.string().trim().min(2).max(120),
+  handle: z.string().trim().max(120).optional().or(z.literal('')),
+  externalAccountId: z.string().trim().max(180).optional().or(z.literal('')),
+  status: marketingSocialAccountStatusSchema.default('SETUP_REQUIRED'),
+  scopes: z.array(z.string().trim().min(1).max(120)).default([]),
+  tokenSecretRef: z.string().trim().max(240).optional().or(z.literal('')),
+  lastError: z.string().trim().max(1000).optional().or(z.literal(''))
+});
+
+export const marketingSocialAccountUpdateInputSchema = marketingSocialAccountInputSchema.partial();
+
+export const googleReserveIntegrationSettingInputSchema = z.object({
+  venue: z.string().min(1),
+  enabled: z.boolean().default(false),
+  merchantId: z.string().optional().or(z.literal('')),
+  integrationStatus: googleReserveIntegrationStatusSchema.default('SETUP_REQUIRED'),
+  lastError: z.string().optional().or(z.literal(''))
+});
 
 export const giftCardCheckoutInputSchema = z.object({
   amountCents: z.coerce.number().int().min(1000).max(200000),
@@ -874,6 +1168,12 @@ export type GiftCardSettings = {
   emailIntro: string;
   primaryColor: string;
   accentColor: string;
+};
+
+export type GiftCardPublicConfig = {
+  settings: GiftCardSettings;
+  checkoutMode: 'live' | 'test' | 'setup_required';
+  checkoutNotice: string | null;
 };
 
 export const DEFAULT_GIFT_CARD_SETTINGS: GiftCardSettings = {
@@ -1152,12 +1452,23 @@ export type RosterShiftStatus = z.infer<typeof rosterShiftStatusSchema>;
 export type StaffLeaveType = z.infer<typeof staffLeaveTypeSchema>;
 export type StaffLeaveStatus = z.infer<typeof staffLeaveStatusSchema>;
 export type TimesheetStatus = z.infer<typeof timesheetStatusSchema>;
+export type StaffClockSessionStatus = z.infer<typeof staffClockSessionStatusSchema>;
+export type StaffClockEventType = z.infer<typeof staffClockEventTypeSchema>;
 export type TrainingModuleStatus = z.infer<typeof trainingModuleStatusSchema>;
 export type StaffTrainingStatus = z.infer<typeof staffTrainingStatusSchema>;
 export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSchema>;
 export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
 export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
 export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
+export type MarketingContentAssetType = z.infer<typeof marketingContentAssetTypeSchema>;
+export type MarketingContentAssetStorageProvider = z.infer<typeof marketingContentAssetStorageProviderSchema>;
+export type MarketingContentAssetStatus = z.infer<typeof marketingContentAssetStatusSchema>;
+export type MarketingContentAssetSource = z.infer<typeof marketingContentAssetSourceSchema>;
+export type MarketingContentPostStatus = z.infer<typeof marketingContentPostStatusSchema>;
+export type SocialPlatform = z.infer<typeof socialPlatformSchema>;
+export type MarketingSocialAccountStatus = z.infer<typeof marketingSocialAccountStatusSchema>;
+export type MarketingContentPublishStatus = z.infer<typeof marketingContentPublishStatusSchema>;
+export type MarketingContentPublishMode = z.infer<typeof marketingContentPublishModeSchema>;
 export type GiftCardStatus = z.infer<typeof giftCardStatusSchema>;
 export type GiftCardRedemptionStatus = z.infer<typeof giftCardRedemptionStatusSchema>;
 export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
@@ -1175,19 +1486,48 @@ export type RosterShiftInput = z.infer<typeof rosterShiftInputSchema>;
 export type RosterShiftUpdateInput = z.infer<typeof rosterShiftUpdateInputSchema>;
 export type TimesheetCreateInput = z.infer<typeof timesheetCreateInputSchema>;
 export type TimesheetUpdateInput = z.infer<typeof timesheetUpdateInputSchema>;
+export type StaffShiftConfirmationInput = z.infer<typeof staffShiftConfirmationInputSchema>;
+export type StaffClockInInput = z.infer<typeof staffClockInInputSchema>;
+export type StaffClockOutInput = z.infer<typeof staffClockOutInputSchema>;
+export type StaffClockBreakInput = z.infer<typeof staffClockBreakInputSchema>;
+export type StaffOwnLeaveRequestInput = z.infer<typeof staffOwnLeaveRequestInputSchema>;
 export type TrainingModuleInput = z.infer<typeof trainingModuleInputSchema>;
 export type TrainingPayRuleInput = z.infer<typeof trainingPayRuleInputSchema>;
 export type StaffTrainingAssignInput = z.infer<typeof staffTrainingAssignInputSchema>;
 export type StaffTrainingUpdateInput = z.infer<typeof staffTrainingUpdateInputSchema>;
 export type ReserveGuestInput = z.infer<typeof reserveGuestInputSchema>;
+export type ReserveGuestUpdateInput = z.infer<typeof reserveGuestUpdateInputSchema>;
 export type ReserveTableInput = z.infer<typeof reserveTableInputSchema>;
 export type ReserveReservationInput = z.infer<typeof reserveReservationInputSchema>;
 export type ReserveReservationUpdateInput = z.infer<typeof reserveReservationUpdateInputSchema>;
+export type ReserveAvailabilityRuleInput = z.infer<typeof reserveAvailabilityRuleInputSchema>;
+export type ReserveAvailabilityRuleUpdateInput = z.infer<typeof reserveAvailabilityRuleUpdateInputSchema>;
+export type ReserveBlackoutInput = z.infer<typeof reserveBlackoutInputSchema>;
+export type ReservePublicAvailabilityInput = z.infer<typeof reservePublicAvailabilityInputSchema>;
+export type ReservePublicBookingInput = z.infer<typeof reservePublicBookingInputSchema>;
+export type MarketingSegmentDefinition = z.infer<typeof marketingSegmentDefinitionSchema>;
 export type MarketingContactInput = z.infer<typeof marketingContactInputSchema>;
 export type MarketingContactUpdateInput = z.infer<typeof marketingContactUpdateInputSchema>;
 export type MarketingSegmentInput = z.infer<typeof marketingSegmentInputSchema>;
+export type MarketingTagInput = z.infer<typeof marketingTagInputSchema>;
+export type MarketingTagUpdateInput = z.infer<typeof marketingTagUpdateInputSchema>;
+export type MarketingGuestTagAssignmentInput = z.infer<typeof marketingGuestTagAssignmentInputSchema>;
+export type MarketingTemplateInput = z.infer<typeof marketingTemplateInputSchema>;
+export type MarketingTemplateUpdateInput = z.infer<typeof marketingTemplateUpdateInputSchema>;
 export type MarketingCampaignInput = z.infer<typeof marketingCampaignInputSchema>;
 export type MarketingCampaignUpdateInput = z.infer<typeof marketingCampaignUpdateInputSchema>;
+export type MarketingSegmentPreviewInput = z.infer<typeof marketingSegmentPreviewInputSchema>;
+export type MarketingAutomationInput = z.infer<typeof marketingAutomationInputSchema>;
+export type MarketingAutomationUpdateInput = z.infer<typeof marketingAutomationUpdateInputSchema>;
+export type MarketingContentAssetInput = z.infer<typeof marketingContentAssetInputSchema>;
+export type MarketingContentAssetUpdateInput = z.infer<typeof marketingContentAssetUpdateInputSchema>;
+export type MarketingContentPostInput = z.infer<typeof marketingContentPostInputSchema>;
+export type MarketingContentPostUpdateInput = z.infer<typeof marketingContentPostUpdateInputSchema>;
+export type MarketingContentPostAssetInput = z.infer<typeof marketingContentPostAssetInputSchema>;
+export type MarketingContentScheduleInput = z.infer<typeof marketingContentScheduleInputSchema>;
+export type MarketingSocialAccountInput = z.infer<typeof marketingSocialAccountInputSchema>;
+export type MarketingSocialAccountUpdateInput = z.infer<typeof marketingSocialAccountUpdateInputSchema>;
+export type GoogleReserveIntegrationSettingInput = z.infer<typeof googleReserveIntegrationSettingInputSchema>;
 export type GiftCardCheckoutInput = z.infer<typeof giftCardCheckoutInputSchema>;
 export type GiftCardLookupInput = z.infer<typeof giftCardLookupInputSchema>;
 export type GiftCardRedemptionInput = z.infer<typeof giftCardRedemptionInputSchema>;
@@ -1419,6 +1759,52 @@ export type RosterShift = {
   createdAt: string;
   updatedAt: string;
   staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue' | 'employmentStatus'>;
+  confirmation?: StaffShiftConfirmation | null;
+};
+
+export type StaffShiftConfirmation = {
+  id: string;
+  rosterShiftId: string;
+  staffProfileId: string;
+  note: string | null;
+  confirmedAt: string;
+  createdById: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StaffClockEvent = {
+  id: string;
+  sessionId: string;
+  staffProfileId: string;
+  rosterShiftId: string | null;
+  venue: string | null;
+  eventType: StaffClockEventType;
+  occurredAt: string;
+  createdById: string | null;
+  metadata: Record<string, unknown>;
+  createdAt: string;
+};
+
+export type StaffClockSession = {
+  id: string;
+  staffProfileId: string;
+  rosterShiftId: string | null;
+  venue: string | null;
+  area: string | null;
+  roleTitle: string | null;
+  clockInAt: string;
+  clockOutAt: string | null;
+  status: StaffClockSessionStatus;
+  currentBreakStartedAt: string | null;
+  accumulatedBreakMinutes: number;
+  managerNote: string | null;
+  reviewedAt: string | null;
+  reviewedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  events?: StaffClockEvent[];
+  rosterShift?: RosterShift | null;
 };
 
 export type RosterForecastSnapshot = {
@@ -1513,17 +1899,64 @@ export type StaffManagerDashboardPayload = {
   }>;
 };
 
+export type GuestTagType = z.infer<typeof guestTagTypeSchema>;
+export type GuestTagAssignmentSource = z.infer<typeof guestTagAssignmentSourceSchema>;
+export type MarketingEmailTemplateStatus = z.infer<typeof marketingEmailTemplateStatusSchema>;
+export type MarketingAutomationTriggerType = z.infer<typeof marketingAutomationTriggerTypeSchema>;
+export type MarketingAutomationRunStatus = z.infer<typeof marketingAutomationRunStatusSchema>;
+export type GoogleReserveIntegrationStatus = z.infer<typeof googleReserveIntegrationStatusSchema>;
+
+export type GuestTag = {
+  id: string;
+  venue: string | null;
+  name: string;
+  slug: string;
+  description: string | null;
+  type: GuestTagType;
+  color: string | null;
+  ruleDefinition: MarketingSegmentDefinition;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GuestTagAssignment = {
+  id: string;
+  guestId: string;
+  tagId: string;
+  source: GuestTagAssignmentSource;
+  assignedAt: string;
+  assignedByStaffId: string | null;
+  metadata: Record<string, unknown>;
+  tag: GuestTag;
+};
+
 export type ReserveGuest = {
   id: string;
+  venue: string | null;
   firstName: string;
   lastName: string;
   email: string | null;
   phone: string | null;
+  birthday: string | null;
   tags: string[];
   allergyNotes: string | null;
   visitNotes: string | null;
+  notes: string | null;
+  preferences: Record<string, unknown>;
+  dietaryNotes: string | null;
+  marketingOptIn: boolean;
+  emailUnsubscribedAt: string | null;
+  smsUnsubscribedAt: string | null;
+  source: string;
+  totalVisits: number;
+  totalSpendCents: number;
+  noShowCount: number;
+  lastVisitAt: string | null;
+  firstVisitAt: string | null;
   createdAt: string;
   updatedAt: string;
+  tagAssignments?: GuestTagAssignment[];
 };
 
 export type ReserveTable = {
@@ -1535,6 +1968,49 @@ export type ReserveTable = {
   maxCovers: number;
   sortOrder: number;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReserveAvailabilityRule = {
+  id: string;
+  venue: string;
+  name: string;
+  servicePeriod: ReserveServicePeriod | null;
+  active: boolean;
+  defaultDurationMinutes: number;
+  minPartySize: number;
+  maxPartySize: number;
+  daysOfWeek: number[];
+  startTime: string;
+  endTime: string;
+  intervalMinutes: number;
+  capacity: number;
+  onlineEnabled: boolean;
+  googleReserveEnabled: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReserveBlackout = {
+  id: string;
+  venue: string;
+  name: string;
+  reason: string | null;
+  startAt: string;
+  endAt: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type GoogleReserveIntegrationSetting = {
+  id: string;
+  venue: string;
+  enabled: boolean;
+  merchantId: string | null;
+  integrationStatus: GoogleReserveIntegrationStatus;
+  lastSyncAt: string | null;
+  lastError: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1551,13 +2027,23 @@ export type ReserveReservation = {
   source: string;
   tableId: string | null;
   guestId: string;
+  availabilityRuleId: string | null;
+  guestName: string | null;
+  guestEmail: string | null;
+  guestPhone: string | null;
   occasion: string | null;
   notes: string | null;
+  specialRequests: string | null;
+  internalNotes: string | null;
+  marketingOptIn: boolean;
   createdById: string | null;
+  cancelledAt: string | null;
+  completedAt: string | null;
   createdAt: string;
   updatedAt: string;
   guest: ReserveGuest;
   table: ReserveTable | null;
+  availabilityRule: ReserveAvailabilityRule | null;
 };
 
 export type ReserveDiarySummary = {
@@ -1574,6 +2060,67 @@ export type ReserveDiarySummary = {
     cancelled: number;
     noShow: number;
   };
+};
+
+export type ReserveDashboardPayload = {
+  date: string;
+  venue: string | null;
+  todayReservations: ReserveReservation[];
+  upcomingReservations: ReserveReservation[];
+  recentGuests: ReserveGuest[];
+  recentNoShows: ReserveReservation[];
+  availabilityRules: ReserveAvailabilityRule[];
+  integration: GoogleReserveIntegrationSetting | null;
+  totals: {
+    coversToday: number;
+    todayBookings: number;
+    cancellationsToday: number;
+    noShowsToday: number;
+    newGuests30Days: number;
+    repeatGuests30Days: number;
+  };
+};
+
+export type ReservePublicAvailabilitySlot = {
+  startsAt: string;
+  endsAt: string;
+  label: string;
+  capacityRemaining: number;
+  availabilityRuleId: string | null;
+  servicePeriod: ReserveServicePeriod | null;
+};
+
+export type ReservePublicAvailabilityResponse = {
+  venue: string;
+  serviceDate: string;
+  partySize: number;
+  slots: ReservePublicAvailabilitySlot[];
+};
+
+export type ReservePublicBookingConfirmation = {
+  id: string;
+  venue: string;
+  serviceDate: string;
+  startsAt: string;
+  endsAt: string;
+  covers: number;
+  guestName: string;
+  status: ReserveReservationStatus;
+  source: string;
+  marketingOptIn: boolean;
+  occasion: string | null;
+  specialRequests: string | null;
+  createdAt: string;
+};
+
+export type ReservePublicWidgetConfig = {
+  venues: Array<{
+    name: string;
+    onlineEnabled: boolean;
+    activeRules: number;
+    googleReserveReady: boolean;
+  }>;
+  limitations: string[];
 };
 
 export type MarketingContact = {
@@ -1601,8 +2148,22 @@ export type MarketingSegment = {
   name: string;
   description: string | null;
   venue: string | null;
-  rules: Record<string, unknown>;
+  rules: MarketingSegmentDefinition;
   isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingEmailTemplate = {
+  id: string;
+  venue: string | null;
+  name: string;
+  subject: string;
+  previewText: string | null;
+  htmlBody: string;
+  textBody: string | null;
+  status: MarketingEmailTemplateStatus;
+  createdByStaffId: string | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -1611,15 +2172,22 @@ export type MarketingCampaignRecipient = {
   id: string;
   campaignId: string;
   contactId: string;
+  guestId: string | null;
+  email: string | null;
   status: string;
+  skipReason: string | null;
   sentAt: string | null;
+  openedAt: string | null;
+  clickedAt: string | null;
   error: string | null;
   createdAt: string;
   contact: MarketingContact;
+  guest: ReserveGuest | null;
 };
 
 export type MarketingCampaign = {
   id: string;
+  venue: string | null;
   name: string;
   channel: MarketingChannel;
   status: MarketingCampaignStatus;
@@ -1627,26 +2195,187 @@ export type MarketingCampaign = {
   subject: string | null;
   previewText: string | null;
   body: string;
+  textBody: string | null;
+  segmentDefinition: MarketingSegmentDefinition;
   scheduledFor: string | null;
   sentAt: string | null;
+  simulatedAt: string | null;
   createdById: string | null;
   createdAt: string;
   updatedAt: string;
   recipients: MarketingCampaignRecipient[];
 };
 
+export type MarketingAutomation = {
+  id: string;
+  venue: string;
+  name: string;
+  triggerType: MarketingAutomationTriggerType;
+  segmentDefinition: MarketingSegmentDefinition;
+  emailTemplateId: string | null;
+  delayHours: number;
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  emailTemplate: MarketingEmailTemplate | null;
+};
+
+export type MarketingAutomationRun = {
+  id: string;
+  automationId: string;
+  guestId: string;
+  reservationId: string | null;
+  status: MarketingAutomationRunStatus;
+  reason: string | null;
+  createdAt: string;
+  processedAt: string | null;
+};
+
+export type MarketingSegmentPreviewPayload = {
+  guestCount: number;
+  includedCount: number;
+  skippedCount: number;
+  skippedReasons: Record<string, number>;
+  guests: ReserveGuest[];
+};
+
 export type MarketingOverview = {
-  contacts: MarketingContact[];
-  segments: MarketingSegment[];
+  guests: ReserveGuest[];
+  tags: GuestTag[];
+  templates: MarketingEmailTemplate[];
   campaigns: MarketingCampaign[];
+  automations: MarketingAutomation[];
+  recentReservations: ReserveReservation[];
   totals: {
-    contacts: number;
-    emailConsent: number;
-    smsConsent: number;
-    draftCampaigns: number;
-    readyCampaigns: number;
-    reserveGuestContacts: number;
+    guests: number;
+    optedInGuests: number;
+    unsubscribedGuests: number;
+    repeatVisitors: number;
+    bigSpenders: number;
+    lapsedGuests: number;
+    recentCampaigns: number;
+    activeAutomations: number;
   };
+};
+
+export type MarketingContentAsset = {
+  id: string;
+  venue: string;
+  uploadedByStaffId: string | null;
+  title: string;
+  description: string | null;
+  assetType: MarketingContentAssetType;
+  mimeType: string;
+  fileName: string;
+  fileSizeBytes: number;
+  storageProvider: MarketingContentAssetStorageProvider;
+  storagePath: string | null;
+  publicUrl: string | null;
+  thumbnailUrl: string | null;
+  width: number | null;
+  height: number | null;
+  durationSeconds: number | null;
+  status: MarketingContentAssetStatus;
+  tags: string[];
+  source: MarketingContentAssetSource;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingContentPostAsset = {
+  id: string;
+  postId: string;
+  assetId: string;
+  sortOrder: number;
+  createdAt: string;
+  asset: MarketingContentAsset;
+};
+
+export type MarketingContentPost = {
+  id: string;
+  venue: string;
+  createdByStaffId: string | null;
+  title: string;
+  caption: string;
+  status: MarketingContentPostStatus;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  campaignId: string | null;
+  targetChannels: SocialPlatform[];
+  contentPillar: string | null;
+  approvalRequired: boolean;
+  approvedByStaffId: string | null;
+  approvedAt: string | null;
+  failureReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+  assets: MarketingContentPostAsset[];
+};
+
+export type MarketingSocialAccount = {
+  id: string;
+  venue: string;
+  platform: SocialPlatform;
+  displayName: string;
+  handle: string | null;
+  externalAccountId: string | null;
+  status: MarketingSocialAccountStatus;
+  scopes: string[];
+  hasTokenSecretRef: boolean;
+  lastConnectedAt: string | null;
+  lastError: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type MarketingContentPublishAttempt = {
+  id: string;
+  postId: string;
+  platform: SocialPlatform;
+  socialAccountId: string | null;
+  status: MarketingContentPublishStatus;
+  mode: MarketingContentPublishMode;
+  requestPreview: Record<string, unknown> | null;
+  responsePreview: Record<string, unknown> | null;
+  errorMessage: string | null;
+  createdAt: string;
+  processedAt: string | null;
+};
+
+export type MarketingContentPlatformPreview = {
+  platform: SocialPlatform;
+  status: 'READY_TO_SIMULATE' | 'SETUP_REQUIRED' | 'MISSING_ASSET' | 'MISSING_CAPTION' | 'UNSUPPORTED_MEDIA_TYPE';
+  message: string;
+  requestPreview: Record<string, unknown>;
+};
+
+export type MarketingContentDashboardSummary = {
+  totals: {
+    assets: number;
+    images: number;
+    videos: number;
+    drafts: number;
+    scheduledPosts: number;
+    needsReview: number;
+    failedPosts: number;
+    setupRequiredAccounts: number;
+  };
+  upcomingPosts: MarketingContentPost[];
+  recentAssets: MarketingContentAsset[];
+  socialAccounts: MarketingSocialAccount[];
+};
+
+export type MarketingContentCalendarResponse = {
+  from: string;
+  to: string;
+  posts: MarketingContentPost[];
+};
+
+export type MarketingContentUploadConfigResponse = {
+  mode: 'setup_required' | 'external_url';
+  message: string;
+  acceptedMimeTypes: string[];
+  maxFileSizeBytes: number;
 };
 
 export type GiftCardRedemption = {
@@ -1797,6 +2526,75 @@ export type Timesheet = {
   createdAt: string;
   updatedAt: string;
   staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue' | 'email'>;
+};
+
+export type StaffMyRosterPayload = {
+  shifts: RosterShift[];
+  upcomingCount: number;
+  pastCount: number;
+  pendingConfirmationCount: number;
+};
+
+export type StaffClockStatusPayload = {
+  activeSession: StaffClockSession | null;
+  currentShift: RosterShift | null;
+  nextShift: RosterShift | null;
+  recentSessions: StaffClockSession[];
+};
+
+export type StaffDailyHomePayload = {
+  member: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+  todayShift: RosterShift | null;
+  nextShift: RosterShift | null;
+  clock: StaffClockStatusPayload;
+  upcomingLeave: StaffLeaveRequest[];
+  complianceReminders: Array<{
+    id: string;
+    kind: 'RECORD' | 'TRAINING';
+    title: string;
+    detail: string;
+    dueAt: string | null;
+    status: string;
+  }>;
+  announcements: SuiteAnnouncement[];
+};
+
+export type StaffManagerOperationsPayload = {
+  date: string;
+  venue: string;
+  generatedAt: string;
+  metrics: {
+    scheduledStaff: number;
+    clockedIn: number;
+    onBreak: number;
+    lateClockIns: number;
+    missedClockIns: number;
+    pendingConfirmations: number;
+    clockExceptions: number;
+  };
+  todaysStaff: Array<{
+    shift: RosterShift;
+    staffProfile: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+    confirmation: StaffShiftConfirmation | null;
+    activeSession: StaffClockSession | null;
+    state: 'SCHEDULED' | 'CLOCKED_IN' | 'ON_BREAK' | 'LATE' | 'MISSED' | 'CLOCKED_OUT';
+  }>;
+  clockedIn: StaffClockSession[];
+  pendingConfirmations: Array<{
+    shift: RosterShift;
+    staffProfile: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+  }>;
+  clockExceptions: Array<{
+    id: string;
+    kind: 'OPEN_SESSION' | 'BREAK_OVERDUE' | 'MISSED_CLOCK_IN' | 'LATE_CLOCK_IN';
+    severity: 'warning' | 'danger';
+    summary: string;
+    detail: string;
+    venue: string | null;
+    staffProfile: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+    shift: RosterShift | null;
+    session: StaffClockSession | null;
+  }>;
 };
 
 export type StaffTipEntitlement = {
