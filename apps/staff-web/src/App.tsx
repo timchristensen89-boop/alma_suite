@@ -253,8 +253,8 @@ const NAV_ITEMS = [
   },
   {
     to: '/manager',
-    label: 'Manager',
-    description: 'Mobile approvals and live operating warnings',
+    label: 'Manager Today',
+    description: 'Today’s staff, clock sessions, bookings and exceptions',
     icon: <ChartIcon />
   },
   {
@@ -346,27 +346,9 @@ const STAFF_MEMBER_NAV_ITEMS = [
     icon: <DocumentIcon />
   },
   {
-    to: '/academy',
-    label: 'Academy',
-    description: 'Assigned training modules',
-    icon: <CapIcon />
-  },
-  {
-    to: '/timesheets',
-    label: 'Timesheets',
-    description: 'Submit worked hours',
-    icon: <DocumentIcon />
-  },
-  {
-    to: '/tips',
-    label: 'Tips',
-    description: 'Paid tip history',
-    icon: <ChartIcon />
-  },
-  {
-    to: '/communications',
-    label: 'Comms',
-    description: 'Announcements and team messages',
+    to: '/compliance',
+    label: 'Compliance',
+    description: 'Documents, training and reminders',
     icon: <DocumentIcon />
   }
 ];
@@ -1054,12 +1036,19 @@ function StaffMemberHome({
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
+      <Card title="Staff launch" subtitle="Use this app for the daily basics from Monday.">
+        <div className="staff-launch-panel">
+          <span>View your shifts, clock in and out, take breaks, request leave, and check compliance reminders here.</span>
+          <span className="subtle">If something looks wrong, speak to your manager before clocking out so the day can be fixed cleanly.</span>
+        </div>
+      </Card>
+
       <Card title="Quick actions" subtitle="Everything you’ll use most days lives here.">
         <div className="staff-quick-links">
           <Button type="button" onClick={() => navigate('/roster')}>Open roster</Button>
           <Button type="button" variant="secondary" onClick={() => navigate('/clock')}>Open clock</Button>
           <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
-          <Button type="button" variant="ghost" onClick={() => navigate('/communications')}>Announcements</Button>
+          <Button type="button" variant="ghost" onClick={() => navigate('/compliance')}>Compliance</Button>
         </div>
       </Card>
 
@@ -1580,6 +1569,80 @@ function StaffMemberLeavePage() {
                 {item.managerNote ? <span className="subtle">Manager note: {item.managerNote}</span> : null}
               </span>
               <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
+            </div>
+          ))}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+function StaffMemberCompliancePage() {
+  const [home, setHome] = useState<StaffDailyHomePayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const loadCompliance = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setHome(await api<StaffDailyHomePayload>('/api/staff/me/home'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your compliance reminders.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadCompliance();
+  }, [loadCompliance]);
+
+  const reminders = home?.complianceReminders ?? [];
+  const expired = reminders.filter((item) => item.status === 'EXPIRED').length;
+  const pending = reminders.filter((item) => item.status === 'PENDING' || item.status === 'IN_PROGRESS').length;
+  const expiring = reminders.filter((item) => item.dueAt && item.status !== 'EXPIRED').length;
+
+  return (
+    <div className="page-stack staff-compliance-page">
+      <PageHeader
+        eyebrow="Compliance"
+        title="My compliance reminders"
+        description="Check documents, certificates and training that may need attention before your next shift."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadCompliance()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Expired" value={expired} hint="Needs manager attention" loading={loading} />
+        <StatCard label="Pending" value={pending} hint="Awaiting completion or review" loading={loading} />
+        <StatCard label="Upcoming" value={expiring} hint="Due or expiring soon" loading={loading} />
+      </div>
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      <Card title="What to do" subtitle="Compliance records are managed with your venue manager.">
+        <div className="staff-launch-panel">
+          <span>Bring any missing certificates, training evidence, or document updates to your manager.</span>
+          <span className="subtle">If this page says everything is clear, there is nothing urgent for you to action right now.</span>
+        </div>
+      </Card>
+
+      <Card title="Reminders" subtitle="Required documents, expiring certificates and incomplete training.">
+        {loading ? <Spinner label="Loading compliance reminders…" /> : null}
+        {!loading && reminders.length === 0 ? (
+          <EmptyState title="All good" description="No urgent compliance reminders are showing for your profile." />
+        ) : null}
+        <div className="staff-expiry-list">
+          {reminders.map((item) => (
+            <div key={`${item.kind}:${item.id}`} className="staff-expiry-row">
+              <span>
+                <strong>{item.title}</strong>
+                <span className="subtle">{item.detail}</span>
+                {item.dueAt ? <span className="subtle">Due {new Date(item.dueAt).toLocaleDateString()}</span> : null}
+              </span>
+              <Badge tone={item.status === 'EXPIRED' ? 'danger' : item.status === 'PENDING' || item.status === 'IN_PROGRESS' ? 'warning' : 'info'}>
+                {item.status.replaceAll('_', ' ')}
+              </Badge>
             </div>
           ))}
         </div>
@@ -9090,6 +9153,7 @@ function StaffShell() {
           <Route path="/roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
+          <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />

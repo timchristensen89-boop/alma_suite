@@ -136,6 +136,16 @@
   min-width: 140px;
 }
 
+.staff-launch-panel {
+  display: grid;
+  gap: 6px;
+  max-width: 760px;
+}
+
+.staff-compliance-page {
+  max-width: 1120px;
+}
+
 .staff-daily-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
