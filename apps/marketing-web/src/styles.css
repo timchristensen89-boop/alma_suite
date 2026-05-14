@@ -249,10 +249,17 @@
 }
 
 .content-preview-tabs,
+.content-section-tabs,
 .social-account-grid,
 .content-calendar-list {
   display: grid;
   gap: 10px;
+}
+
+.content-section-tabs {
+  grid-template-columns: repeat(auto-fit, minmax(120px, max-content));
+  align-items: center;
+  justify-content: flex-start;
 }
 
 .content-preview-tabs {

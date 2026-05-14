@@ -90,33 +90,6 @@ type ForecastInput = {
   targetWagePercent: string;
 };
 
-type WebsiteMenuPayload = {
-  updatedAt: string;
-  message?: string;
-  venues: Array<{
-    title: string;
-    sections: Array<{
-      title: string;
-      items: Array<{ name: string; price?: string; tag?: string }>;
-    }>;
-    drinks: Array<{
-      title: string;
-      items: Array<{ name: string; price?: string; tag?: string }>;
-    }>;
-  }>;
-};
-
-type WebsiteMenuPublishResult = {
-  ok: boolean;
-  dryRun: boolean;
-  venueCount?: number;
-  itemCount?: number;
-  branch?: string;
-  commitUrl?: string;
-  fileUrl?: string;
-  message?: string;
-};
-
 type ForecastVenueRow = {
   venue: string;
   forecastSalesCents: number;
@@ -157,7 +130,6 @@ type ReportNavItem = {
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
-const WEBSITE_MENU_STORAGE_KEY = 'alma.reports.websiteMenuDraft.v1';
 const REPORT_NAV_ITEMS: ReportNavItem[] = [
   {
     id: 'overview',
@@ -325,47 +297,6 @@ function parseMoneyCents(value: string) {
   return Number.isFinite(numeric) ? Math.round(numeric * 100) : 0;
 }
 
-function splitCsvLine(line: string) {
-  const cells: string[] = [];
-  let current = '';
-  let quoted = false;
-  for (const char of line) {
-    if (char === '"') {
-      quoted = !quoted;
-    } else if (char === ',' && !quoted) {
-      cells.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-  cells.push(current.trim());
-  return cells;
-}
-
-function parseSalesImportRows(text: string, defaultSource: string) {
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-  if (lines.length < 2) throw new Error('Paste a CSV with date, venue and sales columns.');
-  const header = splitCsvLine(lines[0] ?? '').map((cell) => cell.toLowerCase().replace(/[^a-z0-9]/g, ''));
-  const findColumn = (names: string[]) => names.map((name) => header.indexOf(name)).find((index) => index >= 0) ?? -1;
-  const dateIndex = findColumn(['date', 'servicedate', 'businessdate', 'businessday', 'tradingdate']);
-  const venueIndex = findColumn(['venue', 'location', 'site', 'locationname', 'storename', 'outlet']);
-  const salesIndex = findColumn(['sales', 'netsales', 'grosssales', 'amount', 'total', 'salestotal', 'nettotal', 'grossamount']);
-  const idIndex = findColumn(['id', 'externalid', 'transactionid', 'reportid', 'rowid']);
-  if (dateIndex < 0 || venueIndex < 0 || salesIndex < 0) {
-    throw new Error('CSV needs date, venue and sales columns.');
-  }
-
-  return lines.slice(1).map((line, index) => {
-    const cells = splitCsvLine(line);
-    const serviceDate = cells[dateIndex] ?? '';
-    const venue = cells[venueIndex] ?? '';
-    const salesCents = parseMoneyCents(cells[salesIndex] ?? '');
-    const externalId = cells[idIndex] || `${defaultSource}:${venue}:${serviceDate}:${index}`;
-    return { serviceDate, venue, salesCents, externalId };
-  }).filter((row) => row.serviceDate && row.venue && row.salesCents > 0);
-}
-
 function parsePercent(value: string, fallback = 32) {
   const numeric = Number(value.replace(/[^0-9.]/g, ''));
   return Number.isFinite(numeric) && numeric > 0 ? numeric : fallback;
@@ -373,48 +304,6 @@ function parsePercent(value: string, fallback = 32) {
 
 function centsInput(cents: number) {
   return cents > 0 ? String(Math.round(cents / 100)) : '';
-}
-
-function defaultWebsiteMenuPayload(): WebsiteMenuPayload {
-  return {
-    updatedAt: new Date().toISOString(),
-    venues: [
-      {
-        title: 'Alma Avalon',
-        sections: [
-          {
-            title: 'To start',
-            items: [
-              { name: 'Guacamole, corn chips, wakame', price: '16', tag: 'Start here' }
-            ]
-          }
-        ],
-        drinks: [
-          {
-            title: 'Margaritas',
-            items: [{ name: 'Classic margarita' }]
-          }
-        ]
-      },
-      {
-        title: 'St Alma',
-        sections: [
-          {
-            title: 'To start',
-            items: [
-              { name: 'Guacamole, salsa macha, tostadas', price: '16', tag: 'Start here' }
-            ]
-          }
-        ],
-        drinks: [
-          {
-            title: 'Margaritas',
-            items: [{ name: 'Tommy’s margarita', tag: 'Popular' }]
-          }
-        ]
-      }
-    ]
-  };
 }
 
 function loadJsonDraft<T>(key: string, fallback: T): T {
@@ -641,13 +530,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [forecastInputs, setForecastInputs] = useState<Record<string, ForecastInput>>(() =>
     loadJsonDraft<Record<string, ForecastInput>>(REPORTS_FORECAST_STORAGE_KEY, {})
   );
-  const [websiteMenuDraft, setWebsiteMenuDraft] = useState(() =>
-    JSON.stringify(loadJsonDraft<WebsiteMenuPayload>(WEBSITE_MENU_STORAGE_KEY, defaultWebsiteMenuPayload()), null, 2)
-  );
-  const [websiteMenuMessage, setWebsiteMenuMessage] = useState<string | null>(null);
-  const [salesImportText, setSalesImportText] = useState('date,venue,sales\n2026-05-04,Alma Avalon,12500.00');
-  const [salesImportSource, setSalesImportSource] = useState('manual');
-  const [salesImportMessage, setSalesImportMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
   const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
@@ -706,14 +588,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     window.localStorage.setItem(REPORTS_FORECAST_STORAGE_KEY, JSON.stringify(forecastInputs));
   }, [forecastInputs]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(WEBSITE_MENU_STORAGE_KEY, JSON.stringify(JSON.parse(websiteMenuDraft)));
-    } catch {
-      window.localStorage.setItem(WEBSITE_MENU_STORAGE_KEY, websiteMenuDraft);
-    }
-  }, [websiteMenuDraft]);
 
   const activeStaff = data.staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const staffById = useMemo(() => new Map(activeStaff.map((member) => [member.id, member])), [activeStaff]);
@@ -845,143 +719,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     });
   }
 
-  function parseWebsiteMenuDraft() {
-    const parsed = JSON.parse(websiteMenuDraft) as WebsiteMenuPayload;
-    if (!Array.isArray(parsed.venues) || parsed.venues.length === 0) {
-      throw new Error('Menu JSON needs at least one venue in venues[].');
-    }
-    for (const venue of parsed.venues) {
-      if (!venue.title || !Array.isArray(venue.sections) || !Array.isArray(venue.drinks)) {
-        throw new Error('Each venue needs title, sections[] and drinks[].');
-      }
-    }
-    return parsed;
-  }
-
-  async function validateWebsiteMenuPayload() {
-    setWebsiteMenuMessage(null);
-    try {
-      const parsed = parseWebsiteMenuDraft();
-      const result = await staffApi<WebsiteMenuPublishResult>('/api/website/menu/validate', {
-        method: 'POST',
-        body: JSON.stringify({ ...parsed, dryRun: true })
-      });
-      setWebsiteMenuMessage(`Menu validated: ${result.venueCount ?? parsed.venues.length} venues and ${result.itemCount ?? 0} menu items.`);
-    } catch (error) {
-      setWebsiteMenuMessage(error instanceof Error ? error.message : 'Menu validation failed.');
-    }
-  }
-
-  async function publishWebsiteMenuPayload() {
-    setWebsiteMenuMessage(null);
-    try {
-      const parsed = parseWebsiteMenuDraft();
-      if (!window.confirm('Publish this menu update to the Alma Group website repo? Vercel will deploy after the website repo accepts the commit.')) {
-        return;
-      }
-      const result = await staffApi<WebsiteMenuPublishResult>('/api/website/menu/publish', {
-        method: 'POST',
-        body: JSON.stringify({ ...parsed, updatedAt: new Date().toISOString() })
-      });
-      setWebsiteMenuMessage(
-        result.commitUrl
-          ? `Website menu update committed to ${result.branch ?? 'the website branch'}. ${result.commitUrl}`
-          : 'Website menu update accepted.'
-      );
-    } catch (error) {
-      setWebsiteMenuMessage(error instanceof Error ? error.message : 'Could not publish website menu.');
-    }
-  }
-
-  async function copyWebsiteMenuPayload() {
-    setWebsiteMenuMessage(null);
-    try {
-      const parsed = parseWebsiteMenuDraft();
-      const text = JSON.stringify({ ...parsed, updatedAt: new Date().toISOString() }, null, 2);
-      await navigator.clipboard.writeText(text);
-      setWebsiteMenuMessage('Website menu JSON copied.');
-    } catch (error) {
-      setWebsiteMenuMessage(error instanceof Error ? error.message : 'Menu JSON is invalid.');
-    }
-  }
-
-  function downloadWebsiteMenuPayload() {
-    setWebsiteMenuMessage(null);
-    try {
-      const parsed = parseWebsiteMenuDraft();
-      downloadTextFile(
-        `alma-website-menu-${isoDate(new Date())}.json`,
-        JSON.stringify({ ...parsed, updatedAt: new Date().toISOString() }, null, 2)
-      );
-      setWebsiteMenuMessage('Website menu JSON downloaded.');
-    } catch (error) {
-      setWebsiteMenuMessage(error instanceof Error ? error.message : 'Menu JSON is invalid.');
-    }
-  }
-
-  async function importActualSales() {
-    setSalesImportMessage(null);
-    try {
-      const rows = parseSalesImportRows(salesImportText, salesImportSource.trim() || 'manual');
-      if (!rows.length) {
-        setSalesImportMessage('No valid sales rows found.');
-        return;
-      }
-      const result = await staffApi<{ imported: number }>('/api/reports/sales/import', {
-        method: 'POST',
-        body: JSON.stringify({
-          source: salesImportSource.trim() || 'manual',
-          rows
-        })
-      });
-      setSalesImportMessage(`Imported ${result.imported} sales row${result.imported === 1 ? '' : 's'}.`);
-      await load();
-    } catch (error) {
-      setSalesImportMessage(error instanceof Error ? error.message : 'Could not import sales.');
-    }
-  }
-
-  async function deleteActualSalesEntry(id: string) {
-    if (!window.confirm('Delete this actual sales row?')) return;
-    setSalesImportMessage(null);
-    try {
-      await staffApi(`/api/reports/sales/${id}`, { method: 'DELETE' });
-      setSalesImportMessage('Sales row deleted.');
-      await load();
-    } catch (error) {
-      setSalesImportMessage(error instanceof Error ? error.message : 'Could not delete sales row.');
-    }
-  }
-
-  async function clearActualSalesForWeek() {
-    if (!window.confirm(`Clear imported actual sales for ${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}?`)) return;
-    setSalesImportMessage(null);
-    try {
-      const result = await staffApi<{ deleted: number }>('/api/reports/sales/clear', {
-        method: 'POST',
-        body: JSON.stringify({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString()
-        })
-      });
-      setSalesImportMessage(`Deleted ${result.deleted} sales row${result.deleted === 1 ? '' : 's'}.`);
-      await load();
-    } catch (error) {
-      setSalesImportMessage(error instanceof Error ? error.message : 'Could not clear sales rows.');
-    }
-  }
-
-  function downloadSalesTemplate() {
-    downloadTextFile(
-      `alma-actual-sales-template-${isoDate(weekStart)}.csv`,
-      [
-        'date,venue,sales',
-        `${isoDate(weekStart)},Alma Avalon,0`,
-        `${isoDate(weekStart)},St Alma,0`
-      ].join('\n')
-    );
-  }
-
   function exportPerformanceCsv() {
     setExportMessage(null);
     const rows = [
@@ -1097,37 +834,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     ];
     downloadTextFile(`alma-management-overview-${overview.rangeDays}d.csv`, csvRows(rows));
     setExportMessage('Management overview CSV downloaded.');
-  }
-
-  async function exportApprovedXeroTimesheets() {
-    const approvedXeroCount = data.timesheets.filter((timesheet) => timesheet.status === 'APPROVED' && timesheet.paymentMethod !== 'CASH').length;
-    if (!approvedXeroCount) {
-      setExportMessage('No approved Xero timesheets to export.');
-      return;
-    }
-    if (!window.confirm(`Export and mark ${approvedXeroCount} approved Xero timesheet${approvedXeroCount === 1 ? '' : 's'} as exported?`)) {
-      return;
-    }
-    setExportMessage(null);
-    try {
-      const result = await staffApi<{ count: number; markedExported: boolean; exportBatchId: string; csv: string }>('/api/staff/timesheets/export/xero', {
-        method: 'POST',
-        body: JSON.stringify({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString(),
-          markExported: true
-        })
-      });
-      if (!result.count) {
-        setExportMessage('No approved Xero timesheets were returned by the API.');
-        return;
-      }
-      downloadTextFile(`alma-xero-timesheets-${isoDate(weekStart)}-${result.exportBatchId}.csv`, result.csv);
-      setExportMessage(`Exported ${result.count} Xero timesheet${result.count === 1 ? '' : 's'} and marked them exported.`);
-      await load();
-    } catch (error) {
-      setExportMessage(error instanceof Error ? error.message : 'Could not export Xero timesheets.');
-    }
   }
 
   async function copyWeeklySummary() {

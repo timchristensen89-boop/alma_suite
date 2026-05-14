@@ -20,7 +20,6 @@ import type {
   MarketingOverview,
   MarketingSegmentDefinition,
   MarketingSegmentPreviewPayload,
-  MarketingSocialAccount,
   ReserveGuest,
   ReserveReservation,
   SocialPlatform
@@ -83,10 +82,14 @@ const TEMPLATE_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 const MARKETING_NAV_ITEMS = [
   { href: '#dashboard', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <SearchIcon /> },
-  { href: '#campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
-  { href: '#content', label: 'Content', description: 'Assets, posts, calendar', icon: <DocumentIcon /> },
-  { href: '#automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
   { href: '#segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
+  { href: '#campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
+  { href: '#content', label: 'Content', description: 'Social overview', icon: <DocumentIcon /> },
+  { href: '#assets', label: 'Assets', description: 'Upload and library', icon: <DocumentIcon /> },
+  { href: '#composer', label: 'Composer', description: 'Draft and preview posts', icon: <DocumentIcon /> },
+  { href: '#calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <DocumentIcon /> },
+  { href: '#approvals', label: 'Approvals', description: 'Review social posts', icon: <DocumentIcon /> },
+  { href: '#automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
   { href: '#templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
 ];
 
@@ -477,8 +480,7 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarNav() {
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+function useMarketingActiveHash() {
   const [activeHash, setActiveHash] = useState('#dashboard');
 
   useEffect(() => {
@@ -488,6 +490,12 @@ function SidebarNav() {
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
+  return MARKETING_NAV_ITEMS.some((item) => item.href === activeHash) ? activeHash : '#dashboard';
+}
+
+function SidebarNav() {
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const activeHash = useMarketingActiveHash();
   const active = MARKETING_NAV_ITEMS.find((item) => item.href === activeHash) ?? MARKETING_NAV_ITEMS[0]!;
 
   return (
@@ -513,7 +521,6 @@ function SidebarNav() {
               href={item.href}
               className={activeHash === item.href ? 'active' : ''}
               onClick={() => {
-                setActiveHash(item.href);
                 setMobileMenuOpen(false);
               }}
             >
@@ -528,6 +535,7 @@ function SidebarNav() {
 }
 
 function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+  const activeHash = useMarketingActiveHash();
   const options = useMemo(() => venueOptions(user), [user]);
   const initialVenue = scopedVenue(user, isAdmin(user) ? ALL_VENUES : user.venue || KNOWN_VENUES[0]!);
   const [venueFilter, setVenueFilter] = useState(initialVenue);
@@ -567,6 +575,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const socialAccounts = contentDashboard?.socialAccounts ?? [];
   const postsNeedingReview = contentPosts.filter((post) => post.status === 'NEEDS_REVIEW');
   const upcomingContentPosts = contentCalendar?.posts ?? contentDashboard?.upcomingPosts ?? [];
+  const isActiveSection = (href: string) => activeHash === href;
+  const showContentSection = ['#content', '#assets', '#composer', '#calendar', '#approvals'].includes(activeHash);
+  const showContentOverview = activeHash === '#content';
+  const showContentAssets = activeHash === '#assets';
+  const showContentComposer = activeHash === '#composer';
+  const showContentCalendar = showContentOverview || activeHash === '#calendar';
+  const showContentApprovals = showContentOverview || activeHash === '#approvals';
   const previewGuest = guestDetail?.guest ?? guests[0] ?? null;
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === automationForm.emailTemplateId) ?? templates[0] ?? null,
@@ -956,10 +971,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       });
       setContentAssetForm(defaultContentAssetForm(defaultVenue));
       setContentPostForm((current) => ({ ...current, assetId: asset.id }));
-      setSuccess('content-asset', 'Asset registered and ready to attach.');
+      setSuccess('content-asset', 'Asset uploaded and ready to attach.');
       await load();
     } catch (error) {
-      setError('content-asset', error, 'Could not register asset.');
+      setError('content-asset', error, 'Could not upload asset.');
     }
   }
 
@@ -1066,25 +1081,6 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     }
   }
 
-  async function createSetupAccount(platform: SocialPlatform) {
-    try {
-      await api<MarketingSocialAccount>('/api/marketing/content/social-accounts', {
-        method: 'POST',
-        body: JSON.stringify({
-          venue: defaultVenue,
-          platform,
-          displayName: `${defaultVenue} ${platform.toLowerCase()} setup`,
-          status: 'SETUP_REQUIRED',
-          scopes: []
-        })
-      });
-      setSuccess('social-account', `${platform} setup card created.`);
-      await load();
-    } catch (error) {
-      setError('social-account', error, 'Could not create social setup card.');
-    }
-  }
-
   return (
     <AppShell
       brand={<ProductLogo appId="marketing" size="md" showBrandMark={false} />}
@@ -1134,7 +1130,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
         <div className="marketing-layout">
           <section className="marketing-main">
-            <section id="dashboard">
+            <section id="dashboard" className="marketing-page-section" hidden={!isActiveSection('#dashboard')}>
               <Card title="Recent activity" subtitle={venueParam || 'All venues'}>
               {loading ? <Spinner label="Loading marketing dashboard..." /> : null}
               {!loading && overview ? (
@@ -1178,8 +1174,21 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="content">
-              <Card title="Content Studio" subtitle="Social assets, post drafts, approval, scheduling, and simulation-only publishing">
+            <section id="content" className="marketing-page-section" hidden={!showContentSection}>
+              <Card
+                title={
+                  showContentAssets
+                    ? 'Asset library'
+                    : showContentComposer
+                      ? 'Post composer'
+                      : activeHash === '#calendar'
+                        ? 'Content calendar'
+                        : activeHash === '#approvals'
+                          ? 'Content approvals'
+                          : 'Content Studio'
+                }
+                subtitle="Social planning stays in Marketing; platform connection settings live in Admin."
+              >
                 <div className="stats-grid compact">
                   <StatCard label="Assets" value={contentDashboard?.totals.assets ?? 0} hint={`${contentDashboard?.totals.images ?? 0} images · ${contentDashboard?.totals.videos ?? 0} videos`} loading={loading} />
                   <StatCard label="Drafts" value={contentDashboard?.totals.drafts ?? 0} hint="Ideas and drafts" loading={loading} />
@@ -1187,9 +1196,34 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   <StatCard label="Scheduled" value={contentDashboard?.totals.scheduledPosts ?? 0} hint="On the content calendar" loading={loading} />
                 </div>
 
-                <div className="content-studio-grid">
-                  <div className="marketing-stack">
-                    <Card title="Register asset" subtitle={contentUploadConfig?.message ?? 'Register images and videos for social posts.'}>
+                <div className="content-section-tabs" aria-label="Content Studio pages">
+                  <Button type="button" size="sm" variant={activeHash === '#content' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#content'; }}>Overview</Button>
+                  <Button type="button" size="sm" variant={showContentAssets ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#assets'; }}>Assets</Button>
+                  <Button type="button" size="sm" variant={showContentComposer ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#composer'; }}>Composer</Button>
+                  <Button type="button" size="sm" variant={activeHash === '#calendar' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#calendar'; }}>Calendar</Button>
+                  <Button type="button" size="sm" variant={activeHash === '#approvals' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#approvals'; }}>Approvals</Button>
+                </div>
+
+                {showContentOverview ? (
+                  <div className="marketing-section-grid">
+                    <div className="marketing-summary-card">
+                      <strong>Plan content in smaller workspaces</strong>
+                      <span>Use Assets for uploads, Composer for drafts and previews, Calendar for scheduling, and Approvals for manager review.</span>
+                    </div>
+                    <div className="marketing-summary-card">
+                      <strong>Live publishing setup is admin-owned</strong>
+                      <span>{contentDashboard?.totals.setupRequiredAccounts ?? socialAccounts.filter((account) => account.status !== 'CONNECTED').length} Facebook, Instagram, or TikTok account setup item(s) need Admin attention.</span>
+                    </div>
+                    <div className="marketing-summary-card">
+                      <strong>Simulation only</strong>
+                      <span>Marketing can preview and simulate social publishing. OAuth, token references, and live publishing readiness are managed in Admin.</span>
+                    </div>
+                  </div>
+                ) : null}
+
+                <div className="content-studio-grid" hidden={!showContentAssets && !showContentComposer}>
+                  <div className="marketing-stack" hidden={!showContentAssets}>
+                    <Card title="Upload asset" subtitle={contentUploadConfig?.message ?? 'Upload or register images and videos for social posts.'}>
                       <form className="marketing-form" onSubmit={(event) => void saveContentAsset(event)}>
                         <div className="form-grid two">
                           <Select label="Venue" value={contentAssetForm.venue} onChange={(event) => setContentAssetForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
@@ -1205,14 +1239,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <Textarea label="Description" rows={2} value={contentAssetForm.description} onChange={(event) => setContentAssetForm((current) => ({ ...current, description: event.currentTarget.value }))} />
                         <div className="toolbar-right">
                           <ActionFeedback message={feedback.target === 'content-asset' ? feedback.message : null} tone={feedback.tone} />
-                          <Button type="submit">Register asset</Button>
+                          <Button type="submit">Upload asset</Button>
                         </div>
                       </form>
                     </Card>
 
                     <Card title="Content library" subtitle="Ready assets for posts">
                       {contentAssets.length === 0 ? (
-                        <EmptyState title="No assets registered" description="Add a public image or video URL to start building post drafts." />
+                        <EmptyState title="No assets uploaded" description="Add a public image or video URL to start building post drafts." />
                       ) : (
                         <div className="content-asset-grid">
                           {contentAssets.slice(0, 12).map((asset) => (
@@ -1242,7 +1276,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     </Card>
                   </div>
 
-                  <div className="marketing-stack">
+                  <div className="marketing-stack" hidden={!showContentComposer}>
                     <Card title="Post composer" subtitle="Facebook, Instagram, and TikTok previews. Live publish stays setup required.">
                       <div className="marketing-summary-card">
                         <strong>Hospitality helpers</strong>
@@ -1345,61 +1379,47 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   </div>
                 </div>
 
-                <div className="content-bottom-grid">
-                  <Card title="Content calendar" subtitle="Scheduled and approved social posts">
-                    {upcomingContentPosts.length === 0 ? (
-                      <EmptyState title="No scheduled content" description="Save a post with a schedule time, then approve and simulate it." />
-                    ) : (
-                      <div className="content-calendar-list">
-                        {upcomingContentPosts.map((post) => (
-                          <div key={post.id} className="content-calendar-row">
-                            <time>{post.scheduledAt ? shortDate(post.scheduledAt) : 'No date'}</time>
-                            <span>
+                <div className="content-bottom-grid" hidden={!showContentCalendar && !showContentApprovals}>
+                  {showContentCalendar ? (
+                    <Card title="Content calendar" subtitle="Scheduled and approved social posts">
+                      {upcomingContentPosts.length === 0 ? (
+                        <EmptyState title="No scheduled content" description="Save a post with a schedule time, then approve and simulate it." />
+                      ) : (
+                        <div className="content-calendar-list">
+                          {upcomingContentPosts.map((post) => (
+                            <div key={post.id} className="content-calendar-row">
+                              <time>{post.scheduledAt ? shortDate(post.scheduledAt) : 'No date'}</time>
+                              <span>
+                                <strong>{post.title}</strong>
+                                {post.venue} · {post.status} · {post.targetChannels.join(', ')}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  ) : null}
+
+                  {showContentApprovals ? (
+                    <Card title="Approvals" subtitle="Posts waiting for manager review">
+                      {postsNeedingReview.length === 0 ? (
+                        <EmptyState title="Approval queue clear" description="Submitted posts will appear here for review before scheduling." />
+                      ) : (
+                        <div className="marketing-stack">
+                          {postsNeedingReview.map((post) => (
+                            <div key={post.id} className="marketing-summary-card">
                               <strong>{post.title}</strong>
-                              {post.venue} · {post.status} · {post.targetChannels.join(', ')}
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-
-                  <Card title="Approvals" subtitle="Posts waiting for manager review">
-                    {postsNeedingReview.length === 0 ? (
-                      <EmptyState title="Approval queue clear" description="Submitted posts will appear here for review before scheduling." />
-                    ) : (
-                      <div className="marketing-stack">
-                        {postsNeedingReview.map((post) => (
-                          <div key={post.id} className="marketing-summary-card">
-                            <strong>{post.title}</strong>
-                            <span>{post.venue} · {post.targetChannels.join(', ')}</span>
-                            <Button type="button" size="sm" onClick={() => void approveContentPost(post.id)}>Approve post</Button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </Card>
-
-                  <Card title="Social readiness" subtitle="Admin setup status for Facebook, Instagram, and TikTok. Live posting remains disabled until OAuth is connected safely.">
-                    <div className="social-account-grid">
-                      {SOCIAL_PLATFORMS.map((platform) => {
-                        const account = socialAccounts.find((item) => item.platform === platform && item.venue === defaultVenue);
-                        return (
-                          <div key={platform} className="social-account-card">
-                            <strong>{platform}</strong>
-                            <Badge tone={account?.status === 'CONNECTED' ? 'positive' : 'warning'}>{account?.status ?? 'SETUP_REQUIRED'}</Badge>
-                            <span>{account?.displayName ?? `${defaultVenue} account not connected`}</span>
-                            <small>{account?.hasTokenSecretRef ? 'Secret reference present' : 'No OAuth secret reference exposed or configured'}</small>
-                            {!account ? <Button type="button" size="sm" variant="secondary" onClick={() => void createSetupAccount(platform)}>Create setup card</Button> : null}
-                          </div>
-                        );
-                      })}
-                    </div>
-                    <ActionFeedback message={feedback.target === 'social-account' ? feedback.message : null} tone={feedback.tone} />
-                  </Card>
+                              <span>{post.venue} · {post.targetChannels.join(', ')}</span>
+                              <Button type="button" size="sm" onClick={() => void approveContentPost(post.id)}>Approve post</Button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  ) : null}
                 </div>
 
-                {contentPublishPreview ? (
+                {showContentComposer && contentPublishPreview ? (
                   <Card title="Platform publish preview" subtitle={contentPublishPreview.message ?? contentPublishPreview.post.title}>
                     <div className="content-preview-tabs">
                       {contentPublishPreview.previews.map((preview) => (
@@ -1425,7 +1445,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="guests">
+            <section id="guests" className="marketing-page-section" hidden={!isActiveSection('#guests')}>
               <Card title="Guest CRM" subtitle="Profiles, consent status, tags, and visit history">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1526,7 +1546,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="segments">
+            <section id="segments" className="marketing-page-section" hidden={!isActiveSection('#segments')}>
               <Card title="Tags and segments" subtitle="Manual tags plus automatic audience rules">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1618,7 +1638,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
           </section>
 
           <aside className="marketing-side">
-            <section id="templates">
+            <section id="templates" className="marketing-page-section" hidden={!isActiveSection('#templates')}>
               <Card title="Templates" subtitle="HTML accepted. Preview rendered inside a sandboxed iframe.">
               <form className="marketing-form" onSubmit={(event) => void saveTemplate(event)}>
                 <div className="form-grid two">
@@ -1649,7 +1669,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="campaigns">
+            <section id="campaigns" className="marketing-page-section" hidden={!isActiveSection('#campaigns')}>
               <Card title="Campaigns" subtitle="Recipient preview and simulation only. No external send.">
               <form className="marketing-form" onSubmit={(event) => void saveCampaign(event)}>
                 <div className="form-grid two">
@@ -1715,7 +1735,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="automations">
+            <section id="automations" className="marketing-page-section" hidden={!isActiveSection('#automations')}>
               <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">

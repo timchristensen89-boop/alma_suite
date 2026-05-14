@@ -4,6 +4,8 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams }
 import type {
   AppSettingsPayload,
   AlmaAppId,
+  MarketingContentDashboardSummary,
+  MarketingSocialAccount,
   OnboardingSettings,
   OnboardingStepSettings,
   RosterShift,
@@ -30,6 +32,7 @@ import type {
   StaffTipsSummary,
   StaffTrainingRecord,
   SuiteCommunicationsPayload,
+  SocialPlatform,
   Timesheet,
   TrainingOverview
 } from '@alma/shared';
@@ -258,6 +261,12 @@ const NAV_ITEMS = [
     icon: <ChartIcon />
   },
   {
+    to: '/clock',
+    label: 'Clock',
+    description: 'My clock in, out and breaks',
+    icon: <DocumentIcon />
+  },
+  {
     to: '/access',
     label: 'Profiles',
     description: 'Full staff profiles, permissions, documents, and tasks',
@@ -359,6 +368,7 @@ const VENUE_OPTIONS = [
   { label: 'St Alma', value: 'St Alma' },
   { label: 'Both', value: 'Both' }
 ];
+const MARKETING_SOCIAL_PLATFORMS: SocialPlatform[] = ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'];
 
 const ROSTER_FORECAST_STORAGE_KEY = 'alma.staff.roster.forecast.v1';
 const ROSTER_CLOSED_DAYS_STORAGE_KEY = 'alma.staff.roster.closedDays.v1';
@@ -3665,6 +3675,8 @@ function AdminPage({
   const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
   const [rosterAreaSettings, setRosterAreaSettings] = useState(loadRosterAreaSettings);
   const [newRosterAreaName, setNewRosterAreaName] = useState('');
+  const [marketingSocialAccounts, setMarketingSocialAccounts] = useState<MarketingSocialAccount[]>([]);
+  const [marketingSocialLoading, setMarketingSocialLoading] = useState(false);
   const enabledAccessCount = staff.flatMap((member) => member.appAccess).filter((access) => access.status === 'ENABLED').length;
   const adminCount = staff.filter((member) => member.isAdmin).length;
   const venueCount = new Set(staff.map((member) => member.venue).filter(Boolean)).size;
@@ -3679,6 +3691,7 @@ function AdminPage({
   const effectiveRosterSettingsVenue = rosterVenueValues.includes(rosterSettingsVenue)
     ? rosterSettingsVenue
     : rosterVenueValues[0] ?? '';
+  const adminSocialVenue = effectiveRosterSettingsVenue || rosterVenueValues[0] || 'Alma Avalon';
   const rosterSettingsScopeKey = rosterClosedDaysScopeKey(
     rosterSettingsWeekStart,
     rosterSettingsBoardDays,
@@ -3728,6 +3741,19 @@ function AdminPage({
     }))
   ];
 
+  const loadMarketingSocialAccounts = useCallback(async (targetVenue: string) => {
+    setMarketingSocialLoading(true);
+    try {
+      const query = targetVenue ? `?venue=${encodeURIComponent(targetVenue)}` : '';
+      const dashboard = await api<MarketingContentDashboardSummary>(`/api/marketing/content/dashboard${query}`);
+      setMarketingSocialAccounts(dashboard.socialAccounts ?? []);
+    } catch {
+      setMarketingSocialAccounts([]);
+    } finally {
+      setMarketingSocialLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
@@ -3752,6 +3778,11 @@ function AdminPage({
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    if (!canAccessSettings(user)) return;
+    void loadMarketingSocialAccounts(adminSocialVenue);
+  }, [adminSocialVenue, loadMarketingSocialAccounts, user]);
 
   useEffect(() => {
     if (effectiveRosterSettingsVenue && effectiveRosterSettingsVenue !== rosterSettingsVenue) {
@@ -4022,6 +4053,35 @@ function AdminPage({
     }
   }
 
+  async function createMarketingSocialSetup(platform: SocialPlatform) {
+    setMessageTarget(`marketing-social:${platform}`);
+    if (!user?.isAdmin) {
+      setMessage('Only admin users can create social setup cards.');
+      return;
+    }
+
+    setMarketingSocialLoading(true);
+    setMessage(null);
+    try {
+      await api('/api/marketing/content/social-accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue: adminSocialVenue,
+          platform,
+          displayName: `${adminSocialVenue} ${platform.toLowerCase()} setup`,
+          status: 'SETUP_REQUIRED',
+          scopes: []
+        })
+      });
+      await loadMarketingSocialAccounts(adminSocialVenue);
+      setMessage(`${platform} setup card created in Admin.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not create social setup card.');
+    } finally {
+      setMarketingSocialLoading(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -4117,6 +4177,62 @@ function AdminPage({
               />
             </div>
           </form>
+        </Card>
+
+        <Card title="Marketing social setup" subtitle="Facebook, Instagram and TikTok live publishing readiness belongs in Admin. Tokens are never shown here.">
+          <div className="admin-social-grid">
+            {MARKETING_SOCIAL_PLATFORMS.map((platform) => {
+              const account = marketingSocialAccounts.find((item) => item.platform === platform && item.venue === adminSocialVenue);
+              return (
+                <div key={platform} className="admin-social-card">
+                  <div className="admin-social-card-header">
+                    <strong>{platform}</strong>
+                    <Badge tone={account?.status === 'CONNECTED' ? 'positive' : 'warning'}>
+                      {account?.status ?? 'SETUP_REQUIRED'}
+                    </Badge>
+                  </div>
+                  <span>{account?.displayName ?? `${adminSocialVenue} ${platform.toLowerCase()} setup not created`}</span>
+                  <span>{account?.hasTokenSecretRef ? 'Secret reference present' : 'No OAuth token reference configured'}</span>
+                  {account?.lastError ? <span className="error-text">{account.lastError}</span> : null}
+                  {!account ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={marketingSocialLoading || !user?.isAdmin}
+                      onClick={() => void createMarketingSocialSetup(platform)}
+                    >
+                      Create setup card
+                    </Button>
+                  ) : (
+                    <span className="subtle">Live publish remains disabled until OAuth and secret references are configured.</span>
+                  )}
+                  <ActionFeedback
+                    message={messageTarget === `marketing-social:${platform}` ? message : null}
+                    tone={message?.includes('created') ? 'success' : 'error'}
+                  />
+                </div>
+              );
+            })}
+          </div>
+          <p className="subtle">Marketing users can plan, schedule, preview and simulate content. Platform connection, OAuth readiness and secret references stay in Admin.</p>
+        </Card>
+
+        <Card title="Reports and exports setup" subtitle="Report configuration belongs in Admin; the Reports app stays read-only.">
+          <div className="admin-boundary-list">
+            <div>
+              <strong>Sales source imports</strong>
+              <span>Admin-owned setup before reports consume actual sales. Reports no longer owns import or clear actions.</span>
+            </div>
+            <div>
+              <strong>Payroll and Xero export readiness</strong>
+              <span>Admin controls provider setup and support decisions. Reports can download read-only CSVs only.</span>
+            </div>
+            <div>
+              <strong>Website menu publishing</strong>
+              <span>Publishing and integration setup stay outside Reports so reporting remains predictable and safe.</span>
+            </div>
+          </div>
         </Card>
       </div>
 
@@ -9167,6 +9283,7 @@ function StaffShell() {
         <Routes>
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
+          <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
