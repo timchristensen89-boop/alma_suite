@@ -136,9 +136,118 @@ type ForecastVenueRow = {
   }>;
 };
 
+type ReportSectionId =
+  | 'overview'
+  | 'staff'
+  | 'compliance'
+  | 'stock'
+  | 'reserve'
+  | 'marketing'
+  | 'content'
+  | 'gift-cards'
+  | 'exports';
+
+type ReportNavItem = {
+  id: ReportSectionId;
+  label: string;
+  title: string;
+  description: string;
+  icon: JSX.Element;
+};
+
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
 const WEBSITE_MENU_STORAGE_KEY = 'alma.reports.websiteMenuDraft.v1';
+const REPORT_NAV_ITEMS: ReportNavItem[] = [
+  {
+    id: 'overview',
+    label: 'Overview',
+    title: 'Reports Overview',
+    description: 'High-level attention signals across the suite.',
+    icon: <ChartIcon />
+  },
+  {
+    id: 'staff',
+    label: 'Staff',
+    title: 'Staff Reports',
+    description: 'Active staff, leave, payroll readiness, and recent management events.',
+    icon: <ChartIcon />
+  },
+  {
+    id: 'compliance',
+    label: 'Compliance',
+    title: 'Compliance Reports',
+    description: 'Outstanding compliance records, expiring items, and venue attention signals.',
+    icon: <DocumentIcon />
+  },
+  {
+    id: 'stock',
+    label: 'Stock',
+    title: 'Stock Reports',
+    description: 'Catalogue health, venue stock status, low stock, and stocktake review signals.',
+    icon: <DocumentIcon />
+  },
+  {
+    id: 'reserve',
+    label: 'Reserve',
+    title: 'Reserve Reports',
+    description: 'Bookings, covers, cancellations, no-shows, and guest mix.',
+    icon: <ChartIcon />
+  },
+  {
+    id: 'marketing',
+    label: 'Marketing',
+    title: 'Marketing Reports',
+    description: 'Guest CRM reach, consent, campaigns, and simulated sends.',
+    icon: <DocumentIcon />
+  },
+  {
+    id: 'content',
+    label: 'Content',
+    title: 'Content Reports',
+    description: 'Scheduled posts, approvals, simulated publishing, and social setup readiness.',
+    icon: <DocumentIcon />
+  },
+  {
+    id: 'gift-cards',
+    label: 'Gift Cards',
+    title: 'Gift Card Reports',
+    description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
+    icon: <DocumentIcon />
+  },
+  {
+    id: 'exports',
+    label: 'Exports',
+    title: 'Exports',
+    description: 'Read-only CSV downloads and weekly summary exports.',
+    icon: <DocumentIcon />
+  }
+];
+
+const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
+  '#report-staff': 'staff',
+  '#report-compliance': 'compliance',
+  '#report-stock': 'stock',
+  '#report-reserve': 'reserve',
+  '#report-marketing': 'marketing',
+  '#report-content': 'content',
+  '#report-giftcards': 'gift-cards',
+  '#giftcards': 'gift-cards',
+  '#forecast': 'exports',
+  '#wages': 'staff',
+  '#cogs': 'stock',
+  '#website-menu': 'exports'
+};
+
+function reportHash(section: ReportSectionId) {
+  return `#${section}`;
+}
+
+function reportSectionFromHash(hash: string): ReportSectionId {
+  if (hash in LEGACY_REPORT_HASHES) return LEGACY_REPORT_HASHES[hash]!;
+  const section = hash.replace(/^#/, '') as ReportSectionId;
+  return REPORT_NAV_ITEMS.some((item) => item.id === section) ? section : 'overview';
+}
 
 function startOfWeek(date: Date) {
   const day = date.getDay();
@@ -455,33 +564,15 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function SidebarNav() {
+function SidebarNav({
+  activeSection = reportSectionFromHash(window.location.hash),
+  onSectionChange = () => undefined
+}: {
+  activeSection?: ReportSectionId;
+  onSectionChange?: (section: ReportSectionId) => void;
+} = {}) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState(() => window.location.hash || '#overview');
-  const navItems = [
-    { href: '#overview', label: 'Overview', icon: <ChartIcon /> },
-    { href: '#report-staff', label: 'Staff', icon: <ChartIcon /> },
-    { href: '#report-compliance', label: 'Compliance', icon: <DocumentIcon /> },
-    { href: '#report-stock', label: 'Stock', icon: <DocumentIcon /> },
-    { href: '#report-reserve', label: 'Reserve', icon: <ChartIcon /> },
-    { href: '#report-marketing', label: 'Marketing', icon: <DocumentIcon /> },
-    { href: '#report-content', label: 'Content', icon: <DocumentIcon /> },
-    { href: '#report-giftcards', label: 'Gift Cards', icon: <DocumentIcon /> },
-    { href: '#forecast', label: 'Forecast', icon: <ChartIcon /> },
-    { href: '#wages', label: 'Wages', icon: <ChartIcon /> },
-    { href: '#cogs', label: 'COGS', icon: <DocumentIcon /> },
-    { href: '#website-menu', label: 'Exports', icon: <DocumentIcon /> }
-  ];
-  const active = navItems.find((item) => item.href === activeHash) ?? navItems[0]!;
-
-  useEffect(() => {
-    const handleHashChange = () => {
-      setActiveHash(window.location.hash || '#overview');
-      setMobileMenuOpen(false);
-    };
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  const active = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
 
   return (
     <>
@@ -503,13 +594,14 @@ function SidebarNav() {
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Reports</li>
-        {navItems.map((item) => (
-          <li key={item.href}>
+        {REPORT_NAV_ITEMS.map((item) => (
+          <li key={item.id}>
             <a
-              href={item.href}
-              className={item.href === activeHash ? 'active' : undefined}
-              onClick={() => {
-                setActiveHash(item.href);
+              href={reportHash(item.id)}
+              className={item.id === activeSection ? 'active' : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                onSectionChange(item.id);
                 setMobileMenuOpen(false);
               }}
             >
@@ -524,6 +616,7 @@ function SidebarNav() {
 }
 
 function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+  const [activeSection, setActiveSection] = useState<ReportSectionId>(() => reportSectionFromHash(window.location.hash));
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
@@ -556,6 +649,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [salesImportSource, setSalesImportSource] = useState('manual');
   const [salesImportMessage, setSalesImportMessage] = useState<string | null>(null);
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
+  const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
+  const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -600,6 +696,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const handleHashChange = () => setActiveSection(reportSectionFromHash(window.location.hash));
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
 
   useEffect(() => {
     window.localStorage.setItem(REPORTS_FORECAST_STORAGE_KEY, JSON.stringify(forecastInputs));
@@ -1252,809 +1354,286 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setSelectedWeekStart(isoDate(addDays(weekStart, days)));
   }
 
-  return (
-    <AppShell
-      brand={<ProductLogo appId="reports" size="md" />}
-      sidebar={<SidebarNav />}
-      topBar={
-        <TopBar
-          title="Reports"
-          subtitle="Wages, stock value, and operating cost signals"
-          right={
-            <>
-              <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
-              <SuiteCommsWidget
-                appId="REPORTS"
-                api={staffApi}
-                venue={user.venue}
-                userName={`${user.firstName} ${user.lastName}`}
-                canAnnounce={user.role !== 'STAFF'}
-              />
-              <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
-                Sign out
-              </Button>
-            </>
-          }
-        />
-      }
-    >
-      <div className="page-stack">
-        <PageHeader
-          eyebrow="ALMA Reports"
-          title="Operating reports"
-          description={`Signed in as ${user.firstName}. This app keeps management reporting separate from Staff admin screens.`}
-          actions={
-            <div className="reports-week-controls">
-              <Select
-                label="Overview"
-                value={overviewRange}
-                onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
-                options={[
-                  { label: 'Last 7 days', value: '7' },
-                  { label: 'Last 30 days', value: '30' },
-                  { label: 'Last 90 days', value: '90' }
-                ]}
-              />
-              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
-                Prev
-              </Button>
-              <Input
-                label="Week"
-                type="date"
-                value={selectedWeekStart}
-                onChange={(event) => setSelectedWeekStart(isoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
-              />
-              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(7)}>
-                Next
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(isoDate(startOfWeek(new Date())))}>
-                This week
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-                Refresh
-              </Button>
+  function selectReportSection(section: ReportSectionId) {
+    const nextHash = reportHash(section);
+    setActiveSection(section);
+    if (window.location.hash !== nextHash) {
+      window.history.pushState(null, '', nextHash);
+    }
+  }
+
+  function sectionButton(section: ReportSectionId, label = `Open ${REPORT_NAV_ITEMS.find((item) => item.id === section)?.label ?? 'section'}`) {
+    return (
+      <Button type="button" size="sm" variant="secondary" onClick={() => selectReportSection(section)}>
+        {label}
+      </Button>
+    );
+  }
+
+  function SectionShell({
+    id,
+    title,
+    description,
+    children,
+    action
+  }: {
+    id: ReportSectionId;
+    title: string;
+    description: string;
+    children: JSX.Element;
+    action?: JSX.Element;
+  }) {
+    const label = id === 'exports' ? weekWindowLabel : overviewWindowLabel;
+    return (
+      <section id={id} className="reports-section report-active-section" aria-labelledby={`${id}-heading`}>
+        <Card
+          title={title}
+          subtitle={`${description} ${label}.`}
+          action={action}
+        >
+          {children}
+        </Card>
+      </section>
+    );
+  }
+
+  function Metric({
+    label,
+    value,
+    tone = 'neutral',
+    hint
+  }: {
+    label: string;
+    value: string | number;
+    tone?: 'positive' | 'warning' | 'danger' | 'info' | 'neutral';
+    hint?: string;
+  }) {
+    return (
+      <div className="metric-row">
+        <span>
+          <strong>{label}</strong>
+          {hint ? <span className="subtle">{hint}</span> : null}
+        </span>
+        <Badge tone={tone}>{value}</Badge>
+      </div>
+    );
+  }
+
+  function renderOverviewSection() {
+    const attentionCount =
+      (data.overview?.staff.pendingLeaveCount ?? 0) +
+      (data.overview?.staff.missingRequiredCompliance ?? 0) +
+      (data.overview?.compliance.expiredStaffRecords ?? 0) +
+      (data.overview?.stock.lowStockCount ?? 0) +
+      (data.overview?.stock.stocktakesReadyForReview ?? 0) +
+      (data.overview?.content.postsNeedingApproval ?? 0) +
+      (data.overview?.giftCards.pendingOrders ?? 0);
+
+    return (
+      <SectionShell
+        id="overview"
+        title="Reports Overview"
+        description="High-level snapshot only, with shortcuts into each detailed report"
+        action={<Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>Export overview CSV</Button>}
+      >
+        <div className="report-section-stack">
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
+            <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? 0} hint="Current staff profiles" loading={loading} />
+            <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
+            <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
+          </div>
+
+          <div className="report-detail-grid">
+            <div className="report-panel">
+              <h4>Needs attention</h4>
+              <Metric label="Expired compliance records" value={data.overview?.compliance.expiredStaffRecords ?? 0} tone={(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? 'danger' : 'positive'} />
+              <Metric label="Stocktakes ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} tone={(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? 'warning' : 'positive'} />
+              <Metric label="Posts needing approval" value={data.overview?.content.postsNeedingApproval ?? 0} tone={(data.overview?.content.postsNeedingApproval ?? 0) > 0 ? 'warning' : 'positive'} />
+              <Metric label="Pending gift card orders" value={data.overview?.giftCards.pendingOrders ?? 0} tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'} />
             </div>
-          }
-        />
 
-        {message ? <p className="error-text">{message}</p> : null}
-        {loading ? <Spinner label="Loading reports" /> : null}
-
-        <div className="stats-grid">
-          <StatCard label="Forecast sales" value={formatCurrency(forecastTotals.salesCents)} hint={`${roundHours(forecastTotals.recommendedHours)} recommended`} loading={loading} />
-          <StatCard label="Roster cost" value={formatCurrency(forecastTotals.plannedCostCents)} hint={`${roundHours(forecastTotals.plannedHours)} planned`} loading={loading} />
-          <StatCard label="Weekly wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={roundHours(wageTotals.hours)} loading={loading} />
-          <StatCard label="Stock value" value={formatCurrency(stockValueCents)} hint={`${data.stockSummary?.activeItems ?? 0} active items`} loading={loading} />
+            <div className="report-panel">
+              <h4>Open detailed reports</h4>
+              <div className="report-shortcut-grid">
+                {REPORT_NAV_ITEMS.filter((item) => item.id !== 'overview').map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="report-shortcut"
+                    onClick={() => selectReportSection(item.id)}
+                  >
+                    <strong>{item.label}</strong>
+                    <span>{item.description}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
         </div>
+      </SectionShell>
+    );
+  }
 
-        <section id="overview" className="reports-section">
-          <Card
-            title="Management overview"
-            subtitle={`Read-only suite signals for the last ${data.overview?.rangeDays ?? overviewRange} days. Manager views are limited to their venue.`}
-            action={
-              <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
-                Export CSV
-              </Button>
-            }
-          >
-            <div className="report-overview-grid">
-              <div id="report-staff" className="report-panel">
-                <h4>Staff</h4>
-                <div className="metric-row">
-                  <span>Active staff</span>
-                  <Badge tone="info">{data.overview?.staff.totalActiveStaff ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Pending leave</span>
-                  <Badge tone={(data.overview?.staff.pendingLeaveCount ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.staff.pendingLeaveCount ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Approved leave next 30 days</span>
-                  <Badge tone="neutral">{data.overview?.staff.approvedLeaveNext30Days ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Missing or pending compliance</span>
-                  <Badge tone={(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.staff.missingRequiredCompliance ?? 0}
-                  </Badge>
-                </div>
-              </div>
+  function renderStaffSection() {
+    return (
+      <SectionShell
+        id="staff"
+        title="Staff Reports"
+        description="Active staff, leave, clocking, payroll readiness, and recent staff management events"
+      >
+        <div className="report-section-stack">
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? activeStaff.length} hint="Current profiles" loading={loading} />
+            <StatCard label="Pending leave" value={data.overview?.staff.pendingLeaveCount ?? 0} hint="Awaiting manager decision" loading={loading} />
+            <StatCard label="Approved leave" value={data.overview?.staff.approvedLeaveNext30Days ?? 0} hint="Next 30 days" loading={loading} />
+            <StatCard label="Awaiting timesheet approval" value={data.timesheets.filter((item) => item.status === 'SUBMITTED').length} hint={weekWindowLabel} loading={loading} />
+          </div>
 
-              <div id="report-compliance" className="report-panel">
-                <h4>Compliance</h4>
-                <div className="metric-row">
-                  <span>Pending records</span>
-                  <Badge tone={(data.overview?.compliance.pendingStaffRecords ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.compliance.pendingStaffRecords ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Expired records</span>
-                  <Badge tone={(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? 'danger' : 'positive'}>
-                    {data.overview?.compliance.expiredStaffRecords ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Temp readings missing today</span>
-                  <Badge tone={(data.overview?.compliance.missingTemperatureReadingsToday ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.compliance.missingTemperatureReadingsToday ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Licences expiring next 30 days</span>
-                  <Badge tone={(data.overview?.compliance.expiringLicencesNext30Days ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.compliance.expiringLicencesNext30Days ?? 0}
-                  </Badge>
-                </div>
-              </div>
-
-              <div id="report-stock" className="report-panel">
-                <h4>Stock</h4>
-                <div className="metric-row">
-                  <span>Catalogue items</span>
-                  <Badge tone="info">{data.overview?.stock.activeStockItems ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Low stock venue rows</span>
-                  <Badge tone={(data.overview?.stock.lowStockCount ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.stock.lowStockCount ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Out of stock venue rows</span>
-                  <Badge tone={(data.overview?.stock.outOfStockCount ?? 0) > 0 ? 'danger' : 'positive'}>
-                    {data.overview?.stock.outOfStockCount ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Stocktakes ready for review</span>
-                  <Badge tone={(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.stock.stocktakesReadyForReview ?? 0}
-                  </Badge>
-                </div>
-              </div>
-
-              <div id="report-reserve" className="report-panel">
-                <h4>Reserve</h4>
-                <div className="metric-row">
-                  <span>Bookings today</span>
-                  <Badge tone="info">{data.overview?.reserve.bookingsToday ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Covers today</span>
-                  <Badge tone="neutral">{data.overview?.reserve.coversToday ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Upcoming bookings</span>
-                  <Badge tone={(data.overview?.reserve.upcomingBookings ?? 0) > 0 ? 'positive' : 'neutral'}>
-                    {data.overview?.reserve.upcomingBookings ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Cancellations / no-shows</span>
-                  <Badge tone={(data.overview?.reserve.cancellations ?? 0) + (data.overview?.reserve.noShows ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {(data.overview?.reserve.cancellations ?? 0) + (data.overview?.reserve.noShows ?? 0)}
-                  </Badge>
-                </div>
-              </div>
-
-              <div id="report-marketing" className="report-panel">
-                <h4>Marketing</h4>
-                <div className="metric-row">
-                  <span>Total guests</span>
-                  <Badge tone="info">{data.overview?.marketing.totalGuests ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Opted in guests</span>
-                  <Badge tone="positive">{data.overview?.marketing.optedInGuests ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Campaign drafts</span>
-                  <Badge tone={(data.overview?.marketing.campaignDrafts ?? 0) > 0 ? 'warning' : 'neutral'}>
-                    {data.overview?.marketing.campaignDrafts ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Simulated sends</span>
-                  <Badge tone="neutral">{data.overview?.marketing.simulatedSends ?? 0}</Badge>
-                </div>
-              </div>
-
-              <div id="report-content" className="report-panel">
-                <h4>Content</h4>
-                <div className="metric-row">
-                  <span>Scheduled this week</span>
-                  <Badge tone="info">{data.overview?.content.scheduledPostsThisWeek ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Needs approval</span>
-                  <Badge tone={(data.overview?.content.postsNeedingApproval ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.content.postsNeedingApproval ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Failed simulated publishes</span>
-                  <Badge tone={(data.overview?.content.failedSimulatedPublishAttempts ?? 0) > 0 ? 'danger' : 'positive'}>
-                    {data.overview?.content.failedSimulatedPublishAttempts ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Setup required accounts</span>
-                  <Badge tone={(data.overview?.content.setupRequiredSocialAccounts ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.content.setupRequiredSocialAccounts ?? 0}
-                  </Badge>
-                </div>
-              </div>
-
-              <div id="report-giftcards" className="report-panel">
-                <h4>Gift cards</h4>
-                <div className="metric-row">
-                  <span>Pending orders</span>
-                  <Badge tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.overview?.giftCards.pendingOrders ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Pending amount</span>
-                  <Badge tone="neutral">{formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Fulfilled orders</span>
-                  <Badge tone="info">{data.overview?.giftCards.fulfilledOrders ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>New guests</span>
-                  <Badge tone="neutral">{data.overview?.reserve.newGuests ?? 0}</Badge>
-                </div>
-              </div>
+          <div className="report-detail-grid">
+            <div className="report-panel">
+              <h4>Staff attention</h4>
+              <Metric label="Missing or pending compliance" value={data.overview?.staff.missingRequiredCompliance ?? 0} tone={(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? 'warning' : 'positive'} />
+              <Metric label="Staff missing pay rate" value={activeStaff.filter((member) => !member.payRateCents && !member.trainingPayRateCents).length} tone={activeStaff.some((member) => !member.payRateCents && !member.trainingPayRateCents) ? 'warning' : 'positive'} />
+              <Metric label="Approved or exported timesheets" value={data.timesheets.filter((item) => item.status === 'APPROVED' || item.status === 'EXPORTED').length} tone="positive" />
+              <Metric label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} tone={(data.tips?.tipPoolCents ?? 0) > 0 ? 'positive' : 'neutral'} />
             </div>
 
-            <div className="report-overview-grid report-overview-grid-wide">
-              <div className="report-panel">
-                <h4>Recent staff management events</h4>
-                <div className="table-scroll">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>When</th>
-                        <th>Staff</th>
-                        <th>Event</th>
-                        <th>Summary</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.overview?.staff.recentManagementEvents.length ? (
-                        data.overview.staff.recentManagementEvents.map((event) => (
-                          <tr key={event.id}>
-                            <td>{formatDateTime(event.createdAt)}</td>
-                            <td>{event.staffProfile ? `${event.staffProfile.firstName} ${event.staffProfile.lastName}` : 'Staff profile'}</td>
-                            <td>{event.eventType}</td>
-                            <td>{event.summary}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={4}>No recent management events in this range.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div className="report-panel">
-                <h4>Stocktake variance attention</h4>
-                <div className="table-scroll">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>Stocktake</th>
-                        <th>Item</th>
-                        <th>Venue</th>
-                        <th>Variance</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.overview?.stock.highestVarianceLines.length ? (
-                        data.overview.stock.highestVarianceLines.map((line, index) => (
-                          <tr key={`${line.stocktakeId}:${line.itemName}:${index}`}>
-                            <td>{line.stocktakeName}</td>
-                            <td>{line.itemName}</td>
-                            <td>{line.venue ?? 'Unassigned'}</td>
-                            <td>{line.variance > 0 ? '+' : ''}{line.variance.toFixed(2)} {line.unit ?? ''}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={4}>No submitted stocktake variances in this range.</td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-          </Card>
-        </section>
-
-        <section id="forecast" className="reports-section">
-          <Card
-            title="Roster forecast"
-            subtitle={`${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}. Starts from previous-year sales by month and trading day, then lets managers adjust before publishing.`}
-            action={
-              <Button size="sm" variant="secondary" onClick={() => applyHistoricalForecast()} disabled={!forecastRows.some((row) => row.historicalSalesCents > 0)}>
-                Use historical forecast
-              </Button>
-            }
-            padding="none"
-          >
-            <div className="forecast-grid">
-              {forecastRows.map((row) => (
-                <div key={row.venue} className="forecast-card">
-                  <div className="forecast-card-header">
-                    <span>
-                      <strong>{row.venue}</strong>
-                      <small>{row.forecastSalesCents ? `${row.targetWagePercent}% wage target` : 'Enter sales forecast'}</small>
-                    </span>
-                    <Badge tone={row.costGapCents >= 0 ? 'positive' : 'warning'}>
-                      {row.costGapCents >= 0 ? `${formatCurrency(row.costGapCents)} under` : `${formatCurrency(Math.abs(row.costGapCents))} over`}
-                    </Badge>
-                  </div>
-
-                  <div className="form-grid two">
-                    <Input
-                      label="Forecast sales"
-                      value={forecastInputs[row.venue]?.sales ?? ''}
-                      onChange={(event) => updateForecastInput(row.venue, { sales: event.currentTarget.value })}
-                      placeholder={centsInput(row.historicalSalesCents) || '32000'}
-                    />
-                    <Input
-                      label="Target wage %"
-                      value={forecastInputs[row.venue]?.targetWagePercent ?? '32'}
-                      onChange={(event) => updateForecastInput(row.venue, { targetWagePercent: event.currentTarget.value })}
-                      placeholder="32"
-                    />
-                  </div>
-
-                  <div className="forecast-history-row">
-                    <span>
-                      Previous-year guide
-                      {row.historicalSource ? <small>{row.historicalSource} historical sales for this week pattern</small> : null}
-                    </span>
-                    <div className="forecast-history-actions">
-                      <Badge tone={row.historicalSalesCents > 0 ? 'info' : 'neutral'}>
-                        {row.historicalSalesCents > 0 ? formatCurrency(row.historicalSalesCents) : 'No match'}
-                      </Badge>
-                      <Button size="sm" variant="ghost" onClick={() => applyHistoricalForecast(row.venue)} disabled={row.historicalSalesCents <= 0}>
-                        Apply
-                      </Button>
-                    </div>
-                  </div>
-
-                  <div className="forecast-metrics">
-                    <div>
-                      <span>Wage budget</span>
-                      <strong>{formatCurrency(row.wageBudgetCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Planned cost</span>
-                      <strong>{formatCurrency(row.plannedCostCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Recommended hours</span>
-                      <strong>{roundHours(row.recommendedHours)}</strong>
-                    </div>
-                    <div>
-                      <span>Planned hours</span>
-                      <strong>{roundHours(row.plannedHours)}</strong>
-                    </div>
-                  </div>
-
-                  <table className="report-table forecast-table">
-                    <thead>
-                      <tr>
-                        <th>Area</th>
-                        <th>Planned</th>
-                        <th>Recommended</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {row.areaRows.map((areaRow) => (
-                        <tr key={areaRow.area}>
-                          <td>{areaRow.area}</td>
-                          <td>{roundHours(areaRow.plannedHours)}</td>
-                          <td>{roundHours(areaRow.recommendedHours)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ))}
-            </div>
-            <div className="published-forecast-panel">
-              <div className="published-forecast-header">
-                <span>
-                  <strong>Published roster forecast</strong>
-                  <small>Snapshot saved when the manager publishes the roster.</small>
-                </span>
-                <Badge tone={data.rosterForecastSnapshots.length ? 'info' : 'neutral'}>
-                  {data.rosterForecastSnapshots.length ? `${data.rosterForecastSnapshots.length} saved` : 'Not published yet'}
-                </Badge>
-              </div>
-              {data.rosterForecastSnapshots.length ? (
-                <>
-                  <div className="forecast-metrics">
-                    <div>
-                      <span>Published sales</span>
-                      <strong>{formatCurrency(publishedForecastTotals.salesCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Published wage budget</span>
-                      <strong>{formatCurrency(publishedForecastTotals.budgetCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Published roster cost</span>
-                      <strong>{formatCurrency(publishedForecastTotals.rosterCostCents)}</strong>
-                    </div>
-                    <div>
-                      <span>Published hours</span>
-                      <strong>{roundHours(publishedForecastTotals.plannedHours)}</strong>
-                    </div>
-                  </div>
-                  <table className="report-table forecast-table">
-                    <thead>
-                      <tr>
-                        <th>Venue</th>
-                        <th>Source</th>
-                        <th>Sales</th>
-                        <th>Budget</th>
-                        <th>Roster cost</th>
-                        <th>Hours</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.rosterForecastSnapshots.map((snapshot) => (
-                        <tr key={snapshot.id}>
-                          <td>{snapshot.venue || 'All venues'}</td>
-                          <td>{snapshot.source || 'Forecast'}</td>
-                          <td>{formatCurrency(snapshot.forecastSalesCents)}</td>
-                          <td>{formatCurrency(snapshot.wageBudgetCents)}</td>
-                          <td>{formatCurrency(snapshot.rosterCostCents)}</td>
-                          <td>{roundHours(snapshot.plannedHours)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </>
+            <div className="report-panel">
+              <h4>Wages by venue</h4>
+              {wageByVenue.length ? (
+                wageByVenue.map((venue) => (
+                  <Metric key={venue.venue} label={venue.venue} value={formatCurrency(venue.costCents)} tone="info" hint={roundHours(venue.hours)} />
+                ))
               ) : (
-                <p className="subtle">No published forecast snapshot yet. Publish the week from Staff roster to lock the forecast used for this roster.</p>
+                <p className="subtle">No timesheets found for this week.</p>
               )}
             </div>
-            <div className="published-forecast-panel">
-              <div className="published-forecast-header">
-                <span>
-                  <strong>Forecast vs actual</strong>
-                  <small>Uses imported actual sales and submitted or approved timesheets for the same week.</small>
-                </span>
-                <Badge tone={actualSalesCents > 0 ? 'info' : 'neutral'}>
-                  {actualSalesCents > 0 ? formatCurrency(actualSalesCents) : 'Import sales'}
-                </Badge>
-              </div>
-              <div className="forecast-metrics">
-                <div>
-                  <span>Sales variance</span>
-                  <strong>{actualSalesCents > 0 ? formatCurrency(forecastSalesVarianceCents) : 'No sales'}</strong>
-                </div>
-                <div>
-                  <span>Planned vs actual wages</span>
-                  <strong>{publishedForecastTotals.rosterCostCents > 0 ? formatCurrency(plannedVsActualWageCents) : 'No snapshot'}</strong>
-                </div>
-                <div>
-                  <span>Actual wage %</span>
-                  <strong>{actualWagePercent ? `${actualWagePercent.toFixed(1)}%` : 'No sales'}</strong>
-                </div>
-                <div>
-                  <span>Target wage %</span>
-                  <strong>{targetWagePercent ? `${targetWagePercent.toFixed(1)}%` : 'No snapshot'}</strong>
-                </div>
-              </div>
-              <div className="actual-sales-import">
-                <div className="form-grid two">
-                  <Input label="Sales source" value={salesImportSource} onChange={(event) => setSalesImportSource(event.currentTarget.value)} placeholder="square" />
-                  <Input label="Expected columns" readOnly value="date, venue, sales" />
-                </div>
-                <textarea
-                  aria-label="Actual sales CSV"
-                  value={salesImportText}
-                  onChange={(event) => setSalesImportText(event.currentTarget.value)}
-                  spellCheck={false}
-                />
-                <div className="website-menu-actions">
-                  <Button type="button" size="sm" onClick={() => void importActualSales()}>
-                    Import actual sales
-                  </Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={downloadSalesTemplate}>
-                    Download template
-                  </Button>
-                  <Button type="button" size="sm" variant="danger" onClick={() => void clearActualSalesForWeek()} disabled={!data.actualSales?.entries.length}>
-                    Clear week
-                  </Button>
-                  {salesImportMessage ? <span className="subtle">{salesImportMessage}</span> : null}
-                </div>
-                <div className="reports-export-actions">
-                  <Button type="button" size="sm" variant="secondary" onClick={exportPerformanceCsv} disabled={!venuePerformanceRows.length}>
-                    Export performance CSV
-                  </Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>
-                    Export wage CSV
-                  </Button>
-                  <Button type="button" size="sm" variant="secondary" onClick={() => void copyWeeklySummary()}>
-                    Copy summary
-                  </Button>
-                  {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
-                </div>
-              </div>
-              {data.actualSales?.byVenue.length ? (
-                <table className="report-table forecast-table">
-                  <thead>
-                    <tr>
-                      <th>Venue</th>
-                      <th>Actual sales</th>
-                      <th>Days</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.actualSales.byVenue.map((row) => (
-                      <tr key={row.venue}>
-                        <td>{row.venue}</td>
-                        <td>{formatCurrency(row.salesCents)}</td>
-                        <td>{row.days}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : null}
-              {data.actualSales?.entries.length ? (
-                <div className="table-scroll">
-                  <table className="report-table forecast-table">
-                    <thead>
-                      <tr>
-                        <th>Date</th>
-                        <th>Venue</th>
-                        <th>Sales</th>
-                        <th>Source</th>
-                        <th></th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {data.actualSales.entries.map((entry) => (
-                        <tr key={entry.id}>
-                          <td>{isoDate(new Date(entry.serviceDate))}</td>
-                          <td>{entry.venue}</td>
-                          <td>{formatCurrency(entry.salesCents)}</td>
-                          <td>{entry.source}</td>
-                          <td>
-                            <Button type="button" size="sm" variant="danger" onClick={() => void deleteActualSalesEntry(entry.id)}>
-                              Delete
-                            </Button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : null}
-              <div className="table-scroll">
-                <table className="report-table venue-performance-table">
-                  <thead>
-                    <tr>
-                      <th>Venue</th>
-                      <th>Forecast sales</th>
-                      <th>Actual sales</th>
-                      <th>Sales variance</th>
-                      <th>Planned wages</th>
-                      <th>Actual wages</th>
-                      <th>Wage variance</th>
-                      <th>Target %</th>
-                      <th>Actual %</th>
-                      <th>Hours</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {venuePerformanceRows.map((row) => (
-                      <tr key={row.venue}>
-                        <td>{row.venue}</td>
-                        <td>{row.forecastSalesCents ? formatCurrency(row.forecastSalesCents) : '-'}</td>
-                        <td>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : '-'}</td>
-                        <td className={row.salesVarianceCents >= 0 ? 'is-positive' : 'is-warning'}>
-                          {row.actualSalesCents || row.forecastSalesCents ? formatCurrency(row.salesVarianceCents) : '-'}
-                        </td>
-                        <td>{row.plannedWageCents ? formatCurrency(row.plannedWageCents) : '-'}</td>
-                        <td>{row.actualWageCents ? formatCurrency(row.actualWageCents) : '-'}</td>
-                        <td className={row.wageVarianceCents <= 0 ? 'is-positive' : 'is-warning'}>
-                          {row.actualWageCents || row.plannedWageCents ? formatCurrency(row.wageVarianceCents) : '-'}
-                        </td>
-                        <td>{row.targetPercent ? `${row.targetPercent.toFixed(1)}%` : '-'}</td>
-                        <td className={row.targetPercent && row.actualPercent > row.targetPercent ? 'is-warning' : 'is-positive'}>
-                          {row.actualPercent ? `${row.actualPercent.toFixed(1)}%` : '-'}
-                        </td>
-                        <td>{roundHours(row.actualHours || row.plannedHours)}</td>
-                      </tr>
-                    ))}
-                    {!venuePerformanceRows.length ? (
-                      <tr>
-                        <td colSpan={10}>Publish a roster forecast and import sales to compare venue performance.</td>
-                      </tr>
-                    ) : null}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </Card>
-        </section>
+          </div>
 
-        <section id="wages" className="reports-section">
-          <Card
-            title="Wage report"
-            subtitle={`${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}. Uses submitted timesheets and staff pay rates.`}
-            padding="none"
-          >
-            <div className="report-split">
-              <div className="report-panel">
-                <h4>By venue</h4>
-                {wageByVenue.length ? (
-                  wageByVenue.map((venue) => (
-                    <div key={venue.venue} className="metric-row">
-                      <span>
-                        <strong>{venue.venue}</strong>
-                        <span className="subtle">{roundHours(venue.hours)}</span>
-                      </span>
-                      <Badge tone="info">{formatCurrency(venue.costCents)}</Badge>
-                    </div>
-                  ))
-                ) : (
-                  <p className="subtle">No timesheets found for this week.</p>
-                )}
-              </div>
-
-              <div className="report-panel">
-                <h4>Payroll readiness</h4>
-                <div className="metric-row">
-                  <span>Timesheets awaiting approval</span>
-                  <Badge tone="warning">{data.timesheets.filter((item) => item.status === 'SUBMITTED').length}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Approved or exported</span>
-                  <Badge tone="positive">
-                    {data.timesheets.filter((item) => item.status === 'APPROVED' || item.status === 'EXPORTED').length}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Staff missing pay rate</span>
-                  <Badge tone="danger">{activeStaff.filter((member) => !member.payRateCents && !member.trainingPayRateCents).length}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Weekly tips pool</span>
-                  <Badge tone={(data.tips?.tipPoolCents ?? 0) > 0 ? 'positive' : 'neutral'}>{formatCurrency(data.tips?.tipPoolCents ?? 0)}</Badge>
-                </div>
-                <div className="reports-export-actions">
-                  <Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>
-                    Export payroll CSV
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() => void exportApprovedXeroTimesheets()}
-                    disabled={!data.timesheets.some((item) => item.status === 'APPROVED' && item.paymentMethod !== 'CASH')}
-                  >
-                    Export Xero timesheets
-                  </Button>
-                  {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
-                </div>
-              </div>
-            </div>
-
+          <div className="report-panel">
+            <h4>Recent staff management events</h4>
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
                   <tr>
+                    <th>When</th>
                     <th>Staff</th>
-                    <th>Venue</th>
-                    <th>Role</th>
-                    <th>Hours</th>
-                    <th>Xero</th>
-                    <th>Cash</th>
-                    <th>Rate</th>
-                    <th>Projected</th>
-                    <th>Approved</th>
-                    <th>Tips</th>
-                    <th>Payroll total</th>
-                    <th>Status</th>
+                    <th>Event</th>
+                    <th>Summary</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {wageRows.map((row) => (
-                    <tr key={row.staffProfileId}>
-                      <td>{row.name}</td>
-                      <td>{row.venue}</td>
-                      <td>{row.roleTitle}</td>
-                      <td>{roundHours(row.hours)}</td>
-                      <td>{roundHours(row.xeroHours)}</td>
-                      <td>{roundHours(row.cashHours)}</td>
-                      <td>{formatCurrency(row.rateCents)}</td>
-                      <td>{formatCurrency(row.projectedCostCents)}</td>
-                      <td>{formatCurrency(row.approvedCostCents)}</td>
-                      <td>{formatCurrency(row.tipsCents)}</td>
-                      <td>{formatCurrency(row.approvedCostCents + row.tipsCents)}</td>
-                      <td>
-                        {row.cashPaidMissingCount > 0 ? (
-                          <Badge tone="warning">{row.cashPaidMissingCount} cash pending</Badge>
-                        ) : row.approvedCount > 0 ? (
-                          <Badge tone="info">{row.approvedCount} ready</Badge>
-                        ) : row.exportedCount > 0 ? (
-                          <Badge tone="positive">Exported</Badge>
-                        ) : (
-                          <Badge tone="neutral">No approved hours</Badge>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-                  {!wageRows.length ? (
+                  {data.overview?.staff.recentManagementEvents.length ? (
+                    data.overview.staff.recentManagementEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td>{formatDateTime(event.createdAt)}</td>
+                        <td>{event.staffProfile ? `${event.staffProfile.firstName} ${event.staffProfile.lastName}` : 'Staff profile'}</td>
+                        <td>{event.eventType}</td>
+                        <td>{event.summary}</td>
+                      </tr>
+                    ))
+                  ) : (
                     <tr>
-                      <td colSpan={12}>No wage rows yet. Submit or approve timesheets to populate this report.</td>
+                      <td colSpan={4}>No recent staff management events in this range.</td>
                     </tr>
-                  ) : null}
+                  )}
                 </tbody>
               </table>
             </div>
-          </Card>
-        </section>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
 
-        <section id="cogs" className="reports-section">
-          <Card
-            title="COGS signals"
-            subtitle="Stock value and recipe cost indicators. Venue stock rows are used where configured; true COGS will still need POS sales mapped into the ledger."
-            padding="none"
-          >
-            {stockMessage ? <p className="error-text report-error">{stockMessage}</p> : null}
-            <div className="report-split">
-              <div className="report-panel">
-                <h4>Stock cost base</h4>
-                <div className="metric-row">
-                  <span>Current stock value</span>
-                  <Badge tone="info">{formatCurrency(stockValueCents)}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>{stockLowStockLabel}</span>
-                  <Badge tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}>
-                    {data.stockSummary?.lowStockItems ?? 0}
-                  </Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Latest stocktake value</span>
-                  <Badge tone="neutral">{formatCurrency(data.stocktakes?.totalValueCents ?? 0)}</Badge>
-                </div>
-              </div>
+  function renderComplianceSection() {
+    return (
+      <SectionShell
+        id="compliance"
+        title="Compliance Reports"
+        description="Outstanding compliance, expired records, expiring records, and venue attention"
+      >
+        <div className="report-detail-grid">
+          <div className="report-panel">
+            <h4>Record attention</h4>
+            <Metric label="Pending staff records" value={data.overview?.compliance.pendingStaffRecords ?? 0} tone={(data.overview?.compliance.pendingStaffRecords ?? 0) > 0 ? 'warning' : 'positive'} />
+            <Metric label="Expired staff records" value={data.overview?.compliance.expiredStaffRecords ?? 0} tone={(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? 'danger' : 'positive'} />
+            <Metric label="Expiring staff records" value={data.overview?.compliance.expiringStaffRecordsNext30Days ?? 0} tone={(data.overview?.compliance.expiringStaffRecordsNext30Days ?? 0) > 0 ? 'warning' : 'positive'} hint="Next 30 days" />
+            <Metric label="Licences expiring" value={data.overview?.compliance.expiringLicencesNext30Days ?? 0} tone={(data.overview?.compliance.expiringLicencesNext30Days ?? 0) > 0 ? 'warning' : 'positive'} hint="Next 30 days" />
+          </div>
 
-              <div className="report-panel">
-                <h4>Recipe cost base</h4>
-                <div className="metric-row">
-                  <span>Recipes costed</span>
-                  <Badge tone="info">{data.recipes?.totalRecipes ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Recipe lines</span>
-                  <Badge tone="neutral">{data.recipes?.totalLines ?? 0}</Badge>
-                </div>
-                <div className="metric-row">
-                  <span>Average recipe cost</span>
-                  <Badge tone="info">{formatMoney(data.recipes?.averageEstimatedCost ?? 0)}</Badge>
-                </div>
-              </div>
+          <div className="report-panel">
+            <h4>Operational compliance</h4>
+            <Metric label="Open issues" value={data.summary?.issues?.open ?? 0} tone={(data.summary?.issues?.open ?? 0) > 0 ? 'warning' : 'positive'} />
+            <Metric label="Critical issues" value={data.summary?.issues?.critical ?? 0} tone={(data.summary?.issues?.critical ?? 0) > 0 ? 'danger' : 'positive'} />
+            <Metric label="Missing temperature readings today" value={data.overview?.compliance.missingTemperatureReadingsToday ?? 0} tone={(data.overview?.compliance.missingTemperatureReadingsToday ?? 0) > 0 ? 'warning' : 'positive'} />
+            <Metric label="Out-of-range temperature assets" value={data.summary?.temperatures?.outOfRange ?? 0} tone={(data.summary?.temperatures?.outOfRange ?? 0) > 0 ? 'danger' : 'positive'} />
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderStockSection() {
+    return (
+      <SectionShell
+        id="stock"
+        title="Stock Reports"
+        description="Catalogue health, venue stock status, low stock, and stocktake review"
+      >
+        <div className="report-section-stack">
+          {stockMessage ? <p className="error-text">{stockMessage}</p> : null}
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Active catalogue items" value={data.overview?.stock.activeStockItems ?? data.stockSummary?.activeItems ?? 0} hint="Global catalogue" loading={loading} />
+            <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? data.stockSummary?.lowStockItems ?? 0} hint="Venue-aware rows" loading={loading} />
+            <StatCard label="Out of stock" value={data.overview?.stock.outOfStockCount ?? 0} hint="Venue-aware rows" loading={loading} />
+            <StatCard label="Ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} hint="Submitted stocktakes" loading={loading} />
+          </div>
+
+          <div className="report-detail-grid">
+            <div className="report-panel">
+              <h4>Stock health</h4>
+              <Metric label="Current stock value" value={formatCurrency(stockValueCents)} tone="info" />
+              <Metric label={stockLowStockLabel} value={data.stockSummary?.lowStockItems ?? 0} tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'} />
+              <Metric label="Latest stocktake value" value={formatCurrency(data.stocktakes?.totalValueCents ?? 0)} tone="neutral" />
             </div>
 
+            <div className="report-panel">
+              <h4>Stocktake variance attention</h4>
+              <div className="table-scroll">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>Stocktake</th>
+                      <th>Item</th>
+                      <th>Venue</th>
+                      <th>Variance</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.overview?.stock.highestVarianceLines.length ? (
+                      data.overview.stock.highestVarianceLines.map((line, index) => (
+                        <tr key={`${line.stocktakeId}:${line.itemName}:${index}`}>
+                          <td>{line.stocktakeName}</td>
+                          <td>{line.itemName}</td>
+                          <td>{line.venue ?? 'Unassigned'}</td>
+                          <td>{line.variance > 0 ? '+' : ''}{line.variance.toFixed(2)} {line.unit ?? ''}</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4}>No submitted stocktake variances in this range.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <div className="report-panel">
+            <h4>Stock value by category</h4>
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
@@ -2082,60 +1661,226 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </tbody>
               </table>
             </div>
-          </Card>
-        </section>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
 
-        <section id="website-menu" className="reports-section">
-          <Card
-            title="Website menu publisher"
-            subtitle="Manager-safe menu updates for the Alma Group website. The API validates the payload and only commits when GitHub publishing is configured."
-          >
-            <div className="website-menu-grid">
-              <div className="website-menu-editor">
-                <Input
-                  label="Fallback script"
-                  readOnly
-                  value="pnpm website:menu:update -- --file alma-website-menu.json"
-                />
-                <textarea
-                  aria-label="Website menu JSON"
-                  value={websiteMenuDraft}
-                  onChange={(event) => setWebsiteMenuDraft(event.currentTarget.value)}
-                  spellCheck={false}
-                />
-              </div>
-              <div className="website-menu-guide">
-                <strong>How this works</strong>
-                <span>1. Edit or paste the current menu JSON here.</span>
-                <span>2. Validate it before publishing.</span>
-                <span>3. Publish commits the website menu data through the protected API.</span>
-                <span>If publishing is not configured, the API returns a clear setup error and nothing is changed.</span>
-                <div className="website-menu-actions">
-                  <Button type="button" variant="secondary" onClick={() => void validateWebsiteMenuPayload()}>
-                    Validate
-                  </Button>
-                  <Button type="button" onClick={() => void publishWebsiteMenuPayload()}>
-                    Publish to website
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={() => void copyWebsiteMenuPayload()}>
-                    Copy JSON
-                  </Button>
-                  <Button type="button" variant="secondary" onClick={downloadWebsiteMenuPayload}>
-                    Download JSON
-                  </Button>
-                </div>
-                {websiteMenuMessage ? (
-                  <p className={websiteMenuMessage.includes('invalid') || websiteMenuMessage.includes('needs') ? 'error-text' : 'subtle'}>
-                    {websiteMenuMessage}
-                  </p>
-                ) : null}
-              </div>
+  function renderReserveSection() {
+    return (
+      <SectionShell
+        id="reserve"
+        title="Reserve Reports"
+        description="Bookings, covers, cancellations, no-shows, and guest mix"
+      >
+        <div className="stats-grid report-metric-grid">
+          <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
+          <StatCard label="Upcoming bookings" value={data.overview?.reserve.upcomingBookings ?? 0} hint="Future reservations" loading={loading} />
+          <StatCard label="Cancellations" value={data.overview?.reserve.cancellations ?? 0} hint={overviewWindowLabel} loading={loading} />
+          <StatCard label="No shows" value={data.overview?.reserve.noShows ?? 0} hint={overviewWindowLabel} loading={loading} />
+          <StatCard label="New guests" value={data.overview?.reserve.newGuests ?? 0} hint={overviewWindowLabel} loading={loading} />
+          <StatCard label="Covers today" value={data.overview?.reserve.coversToday ?? 0} hint="Booked covers" loading={loading} />
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderMarketingSection() {
+    return (
+      <SectionShell
+        id="marketing"
+        title="Marketing Reports"
+        description="Guest CRM reach, consent, campaigns, lapsed guests, and simulated sends"
+      >
+        <div className="stats-grid report-metric-grid">
+          <StatCard label="Total guests" value={data.overview?.marketing.totalGuests ?? 0} hint="Reserve and Marketing guest profiles" loading={loading} />
+          <StatCard label="Opted-in guests" value={data.overview?.marketing.optedInGuests ?? 0} hint="Email marketing consent" loading={loading} />
+          <StatCard label="Unsubscribed guests" value={data.overview?.marketing.unsubscribedGuests ?? 0} hint="Excluded from email campaigns" loading={loading} />
+          <StatCard label="Repeat visitors" value={data.overview?.marketing.repeatVisitors ?? 0} hint="Behavioural segment" loading={loading} />
+          <StatCard label="Campaign drafts" value={data.overview?.marketing.campaignDrafts ?? 0} hint="Email campaigns in draft" loading={loading} />
+          <StatCard label="Simulated sends" value={data.overview?.marketing.simulatedSends ?? 0} hint="No external email sent" loading={loading} />
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderContentSection() {
+    return (
+      <SectionShell
+        id="content"
+        title="Content Reports"
+        description="Scheduled posts, approvals, simulated publish attempts, and social setup readiness"
+      >
+        <div className="stats-grid report-metric-grid">
+          <StatCard label="Scheduled posts" value={data.overview?.content.scheduledPostsThisWeek ?? 0} hint="This week" loading={loading} />
+          <StatCard label="Needs approval" value={data.overview?.content.postsNeedingApproval ?? 0} hint="Review queue" loading={loading} />
+          <StatCard label="Failed simulations" value={data.overview?.content.failedSimulatedPublishAttempts ?? 0} hint="No live social posting" loading={loading} />
+          <StatCard label="Setup required accounts" value={data.overview?.content.setupRequiredSocialAccounts ?? 0} hint="Facebook, Instagram, TikTok" loading={loading} />
+          <StatCard label="Assets uploaded" value={data.overview?.content.assetsUploaded ?? 0} hint="Content library" loading={loading} />
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderGiftCardsSection() {
+    return (
+      <SectionShell
+        id="gift-cards"
+        title="Gift Card Reports"
+        description="Pending gift card orders, pending value, fulfilment, and setup state"
+      >
+        <div className="report-detail-grid">
+          <div className="report-panel">
+            <h4>Gift card order status</h4>
+            <Metric label="Pending orders" value={data.overview?.giftCards.pendingOrders ?? 0} tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'} />
+            <Metric label="Pending value" value={formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)} tone="info" />
+            <Metric label="Fulfilled orders" value={data.overview?.giftCards.fulfilledOrders ?? 0} tone="positive" />
+          </div>
+          <div className="report-panel">
+            <h4>Payment readiness</h4>
+            <p className="subtle">Gift card checkout setup and payment provider configuration are managed in Admin. Reports stays read-only and never exposes payment secrets.</p>
+            {sectionButton('exports', 'Open exports')}
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderExportsSection() {
+    return (
+      <SectionShell
+        id="exports"
+        title="Exports"
+        description="Read-only downloads for management reporting"
+      >
+        <div className="report-detail-grid">
+          <div className="report-panel">
+            <h4>Available exports</h4>
+            <div className="reports-export-actions spacious">
+              <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
+                Download overview CSV
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={exportPerformanceCsv} disabled={!venuePerformanceRows.length}>
+                Download performance CSV
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>
+                Download wage CSV
+              </Button>
+              <Button type="button" size="sm" variant="secondary" onClick={() => void copyWeeklySummary()}>
+                Copy weekly summary
+              </Button>
+              {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
             </div>
-          </Card>
-        </section>
+          </div>
+
+          <div className="report-panel">
+            <h4>Export notes</h4>
+            <p className="subtle">Reports exports do not change production data. Sales imports, Xero export marking, website menu publishing, provider setup, and report configuration belong in Admin or the relevant operational app.</p>
+            <Metric label="Overview range" value={overviewWindowLabel} tone="neutral" />
+            <Metric label="Weekly payroll range" value={weekWindowLabel} tone="neutral" />
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderActiveReportSection() {
+    switch (activeSection) {
+      case 'staff':
+        return renderStaffSection();
+      case 'compliance':
+        return renderComplianceSection();
+      case 'stock':
+        return renderStockSection();
+      case 'reserve':
+        return renderReserveSection();
+      case 'marketing':
+        return renderMarketingSection();
+      case 'content':
+        return renderContentSection();
+      case 'gift-cards':
+        return renderGiftCardsSection();
+      case 'exports':
+        return renderExportsSection();
+      case 'overview':
+      default:
+        return renderOverviewSection();
+    }
+  }
+
+  return (
+    <AppShell
+      brand={<ProductLogo appId="reports" size="md" />}
+      sidebar={<SidebarNav activeSection={activeSection} onSectionChange={selectReportSection} />}
+      topBar={
+        <TopBar
+          title="Reports"
+          subtitle="Read-only operating reports"
+          right={
+            <>
+              <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
+              <SuiteCommsWidget
+                appId="REPORTS"
+                api={staffApi}
+                venue={user.venue}
+                userName={`${user.firstName} ${user.lastName}`}
+                canAnnounce={user.role !== 'STAFF'}
+              />
+              <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
+                Sign out
+              </Button>
+            </>
+          }
+        />
+      }
+    >
+      <div className="page-stack reports-page">
+        <PageHeader
+          eyebrow="ALMA Reports"
+          title={activeReport.title}
+          description={`${activeReport.description} Signed in as ${user.firstName}. Reports are read-only and scoped by your venue access.`}
+          actions={
+            <div className="reports-week-controls">
+              <Select
+                label="Overview range"
+                value={overviewRange}
+                onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
+                options={[
+                  { label: 'Last 7 days', value: '7' },
+                  { label: 'Last 30 days', value: '30' },
+                  { label: 'Last 90 days', value: '90' }
+                ]}
+              />
+              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
+                Prev week
+              </Button>
+              <Input
+                label="Week"
+                type="date"
+                value={selectedWeekStart}
+                onChange={(event) => setSelectedWeekStart(isoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
+              />
+              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(7)}>
+                Next week
+              </Button>
+              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(isoDate(startOfWeek(new Date())))}>
+                This week
+              </Button>
+              <Button type="button" variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
+                Refresh
+              </Button>
+            </div>
+          }
+        />
+
+        {message ? <p className="error-text">{message}</p> : null}
+        {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}
+        {renderActiveReportSection()}
       </div>
     </AppShell>
   );
+
 }
 
 export function App() {
