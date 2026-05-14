@@ -61,6 +61,14 @@ reserveRouter.get('/guests/:id', requireManager, async (req, res, next) => {
   }
 });
 
+reserveRouter.get('/guests/:id/timeline', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reserveService.guestTimeline(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reserveRouter.patch('/guests/:id', requireManager, async (req, res, next) => {
   try {
     res.json(await reserveService.updateGuest(req.user!, String(req.params.id), req.body));

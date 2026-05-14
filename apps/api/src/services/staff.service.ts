@@ -2858,7 +2858,7 @@ export const staffService = {
       ? { OR: [{ venue }, { venue: null, staffProfile: { venue } }, { venue: null, rosterShift: { venue } }, { venue: null, rosterShift: { venue: null, staffProfile: { venue } } }] }
       : {};
 
-    const [todaysShifts, relevantSessions, pendingConfirmations] = await Promise.all([
+    const [todaysShifts, relevantSessions, pendingConfirmations, todaysReservations] = await Promise.all([
       prisma.rosterShift.findMany({
         where: {
           startsAt: { lt: end },
@@ -2908,6 +2908,23 @@ export const staffService = {
             select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true, employmentStatus: true }
           },
           shiftConfirmations: { orderBy: [{ confirmedAt: 'desc' }], take: 1 }
+        },
+        orderBy: [{ startsAt: 'asc' }],
+        take: 20
+      }),
+      prisma.reserveReservation.findMany({
+        where: {
+          startsAt: { gte: start, lt: end },
+          ...(venue ? { venue } : {}),
+          status: { in: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'] }
+        },
+        select: {
+          id: true,
+          venue: true,
+          startsAt: true,
+          covers: true,
+          guestName: true,
+          status: true
         },
         orderBy: [{ startsAt: 'asc' }],
         take: 20
@@ -3016,6 +3033,30 @@ export const staffService = {
       }
     }
 
+    const activeBookingStatuses = new Set(['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED']);
+    const bookingsSummary = {
+      bookingsToday: todaysReservations.filter((reservation) => activeBookingStatuses.has(reservation.status)).length,
+      coversToday: todaysReservations
+        .filter((reservation) => activeBookingStatuses.has(reservation.status))
+        .reduce((sum, reservation) => sum + reservation.covers, 0),
+      upcomingBookings: todaysReservations.filter((reservation) =>
+        ['PENDING', 'CONFIRMED', 'SEATED'].includes(reservation.status) && reservation.startsAt >= now
+      ).length,
+      cancellationsToday: todaysReservations.filter((reservation) => reservation.status === 'CANCELLED').length,
+      noShowsToday: todaysReservations.filter((reservation) => reservation.status === 'NO_SHOW').length,
+      nextReservations: todaysReservations
+        .filter((reservation) => ['PENDING', 'CONFIRMED', 'SEATED'].includes(reservation.status) && reservation.startsAt >= now)
+        .slice(0, 5)
+        .map((reservation) => ({
+          id: reservation.id,
+          venue: reservation.venue,
+          startsAt: reservation.startsAt.toISOString(),
+          covers: reservation.covers,
+          guestName: reservation.guestName,
+          status: reservation.status
+        }))
+    };
+
     return {
       date: key,
       venue,
@@ -3027,8 +3068,11 @@ export const staffService = {
         lateClockIns: todaysStaff.filter((row) => row.state === 'LATE').length,
         missedClockIns: todaysStaff.filter((row) => row.state === 'MISSED').length,
         pendingConfirmations: pendingConfirmations.length,
-        clockExceptions: clockExceptions.length
+        clockExceptions: clockExceptions.length,
+        bookingsToday: bookingsSummary.bookingsToday,
+        coversToday: bookingsSummary.coversToday
       },
+      bookingsSummary,
       todaysStaff,
       clockedIn: openSessions.map(toClockSessionPayload),
       pendingConfirmations: pendingConfirmations.map((shift) => ({

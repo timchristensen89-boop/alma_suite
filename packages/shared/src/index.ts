@@ -907,7 +907,15 @@ export const reservePublicBookingInputSchema = z.object({
   lastName: z.string().min(1),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().min(6),
+  birthday: z.string().optional().or(z.literal('')),
+  anniversary: z.string().optional().or(z.literal('')),
   occasion: z.string().optional().or(z.literal('')),
+  dietaryNotes: z.string().optional().or(z.literal('')),
+  seatingPreference: z.string().optional().or(z.literal('')),
+  highChair: z.boolean().default(false),
+  accessibility: z.boolean().default(false),
+  outdoorSeating: z.boolean().default(false),
+  barSeating: z.boolean().default(false),
   specialRequests: z.string().optional().or(z.literal('')),
   marketingOptIn: z.boolean().default(false)
 });
@@ -917,13 +925,19 @@ export const marketingSegmentDefinitionSchema = z.object({
   venue: z.string().optional().or(z.literal('')),
   guestIds: z.array(z.string().min(1)).default([]),
   tagIds: z.array(z.string().min(1)).default([]),
+  excludedTagIds: z.array(z.string().min(1)).default([]),
   marketingOptInOnly: z.boolean().default(false),
   emailOnly: z.boolean().default(false),
   includeUnsubscribed: z.boolean().default(false),
   minVisits: z.coerce.number().int().nonnegative().optional(),
+  maxVisits: z.coerce.number().int().nonnegative().optional(),
   maxDaysSinceVisit: z.coerce.number().int().nonnegative().optional(),
+  lastVisitOlderThanDays: z.coerce.number().int().nonnegative().optional(),
+  lastVisitWithinDays: z.coerce.number().int().nonnegative().optional(),
   birthdaysWithinDays: z.coerce.number().int().positive().max(365).optional(),
-  minSpendCents: z.coerce.number().int().nonnegative().optional()
+  minSpendCents: z.coerce.number().int().nonnegative().optional(),
+  hasUpcomingReservation: z.boolean().optional(),
+  hasGiftCardPurchase: z.boolean().optional()
 });
 
 export const marketingContactInputSchema = z.object({
@@ -1959,6 +1973,30 @@ export type ReserveGuest = {
   tagAssignments?: GuestTagAssignment[];
 };
 
+export type GuestTimelineItem = {
+  id: string;
+  at: string;
+  type:
+    | 'RESERVATION_CREATED'
+    | 'RESERVATION_STATUS'
+    | 'TAG_ASSIGNED'
+    | 'CAMPAIGN_SIMULATED'
+    | 'CONTENT_TOUCHPOINT'
+    | 'GIFT_CARD_ORDER'
+    | 'INTERNAL_NOTE';
+  title: string;
+  description: string;
+  venue: string | null;
+  source: 'reserve' | 'marketing' | 'content' | 'gift_cards' | 'staff';
+  metadata: Record<string, unknown>;
+};
+
+export type GuestTimelinePayload = {
+  guest: ReserveGuest;
+  generatedAt: string;
+  timeline: GuestTimelineItem[];
+};
+
 export type ReserveTable = {
   id: string;
   venue: string;
@@ -2236,6 +2274,7 @@ export type MarketingSegmentPreviewPayload = {
   includedCount: number;
   skippedCount: number;
   skippedReasons: Record<string, number>;
+  estimatedReachableEmailCount: number;
   guests: ReserveGuest[];
 };
 
@@ -2369,6 +2408,17 @@ export type MarketingContentCalendarResponse = {
   from: string;
   to: string;
   posts: MarketingContentPost[];
+};
+
+export type MarketingContentHelper = {
+  id: string;
+  label: string;
+  contentPillar: string;
+  caption: string;
+  targetChannels: SocialPlatform[];
+  campaignSubject: string;
+  campaignPreviewText: string;
+  campaignBody: string;
 };
 
 export type MarketingContentUploadConfigResponse = {
@@ -2571,6 +2621,23 @@ export type StaffManagerOperationsPayload = {
     missedClockIns: number;
     pendingConfirmations: number;
     clockExceptions: number;
+    bookingsToday?: number;
+    coversToday?: number;
+  };
+  bookingsSummary?: {
+    bookingsToday: number;
+    coversToday: number;
+    upcomingBookings: number;
+    cancellationsToday: number;
+    noShowsToday: number;
+    nextReservations: Array<{
+      id: string;
+      venue: string;
+      startsAt: string;
+      covers: number;
+      guestName: string | null;
+      status: ReserveReservationStatus;
+    }>;
   };
   todaysStaff: Array<{
     shift: RosterShift;
@@ -3637,6 +3704,38 @@ export type ReportsStockSummary = {
   stockItemsVenueScoped: boolean;
 };
 
+export type ReportsReserveSummary = {
+  bookingsToday: number;
+  coversToday: number;
+  upcomingBookings: number;
+  cancellations: number;
+  noShows: number;
+  newGuests: number;
+};
+
+export type ReportsMarketingSummary = {
+  totalGuests: number;
+  optedInGuests: number;
+  unsubscribedGuests: number;
+  repeatVisitors: number;
+  campaignDrafts: number;
+  simulatedSends: number;
+};
+
+export type ReportsContentSummary = {
+  scheduledPostsThisWeek: number;
+  postsNeedingApproval: number;
+  failedSimulatedPublishAttempts: number;
+  setupRequiredSocialAccounts: number;
+  assetsUploaded: number;
+};
+
+export type ReportsGiftCardSummary = {
+  pendingOrders: number;
+  totalPendingAmountCents: number;
+  fulfilledOrders: number;
+};
+
 export type ReportsOverviewPayload = {
   generatedAt: string;
   rangeDays: ReportsRangeDays;
@@ -3649,6 +3748,10 @@ export type ReportsOverviewPayload = {
   staff: ReportsStaffSummary;
   compliance: ReportsComplianceSummary;
   stock: ReportsStockSummary;
+  reserve: ReportsReserveSummary;
+  marketing: ReportsMarketingSummary;
+  content: ReportsContentSummary;
+  giftCards: ReportsGiftCardSummary;
 };
 
 export const stocktakeLineInputSchema = z.object({

@@ -23,7 +23,7 @@ import {
   type MarketingSegmentDefinition
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
-import { recalculateAutoTagsForGuest } from './marketing.service.js';
+import { buildGuestTimeline, recalculateAutoTagsForGuest } from './marketing.service.js';
 
 const ACTIVE_BOOKING_STATUSES = new Set<ReserveReservationStatus>(['PENDING', 'CONFIRMED', 'SEATED']);
 const VISIT_STATUSES = new Set<ReserveReservationStatus>(['SEATED', 'COMPLETED']);
@@ -99,6 +99,11 @@ function formatSlotLabel(value: Date) {
 
 function cleanText(value?: string | null) {
   return value?.trim() || null;
+}
+
+function jsonObject(value: Prisma.JsonValue | null | undefined): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return value as Record<string, unknown>;
 }
 
 function parseRuleTime(date: Date, time: string, label: string) {
@@ -381,11 +386,26 @@ async function findOrCreateGuestForVenue(
     : null;
 
   if (existing) {
+    const incoming = guestWriteData(input, existing.venue ?? venue);
+    const incomingPreferences = jsonObject(input.preferences as Prisma.JsonValue | null | undefined);
+    const existingPreferences = jsonObject(existing.preferences);
     return tx.reserveGuest.update({
       where: { id: existing.id },
       data: {
-        ...guestWriteData(input, existing.venue ?? venue),
-        marketingOptIn: existing.marketingOptIn || input.marketingOptIn
+        venue: existing.venue ?? venue,
+        firstName: input.firstName?.trim() || existing.firstName,
+        lastName: input.lastName?.trim() || existing.lastName,
+        email: incoming.email ?? existing.email,
+        phone: incoming.phone ?? existing.phone,
+        birthday: incoming.birthday ?? existing.birthday,
+        tags: input.tags?.length ? incoming.tags : existing.tags,
+        allergyNotes: incoming.allergyNotes ?? existing.allergyNotes,
+        visitNotes: incoming.visitNotes ?? existing.visitNotes,
+        notes: incoming.notes ?? existing.notes,
+        dietaryNotes: incoming.dietaryNotes ?? existing.dietaryNotes,
+        preferences: { ...existingPreferences, ...incomingPreferences } as Prisma.InputJsonValue,
+        marketingOptIn: existing.marketingOptIn || input.marketingOptIn,
+        source: existing.source || incoming.source
       },
       include: guestInclude()
     });
@@ -651,6 +671,11 @@ export const reserveService = {
     return toGuestPayload(await findScopedGuestById(id, actor));
   },
 
+  async guestTimeline(actor: AuthUser, id: string) {
+    await findScopedGuestById(id, actor);
+    return buildGuestTimeline(actor, id);
+  },
+
   async createGuest(actor: AuthUser, input: unknown) {
     const data = reserveGuestInputSchema.parse(input);
     const venue = actorVenueScope(actor, data.venue || actor.venue || null, 'Reserve');
@@ -831,9 +856,7 @@ export const reserveService = {
       return reservationRow;
     });
 
-    if (['SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(reservation.status)) {
-      await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
-    }
+    await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
 
     return toReservationPayload(reservation);
   },
@@ -894,7 +917,7 @@ export const reserveService = {
       return updated;
     });
 
-    if (data.status !== undefined && ['SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].includes(data.status)) {
+    if (data.status !== undefined) {
       await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
     }
 
@@ -1115,6 +1138,23 @@ export const reserveService = {
     const serviceDate = startOfDay(parseDate(data.serviceDate, 'Service date'));
     const startsAt = parseDate(data.startsAt, 'Reservation start time');
     const venue = data.venue.trim();
+    const preferences = {
+      ...(cleanText(data.anniversary) ? { anniversary: cleanText(data.anniversary) } : {}),
+      ...(cleanText(data.seatingPreference) ? { seatingPreference: cleanText(data.seatingPreference) } : {}),
+      highChair: data.highChair,
+      accessibility: data.accessibility,
+      outdoorSeating: data.outdoorSeating,
+      barSeating: data.barSeating
+    };
+    const requestLines = [
+      cleanText(data.specialRequests),
+      cleanText(data.dietaryNotes) ? `Dietary: ${cleanText(data.dietaryNotes)}` : null,
+      cleanText(data.seatingPreference) ? `Seating: ${cleanText(data.seatingPreference)}` : null,
+      data.highChair ? 'High chair requested' : null,
+      data.accessibility ? 'Accessibility support requested' : null,
+      data.outdoorSeating ? 'Outdoor seating preferred' : null,
+      data.barSeating ? 'Bar seating preferred' : null
+    ].filter((entry): entry is string => Boolean(entry));
 
     const slots = await listPublicSlots({
       venue,
@@ -1132,13 +1172,13 @@ export const reserveService = {
         lastName: data.lastName,
         email: data.email,
         phone: data.phone,
-        birthday: '',
+        birthday: data.birthday,
         tags: [],
         allergyNotes: '',
         visitNotes: '',
         notes: '',
-        dietaryNotes: '',
-        preferences: {},
+        dietaryNotes: data.dietaryNotes,
+        preferences,
         marketingOptIn: data.marketingOptIn,
         source: 'public_widget'
       })
@@ -1161,7 +1201,7 @@ export const reserveService = {
           guestEmail: guest.email,
           guestPhone: guest.phone,
           occasion: cleanText(data.occasion),
-          specialRequests: cleanText(data.specialRequests),
+          specialRequests: requestLines.length ? requestLines.join('\n') : null,
           marketingOptIn: data.marketingOptIn
         },
         include: reserveReservationWithRelationsArgs.include

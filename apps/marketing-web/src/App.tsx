@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthUser,
+  GuestTimelinePayload,
   GuestTag,
   GuestTagType,
   MarketingAutomation,
@@ -11,6 +12,7 @@ import type {
   MarketingContentAssetType,
   MarketingContentCalendarResponse,
   MarketingContentDashboardSummary,
+  MarketingContentHelper,
   MarketingContentPlatformPreview,
   MarketingContentPost,
   MarketingContentUploadConfigResponse,
@@ -109,13 +111,18 @@ type SegmentBuilder = {
   channel: MarketingChannel;
   search: string;
   tagId: string;
+  excludedTagId: string;
   marketingOptInOnly: boolean;
   emailOnly: boolean;
   includeUnsubscribed: boolean;
   minVisits: string;
+  maxVisits: string;
   maxDaysSinceVisit: string;
+  lastVisitWithinDays: string;
   birthdaysWithinDays: string;
   minSpendCents: string;
+  hasUpcomingReservation: boolean;
+  hasGiftCardPurchase: boolean;
 };
 
 type TemplateForm = {
@@ -174,6 +181,7 @@ type ContentPostForm = {
 type MarketingGuestDetail = {
   guest: ReserveGuest;
   reservations: ReserveReservation[];
+  timeline?: GuestTimelinePayload;
 };
 
 type CampaignPreviewResult = MarketingSegmentPreviewPayload & {
@@ -229,13 +237,18 @@ function defaultSegmentBuilder(venue: string): SegmentBuilder {
     channel: 'EMAIL',
     search: '',
     tagId: '',
+    excludedTagId: '',
     marketingOptInOnly: true,
     emailOnly: true,
     includeUnsubscribed: false,
     minVisits: '',
+    maxVisits: '',
     maxDaysSinceVisit: '',
+    lastVisitWithinDays: '',
     birthdaysWithinDays: '',
-    minSpendCents: ''
+    minSpendCents: '',
+    hasUpcomingReservation: false,
+    hasGiftCardPurchase: false
   };
 }
 
@@ -367,13 +380,19 @@ function buildSegmentDefinition(form: SegmentBuilder): MarketingSegmentDefinitio
     search: form.search,
     guestIds: [],
     tagIds: form.tagId ? [form.tagId] : [],
+    excludedTagIds: form.excludedTagId ? [form.excludedTagId] : [],
     marketingOptInOnly: form.marketingOptInOnly,
     emailOnly: form.channel === 'EMAIL' ? form.emailOnly : false,
     includeUnsubscribed: form.includeUnsubscribed,
     minVisits: form.minVisits ? Number(form.minVisits) : undefined,
+    maxVisits: form.maxVisits ? Number(form.maxVisits) : undefined,
     maxDaysSinceVisit: form.maxDaysSinceVisit ? Number(form.maxDaysSinceVisit) : undefined,
+    lastVisitOlderThanDays: form.maxDaysSinceVisit ? Number(form.maxDaysSinceVisit) : undefined,
+    lastVisitWithinDays: form.lastVisitWithinDays ? Number(form.lastVisitWithinDays) : undefined,
     birthdaysWithinDays: form.birthdaysWithinDays ? Number(form.birthdaysWithinDays) : undefined,
-    minSpendCents: form.minSpendCents ? Number(form.minSpendCents) : undefined
+    minSpendCents: form.minSpendCents ? Number(form.minSpendCents) : undefined,
+    hasUpcomingReservation: form.hasUpcomingReservation || undefined,
+    hasGiftCardPurchase: form.hasGiftCardPurchase || undefined
   };
 }
 
@@ -527,6 +546,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const [contentPosts, setContentPosts] = useState<MarketingContentPost[]>([]);
   const [contentCalendar, setContentCalendar] = useState<MarketingContentCalendarResponse | null>(null);
   const [contentUploadConfig, setContentUploadConfig] = useState<MarketingContentUploadConfigResponse | null>(null);
+  const [contentHelpers, setContentHelpers] = useState<MarketingContentHelper[]>([]);
   const [contentPublishPreview, setContentPublishPreview] = useState<ContentPublishPreviewResult | null>(null);
 
   const venueParam = venueFilter === ALL_VENUES ? '' : venueFilter;
@@ -575,14 +595,15 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       if (venueParam) calendarQuery.set('venue', venueParam);
       calendarQuery.set('from', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
       calendarQuery.set('to', new Date(Date.now() + 45 * 24 * 60 * 60 * 1000).toISOString());
-      const [nextOverview, nextGuests, nextContentDashboard, nextAssets, nextPosts, nextCalendar, nextUploadConfig] = await Promise.all([
+      const [nextOverview, nextGuests, nextContentDashboard, nextAssets, nextPosts, nextCalendar, nextUploadConfig, nextContentHelpers] = await Promise.all([
         api<MarketingOverview>(`/api/marketing/overview${query}`),
         api<ReserveGuest[]>(`/api/marketing/guests?${guestsQuery.toString()}`),
         api<MarketingContentDashboardSummary>(`/api/marketing/content/dashboard${query}`),
         api<MarketingContentAsset[]>(`/api/marketing/content/assets${query}`),
         api<MarketingContentPost[]>(`/api/marketing/content/posts${query}`),
         api<MarketingContentCalendarResponse>(`/api/marketing/content/calendar?${calendarQuery.toString()}`),
-        api<MarketingContentUploadConfigResponse>('/api/marketing/content/upload-config')
+        api<MarketingContentUploadConfigResponse>('/api/marketing/content/upload-config'),
+        api<MarketingContentHelper[]>('/api/marketing/content/helpers')
       ]);
       setOverview(nextOverview);
       setGuests(nextGuests);
@@ -591,6 +612,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setContentPosts(nextPosts);
       setContentCalendar(nextCalendar);
       setContentUploadConfig(nextUploadConfig);
+      setContentHelpers(nextContentHelpers);
     } catch (error) {
       setFeedback({
         target: 'page',
@@ -605,6 +627,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   useEffect(() => {
     void load();
   }, [load]);
+
+  const loadGuestDetail = useCallback(async (guestId: string): Promise<MarketingGuestDetail> => {
+    const [detail, timeline] = await Promise.all([
+      api<MarketingGuestDetail>(`/api/marketing/guests/${guestId}`),
+      api<GuestTimelinePayload>(`/api/marketing/guests/${guestId}/timeline`)
+    ]);
+    return { ...detail, timeline };
+  }, []);
 
   useEffect(() => {
     setTagForm(defaultTagForm(defaultVenue));
@@ -625,7 +655,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     let cancelled = false;
     const run = async () => {
       try {
-        const detail = await api<MarketingGuestDetail>(`/api/marketing/guests/${selectedGuestId}`);
+        const detail = await loadGuestDetail(selectedGuestId);
         if (!cancelled) setGuestDetail(detail);
       } catch {
         if (!cancelled) setGuestDetail(null);
@@ -636,7 +666,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     return () => {
       cancelled = true;
     };
-  }, [selectedGuestId]);
+  }, [loadGuestDetail, selectedGuestId]);
 
   function setSuccess(target: string, message: string) {
     setFeedback({ target, message, tone: 'success' });
@@ -680,7 +710,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess('guest-tag', 'Tag applied.');
       await load();
       if (selectedGuestId === guestId) {
-        const detail = await api<MarketingGuestDetail>(`/api/marketing/guests/${guestId}`);
+        const detail = await loadGuestDetail(guestId);
         setGuestDetail(detail);
       }
     } catch (error) {
@@ -694,7 +724,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess('guest-tag', 'Tag removed.');
       await load();
       if (selectedGuestId === guestId) {
-        const detail = await api<MarketingGuestDetail>(`/api/marketing/guests/${guestId}`);
+        const detail = await loadGuestDetail(guestId);
         setGuestDetail(detail);
       }
     } catch (error) {
@@ -714,7 +744,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess('auto-tags', guestId ? 'Guest auto-tags recalculated.' : 'Venue auto-tags recalculated.');
       await load();
       if (guestId && selectedGuestId === guestId) {
-        const detail = await api<MarketingGuestDetail>(`/api/marketing/guests/${guestId}`);
+        const detail = await loadGuestDetail(guestId);
         setGuestDetail(detail);
       }
     } catch (error) {
@@ -851,6 +881,60 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       const next = selected ? current.targetChannels.filter((item) => item !== channel) : [...current.targetChannels, channel];
       return { ...current, targetChannels: next.length > 0 ? next : [channel] };
     });
+  }
+
+  function applyContentHelper(helper: MarketingContentHelper) {
+    setContentPostForm((current) => ({
+      ...current,
+      title: helper.label,
+      caption: helper.caption,
+      contentPillar: helper.contentPillar,
+      targetChannels: helper.targetChannels
+    }));
+    setCampaignForm((current) => ({
+      ...current,
+      name: helper.label,
+      audienceName: helper.label,
+      subject: helper.campaignSubject,
+      previewText: helper.campaignPreviewText,
+      body: helper.campaignBody,
+      textBody: helper.campaignPreviewText
+    }));
+    setSuccess('content-helper', `${helper.label} helper applied.`);
+  }
+
+  async function createPostFromHelper(helper: MarketingContentHelper) {
+    try {
+      const result = await api<{ post: MarketingContentPost }>(`/api/marketing/content/helpers/${helper.id}/create-post`, {
+        method: 'POST',
+        body: JSON.stringify({ venue: contentPostForm.venue || defaultVenue, scheduledAt: contentPostForm.scheduledAt })
+      });
+      setSuccess('content-helper', `${helper.label} draft created.`);
+      setContentPostForm((current) => ({ ...current, title: result.post.title, caption: result.post.caption }));
+      await load();
+    } catch (error) {
+      setError('content-helper', error, 'Could not create helper post.');
+    }
+  }
+
+  async function createCampaignFromPost(postId: string) {
+    try {
+      await api(`/api/marketing/content/posts/${postId}/create-campaign`, { method: 'POST' });
+      setSuccess(`content-post:${postId}`, 'Email campaign draft created and linked.');
+      await load();
+    } catch (error) {
+      setError(`content-post:${postId}`, error, 'Could not create campaign from post.');
+    }
+  }
+
+  async function createContentPostFromCampaign(campaignId: string) {
+    try {
+      await api(`/api/marketing/campaigns/${campaignId}/create-content-post`, { method: 'POST' });
+      setSuccess(`campaign-preview:${campaignId}`, 'Social content draft created from campaign.');
+      await load();
+    } catch (error) {
+      setError(`campaign-preview:${campaignId}`, error, 'Could not create social post from campaign.');
+    }
   }
 
   async function saveContentAsset(event: FormEvent<HTMLFormElement>) {
@@ -1160,6 +1244,23 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
                   <div className="marketing-stack">
                     <Card title="Post composer" subtitle="Facebook, Instagram, and TikTok previews. Live publish stays setup required.">
+                      <div className="marketing-summary-card">
+                        <strong>Hospitality helpers</strong>
+                        <span>Prefill post and campaign copy for bookings, gift cards, functions, specials, events, cocktails, and staff stories.</span>
+                        <div className="marketing-badges">
+                          {contentHelpers.map((helper) => (
+                            <span key={helper.id} className="marketing-tag-chip">
+                              <Button type="button" size="sm" variant="secondary" onClick={() => applyContentHelper(helper)}>
+                                {helper.label}
+                              </Button>
+                              <Button type="button" size="sm" variant="ghost" onClick={() => void createPostFromHelper(helper)}>
+                                Create draft
+                              </Button>
+                            </span>
+                          ))}
+                        </div>
+                        <ActionFeedback message={feedback.target === 'content-helper' ? feedback.message : null} tone={feedback.tone} />
+                      </div>
                       <form className="marketing-form" onSubmit={(event) => void saveContentPost(event)}>
                         <div className="form-grid two">
                           <Select label="Venue" value={contentPostForm.venue} onChange={(event) => setContentPostForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
@@ -1217,12 +1318,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                               <div className="marketing-badges">
                                 {post.contentPillar ? <Badge tone="neutral">{prettyLabel(post.contentPillar)}</Badge> : null}
                                 {post.scheduledAt ? <Badge tone="positive">{dateTimeLabel(post.scheduledAt)}</Badge> : <Badge tone="warning">Unscheduled</Badge>}
+                                {post.campaignId ? <Badge tone="info">Linked campaign</Badge> : null}
                               </div>
                               <div className="marketing-toolbar">
                                 <Button type="button" size="sm" variant="secondary" onClick={() => void submitContentPost(post.id)}>Submit review</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => void approveContentPost(post.id)}>Approve</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => void scheduleContentPost(post.id, post.scheduledAt)}>Schedule</Button>
                                 <Button type="button" size="sm" variant="secondary" onClick={() => void previewContentPostPublish(post.id)}>Preview</Button>
+                                <Button type="button" size="sm" variant="secondary" onClick={() => void createCampaignFromPost(post.id)}>Create email campaign</Button>
                                 <Button type="button" size="sm" onClick={() => void simulateContentPostPublish(post.id)}>Simulate</Button>
                                 <Button type="button" size="sm" variant="ghost" disabled title="Live publish requires Meta/TikTok OAuth setup">Live publish setup required</Button>
                               </div>
@@ -1399,6 +1502,21 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                           </div>
                         )}
                       </Card>
+                      <Card title="Guest timeline" subtitle="Reservations, tags, campaign simulations, content links, and gift card matches">
+                        {guestDetail.timeline?.timeline.length ? (
+                          <div className="marketing-stack">
+                            {guestDetail.timeline.timeline.slice(0, 12).map((item) => (
+                              <div key={item.id} className="marketing-summary-card">
+                                <strong>{item.title}</strong>
+                                <span>{dateTimeLabel(item.at)} · {item.source.replace('_', ' ')} · {item.venue || 'No venue'}</span>
+                                <span>{item.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <EmptyState title="No timeline yet" description="Reservations, tags, campaign simulations, and gift card matches will appear here." />
+                        )}
+                      </Card>
                     </>
                   ) : (
                     <EmptyState title="Select a guest" description="Review consent, manual tags, and visit history from one panel." />
@@ -1453,8 +1571,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <Select label="Channel" value={segmentForm.channel} onChange={(event) => setSegmentForm((current) => ({ ...current, channel: event.currentTarget.value as MarketingChannel }))} options={CAMPAIGN_CHANNELS.map((value) => ({ label: value, value }))} />
                         <Input label="Search filter" value={segmentForm.search} onChange={(event) => setSegmentForm((current) => ({ ...current, search: event.currentTarget.value }))} />
                         <Select label="Must have tag" value={segmentForm.tagId} onChange={(event) => setSegmentForm((current) => ({ ...current, tagId: event.currentTarget.value }))} options={[{ label: 'Any tag state', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
+                        <Select label="Exclude tag" value={segmentForm.excludedTagId} onChange={(event) => setSegmentForm((current) => ({ ...current, excludedTagId: event.currentTarget.value }))} options={[{ label: 'No excluded tag', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
                         <Input label="Minimum visits" type="number" min="0" value={segmentForm.minVisits} onChange={(event) => setSegmentForm((current) => ({ ...current, minVisits: event.currentTarget.value }))} />
-                        <Input label="Lapsed days" type="number" min="0" value={segmentForm.maxDaysSinceVisit} onChange={(event) => setSegmentForm((current) => ({ ...current, maxDaysSinceVisit: event.currentTarget.value }))} />
+                        <Input label="Maximum visits" type="number" min="0" value={segmentForm.maxVisits} onChange={(event) => setSegmentForm((current) => ({ ...current, maxVisits: event.currentTarget.value }))} />
+                        <Input label="Last visit older than days" type="number" min="0" value={segmentForm.maxDaysSinceVisit} onChange={(event) => setSegmentForm((current) => ({ ...current, maxDaysSinceVisit: event.currentTarget.value }))} />
+                        <Input label="Last visit within days" type="number" min="0" value={segmentForm.lastVisitWithinDays} onChange={(event) => setSegmentForm((current) => ({ ...current, lastVisitWithinDays: event.currentTarget.value }))} />
                         <Input label="Birthday within days" type="number" min="1" value={segmentForm.birthdaysWithinDays} onChange={(event) => setSegmentForm((current) => ({ ...current, birthdaysWithinDays: event.currentTarget.value }))} />
                         <Input label="Minimum spend cents" type="number" min="0" value={segmentForm.minSpendCents} onChange={(event) => setSegmentForm((current) => ({ ...current, minSpendCents: event.currentTarget.value }))} />
                       </div>
@@ -1462,6 +1583,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <label><input type="checkbox" checked={segmentForm.marketingOptInOnly} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, marketingOptInOnly: checked })); }} /> Consent required</label>
                         <label><input type="checkbox" checked={segmentForm.emailOnly} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, emailOnly: checked })); }} /> Email required</label>
                         <label><input type="checkbox" checked={segmentForm.includeUnsubscribed} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, includeUnsubscribed: checked })); }} /> Include unsubscribed</label>
+                        <label><input type="checkbox" checked={segmentForm.hasUpcomingReservation} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, hasUpcomingReservation: checked })); }} /> Has upcoming booking</label>
+                        <label><input type="checkbox" checked={segmentForm.hasGiftCardPurchase} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, hasGiftCardPurchase: checked })); }} /> Has gift card order</label>
                       </div>
                       <div className="toolbar-right">
                         <ActionFeedback message={feedback.target === 'segment' ? feedback.message : null} tone={feedback.tone} />
@@ -1472,7 +1595,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       <div className="marketing-stack">
                         <div className="marketing-summary-card">
                           <strong>{segmentPreview.includedCount} included</strong>
-                          <span>{segmentPreview.skippedCount} skipped · {segmentPreview.guestCount} total</span>
+                          <span>{segmentPreview.skippedCount} skipped · {segmentPreview.guestCount} total · {segmentPreview.estimatedReachableEmailCount} reachable email</span>
                         </div>
                         <div className="marketing-badges">
                           {Object.entries(segmentPreview.skippedReasons).map(([reason, count]) => (
@@ -1554,10 +1677,17 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               <div className="marketing-stack">
                 {campaigns.slice(0, 5).map((campaign) => (
                   <div key={campaign.id} className="marketing-summary-card">
+                    {(() => {
+                      const linkedPosts = contentPosts.filter((post) => post.campaignId === campaign.id);
+                      return linkedPosts.length ? (
+                        <span className="subtle">{linkedPosts.length} linked social post{linkedPosts.length === 1 ? '' : 's'}</span>
+                      ) : null;
+                    })()}
                     <strong>{campaign.name}</strong>
                     <span>{campaign.channel} · {campaign.status} · {campaign.recipients.length} recipients</span>
                     <div className="marketing-badges">
                       <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)}>Preview</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
                       <Button type="button" size="sm" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
                     </div>
                     <ActionFeedback
@@ -1574,6 +1704,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               {campaignPreview ? (
                 <Card title="Campaign preview result" subtitle={`${campaignPreview.includedCount} included · ${campaignPreview.skippedCount} skipped`}>
                   {campaignPreview.message ? <p className="subtle">{campaignPreview.message}</p> : null}
+                  <p className="subtle">{campaignPreview.estimatedReachableEmailCount} guests have reachable email for this audience.</p>
                   <div className="marketing-badges">
                     {Object.entries(campaignPreview.skippedReasons).map(([reason, count]) => (
                       <Badge key={reason} tone="warning">{reason}: {count}</Badge>

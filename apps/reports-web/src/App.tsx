@@ -969,7 +969,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       ['Stock', 'Active catalogue items', overview.stock.activeStockItems],
       ['Stock', 'Low stock venue rows', overview.stock.lowStockCount],
       ['Stock', 'Out of stock venue rows', overview.stock.outOfStockCount],
-      ['Stock', 'Stocktakes ready for review', overview.stock.stocktakesReadyForReview]
+      ['Stock', 'Stocktakes ready for review', overview.stock.stocktakesReadyForReview],
+      ['Reserve', 'Bookings today', overview.reserve.bookingsToday],
+      ['Reserve', 'Covers today', overview.reserve.coversToday],
+      ['Reserve', 'Upcoming bookings', overview.reserve.upcomingBookings],
+      ['Reserve', 'Cancellations', overview.reserve.cancellations],
+      ['Reserve', 'No shows', overview.reserve.noShows],
+      ['Marketing', 'Guests', overview.marketing.totalGuests],
+      ['Marketing', 'Opted in guests', overview.marketing.optedInGuests],
+      ['Marketing', 'Campaign drafts', overview.marketing.campaignDrafts],
+      ['Marketing', 'Simulated sends', overview.marketing.simulatedSends],
+      ['Content', 'Scheduled posts this week', overview.content.scheduledPostsThisWeek],
+      ['Content', 'Posts needing approval', overview.content.postsNeedingApproval],
+      ['Content', 'Setup required social accounts', overview.content.setupRequiredSocialAccounts],
+      ['Gift cards', 'Pending orders', overview.giftCards.pendingOrders],
+      ['Gift cards', 'Pending amount', overview.giftCards.totalPendingAmountCents],
+      ['Gift cards', 'Fulfilled orders', overview.giftCards.fulfilledOrders]
     ];
     downloadTextFile(`alma-management-overview-${overview.rangeDays}d.csv`, csvRows(rows));
     setExportMessage('Management overview CSV downloaded.');
@@ -1391,6 +1406,100 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <Badge tone={(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? 'warning' : 'positive'}>
                     {data.overview?.stock.stocktakesReadyForReview ?? 0}
                   </Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Reserve</h4>
+                <div className="metric-row">
+                  <span>Bookings today</span>
+                  <Badge tone="info">{data.overview?.reserve.bookingsToday ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Covers today</span>
+                  <Badge tone="neutral">{data.overview?.reserve.coversToday ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Upcoming bookings</span>
+                  <Badge tone={(data.overview?.reserve.upcomingBookings ?? 0) > 0 ? 'positive' : 'neutral'}>
+                    {data.overview?.reserve.upcomingBookings ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Cancellations / no-shows</span>
+                  <Badge tone={(data.overview?.reserve.cancellations ?? 0) + (data.overview?.reserve.noShows ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {(data.overview?.reserve.cancellations ?? 0) + (data.overview?.reserve.noShows ?? 0)}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Marketing</h4>
+                <div className="metric-row">
+                  <span>Total guests</span>
+                  <Badge tone="info">{data.overview?.marketing.totalGuests ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Opted in guests</span>
+                  <Badge tone="positive">{data.overview?.marketing.optedInGuests ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Campaign drafts</span>
+                  <Badge tone={(data.overview?.marketing.campaignDrafts ?? 0) > 0 ? 'warning' : 'neutral'}>
+                    {data.overview?.marketing.campaignDrafts ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Simulated sends</span>
+                  <Badge tone="neutral">{data.overview?.marketing.simulatedSends ?? 0}</Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Content</h4>
+                <div className="metric-row">
+                  <span>Scheduled this week</span>
+                  <Badge tone="info">{data.overview?.content.scheduledPostsThisWeek ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Needs approval</span>
+                  <Badge tone={(data.overview?.content.postsNeedingApproval ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.content.postsNeedingApproval ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Failed simulated publishes</span>
+                  <Badge tone={(data.overview?.content.failedSimulatedPublishAttempts ?? 0) > 0 ? 'danger' : 'positive'}>
+                    {data.overview?.content.failedSimulatedPublishAttempts ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Setup required accounts</span>
+                  <Badge tone={(data.overview?.content.setupRequiredSocialAccounts ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.content.setupRequiredSocialAccounts ?? 0}
+                  </Badge>
+                </div>
+              </div>
+
+              <div className="report-panel">
+                <h4>Gift cards</h4>
+                <div className="metric-row">
+                  <span>Pending orders</span>
+                  <Badge tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}>
+                    {data.overview?.giftCards.pendingOrders ?? 0}
+                  </Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Pending amount</span>
+                  <Badge tone="neutral">{formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>Fulfilled orders</span>
+                  <Badge tone="info">{data.overview?.giftCards.fulfilledOrders ?? 0}</Badge>
+                </div>
+                <div className="metric-row">
+                  <span>New guests</span>
+                  <Badge tone="neutral">{data.overview?.reserve.newGuests ?? 0}</Badge>
                 </div>
               </div>
             </div>

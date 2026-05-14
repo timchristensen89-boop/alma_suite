@@ -22,7 +22,9 @@ import {
   marketingTemplateInputSchema,
   marketingTemplateUpdateInputSchema,
   type AuthUser,
+  type GuestTimelinePayload,
   type MarketingChannel,
+  type MarketingContentHelper,
   type MarketingSegmentDefinition,
   type ReserveGuest,
   type SocialPlatform
@@ -33,6 +35,89 @@ const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
 const LAPSED_DAYS = 90;
 const BIRTHDAY_SOON_DAYS = 30;
 const EMPTY_SEGMENT_DEFINITION = marketingSegmentDefinitionSchema.parse({});
+
+const CONTENT_HELPERS: MarketingContentHelper[] = [
+  {
+    id: 'book-now',
+    label: 'Book now',
+    contentPillar: 'bookings',
+    caption: 'Tables are open this week at {{venueName}}. Book your spot and make a night of it.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM'],
+    campaignSubject: 'Your next table at {{venueName}}',
+    campaignPreviewText: 'Reserve a table for this week.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Tables are open at {{venueName}}. We would love to see you soon.</p><p><a href="{{bookingLink}}">Book a table</a></p>'
+  },
+  {
+    id: 'gift-cards',
+    label: 'Gift cards',
+    contentPillar: 'gift_cards',
+    caption: 'An Alma gift card is ready when you need a thoughtful last-minute present.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM'],
+    campaignSubject: 'A little Alma gift',
+    campaignPreviewText: 'Gift cards are available for the next celebration.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Gift cards are available for Alma venues and make an easy table-ready present.</p>'
+  },
+  {
+    id: 'function-enquiry',
+    label: 'Function enquiry',
+    contentPillar: 'functions',
+    caption: 'Planning a group lunch, dinner, or celebration? Talk to our team about functions at {{venueName}}.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM'],
+    campaignSubject: 'Plan your next function at {{venueName}}',
+    campaignPreviewText: 'Group dining and events at Alma.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Planning a group event? Our team can help with functions at {{venueName}}.</p>'
+  },
+  {
+    id: 'weekend-special',
+    label: 'Weekend special',
+    contentPillar: 'food',
+    caption: 'Weekend specials are on. Bring a few friends and settle in at {{venueName}}.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'],
+    campaignSubject: 'Weekend specials at {{venueName}}',
+    campaignPreviewText: 'A reason to book this weekend.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Weekend specials are on at {{venueName}}. Book a table and make a night of it.</p><p><a href="{{bookingLink}}">Book now</a></p>'
+  },
+  {
+    id: 'new-menu-item',
+    label: 'New menu item',
+    contentPillar: 'food',
+    caption: 'New on the menu at {{venueName}}. Come in and try it while it is fresh.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'],
+    campaignSubject: 'New on the menu',
+    campaignPreviewText: 'Try something new at Alma.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>There is something new on the menu at {{venueName}}.</p>'
+  },
+  {
+    id: 'event-night',
+    label: 'Event night',
+    contentPillar: 'events',
+    caption: 'Event night is coming up at {{venueName}}. Book early so you do not miss a table.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM'],
+    campaignSubject: 'Event night at {{venueName}}',
+    campaignPreviewText: 'Book ahead for the next Alma event.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Event night is coming up at {{venueName}}. Reserve ahead to secure a table.</p><p><a href="{{bookingLink}}">Book now</a></p>'
+  },
+  {
+    id: 'cocktail-feature',
+    label: 'Margarita or cocktail feature',
+    contentPillar: 'drinks',
+    caption: 'Cocktail feature of the week at {{venueName}}. A good excuse to start with a margarita.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'],
+    campaignSubject: 'Cocktail feature at {{venueName}}',
+    campaignPreviewText: 'Start with a margarita.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Our cocktail feature is pouring this week at {{venueName}}.</p>'
+  },
+  {
+    id: 'staff-spotlight',
+    label: 'Staff spotlight',
+    contentPillar: 'staff',
+    caption: 'Meet one of the people who makes service feel like Alma.',
+    targetChannels: ['FACEBOOK', 'INSTAGRAM'],
+    campaignSubject: 'Meet the Alma team',
+    campaignPreviewText: 'A little behind the scenes from the venue.',
+    campaignBody: '<h1>Hi {{firstName}}</h1><p>Meet one of the people behind service at {{venueName}}.</p>'
+  }
+];
 
 const AUTO_TAGS = [
   { slug: 'repeat_visitor', name: 'Repeat visitor', type: 'AUTOMATIC' as const },
@@ -108,6 +193,23 @@ function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
 
 function cleanText(value?: string | null) {
   return value?.trim() || null;
+}
+
+function escapeHtml(value: string) {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;');
+}
+
+function stripHtml(value: string) {
+  return value.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+function truncate(value: string, max: number) {
+  return value.length <= max ? value : `${value.slice(0, Math.max(0, max - 1)).trim()}...`;
 }
 
 function jsonStringArray(value: Prisma.JsonValue | null | undefined): string[] {
@@ -597,14 +699,50 @@ async function loadGuestsForSegment(
   fallbackVenue?: string | null
 ) {
   const venue = actorVenueScope(actor, definition.venue || fallbackVenue || null, 'Marketing');
+  const now = new Date();
+  const lastVisitOlderThanDays = definition.lastVisitOlderThanDays ?? definition.maxDaysSinceVisit;
+  const lastVisitWithinDays = definition.lastVisitWithinDays;
+  const lastVisitAt: Prisma.DateTimeNullableFilter | undefined =
+    lastVisitOlderThanDays !== undefined || lastVisitWithinDays !== undefined
+      ? {
+          ...(lastVisitOlderThanDays !== undefined
+            ? { lte: new Date(now.getTime() - lastVisitOlderThanDays * 24 * 60 * 60 * 1000) }
+            : {}),
+          ...(lastVisitWithinDays !== undefined
+            ? { gte: new Date(now.getTime() - lastVisitWithinDays * 24 * 60 * 60 * 1000) }
+            : {})
+        }
+      : undefined;
   const baseWhere: Prisma.ReserveGuestWhereInput = {
     ...guestScope(actor, venue),
     ...(definition.guestIds.length > 0 ? { id: { in: definition.guestIds } } : {}),
     ...(definition.tagIds.length > 0 ? { tagAssignments: { some: { tagId: { in: definition.tagIds } } } } : {}),
+    ...(definition.excludedTagIds.length > 0 ? { NOT: { tagAssignments: { some: { tagId: { in: definition.excludedTagIds } } } } } : {}),
     ...(definition.minVisits !== undefined ? { totalVisits: { gte: definition.minVisits } } : {}),
+    ...(definition.maxVisits !== undefined ? { totalVisits: { lte: definition.maxVisits } } : {}),
     ...(definition.minSpendCents !== undefined ? { totalSpendCents: { gte: definition.minSpendCents } } : {}),
-    ...(definition.maxDaysSinceVisit !== undefined
-      ? { lastVisitAt: { lte: new Date(Date.now() - definition.maxDaysSinceVisit * 24 * 60 * 60 * 1000) } }
+    ...(lastVisitAt ? { lastVisitAt } : {}),
+    ...(definition.hasUpcomingReservation === true
+      ? {
+          reservations: {
+            some: {
+              startsAt: { gte: now },
+              status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
+              ...(venue ? { venue } : {})
+            }
+          }
+        }
+      : {}),
+    ...(definition.hasUpcomingReservation === false
+      ? {
+          reservations: {
+            none: {
+              startsAt: { gte: now },
+              status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
+              ...(venue ? { venue } : {})
+            }
+          }
+        }
       : {})
   };
 
@@ -629,12 +767,42 @@ async function loadGuestsForSegment(
     take: 500
   });
 
-  return guests.filter((guest) => {
+  let filteredGuests = guests.filter((guest) => {
     if (definition.birthdaysWithinDays && !birthdayWithinDays(guest.birthday, definition.birthdaysWithinDays)) {
       return false;
     }
     return true;
   });
+
+  if (definition.hasGiftCardPurchase !== undefined) {
+    const emails = Array.from(
+      new Set(
+        filteredGuests
+          .flatMap((guest) => [guest.email?.trim().toLowerCase()].filter((email): email is string => Boolean(email)))
+      )
+    );
+    const giftCardEmails = emails.length
+      ? await prisma.giftCard.findMany({
+          where: {
+            OR: [{ purchaserEmail: { in: emails } }, { recipientEmail: { in: emails } }],
+            status: { in: ['PENDING_PAYMENT', 'ACTIVE', 'REDEEMED'] }
+          },
+          select: { purchaserEmail: true, recipientEmail: true }
+        })
+      : [];
+    const emailSet = new Set(
+      giftCardEmails.flatMap((card) =>
+        [card.purchaserEmail, card.recipientEmail].filter((email): email is string => Boolean(email)).map((email) => email.toLowerCase())
+      )
+    );
+    filteredGuests = filteredGuests.filter((guest) => {
+      const email = guest.email?.trim().toLowerCase();
+      const hasGiftCard = Boolean(email && emailSet.has(email));
+      return definition.hasGiftCardPurchase ? hasGiftCard : !hasGiftCard;
+    });
+  }
+
+  return filteredGuests;
 }
 
 async function buildCampaignPreview(actor: AuthUser, campaign: CampaignRow) {
@@ -664,6 +832,7 @@ async function buildCampaignPreview(actor: AuthUser, campaign: CampaignRow) {
     includedCount: rows.filter((row) => row.status === 'PENDING').length,
     skippedCount: rows.filter((row) => row.status !== 'PENDING').length,
     skippedReasons,
+    estimatedReachableEmailCount: rows.filter((row) => row.status === 'PENDING' && row.guest.email).length,
     guests: rows
   };
 }
@@ -678,6 +847,257 @@ async function findScopedGuest(actor: AuthUser, guestId: string) {
   });
   if (!guest) throw new HttpError(404, 'Guest not found');
   return guest;
+}
+
+export async function buildGuestTimeline(actor: AuthUser, guestId: string): Promise<GuestTimelinePayload> {
+  const guest = await findScopedGuest(actor, guestId);
+  const venue = actorVenueScope(actor, guest.venue, 'Marketing');
+  const [reservations, campaignRecipients] = await Promise.all([
+    prisma.reserveReservation.findMany({
+      where: {
+        guestId: guest.id,
+        ...(venue ? { venue } : {})
+      },
+      select: {
+        id: true,
+        venue: true,
+        startsAt: true,
+        endsAt: true,
+        covers: true,
+        status: true,
+        source: true,
+        occasion: true,
+        notes: true,
+        specialRequests: true,
+        createdAt: true,
+        updatedAt: true,
+        cancelledAt: true,
+        completedAt: true
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 120
+    }),
+    prisma.marketingCampaignRecipient.findMany({
+      where: {
+        guestId: guest.id,
+        campaign: {
+          ...(venue ? { venue } : {})
+        }
+      },
+      include: {
+        campaign: {
+          select: {
+            id: true,
+            venue: true,
+            name: true,
+            channel: true,
+            status: true,
+            subject: true,
+            simulatedAt: true
+          }
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      take: 80
+    })
+  ]);
+
+  const campaignIds = Array.from(new Set(campaignRecipients.map((recipient) => recipient.campaignId)));
+  const [contentPosts, giftCards] = await Promise.all([
+    campaignIds.length
+      ? prisma.marketingContentPost.findMany({
+          where: {
+            campaignId: { in: campaignIds },
+            ...(venue ? { venue } : {})
+          },
+          select: {
+            id: true,
+            venue: true,
+            title: true,
+            status: true,
+            scheduledAt: true,
+            approvedAt: true,
+            updatedAt: true,
+            campaignId: true,
+            targetChannels: true
+          },
+          orderBy: { updatedAt: 'desc' },
+          take: 80
+        })
+      : Promise.resolve([]),
+    guest.email
+      ? prisma.giftCard.findMany({
+          where: {
+            OR: [
+              { purchaserEmail: guest.email.toLowerCase() },
+              { recipientEmail: guest.email.toLowerCase() }
+            ]
+          },
+          select: {
+            id: true,
+            status: true,
+            initialValueCents: true,
+            balanceCents: true,
+            amountPaidCents: true,
+            purchaserEmail: true,
+            recipientEmail: true,
+            recipientName: true,
+            createdAt: true,
+            paidAt: true
+          },
+          orderBy: { createdAt: 'desc' },
+          take: 40
+        })
+      : Promise.resolve([])
+  ]);
+
+  const timeline: GuestTimelinePayload['timeline'] = [];
+  for (const reservation of reservations) {
+    timeline.push({
+      id: `reservation-created:${reservation.id}`,
+      at: reservation.createdAt.toISOString(),
+      type: 'RESERVATION_CREATED',
+      title: 'Reservation created',
+      description: `${reservation.covers} covers for ${reservation.startsAt.toISOString()}`,
+      venue: reservation.venue,
+      source: 'reserve',
+      metadata: {
+        reservationId: reservation.id,
+        status: reservation.status,
+        source: reservation.source,
+        occasion: reservation.occasion,
+        specialRequests: reservation.specialRequests
+      }
+    });
+    timeline.push({
+      id: `reservation-status:${reservation.id}:${reservation.status}`,
+      at: (reservation.completedAt ?? reservation.cancelledAt ?? reservation.updatedAt).toISOString(),
+      type: 'RESERVATION_STATUS',
+      title: `Reservation ${reservation.status.replace(/_/g, ' ').toLowerCase()}`,
+      description: `${reservation.covers} covers at ${reservation.startsAt.toISOString()}`,
+      venue: reservation.venue,
+      source: 'reserve',
+      metadata: {
+        reservationId: reservation.id,
+        status: reservation.status,
+        startsAt: reservation.startsAt.toISOString(),
+        endsAt: reservation.endsAt.toISOString(),
+        occasion: reservation.occasion,
+        notes: reservation.notes
+      }
+    });
+  }
+
+  for (const assignment of guest.tagAssignments) {
+    timeline.push({
+      id: `tag:${assignment.id}`,
+      at: assignment.assignedAt.toISOString(),
+      type: 'TAG_ASSIGNED',
+      title: `${assignment.tag.name} tag assigned`,
+      description: `${assignment.source.toLowerCase()} tag on the guest profile.`,
+      venue: assignment.tag.venue ?? guest.venue,
+      source: 'marketing',
+      metadata: {
+        tagId: assignment.tagId,
+        tagName: assignment.tag.name,
+        tagType: assignment.tag.type,
+        source: assignment.source,
+        metadata: assignment.metadata
+      }
+    });
+  }
+
+  for (const recipient of campaignRecipients) {
+    timeline.push({
+      id: `campaign-recipient:${recipient.id}`,
+      at: recipient.createdAt.toISOString(),
+      type: 'CAMPAIGN_SIMULATED',
+      title: `${recipient.campaign.name} campaign ${recipient.status.toLowerCase()}`,
+      description: recipient.skipReason
+        ? `Skipped from ${recipient.campaign.channel.toLowerCase()} simulation: ${recipient.skipReason}.`
+        : `${recipient.campaign.channel.toLowerCase()} simulation only. No external send.`,
+      venue: recipient.campaign.venue,
+      source: 'marketing',
+      metadata: {
+        campaignId: recipient.campaignId,
+        campaignName: recipient.campaign.name,
+        channel: recipient.campaign.channel,
+        status: recipient.status,
+        skipReason: recipient.skipReason
+      }
+    });
+  }
+
+  for (const post of contentPosts) {
+    const channels = jsonStringArray(post.targetChannels);
+    timeline.push({
+      id: `content:${post.id}`,
+      at: (post.scheduledAt ?? post.approvedAt ?? post.updatedAt).toISOString(),
+      type: 'CONTENT_TOUCHPOINT',
+      title: `${post.title} content post`,
+      description: `${post.status.toLowerCase().replace(/_/g, ' ')} social content linked to a campaign.`,
+      venue: post.venue,
+      source: 'content',
+      metadata: {
+        postId: post.id,
+        campaignId: post.campaignId,
+        status: post.status,
+        scheduledAt: post.scheduledAt?.toISOString() ?? null,
+        channels
+      }
+    });
+  }
+
+  for (const card of giftCards) {
+    timeline.push({
+      id: `gift-card:${card.id}`,
+      at: (card.paidAt ?? card.createdAt).toISOString(),
+      type: 'GIFT_CARD_ORDER',
+      title: 'Gift card order matched by email',
+      description: `${card.status.toLowerCase().replace(/_/g, ' ')} gift card for ${(card.initialValueCents / 100).toFixed(2)} AUD.`,
+      venue: guest.venue,
+      source: 'gift_cards',
+      metadata: {
+        giftCardId: card.id,
+        status: card.status,
+        initialValueCents: card.initialValueCents,
+        balanceCents: card.balanceCents,
+        amountPaidCents: card.amountPaidCents,
+        matchedAs:
+          card.purchaserEmail?.toLowerCase() === guest.email?.toLowerCase()
+            ? 'purchaser'
+            : card.recipientEmail?.toLowerCase() === guest.email?.toLowerCase()
+              ? 'recipient'
+              : 'unknown',
+        recipientName: card.recipientName
+      }
+    });
+  }
+
+  if (guest.notes || guest.visitNotes || guest.dietaryNotes) {
+    timeline.push({
+      id: `internal-note:${guest.id}`,
+      at: guest.updatedAt.toISOString(),
+      type: 'INTERNAL_NOTE',
+      title: 'Guest profile notes',
+      description: 'Internal guest notes, preferences, or dietary details are recorded for manager review.',
+      venue: guest.venue,
+      source: 'staff',
+      metadata: {
+        notes: guest.notes,
+        visitNotes: guest.visitNotes,
+        dietaryNotes: guest.dietaryNotes
+      }
+    });
+  }
+
+  timeline.sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+
+  return {
+    guest: guestToPayload(guest),
+    generatedAt: new Date().toISOString(),
+    timeline: timeline.slice(0, 160)
+  };
 }
 
 function validateContentAssetPayload(data: {
@@ -745,6 +1165,18 @@ async function findScopedContentPost(actor: AuthUser, postId: string) {
   });
   if (!post) throw new HttpError(404, 'Content post not found');
   return post;
+}
+
+async function findScopedCampaign(actor: AuthUser, campaignId: string) {
+  const campaign = await prisma.marketingCampaign.findFirst({
+    where: {
+      id: campaignId,
+      ...(isAdminActor(actor) ? {} : { OR: [{ venue: actor.venue }, { venue: null }] })
+    },
+    include: campaignWithRecipientsArgs.include
+  });
+  if (!campaign) throw new HttpError(404, 'Campaign not found');
+  return campaign;
 }
 
 async function findScopedSocialAccount(actor: AuthUser, accountId: string) {
@@ -1078,6 +1510,10 @@ export const marketingService = {
     };
   },
 
+  async getGuestTimeline(actor: AuthUser, guestId: string) {
+    return buildGuestTimeline(actor, guestId);
+  },
+
   async listTags(actor: AuthUser, input: { venue?: string }) {
     const venue = actorVenueScope(actor, input.venue, 'Marketing');
     const tags = await prisma.guestTag.findMany({
@@ -1238,6 +1674,7 @@ export const marketingService = {
       includedCount: guests.filter((guest) => recipientStatusForGuest(guest, data.channel).status === 'PENDING').length,
       skippedCount: guests.filter((guest) => recipientStatusForGuest(guest, data.channel).status !== 'PENDING').length,
       skippedReasons,
+      estimatedReachableEmailCount: guests.filter((guest) => recipientStatusForGuest(guest, 'EMAIL').status === 'PENDING').length,
       guests: rows
     };
   },
@@ -1370,15 +1807,33 @@ export const marketingService = {
   },
 
   async getCampaign(actor: AuthUser, id: string) {
-    const campaign = await prisma.marketingCampaign.findFirst({
-      where: {
-        id,
-        ...(isAdminActor(actor) ? {} : { OR: [{ venue: actor.venue }, { venue: null }] })
-      },
-      include: campaignWithRecipientsArgs.include
-    });
-    if (!campaign) throw new HttpError(404, 'Campaign not found');
+    const campaign = await findScopedCampaign(actor, id);
     return campaignToPayload(campaign);
+  },
+
+  async createContentPostFromCampaign(actor: AuthUser, campaignId: string) {
+    const campaign = await findScopedCampaign(actor, campaignId);
+    if (!campaign.venue) throw new HttpError(400, 'Campaign must be venue-scoped before creating content.');
+    actorVenueScope(actor, campaign.venue, 'Marketing Content');
+    const text = stripHtml(campaign.body || campaign.previewText || campaign.name);
+    const post = await prisma.marketingContentPost.create({
+      data: {
+        venue: campaign.venue,
+        createdByStaffId: actor.id,
+        title: truncate(campaign.name, 160),
+        caption: truncate(text || campaign.subject || campaign.name, 2200),
+        status: 'DRAFT',
+        campaignId: campaign.id,
+        targetChannels: ['FACEBOOK', 'INSTAGRAM'] as Prisma.InputJsonValue,
+        contentPillar: campaign.name.toLowerCase().includes('gift') ? 'gift_cards' : 'bookings',
+        approvalRequired: true
+      },
+      include: contentPostWithRelationsArgs.include
+    });
+    return {
+      campaign: campaignToPayload(campaign),
+      post: contentPostToPayload(post)
+    };
   },
 
   async updateCampaign(actor: AuthUser, id: string, input: unknown) {
@@ -1554,6 +2009,10 @@ export const marketingService = {
     };
   },
 
+  async contentHelpers() {
+    return CONTENT_HELPERS;
+  },
+
   async listContentAssets(actor: AuthUser, input: { venue?: string; search?: string; type?: string; status?: string }) {
     const venue = actorVenueScope(actor, input.venue, 'Marketing Content');
     const search = cleanText(input.search);
@@ -1708,8 +2167,68 @@ export const marketingService = {
     return contentPostToPayload(post);
   },
 
+  async createContentPostFromHelper(actor: AuthUser, helperId: string, input: { venue?: string; scheduledAt?: string }) {
+    const helper = CONTENT_HELPERS.find((entry) => entry.id === helperId);
+    if (!helper) throw new HttpError(404, 'Content helper not found');
+    const venue = actorVenueScope(actor, input.venue || actor.venue || null, 'Marketing Content');
+    if (!venue) throw new HttpError(400, 'Venue is required for content helpers.');
+    const post = await prisma.marketingContentPost.create({
+      data: {
+        venue,
+        createdByStaffId: actor.id,
+        title: helper.label,
+        caption: helper.caption,
+        status: 'DRAFT',
+        scheduledAt: parseOptionalDate(input.scheduledAt),
+        targetChannels: helper.targetChannels as Prisma.InputJsonValue,
+        contentPillar: helper.contentPillar,
+        approvalRequired: true
+      },
+      include: contentPostWithRelationsArgs.include
+    });
+    return {
+      helper,
+      post: contentPostToPayload(post)
+    };
+  },
+
   async getContentPost(actor: AuthUser, postId: string) {
     return contentPostToPayload(await findScopedContentPost(actor, postId));
+  },
+
+  async createCampaignFromContentPost(actor: AuthUser, postId: string) {
+    const post = await findScopedContentPost(actor, postId);
+    const campaign = await prisma.marketingCampaign.create({
+      data: {
+        venue: post.venue,
+        name: truncate(post.title, 120),
+        channel: 'EMAIL',
+        status: 'DRAFT',
+        audienceName: 'Guests from linked content',
+        subject: truncate(post.title, 140),
+        previewText: truncate(post.caption, 160),
+        body: `<h1>${escapeHtml(post.title)}</h1><p>${escapeHtml(post.caption)}</p><p><a href="{{bookingLink}}">Book a table</a></p>`,
+        textBody: `${post.caption}\n\nBook a table: {{bookingLink}}`,
+        segmentDefinition: {
+          ...EMPTY_SEGMENT_DEFINITION,
+          venue: post.venue,
+          marketingOptInOnly: true,
+          emailOnly: true,
+          includeUnsubscribed: false
+        } as Prisma.InputJsonValue,
+        createdById: actor.id
+      },
+      include: campaignWithRecipientsArgs.include
+    });
+    const linkedPost = await prisma.marketingContentPost.update({
+      where: { id: post.id },
+      data: { campaignId: campaign.id },
+      include: contentPostWithRelationsArgs.include
+    });
+    return {
+      campaign: campaignToPayload(campaign),
+      post: contentPostToPayload(linkedPost)
+    };
   },
 
   async updateContentPost(actor: AuthUser, postId: string, input: unknown) {

@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
   AuthUser,
+  GuestTimelinePayload,
   GoogleReserveIntegrationSetting,
   ReserveAvailabilityRule,
   ReserveBlackout,
@@ -127,14 +128,30 @@ type WidgetBookingForm = {
   lastName: string;
   email: string;
   phone: string;
+  birthday: string;
+  anniversary: string;
   occasion: string;
+  dietaryNotes: string;
+  seatingPreference: string;
+  highChair: boolean;
+  accessibility: boolean;
+  outdoorSeating: boolean;
+  barSeating: boolean;
   specialRequests: string;
   marketingOptIn: boolean;
 };
 
+const BOOKING_PREFERENCE_FIELDS: Array<{ key: keyof Pick<WidgetBookingForm, 'highChair' | 'accessibility' | 'outdoorSeating' | 'barSeating'>; label: string }> = [
+  { key: 'highChair', label: 'High chair' },
+  { key: 'accessibility', label: 'Accessibility' },
+  { key: 'outdoorSeating', label: 'Outdoor seating' },
+  { key: 'barSeating', label: 'Bar seating' }
+];
+
 type MarketingGuestDetail = {
   guest: ReserveGuest;
   reservations: ReserveReservation[];
+  timeline?: GuestTimelinePayload;
 };
 
 function todayInput() {
@@ -300,7 +317,15 @@ function defaultWidgetBooking(): WidgetBookingForm {
     lastName: '',
     email: '',
     phone: '',
+    birthday: '',
+    anniversary: '',
     occasion: '',
+    dietaryNotes: '',
+    seatingPreference: '',
+    highChair: false,
+    accessibility: false,
+    outdoorSeating: false,
+    barSeating: false,
     specialRequests: '',
     marketingOptIn: false
   };
@@ -626,9 +651,38 @@ function PublicBookingWidget() {
                       <Input label="Last name" required value={bookingForm.lastName} onChange={(event) => setBookingForm((current) => ({ ...current, lastName: event.currentTarget.value }))} />
                       <Input label="Email" type="email" value={bookingForm.email} onChange={(event) => setBookingForm((current) => ({ ...current, email: event.currentTarget.value }))} />
                       <Input label="Phone" required value={bookingForm.phone} onChange={(event) => setBookingForm((current) => ({ ...current, phone: event.currentTarget.value }))} />
+                      <Input label="Birthday" type="date" value={bookingForm.birthday} onChange={(event) => setBookingForm((current) => ({ ...current, birthday: event.currentTarget.value }))} />
+                      <Input label="Anniversary" type="date" value={bookingForm.anniversary} onChange={(event) => setBookingForm((current) => ({ ...current, anniversary: event.currentTarget.value }))} />
                     </div>
                     <Input label="Occasion" value={bookingForm.occasion} onChange={(event) => setBookingForm((current) => ({ ...current, occasion: event.currentTarget.value }))} />
+                    <Select
+                      label="Seating preference"
+                      value={bookingForm.seatingPreference}
+                      onChange={(event) => setBookingForm((current) => ({ ...current, seatingPreference: event.currentTarget.value }))}
+                      options={[
+                        { label: 'No preference', value: '' },
+                        { label: 'Outdoor', value: 'outdoor' },
+                        { label: 'Bar seating', value: 'bar' },
+                        { label: 'Accessible table', value: 'accessibility' }
+                      ]}
+                    />
+                    <Textarea label="Dietary notes" rows={2} value={bookingForm.dietaryNotes} onChange={(event) => setBookingForm((current) => ({ ...current, dietaryNotes: event.currentTarget.value }))} />
                     <Textarea label="Special requests" rows={3} value={bookingForm.specialRequests} onChange={(event) => setBookingForm((current) => ({ ...current, specialRequests: event.currentTarget.value }))} />
+                    <div className="reserve-note-list">
+                      {BOOKING_PREFERENCE_FIELDS.map(({ key, label }) => (
+                        <label key={key} className="reserve-inline-check">
+                          <input
+                            type="checkbox"
+                            checked={bookingForm[key]}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              setBookingForm((current) => ({ ...current, [key]: checked }));
+                            }}
+                          />
+                          <span>{label}</span>
+                        </label>
+                      ))}
+                    </div>
                     <label className="reserve-inline-check">
                       <input
                         type="checkbox"
@@ -774,11 +828,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     let cancelled = false;
     const run = async () => {
       try {
-        const [guest, reservations] = await Promise.all([
+        const [guest, reservations, timeline] = await Promise.all([
           api<ReserveGuest>(`/api/reserve/guests/${selectedGuestId}`),
-          api<ReserveReservation[]>(`/api/reserve/guests/${selectedGuestId}/reservations`)
+          api<ReserveReservation[]>(`/api/reserve/guests/${selectedGuestId}/reservations`),
+          api<GuestTimelinePayload>(`/api/reserve/guests/${selectedGuestId}/timeline`)
         ]);
-        if (!cancelled) setGuestDetail({ guest, reservations });
+        if (!cancelled) setGuestDetail({ guest, reservations, timeline });
       } catch {
         if (!cancelled) setGuestDetail(null);
       }
@@ -1165,6 +1220,21 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                               </div>
                             ))}
                           </div>
+                        )}
+                      </Card>
+                      <Card title="Guest timeline" subtitle="Bookings, tags, campaign simulations, content links, and gift card matches">
+                        {guestDetail.timeline?.timeline.length ? (
+                          <div className="reserve-timeline">
+                            {guestDetail.timeline.timeline.slice(0, 12).map((item) => (
+                              <div key={item.id} className="reserve-summary-card">
+                                <strong>{item.title}</strong>
+                                <span>{formatDateTime(item.at)} · {item.source.replace('_', ' ')} · {item.venue || 'No venue'}</span>
+                                <span>{item.description}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <EmptyState title="No timeline yet" description="Reservations, tags, campaign simulations, and gift card matches will appear here." />
                         )}
                       </Card>
                     </>

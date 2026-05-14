@@ -42,6 +42,27 @@ marketingRouter.get('/content/upload-config', requireManager, async (_req, res, 
   }
 });
 
+marketingRouter.get('/content/helpers', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await marketingService.contentHelpers());
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/helpers/:helperId/create-post', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(
+      await marketingService.createContentPostFromHelper(req.user!, String(req.params.helperId), {
+        venue: typeof req.body?.venue === 'string' ? req.body.venue : undefined,
+        scheduledAt: typeof req.body?.scheduledAt === 'string' ? req.body.scheduledAt : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.get('/content/assets', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.listContentAssets(req.user!, {
@@ -125,6 +146,14 @@ marketingRouter.patch('/content/posts/:id', requireManager, async (req, res, nex
 marketingRouter.post('/content/posts/:id/assets', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await marketingService.attachContentAsset(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/content/posts/:id/create-campaign', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createCampaignFromContentPost(req.user!, String(req.params.id)));
   } catch (error) {
     next(error);
   }
@@ -254,6 +283,14 @@ marketingRouter.get('/guests', requireManager, async (req, res, next) => {
 marketingRouter.get('/guests/:guestId', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.getGuest(req.user!, String(req.params.guestId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.get('/guests/:guestId/timeline', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.getGuestTimeline(req.user!, String(req.params.guestId)));
   } catch (error) {
     next(error);
   }
@@ -399,6 +436,14 @@ marketingRouter.patch('/campaigns/:id', requireManager, async (req, res, next) =
 marketingRouter.post('/campaigns/:id/preview-recipients', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.previewCampaignRecipients(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+marketingRouter.post('/campaigns/:id/create-content-post', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.createContentPostFromCampaign(req.user!, String(req.params.id)));
   } catch (error) {
     next(error);
   }

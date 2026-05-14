@@ -69,7 +69,7 @@ import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { COMPLIANCE_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -7739,6 +7739,8 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <StatCard label="Live wages" value={formatCents(dashboard?.totals.actualWageCents ?? 0)} hint={`${roundHours(dashboard?.totals.actualHours ?? 0)} actual hours`} loading={loading} />
         <StatCard label="Wage %" value={wagePercent === null || wagePercent === undefined ? 'No sales' : `${wagePercent.toFixed(1)}%`} hint={`Roster ${formatCents(dashboard?.totals.rosterWageCents ?? 0)}`} loading={loading} />
         <StatCard label="Approvals" value={dashboard?.totals.pendingTimesheets ?? 0} hint="Submitted timesheets" loading={loading} />
+        <StatCard label="Bookings" value={operations?.metrics.bookingsToday ?? 0} hint={`${operations?.bookingsSummary?.upcomingBookings ?? 0} still ahead`} loading={loading} />
+        <StatCard label="Covers" value={operations?.metrics.coversToday ?? 0} hint={`${operations?.bookingsSummary?.cancellationsToday ?? 0} cancelled today`} loading={loading} />
         <StatCard label="Clocked in" value={operations?.metrics.clockedIn ?? 0} hint={`${operations?.metrics.onBreak ?? 0} on break`} loading={loading} />
         <StatCard label="Late / missed" value={`${operations?.metrics.lateClockIns ?? 0}/${operations?.metrics.missedClockIns ?? 0}`} hint="Clock-in exceptions" loading={loading} />
         <StatCard label="Shift confirms" value={operations?.metrics.pendingConfirmations ?? 0} hint="Still awaiting acknowledgement" loading={loading} />
@@ -7781,6 +7783,10 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
           <strong>{operations?.metrics.clockExceptions ?? 0}</strong>
           <span>Clock exceptions</span>
         </button>
+        <button type="button" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>
+          <strong>{operations?.metrics.bookingsToday ?? 0}</strong>
+          <span>Bookings</span>
+        </button>
       </div>
 
       {loading && !dashboard ? <Spinner label="Loading manager dashboard..." /> : null}
@@ -7814,6 +7820,42 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
                     tone={message?.includes('Could') ? 'error' : 'success'}
                   />
                 </span>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        <Card
+          title="Today's bookings"
+          subtitle="Reserve demand signals for staffing decisions."
+          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>Reserve</Button>}
+        >
+          {operations && (!operations.bookingsSummary || operations.bookingsSummary.nextReservations.length === 0) ? (
+            <EmptyState title="No upcoming bookings today" description="Confirmed, pending, and seated reservations will appear here as service approaches." />
+          ) : null}
+          <div className="manager-mobile-report-list">
+            <div className="manager-mobile-report-row">
+              <span>
+                <strong>{operations?.bookingsSummary?.bookingsToday ?? 0} bookings</strong>
+                <small>{operations?.bookingsSummary?.coversToday ?? 0} covers expected today</small>
+              </span>
+              <span>
+                <strong>{operations?.bookingsSummary?.upcomingBookings ?? 0} ahead</strong>
+                <small>{operations?.bookingsSummary?.noShowsToday ?? 0} no-shows · {operations?.bookingsSummary?.cancellationsToday ?? 0} cancelled</small>
+              </span>
+            </div>
+          </div>
+          <div className="manager-mobile-list">
+            {operations?.bookingsSummary?.nextReservations.map((reservation) => (
+              <article key={reservation.id} className="manager-mobile-row">
+                <span>
+                  <strong>{reservation.guestName || 'Guest booking'}</strong>
+                  <span className="subtle">{timeOf(reservation.startsAt)} · {reservation.covers} cover{reservation.covers === 1 ? '' : 's'}</span>
+                  <span className="subtle">{reservation.venue || 'No venue'} · {reservation.status.replaceAll('_', ' ')}</span>
+                </span>
+                <Badge tone={reservation.status === 'CONFIRMED' || reservation.status === 'SEATED' ? 'positive' : reservation.status === 'PENDING' ? 'warning' : 'info'}>
+                  {reservation.status.replaceAll('_', ' ')}
+                </Badge>
               </article>
             ))}
           </div>

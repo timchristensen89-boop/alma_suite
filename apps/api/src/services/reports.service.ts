@@ -6,8 +6,12 @@ import {
   salesActualQuerySchema,
   type AuthUser,
   type ReportsComplianceSummary,
+  type ReportsContentSummary,
+  type ReportsGiftCardSummary,
+  type ReportsMarketingSummary,
   type ReportsOverviewPayload,
   type ReportsRangeDays,
+  type ReportsReserveSummary,
   type ReportsStaffSummary,
   type ReportsStockSummary,
   type StocktakeReviewItem
@@ -477,14 +481,179 @@ async function buildStockSummary(
   };
 }
 
+async function buildReserveSummary(
+  actor: AuthUser,
+  requestedVenue: string | null,
+  start: Date,
+  end: Date
+): Promise<ReportsReserveSummary> {
+  const venue = actorVenueScope(actor, requestedVenue);
+  const today = startOfTodayUtc();
+  const tomorrow = addDays(today, 1);
+  const reservationWhere: Prisma.ReserveReservationWhereInput = venue ? { venue } : {};
+  const [bookingsToday, coversTodayRows, upcomingBookings, cancellations, noShows, newGuests] = await Promise.all([
+    prisma.reserveReservation.count({
+      where: {
+        ...reservationWhere,
+        startsAt: { gte: today, lt: tomorrow },
+        status: { not: 'CANCELLED' }
+      }
+    }),
+    prisma.reserveReservation.aggregate({
+      _sum: { covers: true },
+      where: {
+        ...reservationWhere,
+        startsAt: { gte: today, lt: tomorrow },
+        status: { in: ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED'] }
+      }
+    }),
+    prisma.reserveReservation.count({
+      where: {
+        ...reservationWhere,
+        startsAt: { gte: today, lte: addDays(today, 30) },
+        status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] }
+      }
+    }),
+    prisma.reserveReservation.count({
+      where: {
+        ...reservationWhere,
+        updatedAt: { gte: start, lte: end },
+        status: 'CANCELLED'
+      }
+    }),
+    prisma.reserveReservation.count({
+      where: {
+        ...reservationWhere,
+        updatedAt: { gte: start, lte: end },
+        status: 'NO_SHOW'
+      }
+    }),
+    prisma.reserveGuest.count({
+      where: {
+        ...(venue ? { OR: [{ venue }, { reservations: { some: { venue } } }] } : {}),
+        createdAt: { gte: start, lte: end }
+      }
+    })
+  ]);
+
+  return {
+    bookingsToday,
+    coversToday: coversTodayRows._sum.covers ?? 0,
+    upcomingBookings,
+    cancellations,
+    noShows,
+    newGuests
+  };
+}
+
+async function buildMarketingSummary(
+  actor: AuthUser,
+  requestedVenue: string | null
+): Promise<ReportsMarketingSummary> {
+  const venue = actorVenueScope(actor, requestedVenue);
+  const guestWhere: Prisma.ReserveGuestWhereInput = venue ? { OR: [{ venue }, { reservations: { some: { venue } } }] } : {};
+  const campaignWhere: Prisma.MarketingCampaignWhereInput = venue ? { venue } : {};
+  const [totalGuests, optedInGuests, unsubscribedGuests, repeatVisitors, campaignDrafts, simulatedSends] = await Promise.all([
+    prisma.reserveGuest.count({ where: guestWhere }),
+    prisma.reserveGuest.count({ where: { ...guestWhere, marketingOptIn: true, emailUnsubscribedAt: null } }),
+    prisma.reserveGuest.count({
+      where: {
+        ...guestWhere,
+        OR: [{ emailUnsubscribedAt: { not: null } }, { smsUnsubscribedAt: { not: null } }]
+      }
+    }),
+    prisma.reserveGuest.count({ where: { ...guestWhere, totalVisits: { gte: 2 } } }),
+    prisma.marketingCampaign.count({ where: { ...campaignWhere, status: 'DRAFT' } }),
+    prisma.marketingCampaignRecipient.count({
+      where: {
+        status: 'SIMULATED',
+        campaign: campaignWhere
+      }
+    })
+  ]);
+
+  return {
+    totalGuests,
+    optedInGuests,
+    unsubscribedGuests,
+    repeatVisitors,
+    campaignDrafts,
+    simulatedSends
+  };
+}
+
+async function buildContentSummary(
+  actor: AuthUser,
+  requestedVenue: string | null
+): Promise<ReportsContentSummary> {
+  const venue = actorVenueScope(actor, requestedVenue);
+  const where = venue ? { venue } : {};
+  const today = startOfTodayUtc();
+  const nextWeek = addDays(today, 7);
+  const [scheduledPostsThisWeek, postsNeedingApproval, failedSimulatedPublishAttempts, setupRequiredSocialAccounts, assetsUploaded] =
+    await Promise.all([
+      prisma.marketingContentPost.count({
+        where: {
+          ...where,
+          scheduledAt: { gte: today, lte: nextWeek },
+          status: { in: ['APPROVED', 'SCHEDULED', 'PUBLISHING'] }
+        }
+      }),
+      prisma.marketingContentPost.count({ where: { ...where, status: 'NEEDS_REVIEW' } }),
+      prisma.marketingContentPublishAttempt.count({
+        where: {
+          status: { in: ['FAILED', 'SKIPPED'] },
+          mode: 'SIMULATION',
+          post: where
+        }
+      }),
+      prisma.marketingSocialAccount.count({
+        where: {
+          ...where,
+          status: { in: ['SETUP_REQUIRED', 'ERROR', 'EXPIRED'] }
+        }
+      }),
+      prisma.marketingContentAsset.count({ where: { ...where, status: { not: 'ARCHIVED' } } })
+    ]);
+
+  return {
+    scheduledPostsThisWeek,
+    postsNeedingApproval,
+    failedSimulatedPublishAttempts,
+    setupRequiredSocialAccounts,
+    assetsUploaded
+  };
+}
+
+async function buildGiftCardSummary(): Promise<ReportsGiftCardSummary> {
+  const [pendingOrders, pendingAmount, fulfilledOrders] = await Promise.all([
+    prisma.giftCard.count({ where: { status: 'PENDING_PAYMENT' } }),
+    prisma.giftCard.aggregate({
+      _sum: { initialValueCents: true },
+      where: { status: 'PENDING_PAYMENT' }
+    }),
+    prisma.giftCard.count({ where: { status: { in: ['ACTIVE', 'REDEEMED'] } } })
+  ]);
+
+  return {
+    pendingOrders,
+    totalPendingAmountCents: pendingAmount._sum.initialValueCents ?? 0,
+    fulfilledOrders
+  };
+}
+
 export const reportsService = {
   async overview(input: unknown, actor: AuthUser): Promise<ReportsOverviewPayload> {
     const { rangeDays, requestedVenue, start, end } = rangeFromInput(input);
     const venue = actorVenueScope(actor, requestedVenue);
-    const [staff, compliance, stock] = await Promise.all([
+    const [staff, compliance, stock, reserve, marketing, content, giftCards] = await Promise.all([
       buildStaffSummary(actor, requestedVenue, start),
       buildComplianceSummary(actor, requestedVenue),
-      buildStockSummary(actor, requestedVenue, start)
+      buildStockSummary(actor, requestedVenue, start),
+      buildReserveSummary(actor, requestedVenue, start, end),
+      buildMarketingSummary(actor, requestedVenue),
+      buildContentSummary(actor, requestedVenue),
+      buildGiftCardSummary()
     ]);
 
     return {
@@ -498,7 +667,11 @@ export const reportsService = {
       },
       staff,
       compliance,
-      stock
+      stock,
+      reserve,
+      marketing,
+      content,
+      giftCards
     };
   },
 
