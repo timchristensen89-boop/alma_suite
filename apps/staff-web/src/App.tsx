@@ -307,8 +307,8 @@ const NAV_ITEMS = [
   },
   {
     to: '/settings',
-    label: 'Settings',
-    description: 'Settings, integrations, venues, onboarding and access',
+    label: 'Admin',
+    description: 'Defaults, integrations, venues, onboarding and access',
     icon: <GearIcon />
   },
   {
@@ -3963,8 +3963,8 @@ function AdminPage({
     <div className="page-stack">
       <PageHeader
         eyebrow="ALMA Staff"
-        title="Staff settings"
-        description="Defaults, integrations, venues, onboarding, app access and staff-management audit history."
+        title="Staff admin"
+        description="Admin-owned defaults, integrations, venues, onboarding, app access and staff-management audit history. Daily staff work stays on Home, Roster, Clock and Manager Today."
       />
 
       <div className="stats-grid">

@@ -47,27 +47,27 @@ const AMOUNTS = [
 const VENUES = ['Alma Avalon', 'St Alma'];
 const GIFTCARD_NAV_ITEMS = [
   {
-    href: '#redeem',
+    href: '/',
+    label: 'Shop',
+    description: 'Public purchase page',
+    icon: <ChartIcon />
+  },
+  {
+    href: '/orders#recent',
+    label: 'Orders',
+    description: 'Recent cards and balances',
+    icon: <DocumentIcon />
+  },
+  {
+    href: '/redeem#redeem',
     label: 'Redeem',
     description: 'Check and redeem',
     icon: <SearchIcon />
   },
   {
-    href: '#recent',
-    label: 'Cards',
-    description: 'Recent sales',
-    icon: <DocumentIcon />
-  },
-  {
-    href: '#settings',
-    label: 'Settings',
-    description: 'Promo codes and artwork',
-    icon: <ChartIcon />
-  },
-  {
-    href: '/',
-    label: 'Public shop',
-    description: 'Buy gift card page',
+    href: '/admin#settings',
+    label: 'Admin setup',
+    description: 'Checkout, promos, artwork',
     icon: <ChartIcon />
   }
 ];
@@ -584,16 +584,25 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
 
 function SidebarNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const [activeHash, setActiveHash] = useState('#redeem');
+  const sectionFromLocation = useCallback(() => {
+    if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
+    if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
+    return '/redeem#redeem';
+  }, []);
+  const [activeHref, setActiveHref] = useState(sectionFromLocation);
 
   useEffect(() => {
-    const syncHash = () => setActiveHash(window.location.hash || '#redeem');
+    const syncHash = () => setActiveHref(sectionFromLocation());
     syncHash();
     window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
-  }, []);
+    window.addEventListener('popstate', syncHash);
+    return () => {
+      window.removeEventListener('hashchange', syncHash);
+      window.removeEventListener('popstate', syncHash);
+    };
+  }, [sectionFromLocation]);
 
-  const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHash) ?? GIFTCARD_NAV_ITEMS[0]!;
+  const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHref) ?? GIFTCARD_NAV_ITEMS[2]!;
 
   return (
     <>
@@ -619,9 +628,9 @@ function SidebarNav() {
           <li key={item.href}>
             <a
               href={item.href}
-              className={activeHash === item.href ? 'active' : ''}
+              className={activeHref === item.href ? 'active' : ''}
               onClick={() => {
-                setActiveHash(item.href);
+                setActiveHref(item.href);
                 setMobileMenuOpen(false);
               }}
             >
@@ -760,7 +769,13 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
 
   return (
     <div className="giftcards-settings-grid">
-      <Card title="Client checkout and email" subtitle="Controls the public gift card page, printable card, email artwork, and test checkout.">
+      <Card title="Gift card admin setup" subtitle="Operational redemption stays in Redeem and Orders. Product, payment, artwork and promo controls are grouped here until the dedicated Admin app owns this section.">
+        <p className="subtle">
+          Live payment capture is still server controlled. This screen does not expose provider secrets, and checkout remains setup-required unless the backend reports a safe mode.
+        </p>
+      </Card>
+
+      <Card title="Checkout and email" subtitle="Controls the public gift card page, printable card, email artwork, and test checkout.">
         <form className="giftcards-form" onSubmit={(event) => void saveSettings(event)}>
           {!canEdit ? <p className="subtle">Only Tim can change gift card checkout settings.</p> : null}
           <label className="toggle-row">
@@ -1008,8 +1023,8 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       <div className="giftcards-page">
         <PageHeader
           eyebrow="ALMA Gift Cards"
-          title="Gift card register"
-          description="Stripe-confirmed cards become active here. Staff can check the code, confirm the balance, and redeem against a venue."
+          title="Gift card operations"
+          description="Daily register work stays here: check balances, redeem customer cards, and review recent orders. Checkout, artwork, promo codes, and payment setup are grouped under Admin setup."
           actions={<Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />}
         />
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
@@ -1112,9 +1127,11 @@ function GiftCardAdminApp() {
 
 export function App() {
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
+  const isOrdersPath = window.location.pathname.startsWith('/orders');
+  const isAdminPath = window.location.pathname.startsWith('/admin');
   const isPrintPath = window.location.pathname.startsWith('/print');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
-  if (!isRedeemPath) return <PublicGiftCardShop />;
+  if (!isRedeemPath && !isOrdersPath && !isAdminPath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }

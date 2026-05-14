@@ -9,7 +9,7 @@
 
 .marketing-page {
   display: grid;
-  gap: 18px;
+  gap: 24px;
 }
 
 .marketing-page .page-header-actions {
@@ -18,8 +18,8 @@
 
 .marketing-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 
@@ -29,20 +29,21 @@
 .marketing-contact-list,
 .marketing-campaign-list {
   display: grid;
-  gap: 16px;
+  gap: 22px;
 }
 
 .marketing-stack,
 .marketing-main section,
 .marketing-side section {
   display: grid;
-  gap: 16px;
+  gap: 20px;
+  scroll-margin-top: 96px;
 }
 
 .marketing-section-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+  gap: 20px;
   align-items: start;
 }
 
@@ -109,8 +110,8 @@
 
 .marketing-summary-card {
   display: grid;
-  gap: 4px;
-  padding: 12px 14px;
+  gap: 6px;
+  padding: 16px;
 }
 
 .marketing-summary-card span,
@@ -163,30 +164,30 @@
 
 .marketing-preview-frame {
   width: 100%;
-  min-height: 220px;
+  min-height: 320px;
 }
 
 .stats-grid.compact {
-  grid-template-columns: repeat(4, minmax(150px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
 }
 
 .content-studio-grid,
 .content-bottom-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(340px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+  gap: 24px;
   align-items: start;
 }
 
 .content-bottom-grid {
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.7fr) minmax(300px, 0.8fr);
-  margin-top: 16px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  margin-top: 24px;
 }
 
 .content-asset-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
 }
 
 .content-asset-card,
@@ -204,8 +205,8 @@
 .social-account-card,
 .content-channel-preview {
   display: grid;
-  gap: 8px;
-  padding: 12px;
+  gap: 10px;
+  padding: 16px;
 }
 
 .content-asset-card img,
@@ -255,7 +256,7 @@
 }
 
 .content-preview-tabs {
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
 }
 
 .social-account-grid {
@@ -264,9 +265,9 @@
 
 .content-calendar-row {
   display: grid;
-  grid-template-columns: 86px minmax(0, 1fr);
-  gap: 12px;
-  padding: 10px 12px;
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 14px;
+  padding: 14px 16px;
   align-items: start;
 }
 

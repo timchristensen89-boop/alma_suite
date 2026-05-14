@@ -9,8 +9,8 @@
 
 .staff-board {
   display: grid;
-  grid-template-columns: minmax(280px, 360px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(320px, 440px) minmax(0, 1fr);
+  gap: 24px;
 }
 
 .staff-action-strip {
@@ -123,7 +123,7 @@
 }
 
 .staff-daily-home {
-  max-width: 1120px;
+  max-width: 1240px;
 }
 
 .staff-quick-links {
@@ -138,14 +138,14 @@
 
 .staff-daily-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 18px;
 }
 
 .staff-clock-card {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 18px;
   align-items: center;
 }
 
@@ -246,14 +246,14 @@
 
 .manager-mobile-stats {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 16px;
 }
 
 .manager-mobile-alert-strip {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 14px;
 }
 
 .manager-mobile-alert-strip button {
@@ -289,8 +289,8 @@
 
 .manager-mobile-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-  gap: 14px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
 }
 

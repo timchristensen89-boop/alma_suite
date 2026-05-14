@@ -460,10 +460,17 @@ function SidebarNav() {
   const [activeHash, setActiveHash] = useState(() => window.location.hash || '#overview');
   const navItems = [
     { href: '#overview', label: 'Overview', icon: <ChartIcon /> },
+    { href: '#report-staff', label: 'Staff', icon: <ChartIcon /> },
+    { href: '#report-compliance', label: 'Compliance', icon: <DocumentIcon /> },
+    { href: '#report-stock', label: 'Stock', icon: <DocumentIcon /> },
+    { href: '#report-reserve', label: 'Reserve', icon: <ChartIcon /> },
+    { href: '#report-marketing', label: 'Marketing', icon: <DocumentIcon /> },
+    { href: '#report-content', label: 'Content', icon: <DocumentIcon /> },
+    { href: '#report-giftcards', label: 'Gift Cards', icon: <DocumentIcon /> },
     { href: '#forecast', label: 'Forecast', icon: <ChartIcon /> },
     { href: '#wages', label: 'Wages', icon: <ChartIcon /> },
     { href: '#cogs', label: 'COGS', icon: <DocumentIcon /> },
-    { href: '#website-menu', label: 'Website menu', icon: <DocumentIcon /> }
+    { href: '#website-menu', label: 'Exports', icon: <DocumentIcon /> }
   ];
   const active = navItems.find((item) => item.href === activeHash) ?? navItems[0]!;
 
@@ -1331,7 +1338,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             }
           >
             <div className="report-overview-grid">
-              <div className="report-panel">
+              <div id="report-staff" className="report-panel">
                 <h4>Staff</h4>
                 <div className="metric-row">
                   <span>Active staff</span>
@@ -1355,7 +1362,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-compliance" className="report-panel">
                 <h4>Compliance</h4>
                 <div className="metric-row">
                   <span>Pending records</span>
@@ -1383,7 +1390,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-stock" className="report-panel">
                 <h4>Stock</h4>
                 <div className="metric-row">
                   <span>Catalogue items</span>
@@ -1409,7 +1416,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-reserve" className="report-panel">
                 <h4>Reserve</h4>
                 <div className="metric-row">
                   <span>Bookings today</span>
@@ -1433,7 +1440,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-marketing" className="report-panel">
                 <h4>Marketing</h4>
                 <div className="metric-row">
                   <span>Total guests</span>
@@ -1455,7 +1462,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-content" className="report-panel">
                 <h4>Content</h4>
                 <div className="metric-row">
                   <span>Scheduled this week</span>
@@ -1481,7 +1488,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
 
-              <div className="report-panel">
+              <div id="report-giftcards" className="report-panel">
                 <h4>Gift cards</h4>
                 <div className="metric-row">
                   <span>Pending orders</span>

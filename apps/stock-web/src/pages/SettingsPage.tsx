@@ -45,7 +45,7 @@ function recipeDraftFromCategory(category: RecipeCategory): RecipeCategoryDraft 
 }
 
 export function SettingsPage() {
-  useDocumentTitle('Settings');
+  useDocumentTitle('Admin setup');
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
@@ -305,6 +305,15 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack">
+      <Card
+        title="Stock admin setup"
+        subtitle="Category and recipe setup belongs here. Daily stock health, low-stock work, item edits and stocktake review stay in the operational Stock pages."
+      >
+        <p className="subtle">
+          Broader suite configuration, permissions and integrations remain Admin-owned. This page keeps only the stock setup controls that are active and manager guarded today.
+        </p>
+      </Card>
+
       {error && !feedbackTarget ? <p className="error-text">{error}</p> : null}
 
       <Card
@@ -573,11 +582,11 @@ export function SettingsPage() {
         ) : null}
       </Card>
 
-      <Card title="Other settings" subtitle="Venue, units of measure and account preferences.">
+      <Card title="Admin-owned settings" subtitle="Venue stock defaults, units of measure and account preferences are kept out of the daily stock workflow until they are fully wired.">
         <EmptyState
           icon={<IconSettings size={24} />}
-          title="Additional settings are not active yet"
-          description="Category settings above are available now. Venue defaults, preferred units, and account preferences are deferred so there are no dead setup actions."
+          title="Managed in Admin when ready"
+          description="Category settings above are available now. Venue defaults, preferred units, account preferences and dangerous setup tools stay disabled here so there are no dead setup actions."
         />
       </Card>
     </div>

@@ -81,13 +81,13 @@ const AUTOMATION_TRIGGERS: MarketingAutomationTriggerType[] = [
 ];
 const TEMPLATE_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 const MARKETING_NAV_ITEMS = [
-  { href: '#dashboard', label: 'Dashboard', description: 'Guests and recent activity', icon: <DocumentIcon /> },
-  { href: '#content', label: 'Content', description: 'Assets, posts, calendar', icon: <DocumentIcon /> },
+  { href: '#dashboard', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <SearchIcon /> },
-  { href: '#segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
-  { href: '#templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> },
   { href: '#campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
-  { href: '#automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> }
+  { href: '#content', label: 'Content', description: 'Assets, posts, calendar', icon: <DocumentIcon /> },
+  { href: '#automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
+  { href: '#segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
+  { href: '#templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
 ];
 
 type FeedbackTone = 'success' | 'error';
@@ -1092,7 +1092,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       topBar={
         <TopBar
           title="ALMA Marketing"
-          subtitle="Guest CRM, segments, campaigns, and automations"
+          subtitle="Guest CRM, campaigns, content, and automations"
           right={
             <>
               <SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="topbar" />
@@ -1113,7 +1113,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
         <PageHeader
           eyebrow="ALMA Marketing"
           title="Restaurant marketing control centre"
-          description="Consent-aware guest marketing with manual tags, auto-tags, segments, templates, campaigns, and automation simulation only."
+          description="Consent-aware guest marketing with roomy sections for guests, campaigns, content, templates, and simulation-only automations."
           actions={
             <>
               <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={options} />
@@ -1380,7 +1380,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     )}
                   </Card>
 
-                  <Card title="Social accounts" subtitle="Readiness for Facebook, Instagram, and TikTok">
+                  <Card title="Social readiness" subtitle="Admin setup status for Facebook, Instagram, and TikTok. Live posting remains disabled until OAuth is connected safely.">
                     <div className="social-account-grid">
                       {SOCIAL_PLATFORMS.map((platform) => {
                         const account = socialAccounts.find((item) => item.platform === platform && item.venue === defaultVenue);

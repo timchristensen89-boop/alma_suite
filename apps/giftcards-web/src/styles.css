@@ -12,13 +12,13 @@
 .giftcards-page,
 .giftcards-form {
   display: grid;
-  gap: 16px;
+  gap: 22px;
 }
 
 .giftcards-layout {
   display: grid;
-  grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(360px, 500px) minmax(0, 1fr);
+  gap: 24px;
   align-items: start;
 }
 
@@ -619,10 +619,10 @@
 
 .giftcards-list button {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
+  gap: 18px;
   align-items: center;
-  padding: 14px 16px;
+  padding: 16px 18px;
   border: 0;
   border-top: 1px solid var(--color-border);
   background: #ffffff;
@@ -645,16 +645,14 @@
 }
 
 .giftcards-list small {
-  overflow: hidden;
   color: var(--color-text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
 }
 
 .giftcards-settings-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.1fr) minmax(340px, 0.9fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
 }
 
@@ -694,8 +692,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
+  gap: 16px;
+  padding: 16px;
   border: 1px solid #e2e8f0;
   border-radius: 10px;
   background: #fff;
@@ -859,6 +857,12 @@
   .giftcards-settings-grid,
   .giftcards-artwork-grid {
     grid-template-columns: 1fr;
+  }
+
+  .giftcards-list button,
+  .giftcards-promo-list > div {
+    grid-template-columns: 1fr;
+    display: grid;
   }
 
   .giftcards-print-card {

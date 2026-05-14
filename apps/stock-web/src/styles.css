@@ -65,8 +65,8 @@
 }
 
 .stock-dashboard-toolbar {
-  grid-template-columns: minmax(220px, 280px) minmax(0, 1fr);
-  margin-top: 14px;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  margin-top: 18px;
   align-items: center;
 }
 
@@ -109,8 +109,8 @@
 
 .stock-dashboard-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 22px;
   align-items: start;
 }
 
@@ -127,7 +127,7 @@
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 9px 12px;
+  padding: 10px 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-sm);
   color: var(--color-text);
@@ -149,8 +149,8 @@
 .venue-stock-settings {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 16px;
+  gap: 16px;
+  padding: 18px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
   background: var(--color-surface-muted);
@@ -419,15 +419,15 @@ tbody tr.row-interactive {
 .settings-category-stack {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 14px;
 }
 
 .settings-category-row {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 1.25fr) auto auto;
-  gap: 10px;
+  grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.35fr) auto auto;
+  gap: 14px;
   align-items: end;
-  padding: 10px;
+  padding: 14px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
@@ -440,9 +440,9 @@ tbody tr.row-interactive {
 
 .settings-category-row-recipe {
   grid-template-columns:
-    minmax(160px, 1fr)
-    minmax(140px, 0.65fr)
-    minmax(200px, 1.1fr)
+    minmax(200px, 1fr)
+    minmax(160px, 0.65fr)
+    minmax(260px, 1.1fr)
     auto
     auto;
 }

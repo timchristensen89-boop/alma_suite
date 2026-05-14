@@ -20,7 +20,7 @@ export type NavItem = {
 export const NAV_ITEMS: NavItem[] = [
   {
     to: '/',
-    label: 'Overview',
+    label: 'Dashboard',
     description: 'At-a-glance stock snapshot',
     icon: <IconDashboard />,
     end: true
@@ -33,7 +33,7 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/stocktake',
-    label: 'Stocktake',
+    label: 'Stocktakes',
     description: 'Periodic counts and variance',
     icon: <IconStocktake />
   },
@@ -57,8 +57,8 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/settings',
-    label: 'Settings',
-    description: 'Categories, units, account',
+    label: 'Admin setup',
+    description: 'Categories and setup controls',
     icon: <IconSettings />
   }
 ];
