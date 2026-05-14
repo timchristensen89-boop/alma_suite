@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import type { IncidentReport, IncidentStatus, IncidentSummary } from '@alma/shared';
 import {
   ActionFeedback,
@@ -352,7 +352,7 @@ export function IncidentsPage() {
                 const isOpen = activeId === incident.id;
                 const busy = savingStatus === incident.id;
                 return (
-                  <>
+                  <Fragment key={incident.id}>
                     <tr key={incident.id}>
                       <td>
                         <div className="cell-stack">
@@ -455,7 +455,7 @@ export function IncidentsPage() {
                         </td>
                       </tr>
                     ) : null}
-                  </>
+                  </Fragment>
                 );
               })}
             </tbody>

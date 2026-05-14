@@ -297,6 +297,12 @@ const NAV_ITEMS = [
     icon: <DocumentIcon />
   },
   {
+    to: '/compliance',
+    label: 'Compliance',
+    description: 'Staff compliance reminders',
+    icon: <DocumentIcon />
+  },
+  {
     to: '/academy',
     label: 'Academy',
     description: 'Modules, levels and pay rules',
@@ -1410,7 +1416,12 @@ function StaffMemberClockPage() {
       />
 
       <div className="stats-grid">
-        <StatCard label="Status" value={activeSession ? (activeSession.currentBreakStartedAt ? 'On break' : 'Clocked in') : 'Off'} hint={activeSession ? timeOf(activeSession.clockInAt) : 'Not clocked in'} loading={loading} />
+        <StatCard
+          label="Status"
+          value={activeSession ? (activeSession.currentBreakStartedAt ? 'On break' : 'Clocked in') : 'Not clocked in'}
+          hint={activeSession ? `Since ${timeOf(activeSession.clockInAt)}` : 'Clock in when you start work'}
+          loading={loading}
+        />
         <StatCard label="Breaks" value={activeSession?.accumulatedBreakMinutes ?? 0} hint="Minutes logged" loading={loading} />
         <StatCard label="Current shift" value={payload?.currentShift ? timeOf(payload.currentShift.startsAt) : 'None'} hint={payload?.currentShift ? `${payload.currentShift.area || payload.currentShift.roleTitle || 'Shift'}` : 'No active shift'} loading={loading} />
         <StatCard label="Recent sessions" value={payload?.recentSessions.length ?? 0} hint="Last 10 sessions" loading={loading} />
@@ -1418,7 +1429,7 @@ function StaffMemberClockPage() {
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <Card title="Clock controls" subtitle="Linked shifts help managers review exceptions faster.">
+      <Card title="Clock controls" subtitle="Duplicate clock-ins and break starts are blocked automatically. Link a shift when you can.">
         <div className="staff-profile-form">
           {!activeSession ? (
             <Select
@@ -1568,7 +1579,12 @@ function StaffMemberLeavePage() {
 
       <Card title="Leave requests" subtitle="Your request history and manager notes." padding="none">
         {loading ? <Spinner label="Loading leave…" /> : null}
-        {!loading && leave.length === 0 ? <EmptyState title="No leave requests yet" description="Your submitted leave will appear here." /> : null}
+        {!loading && leave.length === 0 ? (
+          <EmptyState
+            title="No leave recorded for this period"
+            description="Your submitted leave requests and manager responses will appear here."
+          />
+        ) : null}
         <div className="staff-expiry-list">
           {leave.map((item) => (
             <div key={item.id} className="staff-expiry-row">
@@ -7893,6 +7909,72 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const updatedAt = updatedAtSource
     ? new Date(updatedAtSource).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
     : '';
+  const activeLaunchStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED' && !isUnallocatedProfile(member));
+  const missingLoginEmail = activeLaunchStaff.filter((member) => !member.email?.trim()).length;
+  const missingVenueOrRole = activeLaunchStaff.filter((member) => !member.venue?.trim() || !member.roleTitle?.trim()).length;
+  const staffAccessEnabled = activeLaunchStaff.filter((member) =>
+    member.appAccess.some((access) => access.appId === 'STAFF' && access.status === 'ENABLED')
+  ).length;
+  const launchMonday = new Date();
+  launchMonday.setHours(0, 0, 0, 0);
+  const dayOfWeek = launchMonday.getDay();
+  launchMonday.setDate(launchMonday.getDate() + (dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 1 : 8 - dayOfWeek));
+  const launchMondayEnd = addDays(launchMonday, 1);
+  const mondayShiftCount = activeLaunchStaff
+    .flatMap((member) => member.rosterShifts ?? [])
+    .filter((shift) => {
+      const startsAt = new Date(shift.startsAt);
+      return startsAt >= launchMonday && startsAt < launchMondayEnd && shift.status !== 'CANCELLED';
+    }).length;
+  const complianceFollowUpCount = activeLaunchStaff.reduce((count, member) => {
+    return count + member.records.filter((record) =>
+      record.status === 'PENDING' || record.status === 'EXPIRED' || Boolean(record.expiryDate && isExpiringSoon(record.expiryDate))
+    ).length;
+  }, 0);
+  const launchReadinessItems = [
+    {
+      label: 'Active staff accounts',
+      value: activeLaunchStaff.length,
+      detail: 'Profiles available for Staff launch.',
+      tone: activeLaunchStaff.length ? 'positive' : 'warning'
+    },
+    {
+      label: 'Missing login email',
+      value: missingLoginEmail,
+      detail: 'Add emails before sending reset links.',
+      tone: missingLoginEmail ? 'warning' : 'positive'
+    },
+    {
+      label: 'Missing venue or role',
+      value: missingVenueOrRole,
+      detail: 'Venue and role should be obvious before launch.',
+      tone: missingVenueOrRole ? 'warning' : 'positive'
+    },
+    {
+      label: 'Staff app access',
+      value: `${staffAccessEnabled}/${activeLaunchStaff.length}`,
+      detail: 'Enabled Staff app access rows.',
+      tone: activeLaunchStaff.length && staffAccessEnabled === activeLaunchStaff.length ? 'positive' : 'warning'
+    },
+    {
+      label: 'Monday shifts loaded',
+      value: mondayShiftCount,
+      detail: `${launchMonday.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} roster rows.`,
+      tone: mondayShiftCount ? 'positive' : 'warning'
+    },
+    {
+      label: 'Open clock sessions',
+      value: operations?.metrics.clockedIn ?? 0,
+      detail: 'Clear test sessions before inviting staff.',
+      tone: (operations?.metrics.clockedIn ?? 0) ? 'warning' : 'positive'
+    },
+    {
+      label: 'Compliance follow-up',
+      value: complianceFollowUpCount,
+      detail: 'Pending, expired, or expiring records.',
+      tone: complianceFollowUpCount ? 'warning' : 'positive'
+    }
+  ];
 
   return (
     <div className="page-stack manager-mobile-page">
@@ -7912,6 +7994,26 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
       </Card>
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card
+        title="Monday staff launch checklist"
+        subtitle="Read-only checks for the Staff app launch. Use Profiles, Roster, Clock, and Compliance to clear anything highlighted before inviting the team."
+      >
+        <div className="staff-readiness-grid">
+          {launchReadinessItems.map((item) => (
+            <div key={item.label} className={`staff-readiness-item is-${item.tone}`}>
+              <strong>{item.value}</strong>
+              <span>{item.label}</span>
+              <small>{item.detail}</small>
+            </div>
+          ))}
+        </div>
+        <div className="staff-row-actions staff-readiness-actions">
+          <Button type="button" variant="secondary" onClick={() => navigate('/access')}>Open profiles</Button>
+          <Button type="button" variant="secondary" onClick={() => navigate('/roster')}>Check roster</Button>
+          <Button type="button" variant="secondary" onClick={() => navigate('/clock')}>Test clock</Button>
+        </div>
+      </Card>
 
       <div className="manager-mobile-stats">
         <StatCard label="Sales today" value={formatCents(dashboard?.totals.salesCents ?? 0)} hint={dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue signal${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales imported yet'} loading={loading} />
@@ -9291,6 +9393,7 @@ function StaffShell() {
           <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
+          <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
