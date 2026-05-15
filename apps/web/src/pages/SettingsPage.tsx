@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { ALMA_COMPLIANCE_DOCUMENTS, type AppSettingsPayload } from '@alma/shared';
+import {
+  ALMA_COMPLIANCE_DOCUMENTS,
+  type AppSettingsPayload,
+  type IntegrationConnectResponse,
+  type IntegrationProviderStatus,
+  type IntegrationStatusPayload
+} from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Spinner } from '@alma/ui';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -303,6 +309,66 @@ function VenuesTab({
 }
 
 /* ---------- Integrations ---------- */
+function integrationTone(status: IntegrationProviderStatus['status']) {
+  if (status === 'CONNECTED') return 'positive';
+  if (status === 'ERROR') return 'danger';
+  if (status === 'NOT_CONFIGURED') return 'warning';
+  return 'muted';
+}
+
+function ProviderSetupCard({
+  provider,
+  busy,
+  onConnect
+}: {
+  provider: IntegrationProviderStatus;
+  busy: string | null;
+  onConnect: (provider: IntegrationProviderStatus['provider']) => void;
+}) {
+  const isBusy = busy === provider.provider;
+
+  return (
+    <div className="admin-provider-card">
+      <div className="admin-status-line">
+        <span>{provider.label}</span>
+        <Badge tone={integrationTone(provider.status)}>{provider.status.replace(/_/g, ' ')}</Badge>
+      </div>
+      <p>Connection tokens are stored securely on the server and are never exposed in the browser.</p>
+      <div>
+        <strong>Powers</strong>
+        <p>{provider.powers.join(', ')}</p>
+      </div>
+      <div>
+        <strong>Account</strong>
+        <p>{provider.providerAccountName ?? provider.providerAccountId ?? 'Not connected yet'}</p>
+      </div>
+      <div>
+        <strong>Last sync</strong>
+        <p>{provider.lastSyncAt ? new Date(provider.lastSyncAt).toLocaleString('en-AU') : 'No syncs yet'}</p>
+      </div>
+      <div>
+        <strong>Webhooks</strong>
+        <p>{provider.webhookConfigured ? 'Signature key configured' : 'Webhook verification key missing'}</p>
+      </div>
+      {provider.missingEnvVars.length ? (
+        <div>
+          <strong>Setup needed</strong>
+          <p>{provider.missingEnvVars.join(', ')}</p>
+        </div>
+      ) : null}
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={provider.actionDisabled || isBusy}
+        onClick={() => onConnect(provider.provider)}
+      >
+        {isBusy ? 'Opening...' : provider.actionLabel}
+      </Button>
+      {provider.connectBlockedReason ? <p className="muted">{provider.connectBlockedReason}</p> : null}
+    </div>
+  );
+}
+
 function IntegrationsTab({
   settings,
   onSave,
@@ -314,6 +380,36 @@ function IntegrationsTab({
 }) {
   const [key, setKey] = useState(settings.goveeApiKey ?? '');
   const [baseUrl, setBaseUrl] = useState(settings.goveeBaseUrl ?? 'https://openapi.api.govee.com');
+  const [status, setStatus] = useState<IntegrationStatusPayload | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [busyProvider, setBusyProvider] = useState<string | null>(null);
+
+  async function loadIntegrationStatus() {
+    try {
+      const payload = await api<IntegrationStatusPayload>('/api/integrations');
+      setStatus(payload);
+      setStatusError(null);
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Could not load integration status.');
+    }
+  }
+
+  useEffect(() => {
+    void loadIntegrationStatus();
+  }, []);
+
+  async function connectProvider(provider: IntegrationProviderStatus['provider']) {
+    setBusyProvider(provider);
+    try {
+      const payload = await api<IntegrationConnectResponse>(`/api/integrations/${provider}/connect`, {
+        method: 'POST'
+      });
+      window.location.href = payload.authorizationUrl;
+    } catch (err) {
+      setStatusError(err instanceof Error ? err.message : 'Could not start integration connection.');
+      setBusyProvider(null);
+    }
+  }
 
   function submit(event: FormEvent) {
     event.preventDefault();
@@ -325,8 +421,21 @@ function IntegrationsTab({
   }
 
   return (
-    <Card title="Integrations" subtitle="External services that feed compliance data">
-      <form className="page-stack compact" onSubmit={submit}>
+    <div className="page-stack compact">
+      <Card title="Square and Xero" subtitle="Server-owned connections for live sales, invoices and future syncs">
+        {statusError ? <ActionFeedback tone="error" message={statusError} /> : null}
+        {status ? (
+          <div className="admin-grid two">
+            <ProviderSetupCard provider={status.square} busy={busyProvider} onConnect={(provider) => void connectProvider(provider)} />
+            <ProviderSetupCard provider={status.xero} busy={busyProvider} onConnect={(provider) => void connectProvider(provider)} />
+          </div>
+        ) : (
+          <Spinner label="Loading integration status..." />
+        )}
+      </Card>
+
+      <Card title="Govee" subtitle="External services that feed compliance data">
+        <form className="page-stack compact" onSubmit={submit}>
         <Input
           label="govee API key"
           value={key}
@@ -343,8 +452,9 @@ function IntegrationsTab({
           <Button type="submit">Save</Button>
           <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
-      </form>
-    </Card>
+        </form>
+      </Card>
+    </div>
   );
 }
 

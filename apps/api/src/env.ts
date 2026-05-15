@@ -85,6 +85,24 @@ export const env = {
     context: process.env.STRIPE_CONTEXT ?? process.env.STRIPE_ACCOUNT_ID ?? '',
     apiVersion: '2026-04-22.dahlia' as const
   },
+  integrations: {
+    tokenEncryptionKey: process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY ?? '',
+    allowOAuthConnections: process.env.INTEGRATION_OAUTH_CONNECTIONS_ENABLED === 'true',
+    square: {
+      applicationId: process.env.SQUARE_APPLICATION_ID ?? '',
+      applicationSecret: process.env.SQUARE_APPLICATION_SECRET ?? '',
+      environment: (process.env.SQUARE_ENVIRONMENT ?? 'sandbox').toLowerCase(),
+      redirectUrl: process.env.SQUARE_REDIRECT_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/callback`,
+      webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? '',
+      webhookUrl: process.env.SQUARE_WEBHOOK_URL ?? process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/webhooks/square`
+    },
+    xero: {
+      clientId: process.env.XERO_CLIENT_ID ?? '',
+      clientSecret: process.env.XERO_CLIENT_SECRET ?? '',
+      redirectUrl: process.env.XERO_REDIRECT_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/xero/callback`,
+      webhookKey: process.env.XERO_WEBHOOK_KEY ?? ''
+    }
+  },
   giftCards: {
     webUrl: process.env.GIFTCARDS_WEB_URL ?? process.env.GIFT_CARDS_WEB_URL ?? 'http://localhost:5179',
     appleWallet: {

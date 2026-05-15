@@ -1417,7 +1417,67 @@ export type AdminOverviewPayload = {
   recentAuditEvents: AdminAuditEventSummary[];
 };
 
-export type AdminIntegrationProviderStatus = {
+export type IntegrationProviderKey = 'square' | 'xero';
+export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
+export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
+
+export type IntegrationProviderStatus = {
+  provider: IntegrationProviderKey;
+  label: string;
+  status: IntegrationConnectionStatus;
+  configured: boolean;
+  canConnect: boolean;
+  connectBlockedReason: string | null;
+  providerAccountId: string | null;
+  providerAccountName: string | null;
+  connectedAt: string | null;
+  disconnectedAt: string | null;
+  lastSyncAt: string | null;
+  lastSyncStatus: IntegrationSyncStatus | null;
+  lastError: string | null;
+  scopes: string[];
+  environment: string | null;
+  webhookConfigured: boolean;
+  webhookStatus: 'configured' | 'missing';
+  powers: string[];
+  requiredSetup: string[];
+  missingEnvVars: string[];
+  actionLabel: string;
+  actionDisabled: boolean;
+};
+
+export type IntegrationSyncRunSummary = {
+  id: string;
+  provider: IntegrationProviderKey;
+  syncType: 'MANUAL' | 'WEBHOOK' | 'SCHEDULED' | 'BACKFILL' | 'TEST' | 'OAUTH_CALLBACK';
+  status: IntegrationSyncStatus;
+  startedAt: string;
+  finishedAt: string | null;
+  recordsImported: number;
+  recordsUpdated: number;
+  errorSummary: string | null;
+};
+
+export type IntegrationStatusPayload = {
+  generatedAt: string;
+  square: IntegrationProviderStatus;
+  xero: IntegrationProviderStatus;
+  latestSyncRuns: IntegrationSyncRunSummary[];
+  tokenStorage: {
+    configured: boolean;
+    requiredEnvVar: 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
+  };
+};
+
+export type IntegrationConnectResponse = {
+  provider: IntegrationProviderKey;
+  authorizationUrl: string;
+  expiresAt: string;
+};
+
+export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
+
+export type LegacyAdminIntegrationProviderStatus = {
   provider: 'square' | 'xero';
   label: string;
   status: 'NOT_CONNECTED' | 'CONNECTED' | 'NOT_CONFIGURED';
@@ -1431,6 +1491,11 @@ export type AdminIntegrationsStatusPayload = {
   generatedAt: string;
   square: AdminIntegrationProviderStatus;
   xero: AdminIntegrationProviderStatus;
+  latestSyncRuns: IntegrationSyncRunSummary[];
+  tokenStorage: {
+    configured: boolean;
+    requiredEnvVar: 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
+  };
   email: {
     status: 'CONFIGURED' | 'NOT_CONFIGURED';
     provider: 'resend' | 'smtp' | 'none';

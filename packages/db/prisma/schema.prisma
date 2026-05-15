@@ -318,6 +318,40 @@ enum GoogleReserveIntegrationStatus {
   ERROR
 }
 
+enum IntegrationProvider {
+  SQUARE
+  XERO
+}
+
+enum IntegrationConnectionStatus {
+  NOT_CONNECTED
+  CONNECTED
+  ERROR
+  REVOKED
+}
+
+enum IntegrationSyncType {
+  MANUAL
+  WEBHOOK
+  SCHEDULED
+  BACKFILL
+  TEST
+  OAUTH_CALLBACK
+}
+
+enum IntegrationSyncStatus {
+  RUNNING
+  SUCCESS
+  ERROR
+}
+
+enum IntegrationWebhookEventStatus {
+  RECEIVED
+  DUPLICATE
+  IGNORED
+  ERROR
+}
+
 enum GiftCardStatus {
   PENDING_PAYMENT
   ACTIVE
@@ -1657,6 +1691,99 @@ model TemperatureIntegration {
   sensors      TemperatureSensor[]
 
   @@unique([provider])
+}
+
+model IntegrationConnection {
+  id                     String                      @id @default(cuid())
+  provider               IntegrationProvider
+  scopeType              String                      @default("BUSINESS")
+  venueId                String?
+  status                 IntegrationConnectionStatus @default(NOT_CONNECTED)
+  connectedAt            DateTime?
+  disconnectedAt         DateTime?
+  lastSyncAt             DateTime?
+  lastSyncStatus         IntegrationSyncStatus?
+  lastError              String?
+  providerAccountId      String?
+  providerAccountName    String?
+  scopes                 Json                        @default("[]")
+  tokenEncrypted         String?
+  refreshTokenEncrypted  String?
+  tokenSecretRef         String?
+  refreshTokenSecretRef  String?
+  tokenExpiresAt         DateTime?
+  createdAt              DateTime                    @default(now())
+  updatedAt              DateTime                    @updatedAt
+  updatedByUserId        String?
+  syncRuns               IntegrationSyncRun[]
+  events                 IntegrationEvent[]
+  webhookEvents          IntegrationWebhookEvent[]
+
+  @@index([provider, status])
+  @@index([scopeType, venueId])
+  @@index([updatedAt])
+}
+
+model IntegrationSyncRun {
+  id              String                 @id @default(cuid())
+  connectionId    String?
+  provider        IntegrationProvider
+  syncType        IntegrationSyncType
+  status          IntegrationSyncStatus
+  startedAt       DateTime               @default(now())
+  finishedAt      DateTime?
+  recordsImported Int                    @default(0)
+  recordsUpdated  Int                    @default(0)
+  errorSummary    String?
+  connection      IntegrationConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([provider, startedAt])
+  @@index([connectionId, startedAt])
+}
+
+model IntegrationOAuthState {
+  id              String              @id @default(cuid())
+  provider        IntegrationProvider
+  stateHash       String              @unique
+  createdByUserId String
+  redirectPath    String?
+  expiresAt       DateTime
+  consumedAt      DateTime?
+  createdAt       DateTime            @default(now())
+
+  @@index([provider, expiresAt])
+}
+
+model IntegrationEvent {
+  id              String                 @id @default(cuid())
+  connectionId    String?
+  provider        IntegrationProvider
+  eventType       String
+  summary         String
+  metadata        Json                   @default("{}")
+  createdByUserId String?
+  createdByName   String?
+  createdAt       DateTime               @default(now())
+  connection      IntegrationConnection? @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@index([provider, createdAt])
+  @@index([connectionId, createdAt])
+}
+
+model IntegrationWebhookEvent {
+  id              String                        @id @default(cuid())
+  connectionId    String?
+  provider        IntegrationProvider
+  providerEventId String
+  eventType       String?
+  status          IntegrationWebhookEventStatus @default(RECEIVED)
+  receivedAt      DateTime                      @default(now())
+  processedAt     DateTime?
+  errorSummary    String?
+  connection      IntegrationConnection?        @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+
+  @@unique([provider, providerEventId])
+  @@index([provider, receivedAt])
 }
 
 model TemperatureSensor {

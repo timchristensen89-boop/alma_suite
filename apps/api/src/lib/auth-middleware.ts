@@ -27,7 +27,9 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/gift-cards/public/config',
   '/api/gift-cards/public/orders',
   '/api/gift-cards/settings/public',
-  '/api/gift-cards/promo/quote'
+  '/api/gift-cards/promo/quote',
+  '/api/integrations/square/callback',
+  '/api/integrations/xero/callback'
 ]);
 
 const PUBLIC_PREFIXES = [

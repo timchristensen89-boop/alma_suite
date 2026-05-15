@@ -16,7 +16,9 @@ import type {
   AdminIntegrationsStatusPayload,
   AdminOverviewPayload,
   AdminSignalTone,
-  AdminSystemHealthPayload
+  AdminSystemHealthPayload,
+  IntegrationConnectResponse,
+  IntegrationProviderStatus
 } from '@alma/shared';
 import { api, createSuiteHandoffUrl } from '../lib/api';
 import {
@@ -175,6 +177,79 @@ function StatusLine({ label, value, tone = 'neutral' }: { label: string; value: 
   );
 }
 
+function integrationTone(status: IntegrationProviderStatus['status']) {
+  if (status === 'CONNECTED') return 'positive';
+  if (status === 'ERROR') return 'danger';
+  if (status === 'NOT_CONFIGURED') return 'warning';
+  return 'muted';
+}
+
+function IntegrationCard({
+  integration,
+  busy,
+  onConnect,
+  onDisconnect
+}: {
+  integration: IntegrationProviderStatus;
+  busy: string | null;
+  onConnect: (provider: IntegrationProviderStatus['provider']) => void;
+  onDisconnect: (provider: IntegrationProviderStatus['provider']) => void;
+}) {
+  const isBusy = busy === integration.provider;
+
+  return (
+    <Card title={integration.label} subtitle={integration.configured ? 'Connection ready' : 'Setup required'}>
+      <div className="admin-provider-card">
+        <Badge tone={integrationTone(integration.status)}>{integration.status.replace(/_/g, ' ')}</Badge>
+        <p className="muted">Connection tokens are stored securely on the server and are never exposed in the browser.</p>
+        <div>
+          <strong>Powers</strong>
+          <p>{integration.powers.join(', ')}</p>
+        </div>
+        <div>
+          <strong>Account</strong>
+          <p>{integration.providerAccountName ?? integration.providerAccountId ?? 'Not connected yet'}</p>
+        </div>
+        <div>
+          <strong>Last sync</strong>
+          <p>{integration.lastSyncAt ? formatDate(integration.lastSyncAt) : 'No syncs yet'}</p>
+        </div>
+        <div>
+          <strong>Webhooks</strong>
+          <p>{integration.webhookConfigured ? 'Signature key configured' : 'Webhook verification key missing'}</p>
+        </div>
+        {integration.missingEnvVars.length ? (
+          <div>
+            <strong>Setup needed</strong>
+            <p>{integration.missingEnvVars.join(', ')}</p>
+          </div>
+        ) : null}
+        {integration.lastError ? (
+          <div>
+            <strong>Last error</strong>
+            <p>{integration.lastError}</p>
+          </div>
+        ) : null}
+        <div className="inline-actions">
+          <Button
+            variant="secondary"
+            disabled={integration.actionDisabled || isBusy}
+            onClick={() => onConnect(integration.provider)}
+          >
+            {isBusy ? 'Opening...' : integration.actionLabel}
+          </Button>
+          {integration.status === 'CONNECTED' ? (
+            <Button variant="ghost" disabled={isBusy} onClick={() => onDisconnect(integration.provider)}>
+              Disconnect locally
+            </Button>
+          ) : null}
+        </div>
+        {integration.connectBlockedReason ? <p className="muted">{integration.connectBlockedReason}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
 function AuditList({ events }: { events: AdminAuditEventSummary[] }) {
   if (!events.length) {
     return (
@@ -217,6 +292,7 @@ export function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [integrationBusy, setIntegrationBusy] = useState<string | null>(null);
 
   async function loadDashboard() {
     setLoading(true);
@@ -238,6 +314,31 @@ export function AdminPage() {
   useEffect(() => {
     void loadDashboard();
   }, []);
+
+  async function connectIntegration(provider: IntegrationProviderStatus['provider']) {
+    setIntegrationBusy(provider);
+    try {
+      const payload = await api<IntegrationConnectResponse>(`/api/integrations/${provider}/connect`, {
+        method: 'POST'
+      });
+      window.location.href = payload.authorizationUrl;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not start integration connection.');
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function disconnectIntegration(provider: IntegrationProviderStatus['provider']) {
+    setIntegrationBusy(provider);
+    try {
+      await api(`/api/integrations/${provider}/disconnect`, { method: 'POST' });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not disconnect integration.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -508,32 +609,48 @@ export function AdminPage() {
         <SectionHeading
           id="integrations"
           eyebrow="Integrations"
-          title="A clean landing place before live connections."
-          description="Square and Xero are visible here, but no OAuth, tokens or webhooks are implemented in this pass."
+          title="Connect the systems that power trading."
+          description="Square and Xero can be connected from Admin once server configuration and token encryption are ready."
         />
         <div className="admin-grid three">
           {[integrations.square, integrations.xero].map((integration) => (
-            <Card key={integration.provider} title={integration.label} subtitle="Integration placeholder">
-              <div className="admin-provider-card">
-                <Badge tone="muted">{integration.status.replace(/_/g, ' ')}</Badge>
-                <div>
-                  <strong>Will power</strong>
-                  <p>{integration.powers.join(', ')}</p>
-                </div>
-                <div>
-                  <strong>Required setup</strong>
-                  <p>{integration.requiredSetup.join(', ')}</p>
-                </div>
-                <Button variant="secondary" disabled={integration.actionDisabled}>{integration.actionLabel}</Button>
-              </div>
-            </Card>
+            <IntegrationCard
+              key={integration.provider}
+              integration={integration}
+              busy={integrationBusy}
+              onConnect={(provider) => void connectIntegration(provider)}
+              onDisconnect={(provider) => void disconnectIntegration(provider)}
+            />
           ))}
           <Card title="Email and device services" subtitle="Configured without exposing secrets">
             <div className="admin-status-stack">
+              <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
               <StatusLine label="Email delivery" value={integrations.email.status.replace(/_/g, ' ')} tone={integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger'} />
               <StatusLine label="Email provider" value={integrations.email.provider} tone={integrations.email.provider === 'none' ? 'muted' : 'info'} />
               <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
             </div>
+          </Card>
+        </div>
+        <div className="admin-grid two">
+          <Card title="Sync health" subtitle="Last connection and webhook activity">
+            {integrations.latestSyncRuns.length ? (
+              <div className="admin-status-stack">
+                {integrations.latestSyncRuns.map((run) => (
+                  <StatusLine
+                    key={run.id}
+                    label={`${run.provider.toUpperCase()} ${run.syncType.replace(/_/g, ' ').toLowerCase()}`}
+                    value={run.status}
+                    tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<IconRefresh />}
+                title="No sync activity yet"
+                description="OAuth callbacks, local tests and verified webhook events will appear here once configured."
+              />
+            )}
           </Card>
         </div>
       </section>

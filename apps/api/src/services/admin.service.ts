@@ -10,6 +10,7 @@ import type {
   AdminSystemHealthPayload
 } from '@alma/shared';
 import { env } from '../env.js';
+import { integrationService } from './integration.service.js';
 import { mailService } from './mail.service.js';
 import { settingsService } from './settings.service.js';
 
@@ -342,27 +343,10 @@ export const adminService = {
   async integrationsStatus(): Promise<AdminIntegrationsStatusPayload> {
     const settings = await settingsService.get();
     const mailProvider = provider();
+    const integrations = await integrationService.status();
 
     return {
-      generatedAt: new Date().toISOString(),
-      square: {
-        provider: 'square',
-        label: 'Square',
-        status: 'NOT_CONNECTED',
-        powers: ['Live sales', 'payments', 'product movement', 'trading pace'],
-        requiredSetup: ['Application ID', 'secret', 'redirect URL', 'webhook signature key'],
-        actionLabel: 'Set up later',
-        actionDisabled: true
-      },
-      xero: {
-        provider: 'xero',
-        label: 'Xero',
-        status: 'NOT_CONNECTED',
-        powers: ['Invoices', 'bills', 'supplier spend', 'accounting status'],
-        requiredSetup: ['Client ID', 'client secret', 'redirect URL', 'webhook key'],
-        actionLabel: 'Set up later',
-        actionDisabled: true
-      },
+      ...integrations,
       email: {
         status: mailService.isConfigured() ? 'CONFIGURED' : 'NOT_CONFIGURED',
         provider: mailProvider

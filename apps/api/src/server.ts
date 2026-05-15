@@ -12,6 +12,7 @@ import { communicationsRouter } from './routes/communications.js';
 import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
+import { integrationsRouter, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
@@ -34,6 +35,8 @@ const app = express();
 
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.post('/api/gift-cards/webhook', express.raw({ type: 'application/json' }), stripeGiftCardWebhook);
+app.post('/webhooks/square', express.raw({ type: 'application/json' }), squareWebhookReceiver);
+app.post('/webhooks/xero', express.raw({ type: 'application/json' }), xeroWebhookReceiver);
 app.use(express.json());
 app.use(cookieParser());
 
@@ -58,6 +61,7 @@ app.get('/', (_req, res) => {
       'training',
       'settings',
       'admin',
+      'integrations',
       'communications',
       'notifications',
       'search'
@@ -93,6 +97,7 @@ app.use('/api/licences', liquorRouter);
 app.use('/api/licenses', liquorRouter);
 app.use('/api/liquor', liquorRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/integrations', integrationsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/communications', communicationsRouter);
 app.use('/api/notifications', notificationsRouter);
