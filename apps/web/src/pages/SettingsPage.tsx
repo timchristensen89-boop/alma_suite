@@ -55,7 +55,7 @@ export function SettingsPage() {
     () => TABS.filter((t) => !t.adminOnly || user?.isAdmin),
     [user?.isAdmin]
   );
-  const adminHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/settings` : '';
+  const staffSettingsHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/settings` : '';
 
   async function save(patch: Partial<AppSettingsPayload>, target: string) {
     if (!settings) return;
@@ -115,12 +115,12 @@ export function SettingsPage() {
         <div className="hero-text">
           <p className="page-header-eyebrow">Settings</p>
           <h1>{settings.orgName}</h1>
-          <p>Staff defaults, access, onboarding, leave settings and management audit history live in ALMA Staff Settings. Compliance keeps account access and compliance-specific handbook/document links here.</p>
+          <p>Cross-suite setup now starts in Alma Admin. Compliance keeps account access and compliance-specific handbook/document links here.</p>
         </div>
         <div className="hero-actions">
-          {user?.isAdmin && adminHref ? (
-            <Button type="button" onClick={() => { window.location.href = adminHref; }}>
-              Open Staff Settings
+          {user?.isAdmin ? (
+            <Button type="button" onClick={() => { window.location.href = '/admin'; }}>
+              Open Alma Admin
             </Button>
           ) : null}
           {ok && !feedbackTarget ? <Badge tone="positive" dot>{ok}</Badge> : null}
@@ -130,18 +130,24 @@ export function SettingsPage() {
 
       {user?.isAdmin ? (
         <Card
-          title="Staff settings live in ALMA Staff"
-          subtitle="Staff defaults, venues, onboarding rules, access, leave, and staff-management audit events are managed from Staff Settings."
+          title="Managed in Alma Admin"
+          subtitle="Business-wide setup, app configuration, integrations, access, audit and health now have a central Admin home."
           action={
-            adminHref ? (
-              <Button type="button" variant="secondary" onClick={() => { window.location.href = adminHref; }}>
-                Open Staff Settings
-              </Button>
-            ) : undefined
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = '/admin'; }}>
+              Open Alma Admin
+            </Button>
           }
         >
           <p className="subtle">
-            This page remains available for your account password and Compliance handbook/document shortcuts while staff configuration stays in the Staff app.
+            Staff defaults, onboarding and leave settings still use the Staff Settings editor during this transition.
+            {staffSettingsHref ? (
+              <>
+                {' '}
+                <a href={staffSettingsHref}>
+                  Open Staff Settings
+                </a>
+              </>
+            ) : null}
           </p>
         </Card>
       ) : null}

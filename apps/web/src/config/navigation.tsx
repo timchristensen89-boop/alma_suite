@@ -77,9 +77,9 @@ export const NAV_ITEMS: NavItem[] = [
     minimumRole: 'MANAGER'
   },
   {
-    to: '/settings',
+    to: '/admin',
     label: 'Admin',
-    description: 'Suite settings and account',
+    description: 'Suite setup, access and health',
     icon: <IconSettings />,
     minimumRole: 'ADMIN'
   }

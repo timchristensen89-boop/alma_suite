@@ -1338,6 +1338,140 @@ export type AppSettingsPayload = {
   notifyOutOfRangeTemp: boolean;
 };
 
+export type AdminSignalTone = 'positive' | 'warning' | 'danger' | 'info' | 'muted';
+
+export type AdminReadinessWarning = {
+  label: string;
+  detail: string;
+  tone: AdminSignalTone;
+  href?: string;
+};
+
+export type AdminVenueSummary = {
+  name: string;
+  address: string | null;
+  phone: string | null;
+  activeStaffCount: number;
+};
+
+export type AdminBusinessSummary = {
+  orgName: string;
+  primaryContactName: string | null;
+  primaryContactEmail: string | null;
+  primaryContactPhone: string | null;
+  venues: AdminVenueSummary[];
+};
+
+export type AdminAppAccessSummary = {
+  appId: AlmaAppId;
+  label: string;
+  enabled: number;
+  pending: number;
+  disabled: number;
+  managerOrAdmin: number;
+};
+
+export type AdminHandoffLink = {
+  label: string;
+  description: string;
+  appId: string;
+  href: string;
+};
+
+export type AdminAuditEventSummary = {
+  id: string;
+  staffProfileId: string;
+  staffName: string;
+  staffRoleTitle: string | null;
+  venue: string | null;
+  eventType: string;
+  summary: string;
+  createdByName: string | null;
+  createdAt: string;
+};
+
+export type AdminOverviewPayload = {
+  generatedAt: string;
+  readiness: {
+    status: 'ready' | 'needs_attention';
+    label: string;
+    warnings: AdminReadinessWarning[];
+  };
+  counts: {
+    activeStaff: number;
+    staffMissingLoginEmail: number;
+    staffMissingStaffAccess: number;
+    staffWithoutPassword: number;
+    mondayRosterLoaded: boolean;
+    mondayRosterShiftCount: number;
+    openClockSessions: number;
+    pendingComplianceRecords: number;
+    expiredComplianceRecords: number;
+    adminUsers: number;
+    staffManagersOrAdmins: number;
+  };
+  business: AdminBusinessSummary;
+  staffDefaults: StaffDefaults;
+  appAccess: AdminAppAccessSummary[];
+  handoffLinks: AdminHandoffLink[];
+  recentAuditEvents: AdminAuditEventSummary[];
+};
+
+export type AdminIntegrationProviderStatus = {
+  provider: 'square' | 'xero';
+  label: string;
+  status: 'NOT_CONNECTED' | 'CONNECTED' | 'NOT_CONFIGURED';
+  powers: string[];
+  requiredSetup: string[];
+  actionLabel: string;
+  actionDisabled: boolean;
+};
+
+export type AdminIntegrationsStatusPayload = {
+  generatedAt: string;
+  square: AdminIntegrationProviderStatus;
+  xero: AdminIntegrationProviderStatus;
+  email: {
+    status: 'CONFIGURED' | 'NOT_CONFIGURED';
+    provider: 'resend' | 'smtp' | 'none';
+  };
+  govee: {
+    status: 'CONFIGURED' | 'NOT_CONFIGURED';
+    baseUrl: string | null;
+  };
+};
+
+export type AdminSystemHealthPayload = {
+  generatedAt: string;
+  api: {
+    status: 'ok';
+  };
+  database: {
+    status: 'ok' | 'error';
+    detail: string;
+  };
+  email: {
+    configured: boolean;
+    provider: 'resend' | 'smtp' | 'none';
+  };
+  migrations: {
+    status: 'available' | 'not_checked' | 'error';
+    latest: string | null;
+    detail: string;
+  };
+  appUrls: Array<{
+    app: string;
+    envVar: string;
+    status: 'configured' | 'missing';
+    url: string | null;
+  }>;
+};
+
+export type AdminAuditEventsPayload = {
+  eventTypes: string[];
+  events: AdminAuditEventSummary[];
+};
+
 export const incidentPersonInputSchema = z.object({
   name: z.string().min(2),
   role: z.string().min(2),

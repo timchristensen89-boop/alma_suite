@@ -69,7 +69,7 @@ import {
 } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
-import { api } from './lib/api';
+import { api, createSuiteHandoffUrl } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
@@ -322,8 +322,8 @@ const NAV_ITEMS = [
   },
   {
     to: '/settings',
-    label: 'Admin',
-    description: 'Defaults, integrations, venues, onboarding and access',
+    label: 'Staff settings',
+    description: 'Staff defaults, onboarding and access',
     icon: <GearIcon />
   },
   {
@@ -4102,8 +4102,21 @@ function AdminPage({
     <div className="page-stack">
       <PageHeader
         eyebrow="ALMA Staff"
-        title="Staff admin"
-        description="Admin-owned defaults, integrations, venues, onboarding, app access and staff-management audit history. Daily staff work stays on Home, Roster, Clock and Manager Today."
+        title="Staff settings"
+        description="Working editor for staff defaults, onboarding, roster areas and staff audit history. Cross-suite setup starts in Alma Admin."
+        actions={
+          COMPLIANCE_WEB_URL ? (
+            <Button
+              variant="secondary"
+              type="button"
+              onClick={() => {
+                window.location.href = `${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/admin`;
+              }}
+            >
+              Open Alma Admin
+            </Button>
+          ) : undefined
+        }
       />
 
       <div className="stats-grid">
@@ -9342,6 +9355,40 @@ function PublicOnboardingPage() {
   );
 }
 
+function AlmaAdminRedirect() {
+  const [fallback, setFallback] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function openAdmin() {
+      const href = `${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/admin`;
+      try {
+        window.location.href = await createSuiteHandoffUrl(href);
+      } catch {
+        window.location.href = href;
+      }
+      window.setTimeout(() => {
+        if (!cancelled) setFallback(true);
+      }, 1000);
+    }
+
+    void openAdmin();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (fallback) return <Navigate to="/settings" replace />;
+
+  return (
+    <Card>
+      <div className="staff-empty-panel">
+        <Spinner label="Opening Alma Admin..." />
+      </div>
+    </Card>
+  );
+}
+
 function StaffShell() {
   const { user } = useAuth();
   const { staff, roster, loading, error, reload } = useStaffData();
@@ -9389,7 +9436,7 @@ function StaffShell() {
           <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
-          <Route path="/admin" element={<Navigate to="/settings" replace />} />
+          <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />

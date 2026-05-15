@@ -13,6 +13,7 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordRecoveryPages';
 import { SuiteAppLoginPage } from './pages/SuiteAppLoginPage';
+import { AdminPage } from './pages/AdminPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { IssuesListPage } from './pages/issues/IssuesListPage';
 import { IssueDetailPage } from './pages/issues/IssueDetailPage';
@@ -274,6 +275,7 @@ function AuthenticatedApp() {
           <Route path="/handbook/onboarding" element={<HandbookOnboardingPage />} />
           <Route path="/handbook/maintenance" element={<MaintenancePage />} />
           <Route path="/icon-export" element={<IconExportPage />} />
+          <Route path="/admin" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
           <Route path="/settings" element={<RequireRole minimum="ADMIN"><SettingsPage /></RequireRole>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

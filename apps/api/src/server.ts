@@ -4,6 +4,7 @@ import express from 'express';
 import { env } from './env.js';
 import { authMiddleware } from './lib/auth-middleware.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
+import { adminRouter } from './routes/admin.js';
 import { auditsRouter } from './routes/audits.js';
 import { authRouter } from './routes/auth.js';
 import { checklistsRouter } from './routes/checklists.js';
@@ -56,6 +57,7 @@ app.get('/', (_req, res) => {
       'gift-cards',
       'training',
       'settings',
+      'admin',
       'communications',
       'notifications',
       'search'
@@ -90,6 +92,7 @@ app.use('/api/training', trainingRouter);
 app.use('/api/licences', liquorRouter);
 app.use('/api/licenses', liquorRouter);
 app.use('/api/liquor', liquorRouter);
+app.use('/api/admin', adminRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/communications', communicationsRouter);
 app.use('/api/notifications', notificationsRouter);

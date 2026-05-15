@@ -39,6 +39,11 @@ function trimTrailingSlash(value: string) {
   return value.replace(/\/+$/, '');
 }
 
+function adminHref(value: string) {
+  const base = trimTrailingSlash(value);
+  return base.endsWith('/admin') ? base : `${base}/admin`;
+}
+
 export function suiteAppHref(app: SuiteAppIdentity) {
   if (app.id === 'compliance') return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/` : undefined;
   if (app.id === 'stock') return suiteUrls.stock ? `${trimTrailingSlash(suiteUrls.stock)}/` : undefined;
@@ -49,8 +54,8 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   if (app.id === 'giftcards') return suiteUrls.giftcards ? `${trimTrailingSlash(suiteUrls.giftcards)}/redeem` : undefined;
   if (app.id === 'training' || app.id === 'academy') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/academy` : undefined;
   if (app.id === 'settings') {
-    if (suiteUrls.settings) return `${trimTrailingSlash(suiteUrls.settings)}/`;
-    return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/settings` : undefined;
+    if (suiteUrls.settings) return adminHref(suiteUrls.settings);
+    return suiteUrls.compliance ? adminHref(suiteUrls.compliance) : undefined;
   }
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
