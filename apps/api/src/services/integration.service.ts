@@ -393,6 +393,34 @@ async function recordWebhook(provider: Provider, rawBody: string) {
 export const integrationService = {
   normaliseProvider,
 
+  async handleMetaCallback(query: Record<string, unknown>) {
+    const error = typeof query.error === 'string' ? query.error : '';
+    const errorReason = typeof query.error_reason === 'string' ? query.error_reason : '';
+    const errorDescription = typeof query.error_description === 'string' ? query.error_description : '';
+    const code = typeof query.code === 'string' ? query.code : '';
+
+    if (error || errorReason) {
+      return frontendAdminRedirect({
+        integration: 'meta',
+        status: 'failed',
+        reason: errorDescription || errorReason || error || 'meta_oauth_failed'
+      });
+    }
+
+    if (!code) {
+      return frontendAdminRedirect({
+        integration: 'meta',
+        status: 'missing_code'
+      });
+    }
+
+    return frontendAdminRedirect({
+      integration: 'meta',
+      status: 'callback_received',
+      next: 'store_token_secret_reference'
+    });
+  },
+
   async status(): Promise<IntegrationStatusPayload> {
     const [square, xero, syncRuns] = await Promise.all([
       providerStatus('SQUARE'),

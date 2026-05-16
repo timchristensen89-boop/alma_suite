@@ -4,6 +4,15 @@ import { integrationService } from '../services/integration.service.js';
 
 export const integrationsRouter = Router();
 
+integrationsRouter.get('/meta/callback', async (req, res, next) => {
+  try {
+    const redirectUrl = await integrationService.handleMetaCallback(req.query);
+    res.redirect(302, redirectUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/:provider/callback', async (req, res, next) => {
   try {
     const redirectUrl = await integrationService.handleCallback(String(req.params.provider), req.query);
