@@ -263,7 +263,7 @@ export function TemperaturesPage() {
       <header className="page-header">
         <div>
           <p className="eyebrow">Temperature Logs</p>
-          <h1>Watch fridge temps and keep the exception trail tight</h1>
+          <h1>Fridge Temps</h1>
           <p className="muted">
             {selectedVenue === 'all' ? 'Viewing all venues' : `Viewing ${selectedVenue}`} · manual logs and latest readings are separated by venue.
           </p>

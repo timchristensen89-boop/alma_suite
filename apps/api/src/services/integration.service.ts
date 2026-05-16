@@ -112,6 +112,13 @@ function connectionSelect(provider: Provider) {
   });
 }
 
+function isMissingIntegrationStorage(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === 'P2021' || error.code === 'P2022')
+  );
+}
+
 function toIso(value: Date | null | undefined) {
   return value ? value.toISOString() : null;
 }
@@ -153,12 +160,22 @@ async function providerStatus(provider: Provider): Promise<IntegrationProviderSt
   const copy = PROVIDER_COPY[provider];
   const config = providerConfig(provider);
   const tokenStorage = integrationTokenEncryptionStatus();
-  const connection = await connectionSelect(provider);
+  let connection: Awaited<ReturnType<typeof connectionSelect>> | null = null;
+  let storageReady = true;
+  try {
+    connection = await connectionSelect(provider);
+  } catch (error) {
+    if (!isMissingIntegrationStorage(error)) throw error;
+    storageReady = false;
+  }
   const missingEnvVars = [
     ...config.missingEnvVars,
-    ...(tokenStorage.configured ? [] : [tokenStorage.requiredEnvVar])
+    ...(tokenStorage.configured ? [] : [tokenStorage.requiredEnvVar]),
+    ...(storageReady ? [] : ['Integration database setup'])
   ];
-  const reason = blockedReason(provider, config.missingEnvVars, tokenStorage.configured);
+  const reason = storageReady
+    ? blockedReason(provider, config.missingEnvVars, tokenStorage.configured)
+    : 'Integration database setup is not active yet.';
   const status = !config.configured || !tokenStorage.configured
     ? 'NOT_CONFIGURED'
     : connection?.status ?? 'NOT_CONNECTED';
@@ -190,10 +207,16 @@ async function providerStatus(provider: Provider): Promise<IntegrationProviderSt
 }
 
 async function latestSyncRuns() {
-  const runs = await prisma.integrationSyncRun.findMany({
-    orderBy: { startedAt: 'desc' },
-    take: 8
-  });
+  let runs: Awaited<ReturnType<typeof prisma.integrationSyncRun.findMany>>;
+  try {
+    runs = await prisma.integrationSyncRun.findMany({
+      orderBy: { startedAt: 'desc' },
+      take: 8
+    });
+  } catch (error) {
+    if (!isMissingIntegrationStorage(error)) throw error;
+    return [];
+  }
 
   return runs.map((run) => ({
     id: run.id,

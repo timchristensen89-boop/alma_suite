@@ -4551,6 +4551,22 @@ a.suite-app-tile:hover {
   color: #047857;
 }
 
+@media (max-width: 640px) {
+  .notifications-panel {
+    position: fixed;
+    top: 72px;
+    right: max(12px, env(safe-area-inset-right));
+    left: max(12px, env(safe-area-inset-left));
+    width: auto;
+    max-width: none;
+    max-height: calc(100vh - 96px);
+  }
+
+  .notifications-body {
+    max-height: calc(100vh - 156px);
+  }
+}
+
 /* ==========================================================================
    User menu
    ========================================================================== */

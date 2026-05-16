@@ -298,12 +298,20 @@ export function AdminPage() {
     setLoading(true);
     setError(null);
     try {
-      const [overview, integrations, systemHealth] = await Promise.all([
+      const [overviewResult, integrationsResult, systemHealthResult] = await Promise.allSettled([
         api<AdminOverviewPayload>('/api/admin/overview'),
         api<AdminIntegrationsStatusPayload>('/api/admin/integrations/status'),
         api<AdminSystemHealthPayload>('/api/admin/system-health')
       ]);
-      setState({ overview, integrations, systemHealth });
+
+      if (overviewResult.status === 'rejected') throw overviewResult.reason;
+      if (systemHealthResult.status === 'rejected') throw systemHealthResult.reason;
+
+      setState({
+        overview: overviewResult.value,
+        integrations: integrationsResult.status === 'fulfilled' ? integrationsResult.value : null,
+        systemHealth: systemHealthResult.value
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load Admin.');
     } finally {
@@ -391,7 +399,7 @@ export function AdminPage() {
     );
   }
 
-  if (error || !overview || !integrations || !systemHealth) {
+  if (error || !overview || !systemHealth) {
     return (
       <div className="page-stack">
         <PageHeader
@@ -613,46 +621,60 @@ export function AdminPage() {
           description="Square and Xero can be connected from Admin once server configuration and token encryption are ready."
         />
         <div className="admin-grid three">
-          {[integrations.square, integrations.xero].map((integration) => (
-            <IntegrationCard
-              key={integration.provider}
-              integration={integration}
-              busy={integrationBusy}
-              onConnect={(provider) => void connectIntegration(provider)}
-              onDisconnect={(provider) => void disconnectIntegration(provider)}
-            />
-          ))}
-          <Card title="Email and device services" subtitle="Configured without exposing secrets">
-            <div className="admin-status-stack">
-              <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
-              <StatusLine label="Email delivery" value={integrations.email.status.replace(/_/g, ' ')} tone={integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger'} />
-              <StatusLine label="Email provider" value={integrations.email.provider} tone={integrations.email.provider === 'none' ? 'muted' : 'info'} />
-              <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
-            </div>
-          </Card>
-        </div>
-        <div className="admin-grid two">
-          <Card title="Sync health" subtitle="Last connection and webhook activity">
-            {integrations.latestSyncRuns.length ? (
-              <div className="admin-status-stack">
-                {integrations.latestSyncRuns.map((run) => (
-                  <StatusLine
-                    key={run.id}
-                    label={`${run.provider.toUpperCase()} ${run.syncType.replace(/_/g, ' ').toLowerCase()}`}
-                    value={run.status}
-                    tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}
-                  />
-                ))}
-              </div>
-            ) : (
+          {integrations ? (
+            <>
+              {[integrations.square, integrations.xero].map((integration) => (
+                <IntegrationCard
+                  key={integration.provider}
+                  integration={integration}
+                  busy={integrationBusy}
+                  onConnect={(provider) => void connectIntegration(provider)}
+                  onDisconnect={(provider) => void disconnectIntegration(provider)}
+                />
+              ))}
+              <Card title="Email and device services" subtitle="Configured without exposing secrets">
+                <div className="admin-status-stack">
+                  <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
+                  <StatusLine label="Email delivery" value={integrations.email.status.replace(/_/g, ' ')} tone={integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger'} />
+                  <StatusLine label="Email provider" value={integrations.email.provider} tone={integrations.email.provider === 'none' ? 'muted' : 'info'} />
+                  <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
+                </div>
+              </Card>
+            </>
+          ) : (
+            <Card title="Integration status unavailable" subtitle="Core Admin is still available">
               <EmptyState
-                icon={<IconRefresh />}
-                title="No sync activity yet"
-                description="OAuth callbacks, local tests and verified webhook events will appear here once configured."
+                icon={<IconSettings />}
+                title="Integration setup is not active yet"
+                description="Square and Xero status will appear here after the integration backend is enabled. No connection or sync is running from this screen right now."
               />
-            )}
-          </Card>
+            </Card>
+          )}
         </div>
+        {integrations ? (
+          <div className="admin-grid two">
+            <Card title="Sync health" subtitle="Last connection and webhook activity">
+              {integrations.latestSyncRuns.length ? (
+                <div className="admin-status-stack">
+                  {integrations.latestSyncRuns.map((run) => (
+                    <StatusLine
+                      key={run.id}
+                      label={`${run.provider.toUpperCase()} ${run.syncType.replace(/_/g, ' ').toLowerCase()}`}
+                      value={run.status}
+                      tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}
+                    />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<IconRefresh />}
+                  title="No sync activity yet"
+                  description="OAuth callbacks, local tests and verified webhook events will appear here once configured."
+                />
+              )}
+            </Card>
+          </div>
+        ) : null}
       </section>
 
       <section className="admin-section">
