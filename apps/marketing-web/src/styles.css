@@ -7,6 +7,56 @@
   --color-accent-text: #7A1F35;
 }
 
+@media (min-width: 901px) {
+  .app-shell {
+    --sidebar-width: var(--sidebar-width-expanded);
+  }
+
+  .app-shell-sidebar,
+  .app-shell-sidebar:hover,
+  .app-shell-sidebar:focus-within,
+  .app-shell.is-sidebar-pinned .app-shell-sidebar {
+    width: var(--sidebar-width-expanded);
+  }
+
+  .app-shell-sidebar-toggle {
+    display: none;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) {
+    padding-inline: 18px;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .app-shell-brand {
+    justify-content: flex-start;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .product-logo-lockup {
+    gap: 12px !important;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .product-logo-lockup > .product-logo-mark + span,
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a > span:not(.sidebar-nav-icon) {
+    width: auto !important;
+    max-width: none;
+    opacity: 1;
+    overflow: visible;
+    pointer-events: auto;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav-section {
+    height: auto;
+    padding: 12px 8px 6px;
+    opacity: 1;
+    overflow: visible;
+  }
+
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a {
+    justify-content: flex-start;
+    padding-inline: 10px;
+  }
+}
+
 .marketing-page {
   display: grid;
   gap: 24px;
