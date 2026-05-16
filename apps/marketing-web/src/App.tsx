@@ -205,12 +205,67 @@ type ContentPublishPreviewResult = {
   message?: string;
 };
 
+type ContentLivePublishState = {
+  ready: boolean;
+  label: string;
+  title: string;
+};
+
 function defaultFeedback(): FeedbackState {
   return { target: null, message: null, tone: 'success' };
 }
 
 function isAdmin(user: AuthUser) {
   return Boolean(user.isAdmin || user.role === 'ADMIN');
+}
+
+function livePublishInfo(preview: MarketingContentPlatformPreview) {
+  const livePublish = (preview.requestPreview as { livePublish?: unknown }).livePublish;
+  if (!livePublish || typeof livePublish !== 'object') {
+    return { ready: false, setupRequired: true };
+  }
+  return livePublish as {
+    ready?: boolean;
+    setupRequired?: boolean;
+    accountConfigured?: boolean;
+    hasTokenSecretRef?: boolean;
+    connectorEnabled?: boolean;
+    platformSupported?: boolean;
+  };
+}
+
+function livePublishStateForPost(post: MarketingContentPost, preview: ContentPublishPreviewResult | null): ContentLivePublishState {
+  if (!preview || preview.post.id !== post.id) {
+    return {
+      ready: false,
+      label: 'Preview first',
+      title: 'Preview this post to check live publishing readiness before posting.'
+    };
+  }
+
+  const blocking = preview.previews.find((row) => row.status !== 'READY_TO_SIMULATE' || !livePublishInfo(row).ready);
+  if (!blocking) {
+    return {
+      ready: true,
+      label: 'Live publish',
+      title: 'Publish to the connected live social accounts.'
+    };
+  }
+
+  const info = livePublishInfo(blocking);
+  if (blocking.status !== 'READY_TO_SIMULATE') {
+    return { ready: false, label: 'Live setup required', title: blocking.message };
+  }
+  if (info.platformSupported === false) {
+    return { ready: false, label: 'Live setup required', title: `${blocking.platform} live publishing is not implemented yet.` };
+  }
+  if (info.connectorEnabled === false) {
+    return { ready: false, label: 'Live setup required', title: 'Admin must enable MARKETING_SOCIAL_LIVE_PUBLISH_ENABLED before live posting.' };
+  }
+  if (!info.accountConfigured || !info.hasTokenSecretRef) {
+    return { ready: false, label: 'Live setup required', title: `${blocking.platform} needs a connected account and token secret reference in Admin.` };
+  }
+  return { ready: false, label: 'Live setup required', title: blocking.message };
 }
 
 function venueOptions(user: AuthUser) {
@@ -1117,6 +1172,19 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     }
   }
 
+  async function publishContentPostLive(postId: string) {
+    try {
+      const result = await api<ContentPublishPreviewResult>(`/api/marketing/content/posts/${postId}/publish`, {
+        method: 'POST'
+      });
+      setContentPublishPreview(result);
+      setSuccess(`content-preview:${postId}`, result.message || 'Live publish completed.');
+      await load();
+    } catch (error) {
+      setError(`content-preview:${postId}`, error, 'Could not live publish this post.');
+    }
+  }
+
   return (
     <AppShell
       brand={<ProductLogo appId="marketing" size="md" showBrandMark={false} />}
@@ -1393,37 +1461,49 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <EmptyState title="No post drafts" description="Create a draft and attach a library asset to start the content calendar." />
                       ) : (
                         <div className="marketing-stack">
-                          {contentPosts.slice(0, 10).map((post) => (
-                            <article key={post.id} className="content-post-card">
-                              <div>
-                                <strong>{post.title}</strong>
-                                <span>{post.venue} · {post.status} · {post.targetChannels.join(', ')}</span>
-                                <p>{post.caption}</p>
-                              </div>
-                              <div className="marketing-badges">
-                                {post.contentPillar ? <Badge tone="neutral">{prettyLabel(post.contentPillar)}</Badge> : null}
-                                {post.scheduledAt ? <Badge tone="positive">{dateTimeLabel(post.scheduledAt)}</Badge> : <Badge tone="warning">Unscheduled</Badge>}
-                                {post.campaignId ? <Badge tone="info">Linked campaign</Badge> : null}
-                              </div>
-                              <div className="marketing-toolbar">
-                                <Button type="button" size="sm" variant="secondary" onClick={() => void submitContentPost(post.id)}>Submit review</Button>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => void approveContentPost(post.id)}>Approve</Button>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => void scheduleContentPost(post.id, post.scheduledAt)}>Schedule</Button>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => void previewContentPostPublish(post.id)}>Preview</Button>
-                                <Button type="button" size="sm" variant="secondary" onClick={() => void createCampaignFromPost(post.id)}>Create email campaign</Button>
-                                <Button type="button" size="sm" onClick={() => void simulateContentPostPublish(post.id)}>Simulate</Button>
-                                <Button type="button" size="sm" variant="ghost" disabled title="Live publish requires Meta/TikTok OAuth setup">Live publish setup required</Button>
-                              </div>
-                              <ActionFeedback
-                                message={
-                                  feedback.target === `content-post:${post.id}` || feedback.target === `content-preview:${post.id}`
-                                    ? feedback.message
-                                    : null
-                                }
-                                tone={feedback.tone}
-                              />
-                            </article>
-                          ))}
+                          {contentPosts.slice(0, 10).map((post) => {
+                            const liveState = livePublishStateForPost(post, contentPublishPreview);
+                            return (
+                              <article key={post.id} className="content-post-card">
+                                  <div>
+                                    <strong>{post.title}</strong>
+                                    <span>{post.venue} · {post.status} · {post.targetChannels.join(', ')}</span>
+                                    <p>{post.caption}</p>
+                                  </div>
+                                  <div className="marketing-badges">
+                                    {post.contentPillar ? <Badge tone="neutral">{prettyLabel(post.contentPillar)}</Badge> : null}
+                                    {post.scheduledAt ? <Badge tone="positive">{dateTimeLabel(post.scheduledAt)}</Badge> : <Badge tone="warning">Unscheduled</Badge>}
+                                    {post.campaignId ? <Badge tone="info">Linked campaign</Badge> : null}
+                                  </div>
+                                  <div className="marketing-toolbar">
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => void submitContentPost(post.id)}>Submit review</Button>
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => void approveContentPost(post.id)}>Approve</Button>
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => void scheduleContentPost(post.id, post.scheduledAt)}>Schedule</Button>
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => void previewContentPostPublish(post.id)}>Preview</Button>
+                                    <Button type="button" size="sm" variant="secondary" onClick={() => void createCampaignFromPost(post.id)}>Create email campaign</Button>
+                                    <Button type="button" size="sm" onClick={() => void simulateContentPostPublish(post.id)}>Simulate</Button>
+                                    <Button
+                                      type="button"
+                                      size="sm"
+                                      variant={liveState.ready ? 'primary' : 'ghost'}
+                                      disabled={!liveState.ready}
+                                      title={liveState.title}
+                                      onClick={() => void publishContentPostLive(post.id)}
+                                    >
+                                      {liveState.label}
+                                    </Button>
+                                  </div>
+                                  <ActionFeedback
+                                    message={
+                                      feedback.target === `content-post:${post.id}` || feedback.target === `content-preview:${post.id}`
+                                        ? feedback.message
+                                        : null
+                                    }
+                                    tone={feedback.tone}
+                                  />
+                              </article>
+                            );
+                          })}
                         </div>
                       )}
                     </Card>
@@ -1485,7 +1565,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     {contentPublishPreview.attempts ? (
                       <div className="marketing-badges">
                         {contentPublishPreview.attempts.map((attempt) => (
-                          <Badge key={attempt.id} tone={attempt.status === 'SIMULATED' ? 'positive' : 'warning'}>
+                          <Badge key={attempt.id} tone={attempt.status === 'SIMULATED' || attempt.status === 'PUBLISHED' ? 'positive' : 'warning'}>
                             {attempt.platform}: {attempt.status}
                           </Badge>
                         ))}
