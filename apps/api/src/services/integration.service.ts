@@ -3,6 +3,7 @@ import type { Request } from 'express';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import type {
+  AdminMetaIntegrationStatus,
   AuthUser,
   IntegrationConnectResponse,
   IntegrationProviderKey,
@@ -37,6 +38,20 @@ const XERO_SCOPES = [
   'accounting.settings.read'
 ];
 
+const META_SCOPES = [
+  'pages_show_list',
+  'pages_read_engagement',
+  'pages_manage_metadata',
+  'pages_messaging',
+  'instagram_basic',
+  'business_management'
+];
+
+const META_ALLOWED_DOMAINS = [
+  'alma-compliance.web.app',
+  'alma-marketing.web.app'
+];
+
 const PROVIDER_COPY: Record<Provider, {
   key: IntegrationProviderKey;
   label: string;
@@ -63,6 +78,46 @@ function actorName(actor?: AuthUser | null) {
 
 function hashState(state: string) {
   return crypto.createHash('sha256').update(state).digest('hex');
+}
+
+function base64UrlEncode(value: string) {
+  return Buffer.from(value, 'utf8').toString('base64url');
+}
+
+function base64UrlDecode(value: string) {
+  return Buffer.from(value, 'base64url').toString('utf8');
+}
+
+function signMetaStatePayload(payload: string) {
+  return crypto.createHmac('sha256', env.sessionSecret).update(payload).digest('base64url');
+}
+
+function createMetaState(actor: AuthUser) {
+  const payload = base64UrlEncode(JSON.stringify({
+    provider: 'meta',
+    nonce: crypto.randomBytes(16).toString('hex'),
+    actorId: actor.id,
+    redirectPath: '/admin#integrations',
+    exp: Date.now() + 10 * 60 * 1000
+  }));
+  const signature = signMetaStatePayload(payload);
+  return `${payload}.${signature}`;
+}
+
+function verifyMetaState(state: string) {
+  const [payload, signature] = state.split('.');
+  if (!payload || !signature) return false;
+  const expected = signMetaStatePayload(payload);
+  const signatureBuffer = Buffer.from(signature);
+  const expectedBuffer = Buffer.from(expected);
+  if (signatureBuffer.length !== expectedBuffer.length || !crypto.timingSafeEqual(signatureBuffer, expectedBuffer)) return false;
+
+  try {
+    const parsed = JSON.parse(base64UrlDecode(payload)) as { provider?: unknown; exp?: unknown };
+    return parsed.provider === 'meta' && typeof parsed.exp === 'number' && parsed.exp > Date.now();
+  } catch {
+    return false;
+  }
 }
 
 function normaliseProvider(provider: string): Provider {
@@ -105,6 +160,21 @@ function providerConfig(provider: Provider) {
     environment: null,
     oauthBaseUrl: 'https://login.xero.com/identity/connect',
     webhookConfigured: Boolean(env.integrations.xero.webhookKey)
+  };
+}
+
+function metaConfig() {
+  const configured = Boolean(env.integrations.meta.appId && env.integrations.meta.appSecret && env.integrations.meta.redirectUrl);
+  const missingEnvVars = [
+    env.integrations.meta.appId ? null : 'META_APP_ID',
+    env.integrations.meta.appSecret ? null : 'META_APP_SECRET',
+    env.integrations.meta.redirectUrl ? null : 'META_REDIRECT_URI'
+  ].filter((value): value is string => Boolean(value));
+  return {
+    configured,
+    missingEnvVars,
+    redirectUri: env.integrations.meta.redirectUrl,
+    graphVersion: env.marketing.socialPublishing.metaGraphApiVersion
   };
 }
 
@@ -318,6 +388,53 @@ function frontendAdminRedirect(params: Record<string, string>) {
   return `${base}/admin?${search.toString()}`;
 }
 
+function metaStatus(): AdminMetaIntegrationStatus {
+  const config = metaConfig();
+  const status = config.configured ? 'READY_TO_CONNECT' : 'NOT_CONFIGURED';
+  return {
+    provider: 'meta',
+    label: 'Meta / Facebook / Instagram',
+    status,
+    configured: config.configured,
+    canConnect: config.configured,
+    connectBlockedReason: config.configured ? null : `Missing ${config.missingEnvVars.join(', ')}.`,
+    redirectUri: config.redirectUri,
+    authorizationUrl: null,
+    allowedDomains: META_ALLOWED_DOMAINS,
+    missingEnvVars: config.missingEnvVars,
+    scopes: META_SCOPES,
+    checklist: [
+      {
+        label: 'Valid OAuth Redirect URI added in Meta',
+        status: 'required',
+        detail: config.redirectUri
+      },
+      {
+        label: 'Allowed domains added',
+        status: 'required',
+        detail: META_ALLOWED_DOMAINS.join(', ')
+      },
+      {
+        label: 'Human Agent permission requested',
+        status: 'required',
+        detail: 'Use the Admin Human Agent demo for app review. No real customer message is sent in demo mode.'
+      },
+      {
+        label: 'Data deletion instructions URL configured',
+        status: 'required',
+        detail: 'Use the public account deletion instructions page. No data deletion callback endpoint is implemented in this pass.'
+      },
+      {
+        label: 'Deauthorize callback',
+        status: 'not_configured',
+        detail: 'No deauthorize callback endpoint is implemented.'
+      }
+    ],
+    deauthorizeCallbackConfigured: false,
+    dataDeletionCallbackConfigured: false
+  };
+}
+
 function verifySquareSignature(req: Request, rawBody: string) {
   const signature = req.header('x-square-hmacsha256-signature');
   const key = env.integrations.square.webhookSignatureKey;
@@ -393,11 +510,41 @@ async function recordWebhook(provider: Provider, rawBody: string) {
 export const integrationService = {
   normaliseProvider,
 
+  metaStatus,
+
+  async startMetaConnect(actor: AuthUser) {
+    const config = metaConfig();
+    if (!config.configured) {
+      throw new HttpError(503, `Meta Business Login is not configured. Missing ${config.missingEnvVars.join(', ')}.`);
+    }
+
+    const state = createMetaState(actor);
+    const url = new URL(`https://www.facebook.com/${config.graphVersion}/dialog/oauth`);
+    url.searchParams.set('client_id', env.integrations.meta.appId);
+    url.searchParams.set('redirect_uri', config.redirectUri);
+    url.searchParams.set('state', state);
+    url.searchParams.set('response_type', 'code');
+    url.searchParams.set('scope', META_SCOPES.join(','));
+    return {
+      provider: 'meta' as const,
+      authorizationUrl: url.toString(),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString()
+    };
+  },
+
   async handleMetaCallback(query: Record<string, unknown>) {
     const error = typeof query.error === 'string' ? query.error : '';
     const errorReason = typeof query.error_reason === 'string' ? query.error_reason : '';
     const errorDescription = typeof query.error_description === 'string' ? query.error_description : '';
     const code = typeof query.code === 'string' ? query.code : '';
+    const state = typeof query.state === 'string' ? query.state : '';
+
+    if (!state || !verifyMetaState(state)) {
+      return frontendAdminRedirect({
+        integration: 'meta',
+        status: 'invalid_state'
+      });
+    }
 
     if (error || errorReason) {
       return frontendAdminRedirect({
@@ -432,6 +579,7 @@ export const integrationService = {
       generatedAt: new Date().toISOString(),
       square,
       xero,
+      meta: metaStatus(),
       latestSyncRuns: syncRuns,
       tokenStorage: integrationTokenEncryptionStatus()
     };

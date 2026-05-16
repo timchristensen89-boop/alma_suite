@@ -16,6 +16,7 @@ import type {
   AdminAuditEventSummary,
   AdminHandoffLink,
   AdminIntegrationsStatusPayload,
+  AdminMetaIntegrationStatus,
   AdminOverviewPayload,
   AdminSignalTone,
   AdminSystemHealthPayload,
@@ -25,7 +26,7 @@ import type {
   MarketingSocialAccountStatus,
   SocialPlatform
 } from '@alma/shared';
-import { api, createSuiteHandoffUrl } from '../lib/api';
+import { api, apiUrl, createSuiteHandoffUrl } from '../lib/api';
 import {
   GIFTCARDS_WEB_URL,
   MARKETING_WEB_URL,
@@ -84,6 +85,12 @@ type HumanAgentDemoResult = {
   guardrails: string[];
   simulatedAt: string;
 };
+
+type CallbackBanner = {
+  status: string;
+  next: string | null;
+  reason: string | null;
+} | null;
 
 const APP_URLS: Record<string, string> = {
   staff: STAFF_WEB_URL,
@@ -246,6 +253,28 @@ function integrationTone(status: IntegrationProviderStatus['status']) {
   return 'muted';
 }
 
+function metaTone(status: AdminMetaIntegrationStatus['status']) {
+  if (status === 'READY_TO_CONNECT') return 'positive';
+  if (status === 'CALLBACK_RECEIVED' || status === 'TOKEN_STORAGE_PENDING') return 'info';
+  return 'warning';
+}
+
+function metaChecklistTone(status: AdminMetaIntegrationStatus['checklist'][number]['status']) {
+  if (status === 'done') return 'positive';
+  if (status === 'not_configured') return 'muted';
+  return 'warning';
+}
+
+function currentCallbackBanner(): CallbackBanner {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('integration') !== 'meta') return null;
+  return {
+    status: params.get('status') ?? 'unknown',
+    next: params.get('next'),
+    reason: params.get('reason')
+  };
+}
+
 function IntegrationCard({
   integration,
   busy,
@@ -312,6 +341,83 @@ function IntegrationCard({
   );
 }
 
+function MetaIntegrationCard({
+  meta,
+  busy,
+  callbackBanner,
+  onConnect
+}: {
+  meta: AdminMetaIntegrationStatus;
+  busy: string | null;
+  callbackBanner: CallbackBanner;
+  onConnect: () => void;
+}) {
+  const isBusy = busy === 'meta';
+  const displayStatus: AdminMetaIntegrationStatus['status'] =
+    callbackBanner?.next === 'store_token_secret_reference'
+      ? 'TOKEN_STORAGE_PENDING'
+      : callbackBanner?.status === 'callback_received'
+        ? 'CALLBACK_RECEIVED'
+        : meta.status;
+
+  return (
+    <Card title={meta.label} subtitle="Business Login for Facebook and Instagram">
+      <div className="admin-provider-card">
+        <Badge tone={metaTone(displayStatus)}>{displayStatus.replace(/_/g, ' ')}</Badge>
+        {callbackBanner ? (
+          <div className="admin-warning-item">
+            <Badge tone={callbackBanner.status === 'callback_received' ? 'positive' : 'warning'}>
+              {callbackBanner.status.replace(/_/g, ' ')}
+            </Badge>
+            <p>
+              {callbackBanner.next === 'store_token_secret_reference'
+                ? 'Meta returned an OAuth code. Token exchange/storage is intentionally pending; store only a Secret Manager token reference before live publishing.'
+                : callbackBanner.reason ?? 'Meta callback returned to Admin.'}
+            </p>
+          </div>
+        ) : null}
+        <div>
+          <strong>Redirect URI</strong>
+          <p>{meta.redirectUri}</p>
+        </div>
+        <div>
+          <strong>Allowed domains</strong>
+          <p>{meta.allowedDomains.join(', ')}</p>
+        </div>
+        <div>
+          <strong>Review scopes</strong>
+          <p>{meta.scopes.join(', ')}</p>
+        </div>
+        {meta.missingEnvVars.length ? (
+          <div>
+            <strong>Setup needed</strong>
+            <p>{meta.missingEnvVars.join(', ')}</p>
+          </div>
+        ) : null}
+        <div className="admin-status-stack">
+          {meta.checklist.map((item) => (
+            <StatusLine
+              key={item.label}
+              label={item.label}
+              value={item.detail}
+              tone={metaChecklistTone(item.status)}
+            />
+          ))}
+        </div>
+        <div className="inline-actions">
+          <Button variant="secondary" disabled={!meta.canConnect || isBusy} onClick={onConnect}>
+            {isBusy ? 'Opening Meta...' : 'Connect Meta'}
+          </Button>
+          <Button type="button" variant="ghost" onClick={() => { window.location.hash = 'human-agent-demo'; }}>
+            Review demo
+          </Button>
+        </div>
+        {meta.connectBlockedReason ? <p className="muted">{meta.connectBlockedReason}</p> : null}
+      </div>
+    </Card>
+  );
+}
+
 function socialTone(status: MarketingSocialAccountStatus) {
   if (status === 'CONNECTED') return 'positive';
   if (status === 'ERROR' || status === 'EXPIRED') return 'danger';
@@ -369,6 +475,7 @@ export function AdminPage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState<string | null>(null);
+  const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
   const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
@@ -410,6 +517,13 @@ export function AdminPage() {
     void loadDashboard();
   }, []);
 
+  useEffect(() => {
+    if (window.location.pathname !== '/admin/meta-human-agent-demo') return;
+    window.requestAnimationFrame(() => {
+      document.getElementById('human-agent-demo')?.scrollIntoView({ block: 'start' });
+    });
+  }, []);
+
   async function connectIntegration(provider: IntegrationProviderStatus['provider']) {
     setIntegrationBusy(provider);
     try {
@@ -421,6 +535,11 @@ export function AdminPage() {
       setError(err instanceof Error ? err.message : 'Could not start integration connection.');
       setIntegrationBusy(null);
     }
+  }
+
+  function connectMeta() {
+    setIntegrationBusy('meta');
+    window.location.assign(apiUrl('/api/integrations/meta/connect'));
   }
 
   async function disconnectIntegration(provider: IntegrationProviderStatus['provider']) {
@@ -832,6 +951,12 @@ export function AdminPage() {
                   onDisconnect={(provider) => void disconnectIntegration(provider)}
                 />
               ))}
+              <MetaIntegrationCard
+                meta={integrations.meta}
+                busy={integrationBusy}
+                callbackBanner={callbackBanner}
+                onConnect={connectMeta}
+              />
               <Card title="Email and device services" subtitle="Configured without exposing secrets">
                 <div className="admin-status-stack">
                   <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />

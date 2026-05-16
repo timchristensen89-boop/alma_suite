@@ -1418,6 +1418,22 @@ export type AdminOverviewPayload = {
 };
 
 export type IntegrationProviderKey = 'square' | 'xero';
+export type AdminMetaIntegrationStatus = {
+  provider: 'meta';
+  label: string;
+  status: 'NOT_CONFIGURED' | 'READY_TO_CONNECT' | 'CALLBACK_RECEIVED' | 'TOKEN_STORAGE_PENDING';
+  configured: boolean;
+  canConnect: boolean;
+  connectBlockedReason: string | null;
+  redirectUri: string;
+  authorizationUrl: string | null;
+  allowedDomains: string[];
+  missingEnvVars: string[];
+  scopes: string[];
+  checklist: Array<{ label: string; status: 'done' | 'required' | 'not_configured'; detail: string }>;
+  deauthorizeCallbackConfigured: boolean;
+  dataDeletionCallbackConfigured: boolean;
+};
 export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
 
@@ -1462,6 +1478,7 @@ export type IntegrationStatusPayload = {
   generatedAt: string;
   square: IntegrationProviderStatus;
   xero: IntegrationProviderStatus;
+  meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
   tokenStorage: {
     configured: boolean;
@@ -1491,6 +1508,7 @@ export type AdminIntegrationsStatusPayload = {
   generatedAt: string;
   square: AdminIntegrationProviderStatus;
   xero: AdminIntegrationProviderStatus;
+  meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
   tokenStorage: {
     configured: boolean;

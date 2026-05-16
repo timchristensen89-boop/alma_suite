@@ -276,6 +276,7 @@ function AuthenticatedApp() {
           <Route path="/handbook/maintenance" element={<MaintenancePage />} />
           <Route path="/icon-export" element={<IconExportPage />} />
           <Route path="/admin" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
+          <Route path="/admin/meta-human-agent-demo" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
           <Route path="/settings" element={<RequireRole minimum="ADMIN"><SettingsPage /></RequireRole>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>

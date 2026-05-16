@@ -24,6 +24,15 @@ integrationsRouter.get('/:provider/callback', async (req, res, next) => {
 
 integrationsRouter.use(requireAdmin);
 
+integrationsRouter.get('/meta/connect', async (req, res, next) => {
+  try {
+    const payload = await integrationService.startMetaConnect(req.user!);
+    res.redirect(302, payload.authorizationUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/', async (_req, res, next) => {
   try {
     res.json(await integrationService.status());

@@ -101,6 +101,17 @@ export const env = {
       clientSecret: process.env.XERO_CLIENT_SECRET ?? '',
       redirectUrl: process.env.XERO_REDIRECT_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/xero/callback`,
       webhookKey: process.env.XERO_WEBHOOK_KEY ?? ''
+    },
+    meta: {
+      appId: process.env.META_APP_ID ?? '',
+      appSecret: process.env.META_APP_SECRET ?? '',
+      redirectUrl:
+        process.env.META_REDIRECT_URI ??
+        (isProduction
+          ? 'https://alma-compliance.web.app/api/integrations/meta/callback'
+          : `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/meta/callback`),
+      verifyToken: process.env.META_VERIFY_TOKEN ?? '',
+      webhookAppSecret: process.env.META_WEBHOOK_APP_SECRET ?? ''
     }
   },
   marketing: {
