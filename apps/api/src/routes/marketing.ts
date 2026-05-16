@@ -261,6 +261,14 @@ marketingRouter.patch('/content/social-accounts/:id', requireManager, async (req
   }
 });
 
+marketingRouter.delete('/content/social-accounts/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.deleteSocialAccount(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.post('/content/social-accounts/:id/validate-readiness', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.validateSocialAccountReadiness(req.user!, String(req.params.id)));

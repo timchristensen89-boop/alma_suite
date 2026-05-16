@@ -488,6 +488,26 @@ export function AdminPage() {
     }
   }
 
+  async function deleteSocialAccount(account: MarketingSocialAccount) {
+    const confirmed = window.confirm(
+      `Delete ${account.displayName}? This removes the configured social account from Admin. Existing publish history stays in the audit trail.`
+    );
+    if (!confirmed) return;
+    setSocialBusy(account.id);
+    setSocialFeedback(null);
+    try {
+      await api(`/api/marketing/content/social-accounts/${account.id}`, { method: 'DELETE' });
+      if (editingSocialAccountId === account.id) cancelSocialAccountEdit();
+      if (socialReadiness?.account.id === account.id) setSocialReadiness(null);
+      setSocialFeedback(`${account.displayName} was deleted.`);
+      await loadDashboard();
+    } catch (err) {
+      setSocialFeedback(err instanceof Error ? err.message : 'Could not delete social account.');
+    } finally {
+      setSocialBusy(null);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function loadAudit() {
@@ -920,6 +940,13 @@ export function AdminPage() {
                         onClick={() => editSocialAccount(account)}
                       >
                         Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={socialBusy === account.id}
+                        onClick={() => void deleteSocialAccount(account)}
+                      >
+                        Delete
                       </Button>
                     </div>
                   </article>

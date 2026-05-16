@@ -2701,6 +2701,12 @@ export const marketingService = {
     return socialAccountToPayload(account);
   },
 
+  async deleteSocialAccount(actor: AuthUser, accountId: string) {
+    const existing = await findScopedSocialAccount(actor, accountId);
+    await prisma.marketingSocialAccount.delete({ where: { id: existing.id } });
+    return { ok: true };
+  },
+
   async validateSocialAccountReadiness(actor: AuthUser, accountId: string) {
     const account = await findScopedSocialAccount(actor, accountId);
     const supported = socialPlatformSupportsLivePublish(account.platform as SocialPlatform);
