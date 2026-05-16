@@ -28,6 +28,9 @@ const SQUARE_SCOPES = [
 ];
 
 const XERO_SCOPES = [
+  'openid',
+  'profile',
+  'email',
   'offline_access',
   'accounting.transactions.read',
   'accounting.contacts.read',
