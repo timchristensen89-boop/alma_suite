@@ -8,7 +8,8 @@ import {
   PageHeader,
   Select,
   Spinner,
-  StatCard
+  StatCard,
+  Textarea
 } from '@alma/ui';
 import type {
   AdminAuditEventsPayload,
@@ -74,6 +75,16 @@ type SocialReadiness = {
   checks: Array<{ label: string; ok: boolean; message: string }>;
 };
 
+type HumanAgentDemoResult = {
+  mode: 'DEMO';
+  delivered: boolean;
+  tag: string;
+  channel: string;
+  message: string;
+  guardrails: string[];
+  simulatedAt: string;
+};
+
 const APP_URLS: Record<string, string> = {
   staff: STAFF_WEB_URL,
   stock: STOCK_WEB_URL,
@@ -85,6 +96,8 @@ const APP_URLS: Record<string, string> = {
 
 const SOCIAL_PLATFORMS: SocialPlatform[] = ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'];
 const SOCIAL_STATUSES: MarketingSocialAccountStatus[] = ['SETUP_REQUIRED', 'CONNECTED', 'EXPIRED', 'DISABLED', 'ERROR'];
+const HUMAN_AGENT_SAMPLE_REPLY =
+  'Hi, thanks for reaching out. I’ll check with the venue team and get back to you as soon as we confirm whether it has been found.';
 
 function defaultSocialAccountForm(venue = 'Alma Avalon'): SocialAccountForm {
   return {
@@ -361,6 +374,10 @@ export function AdminPage() {
   const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
   const [socialForm, setSocialForm] = useState<SocialAccountForm>(() => defaultSocialAccountForm());
   const [editingSocialAccountId, setEditingSocialAccountId] = useState<string | null>(null);
+  const [humanAgentReply, setHumanAgentReply] = useState(HUMAN_AGENT_SAMPLE_REPLY);
+  const [humanAgentBusy, setHumanAgentBusy] = useState(false);
+  const [humanAgentResult, setHumanAgentResult] = useState<HumanAgentDemoResult | null>(null);
+  const [humanAgentError, setHumanAgentError] = useState<string | null>(null);
 
   async function loadDashboard() {
     setLoading(true);
@@ -508,6 +525,24 @@ export function AdminPage() {
     }
   }
 
+  async function sendHumanAgentDemo(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setHumanAgentBusy(true);
+    setHumanAgentError(null);
+    setHumanAgentResult(null);
+    try {
+      const result = await api<HumanAgentDemoResult>('/api/admin/meta-review-demo/human-agent-reply', {
+        method: 'POST',
+        body: JSON.stringify({ reply: humanAgentReply })
+      });
+      setHumanAgentResult(result);
+    } catch (err) {
+      setHumanAgentError(err instanceof Error ? err.message : 'Could not run the Human Agent demo.');
+    } finally {
+      setHumanAgentBusy(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function loadAudit() {
@@ -607,6 +642,7 @@ export function AdminPage() {
         <a href="#access">Users and access</a>
         <a href="#defaults">Apps and defaults</a>
         <a href="#integrations">Integrations</a>
+        <a href="#human-agent-demo">Human Agent Demo</a>
         <a href="#imports">Data imports</a>
         <a href="#audit">Audit log</a>
         <a href="#system-health">System health</a>
@@ -979,6 +1015,106 @@ export function AdminPage() {
                 description="Admin will confirm connection status, external account id, secret reference and live connector gating without exposing tokens."
               />
             )}
+          </Card>
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <SectionHeading
+          id="human-agent-demo"
+          eyebrow="Meta Messaging Review"
+          title="Human Agent Demo"
+          description="A review-safe demonstration of one to one customer support replies outside the standard messaging window."
+        />
+        <div className="admin-grid two">
+          <Card title="Sample customer conversation" subtitle="Demo mode · No real Meta message is sent">
+            <div className="admin-human-agent-thread">
+              <div className="admin-human-agent-message customer">
+                <span>Customer · Facebook/Instagram</span>
+                <p>Hi, I think I left my jacket at Alma last night. Can someone please check?</p>
+              </div>
+              <div className="admin-human-agent-context">
+                <Badge tone="warning">Received more than 24 hours ago</Badge>
+                <Badge tone="positive">Less than 7 days ago</Badge>
+                <Badge tone="info">Requires human staff follow-up</Badge>
+              </div>
+              <form className="admin-social-form" onSubmit={(event) => void sendHumanAgentDemo(event)}>
+                <Textarea
+                  label="Staff support reply"
+                  rows={5}
+                  value={humanAgentReply}
+                  onChange={(event) => setHumanAgentReply(event.currentTarget.value)}
+                  hint="This demo represents a manually typed or staff-approved one to one customer support response."
+                />
+                <div className="admin-human-agent-guardrails">
+                  <Badge tone="info">Human Agent only</Badge>
+                  <Badge tone="info">Support only</Badge>
+                  <Badge tone="info">One to one reply</Badge>
+                  <Badge tone="info">Within 7 days</Badge>
+                  <Badge tone="warning">No marketing</Badge>
+                </div>
+                <div className="inline-actions">
+                  <Button type="submit" disabled={humanAgentBusy}>
+                    {humanAgentBusy ? 'Sending demo...' : 'Send Human Agent reply'}
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setHumanAgentReply(HUMAN_AGENT_SAMPLE_REPLY);
+                      setHumanAgentResult(null);
+                      setHumanAgentError(null);
+                    }}
+                  >
+                    Reset demo
+                  </Button>
+                </div>
+              </form>
+              {humanAgentError ? (
+                <div className="admin-warning-item">
+                  <Badge tone="danger">Demo error</Badge>
+                  <p>{humanAgentError}</p>
+                </div>
+              ) : null}
+              {humanAgentResult ? (
+                <div className="admin-human-agent-result">
+                  <Badge tone="positive">Demo mode</Badge>
+                  <strong>{humanAgentResult.message}</strong>
+                  <small>
+                    Delivered to Meta: {humanAgentResult.delivered ? 'yes' : 'no'} · Tag: {humanAgentResult.tag} ·{' '}
+                    {formatDate(humanAgentResult.simulatedAt)}
+                  </small>
+                </div>
+              ) : null}
+            </div>
+          </Card>
+
+          <Card title="Reviewer explanation" subtitle="What the screen recording should show">
+            <div className="admin-status-stack">
+              <p className="admin-card-copy">
+                This feature is used only for customer support issues that require human follow-up outside the standard
+                messaging window, such as lost property, booking follow-up, complaints, event enquiries, or messages
+                received while the venue is closed. It is not used for marketing, promotions, abandoned cart messages, or
+                bulk messaging.
+              </p>
+              <div className="admin-human-agent-steps">
+                <strong>Screen recording steps</strong>
+                <ol>
+                  <li>Open Admin.</li>
+                  <li>Open Human Agent Demo.</li>
+                  <li>Open the sample customer conversation.</li>
+                  <li>Type or review the support reply.</li>
+                  <li>Click Send Human Agent reply.</li>
+                  <li>Show the demo confirmation.</li>
+                </ol>
+              </div>
+              <div className="admin-status-stack">
+                <StatusLine label="Mode" value="DEMO" tone="warning" />
+                <StatusLine label="Real Meta delivery" value="OFF" tone="muted" />
+                <StatusLine label="Marketing or bulk messaging" value="BLOCKED" tone="positive" />
+                <StatusLine label="Human Agent tag" value="WOULD BE APPLIED" tone="info" />
+              </div>
+            </div>
           </Card>
         </div>
       </section>

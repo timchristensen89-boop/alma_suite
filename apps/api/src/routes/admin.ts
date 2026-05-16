@@ -40,3 +40,33 @@ adminRouter.get('/audit-events', async (req, res, next) => {
     next(error);
   }
 });
+
+adminRouter.post('/meta-review-demo/human-agent-reply', async (req, res, next) => {
+  try {
+    const reply = typeof req.body?.reply === 'string' ? req.body.reply.trim() : '';
+    if (reply.length < 10) {
+      res.status(400).json({ message: 'Type a one to one customer support reply before sending the demo.' });
+      return;
+    }
+
+    res.json({
+      mode: 'DEMO',
+      delivered: false,
+      tag: 'human_agent',
+      channel: 'Meta Messenger / Instagram Messaging',
+      message:
+        'Demo sent. In production this would call Meta Messenger API with the human_agent tag for a one to one customer support reply.',
+      guardrails: [
+        'Human Agent only',
+        'Support only',
+        'One to one reply',
+        'Within 7 days',
+        'No marketing',
+        'No bulk messaging'
+      ],
+      simulatedAt: new Date().toISOString()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
