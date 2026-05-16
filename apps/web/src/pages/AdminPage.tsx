@@ -98,6 +98,18 @@ function defaultSocialAccountForm(venue = 'Alma Avalon'): SocialAccountForm {
   };
 }
 
+function socialAccountToForm(account: MarketingSocialAccount): SocialAccountForm {
+  return {
+    venue: account.venue,
+    platform: account.platform,
+    displayName: account.displayName,
+    handle: account.handle ?? '',
+    externalAccountId: account.externalAccountId ?? '',
+    status: account.status,
+    tokenSecretRef: ''
+  };
+}
+
 const DATA_IMPORTS = [
   {
     title: 'Roster imports',
@@ -348,6 +360,7 @@ export function AdminPage() {
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
   const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
   const [socialForm, setSocialForm] = useState<SocialAccountForm>(() => defaultSocialAccountForm());
+  const [editingSocialAccountId, setEditingSocialAccountId] = useState<string | null>(null);
 
   async function loadDashboard() {
     setLoading(true);
@@ -410,15 +423,30 @@ export function AdminPage() {
     setSocialBusy('save');
     setSocialFeedback(null);
     try {
-      await api<MarketingSocialAccount>('/api/marketing/content/social-accounts', {
-        method: 'POST',
-        body: JSON.stringify({
-          ...socialForm,
-          scopes: [],
-          lastError: ''
-        })
-      });
-      setSocialFeedback(`${socialForm.platform} account saved for ${socialForm.venue}. Live publishing remains setup required until OAuth is fully configured.`);
+      const payload = {
+        ...socialForm,
+        tokenSecretRef: socialForm.tokenSecretRef.trim() || undefined,
+        scopes: [],
+        lastError: ''
+      };
+      await api<MarketingSocialAccount>(
+        editingSocialAccountId
+          ? `/api/marketing/content/social-accounts/${editingSocialAccountId}`
+          : '/api/marketing/content/social-accounts',
+        {
+          method: editingSocialAccountId ? 'PATCH' : 'POST',
+          body: JSON.stringify({
+            ...payload,
+            ...(editingSocialAccountId && !payload.tokenSecretRef ? { tokenSecretRef: undefined } : {})
+          })
+        }
+      );
+      setSocialFeedback(
+        editingSocialAccountId
+          ? `${socialForm.platform} account updated for ${socialForm.venue}. Existing secret reference was preserved unless you entered a replacement.`
+          : `${socialForm.platform} account saved for ${socialForm.venue}. Live publishing remains setup required until OAuth is fully configured.`
+      );
+      setEditingSocialAccountId(null);
       setSocialForm(defaultSocialAccountForm(socialForm.venue));
       await loadDashboard();
     } catch (err) {
@@ -426,6 +454,22 @@ export function AdminPage() {
     } finally {
       setSocialBusy(null);
     }
+  }
+
+  function editSocialAccount(account: MarketingSocialAccount) {
+    setEditingSocialAccountId(account.id);
+    setSocialForm(socialAccountToForm(account));
+    setSocialFeedback(
+      account.hasTokenSecretRef
+        ? 'Editing account metadata. Leave token secret reference blank to keep the existing secret reference.'
+        : 'Editing account metadata. Add a token secret reference before live publishing.'
+    );
+  }
+
+  function cancelSocialAccountEdit() {
+    setEditingSocialAccountId(null);
+    setSocialForm(defaultSocialAccountForm(socialForm.venue));
+    setSocialFeedback(null);
   }
 
   async function validateSocialAccount(accountId: string) {
@@ -776,7 +820,14 @@ export function AdminPage() {
           </div>
         ) : null}
         <div className="admin-grid two">
-          <Card title="Social publishing setup" subtitle="Admin-owned Facebook, Instagram and TikTok readiness">
+          <Card
+            title={editingSocialAccountId ? 'Edit social account' : 'Social publishing setup'}
+            subtitle={
+              editingSocialAccountId
+                ? 'Update platform metadata. Secret references stay hidden and are preserved when left blank.'
+                : 'Admin-owned Facebook, Instagram and TikTok readiness'
+            }
+          >
             <form className="admin-social-form" onSubmit={(event) => void saveSocialAccount(event)}>
               <div className="admin-form-grid">
                 <Select
@@ -828,8 +879,13 @@ export function AdminPage() {
               />
               <div className="inline-actions">
                 <Button type="submit" disabled={socialBusy === 'save'}>
-                  {socialBusy === 'save' ? 'Saving...' : 'Save social account'}
+                  {socialBusy === 'save' ? 'Saving...' : editingSocialAccountId ? 'Update social account' : 'Save social account'}
                 </Button>
+                {editingSocialAccountId ? (
+                  <Button type="button" variant="ghost" onClick={cancelSocialAccountEdit} disabled={socialBusy === 'save'}>
+                    Cancel edit
+                  </Button>
+                ) : null}
                 {socialFeedback ? <p className="muted">{socialFeedback}</p> : null}
               </div>
             </form>
@@ -857,6 +913,13 @@ export function AdminPage() {
                         onClick={() => void validateSocialAccount(account.id)}
                       >
                         {socialBusy === account.id ? 'Checking...' : 'Check readiness'}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        disabled={socialBusy === account.id}
+                        onClick={() => editSocialAccount(account)}
+                      >
+                        Edit
                       </Button>
                     </div>
                   </article>
