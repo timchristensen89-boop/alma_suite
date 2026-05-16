@@ -29,6 +29,7 @@ import {
   type ReserveGuest,
   type SocialPlatform
 } from '@alma/shared';
+import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 
 const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
@@ -1194,14 +1195,175 @@ function postHasAssetType(post: ContentPostRow, type: 'IMAGE' | 'VIDEO') {
   return post.assets.some((link) => link.asset.assetType === type && link.asset.status !== 'ARCHIVED');
 }
 
-function buildPlatformPreview(post: ContentPostRow, platform: SocialPlatform, accounts: SocialAccountRow[]) {
-  const caption = post.caption.trim();
-  const activeAssets = post.assets
+function activePostAssets(post: ContentPostRow) {
+  return post.assets
     .filter((link) => link.asset.status !== 'ARCHIVED')
     .map((link) => link.asset)
     .sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime());
+}
+
+function firstPublicAsset(post: ContentPostRow, preferredType?: 'IMAGE' | 'VIDEO') {
+  const assets = activePostAssets(post).filter((asset) => asset.publicUrl);
+  return preferredType ? assets.find((asset) => asset.assetType === preferredType) ?? null : assets[0] ?? null;
+}
+
+function socialPlatformSupportsLivePublish(platform: SocialPlatform) {
+  return platform === 'FACEBOOK' || platform === 'INSTAGRAM';
+}
+
+function socialAccountIsLiveReady(account: SocialAccountRow | null | undefined) {
+  return Boolean(
+    account &&
+      account.status === 'CONNECTED' &&
+      account.externalAccountId &&
+      account.tokenSecretRef &&
+      socialPlatformSupportsLivePublish(account.platform as SocialPlatform)
+  );
+}
+
+function secretNameFromRef(ref: string) {
+  const trimmed = ref.trim();
+  if (!trimmed) return '';
+  if (trimmed.startsWith('sm:')) return trimmed.slice(3).trim();
+  const match = trimmed.match(/\/secrets\/([^/]+)(?:\/versions\/[^/]+)?$/);
+  return match?.[1] ?? trimmed;
+}
+
+async function resolveSocialAccessToken(tokenSecretRef: string) {
+  const ref = tokenSecretRef.trim();
+  if (!ref) throw new HttpError(409, 'Social account token secret reference is missing.');
+
+  if (ref.startsWith('env:')) {
+    const envName = ref.slice(4).trim();
+    const token = process.env[envName];
+    if (!token) throw new HttpError(409, 'Social token env reference is not available to the API.');
+    return token;
+  }
+
+  if (!env.isProduction && process.env[ref]) {
+    return process.env[ref] as string;
+  }
+
+  const projectId = env.marketing.socialPublishing.secretProjectId;
+  if (!projectId) {
+    throw new HttpError(409, 'Social token secret project is not configured.');
+  }
+
+  const secretName = secretNameFromRef(ref);
+  if (!secretName) throw new HttpError(409, 'Social token secret reference is invalid.');
+
+  const metadataResponse = await fetch('http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token', {
+    headers: { 'Metadata-Flavor': 'Google' }
+  });
+  if (!metadataResponse.ok) throw new HttpError(409, 'Could not access service account credentials for social publishing.');
+  const metadata = (await metadataResponse.json()) as { access_token?: string };
+  if (!metadata.access_token) throw new HttpError(409, 'Service account access token was not available for social publishing.');
+
+  const secretResponse = await fetch(
+    `https://secretmanager.googleapis.com/v1/projects/${encodeURIComponent(projectId)}/secrets/${encodeURIComponent(secretName)}/versions/latest:access`,
+    { headers: { Authorization: `Bearer ${metadata.access_token}` } }
+  );
+  if (!secretResponse.ok) throw new HttpError(409, 'Could not read social publishing token from Secret Manager.');
+  const secretPayload = (await secretResponse.json()) as { payload?: { data?: string } };
+  const encoded = secretPayload.payload?.data;
+  if (!encoded) throw new HttpError(409, 'Social publishing token secret is empty.');
+  return Buffer.from(encoded, 'base64').toString('utf8').trim();
+}
+
+function sanitizeProviderResponse(value: unknown): Prisma.InputJsonValue {
+  if (!value || typeof value !== 'object') return { value: String(value ?? '') };
+  if (Array.isArray(value)) return value.map((item) => sanitizeProviderResponse(item)) as Prisma.InputJsonValue;
+  const safe: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    if (/token|secret|authorization/i.test(key)) continue;
+    safe[key] = item && typeof item === 'object' ? sanitizeProviderResponse(item) : item;
+  }
+  return safe as Prisma.InputJsonValue;
+}
+
+async function postMetaForm(path: string, fields: Record<string, string>) {
+  const url = `https://graph.facebook.com/${env.marketing.socialPublishing.metaGraphApiVersion}/${path.replace(/^\/+/, '')}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams(fields)
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    const message =
+      payload && typeof payload === 'object' && 'error' in payload
+        ? String((payload as { error?: { message?: string } }).error?.message ?? 'Meta publishing failed.')
+        : 'Meta publishing failed.';
+    throw new HttpError(502, message);
+  }
+  return sanitizeProviderResponse(payload);
+}
+
+async function publishFacebookPost(post: ContentPostRow, account: SocialAccountRow, accessToken: string) {
+  const caption = post.caption.trim();
+  const image = firstPublicAsset(post, 'IMAGE');
+  const video = firstPublicAsset(post, 'VIDEO');
+  const externalAccountId = account.externalAccountId;
+  if (!externalAccountId) throw new HttpError(409, 'Facebook page id is not configured.');
+
+  if (image?.publicUrl) {
+    return postMetaForm(`${externalAccountId}/photos`, {
+      url: image.publicUrl,
+      caption,
+      published: 'true',
+      access_token: accessToken
+    });
+  }
+
+  if (video?.publicUrl) {
+    return postMetaForm(`${externalAccountId}/videos`, {
+      file_url: video.publicUrl,
+      description: caption,
+      access_token: accessToken
+    });
+  }
+
+  if (!caption) throw new HttpError(400, 'Facebook publishing needs a caption or a public image/video asset.');
+  return postMetaForm(`${externalAccountId}/feed`, {
+    message: caption,
+    access_token: accessToken
+  });
+}
+
+async function publishInstagramPost(post: ContentPostRow, account: SocialAccountRow, accessToken: string) {
+  const image = firstPublicAsset(post, 'IMAGE');
+  const externalAccountId = account.externalAccountId;
+  if (!externalAccountId) throw new HttpError(409, 'Instagram business account id is not configured.');
+  if (!image?.publicUrl) {
+    throw new HttpError(400, 'Instagram live publishing currently requires a public image asset.');
+  }
+  const container = (await postMetaForm(`${externalAccountId}/media`, {
+    image_url: image.publicUrl,
+    caption: post.caption.trim(),
+    access_token: accessToken
+  })) as Record<string, unknown>;
+  const creationId = typeof container.id === 'string' ? container.id : null;
+  if (!creationId) throw new HttpError(502, 'Instagram did not return a media container id.');
+  const published = await postMetaForm(`${externalAccountId}/media_publish`, {
+    creation_id: creationId,
+    access_token: accessToken
+  });
+  return { container, published } as Prisma.InputJsonValue;
+}
+
+async function publishSocialPlatform(post: ContentPostRow, account: SocialAccountRow, platform: SocialPlatform, accessToken: string) {
+  if (platform === 'FACEBOOK') return publishFacebookPost(post, account, accessToken);
+  if (platform === 'INSTAGRAM') return publishInstagramPost(post, account, accessToken);
+  throw new HttpError(409, 'TikTok live publishing is not implemented until the TikTok Content Posting API setup is complete.');
+}
+
+function buildPlatformPreview(post: ContentPostRow, platform: SocialPlatform, accounts: SocialAccountRow[]) {
+  const caption = post.caption.trim();
+  const activeAssets = activePostAssets(post);
   const account = accounts.find((row) => row.platform === platform && row.venue === post.venue && row.status === 'CONNECTED');
-  const liveReady = Boolean(account?.externalAccountId && account.tokenSecretRef);
+  const accountReady = socialAccountIsLiveReady(account);
+  const connectorEnabled = env.marketing.socialPublishing.livePublishingEnabled;
+  const liveReady = accountReady && connectorEnabled;
   const mediaPreview = activeAssets.map((asset) => ({
     id: asset.id,
     type: asset.assetType,
@@ -1241,8 +1403,10 @@ function buildPlatformPreview(post: ContentPostRow, platform: SocialPlatform, ac
     platform,
     status: 'READY_TO_SIMULATE' as const,
     message: liveReady
-      ? 'Ready to simulate. Live publishing still requires enabling the social connector.'
-      : 'Ready to simulate. Live publish is setup required until the account is connected with a secret reference.',
+      ? 'Ready to publish through the live connector.'
+      : accountReady
+        ? 'Ready to simulate. Live publishing is disabled until the social connector flag is enabled.'
+        : 'Ready to simulate. Live publish is setup required until the account is connected with a secret reference.',
     requestPreview: {
       platform,
       venue: post.venue,
@@ -1251,10 +1415,12 @@ function buildPlatformPreview(post: ContentPostRow, platform: SocialPlatform, ac
       scheduledAt: post.scheduledAt?.toISOString() ?? null,
       media: mediaPreview,
       livePublish: {
-        ready: false,
-        setupRequired: true,
+        ready: liveReady,
+        setupRequired: !liveReady,
         accountConfigured: Boolean(account),
-        hasTokenSecretRef: Boolean(account?.tokenSecretRef)
+        hasTokenSecretRef: Boolean(account?.tokenSecretRef),
+        connectorEnabled,
+        platformSupported: socialPlatformSupportsLivePublish(platform)
       },
       mode: 'simulation'
     }
@@ -2378,8 +2544,110 @@ export const marketingService = {
   },
 
   async publishContentPost(actor: AuthUser, postId: string) {
-    await findScopedContentPost(actor, postId);
-    throw new HttpError(409, 'Live social publishing is setup required. Use simulate publish until Meta and TikTok OAuth connectors are configured.');
+    if (!env.marketing.socialPublishing.livePublishingEnabled) {
+      throw new HttpError(
+        409,
+        'Live social publishing is disabled. Set MARKETING_SOCIAL_LIVE_PUBLISH_ENABLED=true only after OAuth, token storage and account readiness are configured.'
+      );
+    }
+
+    const post = await findScopedContentPost(actor, postId);
+    const targetChannels = jsonStringArray(post.targetChannels) as SocialPlatform[];
+    if (!targetChannels.length) throw new HttpError(400, 'Choose at least one social channel before publishing.');
+
+    const accounts = await prisma.marketingSocialAccount.findMany({
+      where: { venue: post.venue, platform: { in: targetChannels } }
+    });
+    const previews = targetChannels.map((platform) => buildPlatformPreview(post, platform, accounts));
+    const blockingPreview = previews.find((row) => row.status !== 'READY_TO_SIMULATE');
+    if (blockingPreview) throw new HttpError(400, blockingPreview.message);
+
+    const attempts: PublishAttemptRow[] = [];
+    let successCount = 0;
+    const failureMessages: string[] = [];
+
+    for (const platform of targetChannels) {
+      const account = accounts.find((row) => row.platform === platform && row.venue === post.venue && row.status === 'CONNECTED');
+      const requestPreview = buildPlatformPreview(post, platform, accounts).requestPreview as Prisma.InputJsonValue;
+
+      if (!socialAccountIsLiveReady(account)) {
+        const message = socialPlatformSupportsLivePublish(platform)
+          ? `${platform} account is not ready for live publishing.`
+          : `${platform} live publishing is not implemented yet.`;
+        const attempt = await prisma.marketingContentPublishAttempt.create({
+          data: {
+            postId,
+            platform,
+            socialAccountId: account?.id ?? null,
+            status: 'SKIPPED',
+            mode: 'LIVE',
+            requestPreview,
+            responsePreview: { skipped: true, message } as Prisma.InputJsonValue,
+            errorMessage: message,
+            processedAt: new Date()
+          }
+        });
+        attempts.push(attempt);
+        failureMessages.push(message);
+        continue;
+      }
+
+      try {
+        const accessToken = await resolveSocialAccessToken(account!.tokenSecretRef!);
+        const providerResponse = await publishSocialPlatform(post, account!, platform, accessToken);
+        const attempt = await prisma.marketingContentPublishAttempt.create({
+          data: {
+            postId,
+            platform,
+            socialAccountId: account!.id,
+            status: 'PUBLISHED',
+            mode: 'LIVE',
+            requestPreview,
+            responsePreview: providerResponse,
+            errorMessage: null,
+            processedAt: new Date()
+          }
+        });
+        attempts.push(attempt);
+        successCount += 1;
+      } catch (err) {
+        const message = err instanceof Error ? err.message : `${platform} publishing failed.`;
+        const attempt = await prisma.marketingContentPublishAttempt.create({
+          data: {
+            postId,
+            platform,
+            socialAccountId: account!.id,
+            status: 'FAILED',
+            mode: 'LIVE',
+            requestPreview,
+            responsePreview: { failed: true, provider: platform } as Prisma.InputJsonValue,
+            errorMessage: message,
+            processedAt: new Date()
+          }
+        });
+        attempts.push(attempt);
+        failureMessages.push(message);
+      }
+    }
+
+    const updatedPost = await prisma.marketingContentPost.update({
+      where: { id: postId },
+      data:
+        successCount === targetChannels.length
+          ? { status: 'PUBLISHED', publishedAt: new Date(), failureReason: null }
+          : { status: 'FAILED', failureReason: failureMessages.join(' ') || 'One or more channels did not publish.' },
+      include: contentPostWithRelationsArgs.include
+    });
+
+    return {
+      post: contentPostToPayload(updatedPost),
+      previews,
+      attempts: attempts.map(publishAttemptToPayload),
+      message:
+        successCount === targetChannels.length
+          ? 'Live social publishing completed.'
+          : 'Live social publishing finished with skipped or failed channels.'
+    };
   },
 
   async listSocialAccounts(actor: AuthUser, input: { venue?: string }) {
@@ -2435,6 +2703,8 @@ export const marketingService = {
 
   async validateSocialAccountReadiness(actor: AuthUser, accountId: string) {
     const account = await findScopedSocialAccount(actor, accountId);
+    const supported = socialPlatformSupportsLivePublish(account.platform as SocialPlatform);
+    const liveConnectorEnabled = env.marketing.socialPublishing.livePublishingEnabled;
     const checks = [
       {
         label: `${account.platform} account connected`,
@@ -2453,14 +2723,24 @@ export const marketingService = {
       },
       {
         label: 'Live connector enabled',
-        ok: false,
-        message: 'Live Meta/TikTok publishing is intentionally disabled in this pass.'
+        ok: liveConnectorEnabled,
+        message: liveConnectorEnabled
+          ? 'Live social publishing flag is enabled.'
+          : 'Live social publishing stays disabled until MARKETING_SOCIAL_LIVE_PUBLISH_ENABLED=true.'
+      },
+      {
+        label: 'Platform live adapter',
+        ok: supported,
+        message: supported
+          ? `${account.platform} has a live publishing adapter.`
+          : 'TikTok live publishing needs a dedicated TikTok Content Posting API adapter before it can publish.'
       }
     ];
+    const ready = checks.every((check) => check.ok);
     return {
       account: socialAccountToPayload(account),
-      ready: false,
-      integrationStatus: 'SETUP_REQUIRED',
+      ready,
+      integrationStatus: ready ? 'READY' : 'SETUP_REQUIRED',
       checks
     };
   },

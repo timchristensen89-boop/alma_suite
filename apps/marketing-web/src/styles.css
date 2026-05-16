@@ -30,6 +30,7 @@
 .marketing-campaign-list {
   display: grid;
   gap: 22px;
+  min-width: 0;
 }
 
 .marketing-stack,
@@ -112,6 +113,25 @@
   display: grid;
   gap: 6px;
   padding: 16px;
+}
+
+.marketing-section-launcher {
+  margin-top: 24px;
+}
+
+.marketing-section-link {
+  width: 100%;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+
+.marketing-section-link:hover,
+.marketing-section-link:focus-visible {
+  border-color: var(--color-accent);
+  box-shadow: 0 12px 30px rgba(190, 52, 85, 0.12);
+  transform: translateY(-1px);
+  outline: none;
 }
 
 .marketing-summary-card span,

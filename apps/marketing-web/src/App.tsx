@@ -80,17 +80,17 @@ const AUTOMATION_TRIGGERS: MarketingAutomationTriggerType[] = [
 ];
 const TEMPLATE_STATUSES = ['DRAFT', 'ACTIVE', 'ARCHIVED'] as const;
 const MARKETING_NAV_ITEMS = [
-  { href: '#dashboard', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <DocumentIcon /> },
-  { href: '#guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <SearchIcon /> },
-  { href: '#segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
-  { href: '#campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
-  { href: '#content', label: 'Content', description: 'Social overview', icon: <DocumentIcon /> },
-  { href: '#assets', label: 'Assets', description: 'Upload and library', icon: <DocumentIcon /> },
-  { href: '#composer', label: 'Composer', description: 'Draft and preview posts', icon: <DocumentIcon /> },
-  { href: '#calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <DocumentIcon /> },
-  { href: '#approvals', label: 'Approvals', description: 'Review social posts', icon: <DocumentIcon /> },
-  { href: '#automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
-  { href: '#templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
+  { href: '/', label: 'Overview', description: 'Metrics, alerts, and activity', icon: <DocumentIcon /> },
+  { href: '/guests', label: 'Guests', description: 'Profiles, consent, and tags', icon: <SearchIcon /> },
+  { href: '/segments', label: 'Segments', description: 'Tag and audience logic', icon: <GearIcon /> },
+  { href: '/campaigns', label: 'Campaigns', description: 'Preview and simulate', icon: <DocumentIcon /> },
+  { href: '/content', label: 'Content', description: 'Social overview', icon: <DocumentIcon /> },
+  { href: '/content/assets', label: 'Assets', description: 'Upload and library', icon: <DocumentIcon /> },
+  { href: '/content/composer', label: 'Composer', description: 'Draft and preview posts', icon: <DocumentIcon /> },
+  { href: '/content/calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <DocumentIcon /> },
+  { href: '/content/approvals', label: 'Approvals', description: 'Review social posts', icon: <DocumentIcon /> },
+  { href: '/automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
+  { href: '/templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
 ];
 
 type FeedbackTone = 'success' | 'error';
@@ -480,23 +480,56 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
   );
 }
 
-function useMarketingActiveHash() {
-  const [activeHash, setActiveHash] = useState('#dashboard');
+function legacyHashToPath(hash: string) {
+  const legacyMap: Record<string, string> = {
+    '#dashboard': '/',
+    '#guests': '/guests',
+    '#segments': '/segments',
+    '#campaigns': '/campaigns',
+    '#content': '/content',
+    '#assets': '/content/assets',
+    '#composer': '/content/composer',
+    '#calendar': '/content/calendar',
+    '#approvals': '/content/approvals',
+    '#automations': '/automations',
+    '#templates': '/templates'
+  };
+  return legacyMap[hash] ?? '/';
+}
+
+function currentMarketingPath() {
+  if (window.location.hash) return legacyHashToPath(window.location.hash);
+  const path = window.location.pathname.replace(/\/+$/, '') || '/';
+  return MARKETING_NAV_ITEMS.some((item) => item.href === path) ? path : '/';
+}
+
+function navigateMarketingPath(path: string) {
+  window.history.pushState({}, '', path);
+  window.dispatchEvent(new PopStateEvent('popstate'));
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+
+function useMarketingActivePath() {
+  const [activePath, setActivePath] = useState(currentMarketingPath);
 
   useEffect(() => {
-    const syncHash = () => setActiveHash(window.location.hash || '#dashboard');
-    syncHash();
-    window.addEventListener('hashchange', syncHash);
-    return () => window.removeEventListener('hashchange', syncHash);
+    const syncPath = () => setActivePath(currentMarketingPath());
+    syncPath();
+    window.addEventListener('popstate', syncPath);
+    window.addEventListener('hashchange', syncPath);
+    return () => {
+      window.removeEventListener('popstate', syncPath);
+      window.removeEventListener('hashchange', syncPath);
+    };
   }, []);
 
-  return MARKETING_NAV_ITEMS.some((item) => item.href === activeHash) ? activeHash : '#dashboard';
+  return MARKETING_NAV_ITEMS.some((item) => item.href === activePath) ? activePath : '/';
 }
 
 function SidebarNav() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
-  const activeHash = useMarketingActiveHash();
-  const active = MARKETING_NAV_ITEMS.find((item) => item.href === activeHash) ?? MARKETING_NAV_ITEMS[0]!;
+  const activePath = useMarketingActivePath();
+  const active = MARKETING_NAV_ITEMS.find((item) => item.href === activePath) ?? MARKETING_NAV_ITEMS[0]!;
 
   return (
     <>
@@ -519,8 +552,10 @@ function SidebarNav() {
           <li key={item.href}>
             <a
               href={item.href}
-              className={activeHash === item.href ? 'active' : ''}
-              onClick={() => {
+              className={activePath === item.href ? 'active' : ''}
+              onClick={(event) => {
+                event.preventDefault();
+                navigateMarketingPath(item.href);
                 setMobileMenuOpen(false);
               }}
             >
@@ -535,7 +570,7 @@ function SidebarNav() {
 }
 
 function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
-  const activeHash = useMarketingActiveHash();
+  const activePath = useMarketingActivePath();
   const options = useMemo(() => venueOptions(user), [user]);
   const initialVenue = scopedVenue(user, isAdmin(user) ? ALL_VENUES : user.venue || KNOWN_VENUES[0]!);
   const [venueFilter, setVenueFilter] = useState(initialVenue);
@@ -575,13 +610,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const socialAccounts = contentDashboard?.socialAccounts ?? [];
   const postsNeedingReview = contentPosts.filter((post) => post.status === 'NEEDS_REVIEW');
   const upcomingContentPosts = contentCalendar?.posts ?? contentDashboard?.upcomingPosts ?? [];
-  const isActiveSection = (href: string) => activeHash === href;
-  const showContentSection = ['#content', '#assets', '#composer', '#calendar', '#approvals'].includes(activeHash);
-  const showContentOverview = activeHash === '#content';
-  const showContentAssets = activeHash === '#assets';
-  const showContentComposer = activeHash === '#composer';
-  const showContentCalendar = showContentOverview || activeHash === '#calendar';
-  const showContentApprovals = showContentOverview || activeHash === '#approvals';
+  const activePage = MARKETING_NAV_ITEMS.find((item) => item.href === activePath) ?? MARKETING_NAV_ITEMS[0]!;
+  const isActiveSection = (path: string) => activePath === path;
+  const showContentSection = activePath.startsWith('/content');
+  const showContentOverview = activePath === '/content';
+  const showContentAssets = activePath === '/content/assets';
+  const showContentComposer = activePath === '/content/composer';
+  const showContentCalendar = showContentOverview || activePath === '/content/calendar';
+  const showContentApprovals = showContentOverview || activePath === '/content/approvals';
   const previewGuest = guestDetail?.guest ?? guests[0] ?? null;
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === automationForm.emailTemplateId) ?? templates[0] ?? null,
@@ -1108,8 +1144,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       <div className="marketing-page">
         <PageHeader
           eyebrow="ALMA Marketing"
-          title="Restaurant marketing control centre"
-          description="Consent-aware guest marketing with roomy sections for guests, campaigns, content, templates, and simulation-only automations."
+          title={activePage.label}
+          description={`${activePage.description}. Consent, previews, simulations, and setup status stay visible without crowding every tool into one screen.`}
           actions={
             <>
               <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={options} />
@@ -1130,7 +1166,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
         <div className="marketing-layout">
           <section className="marketing-main">
-            <section id="dashboard" className="marketing-page-section" hidden={!isActiveSection('#dashboard')}>
+            <section id="dashboard" className="marketing-page-section" hidden={!isActiveSection('/')}>
               <Card title="Recent activity" subtitle={venueParam || 'All venues'}>
               {loading ? <Spinner label="Loading marketing dashboard..." /> : null}
               {!loading && overview ? (
@@ -1171,6 +1207,21 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   </div>
                 </div>
               ) : null}
+              {!loading && overview ? (
+                <div className="marketing-section-grid marketing-section-launcher" aria-label="Marketing sections">
+                  {MARKETING_NAV_ITEMS.filter((item) => item.href !== '/').map((item) => (
+                    <button
+                      key={item.href}
+                      type="button"
+                      className="marketing-summary-card marketing-section-link"
+                      onClick={() => navigateMarketingPath(item.href)}
+                    >
+                      <strong>{item.label}</strong>
+                      <span>{item.description}</span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
               </Card>
             </section>
 
@@ -1181,9 +1232,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     ? 'Asset library'
                     : showContentComposer
                       ? 'Post composer'
-                      : activeHash === '#calendar'
+                      : activePath === '/content/calendar'
                         ? 'Content calendar'
-                        : activeHash === '#approvals'
+                        : activePath === '/content/approvals'
                           ? 'Content approvals'
                           : 'Content Studio'
                 }
@@ -1197,11 +1248,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 </div>
 
                 <div className="content-section-tabs" aria-label="Content Studio pages">
-                  <Button type="button" size="sm" variant={activeHash === '#content' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#content'; }}>Overview</Button>
-                  <Button type="button" size="sm" variant={showContentAssets ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#assets'; }}>Assets</Button>
-                  <Button type="button" size="sm" variant={showContentComposer ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#composer'; }}>Composer</Button>
-                  <Button type="button" size="sm" variant={activeHash === '#calendar' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#calendar'; }}>Calendar</Button>
-                  <Button type="button" size="sm" variant={activeHash === '#approvals' ? 'primary' : 'secondary'} onClick={() => { window.location.hash = '#approvals'; }}>Approvals</Button>
+                  <Button type="button" size="sm" variant={activePath === '/content' ? 'primary' : 'secondary'} onClick={() => navigateMarketingPath('/content')}>Overview</Button>
+                  <Button type="button" size="sm" variant={showContentAssets ? 'primary' : 'secondary'} onClick={() => navigateMarketingPath('/content/assets')}>Assets</Button>
+                  <Button type="button" size="sm" variant={showContentComposer ? 'primary' : 'secondary'} onClick={() => navigateMarketingPath('/content/composer')}>Composer</Button>
+                  <Button type="button" size="sm" variant={activePath === '/content/calendar' ? 'primary' : 'secondary'} onClick={() => navigateMarketingPath('/content/calendar')}>Calendar</Button>
+                  <Button type="button" size="sm" variant={activePath === '/content/approvals' ? 'primary' : 'secondary'} onClick={() => navigateMarketingPath('/content/approvals')}>Approvals</Button>
                 </div>
 
                 {showContentOverview ? (
@@ -1445,7 +1496,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="guests" className="marketing-page-section" hidden={!isActiveSection('#guests')}>
+            <section id="guests" className="marketing-page-section" hidden={!isActiveSection('/guests')}>
               <Card title="Guest CRM" subtitle="Profiles, consent status, tags, and visit history">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1546,7 +1597,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="segments" className="marketing-page-section" hidden={!isActiveSection('#segments')}>
+            <section id="segments" className="marketing-page-section" hidden={!isActiveSection('/segments')}>
               <Card title="Tags and segments" subtitle="Manual tags plus automatic audience rules">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1638,7 +1689,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
           </section>
 
           <aside className="marketing-side">
-            <section id="templates" className="marketing-page-section" hidden={!isActiveSection('#templates')}>
+            <section id="templates" className="marketing-page-section" hidden={!isActiveSection('/templates')}>
               <Card title="Templates" subtitle="HTML accepted. Preview rendered inside a sandboxed iframe.">
               <form className="marketing-form" onSubmit={(event) => void saveTemplate(event)}>
                 <div className="form-grid two">
@@ -1669,7 +1720,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="campaigns" className="marketing-page-section" hidden={!isActiveSection('#campaigns')}>
+            <section id="campaigns" className="marketing-page-section" hidden={!isActiveSection('/campaigns')}>
               <Card title="Campaigns" subtitle="Recipient preview and simulation only. No external send.">
               <form className="marketing-form" onSubmit={(event) => void saveCampaign(event)}>
                 <div className="form-grid two">
@@ -1735,7 +1786,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </Card>
             </section>
 
-            <section id="automations" className="marketing-page-section" hidden={!isActiveSection('#automations')}>
+            <section id="automations" className="marketing-page-section" hidden={!isActiveSection('/automations')}>
               <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">

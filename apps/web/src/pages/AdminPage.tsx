@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react';
+import { FormEvent, useEffect, useMemo, useState } from 'react';
 import {
   Badge,
   Button,
   Card,
   EmptyState,
+  Input,
   PageHeader,
   Select,
   Spinner,
@@ -18,7 +19,10 @@ import type {
   AdminSignalTone,
   AdminSystemHealthPayload,
   IntegrationConnectResponse,
-  IntegrationProviderStatus
+  IntegrationProviderStatus,
+  MarketingSocialAccount,
+  MarketingSocialAccountStatus,
+  SocialPlatform
 } from '@alma/shared';
 import { api, createSuiteHandoffUrl } from '../lib/api';
 import {
@@ -50,6 +54,24 @@ type AdminLoadState = {
   overview: AdminOverviewPayload | null;
   integrations: AdminIntegrationsStatusPayload | null;
   systemHealth: AdminSystemHealthPayload | null;
+  socialAccounts: MarketingSocialAccount[];
+};
+
+type SocialAccountForm = {
+  venue: string;
+  platform: SocialPlatform;
+  displayName: string;
+  handle: string;
+  externalAccountId: string;
+  status: MarketingSocialAccountStatus;
+  tokenSecretRef: string;
+};
+
+type SocialReadiness = {
+  account: MarketingSocialAccount;
+  ready: boolean;
+  integrationStatus: string;
+  checks: Array<{ label: string; ok: boolean; message: string }>;
 };
 
 const APP_URLS: Record<string, string> = {
@@ -60,6 +82,21 @@ const APP_URLS: Record<string, string> = {
   marketing: MARKETING_WEB_URL,
   giftcards: GIFTCARDS_WEB_URL
 };
+
+const SOCIAL_PLATFORMS: SocialPlatform[] = ['FACEBOOK', 'INSTAGRAM', 'TIKTOK'];
+const SOCIAL_STATUSES: MarketingSocialAccountStatus[] = ['SETUP_REQUIRED', 'CONNECTED', 'EXPIRED', 'DISABLED', 'ERROR'];
+
+function defaultSocialAccountForm(venue = 'Alma Avalon'): SocialAccountForm {
+  return {
+    venue,
+    platform: 'FACEBOOK',
+    displayName: '',
+    handle: '',
+    externalAccountId: '',
+    status: 'SETUP_REQUIRED',
+    tokenSecretRef: ''
+  };
+}
 
 const DATA_IMPORTS = [
   {
@@ -250,6 +287,19 @@ function IntegrationCard({
   );
 }
 
+function socialTone(status: MarketingSocialAccountStatus) {
+  if (status === 'CONNECTED') return 'positive';
+  if (status === 'ERROR' || status === 'EXPIRED') return 'danger';
+  if (status === 'SETUP_REQUIRED') return 'warning';
+  return 'muted';
+}
+
+function platformSetupCopy(platform: SocialPlatform) {
+  if (platform === 'FACEBOOK') return 'Needs a Meta app, Page access, page/account id, and a secret-manager token reference before live publishing.';
+  if (platform === 'INSTAGRAM') return 'Needs an Instagram business or creator account connected through Meta plus a secret-manager token reference.';
+  return 'Needs a TikTok developer app, OAuth approval, account id, and a secret-manager token reference before live publishing.';
+}
+
 function AuditList({ events }: { events: AdminAuditEventSummary[] }) {
   if (!events.length) {
     return (
@@ -285,7 +335,8 @@ export function AdminPage() {
   const [state, setState] = useState<AdminLoadState>({
     overview: null,
     integrations: null,
-    systemHealth: null
+    systemHealth: null,
+    socialAccounts: []
   });
   const [audit, setAudit] = useState<AdminAuditEventsPayload | null>(null);
   const [auditFilter, setAuditFilter] = useState('');
@@ -293,15 +344,20 @@ export function AdminPage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState<string | null>(null);
+  const [socialBusy, setSocialBusy] = useState<string | null>(null);
+  const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
+  const [socialReadiness, setSocialReadiness] = useState<SocialReadiness | null>(null);
+  const [socialForm, setSocialForm] = useState<SocialAccountForm>(() => defaultSocialAccountForm());
 
   async function loadDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewResult, integrationsResult, systemHealthResult] = await Promise.allSettled([
+      const [overviewResult, integrationsResult, systemHealthResult, socialAccountsResult] = await Promise.allSettled([
         api<AdminOverviewPayload>('/api/admin/overview'),
         api<AdminIntegrationsStatusPayload>('/api/admin/integrations/status'),
-        api<AdminSystemHealthPayload>('/api/admin/system-health')
+        api<AdminSystemHealthPayload>('/api/admin/system-health'),
+        api<MarketingSocialAccount[]>('/api/marketing/content/social-accounts')
       ]);
 
       if (overviewResult.status === 'rejected') throw overviewResult.reason;
@@ -310,7 +366,8 @@ export function AdminPage() {
       setState({
         overview: overviewResult.value,
         integrations: integrationsResult.status === 'fulfilled' ? integrationsResult.value : null,
-        systemHealth: systemHealthResult.value
+        systemHealth: systemHealthResult.value,
+        socialAccounts: socialAccountsResult.status === 'fulfilled' ? socialAccountsResult.value : []
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load Admin.');
@@ -348,6 +405,45 @@ export function AdminPage() {
     }
   }
 
+  async function saveSocialAccount(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSocialBusy('save');
+    setSocialFeedback(null);
+    try {
+      await api<MarketingSocialAccount>('/api/marketing/content/social-accounts', {
+        method: 'POST',
+        body: JSON.stringify({
+          ...socialForm,
+          scopes: [],
+          lastError: ''
+        })
+      });
+      setSocialFeedback(`${socialForm.platform} account saved for ${socialForm.venue}. Live publishing remains setup required until OAuth is fully configured.`);
+      setSocialForm(defaultSocialAccountForm(socialForm.venue));
+      await loadDashboard();
+    } catch (err) {
+      setSocialFeedback(err instanceof Error ? err.message : 'Could not save social account.');
+    } finally {
+      setSocialBusy(null);
+    }
+  }
+
+  async function validateSocialAccount(accountId: string) {
+    setSocialBusy(accountId);
+    setSocialFeedback(null);
+    try {
+      const result = await api<SocialReadiness>(`/api/marketing/content/social-accounts/${accountId}/validate-readiness`, {
+        method: 'POST'
+      });
+      setSocialReadiness(result);
+      setSocialFeedback(`${result.account.platform} readiness checked: ${result.integrationStatus.replace(/_/g, ' ').toLowerCase()}.`);
+    } catch (err) {
+      setSocialFeedback(err instanceof Error ? err.message : 'Could not validate social account readiness.');
+    } finally {
+      setSocialBusy(null);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function loadAudit() {
@@ -380,6 +476,10 @@ export function AdminPage() {
       }))
     ],
     [audit]
+  );
+  const venueOptions = useMemo(
+    () => overview?.business.venues.map((venue) => ({ label: venue.name, value: venue.name })) ?? [],
+    [overview]
   );
 
   if (loading && !overview) {
@@ -675,6 +775,122 @@ export function AdminPage() {
             </Card>
           </div>
         ) : null}
+        <div className="admin-grid two">
+          <Card title="Social publishing setup" subtitle="Admin-owned Facebook, Instagram and TikTok readiness">
+            <form className="admin-social-form" onSubmit={(event) => void saveSocialAccount(event)}>
+              <div className="admin-form-grid">
+                <Select
+                  label="Venue"
+                  value={socialForm.venue}
+                  options={venueOptions.length ? venueOptions : [{ label: socialForm.venue, value: socialForm.venue }]}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, venue: event.currentTarget.value }))}
+                />
+                <Select
+                  label="Platform"
+                  value={socialForm.platform}
+                  options={SOCIAL_PLATFORMS.map((platform) => ({ label: platform, value: platform }))}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, platform: event.currentTarget.value as SocialPlatform }))}
+                />
+                <Select
+                  label="Status"
+                  value={socialForm.status}
+                  options={SOCIAL_STATUSES.map((status) => ({ label: status.replace(/_/g, ' '), value: status }))}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, status: event.currentTarget.value as MarketingSocialAccountStatus }))}
+                />
+              </div>
+              <div className="admin-form-grid">
+                <Input
+                  label="Display name"
+                  value={socialForm.displayName}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, displayName: event.currentTarget.value }))}
+                  placeholder="Alma Avalon Facebook"
+                  required
+                />
+                <Input
+                  label="Handle"
+                  value={socialForm.handle}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, handle: event.currentTarget.value }))}
+                  placeholder="@almaavalon"
+                />
+                <Input
+                  label="External account id"
+                  value={socialForm.externalAccountId}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, externalAccountId: event.currentTarget.value }))}
+                  placeholder="Page or business account id"
+                />
+              </div>
+              <Input
+                label="Token secret reference"
+                value={socialForm.tokenSecretRef}
+                onChange={(event) => setSocialForm((current) => ({ ...current, tokenSecretRef: event.currentTarget.value }))}
+                placeholder="Secret Manager name or env:VARIABLE_NAME"
+                hint="Store only a reference here. Never paste an access token into the browser."
+              />
+              <div className="inline-actions">
+                <Button type="submit" disabled={socialBusy === 'save'}>
+                  {socialBusy === 'save' ? 'Saving...' : 'Save social account'}
+                </Button>
+                {socialFeedback ? <p className="muted">{socialFeedback}</p> : null}
+              </div>
+            </form>
+          </Card>
+          <Card title="Configured social accounts" subtitle="No raw tokens are returned to Admin">
+            {state.socialAccounts.length ? (
+              <div className="admin-card-list">
+                {state.socialAccounts.map((account) => (
+                  <article key={account.id} className="admin-mini-card">
+                    <div>
+                      <strong>{account.displayName}</strong>
+                      <small>
+                        {account.platform} · {account.venue} · {account.handle ?? 'No handle'}
+                      </small>
+                      <small>{platformSetupCopy(account.platform)}</small>
+                    </div>
+                    <div className="admin-social-actions">
+                      <Badge tone={socialTone(account.status)}>{account.status.replace(/_/g, ' ')}</Badge>
+                      <Badge tone={account.hasTokenSecretRef ? 'positive' : 'warning'}>
+                        {account.hasTokenSecretRef ? 'Secret ref' : 'No secret ref'}
+                      </Badge>
+                      <Button
+                        variant="secondary"
+                        disabled={socialBusy === account.id}
+                        onClick={() => void validateSocialAccount(account.id)}
+                      >
+                        {socialBusy === account.id ? 'Checking...' : 'Check readiness'}
+                      </Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<IconSettings />}
+                title="No social accounts configured"
+                description="Add Facebook, Instagram or TikTok account metadata here. Live publish stays disabled until the backend flag and token secret are configured."
+              />
+            )}
+          </Card>
+          <Card title="Readiness result" subtitle="Connector checks for the selected account">
+            {socialReadiness ? (
+              <div className="admin-status-stack">
+                <StatusLine
+                  label={socialReadiness.account.displayName}
+                  value={socialReadiness.integrationStatus.replace(/_/g, ' ')}
+                  tone={socialReadiness.ready ? 'positive' : 'warning'}
+                />
+                {socialReadiness.checks.map((check) => (
+                  <StatusLine key={check.label} label={check.label} value={check.ok ? 'OK' : check.message} tone={check.ok ? 'positive' : 'warning'} />
+                ))}
+              </div>
+            ) : (
+              <EmptyState
+                icon={<IconChecklist />}
+                title="Run a readiness check"
+                description="Admin will confirm connection status, external account id, secret reference and live connector gating without exposing tokens."
+              />
+            )}
+          </Card>
+        </div>
       </section>
 
       <section className="admin-section">

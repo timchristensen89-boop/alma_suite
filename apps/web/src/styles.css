@@ -5082,6 +5082,27 @@ a.suite-app-tile:hover {
   align-items: flex-start;
 }
 
+.admin-social-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.admin-form-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.admin-social-actions {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .admin-provider-card strong {
   font-size: 12px;
   font-weight: 800;
@@ -5137,6 +5158,14 @@ a.suite-app-tile:hover {
   .admin-link-card {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .admin-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .admin-social-actions {
+    justify-content: flex-start;
   }
 
   .admin-section-nav {
