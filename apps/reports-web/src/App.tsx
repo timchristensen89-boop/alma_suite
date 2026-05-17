@@ -115,6 +115,7 @@ type ReportSectionId =
   | 'staff'
   | 'compliance'
   | 'stock'
+  | 'menu-engineering'
   | 'reserve'
   | 'marketing'
   | 'content'
@@ -159,6 +160,13 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     title: 'Stock Reports',
     description: 'Catalogue health, venue stock status, low stock, and stocktake review signals.',
     icon: <DocumentIcon />
+  },
+  {
+    id: 'menu-engineering',
+    label: 'Menu Engineering',
+    title: 'Menu Engineering',
+    description: 'Readiness for item sales, recipe costs, COGS, margin, and menu action decisions.',
+    icon: <ChartIcon />
   },
   {
     id: 'reserve',
@@ -209,6 +217,7 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
   '#forecast': 'exports',
   '#wages': 'staff',
   '#cogs': 'stock',
+  '#menu-engineering': 'menu-engineering',
   '#website-menu': 'exports'
 };
 
@@ -1377,6 +1386,96 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     );
   }
 
+  function renderMenuEngineeringSection() {
+    const hasVenueSales = Boolean(data.actualSales?.entries.length);
+    const hasRecipeSummary = Boolean(data.recipes && data.recipes.totalRecipes > 0);
+    const readinessRows = [
+      {
+        item: 'Imported item-level sales',
+        status: 'Missing',
+        note: 'Current Reports sales imports are venue-level. Menu engineering needs units sold and revenue by menu item.'
+      },
+      {
+        item: 'Recipe cost data',
+        status: hasRecipeSummary ? 'Partly ready' : 'Missing',
+        note: hasRecipeSummary
+          ? `${data.recipes?.totalRecipes ?? 0} recipes are available from Stock. Item matching still needs review.`
+          : 'Create item recipes in Stock before margin analysis can run.'
+      },
+      {
+        item: 'Selling price by item',
+        status: 'Missing',
+        note: 'No reliable item price source is wired into Reports yet.'
+      },
+      {
+        item: 'Venue sales totals',
+        status: hasVenueSales ? 'Ready' : 'Missing',
+        note: hasVenueSales
+          ? `${formatCurrency(data.actualSales?.totalSalesCents ?? 0)} imported for the selected week.`
+          : 'Import weekly sales totals to compare venue trading before item analysis is available.'
+      }
+    ];
+
+    return (
+      <SectionShell
+        id="menu-engineering"
+        title="Menu Engineering"
+        description="Shows whether the data is ready for COGS, margin, popularity, and menu action decisions"
+      >
+        <div className="report-section-stack">
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Sales source" value={hasVenueSales ? 'Venue totals' : 'Missing'} hint="Item-level sales not wired yet" loading={loading} />
+            <StatCard label="Recipes available" value={data.recipes?.totalRecipes ?? 0} hint="From Stock recipe costing" loading={loading} />
+            <StatCard label="Average recipe cost" value={formatMoney(data.recipes?.averageEstimatedCost ?? 0)} hint="Estimated and manually reviewed" loading={loading} />
+            <StatCard label="Recommendations" value="Not ready" hint="Needs item sales, price, and recipe matches" loading={loading} />
+          </div>
+
+          <div className="report-detail-grid">
+            <div className="report-panel">
+              <h4>What can be checked now</h4>
+              <Metric label="Venue sales imported" value={hasVenueSales ? 'Yes' : 'No'} tone={hasVenueSales ? 'positive' : 'warning'} />
+              <Metric label="Recipe costs available" value={hasRecipeSummary ? 'Partial' : 'No'} tone={hasRecipeSummary ? 'info' : 'warning'} />
+              <Metric label="Menu item sales" value="Not connected" tone="warning" />
+              <Metric label="Item price source" value="Not connected" tone="warning" />
+            </div>
+
+            <div className="report-panel">
+              <h4>Next data needed</h4>
+              <p className="subtle">
+                To classify Stars, Plowhorses, Puzzles and Dogs, Reports needs item-level sales with units sold, revenue, venue, date range, menu category, and a recipe match from Stock.
+              </p>
+              {sectionButton('stock', 'Review stock and recipe data')}
+            </div>
+          </div>
+
+          <div className="report-panel">
+            <h4>Data readiness</h4>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Input</th>
+                    <th>Status</th>
+                    <th>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {readinessRows.map((row) => (
+                    <tr key={row.item}>
+                      <td>{row.item}</td>
+                      <td>{row.status}</td>
+                      <td>{row.note}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
   function renderReserveSection() {
     return (
       <SectionShell
@@ -1503,6 +1602,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderComplianceSection();
       case 'stock':
         return renderStockSection();
+      case 'menu-engineering':
+        return renderMenuEngineeringSection();
       case 'reserve':
         return renderReserveSection();
       case 'marketing':
