@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useCallback, useRef, useState, type ReactNode } from 'react';
 import {
   AlmaAppIcon,
   ALMA_APPS,
@@ -15,6 +15,7 @@ import {
   type AlmaAppDefinition,
   type AlmaAppIconKey
 } from './AlmaAppIcon';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 /**
  * Compatibility wrapper around the new ALMA app icon system.
@@ -284,6 +285,7 @@ export function SuiteAppSwitcher({
   apps = SUITE_APPS,
   variant = 'login'
 }: SuiteAppSwitcherProps) {
+  const layerRef = useRef<HTMLDivElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const isSidebar = variant === 'sidebar';
   const isTopbar = variant === 'topbar';
@@ -295,6 +297,8 @@ export function SuiteAppSwitcher({
   ]
     .filter(Boolean)
     .join(' ');
+  const closeMobile = useCallback(() => setMobileOpen(false), []);
+  useDismissibleLayer(layerRef, mobileOpen, closeMobile, `${currentApp ?? 'suite'}-app-switcher`);
 
   const grid = (
     <div className="suite-app-grid">
@@ -375,7 +379,7 @@ export function SuiteAppSwitcher({
 
   if (isTopbar) {
     return (
-      <div className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
+      <div ref={layerRef} className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
         <button
           type="button"
           className="suite-switcher-mobile-trigger"
@@ -430,4 +434,3 @@ export function SuiteApps() {
     </div>
   );
 }
-import { useState } from 'react';

@@ -1,4 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 type ApiClient = <T>(path: string, init?: RequestInit) => Promise<T>;
 
@@ -42,13 +43,13 @@ function apiPath(path: string) {
 }
 
 const panelStyle = {
-  position: 'absolute',
-  right: 0,
-  top: 'calc(100% + 10px)',
+  position: 'fixed',
+  right: 12,
+  top: 72,
   width: 'min(420px, calc(100vw - 24px))',
-  maxHeight: '72vh',
+  maxHeight: 'calc(100vh - 92px)',
   overflow: 'auto',
-  zIndex: 120,
+  zIndex: 220,
   padding: 16,
   borderRadius: 16,
   border: '1px solid rgba(148, 163, 184, 0.35)',
@@ -71,6 +72,7 @@ const cardStyle = {
 } as const;
 
 export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = false }: Props) {
+  const layerRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
@@ -84,6 +86,9 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
     if (venue) params.set('venue', venue);
     return params.toString();
   }, [appId, venue]);
+
+  const close = useCallback(() => setOpen(false), []);
+  useDismissibleLayer(layerRef, open, close, `${appId}-messages`);
 
   async function load() {
     setLoading(true);
@@ -147,7 +152,7 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div ref={layerRef} style={{ position: 'relative' }}>
       <button
         type="button"
         className="btn btn-secondary"

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type {
@@ -65,7 +65,8 @@ import {
   SuiteAppSwitcher,
   SuiteCommsWidget,
   Textarea,
-  TopBar
+  TopBar,
+  useDismissibleLayer
 } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
@@ -535,14 +536,17 @@ function currentPage(pathname: string, items = NAV_ITEMS) {
 function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
   const location = useLocation();
   const active = currentPage(location.pathname, items);
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'staff-mobile-nav');
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -570,7 +574,7 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

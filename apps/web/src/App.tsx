@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Navigate,
   NavLink,
@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -62,14 +62,17 @@ function SidebarNav() {
   const { user } = useAuth();
   const navItems = navItemsForRole(user);
   const active = currentPage(location.pathname, navItems);
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'compliance-mobile-nav');
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -97,7 +100,7 @@ function SidebarNav() {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthUser,
   GuestTimelinePayload,
@@ -36,7 +36,8 @@ import {
   SuiteAppSwitcher,
   SuiteCommsWidget,
   Textarea,
-  TopBar
+  TopBar,
+  useDismissibleLayer
 } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
@@ -413,8 +414,11 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
 }
 
 function SidebarNav() {
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [activeHash, setActiveHash] = useState('#dashboard');
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'reserve-mobile-nav');
 
   useEffect(() => {
     const syncHash = () => setActiveHash(window.location.hash || '#dashboard');
@@ -426,7 +430,7 @@ function SidebarNav() {
   const active = MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ?? MANAGER_NAV_ITEMS[0]!;
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -458,7 +462,7 @@ function SidebarNav() {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

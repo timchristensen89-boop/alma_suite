@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar } from '@alma/ui';
+import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
@@ -23,14 +23,17 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
 function SidebarNav() {
   const location = useLocation();
   const active = currentPage(location.pathname);
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'stock-mobile-nav');
 
   useEffect(() => {
     setMobileMenuOpen(false);
   }, [location.pathname]);
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -58,7 +61,7 @@ function SidebarNav() {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

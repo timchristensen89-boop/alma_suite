@@ -2,6 +2,7 @@ export { AppShell } from './layout/AppShell';
 export { PageHeader } from './layout/PageHeader';
 export { TopBar } from './layout/TopBar';
 export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
+export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';
 export { Card } from './primitives/Card';
 export { StatCard } from './primitives/StatCard';
 export { Button } from './primitives/Button';

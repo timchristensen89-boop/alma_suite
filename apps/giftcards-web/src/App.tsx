@@ -1,4 +1,4 @@
-import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
   type AuthUser,
@@ -32,7 +32,8 @@ import {
   SuiteAppSwitcher,
   SuiteCommsWidget,
   Textarea,
-  TopBar
+  TopBar,
+  useDismissibleLayer
 } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
@@ -583,7 +584,10 @@ function LoginScreen({ onLogin }: { onLogin: (email: string, password: string) =
 }
 
 function SidebarNav() {
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'giftcards-mobile-nav');
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
@@ -605,7 +609,7 @@ function SidebarNav() {
   const active = GIFTCARD_NAV_ITEMS.find((item) => item.href === activeHref) ?? GIFTCARD_NAV_ITEMS[2]!;
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -640,7 +644,7 @@ function SidebarNav() {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

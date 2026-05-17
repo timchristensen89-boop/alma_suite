@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthUser,
   GuestTimelinePayload,
@@ -44,7 +44,8 @@ import {
   SuiteAppSwitcher,
   SuiteCommsWidget,
   Textarea,
-  TopBar
+  TopBar,
+  useDismissibleLayer
 } from '@alma/ui';
 import { MARKETING_WEB_URL, RESERVE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
@@ -582,12 +583,15 @@ function useMarketingActivePath() {
 }
 
 function SidebarNav() {
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const activePath = useMarketingActivePath();
   const active = MARKETING_NAV_ITEMS.find((item) => item.href === activePath) ?? MARKETING_NAV_ITEMS[0]!;
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'marketing-mobile-nav');
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -620,7 +624,7 @@ function SidebarNav() {
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 

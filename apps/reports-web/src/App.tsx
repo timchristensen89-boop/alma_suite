@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from 'react';
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthUser,
   RecipesSummary,
@@ -29,7 +29,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
-  TopBar
+  TopBar,
+  useDismissibleLayer
 } from '@alma/ui';
 import {
   clearApiAuthTokens,
@@ -460,11 +461,14 @@ function SidebarNav({
   activeSection?: ReportSectionId;
   onSectionChange?: (section: ReportSectionId) => void;
 } = {}) {
+  const navRef = useRef<HTMLDivElement>(null);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const active = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
+  const closeMobileMenu = useCallback(() => setMobileMenuOpen(false), []);
+  useDismissibleLayer(navRef, mobileMenuOpen, closeMobileMenu, 'reports-mobile-nav');
 
   return (
-    <>
+    <div ref={navRef} className="mobile-nav-layer">
       <button
         className="mobile-nav-toggle"
         type="button"
@@ -500,7 +504,7 @@ function SidebarNav({
           </li>
         ))}
       </ul>
-    </>
+    </div>
   );
 }
 
