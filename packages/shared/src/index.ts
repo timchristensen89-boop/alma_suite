@@ -544,6 +544,26 @@ export const staffAppAccessInputSchema = z.object({
   }))
 });
 
+export const adminAccessUserCreateInputSchema = z.object({
+  firstName: z.string().trim().min(2),
+  lastName: z.string().trim().min(2),
+  email: z.string().email().optional().or(z.literal('')),
+  venue: z.string().trim().optional().or(z.literal('')),
+  roleTitle: z.string().trim().optional().or(z.literal('')),
+  staffRole: z.enum(['USER', 'MANAGER', 'ADMIN']).default('USER'),
+  enableStaffApp: z.boolean().default(true)
+});
+
+export const adminAccessBulkUpdateInputSchema = z.object({
+  staffProfileIds: z.array(z.string().min(1)).min(1),
+  appIds: z.array(almaAppIdSchema).min(1),
+  status: staffAppAccessStatusSchema,
+  role: z.enum(['USER', 'MANAGER', 'ADMIN']),
+  permissions: z.record(z.string(), z.boolean()).default({}),
+  permissionMode: z.enum(['MERGE', 'REPLACE']).default('MERGE'),
+  notes: z.string().trim().optional().or(z.literal(''))
+});
+
 export const suiteAnnouncementInputSchema = z.object({
   title: z.string().min(2),
   body: z.string().min(1),
@@ -1416,6 +1436,34 @@ export type AdminOverviewPayload = {
   handoffLinks: AdminHandoffLink[];
   recentAuditEvents: AdminAuditEventSummary[];
 };
+
+export type AdminAccessUserSummary = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  venue: string | null;
+  roleTitle: string;
+  employmentStatus: string;
+  isAdmin: boolean;
+  hasPassword: boolean;
+  appAccess: StaffAppAccess[];
+};
+
+export type AdminAccessUsersPayload = {
+  generatedAt: string;
+  apps: Array<{ appId: AlmaAppId; label: string }>;
+  permissionKeys: Array<{ key: string; label: string; description: string; dangerous?: boolean }>;
+  users: AdminAccessUserSummary[];
+};
+
+export type AdminAccessBulkUpdateResult = {
+  updatedUsers: number;
+  updatedRows: number;
+};
+
+export type AdminAccessUserCreateInput = z.infer<typeof adminAccessUserCreateInputSchema>;
+export type AdminAccessBulkUpdateInput = z.infer<typeof adminAccessBulkUpdateInputSchema>;
 
 export type IntegrationProviderKey = 'square' | 'xero';
 export type AdminMetaIntegrationStatus = {

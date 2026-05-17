@@ -12,6 +12,9 @@ import {
   Textarea
 } from '@alma/ui';
 import type {
+  AdminAccessBulkUpdateResult,
+  AdminAccessUserSummary,
+  AdminAccessUsersPayload,
   AdminAuditEventsPayload,
   AdminAuditEventSummary,
   AdminHandoffLink,
@@ -20,11 +23,14 @@ import type {
   AdminOverviewPayload,
   AdminSignalTone,
   AdminSystemHealthPayload,
+  AlmaAppId,
   IntegrationConnectResponse,
   IntegrationProviderStatus,
   MarketingSocialAccount,
   MarketingSocialAccountStatus,
-  SocialPlatform
+  SocialPlatform,
+  StaffAppAccess,
+  StaffAppAccessStatus
 } from '@alma/shared';
 import { api, apiUrl, createSuiteHandoffUrl } from '../lib/api';
 import {
@@ -54,6 +60,7 @@ import {
 
 type AdminLoadState = {
   overview: AdminOverviewPayload | null;
+  accessUsers: AdminAccessUsersPayload | null;
   integrations: AdminIntegrationsStatusPayload | null;
   systemHealth: AdminSystemHealthPayload | null;
   socialAccounts: MarketingSocialAccount[];
@@ -85,6 +92,34 @@ type HumanAgentDemoResult = {
   guardrails: string[];
   simulatedAt: string;
 };
+
+type AccessRole = 'USER' | 'MANAGER' | 'ADMIN';
+
+const ACCESS_STATUS_OPTIONS: Array<{ label: string; value: StaffAppAccessStatus }> = [
+  { label: 'Enabled', value: 'ENABLED' },
+  { label: 'Pending', value: 'PENDING' },
+  { label: 'Disabled', value: 'DISABLED' }
+];
+
+const ACCESS_ROLE_OPTIONS: Array<{ label: string; value: AccessRole }> = [
+  { label: 'User', value: 'USER' },
+  { label: 'Manager', value: 'MANAGER' },
+  { label: 'Admin', value: 'ADMIN' }
+];
+
+const DEFAULT_ACCESS_PERMISSIONS = {
+  view: true,
+  create: false,
+  edit: false,
+  approve: false,
+  export: false,
+  delete: false,
+  admin: false
+};
+
+function accessFor(user: AdminAccessUserSummary, appId: AlmaAppId): StaffAppAccess | undefined {
+  return user.appAccess.find((access) => access.appId === appId);
+}
 
 type CallbackBanner = {
   status: string;
@@ -465,6 +500,7 @@ export function AdminPage() {
   useDocumentTitle('Admin · ALMA Suite');
   const [state, setState] = useState<AdminLoadState>({
     overview: null,
+    accessUsers: null,
     integrations: null,
     systemHealth: null,
     socialAccounts: []
@@ -485,13 +521,33 @@ export function AdminPage() {
   const [humanAgentBusy, setHumanAgentBusy] = useState(false);
   const [humanAgentResult, setHumanAgentResult] = useState<HumanAgentDemoResult | null>(null);
   const [humanAgentError, setHumanAgentError] = useState<string | null>(null);
+  const [accessSearch, setAccessSearch] = useState('');
+  const [accessVenueFilter, setAccessVenueFilter] = useState('');
+  const [selectedAccessUsers, setSelectedAccessUsers] = useState<string[]>([]);
+  const [bulkAccessApps, setBulkAccessApps] = useState<AlmaAppId[]>(['STAFF']);
+  const [bulkAccessStatus, setBulkAccessStatus] = useState<StaffAppAccessStatus>('ENABLED');
+  const [bulkAccessRole, setBulkAccessRole] = useState<AccessRole>('USER');
+  const [bulkPermissionMode, setBulkPermissionMode] = useState<'MERGE' | 'REPLACE'>('MERGE');
+  const [bulkPermissions, setBulkPermissions] = useState<Record<string, boolean>>(DEFAULT_ACCESS_PERMISSIONS);
+  const [accessBusy, setAccessBusy] = useState(false);
+  const [accessFeedback, setAccessFeedback] = useState<string | null>(null);
+  const [newUserForm, setNewUserForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    venue: '',
+    roleTitle: '',
+    staffRole: 'USER' as AccessRole,
+    enableStaffApp: true
+  });
 
   async function loadDashboard() {
     setLoading(true);
     setError(null);
     try {
-      const [overviewResult, integrationsResult, systemHealthResult, socialAccountsResult] = await Promise.allSettled([
+      const [overviewResult, accessUsersResult, integrationsResult, systemHealthResult, socialAccountsResult] = await Promise.allSettled([
         api<AdminOverviewPayload>('/api/admin/overview'),
+        api<AdminAccessUsersPayload>('/api/admin/access/users'),
         api<AdminIntegrationsStatusPayload>('/api/admin/integrations/status'),
         api<AdminSystemHealthPayload>('/api/admin/system-health'),
         api<MarketingSocialAccount[]>('/api/marketing/content/social-accounts')
@@ -502,6 +558,7 @@ export function AdminPage() {
 
       setState({
         overview: overviewResult.value,
+        accessUsers: accessUsersResult.status === 'fulfilled' ? accessUsersResult.value : null,
         integrations: integrationsResult.status === 'fulfilled' ? integrationsResult.value : null,
         systemHealth: systemHealthResult.value,
         socialAccounts: socialAccountsResult.status === 'fulfilled' ? socialAccountsResult.value : []
@@ -662,6 +719,79 @@ export function AdminPage() {
     }
   }
 
+  function toggleSelectedAccessUser(id: string) {
+    setSelectedAccessUsers((current) =>
+      current.includes(id) ? current.filter((item) => item !== id) : [...current, id]
+    );
+  }
+
+  function toggleBulkAccessApp(appId: AlmaAppId) {
+    setBulkAccessApps((current) =>
+      current.includes(appId) ? current.filter((item) => item !== appId) : [...current, appId]
+    );
+  }
+
+  async function createAccessUser(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setAccessBusy(true);
+    setAccessFeedback(null);
+    try {
+      await api('/api/admin/access/users', {
+        method: 'POST',
+        body: JSON.stringify(newUserForm)
+      });
+      setNewUserForm({
+        firstName: '',
+        lastName: '',
+        email: '',
+        venue: newUserForm.venue,
+        roleTitle: '',
+        staffRole: 'USER',
+        enableStaffApp: true
+      });
+      setAccessFeedback('New user created. Send a setup email from Staff when they are ready to log in.');
+      await loadDashboard();
+    } catch (err) {
+      setAccessFeedback(err instanceof Error ? err.message : 'Could not create user.');
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
+  async function applyBulkAccessUpdate() {
+    if (!selectedAccessUsers.length || !bulkAccessApps.length) return;
+    const confirmAdmin =
+      bulkAccessRole === 'ADMIN' || bulkPermissions.admin || bulkAccessApps.includes('SETTINGS');
+    if (confirmAdmin) {
+      const confirmed = window.confirm(
+        'This bulk update touches Admin or Settings-level access. Continue only if these users should have that access.'
+      );
+      if (!confirmed) return;
+    }
+    setAccessBusy(true);
+    setAccessFeedback(null);
+    try {
+      const result = await api<AdminAccessBulkUpdateResult>('/api/admin/access/bulk-update', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffProfileIds: selectedAccessUsers,
+          appIds: bulkAccessApps,
+          status: bulkAccessStatus,
+          role: bulkAccessRole,
+          permissions: bulkPermissions,
+          permissionMode: bulkPermissionMode
+        })
+      });
+      setAccessFeedback(`Updated ${result.updatedRows} app access rows across ${result.updatedUsers} users.`);
+      setSelectedAccessUsers([]);
+      await loadDashboard();
+    } catch (err) {
+      setAccessFeedback(err instanceof Error ? err.message : 'Could not bulk update access.');
+    } finally {
+      setAccessBusy(false);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function loadAudit() {
@@ -683,6 +813,7 @@ export function AdminPage() {
   }, [auditFilter]);
 
   const overview = state.overview;
+  const accessUsers = state.accessUsers;
   const integrations = state.integrations;
   const systemHealth = state.systemHealth;
   const auditOptions = useMemo(
@@ -699,6 +830,32 @@ export function AdminPage() {
     () => overview?.business.venues.map((venue) => ({ label: venue.name, value: venue.name })) ?? [],
     [overview]
   );
+  const accessVenueOptions = useMemo(
+    () => [
+      { label: 'All venues', value: '' },
+      ...Array.from(new Set((accessUsers?.users ?? []).map((user) => user.venue || 'Unassigned')))
+        .sort()
+        .map((venue) => ({ label: venue, value: venue }))
+    ],
+    [accessUsers]
+  );
+  const filteredAccessUsers = useMemo(() => {
+    const query = accessSearch.trim().toLowerCase();
+    return (accessUsers?.users ?? []).filter((user) => {
+      const venue = user.venue || 'Unassigned';
+      if (accessVenueFilter && venue !== accessVenueFilter) return false;
+      if (!query) return true;
+      return [
+        user.firstName,
+        user.lastName,
+        user.email ?? '',
+        user.roleTitle,
+        user.venue ?? ''
+      ].some((value) => value.toLowerCase().includes(query));
+    });
+  }, [accessSearch, accessUsers, accessVenueFilter]);
+  const allVisibleAccessUsersSelected =
+    filteredAccessUsers.length > 0 && filteredAccessUsers.every((user) => selectedAccessUsers.includes(user.id));
 
   if (loading && !overview) {
     return (
@@ -759,6 +916,7 @@ export function AdminPage() {
         <a href="#overview">Overview</a>
         <a href="#business">Business and venues</a>
         <a href="#access">Users and access</a>
+        <a href="#permission-editor">Permission editor</a>
         <a href="#defaults">Apps and defaults</a>
         <a href="#integrations">Integrations</a>
         <a href="#human-agent-demo">Human Agent Demo</a>
@@ -898,6 +1056,273 @@ export function AdminPage() {
             ))}
           </div>
         </Card>
+      </section>
+
+      <section className="admin-section">
+        <SectionHeading
+          id="permission-editor"
+          eyebrow="Permission editor"
+          title="Update user access in one place."
+          description="Create users, select staff in bulk, and apply app roles or permission flags without opening each profile."
+        />
+
+        {!accessUsers ? (
+          <Card>
+            <EmptyState
+              icon={<IconUsers />}
+              title="Access editor unavailable"
+              description="The Admin access endpoint did not return data. The read-only overview above is still available."
+            />
+          </Card>
+        ) : (
+          <>
+            <div className="admin-grid two">
+              <Card title="Add a user" subtitle="Creates a Staff profile and optional Staff app access">
+                <form className="admin-social-form" onSubmit={(event) => void createAccessUser(event)}>
+                  <div className="admin-form-grid">
+                    <Input
+                      label="First name"
+                      value={newUserForm.firstName}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, firstName: event.target.value }))}
+                      required
+                    />
+                    <Input
+                      label="Last name"
+                      value={newUserForm.lastName}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, lastName: event.target.value }))}
+                      required
+                    />
+                    <Input
+                      label="Email"
+                      type="email"
+                      value={newUserForm.email}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, email: event.target.value }))}
+                    />
+                  </div>
+                  <div className="admin-form-grid">
+                    <Select
+                      label="Venue"
+                      value={newUserForm.venue}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, venue: event.target.value }))}
+                      options={[{ label: 'No venue yet', value: '' }, ...venueOptions]}
+                    />
+                    <Input
+                      label="Role title"
+                      value={newUserForm.roleTitle}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, roleTitle: event.target.value }))}
+                      placeholder="Team member"
+                    />
+                    <Select
+                      label="Staff app role"
+                      value={newUserForm.staffRole}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, staffRole: event.target.value as AccessRole }))}
+                      options={ACCESS_ROLE_OPTIONS}
+                    />
+                  </div>
+                  <label className="admin-checkbox">
+                    <input
+                      type="checkbox"
+                      checked={newUserForm.enableStaffApp}
+                      onChange={(event) => setNewUserForm((form) => ({ ...form, enableStaffApp: event.target.checked }))}
+                    />
+                    <span>Enable Staff app access immediately</span>
+                  </label>
+                  <div className="toolbar-right">
+                    <Button type="submit" disabled={accessBusy || !newUserForm.firstName.trim() || !newUserForm.lastName.trim()}>
+                      {accessBusy ? 'Saving...' : 'Add user'}
+                    </Button>
+                  </div>
+                </form>
+              </Card>
+
+              <Card
+                title="Bulk access update"
+                subtitle={`${selectedAccessUsers.length} selected user${selectedAccessUsers.length === 1 ? '' : 's'}`}
+              >
+                <div className="admin-access-bulk-panel">
+                  <div>
+                    <strong>Apps to update</strong>
+                    <div className="admin-chip-grid">
+                      {accessUsers.apps.map((app) => (
+                        <label key={app.appId} className="admin-check-chip">
+                          <input
+                            type="checkbox"
+                            checked={bulkAccessApps.includes(app.appId)}
+                            onChange={() => toggleBulkAccessApp(app.appId)}
+                          />
+                          <span>{app.label}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="admin-form-grid">
+                    <Select
+                      label="Status"
+                      value={bulkAccessStatus}
+                      onChange={(event) => setBulkAccessStatus(event.target.value as StaffAppAccessStatus)}
+                      options={ACCESS_STATUS_OPTIONS}
+                    />
+                    <Select
+                      label="Role"
+                      value={bulkAccessRole}
+                      onChange={(event) => setBulkAccessRole(event.target.value as AccessRole)}
+                      options={ACCESS_ROLE_OPTIONS}
+                    />
+                    <Select
+                      label="Permission mode"
+                      value={bulkPermissionMode}
+                      onChange={(event) => setBulkPermissionMode(event.target.value as 'MERGE' | 'REPLACE')}
+                      options={[
+                        { label: 'Merge with existing', value: 'MERGE' },
+                        { label: 'Replace app permissions', value: 'REPLACE' }
+                      ]}
+                    />
+                  </div>
+                  <div>
+                    <strong>Permission flags</strong>
+                    <div className="admin-permission-grid">
+                      {accessUsers.permissionKeys.map((permission) => (
+                        <label
+                          key={permission.key}
+                          className={`admin-permission-toggle ${permission.dangerous ? 'danger' : ''}`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={Boolean(bulkPermissions[permission.key])}
+                            onChange={(event) =>
+                              setBulkPermissions((current) => ({ ...current, [permission.key]: event.target.checked }))
+                            }
+                          />
+                          <span>
+                            <strong>{permission.label}</strong>
+                            <small>{permission.description}</small>
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    onClick={() => void applyBulkAccessUpdate()}
+                    disabled={accessBusy || !selectedAccessUsers.length || !bulkAccessApps.length}
+                  >
+                    {accessBusy ? 'Updating...' : 'Apply to selected'}
+                  </Button>
+                </div>
+              </Card>
+            </div>
+
+            {accessFeedback ? (
+              <div className="admin-warning-item">
+                <Badge tone={accessFeedback.toLowerCase().includes('could not') ? 'danger' : 'positive'} dot>
+                  Access update
+                </Badge>
+                <p>{accessFeedback}</p>
+              </div>
+            ) : null}
+
+            <Card
+              title="User access matrix"
+              subtitle="Select users, then apply a bulk access template above."
+              action={
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  onClick={() =>
+                    setSelectedAccessUsers((current) =>
+                      allVisibleAccessUsersSelected
+                        ? current.filter((id) => !filteredAccessUsers.some((user) => user.id === id))
+                        : Array.from(new Set([...current, ...filteredAccessUsers.map((user) => user.id)]))
+                    )
+                  }
+                >
+                  {allVisibleAccessUsersSelected ? 'Clear visible' : 'Select visible'}
+                </Button>
+              }
+            >
+              <div className="admin-access-toolbar">
+                <Input
+                  label="Search users"
+                  value={accessSearch}
+                  onChange={(event) => setAccessSearch(event.target.value)}
+                  placeholder="Name, email, role or venue"
+                />
+                <Select
+                  label="Venue"
+                  value={accessVenueFilter}
+                  onChange={(event) => setAccessVenueFilter(event.target.value)}
+                  options={accessVenueOptions}
+                />
+              </div>
+              <div className="admin-access-table-wrap">
+                <table className="admin-access-table">
+                  <thead>
+                    <tr>
+                      <th scope="col">Select</th>
+                      <th scope="col">User</th>
+                      <th scope="col">Venue</th>
+                      <th scope="col">Status</th>
+                      {accessUsers.apps.map((app) => (
+                        <th scope="col" key={app.appId}>{app.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredAccessUsers.map((user) => (
+                      <tr key={user.id}>
+                        <td>
+                          <input
+                            aria-label={`Select ${user.firstName} ${user.lastName}`}
+                            type="checkbox"
+                            checked={selectedAccessUsers.includes(user.id)}
+                            onChange={() => toggleSelectedAccessUser(user.id)}
+                          />
+                        </td>
+                        <td>
+                          <strong>{user.firstName} {user.lastName}</strong>
+                          <small>{user.email || 'No email'} · {user.roleTitle}</small>
+                        </td>
+                        <td>{user.venue || 'Unassigned'}</td>
+                        <td>
+                          <div className="admin-access-status-stack">
+                            <Badge tone={user.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>
+                              {user.employmentStatus.toLowerCase()}
+                            </Badge>
+                            <Badge tone={user.hasPassword ? 'positive' : 'warning'}>
+                              {user.hasPassword ? 'password set' : 'needs setup'}
+                            </Badge>
+                          </div>
+                        </td>
+                        {accessUsers.apps.map((app) => {
+                          const access = accessFor(user, app.appId);
+                          return (
+                            <td key={app.appId}>
+                              {access ? (
+                                <span className={`admin-access-pill ${access.status.toLowerCase()}`}>
+                                  {access.status.toLowerCase()} · {access.role.toLowerCase()}
+                                </span>
+                              ) : (
+                                <span className="admin-access-pill disabled">none</span>
+                              )}
+                            </td>
+                          );
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {!filteredAccessUsers.length ? (
+                <EmptyState
+                  icon={<IconUsers />}
+                  title="No users match this filter"
+                  description="Clear the search or venue filter to see all non-archived staff profiles."
+                />
+              ) : null}
+            </Card>
+          </>
+        )}
       </section>
 
       <section className="admin-section">

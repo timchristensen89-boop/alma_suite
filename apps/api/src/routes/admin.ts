@@ -14,6 +14,30 @@ adminRouter.get('/overview', async (_req, res, next) => {
   }
 });
 
+adminRouter.get('/access/users', async (_req, res, next) => {
+  try {
+    res.json(await adminService.accessUsers());
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/access/users', async (req, res, next) => {
+  try {
+    res.status(201).json(await adminService.createAccessUser(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/access/bulk-update', async (req, res, next) => {
+  try {
+    res.json(await adminService.bulkUpdateAccess(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 adminRouter.get('/integrations/status', async (_req, res, next) => {
   try {
     res.json(await adminService.integrationsStatus());

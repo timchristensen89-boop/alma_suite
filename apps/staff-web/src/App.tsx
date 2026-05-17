@@ -3164,6 +3164,7 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
   const [editingChannelId, setEditingChannelId] = useState('');
   const [selectedChannelId, setSelectedChannelId] = useState('');
   const [directRecipientId, setDirectRecipientId] = useState('');
+  const [directSearch, setDirectSearch] = useState('');
   const [chatText, setChatText] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -3175,6 +3176,18 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
   const activeChannels = payload.channels.filter((channel) => channel.isActive);
   const selectedChannel = activeChannels.find((channel) => channel.id === selectedChannelId) ?? activeChannels[0] ?? null;
   const recipients = staff.filter((member) => member.id !== user?.id && member.employmentStatus !== 'ARCHIVED');
+  const selectedDirectRecipient = recipients.find((member) => member.id === directRecipientId) ?? null;
+  const filteredRecipients = recipients.filter((member) => {
+    const query = directSearch.trim().toLowerCase();
+    if (!query) return true;
+    return [
+      member.firstName,
+      member.lastName,
+      member.email,
+      member.roleTitle,
+      member.venue
+    ].some((value) => value?.toLowerCase().includes(query));
+  });
 
   const loadCommunications = useCallback(async (options?: { channelId?: string; recipientId?: string }) => {
     setLoading(true);
@@ -3410,8 +3423,16 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
   }
 
   const conversationTitle = directRecipientId
-    ? `Direct message: ${recipients.find((member) => member.id === directRecipientId)?.firstName ?? 'Staff'}`
+    ? selectedDirectRecipient
+      ? `${selectedDirectRecipient.firstName} ${selectedDirectRecipient.lastName}`.trim()
+      : 'Direct message'
     : selectedChannel?.name ?? 'Team chat';
+  const conversationSubtitle = directRecipientId
+    ? 'Private one-to-one staff message. Use this for quick operational follow-up, not announcements.'
+    : selectedChannel?.description || 'Team chat for venue updates and shift-day coordination.';
+  const messagePlaceholder = directRecipientId
+    ? `Message ${selectedDirectRecipient?.firstName ?? 'this staff member'}`
+    : 'Message this group';
 
   return (
     <div className="page-stack">
@@ -3544,64 +3565,110 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
         </div>
       ) : null}
 
-      <Card title={conversationTitle} subtitle="Pick a group chat or direct-message an approved staff member.">
+      <Card title={conversationTitle} subtitle={conversationSubtitle}>
         <div className="comms-layout">
           <div className="comms-sidebar">
-            <strong>Group chats</strong>
-            {activeChannels.length === 0 ? (
-              <p className="subtle">No active group chats yet.</p>
-            ) : (
-              activeChannels.map((channel) => (
-                <button key={channel.id} type="button" className={`staff-list-button ${selectedChannelId === channel.id ? 'is-selected' : ''}`} onClick={() => void openChannel(channel)}>
-                  <span>
-                    <strong>{channel.name}</strong>
-                    <span className="subtle">{channel.type} · {channel.venue || 'All venues'}</span>
-                  </span>
-                </button>
-              ))
-            )}
-            {canDirect ? (
-              <>
-                <strong>Direct messages</strong>
-                {recipients.map((member) => (
-                  <button key={member.id} type="button" className={`staff-list-button ${directRecipientId === member.id ? 'is-selected' : ''}`} onClick={() => void openDirect(member.id)}>
+            <section className="comms-sidebar-section" aria-label="Group chats">
+              <div className="comms-section-heading">
+                <strong>Group chats</strong>
+                <span>{activeChannels.length} active</span>
+              </div>
+              {activeChannels.length === 0 ? (
+                <p className="subtle">No active group chats yet.</p>
+              ) : (
+                activeChannels.map((channel) => (
+                  <button key={channel.id} type="button" className={`staff-list-button comms-thread-button ${selectedChannelId === channel.id ? 'is-selected' : ''}`} onClick={() => void openChannel(channel)}>
                     <span>
-                      <strong>{member.firstName} {member.lastName}</strong>
-                      <span className="subtle">{member.roleTitle} · {member.venue || 'No venue'}</span>
+                      <strong>{channel.name}</strong>
+                      <span className="subtle">{channel.type} · {channel.venue || 'All venues'}</span>
                     </span>
                   </button>
-                ))}
-              </>
-            ) : null}
+                ))
+              )}
+            </section>
+            {canDirect ? (
+              <section className="comms-sidebar-section" aria-label="Direct messages">
+                <div className="comms-section-heading">
+                  <strong>Direct messages</strong>
+                  <span>One to one</span>
+                </div>
+                <Input
+                  label="Find staff"
+                  value={directSearch}
+                  onChange={(event) => setDirectSearch(event.currentTarget.value)}
+                  placeholder="Search by name, role, or venue"
+                />
+                <div className="comms-direct-list">
+                  {filteredRecipients.length === 0 ? (
+                    <p className="subtle">No matching staff found.</p>
+                  ) : (
+                    filteredRecipients.map((member) => (
+                      <button key={member.id} type="button" className={`staff-list-button comms-thread-button ${directRecipientId === member.id ? 'is-selected' : ''}`} onClick={() => void openDirect(member.id)}>
+                        <span>
+                          <strong>{member.firstName} {member.lastName}</strong>
+                          <span className="subtle">{member.roleTitle || 'Staff'} · {member.venue || 'No venue'}</span>
+                        </span>
+                      </button>
+                    ))
+                  )}
+                </div>
+              </section>
+            ) : (
+              <section className="comms-sidebar-section" aria-label="Direct messages unavailable">
+                <div className="comms-section-heading">
+                  <strong>Direct messages</strong>
+                  <span>Off</span>
+                </div>
+                <p className="subtle">Direct messages are enabled by managers in staff communication permissions.</p>
+              </section>
+            )}
           </div>
           <div className="staff-mobile-chat">
+            <div className="comms-thread-header">
+              <span>
+                <strong>{conversationTitle}</strong>
+                <span className="subtle">
+                  {directRecipientId
+                    ? `${selectedDirectRecipient?.roleTitle || 'Staff'} · ${selectedDirectRecipient?.venue || 'No venue'}`
+                    : `${selectedChannel?.type ?? 'GENERAL'} · ${selectedChannel?.venue || 'All venues'}`}
+                </span>
+              </span>
+              <Badge tone={directRecipientId ? 'info' : 'muted'}>{directRecipientId ? 'Direct' : 'Group'}</Badge>
+            </div>
             <div className="staff-mobile-comms-list">
               {payload.chat.length === 0 ? (
-                <div>
+                <div className="comms-empty-thread">
                   <strong>No messages yet</strong>
-                  <span className="subtle">Start the conversation when you are ready.</span>
+                  <span className="subtle">
+                    {directRecipientId
+                      ? 'Start with a clear operational message. Direct chats are for one-to-one staff follow-up.'
+                      : 'Start the group conversation when there is something useful for the team.'}
+                  </span>
                 </div>
               ) : (
                 payload.chat.map((item) => (
-                  <div key={item.id}>
-                    <strong>{item.createdByName || 'Team'}{item.recipientName ? ` to ${item.recipientName}` : ''}</strong>
-                    <span>{item.body}</span>
+                  <div key={item.id} className={`comms-message ${item.createdById === user?.id ? 'is-mine' : 'is-theirs'}`}>
+                    <span className="comms-message-meta">
+                      <strong>{item.createdById === user?.id ? 'You' : item.createdByName || 'Team'}</strong>
+                      {item.recipientName && !directRecipientId ? <span>to {item.recipientName}</span> : null}
+                    </span>
+                    <span className="comms-message-body">{item.body}</span>
                     <small>{formatDateTime(item.createdAt)}{item.editedAt ? ' · edited' : ''}</small>
                     {(canManage || item.createdById === user?.id) ? (
-                      <>
+                      <span className="comms-message-actions">
                         <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void deleteMessage(item)}>Delete</Button>
                         <ActionFeedback
                           message={messageTarget === `chat:${item.id}:delete` ? message : null}
                           tone={message?.includes('Could') ? 'error' : 'success'}
                         />
-                      </>
+                      </span>
                     ) : null}
                   </div>
                 ))
               )}
             </div>
             <div className="staff-mobile-chat-form">
-              <Input label="Message" value={chatText} onChange={(event) => setChatText(event.currentTarget.value)} placeholder={directRecipientId ? 'Write a direct message' : 'Message this group'} />
+              <Input label="Message" value={chatText} onChange={(event) => setChatText(event.currentTarget.value)} placeholder={messagePlaceholder} />
               <Button type="button" disabled={saving || !chatText.trim() || (!selectedChannel && !directRecipientId)} onClick={() => void sendMessage()}>
                 Send
               </Button>

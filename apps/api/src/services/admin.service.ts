@@ -2,6 +2,9 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import type {
   AlmaAppId,
+  AuthUser,
+  AdminAccessBulkUpdateResult,
+  AdminAccessUsersPayload,
   AdminAuditEventsPayload,
   AdminAuditEventSummary,
   AdminIntegrationsStatusPayload,
@@ -9,10 +12,15 @@ import type {
   AdminReadinessWarning,
   AdminSystemHealthPayload
 } from '@alma/shared';
+import {
+  adminAccessBulkUpdateInputSchema,
+  adminAccessUserCreateInputSchema
+} from '@alma/shared';
 import { env } from '../env.js';
 import { integrationService } from './integration.service.js';
 import { mailService } from './mail.service.js';
 import { settingsService } from './settings.service.js';
+import { HttpError } from '../lib/http.js';
 
 const APP_LABELS: Record<AlmaAppId, string> = {
   COMPLIANCE: 'Compliance',
@@ -27,6 +35,46 @@ const APP_LABELS: Record<AlmaAppId, string> = {
 };
 
 const APP_IDS = Object.keys(APP_LABELS) as AlmaAppId[];
+
+const ACCESS_PERMISSION_KEYS = [
+  {
+    key: 'view',
+    label: 'View',
+    description: 'Can open the app and read permitted venue data.'
+  },
+  {
+    key: 'create',
+    label: 'Create',
+    description: 'Can add new operational records where the app supports it.'
+  },
+  {
+    key: 'edit',
+    label: 'Edit',
+    description: 'Can update operational records in permitted venues.'
+  },
+  {
+    key: 'approve',
+    label: 'Approve',
+    description: 'Can approve reviews, requests, stocktakes or content where available.'
+  },
+  {
+    key: 'export',
+    label: 'Export',
+    description: 'Can export reports or operational data where available.'
+  },
+  {
+    key: 'delete',
+    label: 'Delete',
+    description: 'Can archive or remove records where the app allows it.',
+    dangerous: true
+  },
+  {
+    key: 'admin',
+    label: 'Admin',
+    description: 'Can manage setup or admin-only actions for that app.',
+    dangerous: true
+  }
+];
 
 const activeStaffWhere: Prisma.StaffProfileWhereInput = {
   employmentStatus: 'ACTIVE',
@@ -61,6 +109,13 @@ function hasAdminPermission(value: unknown) {
       !Array.isArray(value) &&
       (value as { admin?: unknown }).admin === true
   );
+}
+
+function permissionRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, allowed]) => typeof allowed === 'boolean')
+  ) as Record<string, boolean>;
 }
 
 function summariseAuditEvent(event: {
@@ -131,6 +186,182 @@ async function recentAuditEvents(limit = 6, eventType?: string | null) {
 }
 
 export const adminService = {
+  async accessUsers(): Promise<AdminAccessUsersPayload> {
+    const users = await prisma.staffProfile.findMany({
+      where: {
+        mergedIntoStaffProfileId: null,
+        NOT: { employmentStatus: 'ARCHIVED' }
+      },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        venue: true,
+        roleTitle: true,
+        employmentStatus: true,
+        isAdmin: true,
+        passwordHash: true,
+        appAccess: { orderBy: [{ appId: 'asc' }] }
+      }
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      apps: APP_IDS.map((appId) => ({ appId, label: APP_LABELS[appId] })),
+      permissionKeys: ACCESS_PERMISSION_KEYS,
+      users: users.map((user) => ({
+        id: user.id,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        email: user.email,
+        venue: user.venue,
+        roleTitle: user.roleTitle,
+        employmentStatus: user.employmentStatus,
+        isAdmin: user.isAdmin,
+        hasPassword: Boolean(user.passwordHash),
+        appAccess: user.appAccess.map((access) => ({
+          ...access,
+          createdAt: access.createdAt.toISOString(),
+          updatedAt: access.updatedAt.toISOString(),
+          permissions: permissionRecord(access.permissions)
+        }))
+      }))
+    };
+  },
+
+  async createAccessUser(input: unknown, actor?: AuthUser | null) {
+    const data = adminAccessUserCreateInputSchema.parse(input);
+    const email = data.email?.trim().toLowerCase() || null;
+    if (email) {
+      const existing = await prisma.staffProfile.findUnique({ where: { email } });
+      if (existing) throw new HttpError(409, 'A staff profile already exists for that email.');
+    }
+
+    const staffPermissions =
+      data.staffRole === 'ADMIN'
+        ? { view: true, create: true, edit: true, approve: true, export: true, admin: true }
+        : data.staffRole === 'MANAGER'
+          ? { view: true, create: true, edit: true, approve: true, export: true }
+          : { view: true };
+
+    const profile = await prisma.staffProfile.create({
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        email,
+        venue: data.venue || null,
+        roleTitle: data.roleTitle || (data.staffRole === 'MANAGER' ? 'Manager' : 'Team member'),
+        employmentStatus: 'ACTIVE',
+        appAccess: data.enableStaffApp
+          ? {
+              create: {
+                appId: 'STAFF',
+                status: 'ENABLED',
+                role: data.staffRole,
+                permissions: staffPermissions
+              }
+            }
+          : undefined
+      },
+      include: { appAccess: { orderBy: [{ appId: 'asc' }] } }
+    });
+
+    await prisma.staffManagementEvent.create({
+      data: {
+        staffProfileId: profile.id,
+        eventType: 'ADMIN_ACCESS_USER_CREATED',
+        summary: 'Staff user created from Admin access settings.',
+        createdById: actor?.id ?? null,
+        createdByName: actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email : null,
+        createdByEmail: actor?.email ?? null,
+        metadata: {
+          email,
+          venue: data.venue || null,
+          staffRole: data.staffRole,
+          enableStaffApp: data.enableStaffApp
+        }
+      }
+    });
+
+    return profile;
+  },
+
+  async bulkUpdateAccess(input: unknown, actor?: AuthUser | null): Promise<AdminAccessBulkUpdateResult> {
+    const data = adminAccessBulkUpdateInputSchema.parse(input);
+    const users = await prisma.staffProfile.findMany({
+      where: {
+        id: { in: data.staffProfileIds },
+        mergedIntoStaffProfileId: null,
+        NOT: { employmentStatus: 'ARCHIVED' }
+      },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        appAccess: {
+          where: { appId: { in: data.appIds } },
+          select: { appId: true, permissions: true }
+        }
+      }
+    });
+
+    const existingByUser = new Map(users.map((user) => [user.id, new Map(user.appAccess.map((row) => [row.appId, row]))]));
+    let updatedRows = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const user of users) {
+        const existing = existingByUser.get(user.id) ?? new Map();
+        for (const appId of data.appIds) {
+          const currentPermissions = permissionRecord(existing.get(appId)?.permissions);
+          const permissions =
+            data.permissionMode === 'REPLACE'
+              ? data.permissions
+              : { ...currentPermissions, ...data.permissions };
+          await tx.staffAppAccess.upsert({
+            where: { staffProfileId_appId: { staffProfileId: user.id, appId } },
+            update: {
+              status: data.status,
+              role: data.role,
+              permissions,
+              notes: data.notes || null
+            },
+            create: {
+              staffProfileId: user.id,
+              appId,
+              status: data.status,
+              role: data.role,
+              permissions,
+              notes: data.notes || null
+            }
+          });
+          updatedRows += 1;
+        }
+
+        await tx.staffManagementEvent.create({
+          data: {
+            staffProfileId: user.id,
+            eventType: 'ADMIN_BULK_APP_ACCESS_UPDATED',
+            summary: 'App access updated in bulk from Admin.',
+            createdById: actor?.id ?? null,
+            createdByName: actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email : null,
+            createdByEmail: actor?.email ?? null,
+            metadata: {
+              appIds: data.appIds,
+              status: data.status,
+              role: data.role,
+              permissionMode: data.permissionMode,
+              permissionKeys: Object.keys(data.permissions)
+            }
+          }
+        });
+      }
+    });
+
+    return { updatedUsers: users.length, updatedRows };
+  },
+
   async overview(): Promise<AdminOverviewPayload> {
     const settingsPromise = settingsService.get();
     const activeStaffPromise = prisma.staffProfile.findMany({

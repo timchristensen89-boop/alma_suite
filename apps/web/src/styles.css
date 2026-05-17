@@ -5094,6 +5094,156 @@ a.suite-app-tile:hover {
   gap: 12px;
 }
 
+.admin-checkbox,
+.admin-check-chip,
+.admin-permission-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--color-text);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.admin-checkbox input,
+.admin-check-chip input,
+.admin-permission-toggle input,
+.admin-access-table input {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 auto;
+  accent-color: var(--color-accent);
+}
+
+.admin-access-bulk-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.admin-access-bulk-panel > div > strong {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.admin-chip-grid,
+.admin-permission-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+}
+
+.admin-check-chip,
+.admin-permission-toggle {
+  min-height: 44px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-muted);
+}
+
+.admin-permission-toggle.danger {
+  border-color: rgba(179, 38, 46, 0.22);
+  background: rgba(179, 38, 46, 0.06);
+}
+
+.admin-permission-toggle span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-permission-toggle small {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.admin-access-toolbar {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 260px);
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.admin-access-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+}
+
+.admin-access-table {
+  width: 100%;
+  min-width: 1080px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.admin-access-table th,
+.admin-access-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+  font-size: 12px;
+}
+
+.admin-access-table th {
+  color: var(--color-text-muted);
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.admin-access-table td strong,
+.admin-access-table td small {
+  display: block;
+}
+
+.admin-access-table td small {
+  max-width: 220px;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  line-height: 1.35;
+}
+
+.admin-access-status-stack {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.admin-access-pill {
+  display: inline-flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.admin-access-pill.enabled {
+  background: rgba(22, 163, 74, 0.1);
+  color: #166534;
+}
+
+.admin-access-pill.pending {
+  background: rgba(217, 119, 6, 0.12);
+  color: #92400e;
+}
+
+.admin-access-pill.disabled {
+  background: rgba(100, 116, 139, 0.1);
+  color: var(--color-text-muted);
+}
+
 .admin-social-actions {
   flex: 0 0 auto;
   display: flex;

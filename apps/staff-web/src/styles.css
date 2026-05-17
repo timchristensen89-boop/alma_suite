@@ -2529,22 +2529,131 @@
 
 .comms-layout {
   display: grid;
-  gap: 18px;
-  grid-template-columns: minmax(220px, 0.38fr) minmax(0, 1fr);
+  gap: 22px;
+  grid-template-columns: minmax(280px, 0.34fr) minmax(0, 1fr);
 }
 
 .comms-sidebar {
   align-content: start;
   display: grid;
-  gap: 10px;
+  gap: 16px;
 }
 
-.comms-sidebar > strong {
+.comms-sidebar-section {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.comms-section-heading {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.comms-section-heading strong {
   color: var(--muted);
   font-size: 0.76rem;
   letter-spacing: 0.1em;
-  margin-top: 6px;
   text-transform: uppercase;
+}
+
+.comms-section-heading span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+}
+
+.comms-thread-button {
+  border-radius: 12px;
+}
+
+.comms-thread-button span {
+  min-width: 0;
+}
+
+.comms-direct-list {
+  display: grid;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.comms-thread-header {
+  align-items: center;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 14px 16px;
+  background: var(--color-surface);
+}
+
+.comms-thread-header > span {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.comms-thread-header strong,
+.comms-thread-header .subtle {
+  overflow-wrap: anywhere;
+}
+
+.comms-empty-thread {
+  min-height: 150px;
+}
+
+.staff-mobile-comms-list .comms-message {
+  border: 0;
+  max-width: min(760px, 92%);
+  padding: 12px 14px;
+}
+
+.staff-mobile-comms-list .comms-message.is-mine {
+  justify-self: end;
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.staff-mobile-comms-list .comms-message.is-theirs {
+  justify-self: start;
+  background: var(--color-surface-muted);
+  border: 1px solid var(--color-border);
+}
+
+.comms-message-meta {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.staff-mobile-comms-list .comms-message.is-mine span,
+.staff-mobile-comms-list .comms-message.is-mine small,
+.staff-mobile-comms-list .comms-message.is-mine .comms-message-body {
+  color: #fff;
+}
+
+.comms-message-body {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.comms-message-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.comms-message.is-mine .btn {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+}
+
+.comms-message.is-mine .btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.22);
 }
 
 .communication-permission-grid {

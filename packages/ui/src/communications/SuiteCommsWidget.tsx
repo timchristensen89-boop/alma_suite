@@ -63,6 +63,13 @@ const sectionStyle = {
   borderTop: '1px solid rgba(148, 163, 184, 0.22)'
 } as const;
 
+const cardStyle = {
+  padding: 12,
+  borderRadius: 12,
+  background: '#f8fafc',
+  border: '1px solid rgba(148, 163, 184, 0.2)'
+} as const;
+
 export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = false }: Props) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -147,15 +154,15 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        Chat
+        Messages
       </button>
       {open ? (
         <div style={panelStyle}>
           <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
             <div>
-              <strong style={{ display: 'block', color: '#0f172a' }}>Team chat</strong>
+              <strong style={{ display: 'block', color: '#0f172a' }}>Team messages</strong>
               <span style={{ color: '#64748b', fontSize: 13 }}>
-                Announcements and messages for {venue || 'all venues'}
+                Announcements and general chat for {venue || 'all venues'}
               </span>
             </div>
             <button type="button" className="icon-btn" onClick={() => setOpen(false)} aria-label="Close chat">
@@ -169,10 +176,10 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
           <div style={sectionStyle}>
             <strong>Announcements</strong>
             {data.announcements.length === 0 ? (
-              <p className="subtle">No announcements yet.</p>
+              <p className="subtle">No announcements are pinned for this app.</p>
             ) : (
               data.announcements.map((announcement) => (
-                <article key={announcement.id} style={{ padding: 10, borderRadius: 12, background: '#f8fafc' }}>
+                <article key={announcement.id} style={cardStyle}>
                   <strong>{announcement.title}</strong>
                   <p style={{ margin: '4px 0 0', color: '#475569' }}>{announcement.body}</p>
                   <span style={{ color: '#94a3b8', fontSize: 12 }}>
@@ -184,13 +191,13 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
           </div>
 
           <div style={sectionStyle}>
-            <strong>Messages</strong>
+            <strong>General team chat</strong>
             <div style={{ display: 'grid', gap: 8 }}>
               {data.chat.length === 0 ? (
-                <p className="subtle">Start the team chat for today.</p>
+                <p className="subtle">No general chat messages yet. Use Staff communications for direct messages.</p>
               ) : (
                 data.chat.map((item) => (
-                  <div key={item.id} style={{ display: 'grid', gap: 2 }}>
+                  <div key={item.id} style={{ ...cardStyle, display: 'grid', gap: 4 }}>
                     <span style={{ color: '#64748b', fontSize: 12 }}>
                       {item.createdByName || 'Team'} · {displayTime(item.createdAt)}
                     </span>
@@ -204,12 +211,15 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
                 className="field-control"
                 value={chatText}
                 onChange={(event) => setChatText(event.currentTarget.value)}
-                placeholder={`Message as ${userName || 'team'}`}
+                placeholder={`General message as ${userName || 'team'}`}
               />
               <button className="btn btn-primary" type="submit">
                 Send
               </button>
             </form>
+            <p className="subtle" style={{ margin: 0 }}>
+              Direct one-to-one chat is managed inside the Staff app so recipient permissions stay clear.
+            </p>
           </div>
 
           {canAnnounce ? (
