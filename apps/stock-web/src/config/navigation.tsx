@@ -51,8 +51,14 @@ export const NAV_ITEMS: NavItem[] = [
   },
   {
     to: '/recipes',
-    label: 'Recipes & sales',
-    description: 'Prep recipes and sales-driven depletion',
+    label: 'Item Recipes',
+    description: 'Menu item ingredients and cost checks',
+    icon: <IconRecipes />
+  },
+  {
+    to: '/production-recipes',
+    label: 'Production Recipes',
+    description: 'Prep batches, sauces and reusable components',
     icon: <IconRecipes />
   },
   {

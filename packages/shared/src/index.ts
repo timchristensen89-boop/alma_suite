@@ -3801,7 +3801,7 @@ export const recipeLineInputSchema = z.object({
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {
-  message: 'Choose either a stock item or a sub-recipe, not both',
+  message: 'Choose either a stock item or a production recipe, not both',
   path: ['subRecipeId']
 });
 

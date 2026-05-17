@@ -132,7 +132,8 @@ function StockAppShell() {
         <Route path="/stocktake" element={<StocktakePage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
-        <Route path="/recipes" element={<RecipesPage />} />
+        <Route path="/recipes" element={<RecipesPage mode="item" />} />
+        <Route path="/production-recipes" element={<RecipesPage mode="production" />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

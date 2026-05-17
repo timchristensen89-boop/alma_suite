@@ -48,6 +48,10 @@ type RecipeDraft = {
 type RecipeKindFilter = '' | 'FOOD' | 'BEVERAGE';
 type RecipeKindBucket = 'FOOD' | 'BEVERAGE' | 'OTHER';
 type RecipeViewMode = 'category' | 'table';
+type RecipesPageMode = 'item' | 'production';
+
+const PRODUCTION_RECIPE_CATEGORY = 'Production Recipes';
+const PRODUCTION_RECIPE_MARKER = 'production recipe';
 
 const RECIPE_KIND_FILTER_OPTIONS: Array<{ label: string; value: RecipeKindFilter }> = [
   { label: 'All recipes', value: '' },
@@ -118,6 +122,23 @@ function formatYield(recipe: Pick<Recipe, 'yieldQuantity' | 'yieldUnit'>) {
   return formatQuantity(recipe.yieldQuantity, recipe.yieldUnit);
 }
 
+function isProductionRecipe(recipe: Pick<Recipe, 'category' | 'subcategory' | 'title' | 'notes' | 'yieldQuantity'>) {
+  const value = [
+    recipe.category ?? '',
+    recipe.subcategory ?? '',
+    recipe.title ?? '',
+    recipe.notes ?? ''
+  ]
+    .join(' ')
+    .toLowerCase();
+
+  return (
+    recipe.category === PRODUCTION_RECIPE_CATEGORY ||
+    value.includes(PRODUCTION_RECIPE_MARKER) ||
+    /\b(prep|batch|sauce|salsa|syrup|marinade|garnish|mise|component|production)\b/.test(value)
+  );
+}
+
 function duplicateRecipeKey(recipe: Recipe) {
   return [
     recipe.title.trim().toLowerCase().replace(/\s+/g, ' '),
@@ -128,8 +149,9 @@ function duplicateRecipeKey(recipe: Recipe) {
   ].join('|');
 }
 
-export function RecipesPage() {
-  useDocumentTitle('Recipes');
+export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
+  const isProductionMode = mode === 'production';
+  useDocumentTitle(isProductionMode ? 'Production Recipes' : 'Item Recipes');
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
@@ -183,6 +205,7 @@ export function RecipesPage() {
     if (!data) return [] as Recipe[];
     const needle = search.trim().toLowerCase();
     return data.recipes.filter((recipe) => {
+      if (isProductionRecipe(recipe) !== isProductionMode) return false;
       if (category && recipe.category !== category) return false;
       if (kindFilter && recipeKindBucket(recipe) !== kindFilter) return false;
       if (!needle) return true;
@@ -198,7 +221,7 @@ export function RecipesPage() {
         .toLowerCase();
       return haystack.includes(needle);
     });
-  }, [data, search, category, kindFilter]);
+  }, [data, search, category, kindFilter, isProductionMode]);
 
   const categoryOptions = useMemo(
     () => [
@@ -422,12 +445,26 @@ export function RecipesPage() {
     }
   }
 
+  const filteredLineCount = useMemo(
+    () => filtered.reduce((total, recipe) => total + recipe.lineCount, 0),
+    [filtered]
+  );
+
+  const filteredAverageCost = useMemo(() => {
+    if (filtered.length === 0) return 0;
+    return filtered.reduce((total, recipe) => total + recipe.estimatedCost, 0) / filtered.length;
+  }, [filtered]);
+
+  const pageLabel = isProductionMode ? 'Production Recipes' : 'Item Recipes';
+
   const cardTitle =
     form.mode === 'create'
-      ? 'New recipe'
+      ? isProductionMode
+        ? 'New production recipe'
+        : 'New item recipe'
       : form.mode === 'edit'
         ? `Editing ${form.recipe.title}`
-        : 'Recipes';
+        : pageLabel;
 
   function renderRecipeRows(recipes: Recipe[]) {
     return recipes.map((recipe) => {
@@ -564,25 +601,23 @@ export function RecipesPage() {
       <div className="stat-grid">
         <StatCard
           icon={<IconRecipes size={18} />}
-          label="Recipes"
-          value={loading ? '—' : String(summary?.totalRecipes ?? 0)}
-          hint="Across the kitchen and bar"
+          label={pageLabel}
+          value={loading ? '—' : String(filtered.length)}
+          hint={isProductionMode ? 'Reusable prep and batch components' : 'Menu items with ingredient lines'}
         />
         <StatCard
           label="Ingredient lines"
-          value={loading ? '—' : String(summary?.totalLines ?? 0)}
-          hint="Total across all recipes"
+          value={loading ? '—' : String(filteredLineCount)}
+          hint={isProductionMode ? 'Lines across production recipes' : 'Lines across item recipes'}
         />
         <StatCard
-          label="Avg. cost"
+          label={isProductionMode ? 'Avg. batch cost' : 'Avg. item cost'}
           value={
             loading
               ? '—'
-              : summary
-                ? formatCurrency(summary.averageEstimatedCost)
-                : '—'
+              : formatCurrency(filteredAverageCost)
           }
-          hint="Mean estimated cost per recipe"
+          hint={summary ? 'Estimated, manually reviewed' : 'Waiting for recipe summary'}
         />
       </div>
 
@@ -590,13 +625,17 @@ export function RecipesPage() {
         title={cardTitle}
         subtitle={
           form.mode === 'closed'
-            ? 'Prepared items — cocktails, dishes, prep batches, wine pours — and their ingredient lines.'
-            : 'Build recipe lines and link ingredients to stock items or reusable sub-recipes. Nested costing is shown structurally and remains manual for now.'
+            ? isProductionMode
+              ? 'Reusable prep, batch and mise en place recipes used as ingredients in menu items.'
+              : 'Menu items, cocktails and wine pours with stock items or production recipes as ingredient lines.'
+            : isProductionMode
+              ? 'Build the batch recipe. Estimated costs are manual until production recipe roll-up is approved.'
+              : 'Build item ingredient lines from stock items or production recipes. Cost warnings stay visible where cost data is missing.'
         }
         action={
           form.mode === 'closed' ? (
             <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
-              New recipe
+              {isProductionMode ? 'New production recipe' : 'New item recipe'}
             </Button>
           ) : null
         }
@@ -608,6 +647,7 @@ export function RecipesPage() {
             items={items}
             recipes={data?.recipes ?? []}
             categories={data?.categories ?? []}
+            pageMode={mode}
             onSaved={() => void handleSaved()}
             onCancel={() => setForm({ mode: 'closed' })}
           />
@@ -656,7 +696,7 @@ export function RecipesPage() {
                 <span>
                   {selectedIds.size > 0
                     ? `${selectedIds.size} selected`
-                    : `${filtered.length} of ${data.recipes.length} recipes`}
+                    : `${filtered.length} ${isProductionMode ? 'production recipes' : 'item recipes'}`}
                 </span>
                 <span className="table-toolbar-right stock-bulk-actions">
                   {viewMode === 'category' &&
@@ -762,9 +802,13 @@ export function RecipesPage() {
         ) : (
           <EmptyState
             icon={<IconRecipes size={24} />}
-            title="No recipes yet"
-            description="Create recipes here or run the legacy import to bring across cocktails, wine pours, and dishes from the old system."
-            action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>Create recipe</Button>}
+            title={isProductionMode ? 'No production recipes yet' : 'No item recipes yet'}
+            description={
+              isProductionMode
+                ? 'Create production recipes for sauces, salsas, syrups, garnishes and batched prep used across menu items.'
+                : 'Create item recipes for dishes, cocktails, wine pours and other sellable menu items.'
+            }
+            action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>{isProductionMode ? 'Create production recipe' : 'Create item recipe'}</Button>}
           />
         )}
       </Card>
@@ -833,6 +877,16 @@ function emptyRecipeDraft(): RecipeDraft {
   };
 }
 
+function emptyProductionRecipeDraft(): RecipeDraft {
+  return {
+    ...emptyRecipeDraft(),
+    category: PRODUCTION_RECIPE_CATEGORY,
+    subcategory: 'Prep batch',
+    yieldUnit: 'portion',
+    notes: 'Production recipe used as an ingredient in item recipes.'
+  };
+}
+
 function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
   return {
     title: recipe.title,
@@ -861,6 +915,7 @@ function RecipeForm({
   items,
   recipes,
   categories,
+  pageMode,
   onSaved,
   onCancel
 }: {
@@ -869,11 +924,12 @@ function RecipeForm({
   items: StockItem[];
   recipes: Recipe[];
   categories: string[];
+  pageMode: RecipesPageMode;
   onSaved: () => void;
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<RecipeDraft>(() =>
-    initial ? draftFromRecipe(initial) : emptyRecipeDraft()
+    initial ? draftFromRecipe(initial) : pageMode === 'production' ? emptyProductionRecipeDraft() : emptyRecipeDraft()
   );
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -885,11 +941,11 @@ function RecipeForm({
     ],
     [items]
   );
-  const subRecipeOptions = useMemo(
+  const productionRecipeOptions = useMemo(
     () => [
-      { label: 'No sub-recipe', value: '' },
+      { label: 'No production recipe', value: '' },
       ...recipes
-        .filter((recipe) => recipe.id !== initial?.id)
+        .filter((recipe) => recipe.id !== initial?.id && isProductionRecipe(recipe))
         .map((recipe) => ({
           label: `${recipe.title}${recipe.yieldQuantity === null ? '' : ` (${formatYield(recipe)})`}`,
           value: recipe.id
@@ -934,7 +990,7 @@ function RecipeForm({
     });
   }
 
-  function selectSubRecipe(index: number, subRecipeId: string) {
+  function selectProductionRecipe(index: number, subRecipeId: string) {
     const recipe = recipes.find((candidate) => candidate.id === subRecipeId);
     const current = draft.lines[index];
     if (!current) return;
@@ -970,8 +1026,8 @@ function RecipeForm({
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
       kind: draft.kind.trim(),
-      category: draft.category.trim(),
-      subcategory: draft.subcategory.trim(),
+      category: pageMode === 'production' ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY) : draft.category.trim(),
+      subcategory: pageMode === 'production' ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
       venue: draft.venue.trim(),
       yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
       yieldUnit: draft.yieldUnit.trim(),
@@ -1023,6 +1079,11 @@ function RecipeForm({
         />
         <Input label="Estimated cost" type="number" step="0.01" value={draft.estimatedCost} onChange={(event) => update('estimatedCost', event.currentTarget.value)} />
       </div>
+      {pageMode === 'production' ? (
+        <p className="recipe-costing-note">
+          Production recipes are reusable prep or batch items. Add them to item recipes as production recipe ingredient lines once the batch is saved.
+        </p>
+      ) : null}
       <div className="form-grid three">
         <Select label="Category" value={draft.category} onChange={(event) => update('category', event.currentTarget.value)} options={categoryOptions} />
         <Input label="Subcategory" value={draft.subcategory} onChange={(event) => update('subcategory', event.currentTarget.value)} />
@@ -1033,7 +1094,7 @@ function RecipeForm({
         <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
       </div>
       <p className="recipe-costing-note">
-        Estimated cost remains manually entered. Sub-recipes are linked structurally here; automatic nested cost roll-up is a follow-up.
+        Estimated cost remains manually reviewed. Production recipe links show their current unit and batch cost, but automatic COGS roll-up is still pending.
       </p>
       <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
 
@@ -1053,7 +1114,7 @@ function RecipeForm({
         {draft.lines.map((line, index) => (
           <div key={index} className="recipe-edit-line">
             <Select label="Linked item" value={line.itemId} onChange={(event) => selectItem(index, event.currentTarget.value)} options={itemOptions} />
-            <Select label="Sub-recipe" value={line.subRecipeId} onChange={(event) => selectSubRecipe(index, event.currentTarget.value)} options={subRecipeOptions} />
+            <Select label="Production recipe" value={line.subRecipeId} onChange={(event) => selectProductionRecipe(index, event.currentTarget.value)} options={productionRecipeOptions} />
             <Input label="Ingredient" required value={line.ingredientName} onChange={(event) => updateLine(index, { ingredientName: event.currentTarget.value })} />
             <Input label="Qty" type="number" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
             <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
@@ -1083,7 +1144,7 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
     <div className="recipe-lines">
       {detail.lines.some((line) => line.subRecipe) ? (
         <p className="recipe-costing-note">
-          Sub-recipes are reusable recipe links. Estimated costs are displayed for reference only and are not rolled up automatically.
+          Production recipes are reusable ingredient lines. Estimated costs are shown for review and are not automatically rolled into final COGS yet.
         </p>
       ) : null}
       <table className="recipe-lines-table">
@@ -1092,7 +1153,7 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
             <th>#</th>
             <th>Ingredient</th>
             <th>Linked item</th>
-            <th>Sub-recipe</th>
+            <th>Production recipe</th>
             <th>Qty</th>
             <th>Cost</th>
           </tr>
@@ -1119,8 +1180,16 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
                     <span className="subtle">
                       {formatQuantity(line.subRecipe.yieldQuantity, line.subRecipe.yieldUnit)}
                       {' · '}
-                      {formatCurrency(line.subRecipe.estimatedCost)}
+                      {formatCurrency(line.subRecipe.estimatedCost)} batch
                     </span>
+                    {line.subRecipe.yieldQuantity ? (
+                      <span className="subtle">
+                        Approx. unit cost{' '}
+                        {formatCurrency(line.subRecipe.estimatedCost / line.subRecipe.yieldQuantity)}
+                      </span>
+                    ) : (
+                      <span className="subtle">Unit cost needs yield quantity</span>
+                    )}
                   </span>
                 ) : (
                   <span className="subtle">—</span>

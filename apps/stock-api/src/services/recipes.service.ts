@@ -225,7 +225,7 @@ async function validateRecipeLineLinks(
   if (subRecipeIds.length === 0) return;
 
   if (recipeId && subRecipeIds.includes(recipeId)) {
-    throw new HttpError(400, 'A recipe cannot use itself as a sub-recipe');
+    throw new HttpError(400, 'A recipe cannot use itself as a production recipe ingredient');
   }
 
   const found = await prisma.recipe.findMany({
@@ -234,13 +234,13 @@ async function validateRecipeLineLinks(
   });
   const foundIds = new Set(found.map((row) => row.id));
   const missing = subRecipeIds.filter((id) => !foundIds.has(id));
-  if (missing.length > 0) throw new HttpError(400, 'One or more sub-recipes could not be found');
+  if (missing.length > 0) throw new HttpError(400, 'One or more production recipes could not be found');
 
   if (!recipeId) return;
 
   for (const subRecipeId of subRecipeIds) {
     if (await recipeDependsOnRecipe(subRecipeId, recipeId)) {
-      throw new HttpError(400, 'That sub-recipe would create a circular recipe chain');
+      throw new HttpError(400, 'That production recipe would create a circular recipe chain');
     }
   }
 }

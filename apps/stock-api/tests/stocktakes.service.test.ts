@@ -222,7 +222,7 @@ test('bulk destructive inputs require typed confirmation text', () => {
         itemId: 'item-1',
         subRecipeId: 'recipe-1'
       }),
-    /stock item or a sub-recipe/
+    /stock item or a production recipe/
   );
   assert.throws(
     () => stocktakeBulkDeleteInputSchema.parse({ ids: ['stocktake-1'] }),
@@ -241,7 +241,7 @@ test('bulk destructive inputs require typed confirmation text', () => {
   );
 });
 
-test('recipes can use reusable sub-recipes without circular chains', async () => {
+test('recipes can use reusable production recipes without circular chains', async () => {
   const suffix = `nested-recipe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const recipeIds: string[] = [];
 
