@@ -19,6 +19,7 @@
     "import:alma-control": "tsx ../../scripts/import-alma-control.ts",
     "import:compliance-documents": "tsx prisma/import-compliance-documents.ts",
     "import:deputy-roster": "tsx prisma/import-deputy-roster.ts",
+    "import:sevenrooms-reserve": "tsx prisma/import-sevenrooms-reserve.ts",
     "import:legacy": "tsx prisma/import-legacy.ts",
     "import:legacy-stock": "tsx prisma/import-legacy-stock.ts",
     "extract:legacy-compliance": "tsx prisma/extract-legacy-compliance.ts",

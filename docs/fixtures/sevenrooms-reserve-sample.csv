@@ -1,0 +1,4 @@
+venue,service_name,access_rule_name,days_of_week,start_time,end_time,party_size_min,party_size_max,booking_interval,duration_minutes,capacity,booking_cutoff,booking_opening_window,closed_dates,special_dates,notes
+Alma Avalon,Lunch,Standard lunch,Wed-Sun,12:00,15:00,1,8,30,120,60,2 hours,30 days,,,"Sample dry-run row only."
+St Alma,Dinner,Standard dinner,Tue-Sun,17:30,21:30,1,10,15,120,80,2 hours,30 days,2026-12-25,,"Sample dry-run row only."
+Unknown Venue,,Broken row,Monday,12:00,,1,4,30,,40,,,,Missing end time sample row.
