@@ -3755,6 +3755,8 @@ export type RecipeLine = {
   cost: number | null;
   itemId: string | null;
   item: { id: string; name: string; unit: string } | null;
+  subRecipeId: string | null;
+  subRecipe: { id: string; title: string; yieldQuantity: number | null; yieldUnit: string | null; estimatedCost: number } | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -3767,6 +3769,8 @@ export type Recipe = {
   category: string | null;
   subcategory: string | null;
   venue: string | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
   estimatedCost: number;
   notes: string | null;
   lineCount: number;
@@ -3794,7 +3798,11 @@ export const recipeLineInputSchema = z.object({
   quantity: z.coerce.number().optional(),
   unit: z.string().optional().or(z.literal('')),
   cost: z.coerce.number().optional(),
-  itemId: z.string().optional().or(z.literal(''))
+  itemId: z.string().optional().or(z.literal('')),
+  subRecipeId: z.string().optional().or(z.literal(''))
+}).refine((line) => !(line.itemId && line.subRecipeId), {
+  message: 'Choose either a stock item or a sub-recipe, not both',
+  path: ['subRecipeId']
 });
 
 export const recipeCategoryCreateInputSchema = z.object({
@@ -3812,6 +3820,8 @@ export const recipeCreateInputSchema = z.object({
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
+  yieldQuantity: z.coerce.number().optional(),
+  yieldUnit: z.string().optional().or(z.literal('')),
   estimatedCost: z.coerce.number().optional(),
   notes: z.string().optional().or(z.literal('')),
   lines: z.array(recipeLineInputSchema).optional()

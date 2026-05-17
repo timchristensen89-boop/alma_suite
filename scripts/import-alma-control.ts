@@ -925,6 +925,8 @@ async function importRecipes(payload: JsonRecord, dryRun: boolean, itemIdByKey: 
         category: nullableString(record.category),
         subcategory: nullableString(record.subcategory),
         venue: nullableString(record.venue),
+        yieldQuantity: numberValue(record, ['yieldQuantity', 'yield', 'yieldAmount']),
+        yieldUnit: nullableString(record.yieldUnit),
         estimatedCost: asNumber(record.estimatedCost) ?? 0,
         notes: nullableString(record.notes),
         lines: { deleteMany: {} }
@@ -963,7 +965,8 @@ async function importRecipes(payload: JsonRecord, dryRun: boolean, itemIdByKey: 
           quantity: numberValue(line, ['quantity', 'qty']),
           unit: nullableString(line.unit),
           cost: asNumber(line.cost),
-          itemId: itemKey ? itemIdByKey.get(itemKey) ?? null : null
+          itemId: itemKey ? itemIdByKey.get(itemKey) ?? null : null,
+          subRecipeId: null
         }
       });
       inc('recipeLines', 'created');

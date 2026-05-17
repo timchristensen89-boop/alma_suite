@@ -1982,11 +1982,14 @@ model Recipe {
   category      String?
   subcategory   String?
   venue         String?
+  yieldQuantity Float?
+  yieldUnit     String?
   estimatedCost Float        @default(0)
   notes         String?
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  lines         RecipeLine[]
+  lines         RecipeLine[] @relation("RecipeLines")
+  usedByLines   RecipeLine[] @relation("SubRecipeLines")
 
   @@index([title])
   @@index([category])
@@ -2013,13 +2016,16 @@ model RecipeLine {
   unit           String?
   cost           Float?
   itemId         String?
+  subRecipeId    String?
   createdAt      DateTime   @default(now())
   updatedAt      DateTime   @updatedAt
-  recipe         Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe         Recipe     @relation("RecipeLines", fields: [recipeId], references: [id], onDelete: Cascade)
   item           StockItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  subRecipe      Recipe?    @relation("SubRecipeLines", fields: [subRecipeId], references: [id], onDelete: SetNull)
 
   @@index([recipeId])
   @@index([itemId])
+  @@index([subRecipeId])
 }
 
 model Supplier {

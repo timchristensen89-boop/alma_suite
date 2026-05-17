@@ -136,6 +136,7 @@ type ControlSeedRecipe = {
 type ImportArgs = {
   file: string;
   replace: boolean;
+  dryRun: boolean;
 };
 
 type ProductGroup = {
@@ -354,9 +355,11 @@ function parseArgs(argv: string[]): ImportArgs {
   const resolveFrom = process.env.INIT_CWD ?? process.cwd();
   let file = path.resolve(resolveFrom, 'tmp/legacy-stock-export.json');
   let replace = false;
+  let dryRun = false;
 
   for (let index = 0; index < argv.length; index += 1) {
     const current = argv[index];
+    if (current === '--') continue;
     if (current === '--file') {
       const next = argv[index + 1];
       if (!next) throw new Error('Missing value for --file argument.');
@@ -366,10 +369,24 @@ function parseArgs(argv: string[]): ImportArgs {
     }
     if (current === '--replace') {
       replace = true;
+      continue;
+    }
+    if (current === '--dry-run') {
+      dryRun = true;
+      continue;
+    }
+    if (current === '--help' || current === '-h') {
+      console.log(`Usage: pnpm db:import:legacy-stock -- --file tmp/legacy-stock-export.json [--dry-run] [--replace]
+
+Options:
+  --file <path>  Legacy stock JSON export or Alma Control seed.js.
+  --dry-run      Parse and summarize without writing to the database.
+  --replace      Clear existing stock data before import. Ignored in dry-run mode.`);
+      process.exit(0);
     }
   }
 
-  return { file, replace };
+  return { file, replace, dryRun };
 }
 
 function finiteNumber(value: unknown): number | null {
@@ -565,6 +582,18 @@ async function main() {
   console.log(
     `Legacy products — ${products.length} source rows collapsed to ${productGroups.length} stock items (${duplicateProductRows} duplicate rows merged).`
   );
+
+  if (args.dryRun) {
+    const distinctCategoryNames = Array.from(
+      new Set(productGroups.map((group) => group.primary.categoryName).filter((n): n is string => Boolean(n)))
+    );
+    console.log('Mode: DRY RUN - no writes.');
+    console.log(`Would upsert ${distinctCategoryNames.length} categories.`);
+    console.log(`Would process ${productGroups.length} stock items.`);
+    console.log(`Would process ${recipes.length} recipes and ${recipeLines.length} recipe lines.`);
+    console.log(`Would process ${stocktakes.length} stocktakes and ${stocktakeLines.length} stocktake lines.`);
+    return;
+  }
 
   if (args.replace) {
     console.log(
@@ -766,6 +795,8 @@ async function main() {
         category: recipe.category?.trim() || null,
         subcategory: recipe.subcategory?.trim() || null,
         venue: recipe.venue?.trim() || null,
+        yieldQuantity: null,
+        yieldUnit: null,
         estimatedCost:
           typeof recipe.estimatedCost === 'number' && Number.isFinite(recipe.estimatedCost)
             ? recipe.estimatedCost

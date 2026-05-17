@@ -3,12 +3,14 @@ import test from 'node:test';
 import { prisma } from '@alma/db';
 import {
   recipeBulkDeleteInputSchema,
+  recipeLineInputSchema,
   stockInvoiceImportInputSchema,
   stockItemBulkDeleteInputSchema,
   stocktakeBulkDeleteInputSchema,
   supplierBulkDeleteInputSchema
 } from '@alma/shared';
 import { itemsService } from '../src/services/items.service.js';
+import { recipesService } from '../src/services/recipes.service.js';
 import { stocktakesService } from '../src/services/stocktakes.service.js';
 import { suppliersService } from '../src/services/suppliers.service.js';
 
@@ -214,6 +216,15 @@ test('bulk destructive inputs require typed confirmation text', () => {
     /DELETE RECIPES/
   );
   assert.throws(
+    () =>
+      recipeLineInputSchema.parse({
+        ingredientName: 'Nested line',
+        itemId: 'item-1',
+        subRecipeId: 'recipe-1'
+      }),
+    /stock item or a sub-recipe/
+  );
+  assert.throws(
     () => stocktakeBulkDeleteInputSchema.parse({ ids: ['stocktake-1'] }),
     /DELETE STOCKTAKES/
   );
@@ -228,6 +239,116 @@ test('bulk destructive inputs require typed confirmation text', () => {
       confirmationText: 'DELETE ITEMS'
     })
   );
+});
+
+test('recipes can use reusable sub-recipes without circular chains', async () => {
+  const suffix = `nested-recipe-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const recipeIds: string[] = [];
+
+  try {
+    const stock = await recipesService.createRecipe({
+      title: `House stock ${suffix}`,
+      kind: 'FOOD',
+      category: 'Prep',
+      yieldQuantity: 10,
+      yieldUnit: 'L',
+      lines: [
+        { ingredientName: 'Chicken bones', quantity: 20, unit: 'kg' },
+        { ingredientName: 'Carrots', quantity: 2.5, unit: 'kg' }
+      ]
+    });
+    recipeIds.push(stock.id);
+
+    const pork = await recipesService.createRecipe({
+      title: `Cooked pork ${suffix}`,
+      kind: 'FOOD',
+      category: 'Prep',
+      yieldQuantity: 25,
+      yieldUnit: 'kg',
+      lines: [
+        { ingredientName: 'House stock', quantity: 10, unit: 'L', subRecipeId: stock.id },
+        { ingredientName: 'Tomato puree', quantity: 5, unit: 'L' }
+      ]
+    });
+    recipeIds.push(pork.id);
+
+    const taco = await recipesService.createRecipe({
+      title: `Pork taco ${suffix}`,
+      kind: 'FOOD',
+      category: 'Menu',
+      yieldQuantity: 1,
+      yieldUnit: 'portion',
+      lines: [
+        { ingredientName: 'Cooked pork', quantity: 32, unit: 'g', subRecipeId: pork.id },
+        { ingredientName: 'Corn tortilla', quantity: 1, unit: 'each' }
+      ]
+    });
+    recipeIds.push(taco.id);
+
+    const detail = await recipesService.get(taco.id);
+    assert.equal(detail.yieldQuantity, 1);
+    assert.equal(detail.yieldUnit, 'portion');
+    assert.equal(detail.lines[0].subRecipe?.title, pork.title);
+    assert.equal(detail.lines[0].subRecipe?.yieldQuantity, 25);
+    assert.equal(detail.lines[0].subRecipe?.yieldUnit, 'kg');
+
+    await assert.rejects(
+      () =>
+        recipesService.updateRecipe(taco.id, {
+          lines: [
+            {
+              ingredientName: 'Self',
+              quantity: 1,
+              unit: 'portion',
+              subRecipeId: taco.id
+            }
+          ]
+        }),
+      /cannot use itself/
+    );
+
+    const salsa = await recipesService.createRecipe({
+      title: `Salsa ${suffix}`,
+      kind: 'FOOD',
+      category: 'Prep',
+      yieldQuantity: 2,
+      yieldUnit: 'kg',
+      lines: [{ ingredientName: 'Tomato', quantity: 2, unit: 'kg' }]
+    });
+    recipeIds.push(salsa.id);
+
+    const tostada = await recipesService.createRecipe({
+      title: `Tostada ${suffix}`,
+      kind: 'FOOD',
+      category: 'Menu',
+      yieldQuantity: 1,
+      yieldUnit: 'portion',
+      lines: [{ ingredientName: 'Salsa', quantity: 40, unit: 'g', subRecipeId: salsa.id }]
+    });
+    recipeIds.push(tostada.id);
+
+    await recipesService.deleteRecipes({ ids: [salsa.id], confirmationText: 'DELETE RECIPES' });
+    const tostadaAfterDelete = await recipesService.get(tostada.id);
+    assert.equal(tostadaAfterDelete.lines[0].subRecipeId, null);
+    assert.equal(tostadaAfterDelete.lines[0].subRecipe, null);
+
+    await assert.rejects(
+      () =>
+        recipesService.updateRecipe(stock.id, {
+          lines: [
+            {
+              ingredientName: 'Pork taco',
+              quantity: 1,
+              unit: 'portion',
+              subRecipeId: taco.id
+            }
+          ]
+        }),
+      /circular recipe chain/
+    );
+  } finally {
+    await prisma.recipe.deleteMany({ where: { id: { in: recipeIds.reverse() } } });
+  }
 });
 
 test('catalogue item deletion is blocked when records reference the item', async () => {

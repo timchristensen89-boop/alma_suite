@@ -23,7 +23,10 @@ type RecipeRow = Prisma.RecipeGetPayload<{
 type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
   include: {
     lines: {
-      include: { item: { select: { id: true; name: true; unit: true } } };
+      include: {
+        item: { select: { id: true; name: true; unit: true } };
+        subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true } };
+      };
     };
   };
 }>;
@@ -35,6 +38,10 @@ type RecipeCategoryRow = Prisma.RecipeCategoryGetPayload<Record<string, never>>;
 function normaliseOptionalText(value: string | undefined) {
   if (value === undefined) return undefined;
   return value.trim() || null;
+}
+
+function isPresentString(value: string | null | undefined): value is string {
+  return Boolean(value);
 }
 
 function normaliseRecipeCategoryKind(value: string): RecipeCategoryKind {
@@ -89,6 +96,8 @@ function toRecipePayload(row: RecipeRow): Recipe {
     category: row.category,
     subcategory: row.subcategory,
     venue: row.venue,
+    yieldQuantity: row.yieldQuantity,
+    yieldUnit: row.yieldUnit,
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row._count.lines,
@@ -109,6 +118,8 @@ function toLinePayload(row: RecipeLineRow): RecipeLine {
     cost: row.cost,
     itemId: row.itemId,
     item: row.item ?? null,
+    subRecipeId: row.subRecipeId,
+    subRecipe: row.subRecipe ?? null,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -123,6 +134,8 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     category: row.category,
     subcategory: row.subcategory,
     venue: row.venue,
+    yieldQuantity: row.yieldQuantity,
+    yieldUnit: row.yieldUnit,
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row.lines.length,
@@ -172,6 +185,64 @@ async function syncRecipeCategoriesFromRecipes() {
       })
     )
   );
+}
+
+async function recipeDependsOnRecipe(startRecipeId: string, targetRecipeId: string) {
+  const seen = new Set<string>();
+  const queue = [startRecipeId];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current || seen.has(current)) continue;
+    seen.add(current);
+
+    const links = await prisma.recipeLine.findMany({
+      where: { recipeId: current, subRecipeId: { not: null } },
+      select: { subRecipeId: true }
+    });
+
+    for (const link of links) {
+      if (!link.subRecipeId) continue;
+      if (link.subRecipeId === targetRecipeId) return true;
+      if (!seen.has(link.subRecipeId)) queue.push(link.subRecipeId);
+    }
+  }
+
+  return false;
+}
+
+async function validateRecipeLineLinks(
+  recipeId: string | null,
+  lines: Array<{ subRecipeId?: string | null }>
+) {
+  const subRecipeIds = Array.from(
+    new Set(
+      lines
+        .map((line) => normaliseOptionalText(line.subRecipeId ?? undefined))
+        .filter(isPresentString)
+    )
+  );
+  if (subRecipeIds.length === 0) return;
+
+  if (recipeId && subRecipeIds.includes(recipeId)) {
+    throw new HttpError(400, 'A recipe cannot use itself as a sub-recipe');
+  }
+
+  const found = await prisma.recipe.findMany({
+    where: { id: { in: subRecipeIds } },
+    select: { id: true }
+  });
+  const foundIds = new Set(found.map((row) => row.id));
+  const missing = subRecipeIds.filter((id) => !foundIds.has(id));
+  if (missing.length > 0) throw new HttpError(400, 'One or more sub-recipes could not be found');
+
+  if (!recipeId) return;
+
+  for (const subRecipeId of subRecipeIds) {
+    if (await recipeDependsOnRecipe(subRecipeId, recipeId)) {
+      throw new HttpError(400, 'That sub-recipe would create a circular recipe chain');
+    }
+  }
 }
 
 async function listRecipeCategories(syncFromRecipes: boolean) {
@@ -296,7 +367,10 @@ export const recipesService = {
       where: { id },
       include: {
         lines: {
-          include: { item: { select: { id: true, name: true, unit: true } } }
+          include: {
+            item: { select: { id: true, name: true, unit: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
+          }
         }
       }
     });
@@ -306,6 +380,7 @@ export const recipesService = {
 
   async createRecipe(input: unknown): Promise<RecipeWithLines> {
     const data = recipeCreateInputSchema.parse(input);
+    await validateRecipeLineLinks(null, data.lines ?? []);
     const row = await prisma.recipe.create({
       data: {
         title: data.title.trim(),
@@ -313,6 +388,8 @@ export const recipesService = {
         category: normaliseOptionalText(data.category) ?? null,
         subcategory: normaliseOptionalText(data.subcategory) ?? null,
         venue: normaliseOptionalText(data.venue) ?? null,
+        yieldQuantity: data.yieldQuantity ?? null,
+        yieldUnit: normaliseOptionalText(data.yieldUnit) ?? null,
         estimatedCost: data.estimatedCost ?? 0,
         notes: normaliseOptionalText(data.notes) ?? null,
         lines: data.lines
@@ -323,14 +400,18 @@ export const recipesService = {
                 quantity: line.quantity ?? null,
                 unit: normaliseOptionalText(line.unit) ?? null,
                 cost: line.cost ?? null,
-                itemId: normaliseOptionalText(line.itemId) ?? null
+                itemId: normaliseOptionalText(line.itemId) ?? null,
+                subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
             }
           : undefined
       },
       include: {
         lines: {
-          include: { item: { select: { id: true, name: true, unit: true } } }
+          include: {
+            item: { select: { id: true, name: true, unit: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
+          }
         }
       }
     });
@@ -341,6 +422,7 @@ export const recipesService = {
     const data = recipeUpdateInputSchema.parse(input);
     const existing = await prisma.recipe.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Recipe not found');
+    if (data.lines !== undefined) await validateRecipeLineLinks(id, data.lines);
 
     // If lines are provided, treat it as a full replacement: delete the old
     // lines and create the new set. This keeps the API simple — partial line
@@ -361,6 +443,12 @@ export const recipesService = {
           subcategory: normaliseOptionalText(data.subcategory)
         }),
         ...(data.venue !== undefined && { venue: normaliseOptionalText(data.venue) }),
+        ...(data.yieldQuantity !== undefined && {
+          yieldQuantity: data.yieldQuantity
+        }),
+        ...(data.yieldUnit !== undefined && {
+          yieldUnit: normaliseOptionalText(data.yieldUnit)
+        }),
         ...(data.estimatedCost !== undefined && {
           estimatedCost: data.estimatedCost
         }),
@@ -373,14 +461,18 @@ export const recipesService = {
               quantity: line.quantity ?? null,
               unit: normaliseOptionalText(line.unit) ?? null,
               cost: line.cost ?? null,
-              itemId: normaliseOptionalText(line.itemId) ?? null
+              itemId: normaliseOptionalText(line.itemId) ?? null,
+              subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))
           }
         })
       },
       include: {
         lines: {
-          include: { item: { select: { id: true, name: true, unit: true } } }
+          include: {
+            item: { select: { id: true, name: true, unit: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
+          }
         }
       }
     });

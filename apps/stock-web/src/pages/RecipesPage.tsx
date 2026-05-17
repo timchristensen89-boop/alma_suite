@@ -29,6 +29,7 @@ type RecipeLineDraft = {
   unit: string;
   cost: string;
   itemId: string;
+  subRecipeId: string;
 };
 
 type RecipeDraft = {
@@ -37,6 +38,8 @@ type RecipeDraft = {
   category: string;
   subcategory: string;
   venue: string;
+  yieldQuantity: string;
+  yieldUnit: string;
   estimatedCost: string;
   notes: string;
   lines: RecipeLineDraft[];
@@ -109,6 +112,10 @@ function formatQuantity(quantity: number | null, unit: string | null) {
   if (quantity === null) return '—';
   const value = Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(2);
   return unit ? `${value} ${unit}` : value;
+}
+
+function formatYield(recipe: Pick<Recipe, 'yieldQuantity' | 'yieldUnit'>) {
+  return formatQuantity(recipe.yieldQuantity, recipe.yieldUnit);
 }
 
 function duplicateRecipeKey(recipe: Recipe) {
@@ -449,6 +456,7 @@ export function RecipesPage() {
               {recipe.category ? <Badge tone="indigo">{recipe.category}</Badge> : '—'}
             </td>
             <td>{recipe.lineCount}</td>
+            <td>{formatYield(recipe)}</td>
             <td>{formatCurrency(recipe.estimatedCost)}</td>
             <td className="cell-actions">
               <Button
@@ -487,7 +495,7 @@ export function RecipesPage() {
           </tr>
           {expanded ? (
             <tr className="row-detail">
-              <td colSpan={7}>
+              <td colSpan={8}>
                 {detailLoading ? (
                   <Spinner label="Loading lines" />
                 ) : detailError ? (
@@ -524,6 +532,7 @@ export function RecipesPage() {
             <th>Kind</th>
             <th>Category</th>
             <th>Lines</th>
+            <th>Yield</th>
             <th>Est. cost</th>
             <th aria-label="Actions" />
           </tr>
@@ -533,7 +542,7 @@ export function RecipesPage() {
             renderRecipeRows(recipes)
           ) : (
             <tr>
-              <td colSpan={7} className="table-empty-cell">
+              <td colSpan={8} className="table-empty-cell">
                 {emptyMessage}
               </td>
             </tr>
@@ -574,8 +583,8 @@ export function RecipesPage() {
         title={cardTitle}
         subtitle={
           form.mode === 'closed'
-            ? 'Prepared items — cocktails, dishes, wine pours — and their ingredient lines.'
-            : 'Build recipe lines and link ingredients to stock items for costing.'
+            ? 'Prepared items — cocktails, dishes, prep batches, wine pours — and their ingredient lines.'
+            : 'Build recipe lines and link ingredients to stock items or reusable sub-recipes. Nested costing is shown structurally and remains manual for now.'
         }
         action={
           form.mode === 'closed' ? (
@@ -590,6 +599,7 @@ export function RecipesPage() {
             mode={form.mode}
             initial={form.mode === 'edit' ? form.recipe : undefined}
             items={items}
+            recipes={data?.recipes ?? []}
             categories={data?.categories ?? []}
             onSaved={() => void handleSaved()}
             onCancel={() => setForm({ mode: 'closed' })}
@@ -808,9 +818,11 @@ function emptyRecipeDraft(): RecipeDraft {
     category: '',
     subcategory: '',
     venue: '',
+    yieldQuantity: '',
+    yieldUnit: '',
     estimatedCost: '0',
     notes: '',
-    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', itemId: '' }]
+    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', itemId: '', subRecipeId: '' }]
   };
 }
 
@@ -821,6 +833,8 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
     venue: recipe.venue ?? '',
+    yieldQuantity: recipe.yieldQuantity === null ? '' : String(recipe.yieldQuantity),
+    yieldUnit: recipe.yieldUnit ?? '',
     estimatedCost: String(recipe.estimatedCost),
     notes: recipe.notes ?? '',
     lines: recipe.lines.map((line) => ({
@@ -828,7 +842,8 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
       quantity: line.quantity === null ? '' : String(line.quantity),
       unit: line.unit ?? '',
       cost: line.cost === null ? '' : String(line.cost),
-      itemId: line.itemId ?? ''
+      itemId: line.itemId ?? '',
+      subRecipeId: line.subRecipeId ?? ''
     }))
   };
 }
@@ -837,6 +852,7 @@ function RecipeForm({
   mode,
   initial,
   items,
+  recipes,
   categories,
   onSaved,
   onCancel
@@ -844,6 +860,7 @@ function RecipeForm({
   mode: 'create' | 'edit';
   initial?: RecipeWithLines;
   items: StockItem[];
+  recipes: Recipe[];
   categories: string[];
   onSaved: () => void;
   onCancel: () => void;
@@ -860,6 +877,18 @@ function RecipeForm({
       ...items.map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
     ],
     [items]
+  );
+  const subRecipeOptions = useMemo(
+    () => [
+      { label: 'No sub-recipe', value: '' },
+      ...recipes
+        .filter((recipe) => recipe.id !== initial?.id)
+        .map((recipe) => ({
+          label: `${recipe.title}${recipe.yieldQuantity === null ? '' : ` (${formatYield(recipe)})`}`,
+          value: recipe.id
+        }))
+    ],
+    [initial?.id, recipes]
   );
   const categoryOptions = useMemo(() => {
     const unique = Array.from(
@@ -892,8 +921,21 @@ function RecipeForm({
     if (!current) return;
     updateLine(index, {
       itemId,
+      subRecipeId: '',
       ingredientName: item?.name ?? current.ingredientName,
       unit: item?.unit ?? current.unit
+    });
+  }
+
+  function selectSubRecipe(index: number, subRecipeId: string) {
+    const recipe = recipes.find((candidate) => candidate.id === subRecipeId);
+    const current = draft.lines[index];
+    if (!current) return;
+    updateLine(index, {
+      subRecipeId,
+      itemId: '',
+      ingredientName: recipe?.title ?? current.ingredientName,
+      unit: recipe?.yieldUnit ?? current.unit
     });
   }
 
@@ -915,7 +957,8 @@ function RecipeForm({
         quantity: line.quantity === '' ? undefined : Number(line.quantity),
         unit: line.unit.trim(),
         cost: line.cost === '' ? undefined : Number(line.cost),
-        itemId: line.itemId
+        itemId: line.itemId,
+        subRecipeId: line.subRecipeId
       }));
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
@@ -923,6 +966,8 @@ function RecipeForm({
       category: draft.category.trim(),
       subcategory: draft.subcategory.trim(),
       venue: draft.venue.trim(),
+      yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
+      yieldUnit: draft.yieldUnit.trim(),
       estimatedCost: Number(draft.estimatedCost || 0),
       notes: draft.notes.trim(),
       lines
@@ -976,6 +1021,13 @@ function RecipeForm({
         <Input label="Subcategory" value={draft.subcategory} onChange={(event) => update('subcategory', event.currentTarget.value)} />
         <Input label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} />
       </div>
+      <div className="form-grid three">
+        <Input label="Yield quantity" type="number" step="0.01" value={draft.yieldQuantity} onChange={(event) => update('yieldQuantity', event.currentTarget.value)} />
+        <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
+      </div>
+      <p className="recipe-costing-note">
+        Estimated cost remains manually entered. Sub-recipes are linked structurally here; automatic nested cost roll-up is a follow-up.
+      </p>
       <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
 
       <div className="stocktake-count-toolbar">
@@ -984,7 +1036,7 @@ function RecipeForm({
           type="button"
           variant="secondary"
           size="sm"
-          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', itemId: '' }])}
+          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', itemId: '', subRecipeId: '' }])}
         >
           Add line
         </Button>
@@ -994,6 +1046,7 @@ function RecipeForm({
         {draft.lines.map((line, index) => (
           <div key={index} className="recipe-edit-line">
             <Select label="Linked item" value={line.itemId} onChange={(event) => selectItem(index, event.currentTarget.value)} options={itemOptions} />
+            <Select label="Sub-recipe" value={line.subRecipeId} onChange={(event) => selectSubRecipe(index, event.currentTarget.value)} options={subRecipeOptions} />
             <Input label="Ingredient" required value={line.ingredientName} onChange={(event) => updateLine(index, { ingredientName: event.currentTarget.value })} />
             <Input label="Qty" type="number" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
             <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
@@ -1021,12 +1074,18 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
 
   return (
     <div className="recipe-lines">
+      {detail.lines.some((line) => line.subRecipe) ? (
+        <p className="recipe-costing-note">
+          Sub-recipes are reusable recipe links. Estimated costs are displayed for reference only and are not rolled up automatically.
+        </p>
+      ) : null}
       <table className="recipe-lines-table">
         <thead>
           <tr>
             <th>#</th>
             <th>Ingredient</th>
             <th>Linked item</th>
+            <th>Sub-recipe</th>
             <th>Qty</th>
             <th>Cost</th>
           </tr>
@@ -1044,6 +1103,20 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
                   </span>
                 ) : (
                   <span className="subtle">Unlinked</span>
+                )}
+              </td>
+              <td>
+                {line.subRecipe ? (
+                  <span className="cell-stack">
+                    <strong>{line.subRecipe.title}</strong>
+                    <span className="subtle">
+                      {formatQuantity(line.subRecipe.yieldQuantity, line.subRecipe.yieldUnit)}
+                      {' · '}
+                      {formatCurrency(line.subRecipe.estimatedCost)}
+                    </span>
+                  </span>
+                ) : (
+                  <span className="subtle">—</span>
                 )}
               </td>
               <td>{formatQuantity(line.quantity, line.unit)}</td>
