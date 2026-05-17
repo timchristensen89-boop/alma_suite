@@ -35,6 +35,7 @@
     "db:import:compliance-documents": "pnpm --filter @alma/db import:compliance-documents",
     "db:import:deputy-roster": "pnpm --filter @alma/db import:deputy-roster --",
     "db:import:sevenrooms-reserve": "pnpm --filter @alma/db import:sevenrooms-reserve --",
+    "db:import:sevenrooms-marketing": "pnpm --filter @alma/db import:sevenrooms-marketing --",
     "db:import:legacy": "pnpm --filter @alma/db import:legacy --",
     "db:import:legacy-stock": "pnpm --filter @alma/db import:legacy-stock --",
     "db:extract:legacy-compliance": "pnpm --filter @alma/db extract:legacy-compliance --",

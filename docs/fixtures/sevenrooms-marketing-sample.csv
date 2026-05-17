@@ -1,0 +1,4 @@
+venue,full_name,email,phone,birthday,tags,allergy_notes,dietary_notes,visit_notes,notes,marketing_opt_in,email_unsubscribed,sms_unsubscribed,total_visits,total_spend,no_show_count,last_visit_at,first_visit_at,sevenrooms_guest_id
+Alma Avalon,Avery Sample,avery.sample@example.com,0411111111,1990-05-01,"VIP; Birthday",,Vegetarian,,Sample dry-run row only.,yes,no,no,4,245.50,0,2026-05-10,2025-11-02,sr_guest_001
+St Alma,Jordan Example,jordan.example@example.com,0422222222,,Repeat,Shellfish,Dairy free,,Sample dry-run row only.,no,yes,no,2,120.00,1,2026-04-20,2026-01-15,sr_guest_002
+Alma Avalon,Broken Guest,,,1995-01-01,,,,Missing contact sample.,yes,no,no,1,50,0,2026-04-01,2026-01-01,sr_guest_bad
