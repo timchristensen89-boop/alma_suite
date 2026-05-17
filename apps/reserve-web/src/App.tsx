@@ -490,7 +490,7 @@ function PublicBookingWidget() {
       setFeedback({
         target: 'widget',
         tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not load booking widget'
+        message: error instanceof Error ? error.message : 'Could not load booking page'
       });
     } finally {
       setLoading(false);
@@ -572,17 +572,29 @@ function PublicBookingWidget() {
   return (
     <main className="login-page reserve-widget-page">
       <div className="reserve-widget-shell">
-        <ProductLogo appId="reserve" size="lg" />
-        <Card
-          title="Book a table"
-          subtitle="Reserve is using capacity-based availability rules for this first public booking pass."
-        >
-          {loading ? <Spinner label="Loading booking widget..." /> : null}
+        <header className="reserve-public-header">
+          <ProductLogo appId="reserve" size="md" />
+          <a href="https://almagroup.com.au/">Alma Group</a>
+        </header>
+        <section className="reserve-public-hero">
+          <div>
+            <p className="reserve-public-eyebrow">Alma bookings</p>
+            <h1>Find a table for lunch, dinner, or a long afternoon.</h1>
+            <p>Choose a venue, pick a time, and leave the details the floor team needs for service.</p>
+          </div>
+          <div className="reserve-public-venue-card" aria-label="Booking steps">
+            <span>1. Search</span>
+            <span>2. Choose a time</span>
+            <span>3. Confirm details</span>
+          </div>
+        </section>
+        <section className="reserve-public-booking-panel" aria-label="Book a table">
+          {loading ? <Spinner label="Loading booking form..." /> : null}
           {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
           {!loading && config ? (
             <div className="reserve-widget-stack">
-              <form className="reserve-form" onSubmit={(event) => void checkAvailability(event)}>
-                <div className="form-grid two">
+              <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
+                <div className="reserve-public-search-grid">
                   <Select
                     label="Venue"
                     value={search.venue}
@@ -610,23 +622,29 @@ function PublicBookingWidget() {
                     options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: value, value }))]}
                   />
                 </div>
-                <div className="toolbar-right">
+                <div className="reserve-public-actions">
                   <ActionFeedback
                     message={feedback.target === 'widget-search' ? feedback.message : null}
                     tone={feedback.tone}
                   />
-                  <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Check availability'}</Button>
+                  <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Find a table'}</Button>
                 </div>
               </form>
 
-              <div className="reserve-note-list">
+              <div className="reserve-note-list reserve-public-notes">
                 {config.limitations.map((limitation) => (
                   <Badge key={limitation} tone="warning">{limitation}</Badge>
                 ))}
               </div>
 
               {availability ? (
-                <Card title="Available times" subtitle={`${availability.partySize} guests on ${shortDate(availability.serviceDate)}`}>
+                <section className="reserve-public-section">
+                  <div className="reserve-public-section-heading">
+                    <div>
+                      <p className="reserve-public-eyebrow">Available times</p>
+                      <h2>{availability.partySize} guests on {shortDate(availability.serviceDate)}</h2>
+                    </div>
+                  </div>
                   {availability.slots.length === 0 ? (
                     <EmptyState title="No online slots available" description="Try a different time, party size, or venue." />
                   ) : (
@@ -644,11 +662,17 @@ function PublicBookingWidget() {
                       ))}
                     </div>
                   )}
-                </Card>
+                </section>
               ) : null}
 
               {selectedSlot ? (
-                <Card title="Guest details" subtitle={`Selected ${timeLabel(selectedSlot.startsAt)} · ${search.venue}`}>
+                <section className="reserve-public-section">
+                  <div className="reserve-public-section-heading">
+                    <div>
+                      <p className="reserve-public-eyebrow">Guest details</p>
+                      <h2>{timeLabel(selectedSlot.startsAt)} at {search.venue}</h2>
+                    </div>
+                  </div>
                   <form className="reserve-form" onSubmit={(event) => void submitBooking(event)}>
                     <div className="form-grid two">
                       <Input label="First name" required value={bookingForm.firstName} onChange={(event) => setBookingForm((current) => ({ ...current, firstName: event.currentTarget.value }))} />
@@ -698,7 +722,7 @@ function PublicBookingWidget() {
                       />
                       <span>Send me future restaurant updates for this venue.</span>
                     </label>
-                    <div className="toolbar-right">
+                    <div className="reserve-public-actions">
                       <ActionFeedback
                         message={feedback.target === 'widget-booking' ? feedback.message : null}
                         tone={feedback.tone}
@@ -712,11 +736,11 @@ function PublicBookingWidget() {
                       <span>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests</span>
                     </div>
                   ) : null}
-                </Card>
+                </section>
               ) : null}
             </div>
           ) : null}
-        </Card>
+        </section>
       </div>
     </main>
   );
@@ -1057,7 +1081,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <div className="reserve-page">
         <PageHeader
           eyebrow="ALMA Reserve"
-          title="Reservation control centre"
+          title="Reservation overview"
           description="Build the guest book, keep bookings venue-scoped, and preview online booking safely before any live partner integration."
           actions={
             <>

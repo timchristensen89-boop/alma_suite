@@ -437,7 +437,7 @@ export function ItemsPage() {
   const cardSubtitle =
     form.mode === 'edit'
       ? 'Update this item — changes save in place.'
-      : 'Your catalogue — products, categories and pars.';
+      : 'Venue catalogue — products, categories and pars.';
 
   function renderItemRows(items: StockItem[]) {
     return items.map((item) => (

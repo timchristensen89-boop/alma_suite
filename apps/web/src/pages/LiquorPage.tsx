@@ -446,7 +446,7 @@ export function LiquorPage() {
             title="No licences or approvals yet"
             description={
               isManager
-                ? 'Add the first licence, permit, or approval so expiry dates and operating conditions live with the rest of your compliance.'
+                ? 'Add the first licence, permit, or approval so expiry dates and operating conditions sit with the compliance record.'
                 : 'A manager needs to add licence and approval details before they show up here.'
             }
             action={

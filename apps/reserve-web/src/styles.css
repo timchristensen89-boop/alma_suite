@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #0E7490;
-  --color-accent-hover: #164E63;
-  --color-accent-soft: #e6f6fa;
-  --color-accent-text: #164E63;
+  --color-accent: #684A4A;
+  --color-accent-hover: #253326;
+  --color-accent-soft: #EFE8DC;
+  --color-accent-text: #253326;
 }
 
 .reserve-page {
@@ -153,7 +153,7 @@
 .reserve-guest-row.active,
 .reserve-slot-button.active {
   border-color: var(--color-accent);
-  background: var(--color-accent-soft);
+  background: #F5DCCE;
 }
 
 .reserve-inline-check {
@@ -188,14 +188,137 @@
 }
 
 .reserve-widget-page {
-  padding: 32px 20px;
+  min-height: 100vh;
+  padding: 28px 20px 56px;
+  background:
+    linear-gradient(180deg, rgba(239, 232, 220, 0.88), rgba(245, 220, 206, 0.42)),
+    #EFE8DC;
+  color: #253326;
 }
 
 .reserve-widget-shell {
-  width: min(840px, 100%);
+  width: min(1120px, 100%);
   margin: 0 auto;
   display: grid;
+  gap: 24px;
+}
+
+.reserve-public-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 8px 0 18px;
+}
+
+.reserve-public-header a {
+  color: #253326;
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.16em;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.reserve-public-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+  gap: clamp(24px, 6vw, 74px);
+  align-items: end;
+  padding: clamp(22px, 5vw, 58px) 0 8px;
+}
+
+.reserve-public-eyebrow {
+  margin: 0 0 10px;
+  color: #684A4A;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+
+.reserve-public-hero h1,
+.reserve-public-section-heading h2 {
+  margin: 0;
+  color: #253326;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.reserve-public-hero h1 {
+  max-width: 760px;
+  font-size: clamp(42px, 8vw, 86px);
+  line-height: 0.96;
+}
+
+.reserve-public-hero p:not(.reserve-public-eyebrow) {
+  max-width: 560px;
+  margin: 18px 0 0;
+  color: rgba(37, 51, 38, 0.72);
+  font-size: 17px;
+  line-height: 1.65;
+}
+
+.reserve-public-venue-card {
+  display: grid;
+  gap: 12px;
+  padding: 20px;
+  border: 1px solid rgba(104, 74, 74, 0.18);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow: 0 24px 70px rgba(37, 51, 38, 0.1);
+}
+
+.reserve-public-venue-card span {
+  padding: 12px 14px;
+  border-radius: 999px;
+  background: #fff;
+  color: #684A4A;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.reserve-public-booking-panel,
+.reserve-public-section {
+  padding: clamp(18px, 3vw, 30px);
+  border: 1px solid rgba(104, 74, 74, 0.16);
+  border-radius: 26px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow: 0 24px 90px rgba(37, 51, 38, 0.1);
+}
+
+.reserve-public-search,
+.reserve-public-section {
+  display: grid;
   gap: 18px;
+}
+
+.reserve-public-search-grid {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.1fr) minmax(150px, 0.8fr) minmax(120px, 0.55fr) minmax(150px, 0.75fr);
+  gap: 14px;
+}
+
+.reserve-public-actions,
+.reserve-public-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.reserve-public-actions .btn-primary {
+  min-height: 48px;
+  border-radius: 999px;
+  padding-inline: 28px;
+  background: #684A4A;
+  border-color: #684A4A;
+}
+
+.reserve-public-notes {
+  opacity: 0.88;
 }
 
 .reserve-slot-grid {
@@ -207,6 +330,8 @@
 .reserve-slot-button {
   text-align: left;
   cursor: pointer;
+  border-radius: 16px;
+  background: #fffaf5;
 }
 
 .reserve-slot-grid.compact {
@@ -229,12 +354,19 @@
 }
 
 @media (max-width: 960px) {
-  .reserve-layout {
+  .reserve-layout,
+  .reserve-public-hero,
+  .reserve-public-search-grid,
+  .reserve-section-grid {
     grid-template-columns: 1fr;
   }
 
-  .reserve-section-grid {
-    grid-template-columns: 1fr;
+  .reserve-public-hero {
+    padding-top: 16px;
+  }
+
+  .reserve-public-venue-card {
+    display: none;
   }
 }
 
@@ -250,7 +382,7 @@
   .reserve-form .field-control {
     max-width: 100%;
     min-width: 0;
-    width: min(100%, calc(100vw - 70px));
+    width: 100%;
   }
 
   .reserve-booking {

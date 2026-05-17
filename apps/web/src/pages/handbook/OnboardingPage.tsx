@@ -102,7 +102,7 @@ export function OnboardingPage() {
       <PageHeader
         eyebrow="Handbook"
         title="New staff — getting started"
-        description="Your first-day, first-week, and first-month roadmap. If you're lost, start here."
+        description="First-day, first-week, and first-month onboarding steps. Start here when the process is unclear."
         actions={
           <Link to="/handbook">
             <Button

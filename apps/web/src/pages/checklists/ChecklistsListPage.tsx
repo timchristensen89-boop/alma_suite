@@ -179,7 +179,7 @@ export function ChecklistsListPage() {
           <EmptyState
             icon={<IconChecklist size={22} />}
             title="No templates yet"
-            description="Create your first template so your team can start running checks."
+            description="Create the first template so the team can start running checks."
             action={
               managerAccess ? (
               <Link to="/checklists/templates/new">
@@ -307,7 +307,7 @@ export function ChecklistsListPage() {
             description={
               filtersActive
                 ? 'Try clearing a filter or broadening your search.'
-                : 'Start a run against one of your templates.'
+                : 'Start a run against one of the templates.'
             }
             action={
               filtersActive ? (

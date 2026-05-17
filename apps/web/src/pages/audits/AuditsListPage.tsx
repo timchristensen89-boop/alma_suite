@@ -113,7 +113,7 @@ export function AuditsListPage() {
             <EmptyState
               icon={<IconAudit size={22} />}
               title="No audits run yet"
-              description="Run your first health inspection or internal audit to start building the trail."
+              description="Run the first health inspection or internal audit to start building the trail."
               action={
                 <Link to="/audits/new">
                   <Button size="sm" leftIcon={<IconPlus size={14} />}>

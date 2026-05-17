@@ -1059,7 +1059,7 @@ function StaffMemberHome({
       <Card title="Staff launch" subtitle="Use this app for the daily basics from Monday.">
         <div className="staff-launch-panel">
           <span>View your shifts, clock in and out, take breaks, request leave, and check compliance reminders here.</span>
-          <span className="subtle">If something looks wrong, speak to your manager before clocking out so the day can be fixed cleanly.</span>
+          <span className="subtle">If something looks wrong, speak to a manager before clocking out so the day can be fixed cleanly.</span>
         </div>
       </Card>
 
@@ -1089,7 +1089,7 @@ function StaffMemberHome({
                 ? `${activeSession.venue || displayMember?.venue || 'No venue'} · ${activeSession.area || activeSession.roleTitle || 'Shift'} · ${activeSession.accumulatedBreakMinutes}m break logged`
                 : todayShift
                   ? `${todayShift.venue || displayMember?.venue || 'No venue'} · ${roundHours(shiftHours(todayShift))}h rostered`
-                  : 'You can still clock in without a linked shift if needed.'}
+                  : 'Clock-in without a linked shift is available when needed.'}
             </span>
           </span>
           <span className="staff-row-actions">
@@ -1122,7 +1122,7 @@ function StaffMemberHome({
       </Card>
 
       <div className="staff-daily-grid">
-        <Card title="Today’s shift" subtitle="Confirm it before service if your manager needs acknowledgement.">
+        <Card title="Today’s shift" subtitle="Confirm it before service when manager acknowledgement is needed.">
           {todayShift ? (
             <div className="staff-mobile-shift-card staff-daily-shift-card">
               <span>
@@ -1141,11 +1141,11 @@ function StaffMemberHome({
               </span>
             </div>
           ) : (
-            <EmptyState title="No shift today" description="Your next published shift will still appear below." />
+            <EmptyState title="No shift today" description="The next published shift will still appear below." />
           )}
         </Card>
 
-        <Card title="Next shift" subtitle="Your next upcoming rostered shift.">
+        <Card title="Next shift" subtitle="The next upcoming rostered shift.">
           {nextShift ? (
             <div className="staff-mobile-shift-card staff-daily-shift-card">
               <span>
@@ -1163,12 +1163,12 @@ function StaffMemberHome({
               </span>
             </div>
           ) : (
-            <EmptyState title="Nothing upcoming yet" description="Published shifts will appear as soon as your manager assigns them." />
+            <EmptyState title="Nothing upcoming yet" description="Published shifts will appear as soon as a manager assigns them." />
           )}
         </Card>
       </div>
 
-      <Card title="Compliance reminders" subtitle="The things most likely to block your next shift.">
+      <Card title="Compliance reminders" subtitle="The things most likely to block the next shift.">
         <div className="staff-expiry-list">
           {home?.complianceReminders.length ? home.complianceReminders.map((item) => (
             <div key={item.id} className="staff-expiry-row">
@@ -1294,7 +1294,7 @@ function StaffMemberRosterPage() {
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <Card title="Upcoming shifts" subtitle="Your next rostered shifts and confirmations." padding="none">
+      <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
         {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
         <div className="staff-mobile-shift-list">
@@ -1618,7 +1618,7 @@ function StaffMemberCompliancePage() {
     try {
       setHome(await api<StaffDailyHomePayload>('/api/staff/me/home'));
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not load your compliance reminders.');
+      setMessage(err instanceof Error ? err.message : 'Could not load compliance reminders.');
     } finally {
       setLoading(false);
     }
@@ -1638,7 +1638,7 @@ function StaffMemberCompliancePage() {
       <PageHeader
         eyebrow="Compliance"
         title="My compliance reminders"
-        description="Check documents, certificates and training that may need attention before your next shift."
+        description="Check documents, certificates and training that may need attention before the next shift."
         actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadCompliance()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
       />
 
@@ -1650,9 +1650,9 @@ function StaffMemberCompliancePage() {
 
       {message ? <p className="error-text">{message}</p> : null}
 
-      <Card title="What to do" subtitle="Compliance records are managed with your venue manager.">
+      <Card title="What to do" subtitle="Compliance records are managed with venue managers.">
         <div className="staff-launch-panel">
-          <span>Bring any missing certificates, training evidence, or document updates to your manager.</span>
+          <span>Bring any missing certificates, training evidence, or document updates to a manager.</span>
           <span className="subtle">If this page says everything is clear, there is nothing urgent for you to action right now.</span>
         </div>
       </Card>
@@ -1709,7 +1709,7 @@ function StaffMemberAcademyPage({ staff, loading }: { staff: StaffProfile[]; loa
         <StatCard label="Training rate" value={formatCents(member?.trainingPayRateCents ?? null)} hint="Pay rule rate" loading={loading} />
       </div>
 
-      <Card title="Assigned modules" subtitle="Ask your manager to mark completion once practical training is signed off." padding="none">
+      <Card title="Assigned modules" subtitle="Ask a manager to mark completion once practical training is signed off." padding="none">
         {loading ? <Spinner label="Loading Academy…" /> : null}
         {!loading && records.length === 0 ? (
           <EmptyState title="No Academy modules assigned" description="Your assigned training modules will appear here." />
@@ -7886,7 +7886,7 @@ function StaffMemberTipsPage() {
 
       <Card title="Tip history" subtitle="These are locked manager-approved tip payments.">
         {!loading && history.length === 0 ? (
-          <EmptyState title="No paid tips yet" description="Paid tip runs will appear here after your manager marks them paid." />
+          <EmptyState title="No paid tips yet" description="Paid tip runs will appear here after a manager marks them paid." />
         ) : null}
         <div className="staff-list">
           {history.map((entry) => (

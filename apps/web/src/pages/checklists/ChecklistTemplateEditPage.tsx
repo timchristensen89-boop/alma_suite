@@ -190,7 +190,7 @@ export function ChecklistTemplateEditPage() {
       <PageHeader
         eyebrow="Checklists"
         title={isEdit ? 'Edit template' : 'New template'}
-        description="Set the name, area, and list the checks your team will run against this template."
+        description="Set the name, area, and checks the team will run against this template."
         actions={
           <>
             <Button variant="ghost" onClick={() => navigate('/checklists')}>Cancel</Button>

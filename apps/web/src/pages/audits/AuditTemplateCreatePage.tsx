@@ -137,7 +137,7 @@ export function AuditTemplateCreatePage() {
           <EmptyState
             icon={<IconAudit size={22} />}
             title="No sections yet"
-            description="Add your first section to get started."
+            description="Add the first section to get started."
           />
         ) : (
           <div className="page-stack compact">

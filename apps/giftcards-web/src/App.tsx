@@ -781,7 +781,7 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
 
       <Card title="Checkout and email" subtitle="Controls the public gift card page, printable card, email artwork, and test checkout.">
         <form className="giftcards-form" onSubmit={(event) => void saveSettings(event)}>
-          {!canEdit ? <p className="subtle">Only Tim can change gift card checkout settings.</p> : null}
+          {!canEdit ? <p className="subtle">Admin access is required to change checkout settings.</p> : null}
           <label className="toggle-row">
             <input
               type="checkbox"
@@ -826,7 +826,7 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
         </form>
       </Card>
 
-      <Card title="Promo codes" subtitle="Only Tim can add or remove promo codes. Managers can see what is active.">
+      <Card title="Promo codes" subtitle="Admin users can add or remove promo codes. Managers can see what is active.">
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Only') ? 'error-text' : 'subtle'}>{message}</p> : null}
         <form className="giftcards-form" onSubmit={(event) => void createPromoCode(event)}>
           <div className="form-grid two">
@@ -933,7 +933,6 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     const scannedCode = params.get('code');
     if (!scannedCode) return;
     setCode(scannedCode.toUpperCase());
-    window.location.hash = '#redeem';
   }, []);
 
   async function lookup(event: FormEvent<HTMLFormElement>) {
@@ -999,6 +998,29 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   }
 
   const card = selectedCard ?? selectedFromList;
+  const currentPath = window.location.pathname;
+  const activeGiftCardPage = currentPath.startsWith('/admin')
+    ? 'admin'
+    : currentPath.startsWith('/orders')
+      ? 'orders'
+      : 'redeem';
+  const pageCopy = {
+    redeem: {
+      eyebrow: 'Daily workflow',
+      title: 'Redeem gift cards',
+      description: 'Check a card balance, redeem the amount used, and print a customer copy when needed.'
+    },
+    orders: {
+      eyebrow: 'Orders',
+      title: 'Gift card orders',
+      description: 'Review recent cards, active balances, and order status without changing setup.'
+    },
+    admin: {
+      eyebrow: 'Setup',
+      title: 'Gift card setup',
+      description: 'Manage public checkout copy, artwork, test checkout, and promo codes.'
+    }
+  }[activeGiftCardPage];
 
   return (
     <AppShell
@@ -1026,20 +1048,42 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     >
       <div className="giftcards-page">
         <PageHeader
-          eyebrow="ALMA Gift Cards"
-          title="Gift card operations"
-          description="Daily register work stays here: check balances, redeem customer cards, and review recent orders. Checkout, artwork, promo codes, and payment setup are grouped under Admin setup."
-          actions={<Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />}
+          eyebrow={pageCopy.eyebrow}
+          title={pageCopy.title}
+          description={pageCopy.description}
+          actions={activeGiftCardPage === 'orders' ? <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" /> : null}
         />
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
-        <div className="stats-grid">
-          <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
-          <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
-          <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
-          <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
-        </div>
-        <div className="giftcards-layout">
-          <div id="redeem">
+        {activeGiftCardPage === 'orders' ? (
+          <>
+            <div className="stats-grid">
+              <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
+              <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
+              <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
+              <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+            </div>
+            <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
+              {loading ? <Spinner label="Loading gift cards..." /> : null}
+              {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid checkouts will appear here." /> : null}
+              <div className="giftcards-list">
+                {giftCards.map((item) => (
+                  <button key={item.id} type="button" onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}>
+                    <span>
+                      <strong>{item.code}</strong>
+                      <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}{item.promoCodeSnapshot ? ` · ${item.promoCodeSnapshot}` : ''}{item.testMode ? ' · TEST' : ''}</small>
+                    </span>
+                    <span>
+                      <strong>{formatCents(item.balanceCents)}</strong>
+                      <Badge tone={statusTone(item.status)}>{item.status.replace('_', ' ')}</Badge>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </Card>
+          </>
+        ) : null}
+
+        {activeGiftCardPage === 'redeem' ? (
           <Card title="Redeem gift card" subtitle="Enter the customer code and redeem only the amount used.">
             <form className="giftcards-form" onSubmit={(event) => void lookup(event)}>
               <Input label="Gift card code" required value={code} onChange={(event) => setCode(event.currentTarget.value.toUpperCase())} placeholder="ALMA-XXXXXXXX" />
@@ -1091,31 +1135,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               </form>
             ) : null}
           </Card>
-          </div>
-          <div id="recent">
-          <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
-            {loading ? <Spinner label="Loading gift cards..." /> : null}
-            {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid Stripe checkouts will appear here." /> : null}
-            <div className="giftcards-list">
-              {giftCards.map((item) => (
-                <button key={item.id} type="button" onClick={() => { setCode(item.code); setSelectedCard(item); }}>
-                  <span>
-                    <strong>{item.code}</strong>
-                    <small>{item.recipientName || item.purchaserName} · {item.purchaserEmail}{item.promoCodeSnapshot ? ` · ${item.promoCodeSnapshot}` : ''}{item.testMode ? ' · TEST' : ''}</small>
-                  </span>
-                  <span>
-                    <strong>{formatCents(item.balanceCents)}</strong>
-                    <Badge tone={statusTone(item.status)}>{item.status.replace('_', ' ')}</Badge>
-                  </span>
-                </button>
-              ))}
-            </div>
-          </Card>
-          </div>
-        </div>
-        <div id="settings">
-          <GiftCardAdminSettings user={user} />
-        </div>
+        ) : null}
+
+        {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
       </div>
     </AppShell>
   );

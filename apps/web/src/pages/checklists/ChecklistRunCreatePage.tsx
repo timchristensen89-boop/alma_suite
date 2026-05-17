@@ -113,7 +113,7 @@ export function ChecklistRunCreatePage() {
           <EmptyState
             icon={<IconChecklist size={22} />}
             title="No templates yet"
-            description="Create a template first — templates are reusable checklists your team can run."
+            description="Create a template first — templates are reusable checklists for the team."
             action={
               <Link to="/checklists/templates/new">
                 <Button size="sm" leftIcon={<IconPlus size={14} />}>

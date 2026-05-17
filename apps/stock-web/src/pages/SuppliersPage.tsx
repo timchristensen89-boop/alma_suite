@@ -346,7 +346,7 @@ export function SuppliersPage() {
           <EmptyState
             icon={<IconSuppliers size={24} />}
             title="No suppliers yet"
-            description="Record your vendors, contact details and payment terms here."
+            description="Record supplier contacts, payment terms, and ordering notes here."
             action={
               <Button
                 type="button"

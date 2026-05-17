@@ -1549,7 +1549,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         <PageHeader
           eyebrow="ALMA Reports"
           title={activeReport.title}
-          description={`${activeReport.description} Signed in as ${user.firstName}. Reports are read-only and scoped by your venue access.`}
+          description={`${activeReport.description} Signed in as ${user.firstName}. Reports are read-only and scoped to permitted venues.`}
           actions={
             <div className="reports-week-controls">
               <Select
