@@ -48,6 +48,23 @@ const KNOWN_VENUES = ['Alma Avalon', 'St Alma'];
 const SERVICE_PERIODS: ReserveServicePeriod[] = ['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT'];
 const RESERVATION_STATUSES: ReserveReservationStatus[] = ['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'];
 const GOOGLE_STATUSES = ['SETUP_REQUIRED', 'PENDING', 'ACTIVE', 'ERROR'] as const;
+const DEFAULT_RESERVE_PUBLIC_VENUE = {
+  location: 'Alma Group',
+  image: '/images/alma-avalon-margaritas.jpg',
+  summary: 'Alma Group dining with online booking availability.'
+};
+const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; summary: string }> = {
+  'Alma Avalon': {
+    location: 'Avalon Beach',
+    image: '/images/alma-avalon-margaritas.jpg',
+    summary: 'Beachside Mexican dining, margaritas, long lunches, and relaxed evening bookings.'
+  },
+  'St Alma': {
+    location: 'Freshwater',
+    image: '/images/st-alma-food.JPG',
+    summary: 'Coastal dining in Freshwater with bright share plates, cocktails, and group tables.'
+  }
+};
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
@@ -567,7 +584,21 @@ function PublicBookingWidget() {
 
   const venueOptions = (config?.venues ?? [])
     .filter((venue) => venue.onlineEnabled)
-    .map((venue) => ({ label: `${venue.name} · ${venue.activeRules} active rules`, value: venue.name }));
+    .map((venue) => ({
+      activeRules: venue.activeRules,
+      detail: RESERVE_PUBLIC_VENUES[venue.name] ?? DEFAULT_RESERVE_PUBLIC_VENUE,
+      value: venue.name
+    }));
+  const selectedVenue = venueOptions.find((venue) => venue.value === search.venue) ?? venueOptions[0];
+  const selectedVenueDetail = selectedVenue?.detail ?? RESERVE_PUBLIC_VENUES[search.venue] ?? DEFAULT_RESERVE_PUBLIC_VENUE;
+
+  function chooseVenue(venue: string) {
+    setSearch((current) => ({ ...current, venue }));
+    setAvailability(null);
+    setSelectedSlot(null);
+    setReservation(null);
+    setFeedback(defaultFeedback());
+  }
 
   return (
     <main className="login-page reserve-widget-page">
@@ -579,14 +610,16 @@ function PublicBookingWidget() {
         <section className="reserve-public-hero">
           <div>
             <p className="reserve-public-eyebrow">Alma bookings</p>
-            <h1>Find a table for lunch, dinner, or a long afternoon.</h1>
-            <p>Choose a venue, pick a time, and leave the details the floor team needs for service.</p>
+            <h1>Book a table at Alma.</h1>
+            <p>Choose Alma Avalon or St Alma, pick a time, and send the venue team the details they need for service.</p>
           </div>
-          <div className="reserve-public-venue-card" aria-label="Booking steps">
-            <span>1. Search</span>
-            <span>2. Choose a time</span>
-            <span>3. Confirm details</span>
-          </div>
+          <figure className="reserve-public-image-card">
+            <img src={selectedVenueDetail.image} alt={`${search.venue} dining`} />
+            <figcaption>
+              <span>{selectedVenueDetail.location}</span>
+              <strong>{search.venue}</strong>
+            </figcaption>
+          </figure>
         </section>
         <section className="reserve-public-booking-panel" aria-label="Book a table">
           {loading ? <Spinner label="Loading booking form..." /> : null}
@@ -594,13 +627,29 @@ function PublicBookingWidget() {
           {!loading && config ? (
             <div className="reserve-widget-stack">
               <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
+                <section className="reserve-public-venue-picker" aria-label="Choose a venue">
+                  <div>
+                    <p className="reserve-public-eyebrow">Choose your venue</p>
+                    <h2>{search.venue}</h2>
+                    <p>{selectedVenueDetail.summary}</p>
+                  </div>
+                  <div className="reserve-venue-button-grid">
+                    {venueOptions.map((venue) => (
+                      <button
+                        key={venue.value}
+                        type="button"
+                        className={`reserve-venue-button ${search.venue === venue.value ? 'active' : ''}`}
+                        onClick={() => chooseVenue(venue.value)}
+                        aria-pressed={search.venue === venue.value}
+                      >
+                        <strong>{venue.value}</strong>
+                        <span>{venue.detail.location}</span>
+                        <small>{venue.activeRules > 0 ? `${venue.activeRules} booking rules online` : 'Online booking setup required'}</small>
+                      </button>
+                    ))}
+                  </div>
+                </section>
                 <div className="reserve-public-search-grid">
-                  <Select
-                    label="Venue"
-                    value={search.venue}
-                    onChange={(event) => setSearch((current) => ({ ...current, venue: event.currentTarget.value }))}
-                    options={venueOptions}
-                  />
                   <Input
                     label="Date"
                     type="date"
@@ -642,7 +691,7 @@ function PublicBookingWidget() {
                   <div className="reserve-public-section-heading">
                     <div>
                       <p className="reserve-public-eyebrow">Available times</p>
-                      <h2>{availability.partySize} guests on {shortDate(availability.serviceDate)}</h2>
+                      <h2>{availability.partySize} guests at {search.venue} on {shortDate(availability.serviceDate)}</h2>
                     </div>
                   </div>
                   {availability.slots.length === 0 ? (
