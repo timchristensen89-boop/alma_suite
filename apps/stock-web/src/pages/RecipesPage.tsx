@@ -154,6 +154,7 @@ export function RecipesPage() {
   const [collapsedRecipeGroupIds, setCollapsedRecipeGroupIds] = useState<Set<string>>(
     () => new Set()
   );
+  const [recipeGroupsInitialised, setRecipeGroupsInitialised] = useState(false);
 
   async function load() {
     setLoading(true);
@@ -284,6 +285,12 @@ export function RecipesPage() {
     recipeCategoryGroupIds.length &&
       recipeCategoryGroupIds.every((id) => collapsedRecipeGroupIds.has(id))
   );
+
+  useEffect(() => {
+    if (recipeGroupsInitialised || recipeCategoryGroupIds.length === 0) return;
+    setCollapsedRecipeGroupIds(new Set(recipeCategoryGroupIds));
+    setRecipeGroupsInitialised(true);
+  }, [recipeCategoryGroupIds, recipeGroupsInitialised]);
 
   async function toggleRow(recipe: Recipe) {
     if (expandedId === recipe.id) {
@@ -703,7 +710,7 @@ export function RecipesPage() {
                   ) : duplicateGroups.length > 0 ? (
                     `${duplicateGroups.length} duplicate groups`
                   ) : (
-                    'Click a row to see ingredient lines'
+                    'Expand a category, then show a recipe to see ingredient lines'
                   )}
                 </span>
               </div>
