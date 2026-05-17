@@ -9013,6 +9013,14 @@ function readUploadAsDataUrl(file: File): Promise<string> {
 
 const ONBOARDING_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
 const ONBOARDING_UPLOAD_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+const ONBOARDING_UPLOAD_EXTENSION_TYPES = new Map([
+  ['.pdf', 'application/pdf'],
+  ['.png', 'image/png'],
+  ['.jpg', 'image/jpeg'],
+  ['.jpeg', 'image/jpeg'],
+  ['.webp', 'image/webp'],
+  ['.gif', 'image/gif']
+]);
 
 function safeUploadName(name: string) {
   const cleaned = name
@@ -9022,17 +9030,30 @@ function safeUploadName(name: string) {
   return (cleaned || 'uploaded-document').slice(0, 180);
 }
 
+function uploadMimeType(file: File) {
+  if (ONBOARDING_UPLOAD_TYPES.has(file.type)) return file.type;
+  const lowerName = file.name.toLowerCase();
+  const match = Array.from(ONBOARDING_UPLOAD_EXTENSION_TYPES.entries()).find(([extension]) => lowerName.endsWith(extension));
+  return match?.[1] ?? '';
+}
+
+function normaliseUploadDataUrl(dataUrl: string, mimeType: string) {
+  if (!mimeType) return dataUrl;
+  return dataUrl.replace(/^data:(?:application\/octet-stream)?;base64,/i, `data:${mimeType};base64,`);
+}
+
 async function readOnboardingUpload(file: File) {
   if (file.size > ONBOARDING_UPLOAD_MAX_BYTES) {
     throw new Error('Please upload a file smaller than 4MB.');
   }
-  if (!ONBOARDING_UPLOAD_TYPES.has(file.type)) {
+  const mimeType = uploadMimeType(file);
+  if (!mimeType) {
     throw new Error('Upload a PDF, PNG, JPEG, WebP, or GIF document.');
   }
 
   return {
     name: safeUploadName(file.name),
-    url: await readUploadAsDataUrl(file)
+    url: normaliseUploadDataUrl(await readUploadAsDataUrl(file), mimeType)
   };
 }
 
