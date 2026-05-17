@@ -146,6 +146,66 @@
   max-width: 1120px;
 }
 
+.staff-settings-page {
+  gap: 26px;
+}
+
+.staff-settings-page .page-header {
+  align-items: flex-end;
+}
+
+.staff-settings-page .page-header-actions {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.staff-settings-stats {
+  grid-template-columns: repeat(4, minmax(180px, 1fr));
+}
+
+.staff-settings-grid {
+  display: grid;
+  gap: 20px;
+  align-items: start;
+}
+
+.staff-settings-grid-primary {
+  grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
+}
+
+.staff-settings-support-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.staff-settings-card {
+  min-width: 0;
+}
+
+.staff-settings-card-large {
+  grid-row: span 2;
+}
+
+.staff-settings-card-wide {
+  grid-column: 1 / -1;
+}
+
+.staff-settings-card .card-body {
+  display: grid;
+  gap: 16px;
+}
+
+.staff-settings-card .staff-profile-form {
+  gap: 16px;
+}
+
+.staff-settings-card .admin-social-grid {
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+
+.staff-settings-card .admin-boundary-list {
+  gap: 10px;
+}
+
 .staff-daily-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -2202,6 +2262,25 @@
 }
 
 @media (max-width: 1200px) {
+  .staff-settings-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-settings-grid-primary,
+  .staff-settings-support-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-settings-card-large,
+  .staff-settings-card-wide {
+    grid-column: auto;
+    grid-row: auto;
+  }
+
+  .staff-settings-card .admin-social-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .tips-page .stats-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
@@ -2920,6 +2999,20 @@
 }
 
 @media (max-width: 520px) {
+  .staff-settings-page .page-header {
+    align-items: stretch;
+  }
+
+  .staff-settings-page .page-header-actions,
+  .staff-settings-page .page-header-actions .btn {
+    width: 100%;
+  }
+
+  .staff-settings-stats,
+  .staff-settings-card .admin-social-grid {
+    grid-template-columns: 1fr;
+  }
+
   .tips-page .stats-grid {
     grid-template-columns: 1fr;
   }

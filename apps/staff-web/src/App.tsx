@@ -730,14 +730,14 @@ function StaffHome({
   }
 
   return (
-    <div className="page-stack">
+    <div className="page-stack staff-settings-page">
       <PageHeader
         eyebrow="ALMA Staff"
         title="One staff authority for every ALMA app"
         description="This app reads and manages the shared StaffProfile register used by Compliance, Stock, Training, Reports, and future modules."
       />
 
-      <div className="stats-grid">
+      <div className="stats-grid staff-settings-stats">
         <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />
         <StatCard label="Active" value={activeStaff.length} hint="Not archived" loading={loading} />
         <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
@@ -4193,8 +4193,8 @@ function AdminPage({
         <StatCard label="Staff profiles" value={staff.length} hint="Shared authority" loading={loading} />
       </div>
 
-      <div className="tips-entry-grid">
-        <Card title="Organisation settings" subtitle="Production-safe basics shared across the suite">
+      <div className="staff-settings-grid staff-settings-grid-primary">
+        <Card className="staff-settings-card staff-settings-card-large" title="Organisation settings" subtitle="Production-safe basics shared across the suite">
           <form
             className="staff-profile-form"
             onSubmit={(event) => {
@@ -4245,7 +4245,7 @@ function AdminPage({
           </form>
         </Card>
 
-        <Card title="Integrations" subtitle="Shared API keys and service endpoints">
+        <Card className="staff-settings-card" title="Integrations" subtitle="Shared API keys and service endpoints">
           <form
             className="staff-profile-form"
             onSubmit={(event) => {
@@ -4275,7 +4275,7 @@ function AdminPage({
           </form>
         </Card>
 
-        <Card title="Marketing social setup" subtitle="Facebook, Instagram and TikTok live publishing readiness belongs in Admin. Tokens are never shown here.">
+        <Card className="staff-settings-card staff-settings-card-wide" title="Marketing social setup" subtitle="Facebook, Instagram and TikTok live publishing readiness belongs in Admin. Tokens are never shown here.">
           <div className="admin-social-grid">
             {MARKETING_SOCIAL_PLATFORMS.map((platform) => {
               const account = marketingSocialAccounts.find((item) => item.platform === platform && item.venue === adminSocialVenue);
@@ -4314,7 +4314,7 @@ function AdminPage({
           <p className="subtle">Marketing users can plan, schedule, preview and simulate content. Platform connection, OAuth readiness and secret references stay in Admin.</p>
         </Card>
 
-        <Card title="Reports and exports setup" subtitle="Report configuration belongs in Admin; the Reports app stays read-only.">
+        <Card className="staff-settings-card" title="Reports and exports setup" subtitle="Report configuration belongs in Admin; the Reports app stays read-only.">
           <div className="admin-boundary-list">
             <div>
               <strong>Sales source imports</strong>
@@ -4332,7 +4332,7 @@ function AdminPage({
         </Card>
       </div>
 
-      <Card title="Staff defaults" subtitle="Defaults used for new staff profiles and onboarding invites. Individual staff pay and access can still be edited on their profile.">
+      <Card className="staff-settings-card staff-settings-card-wide" title="Staff defaults" subtitle="Defaults used for new staff profiles and onboarding invites. Individual staff pay and access can still be edited on their profile.">
         <form
           className="staff-profile-form"
           onSubmit={(event) => {
@@ -4402,6 +4402,7 @@ function AdminPage({
       </Card>
 
       <Card
+        className="staff-settings-card staff-settings-card-wide"
         title="Venues"
         subtitle="Shared venue list used by Staff, Compliance, Stock, Reports, and Reserve"
         action={<Button type="button" size="sm" variant="secondary" onClick={addVenue}>Add venue</Button>}
@@ -4449,7 +4450,7 @@ function AdminPage({
         </form>
       </Card>
 
-      <Card title="Roster settings" subtitle="Closed days are saved separately for each venue. Area rows still control the roster board order.">
+      <Card className="staff-settings-card staff-settings-card-wide" title="Roster settings" subtitle="Closed days are saved separately for each venue. Area rows still control the roster board order.">
         <div className="roster-area-manager">
           <div className="roster-week-controls" aria-label="Roster settings week controls">
             <Button type="button" variant="secondary" size="sm" onClick={() => setRosterSettingsWeekStart(addDays(rosterSettingsWeekStart, -7))}>
@@ -4570,7 +4571,7 @@ function AdminPage({
         </div>
       </Card>
 
-      <Card title="Onboarding process" subtitle="Control what new staff complete before managers approve them.">
+      <Card className="staff-settings-card staff-settings-card-wide" title="Onboarding process" subtitle="Control what new staff complete before managers approve them.">
         <form
           className="staff-profile-form"
           onSubmit={(event) => {
@@ -4637,8 +4638,8 @@ function AdminPage({
         </form>
       </Card>
 
-      <div className="tips-entry-grid">
-        <Card title="Password and email status" subtitle="Staff password recovery is email-only. Managers can request a reset but cannot set or view passwords.">
+      <div className="staff-settings-grid staff-settings-support-grid">
+        <Card className="staff-settings-card" title="Password and email status" subtitle="Staff password recovery is email-only. Managers can request a reset but cannot set or view passwords.">
           <div className="staff-expiry-list">
             <div className="staff-expiry-row">
               <span>
@@ -4657,7 +4658,7 @@ function AdminPage({
           </div>
         </Card>
 
-        <Card title="Roles and access" subtitle="Available role presets and permission groups. Elevated Settings/admin access remains admin-only.">
+        <Card className="staff-settings-card" title="Roles and access" subtitle="Available role presets and permission groups. Elevated Settings/admin access remains admin-only.">
           <div className="staff-expiry-list">
             {STAFF_PROFILE_PRESETS.map((preset) => (
               <div key={preset.id} className="staff-expiry-row">
@@ -4672,7 +4673,7 @@ function AdminPage({
         </Card>
       </div>
 
-      <Card title="App access matrix" subtitle="Manage access here or jump into the detailed profile workflow." padding="none">
+      <Card className="staff-settings-card staff-settings-card-wide" title="App access matrix" subtitle="Manage access here or jump into the detailed profile workflow." padding="none">
         <div className="staff-list" style={{ padding: 12 }}>
           {appRows.map(({ app, enabled, pending, disabled }) => (
             <div key={app.id} className="staff-expiry-row">
@@ -4696,7 +4697,7 @@ function AdminPage({
         </div>
       </Card>
 
-      <Card title="Staff management audit" subtitle="Recent role, access, pay setup, password reset, leave and duplicate-merge events.">
+      <Card className="staff-settings-card staff-settings-card-wide" title="Staff management audit" subtitle="Recent role, access, pay setup, password reset, leave and duplicate-merge events.">
         <div className="toolbar-right">
           <Select
             label="Event type"
