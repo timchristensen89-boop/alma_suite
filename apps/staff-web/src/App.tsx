@@ -7201,12 +7201,14 @@ function ApprovalRecordRow({
   record,
   saving,
   onApprove,
+  onUpload,
   feedback
 }: {
   member: StaffProfile;
   record: StaffComplianceRecord;
   saving: boolean;
   onApprove: (memberId: string, recordId: string) => void;
+  onUpload: (memberId: string, record: StaffComplianceRecord, file: File) => void;
   feedback?: string | null;
 }) {
   return (
@@ -7226,6 +7228,20 @@ function ApprovalRecordRow({
       </span>
       <span className="invite-row-actions">
         <Badge tone={record.status === 'APPROVED' ? 'positive' : 'warning'}>{record.status}</Badge>
+        <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
+          Upload document
+          <input
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+            disabled={saving}
+            style={{ display: 'none' }}
+            onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              if (file) onUpload(member.id, record, file);
+            }}
+          />
+        </label>
         <Button
           type="button"
           size="sm"
@@ -7267,6 +7283,29 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
       setMessage('Document approved.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not approve document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function uploadRecordDocument(memberId: string, record: StaffComplianceRecord, file: File) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:upload`);
+    try {
+      const upload = await readOnboardingUpload(file);
+      await api(`/api/staff/${memberId}/records/${record.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          documentName: upload.name,
+          documentUrl: upload.url,
+          status: 'PENDING'
+        })
+      });
+      await reload();
+      setMessage('Document uploaded.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not upload document.');
     } finally {
       setSaving(false);
     }
@@ -7352,7 +7391,8 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                 record={record}
                 saving={saving}
                 onApprove={(memberId, recordId) => void approveRecord(memberId, recordId)}
-                feedback={messageTarget === `record:${record.id}` ? message : null}
+                onUpload={(memberId, approvalRecord, file) => void uploadRecordDocument(memberId, approvalRecord, file)}
+                feedback={messageTarget === `record:${record.id}` || messageTarget === `record:${record.id}:upload` ? message : null}
               />
             ))}
           </div>
@@ -8971,14 +9011,27 @@ function readUploadAsDataUrl(file: File): Promise<string> {
   });
 }
 
+const ONBOARDING_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+const ONBOARDING_UPLOAD_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
+
+function safeUploadName(name: string) {
+  const cleaned = name
+    .replace(/[/\\?%*:|"<>]/g, '-')
+    .replace(/\s+/g, ' ')
+    .trim();
+  return (cleaned || 'uploaded-document').slice(0, 180);
+}
+
 async function readOnboardingUpload(file: File) {
-  const maxBytes = 4 * 1024 * 1024;
-  if (file.size > maxBytes) {
+  if (file.size > ONBOARDING_UPLOAD_MAX_BYTES) {
     throw new Error('Please upload a file smaller than 4MB.');
+  }
+  if (!ONBOARDING_UPLOAD_TYPES.has(file.type)) {
+    throw new Error('Upload a PDF, PNG, JPEG, WebP, or GIF document.');
   }
 
   return {
-    name: file.name,
+    name: safeUploadName(file.name),
     url: await readUploadAsDataUrl(file)
   };
 }
@@ -9397,7 +9450,7 @@ function PublicOnboardingPage() {
                         <input
                           aria-label={`Upload ${document.title}`}
                           type="file"
-                          accept="image/*,application/pdf"
+                          accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
                           onChange={(event) => {
                             const file = event.currentTarget.files?.[0];
                             event.currentTarget.value = '';

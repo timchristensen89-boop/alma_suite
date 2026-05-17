@@ -672,6 +672,14 @@ staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, r
   }
 });
 
+staffRouter.patch('/:id/records/:recordId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.attachRecordDocument(String(req.params.id), String(req.params.recordId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.deleteRecord(String(req.params.id), String(req.params.recordId), req.user));

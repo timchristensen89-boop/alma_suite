@@ -37,7 +37,7 @@ app.use(cors({ origin: env.corsOrigin, credentials: true }));
 app.post('/api/gift-cards/webhook', express.raw({ type: 'application/json' }), stripeGiftCardWebhook);
 app.post('/webhooks/square', express.raw({ type: 'application/json', limit: '2mb' }), squareWebhookReceiver);
 app.post('/webhooks/xero', express.raw({ type: 'application/json', limit: '2mb' }), xeroWebhookReceiver);
-app.use(express.json());
+app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
 
 // Auth middleware runs on every request — populates req.user from cookie and
