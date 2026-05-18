@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   Badge,
   Button,
@@ -173,52 +174,81 @@ function socialAccountToForm(account: MarketingSocialAccount): SocialAccountForm
 const DATA_IMPORTS = [
   {
     title: 'Roster imports',
-    body: 'Keep roster import decisions owned in Admin, then hand off to Staff when live.',
-    owner: 'Staff'
+    body: 'Configure roster import decisions in Admin, then hand off to Staff when live.',
+    surface: 'Staff'
   },
   {
     title: 'Sales imports',
     body: 'Future Square sales imports will land here before touching Reports or Stock.',
-    owner: 'Reports'
+    surface: 'Reports'
   },
   {
     title: 'Invoice imports',
     body: 'Future Xero bill and supplier import setup belongs here, not inside one app.',
-    owner: 'Reports'
+    surface: 'Reports'
   },
   {
     title: 'Stock imports',
     body: 'Stock item and supplier import status will sit here while Stock keeps daily work.',
-    owner: 'Stock'
+    surface: 'Stock'
   }
 ];
 
-const APP_DEFAULT_LINKS = [
+const ADMIN_SETUP_LINKS = [
   {
     title: 'Staff defaults',
-    body: 'Default venue, role title, award and Staff app role are still edited in Staff settings today.',
-    appId: 'staff',
-    href: '/settings'
+    body: 'Default role, venue, award and Staff app role belong in Admin. The working editor is linked during migration.',
+    href: '/admin/staff-settings'
   },
   {
-    title: 'Award and pay defaults',
-    body: 'Award default selection is centralised here conceptually, with the working editor still in Staff.',
-    appId: 'staff',
-    href: '/settings'
+    title: 'Staff onboarding',
+    body: 'Required onboarding steps and document upload rules belong in Admin. Staff keeps approvals and reviews.',
+    href: '/admin/staff-onboarding'
   },
   {
-    title: 'Leave and onboarding settings',
-    body: 'Onboarding steps and leave settings remain in Staff settings until the editor is migrated.',
-    appId: 'staff',
-    href: '/settings'
+    title: 'Staff record types',
+    body: 'Required certificates, record labels and document rules should be configured in Admin.',
+    href: '/admin/staff-record-types'
   },
   {
-    title: 'App-specific setup',
-    body: 'Daily app configuration stays close to the app until it is safe to centralise.',
-    appId: 'stock',
-    href: '/'
+    title: 'Compliance settings',
+    body: 'Venue compliance setup, required documents and category defaults belong here.',
+    href: '/admin/compliance-settings'
+  },
+  {
+    title: 'Checklist templates',
+    body: 'Template management belongs in Admin; running checklists stays in Compliance.',
+    href: '/admin/checklist-templates'
+  },
+  {
+    title: 'Audit templates',
+    body: 'Template management belongs in Admin; completing audits stays in Compliance.',
+    href: '/admin/audit-templates'
+  },
+  {
+    title: 'Handbook content',
+    body: 'Policy, guideline and handbook content setup belongs in Admin.',
+    href: '/admin/handbook'
   }
 ];
+
+const ADMIN_ROUTE_SECTIONS: Record<string, string> = {
+  '/admin/venues': 'business',
+  '/admin/users': 'access',
+  '/admin/roles': 'permission-editor',
+  '/admin/staff-settings': 'defaults',
+  '/admin/staff-record-types': 'defaults',
+  '/admin/staff-onboarding': 'defaults',
+  '/admin/compliance-settings': 'compliance-settings',
+  '/admin/checklist-templates': 'compliance-settings',
+  '/admin/audit-templates': 'compliance-settings',
+  '/admin/handbook': 'compliance-settings',
+  '/admin/integrations': 'integrations',
+  '/admin/integrations/xero': 'integrations',
+  '/admin/imports': 'imports',
+  '/admin/danger-zone': 'danger-zone',
+  '/admin/meta-human-agent-demo': 'human-agent-demo'
+};
 
 function toneToBadge(tone: AdminSignalTone) {
   if (tone === 'positive') return 'positive';
@@ -682,6 +712,7 @@ function AuditList({ events }: { events: AdminAuditEventSummary[] }) {
 }
 
 export function AdminPage() {
+  const location = useLocation();
   useDocumentTitle('Admin · ALMA Suite');
   const [state, setState] = useState<AdminLoadState>({
     overview: null,
@@ -768,11 +799,12 @@ export function AdminPage() {
   }, []);
 
   useEffect(() => {
-    if (window.location.pathname !== '/admin/meta-human-agent-demo') return;
+    const sectionId = ADMIN_ROUTE_SECTIONS[location.pathname];
+    if (!sectionId) return;
     window.requestAnimationFrame(() => {
-      document.getElementById('human-agent-demo')?.scrollIntoView({ block: 'start' });
+      document.getElementById(sectionId)?.scrollIntoView({ block: 'start' });
     });
-  }, []);
+  }, [location.pathname]);
 
   async function connectIntegration(provider: IntegrationProviderStatus['provider']) {
     setIntegrationBusy(provider);
@@ -1223,6 +1255,7 @@ export function AdminPage() {
         <a href="#access">Users and access</a>
         <a href="#permission-editor">Permission editor</a>
         <a href="#defaults">Apps and defaults</a>
+        <a href="#compliance-settings">Compliance setup</a>
         <a href="#integrations">Integrations</a>
         <a href="#human-agent-demo">Human Agent Demo</a>
         <a href="#imports">Data imports</a>
@@ -1283,7 +1316,7 @@ export function AdminPage() {
             )}
           </Card>
 
-          <Card title="App handoff links" subtitle="Open the app that owns the daily workflow">
+          <Card title="App handoff links" subtitle="Open the app for each daily workflow">
             <div className="admin-card-list">
               {overview.handoffLinks.map((link) => (
                 <button key={`${link.appId}-${link.href}`} className="admin-link-card" type="button" onClick={() => void openSuiteLink(link)}>
@@ -1635,7 +1668,7 @@ export function AdminPage() {
           id="defaults"
           eyebrow="Apps and defaults"
           title="Defaults have one home."
-          description="This is the Admin index for Staff defaults, awards, leave, onboarding and app setup."
+          description="This is the Admin index for Staff defaults, awards, onboarding, Compliance setup and app configuration."
         />
         <div className="admin-grid two">
           <Card title="Current staff defaults" subtitle="Read from AppSettings">
@@ -1646,17 +1679,67 @@ export function AdminPage() {
               <StatusLine label="Staff app role" value={overview.staffDefaults.defaultStaffAppRole} tone="info" />
             </div>
           </Card>
-          <Card title="Managed links" subtitle="No duplicate editors in this pass">
+          <Card title="Setup routes" subtitle="Admin manages these setup areas as migration lands">
             <div className="admin-card-list">
-              {APP_DEFAULT_LINKS.map((link) => (
-                <button key={link.title} className="admin-link-card" type="button" onClick={() => void openSuiteLink(link)}>
+              {ADMIN_SETUP_LINKS.slice(0, 3).map((link) => (
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = link.href; }}>
                   <span>
                     <strong>{link.title}</strong>
                     <small>{link.body}</small>
                   </span>
-                  <IconExternalLink size={16} />
+                  <IconArrowRight size={16} />
                 </button>
               ))}
+            </div>
+            <div className="toolbar-right">
+              <Button type="button" variant="secondary" onClick={() => void openSuiteLink({ appId: 'staff', href: '/settings' })}>
+                Open Staff settings editor
+              </Button>
+            </div>
+          </Card>
+        </div>
+      </section>
+
+      <section className="admin-section">
+        <SectionHeading
+          id="compliance-settings"
+          eyebrow="Compliance setup"
+          title="Templates and required records move into Admin."
+          description="Compliance keeps daily checklists, audits, incidents and register review. Admin manages template and setup work."
+        />
+        <div className="admin-grid two">
+          <Card title="Compliance setup routes" subtitle="Central setup without changing daily Compliance execution">
+            <div className="admin-card-list">
+              {ADMIN_SETUP_LINKS.slice(3).map((link) => (
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = link.href; }}>
+                  <span>
+                    <strong>{link.title}</strong>
+                    <small>{link.body}</small>
+                  </span>
+                  <IconArrowRight size={16} />
+                </button>
+              ))}
+            </div>
+            <div className="toolbar-right">
+              <Button type="button" variant="secondary" onClick={() => { window.location.href = '/settings'; }}>
+                Open Compliance settings editor
+              </Button>
+            </div>
+          </Card>
+          <Card title="Daily workflow boundaries" subtitle="What stays out of Admin">
+            <div className="admin-boundary-list">
+              <div>
+                <strong>Checklist runs</strong>
+                <span>Start, complete and review checklist runs in Compliance.</span>
+              </div>
+              <div>
+                <strong>Audit runs and incidents</strong>
+                <span>Record findings and follow-up work in Compliance.</span>
+              </div>
+              <div>
+                <strong>Handbook reading</strong>
+                <span>Staff can keep reading handbook and onboarding content in Compliance.</span>
+              </div>
             </div>
           </Card>
         </div>
@@ -1756,7 +1839,7 @@ export function AdminPage() {
             subtitle={
               editingSocialAccountId
                 ? 'Update platform metadata. Secret references stay hidden and are preserved when left blank.'
-                : 'Admin-owned Facebook, Instagram and TikTok readiness'
+                : 'Facebook, Instagram and TikTok readiness in Admin'
             }
           >
             <form className="admin-social-form" onSubmit={(event) => void saveSocialAccount(event)}>
@@ -1999,11 +2082,11 @@ export function AdminPage() {
           id="imports"
           eyebrow="Data imports"
           title="Imports are named before they are wired."
-          description="Admin owns the setup map. The import logic stays in the right app until the integration pass."
+          description="Admin manages the setup map. Import logic stays in the right app until the integration pass."
         />
         <div className="admin-grid four">
           {DATA_IMPORTS.map((item) => (
-            <Card key={item.title} title={item.title} subtitle={item.owner}>
+            <Card key={item.title} title={item.title} subtitle={item.surface}>
               <p className="admin-card-copy">{item.body}</p>
               <Badge tone="muted">Not checked</Badge>
             </Card>

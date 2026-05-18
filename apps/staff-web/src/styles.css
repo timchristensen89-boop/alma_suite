@@ -169,6 +169,38 @@
   align-items: start;
 }
 
+.staff-settings-section-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  width: fit-content;
+  max-width: 100%;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+
+.staff-settings-section-tabs button {
+  border: 0;
+  border-radius: 8px;
+  padding: 8px 12px;
+  background: transparent;
+  color: var(--color-text-subtle);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.staff-settings-section-tabs button:hover,
+.staff-settings-section-tabs button:focus-visible,
+.staff-settings-section-tabs button.is-active {
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: var(--shadow-sm);
+}
+
 .staff-settings-grid-primary {
   grid-template-columns: minmax(0, 1.25fr) minmax(340px, 0.75fr);
 }

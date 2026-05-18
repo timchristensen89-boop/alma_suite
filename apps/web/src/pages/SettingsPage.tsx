@@ -121,7 +121,7 @@ export function SettingsPage() {
         <div className="hero-text">
           <p className="page-header-eyebrow">Settings</p>
           <h1>{settings.orgName}</h1>
-          <p>Cross-suite setup now starts in Alma Admin. Compliance keeps account access and compliance-specific handbook/document links here.</p>
+          <p>Use Admin for cross-suite setup. Compliance settings keeps account access and temporary links while setup routes move.</p>
         </div>
         <div className="hero-actions">
           {user?.isAdmin ? (
@@ -145,7 +145,7 @@ export function SettingsPage() {
           }
         >
           <p className="subtle">
-            Staff defaults, onboarding and leave settings still use the Staff Settings editor during this transition.
+            Organisation, venues, integrations, notifications, handbook and template setup are moving into Admin routes. Staff defaults and onboarding still use Staff Settings during this transition.
             {staffSettingsHref ? (
               <>
                 {' '}
@@ -422,7 +422,7 @@ function IntegrationsTab({
 
   return (
     <div className="page-stack compact">
-      <Card title="Square and Xero" subtitle="Server-owned connections for live sales, invoices and future syncs">
+      <Card title="Square and Xero" subtitle="Server-managed connections for live sales, invoices and future syncs">
         {statusError ? <ActionFeedback tone="error" message={statusError} /> : null}
         {status ? (
           <div className="admin-grid two">

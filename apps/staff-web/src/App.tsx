@@ -3814,6 +3814,7 @@ function AdminPage({
   const [rosterSettingsWeekStart, setRosterSettingsWeekStart] = useState(() => startOfWeek(new Date()));
   const [rosterSettingsBoardDays, setRosterSettingsBoardDays] = useState<7 | 14>(7);
   const [rosterSettingsVenue, setRosterSettingsVenue] = useState('Alma Avalon');
+  const [settingsSection, setSettingsSection] = useState<'admin' | 'staff' | 'onboarding' | 'roster' | 'access' | 'audit'>('admin');
   const [closedDaysByScope, setClosedDaysByScope] = useState(loadRosterClosedDays);
   const [rosterAreaSettings, setRosterAreaSettings] = useState(loadRosterAreaSettings);
   const [newRosterAreaName, setNewRosterAreaName] = useState('');
@@ -4252,145 +4253,76 @@ function AdminPage({
         <StatCard label="Staff profiles" value={staff.length} hint="Shared authority" loading={loading} />
       </div>
 
-      <div className="staff-settings-grid staff-settings-grid-primary">
-        <Card className="staff-settings-card staff-settings-card-large" title="Organisation settings" subtitle="Production-safe basics shared across the suite">
-          <form
-            className="staff-profile-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveSettings('organisation');
-            }}
+      <div className="staff-settings-section-tabs" aria-label="Staff settings sections">
+        {[
+          ['admin', 'Admin handoff'],
+          ['staff', 'Staff defaults'],
+          ['onboarding', 'Onboarding'],
+          ['roster', 'Roster setup'],
+          ['access', 'Access status'],
+          ['audit', 'Audit log']
+        ].map(([key, label]) => (
+          <button
+            key={key}
+            type="button"
+            className={settingsSection === key ? 'is-active' : ''}
+            onClick={() => setSettingsSection(key as typeof settingsSection)}
           >
-            <Input label="Organisation name" value={draft.orgName} onChange={(event) => update('orgName', event.currentTarget.value)} />
-            <div className="form-grid two">
-              <Input label="Primary contact" value={draft.primaryContactName} onChange={(event) => update('primaryContactName', event.currentTarget.value)} />
-              <Input label="Contact phone" value={draft.primaryContactPhone} onChange={(event) => update('primaryContactPhone', event.currentTarget.value)} />
-              <Input label="Contact email" type="email" value={draft.primaryContactEmail} onChange={(event) => update('primaryContactEmail', event.currentTarget.value)} />
-              <Input label="Notification email" type="email" value={draft.notifyEmail} onChange={(event) => update('notifyEmail', event.currentTarget.value)} />
-            </div>
-            <div className="onboarding-toggle-row">
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={draft.notifyOverdueIssues}
-                  onChange={(event) => update('notifyOverdueIssues', event.currentTarget.checked)}
-                />
-                Overdue compliance issues
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={draft.notifyExpiringStaff}
-                  onChange={(event) => update('notifyExpiringStaff', event.currentTarget.checked)}
-                />
-                Expiring staff documents
-              </label>
-              <label className="check-row">
-                <input
-                  type="checkbox"
-                  checked={draft.notifyOutOfRangeTemp}
-                  onChange={(event) => update('notifyOutOfRangeTemp', event.currentTarget.checked)}
-                />
-                Temperature alerts
-              </label>
-            </div>
-            <div className="toolbar-right">
-              <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save settings'}</Button>
-              <ActionFeedback
-                message={messageTarget === 'organisation' ? message : null}
-                tone={message?.includes('saved') ? 'success' : 'error'}
-              />
-            </div>
-          </form>
-        </Card>
-
-        <Card className="staff-settings-card" title="Integrations" subtitle="Shared API keys and service endpoints">
-          <form
-            className="staff-profile-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveSettings('integrations');
-            }}
-          >
-            <Input
-              label="Govee API key"
-              value={draft.goveeApiKey}
-              onChange={(event) => update('goveeApiKey', event.currentTarget.value)}
-              placeholder="Paste a new key to replace"
-              hint="Masked keys are preserved. Paste a real key only when replacing it."
-            />
-            <Input
-              label="Govee API base URL"
-              value={draft.goveeBaseUrl}
-              onChange={(event) => update('goveeBaseUrl', event.currentTarget.value)}
-            />
-            <div className="toolbar-right">
-              <Button type="submit" disabled={saving || !user?.isAdmin}>{saving ? 'Saving…' : 'Save integrations'}</Button>
-              <ActionFeedback
-                message={messageTarget === 'integrations' ? message : null}
-                tone={message?.includes('saved') ? 'success' : 'error'}
-              />
-            </div>
-          </form>
-        </Card>
-
-        <Card className="staff-settings-card staff-settings-card-wide" title="Marketing social setup" subtitle="Facebook, Instagram and TikTok live publishing readiness belongs in Admin. Tokens are never shown here.">
-          <div className="admin-social-grid">
-            {MARKETING_SOCIAL_PLATFORMS.map((platform) => {
-              const account = marketingSocialAccounts.find((item) => item.platform === platform && item.venue === adminSocialVenue);
-              return (
-                <div key={platform} className="admin-social-card">
-                  <div className="admin-social-card-header">
-                    <strong>{platform}</strong>
-                    <Badge tone={account?.status === 'CONNECTED' ? 'positive' : 'warning'}>
-                      {account?.status ?? 'SETUP_REQUIRED'}
-                    </Badge>
-                  </div>
-                  <span>{account?.displayName ?? `${adminSocialVenue} ${platform.toLowerCase()} setup not created`}</span>
-                  <span>{account?.hasTokenSecretRef ? 'Secret reference present' : 'No OAuth token reference configured'}</span>
-                  {account?.lastError ? <span className="error-text">{account.lastError}</span> : null}
-                  {!account ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={marketingSocialLoading || !user?.isAdmin}
-                      onClick={() => void createMarketingSocialSetup(platform)}
-                    >
-                      Create setup card
-                    </Button>
-                  ) : (
-                    <span className="subtle">Live publish remains disabled until OAuth and secret references are configured.</span>
-                  )}
-                  <ActionFeedback
-                    message={messageTarget === `marketing-social:${platform}` ? message : null}
-                    tone={message?.includes('created') ? 'success' : 'error'}
-                  />
-                </div>
-              );
-            })}
-          </div>
-          <p className="subtle">Marketing users can plan, schedule, preview and simulate content. Platform connection, OAuth readiness and secret references stay in Admin.</p>
-        </Card>
-
-        <Card className="staff-settings-card" title="Reports and exports setup" subtitle="Report configuration belongs in Admin; the Reports app stays read-only.">
-          <div className="admin-boundary-list">
-            <div>
-              <strong>Sales source imports</strong>
-              <span>Admin-owned setup before reports consume actual sales. Reports no longer owns import or clear actions.</span>
-            </div>
-            <div>
-              <strong>Payroll and Xero export readiness</strong>
-              <span>Admin controls provider setup and support decisions. Reports can download read-only CSVs only.</span>
-            </div>
-            <div>
-              <strong>Website menu publishing</strong>
-              <span>Publishing and integration setup stay outside Reports so reporting remains predictable and safe.</span>
-            </div>
-          </div>
-        </Card>
+            {label}
+          </button>
+        ))}
       </div>
 
+      {settingsSection === 'admin' ? (
+        <div className="staff-settings-grid staff-settings-grid-primary">
+          <Card className="staff-settings-card staff-settings-card-large" title="Moved to Admin" subtitle="Use Admin for business-wide setup and integration controls.">
+            <div className="admin-boundary-list">
+              <div>
+                <strong>Organisation, venues and notifications</strong>
+                <span>Configure shared business details and venue setup from Admin.</span>
+              </div>
+              <div>
+                <strong>Integrations and imports</strong>
+                <span>Configure Xero, Square, Meta, Govee, imports and sync health from Admin.</span>
+              </div>
+              <div>
+                <strong>Roles and permissions</strong>
+                <span>Use Admin for global access setup. Staff keeps daily profile and approval work.</span>
+              </div>
+            </div>
+            {COMPLIANCE_WEB_URL ? (
+              <div className="toolbar-right">
+                <Button type="button" variant="secondary" onClick={() => { window.location.href = `${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/settings`; }}>
+                  Open current settings editor
+                </Button>
+                <Button type="button" onClick={() => { window.location.href = `${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/admin/staff-settings`; }}>
+                  Open Admin settings
+                </Button>
+              </div>
+            ) : null}
+          </Card>
+
+          <Card className="staff-settings-card" title="Still in Staff" subtitle="Operational tools managers use during the week.">
+            <div className="admin-boundary-list">
+              <div>
+                <strong>Profile records and documents</strong>
+                <span>Add records, view uploaded documents, and approve submitted evidence.</span>
+              </div>
+              <div>
+                <strong>Onboarding approvals</strong>
+                <span>Review documents and approve completed staff onboarding submissions.</span>
+              </div>
+              <div>
+                <strong>Roster, timesheets and communications</strong>
+                <span>Keep daily manager work in Staff.</span>
+              </div>
+            </div>
+          </Card>
+        </div>
+      ) : null}
+
+      {settingsSection === 'staff' ? (
+        <>
       <Card className="staff-settings-card staff-settings-card-wide" title="Staff defaults" subtitle="Defaults used for new staff profiles and onboarding invites. Individual staff pay and access can still be edited on their profile.">
         <form
           className="staff-profile-form"
@@ -4508,7 +4440,10 @@ function AdminPage({
           </div>
         </form>
       </Card>
+        </>
+      ) : null}
 
+      {settingsSection === 'roster' ? (
       <Card className="staff-settings-card staff-settings-card-wide" title="Roster settings" subtitle="Closed days are saved separately for each venue. Area rows still control the roster board order.">
         <div className="roster-area-manager">
           <div className="roster-week-controls" aria-label="Roster settings week controls">
@@ -4629,8 +4564,10 @@ function AdminPage({
           </p>
         </div>
       </Card>
+      ) : null}
 
-      <Card className="staff-settings-card staff-settings-card-wide" title="Onboarding process" subtitle="Control what new staff complete before managers approve them.">
+      {settingsSection === 'onboarding' ? (
+      <Card className="staff-settings-card staff-settings-card-wide" title="Onboarding process" subtitle="Configure what new staff complete before managers approve them.">
         <form
           className="staff-profile-form"
           onSubmit={(event) => {
@@ -4696,7 +4633,10 @@ function AdminPage({
           </div>
         </form>
       </Card>
+      ) : null}
 
+      {settingsSection === 'access' ? (
+      <>
       <div className="staff-settings-grid staff-settings-support-grid">
         <Card className="staff-settings-card" title="Password and email status" subtitle="Staff password recovery is email-only. Managers can request a reset but cannot set or view passwords.">
           <div className="staff-expiry-list">
@@ -4732,7 +4672,7 @@ function AdminPage({
         </Card>
       </div>
 
-      <Card className="staff-settings-card staff-settings-card-wide" title="App access matrix" subtitle="Manage access here or jump into the detailed profile workflow." padding="none">
+      <Card className="staff-settings-card staff-settings-card-wide" title="App access matrix" subtitle="Review app access status here, then open profile access for changes." padding="none">
         <div className="staff-list" style={{ padding: 12 }}>
           {appRows.map(({ app, enabled, pending, disabled }) => (
             <div key={app.id} className="staff-expiry-row">
@@ -4755,7 +4695,10 @@ function AdminPage({
           ))}
         </div>
       </Card>
+      </>
+      ) : null}
 
+      {settingsSection === 'audit' ? (
       <Card className="staff-settings-card staff-settings-card-wide" title="Staff management audit" subtitle="Recent role, access, pay setup, password reset, leave and duplicate-merge events.">
         <div className="toolbar-right">
           <Select
@@ -4791,6 +4734,7 @@ function AdminPage({
           />
         </div>
       </Card>
+      ) : null}
     </div>
   );
 }
