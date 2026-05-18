@@ -155,7 +155,7 @@ export function MaintenancePage() {
       <PageHeader
         eyebrow="Handbook"
         title="Maintenance contacts"
-        description="Who to call when something breaks. Tim is the first call on most things — if he's not reachable, use the backup number."
+        description="What to check first, when to stop service, and who to contact when something breaks."
         actions={
           <Link to="/handbook">
             <Button
@@ -199,8 +199,8 @@ export function MaintenancePage() {
                 {placeholderCount === 1 ? '' : 's'} still need numbers.
               </strong>{' '}
               <span className="muted">
-                Entries wrapped in [brackets] are placeholders — update them in{' '}
-                the handbook editor on the index page.
+                Entries wrapped in [brackets] are placeholders. Ask a manager
+                before calling an unconfirmed contact.
               </span>
             </div>
           </div>

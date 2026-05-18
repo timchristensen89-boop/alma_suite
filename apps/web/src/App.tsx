@@ -32,7 +32,7 @@ import { AuditsListPage } from './pages/audits/AuditsListPage';
 import { AuditRunCreatePage } from './pages/audits/AuditRunCreatePage';
 import { AuditRunDetailPage } from './pages/audits/AuditRunDetailPage';
 import { AuditTemplateCreatePage } from './pages/audits/AuditTemplateCreatePage';
-import { HandbookIndexPage } from './pages/handbook/HandbookIndexPage';
+import { HandbookAdminPage, HandbookIndexPage } from './pages/handbook/HandbookIndexPage';
 import { OrgChartPage } from './pages/handbook/OrgChartPage';
 import { GuidelinesPage } from './pages/handbook/GuidelinesPage';
 import { OnboardingPage as HandbookOnboardingPage } from './pages/handbook/OnboardingPage';
@@ -50,12 +50,28 @@ import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { canAdmin, canManage, type BetaRole } from './lib/rbac';
 import {
   IconChevronDown,
+  IconHandbook,
   IconLogout,
   IconSearch,
   IconSettings
 } from './lib/icons';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
+
+const SECONDARY_PAGE_METADATA = [
+  {
+    to: '/settings',
+    label: 'Compliance settings',
+    description: 'Account access, Compliance shortcuts, and Admin handoff',
+    icon: <IconSettings />
+  },
+  {
+    to: '/admin/handbook',
+    label: 'Handbook admin',
+    description: 'Edit staff handbook content',
+    icon: <IconHandbook />
+  }
+];
 
 function SidebarNav() {
   const location = useLocation();
@@ -114,6 +130,10 @@ function currentPage(pathname: string, navItems = NAV_ITEMS) {
         : pathname === item.to || pathname.startsWith(`${item.to}/`)
     );
   if (match) return match;
+  const secondaryMatch = SECONDARY_PAGE_METADATA.find((item) =>
+    pathname === item.to || pathname.startsWith(`${item.to}/`)
+  );
+  if (secondaryMatch) return secondaryMatch;
   return {
     to: pathname,
     label: 'Page not found',
@@ -277,6 +297,7 @@ function AuthenticatedApp() {
           <Route path="/handbook/guidelines" element={<GuidelinesPage />} />
           <Route path="/handbook/onboarding" element={<HandbookOnboardingPage />} />
           <Route path="/handbook/maintenance" element={<MaintenancePage />} />
+          <Route path="/admin/handbook" element={<RequireRole minimum="ADMIN"><HandbookAdminPage /></RequireRole>} />
           <Route path="/icon-export" element={<IconExportPage />} />
           <Route path="/admin" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
           <Route path="/admin/*" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />

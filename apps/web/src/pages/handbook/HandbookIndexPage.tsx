@@ -407,6 +407,84 @@ function MaintenanceEditor({
 
 export function HandbookIndexPage() {
   const settings = useAsync<{ handbookContent?: Record<string, unknown> }>(() => api('/api/settings'), []);
+  const handbook = resolveHandbookContent(settings.data?.handbookContent ?? DEFAULT_HANDBOOK_CONTENT);
+  const readySections = handbook.handbookSections.filter((section) => section.status === 'ready');
+  const topLevelCount = handbook.orgMembers.filter((m) => m.reportsTo === null).length;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Handbook"
+        title="Staff handbook"
+        description="Read the venue guidance before service, check the policy that applies, and ask a manager if something is unclear."
+      />
+
+      <div className="handbook-grid">
+        {handbook.handbookSections.map((section) => {
+          const isReady = section.status === 'ready';
+          const Wrapper = ({ children }: { children: JSX.Element }) =>
+            isReady ? (
+              <Link to={section.href} className="handbook-card-link">
+                {children}
+              </Link>
+            ) : (
+              <div className="handbook-card-link handbook-card-link-disabled">
+                {children}
+              </div>
+            );
+
+          return (
+            <Wrapper key={section.id}>
+              <article className={`handbook-card ${isReady ? '' : 'is-disabled'}`.trim()}>
+                <div className="handbook-card-icon">
+                  {iconBySection[section.id] ?? <IconHandbook size={20} />}
+                </div>
+                <div className="handbook-card-body">
+                  <div className="handbook-card-header">
+                    <h3>{section.title}</h3>
+                    {isReady ? (
+                      <Badge tone="positive" dot>
+                        Ready
+                      </Badge>
+                    ) : (
+                      <Badge tone="muted">Unavailable</Badge>
+                    )}
+                  </div>
+                  <p>{section.summary}</p>
+                  {isReady ? (
+                    <span className="handbook-card-cta">
+                      Open section <IconArrowRight size={14} />
+                    </span>
+                  ) : null}
+                </div>
+              </article>
+            </Wrapper>
+          );
+        })}
+      </div>
+
+      <Card title="Before service" subtitle="Use the handbook to check how the venue handles common questions, records, and escalation.">
+        <div className="handbook-quick-facts">
+          <div>
+            <strong>{readySections.length}</strong>
+            <span>sections ready to read</span>
+          </div>
+          <div>
+            <strong>{handbook.guidelines.length}</strong>
+            <span>guidelines available</span>
+          </div>
+          <div>
+            <strong>{topLevelCount}</strong>
+            <span>leadership contacts listed</span>
+          </div>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
+export function HandbookAdminPage() {
+  const settings = useAsync<{ handbookContent?: Record<string, unknown> }>(() => api('/api/settings'), []);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<EditorState | null>(null);
   const handbook = resolveHandbookContent(settings.data?.handbookContent ?? DEFAULT_HANDBOOK_CONTENT);
@@ -444,9 +522,16 @@ export function HandbookIndexPage() {
   return (
     <div className="page-stack">
       <PageHeader
-        eyebrow="Handbook"
-        title="How we run the venue"
-        description="The playbook for everyone on the floor — who's responsible for what, how to handle customers, what to do on your first day, and who to call when something breaks."
+        eyebrow="Admin"
+        title="Manage handbook"
+        description="Edit the sections, guidance, onboarding notes, org chart, and maintenance contacts that appear in the staff-facing handbook."
+        actions={
+          <Link to="/handbook">
+            <Button variant="ghost" size="sm">
+              View staff handbook
+            </Button>
+          </Link>
+        }
       />
 
       <div className="handbook-grid">
@@ -477,7 +562,7 @@ export function HandbookIndexPage() {
                         Ready
                       </Badge>
                     ) : (
-                      <Badge tone="muted">Coming soon</Badge>
+                      <Badge tone="muted">Unavailable</Badge>
                     )}
                   </div>
                   <p>{section.summary}</p>
@@ -495,7 +580,7 @@ export function HandbookIndexPage() {
 
       <Card
         title="Quick facts"
-        subtitle="Live from settings. Edit the fields below to change handbook content in-app."
+        subtitle="These counts come from the saved handbook settings."
       >
         <div className="handbook-quick-facts">
           <div>
@@ -523,7 +608,7 @@ export function HandbookIndexPage() {
         <div className="inline-actions" style={{ justifyContent: 'space-between', gap: 12 }}>
           <span className="muted small">Changes save to the settings record and update the handbook pages immediately after refresh.</span>
           <Button onClick={() => void saveHandbook()} disabled={saving}>
-            {saving ? 'Saving…' : 'Save handbook'}
+            {saving ? 'Saving...' : 'Publish handbook updates'}
           </Button>
         </div>
       </Card>

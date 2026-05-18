@@ -129,7 +129,7 @@ export function GuidelinesPage() {
       <PageHeader
         eyebrow="Handbook"
         title="Staff guidelines"
-        description="How we handle customers, alcohol, allergens, and emergencies. Read these once a month, and before your first solo shift."
+        description="How staff handle service, records, safety, and escalation. Read before the first solo shift and whenever a task is unclear."
         actions={
           <Link to="/handbook">
             <Button
@@ -191,9 +191,8 @@ export function GuidelinesPage() {
 
       <Card padding="tight">
         <p className="muted small" style={{ margin: 0 }}>
-          Need to change one of these? Use the handbook editor on the index
-          page. This view reads the saved settings content and falls back to the
-          source defaults.
+          Ask a manager if a guideline is unclear. Published updates appear here
+          after the handbook is refreshed.
         </p>
       </Card>
     </div>

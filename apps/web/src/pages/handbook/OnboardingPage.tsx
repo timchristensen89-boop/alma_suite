@@ -102,7 +102,7 @@ export function OnboardingPage() {
       <PageHeader
         eyebrow="Handbook"
         title="New staff — getting started"
-        description="First-day, first-week, and first-month onboarding steps. Start here when the process is unclear."
+        description="What to read, what to upload, who to ask, and how to start using Alma before working solo."
         actions={
           <Link to="/handbook">
             <Button
@@ -171,9 +171,8 @@ export function OnboardingPage() {
           <div>
             <strong>Welcome aboard.</strong>{' '}
               <span className="muted">
-              Questions? Talk to the Venue Manager first — anything they can't
-              answer, they'll escalate. Edit{' '}
-              the handbook editor on the index page to tweak these steps.
+              Questions? Talk to the Venue Manager first. Anything they cannot
+              answer will be escalated.
             </span>
           </div>
         </div>

@@ -7,9 +7,9 @@
  *
  * - `ORG_MEMBERS` feeds the Org Chart page. Each member has a `reportsTo` id
  *   that points at another member — the page renders the hierarchy from that.
- * - Set `reportsTo: null` for top-level members (usually the owner / GM).
+ * - Set `reportsTo: null` for top-level members (usually the GM).
  * - Placeholder names are wrapped in square brackets so they're easy to spot
- *   and replace (e.g. "[Venue Manager — TBD]").
+ *   and replace (e.g. "[Venue Manager - update in Admin]").
  */
 
 export type OrgMember = {
@@ -26,70 +26,69 @@ export type OrgMember = {
 
 export const ORG_MEMBERS: OrgMember[] = [
   {
-    id: 'owner',
-    name: 'Tim Christensen',
-    title: 'Owner / General Manager',
+    id: 'general-manager',
+    name: '[General Manager - update in Admin]',
+    title: 'General Manager',
     reportsTo: null,
     responsibilities: [
-      'Overall responsibility for venue operations, compliance, and finance',
-      'Sign-off on major spend and staffing decisions',
-      'Primary contact for maintenance and escalations'
-    ],
-    email: 'timchristensen89@gmail.com'
+      'Overall responsibility for service, compliance, and team decisions',
+      'Final escalation point for serious incidents, safety issues, and venue readiness',
+      'Keeps manager guidance current in Alma Admin'
+    ]
   },
   {
     id: 'venue-manager',
-    name: '[Venue Manager — TBD]',
+    name: '[Venue Manager - update in Admin]',
     title: 'Venue Manager',
-    reportsTo: 'owner',
+    reportsTo: 'general-manager',
     responsibilities: [
-      'Day-to-day operations across bar, floor, and kitchen',
-      'Staff rostering via Deputy',
-      'First escalation point for customer incidents and RSA concerns'
+      'Runs day-to-day service across floor, bar, and kitchen',
+      'Checks onboarding, documents, checklists, audits, and follow-up in Alma',
+      'First escalation point for incidents, RSA concerns, and unsafe work'
     ]
   },
   {
     id: 'head-chef',
-    name: '[Head Chef — TBD]',
+    name: '[Head Chef - update in Admin]',
     title: 'Head Chef',
-    reportsTo: 'owner',
+    reportsTo: 'general-manager',
     responsibilities: [
-      'Kitchen operations, menus, and food safety',
-      'Supplier relationships and stock ordering',
-      'Allergen and HACCP compliance'
+      'Kitchen service, prep standards, food safety, and allergen handling',
+      'Supplier and stock decisions with the manager where needed',
+      'Reviews kitchen compliance actions before and after service'
     ]
   },
   {
     id: 'bar-manager',
-    name: '[Bar Manager — TBD]',
+    name: '[Bar Manager - update in Admin]',
     title: 'Bar Manager',
     reportsTo: 'venue-manager',
     responsibilities: [
-      'Bar stock, cellar, and ordering',
-      'RSA training and compliance on bar staff',
-      'Daily pour-cost and wastage checks'
+      'Bar readiness, cellar standards, stock notes, and ordering signals',
+      'RSA coaching and escalation during service',
+      'Checks wastage, incidents, and handover notes in Alma where available'
     ]
   },
   {
     id: 'foh-lead',
-    name: '[FOH Lead — TBD]',
+    name: '[FOH Lead - update in Admin]',
     title: 'Front of House Lead',
     reportsTo: 'venue-manager',
     responsibilities: [
-      'Floor staff supervision and training',
-      'Customer service standards',
-      'Opening and closing checklists'
+      'Floor setup, section standards, and service handover',
+      'Supports new staff with handbook, checklist, and escalation steps',
+      'Completes opening and closing checks before moving on'
     ]
   },
   {
     id: 'sous-chef',
-    name: '[Sous Chef — TBD]',
+    name: '[Sous Chef - update in Admin]',
     title: 'Sous Chef',
     reportsTo: 'head-chef',
     responsibilities: [
-      "Kitchen leadership in Head Chef's absence",
-      'Prep lists and kitchen hygiene',
-      'Station training for cooks'
+      "Kitchen leadership when the Head Chef is not on shift",
+      'Prep lists, station setup, hygiene, and food safety checks',
+      'Helps cooks follow current venue procedures'
     ]
   }
 ];
@@ -115,7 +114,7 @@ export const HANDBOOK_SECTIONS: HandbookSection[] = [
     id: 'org-chart',
     title: 'Org chart & responsibilities',
     summary:
-      'Who manages what. The venue hierarchy, roles, and what each person is on the hook for.',
+      'Who to ask, who checks what, and how service questions should be escalated.',
     status: 'ready',
     href: '/handbook/org-chart'
   },
@@ -123,7 +122,7 @@ export const HANDBOOK_SECTIONS: HandbookSection[] = [
     id: 'guidelines',
     title: 'Staff guidelines',
     summary:
-      'Customer-facing guidelines — RSA, handling difficult situations, refusal of service, intoxication, and more.',
+      'Practical service guidance for RSA, difficult situations, allergens, records, and daily Alma use.',
     status: 'ready',
     href: '/handbook/guidelines'
   },
@@ -131,7 +130,7 @@ export const HANDBOOK_SECTIONS: HandbookSection[] = [
     id: 'onboarding',
     title: 'New staff — getting started',
     summary:
-      'First day / first week procedure. Who to talk to, where to go, how to use Deputy and the compliance app.',
+      'What to read, what to upload, who to check in with, and how to start using Alma.',
     status: 'ready',
     href: '/handbook/onboarding'
   },
@@ -139,7 +138,7 @@ export const HANDBOOK_SECTIONS: HandbookSection[] = [
     id: 'maintenance',
     title: 'Maintenance contacts',
     summary:
-      'Who to call when something breaks — electrical, plumbing, gas, refrigeration — with a backup contact if the primary is unavailable.',
+      'What to check first, when to stop service, and who to contact for urgent venue issues.',
     status: 'ready',
     href: '/handbook/maintenance'
   }
@@ -173,11 +172,60 @@ export type Guideline = {
 
 export const GUIDELINES: Guideline[] = [
   {
+    id: 'using-alma',
+    category: 'Compliance',
+    title: 'Using Alma during service',
+    summary:
+      'Use Alma to keep the next person informed. Read the handbook, complete the task, and record the issue while the details are still clear.',
+    sections: [
+      {
+        heading: 'Before service',
+        bullets: [
+          'Read the handbook section that applies to the shift or task.',
+          'Check assigned checklists, audits, and attention items in Compliance where available.',
+          'Make sure required documents and staff compliance records are current in Alma Staff if the venue has enabled them.',
+          'Ask a manager if something is unclear before service starts.'
+        ]
+      },
+      {
+        heading: 'During service',
+        bullets: [
+          'Complete checklists and audits in Alma when they are assigned. Complete the task before moving on.',
+          'Record incidents, defects, temperature concerns, or maintenance issues in the current Alma area if enabled.',
+          'Keep records accurate. Use Alma so the next person can see what happened.',
+          'If something feels unsafe, stop and escalate it.'
+        ]
+      },
+      {
+        heading: 'Manager checks',
+        bullets: [
+          'Managers review onboarding, documents, checklists, audits, and follow-up before or after service.',
+          'Managers approve, reject, or re-request documents where that workflow is enabled.',
+          'Admin users keep handbook content, required documents, templates, integrations, permissions, and settings current through Admin.'
+        ]
+      },
+      {
+        heading: 'Where the other Alma apps fit',
+        bullets: [
+          'Reports shows action panels, attention items, readiness checks, and menu engineering where available.',
+          'Gift Cards supports redeeming and order management for staff with that responsibility.',
+          'Stock supports items, suppliers, recipes, production recipes, stocktakes, and cost checks for managers and stock users.',
+          'Use only the apps and actions assigned to the role. Ask a manager before changing records outside normal duties.'
+        ]
+      }
+    ],
+    reminders: [
+      'Use the current venue process when an Alma workflow is not enabled.',
+      'Ask a manager if something is unclear.'
+    ],
+    lastUpdated: '2026-05-18'
+  },
+  {
     id: 'rsa',
     category: 'Customer service',
     title: 'Responsible Service of Alcohol (RSA)',
     summary:
-      'The legal and venue-wide standard for serving alcohol. Everyone on the floor is responsible. If in doubt, stop pouring and ask a manager.',
+      'The standard for serving alcohol calmly and safely. If in doubt, stop pouring and ask a manager.',
     sections: [
       {
         heading: 'Spot the signs of intoxication',
@@ -194,8 +242,8 @@ export const GUIDELINES: Guideline[] = [
         bullets: [
           'Be polite, calm, and firm. Use "I" statements ("I can\'t serve you another one tonight").',
           'Offer water, food, and a non-alcoholic alternative.',
-          "Don't argue or negotiate. If the patron pushes back, get a manager — do not handle it alone.",
-          'Log the refusal in the incidents page so we have a record.'
+          "Don't argue or negotiate. If the patron pushes back, get a manager.",
+          'Record the refusal as an incident or shift note where available.'
         ]
       },
       {
@@ -210,33 +258,33 @@ export const GUIDELINES: Guideline[] = [
       {
         heading: 'Duty of care',
         bullets: [
-          "Keep an eye on your section — note who's drinking what and at what pace.",
+          "Keep an eye on the section - note who's drinking what and at what pace.",
           "Don't let an intoxicated patron buy drinks on behalf of someone else.",
-          'Arrange safe transport for anyone who shouldn\'t be driving — offer to call a taxi or rideshare.',
+          'Arrange safe transport for anyone who shouldn\'t be driving - offer to call a taxi or rideshare.',
           'Under 18s are never served, even if a parent is present and offering to buy for them.'
         ]
       }
     ],
     reminders: [
       'If in doubt, don\'t serve. Ask a manager.',
-      'One refusal is a shift note. Patterns are an incident report.'
+      'One refusal may be a shift note. Patterns need a clear incident record.'
     ],
-    lastUpdated: '2026-04-22'
+    lastUpdated: '2026-05-18'
   },
   {
     id: 'difficult-customers',
     category: 'Customer service',
     title: 'Handling difficult or escalating situations',
     summary:
-      'The steps to de-escalate, protect yourself and other patrons, and get a manager involved without making the situation worse.',
+      'How to slow the moment down, protect staff and guests, and bring in a manager early.',
     sections: [
       {
         heading: 'De-escalation basics',
         bullets: [
           'Stay calm. Keep your voice low and steady.',
-          'Give the person space — don\'t crowd or block exits.',
+          'Give the person space. Do not crowd or block exits.',
           'Listen more than you speak. Acknowledge the complaint without agreeing to anything you can\'t deliver.',
-          "Don't take it personally. Most escalation isn't about you."
+          'Keep another staff member in sight if the conversation is tense.'
         ]
       },
       {
@@ -245,28 +293,29 @@ export const GUIDELINES: Guideline[] = [
           'Any time you\'ve refused service or asked someone to leave.',
           'If you feel physically unsafe or cornered.',
           'If another patron is being harassed.',
-          'If the person is threatening property damage or a scene that will affect the room.'
+          'If the person is threatening damage, abuse, or disruption to the room.'
         ]
       },
       {
         heading: 'After the incident',
         bullets: [
-          'Log it as an incident report with time, people involved, and what was said.',
-          'Check in with anyone else on your team who was nearby.',
-          'Flag to the Venue Manager before the end of shift.'
+          'Record the incident with time, people involved, and what was said.',
+          'Check in with staff who were nearby.',
+          'Flag it to the Venue Manager before the end of shift.'
         ]
       }
     ],
     reminders: [
-      'Your safety comes first. Nothing on the floor is worth a punch.'
-    ]
+      'If something feels unsafe, stop and escalate it.'
+    ],
+    lastUpdated: '2026-05-18'
   },
   {
     id: 'allergens',
     category: 'Compliance',
     title: 'Allergen awareness & handling',
     summary:
-      'Food allergies can be fatal. Everyone on the floor and in the kitchen needs to treat allergen requests seriously.',
+      'Food allergies can be fatal. Treat every allergen request as a safety task, not a preference.',
     sections: [
       {
         heading: 'Taking an allergen order',
@@ -274,50 +323,98 @@ export const GUIDELINES: Guideline[] = [
           'Repeat the allergen back to the guest and confirm which dish is affected.',
           'Write "ALLERGEN: [specific]" clearly on the POS ticket.',
           'Tell the kitchen directly — do not rely on the ticket alone.',
-          'Never guess. If you\'re not certain a dish is safe, ask the Head Chef.'
+          'Never guess. If a dish may not be safe, ask the Head Chef.'
         ]
       },
       {
         heading: 'Serving the dish',
         bullets: [
           'Allergen dishes come up on a separate plate, clearly marked.',
-          'Run the allergen plate yourself — don\'t hand off to another staff member.',
-          'Reconfirm with the guest at the pass ("This is the gluten-free X, correct?").'
+          'Run the allergen plate yourself where possible. Do not hand off without a clear verbal handover.',
+          'Reconfirm with the guest at the table.'
+        ]
+      },
+      {
+        heading: 'Record concerns',
+        bullets: [
+          'If an allergen error or near miss happens, stop service on the dish and tell a manager.',
+          'Record the issue in Alma if incident or issue logging is enabled.'
         ]
       }
     ],
     reminders: [
       'If someone is having an allergic reaction, call 000 immediately — do not wait to see if it passes.'
-    ]
+    ],
+    lastUpdated: '2026-05-18'
   },
   {
     id: 'medical-emergency',
     category: 'Emergency',
     title: 'Medical emergencies & first aid',
     summary:
-      'What to do when a customer or staff member is injured, has a medical episode, or needs first aid.',
+      'What to do when a guest or staff member is injured, has a medical episode, or needs first aid.',
     sections: [
       {
         heading: 'Immediate steps',
         bullets: [
-          'Call for the nearest First Aid qualified staff member — check the Staff page if you\'re not sure who\'s on.',
+          'Call for the nearest First Aid qualified staff member. Check Alma Staff if available, or ask the manager on shift.',
           'Call 000 if the person is unconscious, bleeding heavily, struggling to breathe, or having a suspected cardiac event.',
-          "Clear the area — don't let a crowd form.",
+          "Clear the area. Don't let a crowd form.",
           'Assign someone to wait at the door and flag down the ambulance.'
         ]
       },
       {
         heading: 'After the incident',
         bullets: [
-          'Log a full incident report before the end of shift — times, what happened, what was done, who was involved.',
-          'Flag to the Venue Manager or on-call owner immediately for serious incidents.',
+          'Complete an incident report before the end of shift with times, what happened, what was done, and who was involved.',
+          'Tell the Venue Manager immediately for serious incidents.',
           'Keep any CCTV intact — do not let the hard drive loop over the incident window.'
         ]
       }
     ],
     reminders: [
-      'First aid kit is at the pass. AED is [LOCATION — update in data file].'
-    ]
+      'First aid kit is at [FIRST AID KIT LOCATION - update in Admin]. AED is at [AED LOCATION - update in Admin].'
+    ],
+    lastUpdated: '2026-05-18'
+  },
+  {
+    id: 'daily-records',
+    category: 'Compliance',
+    title: 'Checklists, audits, and daily records',
+    summary:
+      'Daily records only help if they are complete, accurate, and easy for the next person to read.',
+    sections: [
+      {
+        heading: 'Complete the task',
+        bullets: [
+          'Run opening, closing, cleaning, temperature, or safety checklists in Compliance where assigned.',
+          'Do the check before marking it complete.',
+          'Add a note or issue when something fails instead of ticking through it.',
+          'Use photos only when they clearly show the issue and the venue process allows it.'
+        ]
+      },
+      {
+        heading: 'Audit follow-up',
+        bullets: [
+          'Managers review audit results and checklist exceptions before service where practical.',
+          'If follow-up is assigned, complete it before moving on or ask a manager to reassign it.',
+          'Use Reports attention items where available to check what still needs action.'
+        ]
+      },
+      {
+        heading: 'Keep records useful',
+        bullets: [
+          'Write short, factual notes: what happened, where, when, and what was done.',
+          'Do not guess expiry dates, certificate details, or safety outcomes.',
+          'Ask a manager if a record looks wrong.'
+        ]
+      }
+    ],
+    reminders: [
+      'Keep records accurate.',
+      'Use Alma so the next person can see what happened.'
+    ],
+    lastUpdated: '2026-05-18'
   }
 ];
 
@@ -341,9 +438,9 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'day-1-arrival',
     phase: 'First day',
-    title: 'Arrive, meet the team, and do the walk-through',
+    title: 'Arrive early and check in',
     description:
-      'When you arrive for your first shift, check in with the Venue Manager (or whoever is shift-leading). They\'ll walk you through the venue, show you the staff area, fire exits, and first-aid kit.',
+      'Arrive before the shift starts and check in with the Venue Manager or shift lead. They will show the staff area, exits, first aid kit, and any service notes for the day.',
     actions: [
       'Arrive 15 minutes before your rostered start time',
       'Check in with the shift lead',
@@ -355,94 +452,105 @@ export const ONBOARDING_STEPS: OnboardingStep[] = [
   {
     id: 'day-1-paperwork',
     phase: 'First day',
-    title: 'Submit your onboarding details & certificates',
+    title: 'Complete onboarding and upload documents',
     description:
-      'Use the Alma Compliance onboarding link the manager sent you (or ask for a fresh one). Fill in your details and upload photos of your RSA, FSS, First Aid, and any other relevant certificates.',
+      'Use the Alma onboarding link sent by a manager. Add the requested details and upload clear copies of required documents such as RSA, Food Safety Supervisor, First Aid, visa evidence, or role-specific certificates where required.',
     actions: [
       'Open the onboarding link on your phone',
-      'Fill in name, role, emergency contact',
-      'Upload clear photos of the front of each certificate',
-      'Double-check expiry dates before submitting'
+      'Fill in contact details, emergency contact, and role information',
+      'Upload clear document images or PDFs where the form allows it',
+      'Check expiry dates before submitting',
+      'Ask a manager for a new link if the link has expired'
     ],
     contact: 'Venue Manager',
-    systems: ['Alma Compliance']
+    systems: ['Alma Staff', 'Alma onboarding']
   },
   {
-    id: 'day-1-deputy',
+    id: 'day-1-roster',
     phase: 'First day',
-    title: 'Set up Deputy for rostering',
+    title: 'Confirm roster and timekeeping process',
     description:
-      'Deputy is how we roster shifts, clock in and out, and request time off. The Venue Manager will invite you — accept the invite on your phone, set your availability, and clock in at the start of your next shift.',
+      'Managers will explain the current roster, clock-in, timesheet, and leave process. Use Alma Staff where available. If the venue uses another process, follow the manager\'s instructions.',
     actions: [
-      'Accept the Deputy invite (check your email)',
-      'Install the Deputy app and log in',
-      'Set your standing availability',
-      'Practice clocking in and out before the shift starts'
+      'Confirm where the roster is published',
+      'Check how to clock in and out',
+      'Confirm how to request time off or update availability',
+      'Ask before the first shift if access has not arrived'
     ],
     contact: 'Venue Manager',
-    systems: ['Deputy']
+    systems: ['Alma Staff where available', 'Current venue process']
   },
   {
     id: 'week-1-menu',
     phase: 'First week',
-    title: 'Learn the menu, top-sellers, and specials',
+    title: 'Learn the menu and service standards',
     description:
-      'Sit down with the Head Chef or Sous Chef and taste the main menu items. Know the top-sellers, the allergen-safe options, and what\'s on current special.',
+      'Spend time with the Head Chef, Sous Chef, or shift lead. Learn key dishes, allergen handling, specials, table language, and what to do when unsure.',
     actions: [
       'Taste the top 5 most-ordered dishes',
       'Learn which dishes are gluten-free, vegan, and dairy-free by default',
       'Read the current specials and know when they change',
-      'Ask: "if a guest asks for X, what do we recommend?"'
+      'Ask what to recommend when a guest is unsure'
     ],
     contact: 'Head Chef'
   },
   {
     id: 'week-1-pos',
     phase: 'First week',
-    title: 'Get comfortable on the POS',
+    title: 'Get comfortable with service systems',
     description:
-      'Your shift lead will walk you through the POS — splitting bills, allergen flags, voids, and end-of-shift cash-up.',
+      'The shift lead will walk through the POS and any Alma tasks used during the shift. Learn what to record, what to ask approval for, and when to escalate.',
     actions: [
       'Practice opening/closing a tab',
       'Practice a split bill',
       'Learn how to mark an allergen order (it flags the kitchen)',
-      'Watch a full cash-up'
+      'Complete any assigned Alma checklist before moving on',
+      'Watch a full cash-up if the role requires it'
     ],
-    contact: 'Shift lead'
+    contact: 'Shift lead',
+    systems: ['POS', 'Alma Compliance where available']
   },
   {
     id: 'week-1-rsa',
     phase: 'First week',
-    title: 'Read the RSA guideline and complete your induction shift',
+    title: 'Read core handbook guidance',
     description:
-      'Even if your RSA is current, read the venue RSA guideline in the Handbook. Shadow an experienced floor member for a full shift before working solo.',
+      'Read the staff handbook before working solo. Focus on RSA, allergens, incidents, checklists, audits, maintenance, and escalation.',
     actions: [
-      'Read Handbook → Guidelines → Responsible Service of Alcohol',
+      'Read Handbook -> Guidelines -> Responsible Service of Alcohol',
+      'Read the guidance on using Alma during service',
       'Shadow for a full shift',
-      'Ask for feedback at the end'
+      'Ask for feedback at the end of the shift'
     ],
     systems: ['Alma Compliance']
   },
   {
     id: 'month-1-compliance',
     phase: 'First month',
-    title: 'Run a full shift using all compliance tools',
+    title: 'Use Alma through a complete shift',
     description:
-      'By the end of your first month you should be running opening or closing checklists, logging temps if required, and flagging any issues through the compliance app.',
+      'By the end of the first month, staff should be comfortable reading the handbook, completing assigned checklists, recording issues, and asking for help before guessing.',
     actions: [
-      'Complete an opening or closing checklist solo',
-      'Log at least one temperature check (where relevant)',
-      'Raise any issue you find via the Issues page'
+      'Complete an opening or closing checklist where assigned',
+      'Record temperature or audit checks where enabled',
+      'Raise an issue for anything unsafe, broken, or unclear',
+      'Use Reports attention items if a manager asks for a readiness check'
     ],
     systems: ['Alma Compliance']
   },
   {
     id: 'ongoing-certs',
     phase: 'Ongoing',
-    title: 'Keep your certificates up to date',
+    title: 'Keep documents and records current',
     description:
-      'The Staff page shows expiring certificates. We\'ll give you 30-day notice before an expiry, but it\'s your responsibility to book the renewal. Upload the new certificate through the compliance app.',
-    systems: ['Alma Compliance']
+      'Managers review staff documents in Alma Staff where available. Upload renewed certificates when asked, keep details accurate, and ask a manager if a record looks wrong.',
+    actions: [
+      'Upload renewed documents before the old copy expires',
+      'Check that the document is readable before submitting',
+      'Respond quickly if a manager re-requests a document',
+      'Use the current venue process if Alma Staff is not enabled for the record'
+    ],
+    systems: ['Alma Staff']
   }
 ];
 
@@ -479,25 +587,24 @@ export const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = [
       'Power outages, tripped circuits, faulty outlets, flickering lights, anything smoking or sparking.',
     urgency: 'Immediate',
     primary: {
-      name: 'Tim Christensen',
-      role: 'Owner / first call',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com',
-      availability: 'Usually reachable. Leave a voicemail if no answer.'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]',
+      availability: 'Call first during service.'
     },
     backup: {
-      name: '[Backup electrician — TBD]',
+      name: '[Licensed electrician - update in Admin]',
       role: 'Licensed electrician',
-      phone: '[Phone — TBD]',
-      availability: 'Emergency call-out available 24/7 — mention the venue name.'
+      phone: '[Phone - update in Admin]',
+      availability: 'Emergency call-out where available.'
     },
     beforeYouCall: [
-      'Check the main switchboard — flip any tripped breaker back on.',
-      'If something is smoking or sparking, cut power at the board and evacuate the area first.',
-      'Note the time the issue started and which circuit / appliance is affected.'
+      'If something is smoking, sparking, hot, or unsafe, stop and clear the area.',
+      'Check the main switchboard only if it is safe to do so.',
+      'Record the time, area, and affected equipment in Alma or the current venue process.'
     ],
     notes:
-      'Tag out any faulty outlet or appliance so no one plugs into it until it\'s been checked.'
+      'Tag out faulty outlets or equipment so no one uses them until cleared by a manager or contractor.'
   },
   {
     id: 'plumbing',
@@ -506,21 +613,21 @@ export const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = [
       'Blocked drains, burst pipes, overflowing toilets, leaks, no hot water.',
     urgency: 'Same-day',
     primary: {
-      name: 'Tim Christensen',
-      role: 'Owner / first call',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]'
     },
     backup: {
-      name: '[Backup plumber — TBD]',
+      name: '[Licensed plumber - update in Admin]',
       role: 'Licensed plumber',
-      phone: '[Phone — TBD]',
-      availability: 'After-hours surcharge applies for emergency call-outs.'
+      phone: '[Phone - update in Admin]',
+      availability: 'After-hours call-out where available.'
     },
     beforeYouCall: [
-      'If water is actively leaking or flooding, shut off the mains (main tap is in the [LOCATION] — update in data file).',
+      'If water is actively leaking or flooding, shut off the mains if trained and safe to do so.',
       'Put down wet-floor signs and mop up.',
-      'Close off any affected bathroom/area to customers.'
+      'Close off any affected bathroom or area to guests.',
+      'Record the issue in Alma where available.'
     ]
   },
   {
@@ -530,47 +637,45 @@ export const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = [
       'Gas smells, pilot lights out, cooktop or oven issues, hot water system.',
     urgency: 'Immediate',
     primary: {
-      name: '[Gas fitter — TBD]',
+      name: '[Licensed gas fitter - update in Admin]',
       role: 'Licensed gas fitter',
-      phone: '[Phone — TBD]',
+      phone: '[Phone - update in Admin]',
       availability: 'Same-day for safety issues.'
     },
     backup: {
-      name: 'Tim Christensen',
-      role: 'Owner',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]'
     },
     beforeYouCall: [
       'Smell gas? Turn off the main gas valve, ventilate the area, evacuate if strong, and CALL 000 FIRST.',
       'Do not use electrical switches, lighters, or phones near the leak.',
-      'Note what equipment / area is affected before calling the fitter.'
+      'When safe, note what equipment or area is affected before calling the fitter.'
     ],
     notes:
-      'For gas emergencies, 000 first, then call us. Never try to re-light a pilot light yourself.'
+      'For gas emergencies, call 000 first. Never try to relight a pilot light unless trained and approved.'
   },
   {
     id: 'refrigeration',
     title: 'Refrigeration & cool-rooms',
     description:
-      'Fridges running warm, cool-room alarms, ice machines, freezer failures. Check the Temperatures page for the live reading before calling.',
+      'Fridges running warm, cool-room alarms, ice machines, freezer failures. Check temperature records where available before calling.',
     urgency: 'Same-day',
     primary: {
-      name: '[Refrigeration tech — TBD]',
+      name: '[Refrigeration technician - update in Admin]',
       role: 'Commercial refrigeration',
-      phone: '[Phone — TBD]',
-      availability: 'Same-day preferred — stock is at risk.'
+      phone: '[Phone - update in Admin]',
+      availability: 'Same-day preferred when stock is at risk.'
     },
     backup: {
-      name: 'Tim Christensen',
-      role: 'Owner',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]'
     },
     beforeYouCall: [
-      'Check the Temperatures page — is this actually out of range, or just a door that was left open?',
-      'If genuinely failing, move critical stock (meat, dairy) to a working unit immediately.',
-      'Note the asset and the temperature when you noticed.'
+      'Check Compliance temperature records if enabled.',
+      'If the unit is failing, move high-risk stock to a working unit if safe and approved by a manager.',
+      'Record the asset, temperature, time noticed, and action taken.'
     ]
   },
   {
@@ -579,21 +684,20 @@ export const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = [
     description: 'Climate control, exhaust fans, kitchen ventilation.',
     urgency: 'Routine',
     primary: {
-      name: '[HVAC contractor — TBD]',
+      name: '[HVAC contractor - update in Admin]',
       role: 'HVAC / mechanical services',
-      phone: '[Phone — TBD]',
-      availability: 'Book ahead — not usually same-day.'
+      phone: '[Phone - update in Admin]',
+      availability: 'Book ahead where practical.'
     },
     backup: {
-      name: 'Tim Christensen',
-      role: 'Owner',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]'
     },
     beforeYouCall: [
-      'Check the thermostat / remote is set correctly.',
-      'Check filters aren\'t obviously clogged.',
-      'Note how long it\'s been acting up and which zones are affected.'
+      'Check the thermostat or remote is set correctly.',
+      'Check filters only if access is safe and approved.',
+      'Record how long it has been acting up and which zones are affected.'
     ]
   },
   {
@@ -603,16 +707,20 @@ export const MAINTENANCE_CATEGORIES: MaintenanceCategory[] = [
       'Furniture, doors, locks, glazing, signage, small bits and pieces that don\'t fit the categories above.',
     urgency: 'Routine',
     primary: {
-      name: 'Tim Christensen',
-      role: 'Owner',
-      phone: '[Tim\'s mobile — update in data file]',
-      email: 'timchristensen89@gmail.com'
+      name: '[Venue Manager - update in Admin]',
+      role: 'Manager on duty',
+      phone: '[Phone - update in Admin]'
     },
     backup: {
-      name: '[Handyman — TBD]',
+      name: '[General maintenance contractor - update in Admin]',
       role: 'General maintenance',
-      phone: '[Phone — TBD]'
-    }
+      phone: '[Phone - update in Admin]'
+    },
+    beforeYouCall: [
+      'Make the area safe first.',
+      'Take a clear note or photo if the venue process allows it.',
+      'Record the issue in Alma where available so follow-up is visible.'
+    ]
   }
 ];
 

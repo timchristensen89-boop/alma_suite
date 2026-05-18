@@ -518,8 +518,8 @@ function HandbookTab() {
   const sections = [
     {
       title: 'Handbook editor',
-      description: 'Manage the handbook landing cards, org chart, guidelines, onboarding notes, and maintenance contacts.',
-      to: '/handbook'
+      description: 'Admin owns handbook editing, publishing, and content updates.',
+      to: '/admin/handbook'
     },
     {
       title: 'Org chart',
@@ -542,7 +542,7 @@ function HandbookTab() {
     <div className="page-stack compact">
       <Card
         title="Handbook"
-        subtitle="Moved from the sidebar into Compliance Settings."
+        subtitle="Staff can read the handbook from the Compliance sidebar. Admin owns editing."
         action={<IconHandbook size={22} />}
       >
         <div className="settings-link-grid">

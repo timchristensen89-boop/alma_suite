@@ -128,7 +128,7 @@ export function OrgChartPage() {
       <PageHeader
         eyebrow="Handbook"
         title="Org chart & responsibilities"
-        description="The venue hierarchy — who reports to whom, and what each person is on the hook for. Staff can check here any time they need to know who to escalate to."
+        description="Who to ask, who checks what, and how service questions should be escalated."
         actions={
           <Link to="/handbook">
             <Button
@@ -164,8 +164,8 @@ export function OrgChartPage() {
             <div>
             <strong>This chart has {placeholderCount} placeholder roles.</strong>{' '}
             <span className="muted">
-              Names wrapped in [brackets] are placeholders — update them in{' '}
-              the handbook editor on the index page.
+              Names wrapped in [brackets] are placeholders. Ask a manager if
+              something is unclear.
             </span>
           </div>
         </div>

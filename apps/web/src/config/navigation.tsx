@@ -4,6 +4,7 @@ import {
   IconAudit,
   IconChecklist,
   IconDashboard,
+  IconHandbook,
   IconIncident,
   IconIssues,
   IconLicences,
@@ -75,6 +76,12 @@ export const NAV_ITEMS: NavItem[] = [
     description: 'Health inspection & internal audits',
     icon: <IconAudit />,
     minimumRole: 'MANAGER'
+  },
+  {
+    to: '/handbook',
+    label: 'Handbook',
+    description: 'Staff guidance and venue procedures',
+    icon: <IconHandbook />
   },
   {
     to: '/admin',
