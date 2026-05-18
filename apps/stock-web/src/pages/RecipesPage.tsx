@@ -223,12 +223,24 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     });
   }, [data, search, category, kindFilter, isProductionMode]);
 
+  const pageCategories = useMemo(() => {
+    if (!data) return [] as string[];
+    return Array.from(
+      new Set(
+        data.recipes
+          .filter((recipe) => isProductionRecipe(recipe) === isProductionMode)
+          .map((recipe) => recipe.category)
+          .filter((value): value is string => Boolean(value))
+      )
+    ).sort((a, b) => a.localeCompare(b));
+  }, [data, isProductionMode]);
+
   const categoryOptions = useMemo(
     () => [
       { label: 'All categories', value: '' },
-      ...(data?.categories ?? []).map((c) => ({ label: c, value: c }))
+      ...pageCategories.map((c) => ({ label: c, value: c }))
     ],
-    [data]
+    [pageCategories]
   );
 
   const recipeGroups = useMemo(() => {
@@ -646,7 +658,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
             initial={form.mode === 'edit' ? form.recipe : undefined}
             items={items}
             recipes={data?.recipes ?? []}
-            categories={data?.categories ?? []}
+            categories={pageCategories}
             pageMode={mode}
             onSaved={() => void handleSaved()}
             onCancel={() => setForm({ mode: 'closed' })}

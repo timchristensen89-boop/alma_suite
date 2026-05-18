@@ -1415,6 +1415,28 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           : 'Import weekly sales totals to compare venue trading before item analysis is available.'
       }
     ];
+    const bucketRows = [
+      {
+        bucket: 'Stars',
+        meaning: 'High sales and high contribution margin.',
+        action: 'Keep visible and protect quality.'
+      },
+      {
+        bucket: 'Plowhorses',
+        meaning: 'High sales and low contribution margin.',
+        action: 'Review pricing, portions, or prep cost.'
+      },
+      {
+        bucket: 'Puzzles',
+        meaning: 'Low sales and high contribution margin.',
+        action: 'Train the team to suggest them or improve menu placement.'
+      },
+      {
+        bucket: 'Dogs',
+        meaning: 'Low sales and low contribution margin.',
+        action: 'Replace, remove, or rework the recipe.'
+      }
+    ];
 
     return (
       <SectionShell
@@ -1444,8 +1466,38 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <p className="subtle">
                 To classify Stars, Plowhorses, Puzzles and Dogs, Reports needs item-level sales with units sold, revenue, venue, date range, menu category, and a recipe match from Stock.
               </p>
-              {sectionButton('stock', 'Review stock and recipe data')}
+              <div className="reports-export-actions spacious">
+                {sectionButton('stock', 'Review stock and recipe data')}
+                {sectionButton('overview', 'Back to reports overview')}
+              </div>
             </div>
+          </div>
+
+          <div className="report-panel">
+            <h4>Bucket guide</h4>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Bucket</th>
+                    <th>Meaning</th>
+                    <th>Usual action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {bucketRows.map((row) => (
+                    <tr key={row.bucket}>
+                      <td>{row.bucket}</td>
+                      <td>{row.meaning}</td>
+                      <td>{row.action}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="subtle">
+              These buckets stay informational until item-level sales, selling price, and recipe cost matches are available.
+            </p>
           </div>
 
           <div className="report-panel">
