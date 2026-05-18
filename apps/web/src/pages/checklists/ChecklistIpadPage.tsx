@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type {
   ChecklistItemResult,
   ChecklistRun,
@@ -58,7 +58,7 @@ export function ChecklistIpadPage() {
   const [performedBy, setPerformedBy] = useState(
     user ? `${user.firstName} ${user.lastName}`.trim() : ''
   );
-  const [venue, setVenue] = useState('Alma Avalon');
+  const [venue, setVenue] = useState(user?.venue || 'Alma Avalon');
   const [currentRun, setCurrentRun] = useState<ChecklistRun | null>(null);
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
@@ -82,6 +82,12 @@ export function ChecklistIpadPage() {
         .slice(0, 6),
     [runs.data, venue]
   );
+
+  useEffect(() => {
+    if (!user) return;
+    setPerformedBy((current) => current || `${user.firstName} ${user.lastName}`.trim());
+    setVenue((current) => current || user.venue || 'Alma Avalon');
+  }, [user]);
 
   async function startRun(template: ChecklistTemplate) {
     try {

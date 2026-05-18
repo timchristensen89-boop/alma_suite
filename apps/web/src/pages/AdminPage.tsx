@@ -252,6 +252,37 @@ const ADMIN_SETUP_LINKS = [
   }
 ];
 
+const VENUE_DEVICE_ACCOUNT_PLAN = [
+  {
+    venue: 'St Alma',
+    accountName: 'St Alma shared iPad'
+  },
+  {
+    venue: 'Alma Avalon',
+    accountName: 'Alma Avalon shared iPad'
+  }
+];
+
+const VENUE_DEVICE_ALLOWED_WORKFLOWS = [
+  'Gift Cards: redeem/check/print where enabled',
+  'Reserve: bookings and availability for assigned venue',
+  'Staff: roster view only, no private staff documents',
+  'Stock: stock levels and stocktakes for assigned venue',
+  'Compliance: checklists, audits, incidents and handbook',
+  'Reports: limited venue daily panels only if safe'
+];
+
+const VENUE_DEVICE_BLOCKED_WORKFLOWS = [
+  'Alma Admin',
+  'Xero',
+  'Integrations',
+  'Users and roles',
+  'Payroll exports',
+  'Staff documents and private compliance records',
+  'All-venue financial reports',
+  'Imports and danger zone'
+];
+
 const ADMIN_ROUTE_SECTIONS: Record<string, AdminFeatureRoute> = {
   '/': 'overview',
   '/settings': 'settings',
@@ -476,6 +507,57 @@ function StatusLine({ label, value, tone = 'neutral' }: { label: string; value: 
       <span>{label}</span>
       <Badge tone={tone}>{value}</Badge>
     </div>
+  );
+}
+
+function VenueDevicePlanningCard() {
+  return (
+    <Card
+      title="Venue shared iPad accounts"
+      subtitle="Readiness plan only. Real accounts, credentials and production users are not created yet."
+    >
+      <div className="admin-status-stack">
+        <div className="admin-access-grid">
+          {VENUE_DEVICE_ACCOUNT_PLAN.map((account) => (
+            <article key={account.venue} className="admin-access-card">
+              <div>
+                <strong>{account.accountName}</strong>
+                <small>{account.venue}</small>
+              </div>
+              <Badge tone="warning" dot>Planned</Badge>
+              <p className="muted">
+                Activate only after per-workflow API route guards enforce this venue-scoped access matrix.
+              </p>
+            </article>
+          ))}
+        </div>
+
+        <div className="admin-grid two">
+          <div className="admin-provider-card">
+            <strong>Allowed planned workflows</strong>
+            <ul className="admin-device-policy-list">
+              {VENUE_DEVICE_ALLOWED_WORKFLOWS.map((workflow) => (
+                <li key={workflow}>{workflow}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="admin-provider-card">
+            <strong>Blocked workflows</strong>
+            <ul className="admin-device-policy-list">
+              {VENUE_DEVICE_BLOCKED_WORKFLOWS.map((workflow) => (
+                <li key={workflow}>{workflow}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+
+        <p className="muted">
+          Current StaffProfile access can label and venue-scope shared devices, but several apps still depend on
+          app-level access rather than precise workflow guards. Keep these accounts inactive until route guards are
+          tightened.
+        </p>
+      </div>
+    </Card>
   );
 }
 
@@ -1587,6 +1669,7 @@ export function AdminPage({
             </div>
           </Card>
         </div>
+        {showVenues ? <VenueDevicePlanningCard /> : null}
       </section>
       ) : null}
 

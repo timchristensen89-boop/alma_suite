@@ -13,19 +13,28 @@ import {
 } from '@alma/ui';
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
+import { useAuth } from '../../lib/auth';
+import { canManage } from '../../lib/rbac';
 import { IconArrowLeft, IconChecklist, IconPlus } from '../../lib/icons';
 
 export function ChecklistRunCreatePage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const prefillTemplate = searchParams.get('template') ?? '';
+  const { user } = useAuth();
+  const managerAccess = canManage(user);
 
   const templates = useAsync<ChecklistTemplate[]>(() => api('/api/checklists/templates'), []);
-  const staff = useAsync<StaffProfile[]>(() => api('/api/staff'), []);
+  const staff = useAsync<StaffProfile[]>(
+    () => (managerAccess ? api('/api/staff') : Promise.resolve([])),
+    [managerAccess]
+  );
 
   const [templateId, setTemplateId] = useState(prefillTemplate);
-  const [performedBy, setPerformedBy] = useState('');
-  const [area, setArea] = useState('');
+  const [performedBy, setPerformedBy] = useState(
+    user ? `${user.firstName} ${user.lastName}`.trim() : ''
+  );
+  const [area, setArea] = useState(user?.venue ?? '');
   const [notes, setNotes] = useState('');
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -41,6 +50,12 @@ export function ChecklistRunCreatePage() {
       }
     }
   }, [templates.data, prefillTemplate, templateId]);
+
+  useEffect(() => {
+    if (!user) return;
+    setPerformedBy((current) => current || `${user.firstName} ${user.lastName}`.trim());
+    setArea((current) => current || user.venue || '');
+  }, [user]);
 
   const templateOptions = useMemo(
     () => [
@@ -92,7 +107,7 @@ export function ChecklistRunCreatePage() {
       <PageHeader
         eyebrow="Checklists"
         title="Start a run"
-        description="Pick a template, assign it, and start working through the checks."
+        description="Choose the checklist for this shift, confirm the venue, then start working through the checks."
         actions={
           <Link to="/checklists">
             <Button variant="ghost" size="sm" leftIcon={<IconArrowLeft size={14} />}>
@@ -135,12 +150,21 @@ export function ChecklistRunCreatePage() {
               options={templateOptions}
             />
             <div className="form-grid two">
-              <Select
-                label="Assign to"
-                value={performedBy}
-                onChange={(event) => setPerformedBy(event.target.value)}
-                options={staffOptions}
-              />
+              {managerAccess ? (
+                <Select
+                  label="Assign to"
+                  value={performedBy}
+                  onChange={(event) => setPerformedBy(event.target.value)}
+                  options={staffOptions}
+                />
+              ) : (
+                <Input
+                  label="Running as"
+                  value={performedBy}
+                  onChange={(event) => setPerformedBy(event.target.value)}
+                  placeholder="Name"
+                />
+              )}
               <Input
                 label="Area"
                 value={area}

@@ -6,7 +6,6 @@ import {
   Button,
   Card,
   EmptyState,
-  IconButton,
   Input,
   PageHeader,
   Select,
@@ -17,13 +16,13 @@ import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { canManage } from '../../lib/rbac';
+import { SETTINGS_WEB_URL } from '../../config/suiteLinks';
 import {
   IconArrowRight,
   IconChecklist,
-  IconEdit,
+  IconExternalLink,
   IconPlus,
-  IconRefresh,
-  IconTrash
+  IconRefresh
 } from '../../lib/icons';
 
 const statusOptions = [
@@ -39,6 +38,11 @@ function statusTone(status: ChecklistRun['status']) {
   return 'warning' as const;
 }
 
+function adminChecklistTemplatesHref() {
+  const base = (SETTINGS_WEB_URL || 'https://alma-suite-admin.web.app').replace(/\/+$/, '');
+  return `${base}/checklist-templates`;
+}
+
 export function ChecklistsListPage() {
   const { user } = useAuth();
   const managerAccess = canManage(user);
@@ -49,7 +53,6 @@ export function ChecklistsListPage() {
   const [templateFilter, setTemplateFilter] = useState('');
   const [performerFilter, setPerformerFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
-  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const templateOptions = useMemo(
     () => [
@@ -90,21 +93,6 @@ export function ChecklistsListPage() {
     setDateFilter('');
   }
 
-  async function handleDeleteTemplate(template: ChecklistTemplate) {
-    const confirmed = window.confirm(
-      `Delete template "${template.name}"? This cannot be undone.`
-    );
-    if (!confirmed) return;
-
-    try {
-      setDeleteError(null);
-      await api(`/api/checklists/templates/${template.id}`, { method: 'DELETE' });
-      await templates.reload();
-    } catch (error) {
-      setDeleteError(error instanceof Error ? error.message : 'Could not delete template');
-    }
-  }
-
   const totalRuns = runs.data?.length ?? 0;
   const openRuns = (runs.data ?? []).filter((run) => run.status !== 'COMPLETED').length;
   const last30 = (runs.data ?? []).filter((run) => {
@@ -112,15 +100,24 @@ export function ChecklistsListPage() {
     return new Date(run.runDate).getTime() >= cutoff;
   }).length;
   const totalTemplates = templates.data?.length ?? 0;
+  const checklistTemplatesHref = adminChecklistTemplatesHref();
 
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Checklists"
-        title="Run operational checks and turn failures into issues"
-        description="Build reusable templates, assign runs to staff, and keep an auditable history of every check."
+        title="Daily venue checklists"
+        description="Start the right checklist, finish it on a phone or shared iPad, and keep the run history easy to scan."
         actions={
           <>
+            <Link to="/checklists/new">
+              <Button leftIcon={<IconPlus size={14} />}>Start run</Button>
+            </Link>
+            <Link to="/checklists/ipad">
+              <Button variant="secondary" leftIcon={<IconChecklist size={14} />}>
+                iPad view
+              </Button>
+            </Link>
             <Button
               variant="secondary"
               size="sm"
@@ -132,21 +129,6 @@ export function ChecklistsListPage() {
             >
               Refresh
             </Button>
-            {managerAccess ? (
-              <Link to="/checklists/templates/new">
-                <Button variant="secondary" leftIcon={<IconPlus size={14} />}>
-                  New template
-                </Button>
-              </Link>
-            ) : null}
-            <Link to="/checklists/ipad">
-              <Button variant="secondary" leftIcon={<IconChecklist size={14} />}>
-                iPad view
-              </Button>
-            </Link>
-            <Link to="/checklists/new">
-              <Button leftIcon={<IconPlus size={14} />}>Start run</Button>
-            </Link>
           </>
         }
       />
@@ -158,35 +140,53 @@ export function ChecklistsListPage() {
         <StatCard label="Templates" value={totalTemplates} />
       </div>
 
-      <Card
-        title="Templates"
-        subtitle="Reusable checks — start a run from a template or edit the items it contains."
-        action={
-          managerAccess ? (
-            <Link to="/checklists/templates/new">
-              <Button size="sm" variant="secondary" leftIcon={<IconPlus size={14} />}>
-                New template
+      {managerAccess ? (
+        <Card
+          title="Checklist admin"
+          subtitle="Template setup belongs in Alma Admin. Compliance keeps daily checklist runs and history."
+          action={
+            <a href={checklistTemplatesHref}>
+              <Button size="sm" variant="ghost" rightIcon={<IconExternalLink size={14} />}>
+                Admin templates
               </Button>
-            </Link>
-          ) : null
-        }
+            </a>
+          }
+        >
+          <div className="checklist-admin-actions">
+            <div>
+              <strong>Template controls</strong>
+              <p className="subtle">
+                Create, edit, delete and configure reusable templates in Alma Admin.
+              </p>
+            </div>
+            <a href={checklistTemplatesHref}>
+              <Button variant="secondary" leftIcon={<IconPlus size={14} />}>
+                Open template setup
+              </Button>
+            </a>
+          </div>
+        </Card>
+      ) : null}
+
+      <Card
+        title="Start from a template"
+        subtitle="Pick the checklist that matches the shift or area."
       >
         {templates.loading ? <Spinner label="Loading templates…" /> : null}
         {templates.error ? <p className="error-text">{templates.error}</p> : null}
-        {deleteError ? <p className="error-text">{deleteError}</p> : null}
 
         {!templates.loading && !templates.error && totalTemplates === 0 ? (
           <EmptyState
             icon={<IconChecklist size={22} />}
             title="No templates yet"
-            description="Create the first template so the team can start running checks."
+            description="Ask an admin to create templates before staff start daily checks."
             action={
               managerAccess ? (
-              <Link to="/checklists/templates/new">
-                <Button size="sm" leftIcon={<IconPlus size={14} />}>
-                  Create template
-                </Button>
-              </Link>
+                <a href={checklistTemplatesHref}>
+                  <Button size="sm" leftIcon={<IconPlus size={14} />}>
+                    Open Admin templates
+                  </Button>
+                </a>
               ) : undefined
             }
           />
@@ -201,21 +201,6 @@ export function ChecklistsListPage() {
                     <strong>{template.name}</strong>
                     <span className="muted">{template.area || 'General'}</span>
                   </div>
-                  {managerAccess ? (
-                    <div className="template-card-actions">
-                      <Link
-                        to={`/checklists/templates/${template.id}/edit`}
-                        aria-label="Edit template"
-                      >
-                        <IconButton label="Edit" icon={<IconEdit size={14} />} />
-                      </Link>
-                      <IconButton
-                        label="Delete"
-                        icon={<IconTrash size={14} />}
-                        onClick={() => void handleDeleteTemplate(template)}
-                      />
-                    </div>
-                  ) : null}
                 </div>
 
                 <div className="template-card-meta">
@@ -227,7 +212,7 @@ export function ChecklistsListPage() {
 
                 <div className="template-card-footer">
                   <Link to={`/checklists/new?template=${template.id}`}>
-                    <Button size="sm" leftIcon={<IconPlus size={12} />}>
+                    <Button leftIcon={<IconPlus size={14} />}>
                       Start run
                     </Button>
                   </Link>
@@ -280,7 +265,7 @@ export function ChecklistsListPage() {
         </div>
       </Card>
 
-      <Card padding="none">
+      <Card>
         <div className="table-toolbar">
           <span>
             {runs.loading ? (
@@ -324,55 +309,47 @@ export function ChecklistsListPage() {
         ) : null}
 
         {filteredRuns.length > 0 ? (
-          <table>
-            <thead>
-              <tr>
-                <th>Template</th>
-                <th>Area</th>
-                <th>Performed by</th>
-                <th>Run date</th>
-                <th>Progress</th>
-                <th>Status</th>
-                <th aria-label="Open" />
-              </tr>
-            </thead>
-            <tbody>
-              {filteredRuns.map((run) => {
-                const done = run.items.filter((item) => item.result !== 'PENDING').length;
-                const failed = run.items.filter((item) => item.result === 'FAIL').length;
-                return (
-                  <tr key={run.id}>
-                    <td>
+          <div className="checklist-run-grid">
+            {filteredRuns.map((run) => {
+              const done = run.items.filter((item) => item.result !== 'PENDING').length;
+              const failed = run.items.filter((item) => item.result === 'FAIL').length;
+              const percent = run.items.length > 0 ? Math.round((done / run.items.length) * 100) : 0;
+              return (
+                <article key={run.id} className="checklist-run-card">
+                  <div className="checklist-run-card-top">
+                    <div>
                       <Link to={`/checklists/runs/${run.id}`} className="link">
                         <strong>{run.template.name}</strong>
                       </Link>
-                    </td>
-                    <td>{run.area || run.template.area || <span className="subtle">—</span>}</td>
-                    <td>{run.performedBy || <span className="subtle">Unassigned</span>}</td>
-                    <td>{new Date(run.runDate).toLocaleString()}</td>
-                    <td>
+                      <span className="subtle">
+                        {run.area || run.template.area || 'General'} · {new Date(run.runDate).toLocaleString()}
+                      </span>
+                    </div>
+                    <Badge tone={statusTone(run.status)} dot>
+                      {run.status.replace('_', ' ')}
+                    </Badge>
+                  </div>
+                  <div className="checklist-run-progress">
+                    <div>
                       <span>{done}/{run.items.length} done</span>
-                      {failed > 0 ? (
-                        <span style={{ marginLeft: 8 }}>
-                          <Badge tone="danger">{failed} failed</Badge>
-                        </span>
-                      ) : null}
-                    </td>
-                    <td>
-                      <Badge tone={statusTone(run.status)} dot>
-                        {run.status.replace('_', ' ')}
-                      </Badge>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <Link to={`/checklists/runs/${run.id}`} aria-label={`Open ${run.template.name}`}>
-                        <IconArrowRight size={16} color="var(--color-text-subtle)" />
-                      </Link>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                      {failed > 0 ? <Badge tone="danger">{failed} failed</Badge> : null}
+                    </div>
+                    <span className="checklist-progress-track" aria-hidden="true">
+                      <span style={{ width: `${percent}%` }} />
+                    </span>
+                  </div>
+                  <div className="checklist-run-card-footer">
+                    <span className="subtle">{run.performedBy || 'Unassigned'}</span>
+                    <Link to={`/checklists/runs/${run.id}`} aria-label={`Open ${run.template.name}`}>
+                      <Button size="sm" variant="secondary" rightIcon={<IconArrowRight size={14} />}>
+                        Open
+                      </Button>
+                    </Link>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         ) : null}
       </Card>
     </div>

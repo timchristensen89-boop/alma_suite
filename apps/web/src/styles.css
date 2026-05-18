@@ -1313,9 +1313,101 @@ tbody tr:hover {
 
 .checklist-item-top {
   display: grid;
-  grid-template-columns: 1fr 220px;
+  grid-template-columns: minmax(0, 1fr) minmax(240px, 320px);
   gap: 16px;
   align-items: start;
+}
+
+.checklist-item-copy {
+  min-width: 0;
+}
+
+.checklist-result-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.checklist-result-button {
+  min-height: 48px;
+}
+
+.checklist-admin-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.checklist-admin-actions > div {
+  min-width: 0;
+}
+
+.checklist-run-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.checklist-run-card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.checklist-run-card-top,
+.checklist-run-card-footer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.checklist-run-card-top > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.checklist-run-card-top strong {
+  overflow-wrap: anywhere;
+}
+
+.checklist-run-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.checklist-run-progress > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.checklist-progress-track {
+  display: block;
+  width: 100%;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.checklist-progress-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--color-accent);
 }
 
 /* ==========================================================================
@@ -1909,6 +2001,33 @@ tbody tr:hover {
   }
 
   .topbar-search { display: none; }
+}
+
+@media (max-width: 560px) {
+  .checklist-admin-actions,
+  .checklist-run-card-top,
+  .checklist-run-card-footer,
+  .checklist-run-progress > div {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .checklist-admin-actions .btn,
+  .checklist-run-card-footer .btn,
+  .template-card-footer .btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .checklist-result-actions,
+  .ipad-result-buttons {
+    grid-template-columns: 1fr;
+  }
+
+  .ipad-result-button,
+  .checklist-result-button {
+    min-height: 52px;
+  }
 }
 
 @media (max-width: 760px) {
@@ -4991,6 +5110,14 @@ a.suite-app-tile:hover {
 .admin-provider-card p,
 .admin-card-copy {
   margin: 8px 0 0;
+}
+
+.admin-device-policy-list {
+  margin: 8px 0 0;
+  padding-left: 18px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.5;
 }
 
 .admin-mini-card,

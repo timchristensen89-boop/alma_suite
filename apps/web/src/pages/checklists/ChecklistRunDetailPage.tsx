@@ -9,7 +9,6 @@ import {
   EmptyState,
   Input,
   PageHeader,
-  Select,
   Spinner,
   StatCard,
   Textarea
@@ -17,13 +16,6 @@ import {
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
 import { IconArrowLeft, IconCheck } from '../../lib/icons';
-
-const resultOptions = [
-  { label: 'Pending', value: 'PENDING' },
-  { label: 'Pass', value: 'PASS' },
-  { label: 'Fail', value: 'FAIL' },
-  { label: 'N/A', value: 'NA' }
-];
 
 function resultTone(result: ChecklistItemResult) {
   if (result === 'PASS') return 'positive' as const;
@@ -116,11 +108,18 @@ export function ChecklistRunDetailPage() {
           data.runDate
         ).toLocaleString()}`}
         actions={
-          <Link to="/checklists">
-            <Button variant="ghost" size="sm" leftIcon={<IconArrowLeft size={14} />}>
-              Back to checklists
-            </Button>
-          </Link>
+          <>
+            <Link to="/">
+              <Button variant="ghost" size="sm">
+                Compliance home
+              </Button>
+            </Link>
+            <Link to="/checklists">
+              <Button variant="ghost" size="sm" leftIcon={<IconArrowLeft size={14} />}>
+                Back to checklists
+              </Button>
+            </Link>
+          </>
         }
       />
 
@@ -159,13 +158,13 @@ export function ChecklistRunDetailPage() {
 
       <Card
         title="Checklist items"
-        subtitle="Mark each check. A failure creates a linked issue you can chase up."
+        subtitle="Tap Pass, Fail, or N/A for each item. Failures create linked issues."
       >
         <div className="page-stack compact">
           {data.items.map((item) => (
             <article key={item.id} className="checklist-item-card">
               <div className="checklist-item-top">
-                <div>
+                <div className="checklist-item-copy">
                   <div className="inline-actions" style={{ gap: 8, marginBottom: 4 }}>
                     <Badge tone={resultTone(item.result)} dot>
                       {item.result === 'NA' ? 'N/A' : item.result}
@@ -176,15 +175,31 @@ export function ChecklistRunDetailPage() {
                   </div>
                   <p className="muted">{item.description || 'No guidance.'}</p>
                 </div>
-                <div className="result-select">
-                  <Select
-                    label="Result"
-                    value={item.result}
-                    onChange={(event) =>
-                      void updateItem(item.id, event.target.value as ChecklistItemResult)
-                    }
-                    options={resultOptions}
-                  />
+                <div className="checklist-result-actions" aria-label={`Result for ${item.label}`}>
+                  <Button
+                    className="checklist-result-button"
+                    variant={item.result === 'PASS' ? 'primary' : 'secondary'}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void updateItem(item.id, 'PASS')}
+                  >
+                    Pass
+                  </Button>
+                  <Button
+                    className="checklist-result-button"
+                    variant={item.result === 'FAIL' ? 'danger' : 'secondary'}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void updateItem(item.id, 'FAIL')}
+                  >
+                    Fail
+                  </Button>
+                  <Button
+                    className="checklist-result-button"
+                    variant={item.result === 'NA' ? 'primary' : 'ghost'}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void updateItem(item.id, 'NA')}
+                  >
+                    N/A
+                  </Button>
                 </div>
               </div>
               <div className="form-grid two">
