@@ -1,0 +1,19 @@
+:root {
+  --color-accent: #343a40;
+  --color-accent-hover: #1f2328;
+  --color-accent-soft: #eef0f2;
+  --color-accent-text: #1f2328;
+}
+
+.admin-app-sidebar-label {
+  padding: 0 18px 8px;
+  color: var(--color-text-subtle);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.admin-login-page .login-shell {
+  max-width: 460px;
+}

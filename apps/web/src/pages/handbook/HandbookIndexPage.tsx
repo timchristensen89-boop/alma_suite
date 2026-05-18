@@ -483,11 +483,12 @@ export function HandbookIndexPage() {
   );
 }
 
-export function HandbookAdminPage() {
+export function HandbookAdminPage({ staffHandbookHref = '/handbook' }: { staffHandbookHref?: string }) {
   const settings = useAsync<{ handbookContent?: Record<string, unknown> }>(() => api('/api/settings'), []);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState<EditorState | null>(null);
   const handbook = resolveHandbookContent(settings.data?.handbookContent ?? DEFAULT_HANDBOOK_CONTENT);
+  const externalStaffHandbook = /^https?:\/\//i.test(staffHandbookHref);
 
   useEffect(() => {
     if (!draft && settings.data) {
@@ -519,6 +520,25 @@ export function HandbookAdminPage() {
     }
   }
 
+  function staffHref(sectionHref = '/handbook') {
+    const root = staffHandbookHref.replace(/\/+$/, '');
+    const suffix = sectionHref.replace(/^\/handbook/, '');
+    return `${root}${suffix}`;
+  }
+
+  function StaffLink({ href = '/handbook', children, className }: { href?: string; children: JSX.Element; className?: string }) {
+    const resolvedHref = staffHref(href);
+    return externalStaffHandbook ? (
+      <a href={resolvedHref} className={className}>
+        {children}
+      </a>
+    ) : (
+      <Link to={resolvedHref} className={className}>
+        {children}
+      </Link>
+    );
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -526,11 +546,11 @@ export function HandbookAdminPage() {
         title="Manage handbook"
         description="Edit the sections, guidance, onboarding notes, org chart, and maintenance contacts that appear in the staff-facing handbook."
         actions={
-          <Link to="/handbook">
+          <StaffLink>
             <Button variant="ghost" size="sm">
               View staff handbook
             </Button>
-          </Link>
+          </StaffLink>
         }
       />
 
@@ -539,9 +559,9 @@ export function HandbookAdminPage() {
           const isReady = section.status === 'ready';
           const Wrapper = ({ children }: { children: JSX.Element }) =>
             isReady ? (
-              <Link to={section.href} className="handbook-card-link">
+              <StaffLink href={section.href} className="handbook-card-link">
                 {children}
-              </Link>
+              </StaffLink>
             ) : (
               <div className="handbook-card-link handbook-card-link-disabled">
                 {children}

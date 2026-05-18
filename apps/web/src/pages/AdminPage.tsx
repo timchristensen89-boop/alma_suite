@@ -44,6 +44,7 @@ import {
   MARKETING_WEB_URL,
   REPORTS_WEB_URL,
   RESERVE_WEB_URL,
+  SETTINGS_WEB_URL,
   STAFF_WEB_URL,
   STOCK_WEB_URL
 } from '../config/suiteLinks';
@@ -233,6 +234,23 @@ const ADMIN_SETUP_LINKS = [
 ];
 
 const ADMIN_ROUTE_SECTIONS: Record<string, string> = {
+  '/': 'overview',
+  '/settings': 'overview',
+  '/venues': 'business',
+  '/users': 'access',
+  '/roles': 'permission-editor',
+  '/staff-settings': 'defaults',
+  '/staff-record-types': 'defaults',
+  '/staff-onboarding': 'defaults',
+  '/compliance-settings': 'compliance-settings',
+  '/checklist-templates': 'compliance-settings',
+  '/audit-templates': 'compliance-settings',
+  '/handbook': 'compliance-settings',
+  '/integrations': 'integrations',
+  '/integrations/xero': 'integrations',
+  '/imports': 'imports',
+  '/danger-zone': 'danger-zone',
+  '/meta-human-agent-demo': 'human-agent-demo',
   '/admin/venues': 'business',
   '/admin/users': 'access',
   '/admin/roles': 'permission-editor',
@@ -249,6 +267,16 @@ const ADMIN_ROUTE_SECTIONS: Record<string, string> = {
   '/admin/danger-zone': 'danger-zone',
   '/admin/meta-human-agent-demo': 'human-agent-demo'
 };
+
+function adminPath(path: string, standalone = false) {
+  if (!standalone) return path;
+  return path.replace(/^\/admin(?=\/|$)/, '') || '/';
+}
+
+function adminAppUrl(path = '/') {
+  if (!SETTINGS_WEB_URL) return adminPath(path);
+  return `${SETTINGS_WEB_URL.replace(/\/+$/, '')}${adminPath(path, true)}`;
+}
 
 function toneToBadge(tone: AdminSignalTone) {
   if (tone === 'positive') return 'positive';
@@ -711,7 +739,7 @@ function AuditList({ events }: { events: AdminAuditEventSummary[] }) {
   );
 }
 
-export function AdminPage() {
+export function AdminPage({ standalone = false }: { standalone?: boolean }) {
   const location = useLocation();
   useDocumentTitle('Admin · ALMA Suite');
   const [state, setState] = useState<AdminLoadState>({
@@ -799,7 +827,7 @@ export function AdminPage() {
   }, []);
 
   useEffect(() => {
-    const sectionId = ADMIN_ROUTE_SECTIONS[location.pathname];
+    const sectionId = ADMIN_ROUTE_SECTIONS[location.pathname] ?? (standalone ? ADMIN_ROUTE_SECTIONS[`/admin${location.pathname}`] : undefined);
     if (!sectionId) return;
     window.requestAnimationFrame(() => {
       document.getElementById(sectionId)?.scrollIntoView({ block: 'start' });
@@ -1235,7 +1263,7 @@ export function AdminPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="ALMA Admin"
-        title="Suite admin"
+        title={standalone ? 'Alma Admin' : 'Suite admin'}
         description="Business-wide setup, app configuration, access, integrations, imports, audit and system health. Staff profile actions stay in Staff."
         actions={
           <Button
@@ -1248,6 +1276,18 @@ export function AdminPage() {
           </Button>
         }
       />
+
+      {!standalone && SETTINGS_WEB_URL ? (
+        <Card
+          title="Alma Admin has its own app"
+          subtitle="Setup and configuration now live in Alma Admin. This Compliance route remains available during the transition."
+          action={
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = adminAppUrl('/'); }}>
+              Open Alma Admin
+            </Button>
+          }
+        />
+      ) : null}
 
       <nav className="admin-section-nav" aria-label="Admin sections">
         <a href="#overview">Overview</a>
@@ -1682,7 +1722,7 @@ export function AdminPage() {
           <Card title="Setup routes" subtitle="Admin manages these setup areas as migration lands">
             <div className="admin-card-list">
               {ADMIN_SETUP_LINKS.slice(0, 3).map((link) => (
-                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = link.href; }}>
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminPath(link.href, standalone); }}>
                   <span>
                     <strong>{link.title}</strong>
                     <small>{link.body}</small>
@@ -1711,7 +1751,7 @@ export function AdminPage() {
           <Card title="Compliance setup routes" subtitle="Central setup without changing daily Compliance execution">
             <div className="admin-card-list">
               {ADMIN_SETUP_LINKS.slice(3).map((link) => (
-                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = link.href; }}>
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminPath(link.href, standalone); }}>
                   <span>
                     <strong>{link.title}</strong>
                     <small>{link.body}</small>
@@ -1721,8 +1761,8 @@ export function AdminPage() {
               ))}
             </div>
             <div className="toolbar-right">
-              <Button type="button" variant="secondary" onClick={() => { window.location.href = '/settings'; }}>
-                Open Compliance settings editor
+              <Button type="button" variant="secondary" onClick={() => { window.location.href = standalone ? adminPath('/admin/compliance-settings', true) : '/settings'; }}>
+                {standalone ? 'Open Compliance setup' : 'Open Compliance settings editor'}
               </Button>
             </div>
           </Card>

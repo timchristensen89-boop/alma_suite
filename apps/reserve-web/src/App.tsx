@@ -65,6 +65,12 @@ const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; s
     summary: 'Coastal dining in Freshwater with bright share plates, cocktails, and group tables.'
   }
 };
+const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
+  BREAKFAST: 'Breakfast',
+  LUNCH: 'Lunch',
+  DINNER: 'Dinner',
+  EVENT: 'Event'
+};
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
@@ -615,9 +621,9 @@ function PublicBookingWidget() {
         </header>
         <section className="reserve-public-hero">
           <div>
-            <p className="reserve-public-eyebrow">Reservations</p>
-            <h1>Book Alma Avalon or St Alma.</h1>
-            <p>Choose the venue, find a time, and send the details through to the restaurant team.</p>
+            <p className="reserve-public-eyebrow">Alma Group reservations</p>
+            <h1>Book a table by the beach.</h1>
+            <p>Choose Alma Avalon or St Alma, find a time, and send your booking request through to the restaurant.</p>
             <ol className="reserve-public-steps" aria-label="Booking steps">
               <li>Choose venue</li>
               <li>Find a table</li>
@@ -653,9 +659,12 @@ function PublicBookingWidget() {
                         onClick={() => chooseVenue(venue.value)}
                         aria-pressed={search.venue === venue.value}
                       >
-                        <strong>{venue.value}</strong>
-                        <span>{venue.detail.location}</span>
-                        <small>{venue.onlineEnabled && venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
+                        <img className="reserve-venue-thumb" src={venue.detail.image} alt="" />
+                        <span className="reserve-venue-button-copy">
+                          <strong>{venue.value}</strong>
+                          <span>{venue.detail.location}</span>
+                          <small>{venue.onlineEnabled && venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
+                        </span>
                       </button>
                     ))}
                   </div>
@@ -683,7 +692,7 @@ function PublicBookingWidget() {
                     label="Service"
                     value={search.servicePeriod}
                     onChange={(event) => setSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))}
-                    options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: value, value }))]}
+                    options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: servicePeriodLabels[value], value }))]}
                   />
                 </div>
                 <div className="reserve-public-actions">

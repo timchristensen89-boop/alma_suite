@@ -10,7 +10,7 @@ import {
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Spinner } from '@alma/ui';
 import { api, ApiError } from '../lib/api';
 import { useAuth } from '../lib/auth';
-import { STAFF_WEB_URL } from '../config/suiteLinks';
+import { SETTINGS_WEB_URL, STAFF_WEB_URL } from '../config/suiteLinks';
 import { IconArrowRight, IconHandbook, IconPlus, IconRefresh } from '../lib/icons';
 
 type Venue = AppSettingsPayload['venues'][number];
@@ -62,6 +62,7 @@ export function SettingsPage() {
     [user?.isAdmin]
   );
   const staffSettingsHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/settings` : '';
+  const adminHref = SETTINGS_WEB_URL ? `${SETTINGS_WEB_URL.replace(/\/+$/, '')}/` : '/admin';
 
   async function save(patch: Partial<AppSettingsPayload>, target: string) {
     if (!settings) return;
@@ -121,11 +122,11 @@ export function SettingsPage() {
         <div className="hero-text">
           <p className="page-header-eyebrow">Settings</p>
           <h1>{settings.orgName}</h1>
-          <p>Use Admin for cross-suite setup. Compliance settings keeps account access and temporary links while setup routes move.</p>
+          <p>Setup and configuration now live in Alma Admin. Compliance stays focused on daily checks, audits, incidents and handbook reading.</p>
         </div>
         <div className="hero-actions">
           {user?.isAdmin ? (
-            <Button type="button" onClick={() => { window.location.href = '/admin'; }}>
+            <Button type="button" onClick={() => { window.location.href = adminHref; }}>
               Open Alma Admin
             </Button>
           ) : null}
@@ -137,15 +138,15 @@ export function SettingsPage() {
       {user?.isAdmin ? (
         <Card
           title="Managed in Alma Admin"
-          subtitle="Business-wide setup, app configuration, integrations, access, audit and health now have a central Admin home."
+          subtitle="Business-wide setup, app configuration, integrations, access, audit and health now live in the Admin app."
           action={
-            <Button type="button" variant="secondary" onClick={() => { window.location.href = '/admin'; }}>
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = adminHref; }}>
               Open Alma Admin
             </Button>
           }
         >
           <p className="subtle">
-            Organisation, venues, integrations, notifications, handbook and template setup are moving into Admin routes. Staff defaults and onboarding still use Staff Settings during this transition.
+            Setup and configuration now live in Alma Admin. Organisation, venues, integrations, notifications, handbook and template setup should be managed there. Staff defaults and onboarding still use Staff Settings during this transition.
             {staffSettingsHref ? (
               <>
                 {' '}
