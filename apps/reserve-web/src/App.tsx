@@ -695,11 +695,9 @@ function PublicBookingWidget() {
                 </div>
               </form>
 
-              <div className="reserve-note-list reserve-public-notes">
-                {config.limitations.map((limitation) => (
-                  <Badge key={limitation} tone="warning">{limitation}</Badge>
-                ))}
-              </div>
+              <p className="reserve-public-help-note">
+                For larger groups or special requests, the venue team may follow up before confirming the booking details.
+              </p>
 
               {availability ? (
                 <section className="reserve-public-section">

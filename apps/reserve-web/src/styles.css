@@ -466,8 +466,11 @@
   border-color: #684A4A;
 }
 
-.reserve-public-notes {
-  opacity: 0.88;
+.reserve-public-help-note {
+  margin: 0;
+  color: rgba(37, 51, 38, 0.66);
+  font-size: 14px;
+  line-height: 1.55;
 }
 
 .reserve-slot-grid {
