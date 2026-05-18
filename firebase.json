@@ -43,7 +43,7 @@
       ]
     },
     {
-      "site": "alma-admin",
+      "site": "alma-suite-admin",
       "public": "apps/admin-web/dist",
       "ignore": [
         "firebase.json",
