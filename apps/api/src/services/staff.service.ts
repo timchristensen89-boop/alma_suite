@@ -82,6 +82,11 @@ function validateStaffRecordAttachmentOnCreate(documentUrl?: string) {
   }
 }
 
+function withoutStaffSecrets<T extends { passwordHash?: string | null }>(profile: T) {
+  const { passwordHash: _passwordHash, ...safeProfile } = profile;
+  return safeProfile;
+}
+
 function onboardingDetailCreateData(data: {
   dateOfBirth?: string;
   addressLine1?: string;
@@ -1095,7 +1100,7 @@ export const staffService = {
         }
       }
     });
-    return profiles.map((profile) => attachDefaultPayProfile(profile, staffDefaults));
+    return profiles.map((profile) => withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)));
   },
 
   async getById(id: string, actor?: AuthUser) {
@@ -1127,7 +1132,7 @@ export const staffService = {
       throw new HttpError(404, 'Staff profile not found');
     }
 
-    return attachDefaultPayProfile(profile, await getStaffDefaults());
+    return withoutStaffSecrets(attachDefaultPayProfile(profile, await getStaffDefaults()));
   },
 
   async create(input: unknown, actor?: AuthUser) {
@@ -1152,7 +1157,7 @@ export const staffService = {
       }
     }
 
-    return prisma.staffProfile.create({
+    const profile = await prisma.staffProfile.create({
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
@@ -1194,7 +1199,8 @@ export const staffService = {
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
-    }).then((profile) => attachDefaultPayProfile(profile, staffDefaults));
+    });
+    return withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults));
   },
 
   async update(id: string, input: unknown, actor?: AuthUser) {
@@ -1260,7 +1266,7 @@ export const staffService = {
       });
     }
 
-    return attachDefaultPayProfile(updated);
+    return withoutStaffSecrets(attachDefaultPayProfile(updated));
   },
 
   async delete(id: string, actor?: AuthUser) {
@@ -4084,7 +4090,7 @@ export const staffService = {
           data: { completedAt: new Date(), staffProfileId: profile.id }
         });
 
-        return profile;
+        return withoutStaffSecrets(profile);
       }
 
       const existingProfile = await tx.staffProfile.findUnique({
@@ -4134,7 +4140,7 @@ export const staffService = {
         data: { completedAt: new Date() }
       });
 
-      return profile;
+      return withoutStaffSecrets(profile);
     });
   },
 
@@ -4181,7 +4187,7 @@ export const staffService = {
       data: { status: 'APPROVED' }
     });
 
-    return prisma.staffProfile.update({
+    const approvedProfile = await prisma.staffProfile.update({
       where: { id: staffProfileId },
       data: { employmentStatus: 'ACTIVE' },
       include: {
@@ -4190,6 +4196,7 @@ export const staffService = {
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] }
       }
     });
+    return withoutStaffSecrets(approvedProfile);
   },
 
   async summary(actor?: AuthUser) {
