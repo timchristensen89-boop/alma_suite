@@ -582,11 +582,14 @@ function PublicBookingWidget() {
     }
   }
 
-  const venueOptions = (config?.venues ?? [])
-    .filter((venue) => venue.onlineEnabled)
+  const configuredVenues = config?.venues.length
+    ? config.venues
+    : KNOWN_VENUES.map((name) => ({ name, onlineEnabled: false, activeRules: 0, googleReserveReady: false }));
+  const venueOptions = configuredVenues
     .map((venue) => ({
       activeRules: venue.activeRules,
       detail: RESERVE_PUBLIC_VENUES[venue.name] ?? DEFAULT_RESERVE_PUBLIC_VENUE,
+      onlineEnabled: venue.onlineEnabled,
       value: venue.name
     }));
   const selectedVenue = venueOptions.find((venue) => venue.value === search.venue) ?? venueOptions[0];
@@ -652,7 +655,7 @@ function PublicBookingWidget() {
                       >
                         <strong>{venue.value}</strong>
                         <span>{venue.detail.location}</span>
-                        <small>{venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
+                        <small>{venue.onlineEnabled && venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
                       </button>
                     ))}
                   </div>
