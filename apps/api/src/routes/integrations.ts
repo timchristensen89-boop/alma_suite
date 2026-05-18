@@ -59,6 +59,38 @@ integrationsRouter.post('/xero/health-check', async (req, res, next) => {
   }
 });
 
+integrationsRouter.get('/xero/supplier-contacts/preview', async (req, res, next) => {
+  try {
+    res.json(await integrationService.previewXeroSupplierContacts(req.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/xero/supplier-contacts/import', async (req, res, next) => {
+  try {
+    res.status(201).json(await integrationService.importXeroSupplierContacts(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.get('/xero/supplier-bills/preview', async (req, res, next) => {
+  try {
+    res.json(await integrationService.previewXeroSupplierBills(req.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/xero/supplier-bills/import', async (req, res, next) => {
+  try {
+    res.status(201).json(await integrationService.importXeroSupplierBills(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/:provider/connect', async (req, res, next) => {
   try {
     res.json(await integrationService.startConnect(String(req.params.provider), req.user!));

@@ -9,7 +9,17 @@ import type {
   IntegrationProviderKey,
   IntegrationProviderStatus,
   IntegrationStatusPayload,
+  XeroSupplierBillsImportResult,
+  XeroSupplierBillsPreviewPayload,
+  XeroSupplierBillPreview,
+  XeroSupplierContactsImportResult,
+  XeroSupplierContactsPreviewPayload,
+  XeroSupplierContactPreview,
   XeroConnectionHealthPayload
+} from '@alma/shared';
+import {
+  xeroSupplierBillsImportInputSchema,
+  xeroSupplierContactsImportInputSchema
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -422,6 +432,167 @@ type XeroTenantConnection = {
   tenantType?: string;
 };
 
+type XeroContact = {
+  ContactID?: string;
+  Name?: string;
+  EmailAddress?: string;
+  ContactStatus?: string;
+  IsSupplier?: boolean;
+  IsCustomer?: boolean;
+  TaxNumber?: string;
+  Phones?: Array<{ PhoneType?: string; PhoneNumber?: string; PhoneAreaCode?: string; PhoneCountryCode?: string }>;
+  Addresses?: Array<{ AddressType?: string; AddressLine1?: string; City?: string; Region?: string; PostalCode?: string; Country?: string }>;
+};
+
+type XeroInvoiceLineItem = {
+  LineItemID?: string;
+  Description?: string;
+  Quantity?: number;
+  UnitAmount?: number;
+  LineAmount?: number;
+  TaxAmount?: number;
+  AccountCode?: string;
+  ItemCode?: string;
+};
+
+type XeroInvoice = {
+  InvoiceID?: string;
+  Type?: string;
+  Contact?: XeroContact;
+  InvoiceNumber?: string;
+  Reference?: string;
+  Date?: string;
+  DateString?: string;
+  DueDate?: string;
+  DueDateString?: string;
+  Status?: string;
+  CurrencyCode?: string;
+  SubTotal?: number;
+  TotalTax?: number;
+  Total?: number;
+  LineItems?: XeroInvoiceLineItem[];
+};
+
+type SupplierMatch = {
+  supplierId: string | null;
+  supplierName: string | null;
+  matchReason: string | null;
+};
+
+type ExistingSupplier = {
+  id: string;
+  name: string;
+  email: string | null;
+};
+
+type ExistingInvoice = {
+  id: string;
+  source: string;
+  invoiceKey: string;
+  externalInvoiceId: string | null;
+  invoiceNumber: string | null;
+  supplierName: string;
+  invoiceDate: Date | null;
+  totalCents: number;
+};
+
+function trimText(value: unknown) {
+  return String(value ?? '').trim();
+}
+
+function optionalText(value: unknown) {
+  const text = trimText(value);
+  return text ? text : null;
+}
+
+function normaliseMatchText(value: unknown) {
+  return trimText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function moneyToCents(value: unknown) {
+  const amount = typeof value === 'number' && Number.isFinite(value) ? value : Number(trimText(value).replace(/[$,%\s,]/g, ''));
+  return Number.isFinite(amount) ? Math.round(amount * 100) : 0;
+}
+
+function parseXeroDate(value: unknown) {
+  const text = trimText(value);
+  if (!text) return null;
+  const xeroJsonDate = /\/Date\((\d+)(?:[+-]\d+)?\)\//.exec(text);
+  const date = xeroJsonDate?.[1] ? new Date(Number(xeroJsonDate[1])) : new Date(text);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function isoDateOnly(value: Date | null | undefined) {
+  return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function buildImportHash(parts: Array<string | number | null | undefined>) {
+  const hash = crypto.createHash('sha1');
+  hash.update(parts.map((part) => trimText(part)).join('|'));
+  return hash.digest('hex');
+}
+
+function phoneFromXero(contact: XeroContact) {
+  const phone = contact.Phones?.find((entry) => entry.PhoneNumber)?.PhoneNumber;
+  return optionalText(phone);
+}
+
+function addressFromXero(contact: XeroContact) {
+  const address = contact.Addresses?.find((entry) => entry.AddressType === 'STREET' || entry.AddressLine1) ?? null;
+  if (!address) return null;
+  return [
+    address.AddressLine1,
+    address.City,
+    address.Region,
+    address.PostalCode,
+    address.Country
+  ].map(optionalText).filter(Boolean).join(', ') || null;
+}
+
+function isSupplierCandidate(contact: XeroContact) {
+  return contact.IsSupplier === true;
+}
+
+function matchSupplier(input: { name: string; email?: string | null }, suppliers: ExistingSupplier[]): SupplierMatch {
+  const email = optionalText(input.email)?.toLowerCase() ?? null;
+  if (email) {
+    const emailMatch = suppliers.find((supplier) => supplier.email?.toLowerCase() === email);
+    if (emailMatch) return { supplierId: emailMatch.id, supplierName: emailMatch.name, matchReason: 'email' };
+  }
+
+  const normalisedName = normaliseMatchText(input.name);
+  if (normalisedName) {
+    const exact = suppliers.find((supplier) => supplier.name === input.name);
+    if (exact) return { supplierId: exact.id, supplierName: exact.name, matchReason: 'exact name' };
+    const normalised = suppliers.find((supplier) => normaliseMatchText(supplier.name) === normalisedName);
+    if (normalised) return { supplierId: normalised.id, supplierName: normalised.name, matchReason: 'normalised name' };
+  }
+
+  return { supplierId: null, supplierName: null, matchReason: null };
+}
+
+function xeroContactId(contact: XeroContact) {
+  return optionalText(contact.ContactID);
+}
+
+function xeroBillId(invoice: XeroInvoice) {
+  return optionalText(invoice.InvoiceID);
+}
+
+function billInvoiceNumber(invoice: XeroInvoice) {
+  return optionalText(invoice.InvoiceNumber) ?? optionalText(invoice.Reference);
+}
+
+function lineKey(line: XeroInvoiceLineItem, index: number) {
+  return optionalText(line.LineItemID) ?? buildImportHash([
+    index,
+    line.Description,
+    line.ItemCode,
+    line.Quantity,
+    line.LineAmount
+  ]);
+}
+
 async function refreshXeroToken(refreshToken: string): Promise<XeroTokenResponse> {
   const credentials = Buffer.from(`${env.integrations.xero.clientId}:${env.integrations.xero.clientSecret}`).toString('base64');
   const response = await fetch('https://identity.xero.com/connect/token', {
@@ -545,6 +716,165 @@ async function xeroGetJson<T>(
     data: await response.json() as T,
     connection,
     tokenStatus
+  };
+}
+
+async function connectedXeroConnection() {
+  const connection = await connectionSelect('XERO');
+  if (!connection || connection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Xero is not connected.');
+  }
+  if (!connection.providerAccountId) {
+    throw new HttpError(409, 'Xero tenant is not selected.');
+  }
+  return connection;
+}
+
+function clampLimit(value: unknown, fallback: number, max: number) {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed)) return fallback;
+  return Math.max(1, Math.min(max, Math.floor(parsed)));
+}
+
+async function xeroContacts(limit: number) {
+  const connection = await connectedXeroConnection();
+  const response = await xeroGetJson<{ Contacts?: XeroContact[] }>(
+    '/api.xro/2.0/Contacts?includeArchived=false&page=1',
+    { connection }
+  );
+  return {
+    connection: response.connection,
+    contacts: (response.data.Contacts ?? []).slice(0, limit)
+  };
+}
+
+function defaultBillDates(query: Record<string, unknown>) {
+  const end = parseXeroDate(query.endDate) ?? new Date();
+  const start = parseXeroDate(query.startDate) ?? new Date(end);
+  if (!query.startDate) start.setDate(start.getDate() - 90);
+  return {
+    start,
+    end
+  };
+}
+
+async function xeroBills(query: Record<string, unknown>, limit: number) {
+  const connection = await connectedXeroConnection();
+  const where = encodeURIComponent('Type=="ACCPAY"');
+  const response = await xeroGetJson<{ Invoices?: XeroInvoice[] }>(
+    `/api.xro/2.0/Invoices?where=${where}&order=Date%20DESC&page=1`,
+    { connection }
+  );
+  const { start, end } = defaultBillDates(query);
+  const statuses = optionalText(query.statuses)
+    ?.split(',')
+    .map((status) => status.trim().toUpperCase())
+    .filter(Boolean) ?? [];
+  const invoices = (response.data.Invoices ?? [])
+    .filter((invoice) => invoice.Type === 'ACCPAY' || !invoice.Type)
+    .filter((invoice) => {
+      const date = parseXeroDate(invoice.DateString ?? invoice.Date);
+      if (!date) return true;
+      return date >= start && date <= end;
+    })
+    .filter((invoice) => !statuses.length || statuses.includes(trimText(invoice.Status).toUpperCase()))
+    .slice(0, limit);
+  return {
+    connection: response.connection,
+    start,
+    end,
+    bills: invoices
+  };
+}
+
+function supplierContactPreview(contact: XeroContact, suppliers: ExistingSupplier[]): XeroSupplierContactPreview | null {
+  const id = xeroContactId(contact);
+  const name = optionalText(contact.Name);
+  if (!id || !name) return null;
+  const email = optionalText(contact.EmailAddress);
+  const match = matchSupplier({ name, email }, suppliers);
+  const warnings: string[] = [];
+  if (!isSupplierCandidate(contact)) warnings.push('Not marked as a supplier in Xero.');
+  if (!email) warnings.push('No email on Xero contact.');
+  return {
+    xeroContactId: id,
+    xeroContactIdMasked: maskIdentifier(id) ?? 'connected',
+    name,
+    email,
+    phone: phoneFromXero(contact),
+    isSupplierCandidate: isSupplierCandidate(contact),
+    existingSupplierId: match.supplierId,
+    existingSupplierName: match.supplierName,
+    existingSupplierMatch: Boolean(match.supplierId),
+    matchReason: match.matchReason,
+    warnings
+  };
+}
+
+function duplicateForBill(invoice: XeroInvoice, existingInvoices: ExistingInvoice[]) {
+  const id = xeroBillId(invoice);
+  const invoiceNumber = billInvoiceNumber(invoice);
+  const supplierName = optionalText(invoice.Contact?.Name) ?? 'Unknown supplier';
+  const invoiceDate = parseXeroDate(invoice.DateString ?? invoice.Date);
+  const totalCents = moneyToCents(invoice.Total);
+
+  if (id && existingInvoices.some((existing) => existing.invoiceKey === id || existing.externalInvoiceId === id)) {
+    return { duplicateStatus: 'duplicate' as const, duplicateReason: 'Xero bill id already imported.' };
+  }
+
+  if (invoiceNumber) {
+    const exact = existingInvoices.find((existing) =>
+      existing.invoiceNumber === invoiceNumber &&
+      normaliseMatchText(existing.supplierName) === normaliseMatchText(supplierName)
+    );
+    if (exact) return { duplicateStatus: 'possible_duplicate' as const, duplicateReason: 'Invoice number and supplier already exist.' };
+  }
+
+  const dateOnly = isoDateOnly(invoiceDate);
+  const possible = existingInvoices.find((existing) =>
+    normaliseMatchText(existing.supplierName) === normaliseMatchText(supplierName) &&
+    isoDateOnly(existing.invoiceDate) === dateOnly &&
+    existing.totalCents === totalCents
+  );
+  if (possible) return { duplicateStatus: 'possible_duplicate' as const, duplicateReason: 'Supplier, date and total match an existing invoice.' };
+
+  return { duplicateStatus: 'new' as const, duplicateReason: null };
+}
+
+function billPreview(
+  invoice: XeroInvoice,
+  suppliers: ExistingSupplier[],
+  existingInvoices: ExistingInvoice[]
+): XeroSupplierBillPreview | null {
+  const id = xeroBillId(invoice);
+  if (!id) return null;
+  const supplierName = optionalText(invoice.Contact?.Name) ?? 'Unknown supplier';
+  const supplierEmail = optionalText(invoice.Contact?.EmailAddress);
+  const match = matchSupplier({ name: supplierName, email: supplierEmail }, suppliers);
+  const duplicate = duplicateForBill(invoice, existingInvoices);
+  const warnings: string[] = [];
+  if (!match.supplierId) warnings.push('Supplier is not matched in Alma.');
+  if (!invoice.LineItems?.length) warnings.push('No bill lines returned.');
+  if (duplicate.duplicateStatus !== 'new' && duplicate.duplicateReason) warnings.push(duplicate.duplicateReason);
+
+  return {
+    xeroInvoiceId: id,
+    xeroInvoiceIdMasked: maskIdentifier(id) ?? 'connected',
+    supplierName,
+    supplierEmail,
+    invoiceNumber: optionalText(invoice.InvoiceNumber),
+    reference: optionalText(invoice.Reference),
+    status: optionalText(invoice.Status) ?? 'UNKNOWN',
+    invoiceDate: isoDateOnly(parseXeroDate(invoice.DateString ?? invoice.Date)),
+    dueDate: isoDateOnly(parseXeroDate(invoice.DueDateString ?? invoice.DueDate)),
+    currencyCode: optionalText(invoice.CurrencyCode) ?? 'AUD',
+    lineCount: invoice.LineItems?.length ?? 0,
+    totalCents: moneyToCents(invoice.Total),
+    supplierId: match.supplierId,
+    supplierMatchStatus: match.supplierId ? 'matched' : supplierName === 'Unknown supplier' ? 'unknown' : 'missing',
+    duplicateStatus: duplicate.duplicateStatus,
+    duplicateReason: duplicate.duplicateReason,
+    warnings
   };
 }
 
@@ -931,6 +1261,398 @@ export const integrationService = {
         message: safeErrorMessage(error)
       };
     }
+  },
+
+  async previewXeroSupplierContacts(query: Record<string, unknown>): Promise<XeroSupplierContactsPreviewPayload> {
+    const limit = clampLimit(query.limit, 100, 500);
+    const [{ contacts, connection }, suppliers] = await Promise.all([
+      xeroContacts(limit),
+      prisma.supplier.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' }
+      })
+    ]);
+    const previews = contacts
+      .map((contact) => supplierContactPreview(contact, suppliers))
+      .filter((preview): preview is XeroSupplierContactPreview => Boolean(preview));
+    const warnings: string[] = [];
+    if (previews.length === limit) warnings.push(`Preview limited to ${limit} contacts.`);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      connected: true,
+      tenantName: connection.providerAccountName,
+      contactsRead: contacts.length,
+      supplierCandidates: previews.filter((preview) => preview.isSupplierCandidate).length,
+      matchedSuppliers: previews.filter((preview) => preview.existingSupplierMatch).length,
+      contacts: previews,
+      warnings
+    };
+  },
+
+  async importXeroSupplierContacts(input: unknown, actor: AuthUser): Promise<XeroSupplierContactsImportResult> {
+    const data = xeroSupplierContactsImportInputSchema.parse(input);
+    const limit = data.limit ?? 500;
+    const { contacts, connection } = await xeroContacts(limit);
+    const suppliers = await prisma.supplier.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' }
+    });
+    const previews = contacts
+      .map((contact) => {
+        const preview = supplierContactPreview(contact, suppliers);
+        return preview ? { contact, preview } : null;
+      })
+      .filter((entry): entry is { contact: XeroContact; preview: XeroSupplierContactPreview } => Boolean(entry));
+    const selected = data.importAllCandidates
+      ? previews.filter((entry) => entry.preview.isSupplierCandidate)
+      : previews.filter((entry) => data.contactIds.includes(entry.preview.xeroContactId));
+
+    let createdCount = 0;
+    let updatedCount = 0;
+    let skippedCount = 0;
+    let conflictCount = 0;
+    const warnings: string[] = [];
+
+    await prisma.$transaction(async (tx) => {
+      for (const entry of selected) {
+        const { contact, preview } = entry;
+        if (!preview.isSupplierCandidate) {
+          skippedCount += 1;
+          warnings.push(`${preview.name} was skipped because it is not marked as a supplier in Xero.`);
+          continue;
+        }
+
+        const name = preview.name.trim();
+        if (!name) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const existing = preview.existingSupplierId
+          ? await tx.supplier.findUnique({ where: { id: preview.existingSupplierId } })
+          : await tx.supplier.findFirst({ where: { name: { equals: name, mode: 'insensitive' } } });
+
+        const patch = {
+          email: preview.email || existing?.email || null,
+          phone: preview.phone || existing?.phone || null,
+          address: addressFromXero(contact) || existing?.address || null,
+          notes: existing?.notes ?? 'Imported from Xero supplier contact. Xero contact id is not stored until provider reference fields are added.'
+        };
+
+        if (existing) {
+          await tx.supplier.update({
+            where: { id: existing.id },
+            data: patch
+          });
+          updatedCount += 1;
+        } else {
+          const duplicateMatch: Prisma.SupplierWhereInput[] = [
+            { name: { equals: name, mode: 'insensitive' } }
+          ];
+          if (preview.email) {
+            duplicateMatch.push({ email: { equals: preview.email, mode: 'insensitive' } });
+          }
+          const duplicate = await tx.supplier.findFirst({
+            where: {
+              OR: duplicateMatch
+            }
+          });
+          if (duplicate) {
+            conflictCount += 1;
+            warnings.push(`${name} was skipped because it matches another supplier.`);
+            continue;
+          }
+          await tx.supplier.create({
+            data: {
+              name,
+              email: preview.email,
+              phone: preview.phone,
+              address: addressFromXero(contact),
+              notes: 'Imported from Xero supplier contact. Xero contact id is not stored until provider reference fields are added.',
+              status: 'ACTIVE'
+            }
+          });
+          createdCount += 1;
+        }
+      }
+
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'XERO',
+          connectionId: connection.id,
+          syncType: 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          recordsImported: createdCount,
+          recordsUpdated: updatedCount,
+          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'SUPPLIER_CONTACTS_IMPORTED',
+      summary: `Xero supplier contact import finished: ${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped.`,
+      actor,
+      metadata: { createdCount, updatedCount, skippedCount, conflictCount }
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      createdCount,
+      updatedCount,
+      skippedCount,
+      conflictCount,
+      warnings
+    };
+  },
+
+  async previewXeroSupplierBills(query: Record<string, unknown>): Promise<XeroSupplierBillsPreviewPayload> {
+    const limit = clampLimit(query.limit, 30, 100);
+    const [{ bills, connection, start, end }, suppliers, existingInvoices] = await Promise.all([
+      xeroBills(query, limit),
+      prisma.supplier.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, email: true },
+        orderBy: { name: 'asc' }
+      }),
+      prisma.supplierInvoice.findMany({
+        where: { source: 'XERO' },
+        select: {
+          id: true,
+          source: true,
+          invoiceKey: true,
+          externalInvoiceId: true,
+          invoiceNumber: true,
+          supplierName: true,
+          invoiceDate: true,
+          totalCents: true
+        },
+        orderBy: { importedAt: 'desc' },
+        take: 500
+      })
+    ]);
+    const previews = bills
+      .map((bill) => billPreview(bill, suppliers, existingInvoices))
+      .filter((preview): preview is XeroSupplierBillPreview => Boolean(preview));
+    const statusCounts = previews.reduce<Record<string, number>>((accumulator, preview) => {
+      accumulator[preview.status] = (accumulator[preview.status] ?? 0) + 1;
+      return accumulator;
+    }, {});
+    const warnings: string[] = [];
+    if (previews.length === limit) warnings.push(`Preview limited to ${limit} bills.`);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      connected: true,
+      tenantName: connection.providerAccountName,
+      startDate: start.toISOString().slice(0, 10),
+      endDate: end.toISOString().slice(0, 10),
+      billsRead: bills.length,
+      billsPreviewed: previews.length,
+      statusCounts,
+      bills: previews,
+      warnings
+    };
+  },
+
+  async importXeroSupplierBills(input: unknown, actor: AuthUser): Promise<XeroSupplierBillsImportResult> {
+    const data = xeroSupplierBillsImportInputSchema.parse(input);
+    const limit = data.limit ?? 100;
+    const { bills, connection } = await xeroBills({
+      startDate: data.startDate,
+      endDate: data.endDate,
+      limit
+    }, limit);
+    const suppliers = await prisma.supplier.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' }
+    });
+    const existingInvoices = await prisma.supplierInvoice.findMany({
+      where: { source: 'XERO' },
+      select: {
+        id: true,
+        source: true,
+        invoiceKey: true,
+        externalInvoiceId: true,
+        invoiceNumber: true,
+        supplierName: true,
+        invoiceDate: true,
+        totalCents: true
+      },
+      orderBy: { importedAt: 'desc' },
+      take: 500
+    });
+    const matchItems = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, sku: true },
+      orderBy: { name: 'asc' }
+    });
+    const selectedBills = bills.filter((bill) => {
+      const id = xeroBillId(bill);
+      return id ? data.billIds.includes(id) : false;
+    });
+
+    let importedCount = 0;
+    let skippedCount = 0;
+    let duplicateCount = 0;
+    let supplierCreatedCount = 0;
+    let lineCount = 0;
+    const warnings: string[] = [];
+
+    await prisma.$transaction(async (tx) => {
+      for (const bill of selectedBills) {
+        const id = xeroBillId(bill);
+        if (!id) {
+          skippedCount += 1;
+          continue;
+        }
+
+        const duplicate = duplicateForBill(bill, existingInvoices);
+        if (duplicate.duplicateStatus !== 'new') {
+          duplicateCount += 1;
+          warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} was skipped as a duplicate.`);
+          continue;
+        }
+
+        const supplierName = optionalText(bill.Contact?.Name) ?? 'Unknown supplier';
+        const supplierEmail = optionalText(bill.Contact?.EmailAddress);
+        let supplierId = matchSupplier({ name: supplierName, email: supplierEmail }, suppliers).supplierId;
+        if (!supplierId && !data.allowCreateSuppliers) {
+          skippedCount += 1;
+          warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} was skipped because the supplier is missing in Alma.`);
+          continue;
+        }
+        if (!supplierId && data.allowCreateSuppliers && supplierName !== 'Unknown supplier') {
+          const created = await tx.supplier.create({
+            data: {
+              name: supplierName,
+              email: supplierEmail,
+              phone: phoneFromXero(bill.Contact ?? {}),
+              address: addressFromXero(bill.Contact ?? {}),
+              notes: 'Created during explicit Xero bill import. Xero contact id is not stored until provider reference fields are added.',
+              status: 'ACTIVE'
+            }
+          });
+          supplierId = created.id;
+          suppliers.push({ id: created.id, name: created.name, email: created.email });
+          supplierCreatedCount += 1;
+        }
+
+        const invoiceDate = parseXeroDate(bill.DateString ?? bill.Date);
+        const dueDate = parseXeroDate(bill.DueDateString ?? bill.DueDate);
+        const invoice = await tx.supplierInvoice.create({
+          data: {
+            source: 'XERO',
+            invoiceKey: id,
+            externalInvoiceId: id,
+            invoiceNumber: optionalText(bill.InvoiceNumber) ?? optionalText(bill.Reference),
+            supplierId,
+            supplierName,
+            supplierEmail,
+            venue: optionalText(data.venue),
+            invoiceDate,
+            dueDate,
+            currencyCode: optionalText(bill.CurrencyCode) ?? 'AUD',
+            status: optionalText(bill.Status) ?? 'DRAFT',
+            subtotalCents: moneyToCents(bill.SubTotal),
+            taxCents: moneyToCents(bill.TotalTax),
+            totalCents: moneyToCents(bill.Total),
+            sourceFileName: 'Xero supplier bill sync',
+            sourceFileType: 'application/xero+json',
+            sourceMetadata: {
+              importedFrom: 'xero',
+              reference: optionalText(bill.Reference),
+              importedBy: actor.email ?? actor.id,
+              importedAt: new Date().toISOString()
+            }
+          }
+        });
+
+        for (const [index, line] of (bill.LineItems ?? []).entries()) {
+          const itemCode = optionalText(line.ItemCode);
+          const description = optionalText(line.Description) ?? 'Xero bill line';
+          const exactSkuMatch = itemCode
+            ? matchItems.find((item) => item.sku && normaliseMatchText(item.sku) === normaliseMatchText(itemCode))
+            : null;
+          const exactNameMatch = matchItems.find((item) => normaliseMatchText(item.name) === normaliseMatchText(description));
+          const itemId = exactSkuMatch?.id ?? exactNameMatch?.id ?? null;
+          await tx.supplierInvoiceLine.create({
+            data: {
+              supplierInvoiceId: invoice.id,
+              lineNumber: index + 1,
+              lineKey: lineKey(line, index),
+              externalLineId: optionalText(line.LineItemID),
+              description,
+              itemCode,
+              accountCode: optionalText(line.AccountCode),
+              quantity: typeof line.Quantity === 'number' ? line.Quantity : 0,
+              unit: null,
+              unitAmountCents: moneyToCents(line.UnitAmount),
+              lineAmountCents: moneyToCents(line.LineAmount),
+              taxAmountCents: moneyToCents(line.TaxAmount),
+              itemId,
+              matchingStatus: itemId ? 'AUTO_MATCHED' : 'NEEDS_REVIEW',
+              sourceMetadata: {
+                importedFrom: 'xero',
+                accountCode: optionalText(line.AccountCode)
+              }
+            }
+          });
+          lineCount += 1;
+        }
+
+        existingInvoices.push({
+          id: invoice.id,
+          source: invoice.source,
+          invoiceKey: invoice.invoiceKey,
+          externalInvoiceId: invoice.externalInvoiceId,
+          invoiceNumber: invoice.invoiceNumber,
+          supplierName: invoice.supplierName,
+          invoiceDate: invoice.invoiceDate,
+          totalCents: invoice.totalCents
+        });
+        importedCount += 1;
+      }
+
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'XERO',
+          connectionId: connection.id,
+          syncType: 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          recordsImported: importedCount,
+          recordsUpdated: 0,
+          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'SUPPLIER_BILLS_IMPORTED',
+      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped, ${duplicateCount} duplicate.`,
+      actor,
+      metadata: { importedCount, skippedCount, duplicateCount, supplierCreatedCount, lineCount }
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      importedCount,
+      skippedCount,
+      duplicateCount,
+      supplierCreatedCount,
+      lineCount,
+      warnings
+    };
   },
 
   async startConnect(providerInput: string, actor: AuthUser): Promise<IntegrationConnectResponse> {

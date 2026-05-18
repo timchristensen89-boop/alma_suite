@@ -31,7 +31,11 @@ import type {
   SocialPlatform,
   StaffAppAccess,
   StaffAppAccessStatus,
-  XeroConnectionHealthPayload
+  XeroConnectionHealthPayload,
+  XeroSupplierBillsImportResult,
+  XeroSupplierBillsPreviewPayload,
+  XeroSupplierContactsImportResult,
+  XeroSupplierContactsPreviewPayload
 } from '@alma/shared';
 import { api, apiUrl, createSuiteHandoffUrl } from '../lib/api';
 import {
@@ -233,6 +237,13 @@ function formatDate(value: string) {
   }).format(new Date(value));
 }
 
+function formatMoney(cents: number, currencyCode = 'AUD') {
+  return new Intl.NumberFormat('en-AU', {
+    style: 'currency',
+    currency: currencyCode
+  }).format(cents / 100);
+}
+
 function cleanBaseUrl(value: string) {
   return value.replace(/\/+$/, '');
 }
@@ -408,6 +419,148 @@ function IntegrationCard({
   );
 }
 
+function XeroSyncPanel({
+  contactPreview,
+  billPreview,
+  selectedContacts,
+  selectedBills,
+  busy,
+  feedback,
+  allowCreateSuppliers,
+  onPreviewContacts,
+  onToggleContact,
+  onImportContacts,
+  onPreviewBills,
+  onToggleBill,
+  onImportBills,
+  onAllowCreateSuppliersChange
+}: {
+  contactPreview: XeroSupplierContactsPreviewPayload | null;
+  billPreview: XeroSupplierBillsPreviewPayload | null;
+  selectedContacts: string[];
+  selectedBills: string[];
+  busy: string | null;
+  feedback: string | null;
+  allowCreateSuppliers: boolean;
+  onPreviewContacts: () => void;
+  onToggleContact: (id: string) => void;
+  onImportContacts: () => void;
+  onPreviewBills: () => void;
+  onToggleBill: (id: string) => void;
+  onImportBills: () => void;
+  onAllowCreateSuppliersChange: (enabled: boolean) => void;
+}) {
+  return (
+    <Card title="Xero supplier and bill import" subtitle="Preview first, then import selected records">
+      <div className="admin-status-stack">
+        <p className="muted">
+          No accounting data sync is running automatically yet. Preview Xero records before importing. Payroll,
+          payments and bank feeds are not connected.
+        </p>
+        {feedback ? <Badge tone="info">{feedback}</Badge> : null}
+        <div className="admin-grid two">
+          <div className="admin-provider-card">
+            <div>
+              <strong>Supplier contacts</strong>
+              <p>Review Xero contacts that are marked as suppliers, then create or update selected Alma suppliers.</p>
+            </div>
+            <div className="inline-actions">
+              <Button variant="secondary" disabled={Boolean(busy)} onClick={onPreviewContacts}>
+                {busy === 'xero-contacts-preview' ? 'Loading...' : 'Preview contacts'}
+              </Button>
+              <Button variant="primary" disabled={Boolean(busy) || !selectedContacts.length} onClick={onImportContacts}>
+                {busy === 'xero-contacts-import' ? 'Importing...' : `Import selected (${selectedContacts.length})`}
+              </Button>
+            </div>
+            {contactPreview ? (
+              <div className="admin-status-stack">
+                <StatusLine label="Contacts read" value={String(contactPreview.contactsRead)} tone="muted" />
+                <StatusLine label="Supplier candidates" value={String(contactPreview.supplierCandidates)} tone="info" />
+                <StatusLine label="Matched suppliers" value={String(contactPreview.matchedSuppliers)} tone={contactPreview.matchedSuppliers ? 'positive' : 'muted'} />
+                {contactPreview.contacts.slice(0, 8).map((contact) => (
+                  <label key={contact.xeroContactId} className="admin-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedContacts.includes(contact.xeroContactId)}
+                      onChange={() => onToggleContact(contact.xeroContactId)}
+                    />
+                    <span>
+                      <strong>{contact.name}</strong>
+                      <small>
+                        {contact.existingSupplierMatch
+                          ? `Matched to ${contact.existingSupplierName}`
+                          : contact.isSupplierCandidate
+                            ? 'Supplier candidate'
+                            : 'Not marked as supplier'}
+                      </small>
+                    </span>
+                  </label>
+                ))}
+                {contactPreview.contacts.length > 8 ? <p className="muted">Showing first 8 preview rows.</p> : null}
+                {contactPreview.warnings.map((warning) => <p key={warning} className="muted">{warning}</p>)}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="admin-provider-card">
+            <div>
+              <strong>Supplier bills</strong>
+              <p>Preview recent Xero ACCPAY bills, match suppliers, then import selected bills into Stock invoices.</p>
+            </div>
+            <div className="inline-actions">
+              <Button variant="secondary" disabled={Boolean(busy)} onClick={onPreviewBills}>
+                {busy === 'xero-bills-preview' ? 'Loading...' : 'Preview bills'}
+              </Button>
+              <Button variant="primary" disabled={Boolean(busy) || !selectedBills.length} onClick={onImportBills}>
+                {busy === 'xero-bills-import' ? 'Importing...' : `Import selected (${selectedBills.length})`}
+              </Button>
+            </div>
+            <label className="admin-checkbox-row">
+              <input
+                type="checkbox"
+                checked={allowCreateSuppliers}
+                onChange={(event) => onAllowCreateSuppliersChange(event.currentTarget.checked)}
+              />
+              <span>
+                <strong>Create missing suppliers during bill import</strong>
+                <small>Leave off when suppliers should be reviewed before bills are imported.</small>
+              </span>
+            </label>
+            {billPreview ? (
+              <div className="admin-status-stack">
+                <StatusLine label="Bills previewed" value={String(billPreview.billsPreviewed)} tone="info" />
+                <StatusLine label="Date range" value={`${billPreview.startDate} to ${billPreview.endDate}`} tone="muted" />
+                {Object.entries(billPreview.statusCounts).map(([status, count]) => (
+                  <StatusLine key={status} label={status} value={String(count)} tone="muted" />
+                ))}
+                {billPreview.bills.slice(0, 8).map((bill) => (
+                  <label key={bill.xeroInvoiceId} className="admin-checkbox-row">
+                    <input
+                      type="checkbox"
+                      checked={selectedBills.includes(bill.xeroInvoiceId)}
+                      disabled={bill.duplicateStatus === 'duplicate'}
+                      onChange={() => onToggleBill(bill.xeroInvoiceId)}
+                    />
+                    <span>
+                      <strong>{bill.supplierName}</strong>
+                      <small>
+                        {(bill.invoiceNumber ?? bill.reference ?? 'No reference')} · {bill.status} · {formatMoney(bill.totalCents, bill.currencyCode)} · {bill.supplierMatchStatus}
+                        {bill.duplicateStatus !== 'new' ? ` · ${bill.duplicateStatus.replace(/_/g, ' ')}` : ''}
+                      </small>
+                    </span>
+                  </label>
+                ))}
+                {billPreview.bills.length > 8 ? <p className="muted">Showing first 8 preview rows.</p> : null}
+                {billPreview.warnings.map((warning) => <p key={warning} className="muted">{warning}</p>)}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 function MetaIntegrationCard({
   meta,
   busy,
@@ -544,6 +697,13 @@ export function AdminPage() {
   const [error, setError] = useState<string | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState<string | null>(null);
   const [xeroHealth, setXeroHealth] = useState<XeroConnectionHealthPayload | null>(null);
+  const [xeroContactPreview, setXeroContactPreview] = useState<XeroSupplierContactsPreviewPayload | null>(null);
+  const [xeroBillPreview, setXeroBillPreview] = useState<XeroSupplierBillsPreviewPayload | null>(null);
+  const [xeroSelectedContacts, setXeroSelectedContacts] = useState<string[]>([]);
+  const [xeroSelectedBills, setXeroSelectedBills] = useState<string[]>([]);
+  const [xeroSyncBusy, setXeroSyncBusy] = useState<string | null>(null);
+  const [xeroSyncFeedback, setXeroSyncFeedback] = useState<string | null>(null);
+  const [xeroAllowCreateSuppliers, setXeroAllowCreateSuppliers] = useState(false);
   const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
@@ -658,6 +818,101 @@ export function AdminPage() {
       setError(err instanceof Error ? err.message : 'Could not check Xero health.');
     } finally {
       setIntegrationBusy(null);
+    }
+  }
+
+  function toggleXeroContact(id: string) {
+    setXeroSelectedContacts((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
+    );
+  }
+
+  function toggleXeroBill(id: string) {
+    setXeroSelectedBills((current) =>
+      current.includes(id) ? current.filter((entry) => entry !== id) : [...current, id]
+    );
+  }
+
+  async function previewXeroSupplierContacts() {
+    setXeroSyncBusy('xero-contacts-preview');
+    setXeroSyncFeedback(null);
+    setError(null);
+    try {
+      const payload = await api<XeroSupplierContactsPreviewPayload>('/api/integrations/xero/supplier-contacts/preview?limit=100');
+      setXeroContactPreview(payload);
+      setXeroSelectedContacts([]);
+      setXeroSyncFeedback(`Previewed ${payload.contacts.length} Xero contacts. Nothing was imported.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not preview Xero supplier contacts.');
+    } finally {
+      setXeroSyncBusy(null);
+    }
+  }
+
+  async function importXeroSupplierContacts() {
+    if (!xeroSelectedContacts.length) return;
+    setXeroSyncBusy('xero-contacts-import');
+    setXeroSyncFeedback(null);
+    setError(null);
+    try {
+      const result = await api<XeroSupplierContactsImportResult>('/api/integrations/xero/supplier-contacts/import', {
+        method: 'POST',
+        body: JSON.stringify({ contactIds: xeroSelectedContacts, limit: 500 })
+      });
+      setXeroSelectedContacts([]);
+      setXeroSyncFeedback(
+        `Supplier import finished: ${result.createdCount} created, ${result.updatedCount} updated, ${result.skippedCount} skipped.`
+      );
+      await previewXeroSupplierContacts();
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import selected Xero supplier contacts.');
+    } finally {
+      setXeroSyncBusy(null);
+    }
+  }
+
+  async function previewXeroSupplierBills() {
+    setXeroSyncBusy('xero-bills-preview');
+    setXeroSyncFeedback(null);
+    setError(null);
+    try {
+      const payload = await api<XeroSupplierBillsPreviewPayload>('/api/integrations/xero/supplier-bills/preview?limit=30');
+      setXeroBillPreview(payload);
+      setXeroSelectedBills([]);
+      setXeroSyncFeedback(`Previewed ${payload.billsPreviewed} Xero bills. Nothing was imported.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not preview Xero supplier bills.');
+    } finally {
+      setXeroSyncBusy(null);
+    }
+  }
+
+  async function importXeroSupplierBills() {
+    if (!xeroSelectedBills.length) return;
+    setXeroSyncBusy('xero-bills-import');
+    setXeroSyncFeedback(null);
+    setError(null);
+    try {
+      const result = await api<XeroSupplierBillsImportResult>('/api/integrations/xero/supplier-bills/import', {
+        method: 'POST',
+        body: JSON.stringify({
+          billIds: xeroSelectedBills,
+          allowCreateSuppliers: xeroAllowCreateSuppliers,
+          confirmationText: 'IMPORT XERO BILLS',
+          limit: 100
+        })
+      });
+      setXeroSelectedBills([]);
+      setXeroSyncFeedback(
+        `Bill import finished: ${result.importedCount} imported, ${result.duplicateCount} duplicates, ${result.skippedCount} skipped.`
+      );
+      await previewXeroSupplierBills();
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import selected Xero supplier bills.');
+    } finally {
+      setXeroSyncBusy(null);
     }
   }
 
@@ -1455,6 +1710,24 @@ export function AdminPage() {
         </div>
         {integrations ? (
           <div className="admin-grid two">
+            {integrations.xero.status === 'CONNECTED' ? (
+              <XeroSyncPanel
+                contactPreview={xeroContactPreview}
+                billPreview={xeroBillPreview}
+                selectedContacts={xeroSelectedContacts}
+                selectedBills={xeroSelectedBills}
+                busy={xeroSyncBusy}
+                feedback={xeroSyncFeedback}
+                allowCreateSuppliers={xeroAllowCreateSuppliers}
+                onPreviewContacts={() => void previewXeroSupplierContacts()}
+                onToggleContact={toggleXeroContact}
+                onImportContacts={() => void importXeroSupplierContacts()}
+                onPreviewBills={() => void previewXeroSupplierBills()}
+                onToggleBill={toggleXeroBill}
+                onImportBills={() => void importXeroSupplierBills()}
+                onAllowCreateSuppliersChange={setXeroAllowCreateSuppliers}
+              />
+            ) : null}
             <Card title="Sync health" subtitle="Last connection and webhook activity">
               {integrations.latestSyncRuns.length ? (
                 <div className="admin-status-stack">

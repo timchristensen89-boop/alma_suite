@@ -1563,6 +1563,107 @@ export type XeroConnectionHealthPayload = {
   dataSyncRunning: false;
 };
 
+export type XeroSupplierContactPreview = {
+  xeroContactId: string;
+  xeroContactIdMasked: string;
+  name: string;
+  email: string | null;
+  phone: string | null;
+  isSupplierCandidate: boolean;
+  existingSupplierId: string | null;
+  existingSupplierName: string | null;
+  existingSupplierMatch: boolean;
+  matchReason: string | null;
+  warnings: string[];
+};
+
+export type XeroSupplierContactsPreviewPayload = {
+  generatedAt: string;
+  connected: boolean;
+  tenantName: string | null;
+  contactsRead: number;
+  supplierCandidates: number;
+  matchedSuppliers: number;
+  contacts: XeroSupplierContactPreview[];
+  warnings: string[];
+};
+
+export type XeroSupplierContactsImportResult = {
+  generatedAt: string;
+  createdCount: number;
+  updatedCount: number;
+  skippedCount: number;
+  conflictCount: number;
+  warnings: string[];
+};
+
+export const xeroSupplierContactsImportInputSchema = z.object({
+  contactIds: z.array(z.string().min(1)).default([]),
+  importAllCandidates: z.boolean().default(false),
+  limit: z.number().int().min(1).max(500).optional()
+}).refine((value) => value.importAllCandidates || value.contactIds.length > 0, {
+  message: 'Choose supplier contacts to import'
+});
+
+export type XeroSupplierContactsImportInput = z.infer<typeof xeroSupplierContactsImportInputSchema>;
+
+export type XeroSupplierBillPreview = {
+  xeroInvoiceId: string;
+  xeroInvoiceIdMasked: string;
+  supplierName: string;
+  supplierEmail: string | null;
+  invoiceNumber: string | null;
+  reference: string | null;
+  status: string;
+  invoiceDate: string | null;
+  dueDate: string | null;
+  currencyCode: string;
+  lineCount: number;
+  totalCents: number;
+  supplierId: string | null;
+  supplierMatchStatus: 'matched' | 'missing' | 'unknown';
+  duplicateStatus: 'new' | 'duplicate' | 'possible_duplicate';
+  duplicateReason: string | null;
+  warnings: string[];
+};
+
+export type XeroSupplierBillsPreviewPayload = {
+  generatedAt: string;
+  connected: boolean;
+  tenantName: string | null;
+  startDate: string;
+  endDate: string;
+  billsRead: number;
+  billsPreviewed: number;
+  statusCounts: Record<string, number>;
+  bills: XeroSupplierBillPreview[];
+  warnings: string[];
+};
+
+export type XeroSupplierBillsImportResult = {
+  generatedAt: string;
+  importedCount: number;
+  skippedCount: number;
+  duplicateCount: number;
+  supplierCreatedCount: number;
+  lineCount: number;
+  warnings: string[];
+};
+
+export const xeroSupplierBillsImportInputSchema = z.object({
+  billIds: z.array(z.string().min(1)).min(1, 'Choose Xero bills to import'),
+  allowCreateSuppliers: z.boolean().default(false),
+  venue: z.string().optional().or(z.literal('')),
+  startDate: z.string().optional().or(z.literal('')),
+  endDate: z.string().optional().or(z.literal('')),
+  limit: z.number().int().min(1).max(100).optional(),
+  confirmationText: z.literal('IMPORT XERO BILLS', {
+    errorMap: () => ({ message: 'Type IMPORT XERO BILLS to confirm bill import' })
+  })
+});
+
+export type XeroSupplierBillsImportInput = z.infer<typeof xeroSupplierBillsImportInputSchema>;
+
 export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
 
 export type LegacyAdminIntegrationProviderStatus = {

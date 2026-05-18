@@ -4998,12 +4998,34 @@ a.suite-app-tile:hover {
 .admin-status-line,
 .admin-audit-item,
 .admin-access-card,
-.admin-link-card {
+.admin-link-card,
+.admin-checkbox-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
   padding: 14px;
+}
+
+.admin-checkbox-row {
+  justify-content: flex-start;
+  cursor: pointer;
+}
+
+.admin-checkbox-row input {
+  flex: 0 0 auto;
+}
+
+.admin-checkbox-row span {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-checkbox-row small {
+  color: var(--color-text-muted);
+  line-height: 1.45;
 }
 
 .admin-link-card {
