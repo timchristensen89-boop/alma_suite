@@ -870,6 +870,19 @@
   font-family: var(--font-mono);
 }
 
+.document-view-button {
+  border: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+}
+
+.document-view-button:hover,
+.document-view-button:focus-visible {
+  text-decoration: underline;
+}
+
 .invite-row-actions {
   display: inline-flex;
   align-items: center;

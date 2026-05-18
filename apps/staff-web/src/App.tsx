@@ -2944,7 +2944,8 @@ function AccessPage({
                     <span>
                       <strong>{record.title}</strong>
                       <span className="subtle">{record.recordType} · {record.issuer || 'No issuer'} · expires {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}</span>
-                      {record.documentUrl ? <a href={record.documentUrl} target="_blank" rel="noreferrer">Open document</a> : <span className="subtle">No document link</span>}
+                      {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
+                      <StaffDocumentViewLink documentUrl={record.documentUrl} />
                       {record.notes ? <span className="subtle">{record.notes}</span> : null}
                     </span>
                     <span className="invite-row-actions">
@@ -7273,11 +7274,9 @@ function ApprovalRecordRow({
           {member.firstName} {member.lastName} · {member.venue || 'No venue'} · {record.documentName || 'Uploaded document'}
         </span>
         {record.documentUrl ? (
-          <a href={record.documentUrl} target="_blank" rel="noreferrer" className="invite-link">
-            Open uploaded document
-          </a>
+          <StaffDocumentViewLink documentUrl={record.documentUrl} />
         ) : (
-          <span className="subtle">No document uploaded yet</span>
+          <span className="subtle">No document attached</span>
         )}
       </span>
       <span className="invite-row-actions">
@@ -9067,6 +9066,7 @@ function readUploadAsDataUrl(file: File): Promise<string> {
 
 const ONBOARDING_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
 const STAFF_DOCUMENT_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.png,.jpg,.jpeg,.webp,.gif';
+const STAFF_DOCUMENT_DATA_URL_PATTERN = /^data:(application\/pdf|image\/png|image\/jpeg|image\/jpg|image\/webp|image\/gif);base64,[A-Za-z0-9+/=]+$/i;
 const ONBOARDING_UPLOAD_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const ONBOARDING_UPLOAD_EXTENSION_TYPES = new Map([
   ['.pdf', 'application/pdf'],
@@ -9110,6 +9110,67 @@ async function readOnboardingUpload(file: File) {
     name: safeUploadName(file.name),
     url: normaliseUploadDataUrl(await readUploadAsDataUrl(file), mimeType)
   };
+}
+
+function staffDocumentExternalUrl(documentUrl?: string | null) {
+  const value = documentUrl?.trim();
+  if (!value) return null;
+  if (value.startsWith('data:')) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:' ? parsed.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+function staffDocumentBlobUrl(documentUrl: string) {
+  const value = documentUrl.trim();
+  if (!STAFF_DOCUMENT_DATA_URL_PATTERN.test(value)) return null;
+  const [metadata, payload] = value.split(',');
+  const mimeType = metadata?.match(/^data:([^;]+);base64$/i)?.[1] ?? 'application/octet-stream';
+  const binary = window.atob(payload ?? '');
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return window.URL.createObjectURL(new Blob([bytes], { type: mimeType }));
+}
+
+function openStaffDocument(documentUrl: string) {
+  const blobUrl = staffDocumentBlobUrl(documentUrl);
+  if (!blobUrl) return;
+  const opened = window.open(blobUrl, '_blank', 'noopener,noreferrer');
+  window.setTimeout(() => window.URL.revokeObjectURL(blobUrl), 60_000);
+  if (!opened) {
+    window.location.assign(blobUrl);
+  }
+}
+
+function StaffDocumentViewLink({ documentUrl }: { documentUrl?: string | null }) {
+  const value = documentUrl?.trim();
+  if (!value) {
+    return <span className="subtle">No document attached</span>;
+  }
+
+  const externalUrl = staffDocumentExternalUrl(value);
+  if (externalUrl) {
+    return (
+      <a href={externalUrl} target="_blank" rel="noreferrer" className="invite-link">
+        View document
+      </a>
+    );
+  }
+
+  if (STAFF_DOCUMENT_DATA_URL_PATTERN.test(value)) {
+    return (
+      <button type="button" className="invite-link document-view-button" onClick={() => openStaffDocument(value)}>
+        View document
+      </button>
+    );
+  }
+
+  return <span className="subtle">Document link unavailable</span>;
 }
 
 function formatDateTime(value: string) {
@@ -9521,6 +9582,7 @@ function PublicOnboardingPage() {
                         <strong>{document.title}</strong>
                         <span className="subtle">{document.hint}</span>
                         {document.documentName ? <span className="subtle">{document.documentName}</span> : null}
+                        <StaffDocumentViewLink documentUrl={document.documentUrl} />
                       </span>
                       <span className="invite-row-actions">
                         <input
