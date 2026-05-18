@@ -2727,16 +2727,37 @@ function AccessPage({
 
   async function deleteDocument(record: StaffComplianceRecord) {
     if (!selected) return;
-    if (!window.confirm(`Remove ${record.title} from ${selected.firstName}'s documents?`)) return;
+    if (!record.documentUrl) return;
+    if (!window.confirm(`Delete the uploaded file for ${record.title}? The staff record will stay on ${selected.firstName}'s profile.`)) return;
     setSaving(true);
     setMessage(null);
     setMessageTarget(`record:${record.id}:remove`);
     try {
-      await api(`/api/staff/${selected.id}/records/${record.id}`, { method: 'DELETE' });
+      await api(`/api/staff/${selected.id}/records/${record.id}/document`, { method: 'DELETE' });
       await reload();
-      setMessage('Document removed.');
+      setMessage('Document deleted. The record is still available for follow-up.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not remove document.');
+      setMessage(err instanceof Error ? err.message : 'Could not delete document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestDocument(record: StaffComplianceRecord) {
+    if (!selected) return;
+    const prompt = record.documentUrl
+      ? `Request ${record.title} again from ${selected.firstName}? The current uploaded file will be removed.`
+      : `Mark ${record.title} as requested again from ${selected.firstName}?`;
+    if (!window.confirm(prompt)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:request`);
+    try {
+      await api(`/api/staff/${selected.id}/records/${record.id}/request-document`, { method: 'POST' });
+      await reload();
+      setMessage('Document requested again. Marked for follow-up; ask the staff member to upload again.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request document.');
     } finally {
       setSaving(false);
     }
@@ -3017,6 +3038,7 @@ function AccessPage({
                       <span className="subtle">{record.recordType} · {record.issuer || 'No issuer'} · expires {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}</span>
                       {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
                       <StaffDocumentViewLink documentUrl={record.documentUrl} />
+                      {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
                       {record.notes ? <span className="subtle">{record.notes}</span> : null}
                     </span>
                     <span className="invite-row-actions">
@@ -3026,9 +3048,18 @@ function AccessPage({
                         message={messageTarget === `record:${record.id}:approve` ? message : null}
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
-                      <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void deleteDocument(record)}>Remove</Button>
+                      {record.documentUrl ? (
+                        <Button type="button" size="sm" variant="danger" disabled={saving} onClick={() => void deleteDocument(record)}>Delete document</Button>
+                      ) : null}
                       <ActionFeedback
                         message={messageTarget === `record:${record.id}:remove` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                      <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void requestDocument(record)}>
+                        Re-request document
+                      </Button>
+                      <ActionFeedback
+                        message={messageTarget === `record:${record.id}:request` ? message : null}
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
                     </span>
@@ -7272,6 +7303,8 @@ function ApprovalRecordRow({
   saving,
   onApprove,
   onUpload,
+  onDelete,
+  onRequest,
   feedback
 }: {
   member: StaffProfile;
@@ -7279,6 +7312,8 @@ function ApprovalRecordRow({
   saving: boolean;
   onApprove: (memberId: string, recordId: string) => void;
   onUpload: (memberId: string, record: StaffComplianceRecord, file: File) => void;
+  onDelete: (memberId: string, recordId: string, title: string) => void;
+  onRequest: (memberId: string, recordId: string, title: string, hasDocument: boolean) => void;
   feedback?: string | null;
 }) {
   return (
@@ -7293,6 +7328,7 @@ function ApprovalRecordRow({
         ) : (
           <span className="subtle">No document attached</span>
         )}
+        {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
       </span>
       <span className="invite-row-actions">
         <Badge tone={record.status === 'APPROVED' ? 'positive' : 'warning'}>{record.status}</Badge>
@@ -7322,6 +7358,26 @@ function ApprovalRecordRow({
           message={feedback}
           tone={feedback?.includes('Could') ? 'error' : 'success'}
         />
+        {record.documentUrl ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="danger"
+            disabled={saving}
+            onClick={() => onDelete(member.id, record.id, record.title)}
+          >
+            Delete document
+          </Button>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          disabled={saving}
+          onClick={() => onRequest(member.id, record.id, record.title, Boolean(record.documentUrl))}
+        >
+          Re-request document
+        </Button>
       </span>
     </div>
   );
@@ -7374,6 +7430,41 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
       setMessage('Document uploaded.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not upload document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function deleteDocument(memberId: string, recordId: string, title: string) {
+    if (!window.confirm(`Delete the uploaded file for ${title}? The staff record will stay in the approval queue.`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${recordId}`);
+    try {
+      await api(`/api/staff/${memberId}/records/${recordId}/document`, { method: 'DELETE' });
+      await reload();
+      setMessage('Document deleted. The record is still available for follow-up.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not delete document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestDocument(memberId: string, recordId: string, title: string, hasDocument: boolean) {
+    const prompt = hasDocument
+      ? `Request ${title} again? The current uploaded file will be removed.`
+      : `Mark ${title} as requested again?`;
+    if (!window.confirm(prompt)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${recordId}`);
+    try {
+      await api(`/api/staff/${memberId}/records/${recordId}/request-document`, { method: 'POST' });
+      await reload();
+      setMessage('Document requested again. Marked for follow-up; ask the staff member to upload again.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request document.');
     } finally {
       setSaving(false);
     }
@@ -7474,6 +7565,8 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                 saving={saving}
                 onApprove={(memberId, recordId) => void approveRecord(memberId, recordId)}
                 onUpload={(memberId, approvalRecord, file) => void uploadRecordDocument(memberId, approvalRecord, file)}
+                onDelete={(memberId, recordId, title) => void deleteDocument(memberId, recordId, title)}
+                onRequest={(memberId, recordId, title, hasDocument) => void requestDocument(memberId, recordId, title, hasDocument)}
                 feedback={messageTarget === `record:${record.id}` || messageTarget === `record:${record.id}:upload` ? message : null}
               />
             ))}
@@ -9222,6 +9315,10 @@ function StaffDocumentViewLink({ documentUrl }: { documentUrl?: string | null })
   }
 
   return <span className="subtle">Document link unavailable</span>;
+}
+
+function recordDocumentRequested(record: Pick<StaffComplianceRecord, 'notes' | 'documentUrl' | 'status'>) {
+  return !record.documentUrl && record.status === 'PENDING' && Boolean(record.notes?.includes('Document requested again'));
 }
 
 function formatDateTime(value: string) {

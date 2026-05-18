@@ -1,6 +1,12 @@
 import { useRef, useState } from 'react';
 import { Button } from '@alma/ui';
 import { IconCamera, IconTrash } from '../../lib/icons';
+import {
+  STAFF_DOCUMENT_ACCEPT,
+  isPreviewableImageUrl,
+  openDocumentUrl,
+  validateStaffDocumentFile
+} from '../../lib/documentPreview';
 
 const MAX_DIMENSION = 1600;
 const JPEG_QUALITY = 0.85;
@@ -59,7 +65,7 @@ type Props = {
 };
 
 export function PhotoField({
-  label = 'Photo of certificate',
+  label = 'Document upload',
   value,
   onChange,
   hint
@@ -72,6 +78,7 @@ export function PhotoField({
     try {
       setWorking(true);
       setError(null);
+      validateStaffDocumentFile(file);
       const dataUrl = await fileToCompressedDataUrl(file);
       onChange(dataUrl, { name: file.name, size: file.size });
     } catch (captureError) {
@@ -113,12 +120,14 @@ export function PhotoField({
             border: '1px solid var(--color-border)'
           }}
         >
-          {value ? (
+          {value && isPreviewableImageUrl(value) ? (
             <img
               src={value}
               alt="Preview"
               style={{ width: '100%', height: '100%', objectFit: 'cover' }}
             />
+          ) : value ? (
+            <span style={{ fontSize: 11, fontWeight: 700 }}>PDF</span>
           ) : (
             <IconCamera size={26} />
           )}
@@ -133,8 +142,18 @@ export function PhotoField({
               onClick={() => inputRef.current?.click()}
               disabled={working}
             >
-              {working ? 'Processing…' : value ? 'Replace photo' : 'Upload photo'}
+              {working ? 'Processing…' : value ? 'Replace document' : 'Upload document'}
             </Button>
+            {value ? (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                onClick={() => openDocumentUrl(value)}
+              >
+                Preview
+              </Button>
+            ) : null}
             {value ? (
               <Button
                 type="button"
@@ -148,14 +167,14 @@ export function PhotoField({
             ) : null}
           </div>
           <span className="subtle">
-            {hint ?? 'Photos are resized to 1600px and stored alongside the record.'}
+            {hint ?? 'PDF, PNG, JPEG, WebP or GIF. Maximum file size is 4MB.'}
           </span>
           {error ? <span className="error-text">{error}</span> : null}
         </div>
         <input
           ref={inputRef}
           type="file"
-          accept="image/*"
+          accept={STAFF_DOCUMENT_ACCEPT}
           style={{ display: 'none' }}
           onChange={(event) => {
             const file = event.target.files?.[0];

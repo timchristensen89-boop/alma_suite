@@ -87,6 +87,10 @@ function withoutStaffSecrets<T extends { passwordHash?: string | null }>(profile
   return safeProfile;
 }
 
+function appendRecordNote(existing: string | null | undefined, note: string) {
+  return [existing?.trim(), note].filter(Boolean).join('\n');
+}
+
 function onboardingDetailCreateData(data: {
   dateOfBirth?: string;
   addressLine1?: string;
@@ -1627,6 +1631,51 @@ export const staffService = {
 
     await prisma.staffComplianceRecord.delete({ where: { id: recordId } });
     return { id: recordId, deleted: true };
+  },
+
+  async removeRecordDocument(staffProfileId: string, recordId: string, actor?: AuthUser) {
+    await this.getById(staffProfileId, actor);
+    const record = await prisma.staffComplianceRecord.findFirst({
+      where: { id: recordId, staffProfileId }
+    });
+
+    if (!record) {
+      throw new HttpError(404, 'Staff document not found');
+    }
+
+    return prisma.staffComplianceRecord.update({
+      where: { id: recordId },
+      data: {
+        documentName: null,
+        documentUrl: null,
+        status: 'PENDING',
+        notes: appendRecordNote(record.notes, `Document removed ${new Date().toISOString()}.`)
+      }
+    });
+  },
+
+  async requestRecordDocument(staffProfileId: string, recordId: string, actor?: AuthUser) {
+    await this.getById(staffProfileId, actor);
+    const record = await prisma.staffComplianceRecord.findFirst({
+      where: { id: recordId, staffProfileId }
+    });
+
+    if (!record) {
+      throw new HttpError(404, 'Staff document not found');
+    }
+
+    return prisma.staffComplianceRecord.update({
+      where: { id: recordId },
+      data: {
+        documentName: null,
+        documentUrl: null,
+        status: 'PENDING',
+        notes: appendRecordNote(
+          record.notes,
+          `Document requested again ${new Date().toISOString()}. Marked for follow-up; ask the staff member to upload again.`
+        )
+      }
+    });
   },
 
   async updateAppAccess(staffProfileId: string, input: unknown, actor?: AuthUser) {

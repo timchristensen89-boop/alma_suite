@@ -33,6 +33,7 @@ import {
 } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
+import { isPreviewableImageUrl, openDocumentUrl } from '../lib/documentPreview';
 import {
   IconCamera,
   IconClock,
@@ -1175,12 +1176,14 @@ function RecordCard({ record }: { record: StaffComplianceRecord }) {
           border: '1px solid var(--color-border)'
         }}
       >
-        {record.documentUrl ? (
+        {record.documentUrl && isPreviewableImageUrl(record.documentUrl) ? (
           <img
             src={record.documentUrl}
             alt={record.title}
             style={{ width: '100%', height: '100%', objectFit: 'cover' }}
           />
+        ) : record.documentUrl ? (
+          <span style={{ fontSize: 11, fontWeight: 700 }}>PDF</span>
         ) : (
           <IconCamera size={22} />
         )}
@@ -1199,6 +1202,18 @@ function RecordCard({ record }: { record: StaffComplianceRecord }) {
         <Badge tone={expired ? 'danger' : record.status === 'PENDING' ? 'indigo' : 'positive'}>
           {expired ? 'EXPIRED' : record.status}
         </Badge>
+        {record.documentUrl ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => openDocumentUrl(record.documentUrl ?? '')}
+          >
+            View document
+          </Button>
+        ) : (
+          <span className="subtle" style={{ fontSize: 12 }}>No document attached</span>
+        )}
       </div>
     </div>
   );
