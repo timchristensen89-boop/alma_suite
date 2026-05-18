@@ -15,6 +15,7 @@ import {
 import {
   AppShell,
   ActionFeedback,
+  ActionPanel,
   Badge,
   Button,
   Card,
@@ -998,6 +999,19 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   }
 
   const card = selectedCard ?? selectedFromList;
+  const orderActionItems = giftCards.filter((item) =>
+    item.status === 'PENDING_PAYMENT' ||
+    Boolean(item.emailError) ||
+    (item.status === 'EXPIRED' && item.balanceCents > 0)
+  );
+  const selectedCardActions = card
+    ? [
+        card.emailError ? 'Email delivery needs review.' : null,
+        card.status === 'PENDING_PAYMENT' ? 'Payment has not been confirmed yet.' : null,
+        card.status === 'EXPIRED' && card.balanceCents > 0 ? 'Card is expired with remaining value.' : null,
+        card.status === 'CANCELLED' ? 'Card is cancelled and cannot be redeemed.' : null
+      ].filter((item): item is string => Boolean(item))
+    : [];
   const currentPath = window.location.pathname;
   const activeGiftCardPage = currentPath.startsWith('/admin')
     ? 'admin'
@@ -1062,6 +1076,37 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
               <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
             </div>
+            <ActionPanel
+              title="Order actions"
+              description="Cards that need payment, email, expiry, or manager follow-up."
+              count={orderActionItems.length}
+              tone={orderActionItems.length ? 'warning' : 'positive'}
+              empty={<p className="subtle">No gift card orders need action.</p>}
+            >
+              {orderActionItems.slice(0, 10).map((item) => (
+                <div key={item.id} className="action-panel-row">
+                  <span>
+                    <strong>{item.code}</strong>
+                    <small>
+                      {item.recipientName || item.purchaserName} · {item.status.replace('_', ' ')}
+                      {item.emailError ? ` · email issue: ${item.emailError}` : ''}
+                      {item.status === 'EXPIRED' ? ` · ${formatCents(item.balanceCents)} remaining` : ''}
+                    </small>
+                  </span>
+                  <span className="giftcards-inline-actions">
+                    <Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(`/redeem?code=${encodeURIComponent(item.code)}`)}>
+                      View card
+                    </Button>
+                    {item.status === 'ACTIVE' ? (
+                      <Button type="button" size="sm" variant="ghost" onClick={() => window.open(giftCardPrintUrl(item.code), '_blank')}>
+                        Print
+                      </Button>
+                    ) : null}
+                  </span>
+                </div>
+              ))}
+              {orderActionItems.length > 10 ? <p className="subtle">{orderActionItems.length - 10} more orders need review.</p> : null}
+            </ActionPanel>
             <Card title="Recent cards" subtitle="Latest sales and balances" padding="none">
               {loading ? <Spinner label="Loading gift cards..." /> : null}
               {!loading && giftCards.length === 0 ? <EmptyState title="No gift cards yet" description="Paid checkouts will appear here." /> : null}
@@ -1106,6 +1151,26 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   {card.emailError ? <small>Email issue: {card.emailError}</small> : null}
                   {card.cancelReason ? <small>Cancel note: {card.cancelReason}</small> : null}
                 </div>
+                <ActionPanel
+                  title="Card actions"
+                  description="Expand when this card needs manager follow-up."
+                  count={selectedCardActions.length}
+                  tone={selectedCardActions.length ? 'warning' : 'positive'}
+                  empty={<p className="subtle">This card has no action flags.</p>}
+                >
+                  {selectedCardActions.map((item) => (
+                    <div key={item} className="action-panel-row">
+                      <span>
+                        <strong>{item}</strong>
+                        <small>{card.code} · {card.purchaserEmail}</small>
+                      </span>
+                      <span className="giftcards-inline-actions">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => window.open(giftCardPrintUrl(card.code), '_blank')}>Print</Button>
+                        {card.status !== 'CANCELLED' && card.status !== 'EXPIRED' ? <Badge tone="info">Use cancel section below if needed</Badge> : null}
+                      </span>
+                    </div>
+                  ))}
+                </ActionPanel>
                 <div className="form-grid two">
                   <Input label="Redeem amount" required type="number" min="0.01" step="0.01" value={amount} onChange={(event) => setAmount(event.currentTarget.value)} />
                   <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((item) => ({ label: item, value: item }))} />

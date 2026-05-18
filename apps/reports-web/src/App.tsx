@@ -15,6 +15,7 @@ import type {
 } from '@alma/shared';
 import {
   AppShell,
+  ActionPanel,
   Badge,
   Button,
   Card,
@@ -41,7 +42,7 @@ import {
   staffApi,
   stockApi
 } from './lib/api';
-import { withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue } from './data/historicalSales';
 
 type SuiteSummary = {
@@ -1089,6 +1090,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     );
   }
 
+  function appButton(baseUrl: string, path: string, label: string) {
+    return (
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        disabled={!baseUrl}
+        onClick={() => window.location.assign(`${baseUrl.replace(/\/+$/, '')}${path}`)}
+      >
+        {label}
+      </Button>
+    );
+  }
+
   function SectionShell({
     id,
     title,
@@ -1164,13 +1179,77 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Needs attention</h4>
-              <Metric label="Expired compliance records" value={data.overview?.compliance.expiredStaffRecords ?? 0} tone={(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? 'danger' : 'positive'} />
-              <Metric label="Stocktakes ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} tone={(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? 'warning' : 'positive'} />
-              <Metric label="Posts needing approval" value={data.overview?.content.postsNeedingApproval ?? 0} tone={(data.overview?.content.postsNeedingApproval ?? 0) > 0 ? 'warning' : 'positive'} />
-              <Metric label="Pending gift card orders" value={data.overview?.giftCards.pendingOrders ?? 0} tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'} />
-            </div>
+            <ActionPanel
+              title="Needs attention"
+              description="Expand to open the right app for each live signal."
+              count={attentionCount}
+              tone={attentionCount ? 'warning' : 'positive'}
+              empty={<p className="subtle">No report signals need action in this range.</p>}
+            >
+              {(data.overview?.staff.pendingLeaveCount ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Pending leave</strong>
+                    <small>{data.overview?.staff.pendingLeaveCount ?? 0} leave request{(data.overview?.staff.pendingLeaveCount ?? 0) === 1 ? '' : 's'} awaiting manager decision.</small>
+                  </span>
+                  {appButton(STAFF_WEB_URL, '/leave', 'Open Staff')}
+                </div>
+              ) : null}
+              {(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Missing or pending staff compliance</strong>
+                    <small>{data.overview?.staff.missingRequiredCompliance ?? 0} staff compliance item{(data.overview?.staff.missingRequiredCompliance ?? 0) === 1 ? '' : 's'} need follow-up.</small>
+                  </span>
+                  {appButton(STAFF_WEB_URL, '/approvals', 'Open approvals')}
+                </div>
+              ) : null}
+              {(data.overview?.compliance.expiredStaffRecords ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Expired compliance records</strong>
+                    <small>{data.overview?.compliance.expiredStaffRecords ?? 0} record{(data.overview?.compliance.expiredStaffRecords ?? 0) === 1 ? '' : 's'} need review.</small>
+                  </span>
+                  {appButton(COMPLIANCE_WEB_URL, '/staff', 'Open Compliance')}
+                </div>
+              ) : null}
+              {(data.overview?.stock.stocktakesReadyForReview ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Stocktakes ready for review</strong>
+                    <small>{data.overview?.stock.stocktakesReadyForReview ?? 0} submitted stocktake{(data.overview?.stock.stocktakesReadyForReview ?? 0) === 1 ? '' : 's'} waiting.</small>
+                  </span>
+                  {appButton(STOCK_WEB_URL, '/stocktake', 'Open Stock')}
+                </div>
+              ) : null}
+              {(data.overview?.stock.lowStockCount ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Low stock</strong>
+                    <small>{data.overview?.stock.lowStockCount ?? 0} venue stock row{(data.overview?.stock.lowStockCount ?? 0) === 1 ? '' : 's'} below reorder level.</small>
+                  </span>
+                  {appButton(STOCK_WEB_URL, '/', 'Open Stock')}
+                </div>
+              ) : null}
+              {(data.overview?.content.postsNeedingApproval ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Posts needing approval</strong>
+                    <small>{data.overview?.content.postsNeedingApproval ?? 0} content item{(data.overview?.content.postsNeedingApproval ?? 0) === 1 ? '' : 's'} waiting.</small>
+                  </span>
+                  {sectionButton('content', 'Open content report')}
+                </div>
+              ) : null}
+              {(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Pending gift card orders</strong>
+                    <small>{data.overview?.giftCards.pendingOrders ?? 0} order{(data.overview?.giftCards.pendingOrders ?? 0) === 1 ? '' : 's'} need follow-up.</small>
+                  </span>
+                  {appButton(GIFTCARDS_WEB_URL, '/orders', 'Open orders')}
+                </div>
+              ) : null}
+            </ActionPanel>
 
             <div className="report-panel">
               <h4>Open detailed reports</h4>
@@ -1195,6 +1274,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }
 
   function renderStaffSection() {
+    const missingPayRateStaff = activeStaff.filter((member) => !member.payRateCents && !member.trainingPayRateCents);
+    const submittedTimesheets = data.timesheets.filter((item) => item.status === 'SUBMITTED');
+    const exportedTimesheets = data.timesheets.filter((item) => item.status === 'APPROVED' || item.status === 'EXPORTED');
+    const staffAttentionCount =
+      (data.overview?.staff.missingRequiredCompliance ?? 0) +
+      missingPayRateStaff.length +
+      submittedTimesheets.length;
     return (
       <SectionShell
         id="staff"
@@ -1210,13 +1296,43 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Staff attention</h4>
-              <Metric label="Missing or pending compliance" value={data.overview?.staff.missingRequiredCompliance ?? 0} tone={(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? 'warning' : 'positive'} />
-              <Metric label="Staff missing pay rate" value={activeStaff.filter((member) => !member.payRateCents && !member.trainingPayRateCents).length} tone={activeStaff.some((member) => !member.payRateCents && !member.trainingPayRateCents) ? 'warning' : 'positive'} />
-              <Metric label="Approved or exported timesheets" value={data.timesheets.filter((item) => item.status === 'APPROVED' || item.status === 'EXPORTED').length} tone="positive" />
-              <Metric label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} tone={(data.tips?.tipPoolCents ?? 0) > 0 ? 'positive' : 'neutral'} />
-            </div>
+            <ActionPanel
+              title="Staff attention"
+              description="Expand to see the affected staff rows and the safest next action."
+              count={staffAttentionCount}
+              tone={staffAttentionCount ? 'warning' : 'positive'}
+              empty={<p className="subtle">No staff report items need action in this range.</p>}
+            >
+              {(data.overview?.staff.missingRequiredCompliance ?? 0) > 0 ? (
+                <div className="action-panel-row">
+                  <span>
+                    <strong>Missing or pending compliance</strong>
+                    <small>{data.overview?.staff.missingRequiredCompliance ?? 0} compliance item{(data.overview?.staff.missingRequiredCompliance ?? 0) === 1 ? '' : 's'} need review.</small>
+                  </span>
+                  {appButton(STAFF_WEB_URL, '/approvals', 'Review approvals')}
+                </div>
+              ) : null}
+              {missingPayRateStaff.slice(0, 8).map((member) => (
+                <div key={member.id} className="action-panel-row">
+                  <span>
+                    <strong>{member.firstName} {member.lastName}</strong>
+                    <small>{member.venue || 'No venue'} · pay rate missing</small>
+                  </span>
+                  {appButton(STAFF_WEB_URL, '/settings', 'Open Staff settings')}
+                </div>
+              ))}
+              {missingPayRateStaff.length > 8 ? <p className="subtle">{missingPayRateStaff.length - 8} more staff missing pay rate.</p> : null}
+              {submittedTimesheets.slice(0, 8).map((timesheet) => (
+                <div key={timesheet.id} className="action-panel-row">
+                  <span>
+                    <strong>{staffName(timesheet.staffProfile ?? { firstName: 'Unknown', lastName: 'staff' })}</strong>
+                    <small>{roundHours(timesheetHours(timesheet))} submitted hours · awaiting approval</small>
+                  </span>
+                  {appButton(STAFF_WEB_URL, '/timesheets', 'Review timesheet')}
+                </div>
+              ))}
+              {submittedTimesheets.length > 8 ? <p className="subtle">{submittedTimesheets.length - 8} more timesheets waiting.</p> : null}
+            </ActionPanel>
 
             <div className="report-panel">
               <h4>Wages by venue</h4>
@@ -1232,6 +1348,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
           <div className="report-panel">
             <h4>Recent staff management events</h4>
+            <Metric label="Approved or exported timesheets" value={exportedTimesheets.length} tone="positive" />
+            <Metric label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} tone={(data.tips?.tipPoolCents ?? 0) > 0 ? 'positive' : 'neutral'} />
             <div className="table-scroll">
               <table className="report-table">
                 <thead>
@@ -1500,29 +1618,27 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </p>
           </div>
 
-          <div className="report-panel">
-            <h4>Data readiness</h4>
-            <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>Input</th>
-                    <th>Status</th>
-                    <th>Note</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {readinessRows.map((row) => (
-                    <tr key={row.item}>
-                      <td>{row.item}</td>
-                      <td>{row.status}</td>
-                      <td>{row.note}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          <ActionPanel
+            title="Data readiness"
+            description="Expand to see each missing input and where to fix it."
+            count={readinessRows.filter((row) => row.status !== 'Ready').length}
+            tone={readinessRows.some((row) => row.status === 'Missing') ? 'warning' : 'info'}
+            defaultOpen={!hasVenueSales || !hasRecipeSummary}
+          >
+            {readinessRows.map((row) => (
+              <div key={row.item} className="action-panel-row">
+                <span>
+                  <strong>{row.item}</strong>
+                  <small>{row.status} · {row.note}</small>
+                </span>
+                {row.item === 'Recipe cost data'
+                  ? appButton(STOCK_WEB_URL, '/recipes', 'Open recipes')
+                  : row.item === 'Venue sales totals'
+                    ? sectionButton('exports', 'Open imports/exports')
+                    : <Badge tone="muted">Action not available yet</Badge>}
+              </div>
+            ))}
+          </ActionPanel>
         </div>
       </SectionShell>
     );
@@ -1592,12 +1708,30 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         description="Pending gift card orders, pending value, fulfilment, and setup state"
       >
         <div className="report-detail-grid">
-          <div className="report-panel">
-            <h4>Gift card order status</h4>
-            <Metric label="Pending orders" value={data.overview?.giftCards.pendingOrders ?? 0} tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'} />
-            <Metric label="Pending value" value={formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)} tone="info" />
-            <Metric label="Fulfilled orders" value={data.overview?.giftCards.fulfilledOrders ?? 0} tone="positive" />
-          </div>
+          <ActionPanel
+            title="Gift card order actions"
+            description="Expand to open the operational Gift Cards page."
+            count={data.overview?.giftCards.pendingOrders ?? 0}
+            tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}
+            empty={<p className="subtle">No pending gift card orders are reported.</p>}
+          >
+            {(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? (
+              <div className="action-panel-row">
+                <span>
+                  <strong>Pending gift card orders</strong>
+                  <small>{data.overview?.giftCards.pendingOrders ?? 0} order{(data.overview?.giftCards.pendingOrders ?? 0) === 1 ? '' : 's'} · {formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)} pending value.</small>
+                </span>
+                {appButton(GIFTCARDS_WEB_URL, '/orders', 'Open orders')}
+              </div>
+            ) : null}
+            <div className="action-panel-row">
+              <span>
+                <strong>Fulfilled orders</strong>
+                <small>{data.overview?.giftCards.fulfilledOrders ?? 0} fulfilled in this report range.</small>
+              </span>
+              {appButton(GIFTCARDS_WEB_URL, '/orders', 'View orders')}
+            </div>
+          </ActionPanel>
           <div className="report-panel">
             <h4>Payment readiness</h4>
             <p className="subtle">Gift card checkout setup and payment provider configuration are managed in Admin. Reports stays read-only and never exposes payment secrets.</p>

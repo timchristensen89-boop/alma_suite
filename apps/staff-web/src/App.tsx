@@ -45,6 +45,7 @@ import {
 } from '@alma/shared';
 import {
   ActionFeedback,
+  ActionPanel,
   AppShell,
   Badge,
   Button,
@@ -685,6 +686,14 @@ function StaffHome({
       tone: duplicateAdminGroups.length ? 'warning' : 'positive'
     }
   ];
+  const readinessActionCount =
+    lightweightDeputyProfiles.length +
+    missingPayRate.length +
+    missingPayType.length +
+    pending.length +
+    pendingRecords.length +
+    duplicateProfileGroups.length +
+    duplicateAdminGroups.length;
   const expiringSoon = staff.flatMap((member) =>
     member.records
       .filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate))
@@ -760,16 +769,78 @@ function StaffHome({
             </div>
           ))}
         </div>
-        <div className="staff-action-strip staff-readiness-actions">
-          <span>
-            <strong>Resolve cleanup inside existing Staff screens</strong>
-            <span className="subtle">Use Profiles, Invites and Approvals to clean these records up when you are ready.</span>
-          </span>
-          <span className="staff-row-actions">
-            <NavLink to="/access"><Button type="button" size="sm" variant="secondary">Open profiles</Button></NavLink>
-            <NavLink to="/approvals"><Button type="button" size="sm" variant="ghost">Open approvals</Button></NavLink>
-          </span>
-        </div>
+        <ActionPanel
+          title="Resolve staff readiness items"
+          description="Expand to see affected staff and open the right workflow."
+          count={readinessActionCount}
+          tone={readinessActionCount ? 'warning' : 'positive'}
+          empty={<p className="subtle">No staff readiness items need action.</p>}
+          className="staff-readiness-actions"
+        >
+          {lightweightDeputyProfiles.slice(0, 8).map((member) => (
+            <div key={`deputy:${member.id}`} className="action-panel-row">
+              <span>
+                <strong>{member.firstName} {member.lastName}</strong>
+                <small>{member.venue || 'No venue'} · Deputy roster profile needs onboarding.</small>
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => void reonboardLightweightProfile(member)}>
+                Send onboarding
+              </Button>
+            </div>
+          ))}
+          {missingPayRate.slice(0, 8).map((member) => (
+            <div key={`rate:${member.id}`} className="action-panel-row">
+              <span>
+                <strong>{member.firstName} {member.lastName}</strong>
+                <small>{member.venue || 'No venue'} · pay rate missing.</small>
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setForm({ mode: 'edit', member })}>
+                Edit profile
+              </Button>
+            </div>
+          ))}
+          {missingPayType.slice(0, 8).map((member) => (
+            <div key={`paytype:${member.id}`} className="action-panel-row">
+              <span>
+                <strong>{member.firstName} {member.lastName}</strong>
+                <small>{member.venue || 'No venue'} · pay type missing.</small>
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => setForm({ mode: 'edit', member })}>
+                Edit profile
+              </Button>
+            </div>
+          ))}
+          {pending.slice(0, 8).map((member) => (
+            <div key={`pending:${member.id}`} className="action-panel-row">
+              <span>
+                <strong>{member.firstName} {member.lastName}</strong>
+                <small>{member.email || 'No email'} · pending onboarding.</small>
+              </span>
+              <NavLink to="/approvals"><Button type="button" size="sm" variant="secondary">Review approval</Button></NavLink>
+            </div>
+          ))}
+          {pendingRecords.slice(0, 8).map((record) => (
+            <div key={`record:${record.id}`} className="action-panel-row">
+              <span>
+                <strong>{record.title}</strong>
+                <small>{record.recordType.replace('_', ' ')} · pending document review.</small>
+              </span>
+              <NavLink to="/approvals"><Button type="button" size="sm" variant="secondary">Open approvals</Button></NavLink>
+            </div>
+          ))}
+          {duplicateProfileGroups.slice(0, 4).map((group, index) => (
+            <div key={`duplicate:${index}`} className="action-panel-row">
+              <span>
+                <strong>Possible duplicate profile</strong>
+                <small>{group.map((member) => `${member.firstName} ${member.lastName}`).join(', ')}</small>
+              </span>
+              <Button type="button" size="sm" variant="secondary" onClick={() => onSelect(group[0]!.id)}>
+                View profile
+              </Button>
+            </div>
+          ))}
+          {readinessActionCount > 44 ? <p className="subtle">More staff readiness items are available in Profiles and Approvals.</p> : null}
+        </ActionPanel>
       </Card>
 
       {lightweightDeputyProfiles.length ? (
@@ -7341,7 +7412,14 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
 
       {message && !messageTarget ? <p className={message.includes('Could not') || message.includes('Missing') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <Card title="Pending onboarding profiles" subtitle="Approve once details and required uploads have been checked." padding="none">
+      <ActionPanel
+        title="Pending onboarding profiles"
+        description="Approve once details and required uploads have been checked."
+        count={pendingProfiles.length}
+        tone={pendingProfiles.length ? 'warning' : 'positive'}
+        defaultOpen={pendingProfiles.length === 1}
+        empty={<EmptyState title="No staff waiting for approval" description="Completed onboarding submissions will appear here." />}
+      >
         {pendingProfiles.length === 0 ? (
           <EmptyState title="No staff waiting for approval" description="Completed onboarding submissions will appear here." />
         ) : (
@@ -7374,9 +7452,16 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
             })}
           </div>
         )}
-      </Card>
+      </ActionPanel>
 
-      <Card title="Document approval queue" subtitle="Open each uploaded document, then approve it." padding="none">
+      <ActionPanel
+        title="Document approval queue"
+        description="Open each uploaded document, upload missing files if needed, then approve."
+        count={pendingRecords.length}
+        tone={pendingRecords.length ? 'warning' : 'positive'}
+        defaultOpen={pendingRecords.length === 1}
+        empty={<EmptyState title="No documents waiting" description="Pending uploaded documents will appear here." />}
+      >
         {pendingRecords.length === 0 ? (
           <EmptyState title="No documents waiting" description="Pending uploaded documents will appear here." />
         ) : (
@@ -7394,7 +7479,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
             ))}
           </div>
         )}
-      </Card>
+      </ActionPanel>
     </div>
   );
 }
@@ -8097,6 +8182,7 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
       tone: complianceFollowUpCount ? 'warning' : 'positive'
     }
   ];
+  const launchActionItems = launchReadinessItems.filter((item) => item.tone === 'warning');
 
   return (
     <div className="page-stack manager-mobile-page">
@@ -8130,11 +8216,32 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
             </div>
           ))}
         </div>
-        <div className="staff-row-actions staff-readiness-actions">
-          <Button type="button" variant="secondary" onClick={() => navigate('/access')}>Open profiles</Button>
-          <Button type="button" variant="secondary" onClick={() => navigate('/roster')}>Check roster</Button>
-          <Button type="button" variant="secondary" onClick={() => navigate('/clock')}>Test clock</Button>
-        </div>
+        <ActionPanel
+          title="Launch checklist actions"
+          description="Expand to open the workflow for each warning."
+          count={launchActionItems.length}
+          tone={launchActionItems.length ? 'warning' : 'positive'}
+          empty={<p className="subtle">No launch checklist warnings need action.</p>}
+          className="staff-readiness-actions"
+        >
+          {launchActionItems.map((item) => (
+            <div key={item.label} className="action-panel-row">
+              <span>
+                <strong>{item.label}</strong>
+                <small>{item.value} · {item.detail}</small>
+              </span>
+              {item.label.includes('email') || item.label.includes('venue') || item.label.includes('access') ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/access')}>Open profiles</Button>
+              ) : item.label.includes('shifts') ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Check roster</Button>
+              ) : item.label.includes('clock') ? (
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/clock')}>Test clock</Button>
+              ) : (
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/approvals')}>Open approvals</Button>
+              )}
+            </div>
+          ))}
+        </ActionPanel>
       </Card>
 
       <div className="manager-mobile-stats">

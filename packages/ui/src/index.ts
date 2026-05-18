@@ -12,6 +12,7 @@ export { Textarea } from './primitives/Textarea';
 export { Select } from './primitives/Select';
 export { Badge } from './primitives/Badge';
 export { ActionFeedback } from './primitives/ActionFeedback';
+export { ActionPanel } from './primitives/ActionPanel';
 export { EmptyState } from './primitives/EmptyState';
 export { Skeleton } from './primitives/Skeleton';
 export { Spinner } from './primitives/Spinner';
