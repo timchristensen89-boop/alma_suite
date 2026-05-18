@@ -1118,12 +1118,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     action?: JSX.Element;
   }) {
     const label = id === 'exports' ? weekWindowLabel : overviewWindowLabel;
+    const sectionAction = id === 'overview'
+      ? action
+      : (
+        <div className="reports-section-actions">
+          {action}
+          {sectionButton('overview', 'Back to reports overview')}
+        </div>
+      );
     return (
       <section id={id} className="reports-section report-active-section" aria-labelledby={`${id}-heading`}>
         <Card
           title={title}
           subtitle={`${description} ${label}.`}
-          action={action}
+          action={sectionAction}
         >
           {children}
         </Card>
@@ -1713,7 +1721,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             description="Expand to open the operational Gift Cards page."
             count={data.overview?.giftCards.pendingOrders ?? 0}
             tone={(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? 'warning' : 'positive'}
-            empty={<p className="subtle">No pending gift card orders are reported.</p>}
+            empty={
+              <div className="action-panel-row">
+                <span>
+                  <strong>No pending gift card orders</strong>
+                  <small>Open the orders page to review fulfilled, expired, or email issue rows.</small>
+                </span>
+                {appButton(GIFTCARDS_WEB_URL, '/orders', 'View orders')}
+              </div>
+            }
           >
             {(data.overview?.giftCards.pendingOrders ?? 0) > 0 ? (
               <div className="action-panel-row">

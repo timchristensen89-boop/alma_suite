@@ -437,7 +437,7 @@ function IntegrationCard({
               Disconnect locally
             </Button>
           ) : null}
-          {isXero && integration.status === 'CONNECTED' && onHealthCheck ? (
+          {isXero && onHealthCheck ? (
             <Button variant="secondary" disabled={isHealthBusy} onClick={onHealthCheck}>
               {isHealthBusy ? 'Checking...' : 'Check Xero health'}
             </Button>
@@ -1793,24 +1793,22 @@ export function AdminPage() {
         </div>
         {integrations ? (
           <div className="admin-grid two">
-            {integrations.xero.status === 'CONNECTED' ? (
-              <XeroSyncPanel
-                contactPreview={xeroContactPreview}
-                billPreview={xeroBillPreview}
-                selectedContacts={xeroSelectedContacts}
-                selectedBills={xeroSelectedBills}
-                busy={xeroSyncBusy}
-                feedback={xeroSyncFeedback}
-                allowCreateSuppliers={xeroAllowCreateSuppliers}
-                onPreviewContacts={() => void previewXeroSupplierContacts()}
-                onToggleContact={toggleXeroContact}
-                onImportContacts={() => void importXeroSupplierContacts()}
-                onPreviewBills={() => void previewXeroSupplierBills()}
-                onToggleBill={toggleXeroBill}
-                onImportBills={() => void importXeroSupplierBills()}
-                onAllowCreateSuppliersChange={setXeroAllowCreateSuppliers}
-              />
-            ) : null}
+            <XeroSyncPanel
+              contactPreview={xeroContactPreview}
+              billPreview={xeroBillPreview}
+              selectedContacts={xeroSelectedContacts}
+              selectedBills={xeroSelectedBills}
+              busy={xeroSyncBusy}
+              feedback={xeroSyncFeedback}
+              allowCreateSuppliers={xeroAllowCreateSuppliers}
+              onPreviewContacts={() => void previewXeroSupplierContacts()}
+              onToggleContact={toggleXeroContact}
+              onImportContacts={() => void importXeroSupplierContacts()}
+              onPreviewBills={() => void previewXeroSupplierBills()}
+              onToggleBill={toggleXeroBill}
+              onImportBills={() => void importXeroSupplierBills()}
+              onAllowCreateSuppliersChange={setXeroAllowCreateSuppliers}
+            />
             <Card title="Sync health" subtitle="Last connection and webhook activity">
               {integrations.latestSyncRuns.length ? (
                 <div className="admin-status-stack">

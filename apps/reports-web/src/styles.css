@@ -468,6 +468,13 @@
   border-top: none;
 }
 
+.reports-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 @media (max-width: 760px) {
   .report-detail-grid,
   .report-split,
