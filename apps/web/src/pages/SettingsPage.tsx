@@ -27,6 +27,14 @@ const TABS: { key: Tab; label: string; adminOnly?: boolean }[] = [
   { key: 'account', label: 'My account' }
 ];
 
+const ADMIN_HANDOFF_LINKS = [
+  { label: 'Handbook editing', href: '/handbook' },
+  { label: 'Checklist templates', href: '/checklist-templates' },
+  { label: 'Audit templates', href: '/audit-templates' },
+  { label: 'Integrations', href: '/integrations' },
+  { label: 'Xero', href: '/integrations/xero' }
+];
+
 function blankVenue(): Venue {
   return { name: '', address: '', phone: '' };
 }
@@ -62,7 +70,10 @@ export function SettingsPage() {
     [user?.isAdmin]
   );
   const staffSettingsHref = STAFF_WEB_URL ? `${STAFF_WEB_URL.replace(/\/+$/, '')}/settings` : '';
-  const adminHref = SETTINGS_WEB_URL ? `${SETTINGS_WEB_URL.replace(/\/+$/, '')}/` : '/admin';
+  const adminBaseHref = SETTINGS_WEB_URL ? SETTINGS_WEB_URL.replace(/\/+$/, '') : '/admin';
+  const adminHref = `${adminBaseHref}/`;
+  const adminRouteHref = (path: string) =>
+    SETTINGS_WEB_URL ? `${adminBaseHref}${path}` : `/admin${path}`;
 
   async function save(patch: Partial<AppSettingsPayload>, target: string) {
     if (!settings) return;
@@ -146,7 +157,7 @@ export function SettingsPage() {
           }
         >
           <p className="subtle">
-            Setup and configuration now live in Alma Admin. Organisation, venues, integrations, notifications, handbook and template setup should be managed there. Staff defaults and onboarding still use Staff Settings during this transition.
+            Setup and configuration now live in Alma Admin. Organisation, venues, integrations, notifications, handbook and template setup should be managed there.
             {staffSettingsHref ? (
               <>
                 {' '}
@@ -156,6 +167,17 @@ export function SettingsPage() {
               </>
             ) : null}
           </p>
+          <div className="admin-card-list">
+            {ADMIN_HANDOFF_LINKS.map((link) => (
+              <a key={link.href} className="admin-link-card" href={adminRouteHref(link.href)}>
+                <span>
+                  <strong>{link.label}</strong>
+                  <small>Open this setup page in Alma Admin.</small>
+                </span>
+                <IconArrowRight size={16} />
+              </a>
+            ))}
+          </div>
         </Card>
       ) : null}
 

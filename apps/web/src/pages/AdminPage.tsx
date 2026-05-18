@@ -73,6 +73,25 @@ type AdminLoadState = {
   socialAccounts: MarketingSocialAccount[];
 };
 
+export type AdminFeatureRoute =
+  | 'all'
+  | 'overview'
+  | 'settings'
+  | 'venues'
+  | 'users'
+  | 'roles'
+  | 'staff-settings'
+  | 'staff-record-types'
+  | 'staff-onboarding'
+  | 'compliance-settings'
+  | 'checklist-templates'
+  | 'audit-templates'
+  | 'integrations'
+  | 'xero'
+  | 'imports'
+  | 'danger-zone'
+  | 'human-agent-demo';
+
 type SocialAccountForm = {
   venue: string;
   platform: SocialPlatform;
@@ -233,40 +252,145 @@ const ADMIN_SETUP_LINKS = [
   }
 ];
 
-const ADMIN_ROUTE_SECTIONS: Record<string, string> = {
+const ADMIN_ROUTE_SECTIONS: Record<string, AdminFeatureRoute> = {
   '/': 'overview',
-  '/settings': 'overview',
-  '/venues': 'business',
-  '/users': 'access',
-  '/roles': 'permission-editor',
-  '/staff-settings': 'defaults',
-  '/staff-record-types': 'defaults',
-  '/staff-onboarding': 'defaults',
+  '/settings': 'settings',
+  '/venues': 'venues',
+  '/users': 'users',
+  '/roles': 'roles',
+  '/staff-settings': 'staff-settings',
+  '/staff-record-types': 'staff-record-types',
+  '/staff-onboarding': 'staff-onboarding',
   '/compliance-settings': 'compliance-settings',
-  '/checklist-templates': 'compliance-settings',
-  '/audit-templates': 'compliance-settings',
+  '/checklist-templates': 'checklist-templates',
+  '/audit-templates': 'audit-templates',
   '/handbook': 'compliance-settings',
   '/integrations': 'integrations',
-  '/integrations/xero': 'integrations',
+  '/integrations/xero': 'xero',
   '/imports': 'imports',
   '/danger-zone': 'danger-zone',
   '/meta-human-agent-demo': 'human-agent-demo',
-  '/admin/venues': 'business',
-  '/admin/users': 'access',
-  '/admin/roles': 'permission-editor',
-  '/admin/staff-settings': 'defaults',
-  '/admin/staff-record-types': 'defaults',
-  '/admin/staff-onboarding': 'defaults',
+  '/admin': 'overview',
+  '/admin/venues': 'venues',
+  '/admin/users': 'users',
+  '/admin/roles': 'roles',
+  '/admin/staff-settings': 'staff-settings',
+  '/admin/staff-record-types': 'staff-record-types',
+  '/admin/staff-onboarding': 'staff-onboarding',
   '/admin/compliance-settings': 'compliance-settings',
-  '/admin/checklist-templates': 'compliance-settings',
-  '/admin/audit-templates': 'compliance-settings',
+  '/admin/checklist-templates': 'checklist-templates',
+  '/admin/audit-templates': 'audit-templates',
   '/admin/handbook': 'compliance-settings',
   '/admin/integrations': 'integrations',
-  '/admin/integrations/xero': 'integrations',
+  '/admin/integrations/xero': 'xero',
   '/admin/imports': 'imports',
   '/admin/danger-zone': 'danger-zone',
   '/admin/meta-human-agent-demo': 'human-agent-demo'
 };
+
+const ADMIN_ROUTE_COPY: Record<AdminFeatureRoute, { title: string; description: string }> = {
+  all: {
+    title: 'Suite admin',
+    description: 'Business-wide setup, app configuration, access, integrations, imports, audit and system health.'
+  },
+  overview: {
+    title: 'Alma Admin',
+    description: 'A launchpad for setup, access, integrations, imports and system controls.'
+  },
+  settings: {
+    title: 'General settings',
+    description: 'Organisation details, suite health and app configuration entry points.'
+  },
+  venues: {
+    title: 'Venue setup',
+    description: 'Trading locations and venue details used across Alma.'
+  },
+  users: {
+    title: 'Users and access',
+    description: 'Review who has access to each Alma app.'
+  },
+  roles: {
+    title: 'Roles and permissions',
+    description: 'Create users and apply app roles or permission flags.'
+  },
+  'staff-settings': {
+    title: 'Staff settings',
+    description: 'Staff defaults and setup links for onboarding and records.'
+  },
+  'staff-record-types': {
+    title: 'Staff record types',
+    description: 'Required certificates, document labels and record setup.'
+  },
+  'staff-onboarding': {
+    title: 'Staff onboarding setup',
+    description: 'Required onboarding steps and document upload rules.'
+  },
+  'compliance-settings': {
+    title: 'Compliance settings',
+    description: 'Compliance setup boundaries and template entry points.'
+  },
+  'checklist-templates': {
+    title: 'Checklist templates',
+    description: 'Template setup belongs in Admin; running checklists stays in Compliance.'
+  },
+  'audit-templates': {
+    title: 'Audit templates',
+    description: 'Template setup belongs in Admin; completing audits stays in Compliance.'
+  },
+  integrations: {
+    title: 'Integrations',
+    description: 'Connection status and setup entry points for external systems.'
+  },
+  xero: {
+    title: 'Xero integration',
+    description: 'Health checks, supplier previews, bill previews and selected imports.'
+  },
+  imports: {
+    title: 'Imports',
+    description: 'Import lanes are visible here before they are wired into daily apps.'
+  },
+  'danger-zone': {
+    title: 'Danger zone',
+    description: 'Restricted controls only. No destructive Admin actions are exposed yet.'
+  },
+  'human-agent-demo': {
+    title: 'Human Agent Demo',
+    description: 'Review-safe customer support messaging demo.'
+  }
+};
+
+const ADMIN_ROUTE_GROUPS = [
+  {
+    title: 'Business setup',
+    links: [
+      { label: 'General settings', href: '/settings', description: 'Organisation status, health and app URLs.' },
+      { label: 'Venues', href: '/venues', description: 'Trading locations and venue details.' },
+      { label: 'Users', href: '/users', description: 'Access overview by app.' },
+      { label: 'Roles', href: '/roles', description: 'Create users and apply permissions.' }
+    ]
+  },
+  {
+    title: 'Staff and Compliance setup',
+    links: [
+      { label: 'Staff settings', href: '/staff-settings', description: 'Defaults and Staff setup entry points.' },
+      { label: 'Staff record types', href: '/staff-record-types', description: 'Certificates and required document rules.' },
+      { label: 'Staff onboarding', href: '/staff-onboarding', description: 'Onboarding setup and upload requirements.' },
+      { label: 'Compliance settings', href: '/compliance-settings', description: 'Compliance setup boundaries.' },
+      { label: 'Handbook', href: '/handbook', description: 'Edit staff handbook content.' },
+      { label: 'Checklist templates', href: '/checklist-templates', description: 'Checklist template management.' },
+      { label: 'Audit templates', href: '/audit-templates', description: 'Audit template management.' }
+    ]
+  },
+  {
+    title: 'Integrations and controls',
+    links: [
+      { label: 'Integrations', href: '/integrations', description: 'Connection status and setup entry points.' },
+      { label: 'Xero', href: '/integrations/xero', description: 'Xero health, preview and selected import controls.' },
+      { label: 'Imports', href: '/imports', description: 'Import lanes before they are wired live.' },
+      { label: 'Danger zone', href: '/danger-zone', description: 'Restricted controls and caution copy.' }
+    ]
+  }
+];
 
 function adminPath(path: string, standalone = false) {
   if (!standalone) return path;
@@ -276,6 +400,10 @@ function adminPath(path: string, standalone = false) {
 function adminAppUrl(path = '/') {
   if (!SETTINGS_WEB_URL) return adminPath(path);
   return `${SETTINGS_WEB_URL.replace(/\/+$/, '')}${adminPath(path, true)}`;
+}
+
+function adminRouteHref(path: string, standalone = false) {
+  return standalone ? adminPath(path, true) : adminAppUrl(path);
 }
 
 function toneToBadge(tone: AdminSignalTone) {
@@ -686,7 +814,7 @@ function MetaIntegrationCard({
           <Button variant="secondary" disabled={!meta.canConnect || isBusy} onClick={onConnect}>
             {isBusy ? 'Opening Meta...' : 'Connect Meta'}
           </Button>
-          <Button type="button" variant="ghost" onClick={() => { window.location.hash = 'human-agent-demo'; }}>
+          <Button type="button" variant="ghost" onClick={() => { window.location.href = adminAppUrl('/meta-human-agent-demo'); }}>
             Review demo
           </Button>
         </div>
@@ -739,9 +867,17 @@ function AuditList({ events }: { events: AdminAuditEventSummary[] }) {
   );
 }
 
-export function AdminPage({ standalone = false }: { standalone?: boolean }) {
+export function AdminPage({
+  standalone = false,
+  route
+}: {
+  standalone?: boolean;
+  route?: AdminFeatureRoute;
+}) {
   const location = useLocation();
-  useDocumentTitle('Admin · ALMA Suite');
+  const activeRoute = route ?? ADMIN_ROUTE_SECTIONS[location.pathname] ?? (standalone ? 'overview' : 'all');
+  const routeCopy = ADMIN_ROUTE_COPY[activeRoute];
+  useDocumentTitle(`${routeCopy.title} · Alma Admin`);
   const [state, setState] = useState<AdminLoadState>({
     overview: null,
     accessUsers: null,
@@ -1221,14 +1357,34 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
   }, [accessSearch, accessUsers, accessVenueFilter]);
   const allVisibleAccessUsersSelected =
     filteredAccessUsers.length > 0 && filteredAccessUsers.every((user) => selectedAccessUsers.includes(user.id));
+  const isAll = activeRoute === 'all';
+  const isOverview = activeRoute === 'overview';
+  const showSettings = isAll || activeRoute === 'settings';
+  const showVenues = isAll || activeRoute === 'venues';
+  const showUsers = isAll || activeRoute === 'users';
+  const showRoles = isAll || activeRoute === 'roles';
+  const showStaffSettings = isAll || activeRoute === 'staff-settings';
+  const showStaffRecordTypes = isAll || activeRoute === 'staff-record-types';
+  const showStaffOnboarding = isAll || activeRoute === 'staff-onboarding';
+  const showComplianceSettings = isAll || activeRoute === 'compliance-settings';
+  const showChecklistTemplates = isAll || activeRoute === 'checklist-templates';
+  const showAuditTemplates = isAll || activeRoute === 'audit-templates';
+  const showIntegrations = isAll || activeRoute === 'integrations';
+  const showXero = isAll || activeRoute === 'xero';
+  const showImports = isAll || activeRoute === 'imports';
+  const showDangerZone = isAll || activeRoute === 'danger-zone';
+  const showHumanAgentDemo = isAll || activeRoute === 'human-agent-demo';
+  const showAudit = isAll || showSettings;
+  const showSystemHealth = isAll || showSettings;
+  const showRouteNav = !standalone || isAll;
 
   if (loading && !overview) {
     return (
       <div className="page-stack">
         <PageHeader
           eyebrow="ALMA Admin"
-          title="Suite admin"
-          description="Business-wide setup, app configuration, integrations, access, audit and health."
+          title={routeCopy.title}
+          description={routeCopy.description}
         />
         <Card>
           <div className="admin-loading">
@@ -1244,8 +1400,8 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
       <div className="page-stack">
         <PageHeader
           eyebrow="ALMA Admin"
-          title="Suite admin"
-          description="Business-wide setup, app configuration, integrations, access, audit and health."
+          title={routeCopy.title}
+          description={routeCopy.description}
         />
         <Card>
           <EmptyState
@@ -1263,17 +1419,24 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
     <div className="page-stack">
       <PageHeader
         eyebrow="ALMA Admin"
-        title={standalone ? 'Alma Admin' : 'Suite admin'}
-        description="Business-wide setup, app configuration, access, integrations, imports, audit and system health. Staff profile actions stay in Staff."
+        title={routeCopy.title}
+        description={routeCopy.description}
         actions={
-          <Button
-            variant="secondary"
-            leftIcon={<IconRefresh size={14} />}
-            onClick={() => void loadDashboard()}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
+          <div className="inline-actions">
+            {standalone && !isOverview ? (
+              <Button type="button" variant="ghost" onClick={() => { window.location.href = '/'; }}>
+                Admin overview
+              </Button>
+            ) : null}
+            <Button
+              variant="secondary"
+              leftIcon={<IconRefresh size={14} />}
+              onClick={() => void loadDashboard()}
+              disabled={loading}
+            >
+              Refresh
+            </Button>
+          </div>
         }
       />
 
@@ -1289,6 +1452,7 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
         />
       ) : null}
 
+      {showRouteNav ? (
       <nav className="admin-section-nav" aria-label="Admin sections">
         <a href="#overview">Overview</a>
         <a href="#business">Business and venues</a>
@@ -1302,7 +1466,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
         <a href="#audit">Audit log</a>
         <a href="#system-health">System health</a>
       </nav>
+      ) : null}
 
+      {(isAll || isOverview) ? (
       <section className="admin-section">
         <SectionHeading
           id="overview"
@@ -1370,14 +1536,33 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
             </div>
           </Card>
         </div>
+        <div className="admin-grid three">
+          {ADMIN_ROUTE_GROUPS.map((group) => (
+            <Card key={group.title} title={group.title} subtitle="Open the page for that workflow">
+              <div className="admin-card-list">
+                {group.links.map((link) => (
+                  <a key={link.href} className="admin-link-card" href={adminRouteHref(link.href, standalone)}>
+                    <span>
+                      <strong>{link.label}</strong>
+                      <small>{link.description}</small>
+                    </span>
+                    <IconArrowRight size={16} />
+                  </a>
+                ))}
+              </div>
+            </Card>
+          ))}
+        </div>
       </section>
+      ) : null}
 
+      {(showSettings || showVenues) ? (
       <section className="admin-section">
         <SectionHeading
           id="business"
-          eyebrow="Business and venues"
-          title="The business setup in one place."
-          description="Venue setup and trading locations stay visible here, even when the editor still lives elsewhere."
+          eyebrow={showSettings && !showVenues ? 'General settings' : 'Venue setup'}
+          title={showSettings && !showVenues ? 'Business details and suite status.' : 'Trading locations.'}
+          description={showSettings && !showVenues ? 'General settings stay in Admin, with daily work left in each app.' : 'Venue setup and trading locations stay visible here.'}
         />
         <div className="admin-grid two">
           <Card title={overview.business.orgName} subtitle="Business details">
@@ -1403,7 +1588,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
         </div>
       </section>
+      ) : null}
 
+      {showUsers ? (
       <section className="admin-section">
         <SectionHeading
           id="access"
@@ -1435,7 +1622,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </div>
         </Card>
       </section>
+      ) : null}
 
+      {showRoles ? (
       <section className="admin-section">
         <SectionHeading
           id="permission-editor"
@@ -1702,13 +1891,27 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </>
         )}
       </section>
+      ) : null}
 
+      {(showStaffSettings || showStaffRecordTypes || showStaffOnboarding) ? (
       <section className="admin-section">
         <SectionHeading
           id="defaults"
-          eyebrow="Apps and defaults"
-          title="Defaults have one home."
-          description="This is the Admin index for Staff defaults, awards, onboarding, Compliance setup and app configuration."
+          eyebrow="Staff setup"
+          title={
+            showStaffRecordTypes && !showStaffSettings && !showStaffOnboarding
+              ? 'Staff record types.'
+              : showStaffOnboarding && !showStaffSettings && !showStaffRecordTypes
+                ? 'Staff onboarding setup.'
+                : 'Staff defaults.'
+          }
+          description={
+            showStaffRecordTypes && !showStaffSettings && !showStaffOnboarding
+              ? 'Required certificates, record labels and document rules should be managed from Admin.'
+              : showStaffOnboarding && !showStaffSettings && !showStaffRecordTypes
+                ? 'Onboarding steps and document upload rules belong in Admin while reviews stay in Staff.'
+                : 'Default role, award and Staff app setup links live here.'
+          }
         />
         <div className="admin-grid two">
           <Card title="Current staff defaults" subtitle="Read from AppSettings">
@@ -1721,8 +1924,15 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
           <Card title="Setup routes" subtitle="Admin manages these setup areas as migration lands">
             <div className="admin-card-list">
-              {ADMIN_SETUP_LINKS.slice(0, 3).map((link) => (
-                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminPath(link.href, standalone); }}>
+              {ADMIN_SETUP_LINKS.slice(0, 3)
+                .filter((link) => {
+                  if (showStaffSettings) return true;
+                  if (showStaffOnboarding) return link.href.endsWith('/staff-onboarding');
+                  if (showStaffRecordTypes) return link.href.endsWith('/staff-record-types');
+                  return true;
+                })
+                .map((link) => (
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminRouteHref(link.href, standalone); }}>
                   <span>
                     <strong>{link.title}</strong>
                     <small>{link.body}</small>
@@ -1739,19 +1949,40 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
         </div>
       </section>
+      ) : null}
 
+      {(showComplianceSettings || showChecklistTemplates || showAuditTemplates) ? (
       <section className="admin-section">
         <SectionHeading
           id="compliance-settings"
           eyebrow="Compliance setup"
-          title="Templates and required records move into Admin."
-          description="Compliance keeps daily checklists, audits, incidents and register review. Admin manages template and setup work."
+          title={
+            showChecklistTemplates && !showComplianceSettings && !showAuditTemplates
+              ? 'Checklist templates.'
+              : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates
+                ? 'Audit templates.'
+                : 'Compliance settings.'
+          }
+          description={
+            showChecklistTemplates && !showComplianceSettings && !showAuditTemplates
+              ? 'Template management belongs in Admin; running checklists stays in Compliance.'
+              : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates
+                ? 'Template management belongs in Admin; completing audits stays in Compliance.'
+                : 'Compliance keeps daily checklists, audits, incidents and register review. Admin manages setup work.'
+          }
         />
         <div className="admin-grid two">
           <Card title="Compliance setup routes" subtitle="Central setup without changing daily Compliance execution">
             <div className="admin-card-list">
-              {ADMIN_SETUP_LINKS.slice(3).map((link) => (
-                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminPath(link.href, standalone); }}>
+              {ADMIN_SETUP_LINKS.slice(3)
+                .filter((link) => {
+                  if (showComplianceSettings) return true;
+                  if (showChecklistTemplates) return link.href.endsWith('/checklist-templates');
+                  if (showAuditTemplates) return link.href.endsWith('/audit-templates');
+                  return true;
+                })
+                .map((link) => (
+                <button key={link.title} className="admin-link-card" type="button" onClick={() => { window.location.href = adminRouteHref(link.href, standalone); }}>
                   <span>
                     <strong>{link.title}</strong>
                     <small>{link.body}</small>
@@ -1761,7 +1992,7 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
               ))}
             </div>
             <div className="toolbar-right">
-              <Button type="button" variant="secondary" onClick={() => { window.location.href = standalone ? adminPath('/admin/compliance-settings', true) : '/settings'; }}>
+              <Button type="button" variant="secondary" onClick={() => { window.location.href = adminRouteHref('/admin/compliance-settings', standalone); }}>
                 {standalone ? 'Open Compliance setup' : 'Open Compliance settings editor'}
               </Button>
             </div>
@@ -1784,34 +2015,39 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
         </div>
       </section>
+      ) : null}
 
+      {(showIntegrations || showXero) ? (
       <section className="admin-section">
         <SectionHeading
           id="integrations"
-          eyebrow="Integrations"
-          title="Connect the systems that power trading."
-          description="Square and Xero can be connected from Admin once server configuration and token encryption are ready."
+          eyebrow={showXero && !showIntegrations ? 'Xero' : 'Integrations'}
+          title={showXero && !showIntegrations ? 'Xero integration controls.' : 'Connect the systems that power trading.'}
+          description={showXero && !showIntegrations ? 'Preview first, then import selected supplier contacts or bills.' : 'Connection health and setup entry points live here.'}
         />
         <div className="admin-grid three">
           {integrations ? (
             <>
-              {[integrations.square, integrations.xero].map((integration) => (
+              {(showXero && !showIntegrations ? [integrations.xero] : [integrations.square, integrations.xero]).map((integration) => (
                 <IntegrationCard
                   key={integration.provider}
                   integration={integration}
                   busy={integrationBusy}
                   onConnect={(provider) => void connectIntegration(provider)}
                   onDisconnect={(provider) => void disconnectIntegration(provider)}
-                  onHealthCheck={integration.provider === 'xero' ? () => void checkXeroHealth() : undefined}
+                  onHealthCheck={integration.provider === 'xero' && showXero ? () => void checkXeroHealth() : undefined}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
               ))}
-              <MetaIntegrationCard
-                meta={integrations.meta}
-                busy={integrationBusy}
-                callbackBanner={callbackBanner}
-                onConnect={connectMeta}
-              />
+              {showIntegrations ? (
+                <MetaIntegrationCard
+                  meta={integrations.meta}
+                  busy={integrationBusy}
+                  callbackBanner={callbackBanner}
+                  onConnect={connectMeta}
+                />
+              ) : null}
+              {showIntegrations ? (
               <Card title="Email and device services" subtitle="Configured without exposing secrets">
                 <div className="admin-status-stack">
                   <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
@@ -1820,6 +2056,7 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
                   <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
                 </div>
               </Card>
+              ) : null}
             </>
           ) : (
             <Card title="Integration status unavailable" subtitle="Core Admin is still available">
@@ -1831,7 +2068,7 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
             </Card>
           )}
         </div>
-        {integrations ? (
+        {integrations && showXero ? (
           <div className="admin-grid two">
             <XeroSyncPanel
               contactPreview={xeroContactPreview}
@@ -1871,6 +2108,18 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
             </Card>
           </div>
         ) : null}
+        {integrations && showIntegrations ? (
+          <Card
+            title="Xero supplier and bill controls"
+            subtitle="Health checks, supplier previews, bill previews and selected imports have their own page."
+            action={
+              <Button type="button" rightIcon={<IconArrowRight size={14} />} onClick={() => { window.location.href = adminRouteHref('/admin/integrations/xero', standalone); }}>
+                Open Xero
+              </Button>
+            }
+          />
+        ) : null}
+        {showIntegrations ? (
         <div className="admin-grid two">
           <Card
             title={editingSocialAccountId ? 'Edit social account' : 'Social publishing setup'}
@@ -2013,8 +2262,11 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
             )}
           </Card>
         </div>
+        ) : null}
       </section>
+      ) : null}
 
+      {showHumanAgentDemo ? (
       <section className="admin-section">
         <SectionHeading
           id="human-agent-demo"
@@ -2114,7 +2366,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
         </div>
       </section>
+      ) : null}
 
+      {showImports ? (
       <section className="admin-section">
         <SectionHeading
           id="imports"
@@ -2131,7 +2385,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           ))}
         </div>
       </section>
+      ) : null}
 
+      {showAudit ? (
       <section className="admin-section">
         <SectionHeading
           id="audit"
@@ -2158,7 +2414,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           )}
         </Card>
       </section>
+      ) : null}
 
+      {showSystemHealth ? (
       <section className="admin-section">
         <SectionHeading
           id="system-health"
@@ -2190,7 +2448,9 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           </Card>
         </div>
       </section>
+      ) : null}
 
+      {showDangerZone ? (
       <section className="admin-section">
         <SectionHeading
           id="danger-zone"
@@ -2206,6 +2466,7 @@ export function AdminPage({ standalone = false }: { standalone?: boolean }) {
           />
         </Card>
       </section>
+      ) : null}
     </div>
   );
 }

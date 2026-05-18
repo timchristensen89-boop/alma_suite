@@ -20,7 +20,6 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { AdminPage } from '../../web/src/pages/AdminPage';
 import { ForgotPasswordPage, ResetPasswordPage } from '../../web/src/pages/PasswordRecoveryPages';
 import { HandbookAdminPage } from '../../web/src/pages/handbook/HandbookIndexPage';
 import { AuthProvider, useAuth } from '../../web/src/lib/auth';
@@ -39,6 +38,24 @@ import {
   IconUsers
 } from '../../web/src/lib/icons';
 import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import {
+  AdminOverviewPage,
+  AuditTemplatesPage,
+  ChecklistTemplatesPage,
+  ComplianceSettingsPage,
+  DangerZonePage,
+  GeneralSettingsPage,
+  HumanAgentDemoPage,
+  ImportsPage,
+  IntegrationsPage,
+  RolesPage,
+  StaffOnboardingPage,
+  StaffRecordTypesPage,
+  StaffSettingsPage,
+  UsersPage,
+  VenuesPage,
+  XeroIntegrationPage
+} from './pages/AdminFeaturePages';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const complianceUrl = COMPLIANCE_WEB_URL
@@ -57,9 +74,15 @@ const NAV_ITEMS: AdminNavItem[] = [
   {
     to: '/',
     label: 'Overview',
-    description: 'Setup, settings, integrations, imports, and system controls',
+    description: 'Launchpad for setup, integrations, imports, and system controls',
     icon: <IconSettings />,
     end: true
+  },
+  {
+    to: '/settings',
+    label: 'Settings',
+    description: 'General settings, system health, and app URLs',
+    icon: <IconSettings />
   },
   {
     to: '/venues',
@@ -74,9 +97,27 @@ const NAV_ITEMS: AdminNavItem[] = [
     icon: <IconUsers />
   },
   {
+    to: '/roles',
+    label: 'Roles',
+    description: 'Roles, permissions, and bulk access updates',
+    icon: <IconUsers />
+  },
+  {
     to: '/staff-settings',
-    label: 'Staff setup',
-    description: 'Record types, onboarding, and staff configuration',
+    label: 'Staff settings',
+    description: 'Staff defaults and configuration',
+    icon: <IconStaff />
+  },
+  {
+    to: '/staff-record-types',
+    label: 'Record types',
+    description: 'Staff document and record type setup',
+    icon: <IconInbox />
+  },
+  {
+    to: '/staff-onboarding',
+    label: 'Onboarding',
+    description: 'Staff onboarding setup',
     icon: <IconStaff />
   },
   {
@@ -90,6 +131,18 @@ const NAV_ITEMS: AdminNavItem[] = [
     label: 'Handbook',
     description: 'Edit and publish staff handbook content',
     icon: <IconHandbook />
+  },
+  {
+    to: '/checklist-templates',
+    label: 'Checklist templates',
+    description: 'Checklist template management',
+    icon: <IconChecklist />
+  },
+  {
+    to: '/audit-templates',
+    label: 'Audit templates',
+    description: 'Audit template management',
+    icon: <IconChecklist />
   },
   {
     to: '/integrations',
@@ -348,25 +401,29 @@ function RequireAdmin({ children }: { children: JSX.Element }) {
 
 function AdminWorkspace() {
   return (
-    <AppShell sidebar={<AdminSidebar />} topBar={<AdminTopBar />}>
+    <AppShell
+      brand={<ProductLogo appId="settings" size="md" showBrandMark={false} />}
+      sidebar={<AdminSidebar />}
+      topBar={<AdminTopBar />}
+    >
       <Routes>
-        <Route path="/" element={<AdminPage standalone />} />
-        <Route path="/settings" element={<AdminPage standalone />} />
-        <Route path="/venues" element={<AdminPage standalone />} />
-        <Route path="/users" element={<AdminPage standalone />} />
-        <Route path="/roles" element={<AdminPage standalone />} />
-        <Route path="/staff-settings" element={<AdminPage standalone />} />
-        <Route path="/staff-record-types" element={<AdminPage standalone />} />
-        <Route path="/staff-onboarding" element={<AdminPage standalone />} />
-        <Route path="/compliance-settings" element={<AdminPage standalone />} />
-        <Route path="/checklist-templates" element={<AdminPage standalone />} />
-        <Route path="/audit-templates" element={<AdminPage standalone />} />
+        <Route path="/" element={<AdminOverviewPage />} />
+        <Route path="/settings" element={<GeneralSettingsPage />} />
+        <Route path="/venues" element={<VenuesPage />} />
+        <Route path="/users" element={<UsersPage />} />
+        <Route path="/roles" element={<RolesPage />} />
+        <Route path="/staff-settings" element={<StaffSettingsPage />} />
+        <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
+        <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />
+        <Route path="/compliance-settings" element={<ComplianceSettingsPage />} />
+        <Route path="/checklist-templates" element={<ChecklistTemplatesPage />} />
+        <Route path="/audit-templates" element={<AuditTemplatesPage />} />
         <Route path="/handbook" element={<HandbookAdminPage staffHandbookHref={`${complianceUrl}/handbook`} />} />
-        <Route path="/integrations" element={<AdminPage standalone />} />
-        <Route path="/integrations/xero" element={<AdminPage standalone />} />
-        <Route path="/imports" element={<AdminPage standalone />} />
-        <Route path="/danger-zone" element={<AdminPage standalone />} />
-        <Route path="/meta-human-agent-demo" element={<AdminPage standalone />} />
+        <Route path="/integrations" element={<IntegrationsPage />} />
+        <Route path="/integrations/xero" element={<XeroIntegrationPage />} />
+        <Route path="/imports" element={<ImportsPage />} />
+        <Route path="/danger-zone" element={<DangerZonePage />} />
+        <Route path="/meta-human-agent-demo" element={<HumanAgentDemoPage />} />
         <Route path="/admin/handbook" element={<Navigate to="/handbook" replace />} />
         <Route path="/admin/*" element={<Navigate to="/" replace />} />
         <Route
