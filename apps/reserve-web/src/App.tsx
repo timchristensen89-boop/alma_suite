@@ -569,7 +569,7 @@ function PublicBookingWidget() {
       setFeedback({
         target: 'widget-booking',
         tone: 'success',
-        message: 'Booking confirmed. A venue manager can see it in the Reserve diary straight away.'
+        message: 'Booking request received. The venue team has the details and will follow up if anything needs to change.'
       });
     } catch (error) {
       setFeedback({
@@ -604,14 +604,22 @@ function PublicBookingWidget() {
     <main className="login-page reserve-widget-page">
       <div className="reserve-widget-shell">
         <header className="reserve-public-header">
-          <ProductLogo appId="reserve" size="md" />
-          <a href="https://almagroup.com.au/">Alma Group</a>
+          <div className="reserve-public-brand" aria-label="Alma Group reservations">
+            <img src="/brand/alma-fish.png" alt="" />
+            <span>Alma Group</span>
+          </div>
+          <a href="https://almagroup.com.au/">Visit website</a>
         </header>
         <section className="reserve-public-hero">
           <div>
-            <p className="reserve-public-eyebrow">Alma bookings</p>
-            <h1>Book a table at Alma.</h1>
-            <p>Choose Alma Avalon or St Alma, pick a time, and send the venue team the details they need for service.</p>
+            <p className="reserve-public-eyebrow">Reservations</p>
+            <h1>Book Alma Avalon or St Alma.</h1>
+            <p>Choose the venue, find a time, and send the details through to the restaurant team.</p>
+            <ol className="reserve-public-steps" aria-label="Booking steps">
+              <li>Choose venue</li>
+              <li>Find a table</li>
+              <li>Your details</li>
+            </ol>
           </div>
           <figure className="reserve-public-image-card">
             <img src={selectedVenueDetail.image} alt={`${search.venue} dining`} />
@@ -629,7 +637,7 @@ function PublicBookingWidget() {
               <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
                 <section className="reserve-public-venue-picker" aria-label="Choose a venue">
                   <div>
-                    <p className="reserve-public-eyebrow">Choose your venue</p>
+                    <p className="reserve-public-eyebrow">Choose a venue</p>
                     <h2>{search.venue}</h2>
                     <p>{selectedVenueDetail.summary}</p>
                   </div>
@@ -644,11 +652,15 @@ function PublicBookingWidget() {
                       >
                         <strong>{venue.value}</strong>
                         <span>{venue.detail.location}</span>
-                        <small>{venue.activeRules > 0 ? `${venue.activeRules} booking rules online` : 'Online booking setup required'}</small>
+                        <small>{venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
                       </button>
                     ))}
                   </div>
                 </section>
+                <div className="reserve-public-flow-heading">
+                  <p className="reserve-public-eyebrow">Find a table</p>
+                  <h2>Party size, date, and service</h2>
+                </div>
                 <div className="reserve-public-search-grid">
                   <Input
                     label="Date"
@@ -690,7 +702,7 @@ function PublicBookingWidget() {
                 <section className="reserve-public-section">
                   <div className="reserve-public-section-heading">
                     <div>
-                      <p className="reserve-public-eyebrow">Available times</p>
+                      <p className="reserve-public-eyebrow">Select a time</p>
                       <h2>{availability.partySize} guests at {search.venue} on {shortDate(availability.serviceDate)}</h2>
                     </div>
                   </div>
@@ -776,7 +788,7 @@ function PublicBookingWidget() {
                         message={feedback.target === 'widget-booking' ? feedback.message : null}
                         tone={feedback.tone}
                       />
-                      <Button type="submit" disabled={booking}>{booking ? 'Confirming...' : 'Confirm booking'}</Button>
+                      <Button type="submit" disabled={booking}>{booking ? 'Sending...' : 'Request booking'}</Button>
                     </div>
                   </form>
                   {reservation ? (

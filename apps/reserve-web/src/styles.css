@@ -191,15 +191,13 @@
   min-height: 100vh;
   padding: 28px 20px 56px;
   background:
-    radial-gradient(circle at 18% 8%, rgba(245, 220, 206, 0.82), transparent 34%),
-    radial-gradient(circle at 82% 12%, rgba(104, 74, 74, 0.16), transparent 28%),
-    linear-gradient(180deg, rgba(239, 232, 220, 0.94), rgba(245, 220, 206, 0.46)),
+    linear-gradient(180deg, rgba(239, 232, 220, 0.98) 0%, rgba(245, 220, 206, 0.72) 50%, rgba(255, 250, 245, 0.96) 100%),
     #EFE8DC;
   color: #253326;
 }
 
 .reserve-widget-shell {
-  width: min(1120px, 100%);
+  width: min(1180px, 100%);
   margin: 0 auto;
   display: grid;
   gap: 24px;
@@ -213,6 +211,22 @@
   padding: 8px 0 18px;
 }
 
+.reserve-public-brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  color: #253326;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 24px;
+  letter-spacing: 0;
+}
+
+.reserve-public-brand img {
+  width: 44px;
+  height: 44px;
+  object-fit: contain;
+}
+
 .reserve-public-header a {
   color: #253326;
   font-size: 12px;
@@ -224,10 +238,10 @@
 
 .reserve-public-hero {
   display: grid;
-  grid-template-columns: minmax(0, 0.95fr) minmax(360px, 0.78fr);
-  gap: clamp(24px, 6vw, 74px);
+  grid-template-columns: minmax(0, 0.9fr) minmax(380px, 0.84fr);
+  gap: clamp(26px, 6vw, 84px);
   align-items: center;
-  padding: clamp(22px, 5vw, 58px) 0 8px;
+  padding: clamp(28px, 5vw, 64px) 0 12px;
 }
 
 .reserve-public-eyebrow {
@@ -250,7 +264,7 @@
 
 .reserve-public-hero h1 {
   max-width: 760px;
-  font-size: clamp(42px, 8vw, 86px);
+  font-size: clamp(44px, 7.6vw, 88px);
   line-height: 0.96;
 }
 
@@ -262,10 +276,29 @@
   line-height: 1.65;
 }
 
+.reserve-public-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 24px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.reserve-public-steps li {
+  padding: 9px 14px;
+  border: 1px solid rgba(104, 74, 74, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 250, 245, 0.72);
+  color: rgba(37, 51, 38, 0.78);
+  font-size: 13px;
+  font-weight: 800;
+}
+
 .reserve-public-image-card {
   position: relative;
   overflow: hidden;
-  min-height: 360px;
+  min-height: 440px;
   margin: 0;
   border: 1px solid rgba(104, 74, 74, 0.18);
   border-radius: 30px;
@@ -318,7 +351,7 @@
   padding: clamp(18px, 3vw, 30px);
   border: 1px solid rgba(104, 74, 74, 0.16);
   border-radius: 26px;
-  background: rgba(255, 255, 255, 0.82);
+  background: rgba(255, 250, 245, 0.9);
   box-shadow: 0 24px 90px rgba(37, 51, 38, 0.1);
 }
 
@@ -333,10 +366,10 @@
   grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr);
   gap: clamp(18px, 4vw, 36px);
   align-items: stretch;
-  padding: 18px;
+  padding: clamp(16px, 3vw, 24px);
   border: 1px solid rgba(104, 74, 74, 0.14);
-  border-radius: 22px;
-  background: rgba(239, 232, 220, 0.58);
+  border-radius: 24px;
+  background: rgba(239, 232, 220, 0.74);
 }
 
 .reserve-public-venue-picker h2 {
@@ -396,6 +429,18 @@
 .reserve-venue-button small {
   color: inherit;
   opacity: 0.78;
+}
+
+.reserve-public-flow-heading {
+  display: grid;
+  gap: 4px;
+}
+
+.reserve-public-flow-heading h2 {
+  margin: 0;
+  color: #253326;
+  font-size: 22px;
+  letter-spacing: 0;
 }
 
 .reserve-public-search-grid {
@@ -467,11 +512,11 @@
   }
 
   .reserve-public-hero {
-    padding-top: 16px;
+    padding-top: 12px;
   }
 
   .reserve-public-image-card {
-    min-height: 280px;
+    min-height: 320px;
   }
 
   .reserve-venue-button-grid {
@@ -518,10 +563,33 @@
   .reserve-public-booking-panel,
   .reserve-public-section {
     border-radius: 20px;
+    padding: 16px;
   }
 
   .reserve-public-venue-picker {
     padding: 14px;
+  }
+
+  .reserve-public-hero h1 {
+    font-size: clamp(40px, 13vw, 58px);
+  }
+
+  .reserve-public-hero p:not(.reserve-public-eyebrow) {
+    font-size: 16px;
+  }
+
+  .reserve-public-image-card {
+    border-radius: 22px;
+  }
+
+  .reserve-public-image-card figcaption {
+    left: 18px;
+    right: 18px;
+    bottom: 18px;
+  }
+
+  .reserve-slot-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .reserve-public-actions .btn-primary {
