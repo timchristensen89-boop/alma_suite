@@ -1000,6 +1000,41 @@
   justify-content: flex-end;
 }
 
+.staff-document-confirm {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1 0 100%;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.staff-document-confirm.is-danger {
+  border-color: var(--tone-danger-border);
+  background: var(--tone-danger-bg);
+}
+
+.staff-document-confirm > span:first-child {
+  min-width: 0;
+}
+
+.staff-document-confirm strong,
+.staff-document-confirm .subtle {
+  display: block;
+}
+
+.staff-document-confirm-actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex: none;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .public-onboarding {
   min-height: 100vh;
   display: grid;
@@ -3095,14 +3130,22 @@
   }
 
   .staff-row-actions,
-  .invite-row-actions {
+  .invite-row-actions,
+  .staff-document-confirm,
+  .staff-document-confirm-actions {
     justify-content: space-between;
     width: 100%;
   }
 
   .staff-row-actions .btn,
-  .invite-row-actions .btn {
+  .invite-row-actions .btn,
+  .staff-document-confirm-actions .btn {
     flex: 1 1 auto;
+  }
+
+  .staff-document-confirm {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .invite-link {

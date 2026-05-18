@@ -2110,6 +2110,8 @@ type InviteDraft = {
   expiresInDays: string;
 };
 
+type StaffDocumentPromptAction = 'delete' | 'request';
+
 type ReonboardDraft = {
   email: string;
   firstName: string;
@@ -2479,6 +2481,7 @@ function AccessPage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [documentPrompt, setDocumentPrompt] = useState<{ action: StaffDocumentPromptAction; recordId: string } | null>(null);
   const accessByApp = new Map(selected?.appAccess.map((access) => [access.appId, access]));
   const activeModules = (training?.modules ?? []).filter((module) => module.status === 'ACTIVE');
   const selectedTrainingRecords = training?.records.filter((record) => record.staffProfileId === selected?.id) ?? selected?.trainingRecords ?? [];
@@ -2504,6 +2507,7 @@ function AccessPage({
 
   useEffect(() => {
     setProfileDraft(selected ? draftFromStaff(selected) : emptyStaffDraft());
+    setDocumentPrompt(null);
   }, [selected?.id]);
 
   useEffect(() => {
@@ -2725,39 +2729,36 @@ function AccessPage({
     }
   }
 
-  async function deleteDocument(record: StaffComplianceRecord) {
-    if (!selected) return;
-    if (!record.documentUrl) return;
-    if (!window.confirm(`Delete the uploaded file for ${record.title}? The staff record will stay on ${selected.firstName}'s profile.`)) return;
-    setSaving(true);
-    setMessage(null);
-    setMessageTarget(`record:${record.id}:remove`);
-    try {
-      await api(`/api/staff/${selected.id}/records/${record.id}/document`, { method: 'DELETE' });
-      await reload();
-      setMessage('Document deleted. The record is still available for follow-up.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not delete document.');
-    } finally {
-      setSaving(false);
+  async function confirmDocumentAction() {
+    if (!selected || !documentPrompt) return;
+    const record = selected.records.find((item) => item.id === documentPrompt.recordId);
+    if (!record) {
+      setDocumentPrompt(null);
+      return;
     }
-  }
 
-  async function requestDocument(record: StaffComplianceRecord) {
-    if (!selected) return;
-    const prompt = record.documentUrl
-      ? `Request ${record.title} again from ${selected.firstName}? The current uploaded file will be removed.`
-      : `Mark ${record.title} as requested again from ${selected.firstName}?`;
-    if (!window.confirm(prompt)) return;
+    if (documentPrompt.action === 'delete' && !record.documentUrl) {
+      setDocumentPrompt(null);
+      return;
+    }
+
+    const actionKey = documentPrompt.action === 'delete' ? 'remove' : 'request';
     setSaving(true);
     setMessage(null);
-    setMessageTarget(`record:${record.id}:request`);
+    setMessageTarget(`record:${record.id}:${actionKey}`);
     try {
-      await api(`/api/staff/${selected.id}/records/${record.id}/request-document`, { method: 'POST' });
+      await api(`/api/staff/${selected.id}/records/${record.id}/${documentPrompt.action === 'delete' ? 'document' : 'request-document'}`, {
+        method: documentPrompt.action === 'delete' ? 'DELETE' : 'POST'
+      });
       await reload();
-      setMessage('Document requested again. Marked for follow-up; ask the staff member to upload again.');
+      setDocumentPrompt(null);
+      setMessage(documentPrompt.action === 'delete'
+        ? 'Document deleted. The record is still available for follow-up.'
+        : 'Document requested again. Marked for follow-up; ask the staff member to upload again.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not request document.');
+      setMessage(err instanceof Error
+        ? err.message
+        : documentPrompt.action === 'delete' ? 'Could not delete document.' : 'Could not request document.');
     } finally {
       setSaving(false);
     }
@@ -3049,13 +3050,27 @@ function AccessPage({
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
                       {record.documentUrl ? (
-                        <Button type="button" size="sm" variant="danger" disabled={saving} onClick={() => void deleteDocument(record)}>Delete document</Button>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="danger"
+                          disabled={saving}
+                          onClick={() => setDocumentPrompt({ action: 'delete', recordId: record.id })}
+                        >
+                          Delete document
+                        </Button>
                       ) : null}
                       <ActionFeedback
                         message={messageTarget === `record:${record.id}:remove` ? message : null}
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
-                      <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void requestDocument(record)}>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="secondary"
+                        disabled={saving}
+                        onClick={() => setDocumentPrompt({ action: 'request', recordId: record.id })}
+                      >
                         Re-request document
                       </Button>
                       <ActionFeedback
@@ -3063,6 +3078,15 @@ function AccessPage({
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
                     </span>
+                    {documentPrompt?.recordId === record.id ? (
+                      <StaffDocumentActionPrompt
+                        action={documentPrompt.action}
+                        saving={saving}
+                        feedback={messageTarget === `record:${record.id}:${documentPrompt.action === 'delete' ? 'remove' : 'request'}` ? message : null}
+                        onCancel={() => setDocumentPrompt(null)}
+                        onConfirm={() => void confirmDocumentAction()}
+                      />
+                    ) : null}
                   </div>
                 ))}
               </div>
@@ -7297,6 +7321,46 @@ function duplicateStaffProfileGroups(staff: StaffProfile[]) {
   return [...groups.values()].filter((group) => group.length > 1);
 }
 
+function StaffDocumentActionPrompt({
+  action,
+  saving,
+  feedback,
+  onCancel,
+  onConfirm
+}: {
+  action: StaffDocumentPromptAction;
+  saving: boolean;
+  feedback?: string | null;
+  onCancel: () => void;
+  onConfirm: () => void;
+}) {
+  const isDelete = action === 'delete';
+  return (
+    <div className={`staff-document-confirm ${isDelete ? 'is-danger' : ''}`} role="group" aria-label={isDelete ? 'Remove this document confirmation' : 'Request this document again confirmation'}>
+      <span>
+        <strong>{isDelete ? 'Remove this document?' : 'Request this document again?'}</strong>
+        <span className="subtle">
+          {isDelete
+            ? 'This clears the uploaded file from the record. The staff record will stay in Alma.'
+            : 'This clears the current upload and marks the document for follow-up. Ask the staff member to upload the correct document again.'}
+        </span>
+      </span>
+      <span className="staff-document-confirm-actions">
+        <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={onCancel}>
+          Cancel
+        </Button>
+        <Button type="button" size="sm" variant={isDelete ? 'danger' : 'secondary'} disabled={saving} onClick={onConfirm}>
+          {saving ? (isDelete ? 'Removing...' : 'Requesting...') : isDelete ? 'Remove document' : 'Request again'}
+        </Button>
+        <ActionFeedback
+          message={feedback ?? null}
+          tone={feedback?.includes('Could') ? 'error' : 'success'}
+        />
+      </span>
+    </div>
+  );
+}
+
 function ApprovalRecordRow({
   member,
   record,
@@ -7305,16 +7369,24 @@ function ApprovalRecordRow({
   onUpload,
   onDelete,
   onRequest,
-  feedback
+  promptAction,
+  onCancelPrompt,
+  onConfirmPrompt,
+  feedback,
+  promptFeedback
 }: {
   member: StaffProfile;
   record: StaffComplianceRecord;
   saving: boolean;
   onApprove: (memberId: string, recordId: string) => void;
   onUpload: (memberId: string, record: StaffComplianceRecord, file: File) => void;
-  onDelete: (memberId: string, recordId: string, title: string) => void;
-  onRequest: (memberId: string, recordId: string, title: string, hasDocument: boolean) => void;
+  onDelete: (memberId: string, recordId: string) => void;
+  onRequest: (memberId: string, recordId: string) => void;
+  promptAction?: StaffDocumentPromptAction | null;
+  onCancelPrompt: () => void;
+  onConfirmPrompt: () => void;
   feedback?: string | null;
+  promptFeedback?: string | null;
 }) {
   return (
     <div className="invite-row">
@@ -7364,7 +7436,7 @@ function ApprovalRecordRow({
             size="sm"
             variant="danger"
             disabled={saving}
-            onClick={() => onDelete(member.id, record.id, record.title)}
+            onClick={() => onDelete(member.id, record.id)}
           >
             Delete document
           </Button>
@@ -7374,11 +7446,20 @@ function ApprovalRecordRow({
           size="sm"
           variant="secondary"
           disabled={saving}
-          onClick={() => onRequest(member.id, record.id, record.title, Boolean(record.documentUrl))}
+          onClick={() => onRequest(member.id, record.id)}
         >
           Re-request document
         </Button>
       </span>
+      {promptAction ? (
+        <StaffDocumentActionPrompt
+          action={promptAction}
+          saving={saving}
+          feedback={promptFeedback}
+          onCancel={onCancelPrompt}
+          onConfirm={onConfirmPrompt}
+        />
+      ) : null}
     </div>
   );
 }
@@ -7387,6 +7468,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [documentPrompt, setDocumentPrompt] = useState<{ action: StaffDocumentPromptAction; memberId: string; recordId: string } | null>(null);
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
   const pendingRecords = staff.flatMap((member) =>
     member.records
@@ -7435,36 +7517,37 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
     }
   }
 
-  async function deleteDocument(memberId: string, recordId: string, title: string) {
-    if (!window.confirm(`Delete the uploaded file for ${title}? The staff record will stay in the approval queue.`)) return;
-    setSaving(true);
-    setMessage(null);
-    setMessageTarget(`record:${recordId}`);
-    try {
-      await api(`/api/staff/${memberId}/records/${recordId}/document`, { method: 'DELETE' });
-      await reload();
-      setMessage('Document deleted. The record is still available for follow-up.');
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not delete document.');
-    } finally {
-      setSaving(false);
+  async function confirmDocumentAction() {
+    if (!documentPrompt) return;
+    const member = staff.find((item) => item.id === documentPrompt.memberId);
+    const record = member?.records.find((item) => item.id === documentPrompt.recordId);
+    if (!member || !record) {
+      setDocumentPrompt(null);
+      return;
     }
-  }
 
-  async function requestDocument(memberId: string, recordId: string, title: string, hasDocument: boolean) {
-    const prompt = hasDocument
-      ? `Request ${title} again? The current uploaded file will be removed.`
-      : `Mark ${title} as requested again?`;
-    if (!window.confirm(prompt)) return;
+    if (documentPrompt.action === 'delete' && !record.documentUrl) {
+      setDocumentPrompt(null);
+      return;
+    }
+
+    const actionKey = documentPrompt.action === 'delete' ? 'remove' : 'request';
     setSaving(true);
     setMessage(null);
-    setMessageTarget(`record:${recordId}`);
+    setMessageTarget(`record:${record.id}:${actionKey}`);
     try {
-      await api(`/api/staff/${memberId}/records/${recordId}/request-document`, { method: 'POST' });
+      await api(`/api/staff/${member.id}/records/${record.id}/${documentPrompt.action === 'delete' ? 'document' : 'request-document'}`, {
+        method: documentPrompt.action === 'delete' ? 'DELETE' : 'POST'
+      });
       await reload();
-      setMessage('Document requested again. Marked for follow-up; ask the staff member to upload again.');
+      setDocumentPrompt(null);
+      setMessage(documentPrompt.action === 'delete'
+        ? 'Document deleted. The record is still available for follow-up.'
+        : 'Document requested again. Marked for follow-up; ask the staff member to upload again.');
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not request document.');
+      setMessage(err instanceof Error
+        ? err.message
+        : documentPrompt.action === 'delete' ? 'Could not delete document.' : 'Could not request document.');
     } finally {
       setSaving(false);
     }
@@ -7565,9 +7648,24 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                 saving={saving}
                 onApprove={(memberId, recordId) => void approveRecord(memberId, recordId)}
                 onUpload={(memberId, approvalRecord, file) => void uploadRecordDocument(memberId, approvalRecord, file)}
-                onDelete={(memberId, recordId, title) => void deleteDocument(memberId, recordId, title)}
-                onRequest={(memberId, recordId, title, hasDocument) => void requestDocument(memberId, recordId, title, hasDocument)}
-                feedback={messageTarget === `record:${record.id}` || messageTarget === `record:${record.id}:upload` ? message : null}
+                onDelete={(memberId, recordId) => setDocumentPrompt({ action: 'delete', memberId, recordId })}
+                onRequest={(memberId, recordId) => setDocumentPrompt({ action: 'request', memberId, recordId })}
+                promptAction={documentPrompt?.memberId === member.id && documentPrompt.recordId === record.id ? documentPrompt.action : null}
+                onCancelPrompt={() => setDocumentPrompt(null)}
+                onConfirmPrompt={() => void confirmDocumentAction()}
+                feedback={
+                  messageTarget === `record:${record.id}` ||
+                  messageTarget === `record:${record.id}:upload` ||
+                  messageTarget === `record:${record.id}:remove` ||
+                  messageTarget === `record:${record.id}:request`
+                    ? message
+                    : null
+                }
+                promptFeedback={
+                  messageTarget === `record:${record.id}:remove` || messageTarget === `record:${record.id}:request`
+                    ? message
+                    : null
+                }
               />
             ))}
           </div>
