@@ -1540,6 +1540,29 @@ export type IntegrationConnectResponse = {
   expiresAt: string;
 };
 
+export type XeroConnectionHealthPayload = {
+  provider: 'xero';
+  connected: boolean;
+  tenantName: string | null;
+  tenantIdMasked: string | null;
+  tenantCount: number | null;
+  tenantStatus: 'reachable' | 'not_found' | 'not_selected' | 'not_checked';
+  tenantSelectionRequired: boolean;
+  tokenStatus:
+    | 'healthy'
+    | 'refreshed'
+    | 'not_connected'
+    | 'configuration_missing'
+    | 'missing'
+    | 'refresh_failed'
+    | 'request_failed';
+  availableScopes: string[];
+  checkedAt: string;
+  errorCategory: string | null;
+  message: string;
+  dataSyncRunning: false;
+};
+
 export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
 
 export type LegacyAdminIntegrationProviderStatus = {

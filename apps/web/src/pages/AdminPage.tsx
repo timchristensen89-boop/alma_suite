@@ -30,7 +30,8 @@ import type {
   MarketingSocialAccountStatus,
   SocialPlatform,
   StaffAppAccess,
-  StaffAppAccessStatus
+  StaffAppAccessStatus,
+  XeroConnectionHealthPayload
 } from '@alma/shared';
 import { api, apiUrl, createSuiteHandoffUrl } from '../lib/api';
 import {
@@ -288,6 +289,12 @@ function integrationTone(status: IntegrationProviderStatus['status']) {
   return 'muted';
 }
 
+function xeroHealthTone(status: XeroConnectionHealthPayload['tokenStatus']) {
+  if (status === 'healthy' || status === 'refreshed') return 'positive';
+  if (status === 'not_connected' || status === 'configuration_missing') return 'muted';
+  return 'warning';
+}
+
 function metaTone(status: AdminMetaIntegrationStatus['status']) {
   if (status === 'READY_TO_CONNECT') return 'positive';
   if (status === 'CALLBACK_RECEIVED' || status === 'TOKEN_STORAGE_PENDING') return 'info';
@@ -314,14 +321,20 @@ function IntegrationCard({
   integration,
   busy,
   onConnect,
-  onDisconnect
+  onDisconnect,
+  onHealthCheck,
+  xeroHealth
 }: {
   integration: IntegrationProviderStatus;
   busy: string | null;
   onConnect: (provider: IntegrationProviderStatus['provider']) => void;
   onDisconnect: (provider: IntegrationProviderStatus['provider']) => void;
+  onHealthCheck?: () => void;
+  xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
   const isBusy = busy === integration.provider;
+  const isHealthBusy = busy === 'xero-health';
+  const isXero = integration.provider === 'xero';
 
   return (
     <Card title={integration.label} subtitle={integration.configured ? 'Connection ready' : 'Setup required'}>
@@ -340,10 +353,24 @@ function IntegrationCard({
           <strong>Last sync</strong>
           <p>{integration.lastSyncAt ? formatDate(integration.lastSyncAt) : 'No syncs yet'}</p>
         </div>
+        {isXero ? (
+          <div>
+            <strong>Accounting sync</strong>
+            <p>No contacts, bills, invoices, payroll or reports are syncing yet. This connection is being prepared for read-only supplier and bill checks.</p>
+          </div>
+        ) : null}
         <div>
           <strong>Webhooks</strong>
           <p>{integration.webhookConfigured ? 'Signature key configured' : 'Webhook verification key missing'}</p>
         </div>
+        {isXero && xeroHealth ? (
+          <div className="admin-status-stack">
+            <StatusLine label="Health check" value={xeroHealth.tokenStatus.replace(/_/g, ' ')} tone={xeroHealthTone(xeroHealth.tokenStatus)} />
+            <StatusLine label="Tenant" value={xeroHealth.tenantName ?? xeroHealth.tenantStatus.replace(/_/g, ' ')} tone={xeroHealth.tenantStatus === 'reachable' ? 'positive' : 'warning'} />
+            <StatusLine label="Tenant count" value={xeroHealth.tenantCount === null ? 'Not checked' : String(xeroHealth.tenantCount)} tone={xeroHealth.tenantSelectionRequired ? 'warning' : 'muted'} />
+            <p className="muted">{xeroHealth.message}</p>
+          </div>
+        ) : null}
         {integration.missingEnvVars.length ? (
           <div>
             <strong>Setup needed</strong>
@@ -367,6 +394,11 @@ function IntegrationCard({
           {integration.status === 'CONNECTED' ? (
             <Button variant="ghost" disabled={isBusy} onClick={() => onDisconnect(integration.provider)}>
               Disconnect locally
+            </Button>
+          ) : null}
+          {isXero && integration.status === 'CONNECTED' && onHealthCheck ? (
+            <Button variant="secondary" disabled={isHealthBusy} onClick={onHealthCheck}>
+              {isHealthBusy ? 'Checking...' : 'Check Xero health'}
             </Button>
           ) : null}
         </div>
@@ -511,6 +543,7 @@ export function AdminPage() {
   const [auditLoading, setAuditLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [integrationBusy, setIntegrationBusy] = useState<string | null>(null);
+  const [xeroHealth, setXeroHealth] = useState<XeroConnectionHealthPayload | null>(null);
   const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
@@ -603,9 +636,26 @@ export function AdminPage() {
     setIntegrationBusy(provider);
     try {
       await api(`/api/integrations/${provider}/disconnect`, { method: 'POST' });
+      if (provider === 'xero') setXeroHealth(null);
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not disconnect integration.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function checkXeroHealth() {
+    setIntegrationBusy('xero-health');
+    setError(null);
+    try {
+      const payload = await api<XeroConnectionHealthPayload>('/api/integrations/xero/health-check', {
+        method: 'POST'
+      });
+      setXeroHealth(payload);
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check Xero health.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -1374,6 +1424,8 @@ export function AdminPage() {
                   busy={integrationBusy}
                   onConnect={(provider) => void connectIntegration(provider)}
                   onDisconnect={(provider) => void disconnectIntegration(provider)}
+                  onHealthCheck={integration.provider === 'xero' ? () => void checkXeroHealth() : undefined}
+                  xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
               ))}
               <MetaIntegrationCard

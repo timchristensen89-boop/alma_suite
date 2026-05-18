@@ -51,6 +51,14 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
   }
 });
 
+integrationsRouter.post('/xero/health-check', async (req, res, next) => {
+  try {
+    res.json(await integrationService.checkXeroHealth(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/:provider/connect', async (req, res, next) => {
   try {
     res.json(await integrationService.startConnect(String(req.params.provider), req.user!));

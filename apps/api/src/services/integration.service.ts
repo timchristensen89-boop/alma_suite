@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request } from 'express';
-import { Prisma } from '@prisma/client';
+import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
 import type {
   AdminMetaIntegrationStatus,
@@ -8,10 +8,12 @@ import type {
   IntegrationConnectResponse,
   IntegrationProviderKey,
   IntegrationProviderStatus,
-  IntegrationStatusPayload
+  IntegrationStatusPayload,
+  XeroConnectionHealthPayload
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
+  decryptIntegrationSecret,
   encryptIntegrationSecret,
   integrationTokenEncryptionStatus,
   safeCompareBase64
@@ -37,6 +39,7 @@ const XERO_SCOPES = [
   'accounting.contacts.read',
   'accounting.settings.read'
 ];
+const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 const META_SCOPES = [
   'pages_show_list',
@@ -196,6 +199,47 @@ function toIso(value: Date | null | undefined) {
   return value ? value.toISOString() : null;
 }
 
+function scopesFromJson(value: unknown) {
+  return Array.isArray(value) ? value.filter((scope): scope is string => typeof scope === 'string') : [];
+}
+
+function maskIdentifier(value: string | null | undefined) {
+  if (!value) return null;
+  if (value.length <= 8) return 'connected';
+  return `${value.slice(0, 4)}...${value.slice(-4)}`;
+}
+
+function safeErrorMessage(error: unknown) {
+  if (error instanceof HttpError) return error.message;
+  if (error instanceof Error) return error.message;
+  return 'Unknown integration error';
+}
+
+function safeXeroErrorCategory(status: number) {
+  if (status === 401) return 'unauthorized';
+  if (status === 403) return 'forbidden';
+  if (status === 404) return 'not_found';
+  if (status === 429) return 'rate_limited';
+  if (status >= 500) return 'xero_unavailable';
+  return 'xero_request_failed';
+}
+
+function tokenStatusFromHealthError(error: unknown): XeroConnectionHealthPayload['tokenStatus'] {
+  const message = safeErrorMessage(error).toLowerCase();
+  if (message.includes('refresh')) return 'refresh_failed';
+  if (message.includes('token')) return 'missing';
+  return 'request_failed';
+}
+
+async function safeResponseDetails(response: Response) {
+  const text = await response.text().catch(() => '');
+  return {
+    status: response.status,
+    category: safeXeroErrorCategory(response.status),
+    detail: text ? text.slice(0, 300) : response.statusText
+  };
+}
+
 async function recordEvent(input: {
   provider: Provider;
   connectionId?: string | null;
@@ -260,14 +304,14 @@ async function providerStatus(provider: Provider): Promise<IntegrationProviderSt
     configured: config.configured && tokenStorage.configured,
     canConnect: !reason,
     connectBlockedReason: reason,
-    providerAccountId: connection?.providerAccountId ?? null,
+    providerAccountId: provider === 'XERO' ? maskIdentifier(connection?.providerAccountId) : connection?.providerAccountId ?? null,
     providerAccountName: connection?.providerAccountName ?? null,
     connectedAt: toIso(connection?.connectedAt),
     disconnectedAt: toIso(connection?.disconnectedAt),
     lastSyncAt: toIso(connection?.lastSyncAt),
     lastSyncStatus: connection?.lastSyncStatus ?? null,
     lastError: connection?.lastError ?? null,
-    scopes: Array.isArray(connection?.scopes) ? connection.scopes.filter((scope): scope is string => typeof scope === 'string') : [],
+    scopes: scopesFromJson(connection?.scopes),
     environment: config.environment,
     webhookConfigured: config.webhookConfigured,
     webhookStatus: config.webhookConfigured ? 'configured' : 'missing',
@@ -361,6 +405,146 @@ async function exchangeXeroToken(code: string) {
     expires_in?: number;
     scope?: string;
     token_type?: string;
+  };
+}
+
+type XeroTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  scope?: string;
+  token_type?: string;
+};
+
+type XeroTenantConnection = {
+  tenantId?: string;
+  tenantName?: string;
+  tenantType?: string;
+};
+
+async function refreshXeroToken(refreshToken: string): Promise<XeroTokenResponse> {
+  const credentials = Buffer.from(`${env.integrations.xero.clientId}:${env.integrations.xero.clientSecret}`).toString('base64');
+  const response = await fetch('https://identity.xero.com/connect/token', {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Xero token refresh failed.', {
+      status: response.status,
+      category: safeXeroErrorCategory(response.status)
+    });
+  }
+
+  return body as XeroTokenResponse;
+}
+
+async function refreshXeroConnection(connection: IntegrationConnection) {
+  if (!connection.refreshTokenEncrypted) {
+    throw new HttpError(409, 'Xero refresh token is missing.');
+  }
+
+  const token = await refreshXeroToken(decryptIntegrationSecret(connection.refreshTokenEncrypted));
+  if (!token.access_token || !token.refresh_token) {
+    throw new HttpError(502, 'Xero did not return refreshed OAuth tokens.');
+  }
+
+  return prisma.integrationConnection.update({
+    where: { id: connection.id },
+    data: {
+      tokenEncrypted: encryptIntegrationSecret(token.access_token),
+      refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+      tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+      scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : scopesFromJson(connection.scopes),
+      status: 'CONNECTED',
+      lastError: null
+    }
+  });
+}
+
+async function validXeroToken(connection: IntegrationConnection) {
+  const expiresAt = connection.tokenExpiresAt?.getTime();
+  const shouldRefresh =
+    !connection.tokenEncrypted ||
+    !expiresAt ||
+    expiresAt <= Date.now() + XERO_TOKEN_REFRESH_BUFFER_MS;
+
+  if (shouldRefresh) {
+    const refreshed = await refreshXeroConnection(connection);
+    if (!refreshed.tokenEncrypted) throw new HttpError(409, 'Xero access token is missing after refresh.');
+    return {
+      accessToken: decryptIntegrationSecret(refreshed.tokenEncrypted),
+      connection: refreshed,
+      tokenStatus: 'refreshed' as const
+    };
+  }
+
+  if (!connection.tokenEncrypted) {
+    throw new HttpError(409, 'Xero access token is missing.');
+  }
+
+  return {
+    accessToken: decryptIntegrationSecret(connection.tokenEncrypted),
+    connection,
+    tokenStatus: 'healthy' as const
+  };
+}
+
+async function xeroGetJson<T>(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    requireTenant?: boolean;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<{ data: T; connection: IntegrationConnection; tokenStatus: 'healthy' | 'refreshed' }> {
+  const { accessToken, connection, tokenStatus } = await validXeroToken(input.connection);
+  const requireTenant = input.requireTenant ?? true;
+  if (requireTenant && !connection.providerAccountId) {
+    throw new HttpError(409, 'Xero tenant is not selected.');
+  }
+
+  const response = await fetch(`https://api.xero.com${path}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json',
+      ...(requireTenant ? { 'xero-tenant-id': connection.providerAccountId ?? '' } : {})
+    }
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshXeroConnection(connection);
+    return xeroGetJson<T>(path, {
+      connection: refreshed,
+      requireTenant,
+      retryAfterUnauthorized: false
+    });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Xero rate limit reached. Try again later.', {
+      category: 'rate_limited'
+    });
+  }
+
+  if (!response.ok) {
+    throw new HttpError(502, 'Xero request failed.', await safeResponseDetails(response));
+  }
+
+  return {
+    data: await response.json() as T,
+    connection,
+    tokenStatus
   };
 }
 
@@ -583,6 +767,170 @@ export const integrationService = {
       latestSyncRuns: syncRuns,
       tokenStorage: integrationTokenEncryptionStatus()
     };
+  },
+
+  async checkXeroHealth(actor: AuthUser): Promise<XeroConnectionHealthPayload> {
+    const checkedAt = new Date();
+    const config = providerConfig('XERO');
+    const tokenStorage = integrationTokenEncryptionStatus();
+    const base = {
+      provider: 'xero' as const,
+      checkedAt: checkedAt.toISOString(),
+      dataSyncRunning: false as const
+    };
+
+    if (!config.configured || !tokenStorage.configured) {
+      return {
+        ...base,
+        connected: false,
+        tenantName: null,
+        tenantIdMasked: null,
+        tenantCount: null,
+        tenantStatus: 'not_checked',
+        tenantSelectionRequired: false,
+        tokenStatus: 'configuration_missing',
+        availableScopes: [],
+        errorCategory: 'configuration_missing',
+        message: 'Xero connection health cannot run until Xero env vars and token encryption are configured.'
+      };
+    }
+
+    let connection: Awaited<ReturnType<typeof connectionSelect>> | null = null;
+    try {
+      connection = await connectionSelect('XERO');
+    } catch (error) {
+      if (!isMissingIntegrationStorage(error)) throw error;
+      return {
+        ...base,
+        connected: false,
+        tenantName: null,
+        tenantIdMasked: null,
+        tenantCount: null,
+        tenantStatus: 'not_checked',
+        tenantSelectionRequired: false,
+        tokenStatus: 'configuration_missing',
+        availableScopes: [],
+        errorCategory: 'integration_storage_missing',
+        message: 'Integration database setup is not active yet.'
+      };
+    }
+
+    if (!connection || connection.status !== 'CONNECTED') {
+      return {
+        ...base,
+        connected: false,
+        tenantName: null,
+        tenantIdMasked: null,
+        tenantCount: null,
+        tenantStatus: 'not_checked',
+        tenantSelectionRequired: false,
+        tokenStatus: 'not_connected',
+        availableScopes: scopesFromJson(connection?.scopes),
+        errorCategory: 'not_connected',
+        message: 'Xero is not connected. No health check was sent to Xero.'
+      };
+    }
+
+    try {
+      const response = await xeroGetJson<XeroTenantConnection[]>('/connections', {
+        connection,
+        requireTenant: false
+      });
+      const tenants = Array.isArray(response.data) ? response.data : [];
+      const currentTenant = connection.providerAccountId
+        ? tenants.find((tenant) => tenant.tenantId === connection.providerAccountId) ?? null
+        : null;
+      const tenantStatus: XeroConnectionHealthPayload['tenantStatus'] =
+        !connection.providerAccountId
+          ? 'not_selected'
+          : currentTenant
+            ? 'reachable'
+            : 'not_found';
+      const tenantSelectionRequired = tenants.length > 1;
+      const refreshedConnection = response.connection;
+      const tenantName =
+        refreshedConnection.providerAccountName ??
+        currentTenant?.tenantName ??
+        connection.providerAccountName ??
+        null;
+
+      await prisma.integrationSyncRun.create({
+        data: {
+          provider: 'XERO',
+          connectionId: refreshedConnection.id,
+          syncType: 'TEST',
+          status: 'SUCCESS',
+          finishedAt: new Date()
+        }
+      });
+      await recordEvent({
+        provider: 'XERO',
+        connectionId: refreshedConnection.id,
+        eventType: 'HEALTH_CHECKED',
+        summary: 'Xero connection health check completed. No accounting records were synced.',
+        actor,
+        metadata: {
+          tenantCount: tenants.length,
+          tenantStatus,
+          tokenStatus: response.tokenStatus
+        }
+      });
+
+      return {
+        ...base,
+        connected: true,
+        tenantName,
+        tenantIdMasked: maskIdentifier(refreshedConnection.providerAccountId),
+        tenantCount: tenants.length,
+        tenantStatus,
+        tenantSelectionRequired,
+        tokenStatus: response.tokenStatus,
+        availableScopes: scopesFromJson(refreshedConnection.scopes),
+        errorCategory: null,
+        message: tenantSelectionRequired
+          ? 'Xero is reachable. Multiple tenants are available, so Alma is preserving the current tenant until tenant selection is added.'
+          : 'Xero is reachable. No accounting records were synced.'
+      };
+    } catch (error) {
+      const errorCategory = error instanceof HttpError && error.details && typeof error.details === 'object' && 'category' in error.details
+        ? String((error.details as { category?: unknown }).category ?? 'xero_health_failed')
+        : 'xero_health_failed';
+      await prisma.integrationSyncRun.create({
+        data: {
+          provider: 'XERO',
+          connectionId: connection.id,
+          syncType: 'TEST',
+          status: 'ERROR',
+          finishedAt: new Date(),
+          errorSummary: safeErrorMessage(error).slice(0, 500)
+        }
+      });
+      await recordEvent({
+        provider: 'XERO',
+        connectionId: connection.id,
+        eventType: 'HEALTH_CHECK_FAILED',
+        summary: 'Xero connection health check failed. No accounting records were synced.',
+        actor,
+        metadata: {
+          category: errorCategory,
+          message: safeErrorMessage(error)
+        }
+      });
+
+      return {
+        ...base,
+        connected: true,
+        tenantName: connection.providerAccountName,
+        tenantIdMasked: maskIdentifier(connection.providerAccountId),
+        tenantCount: null,
+        tenantStatus: connection.providerAccountId ? 'not_checked' : 'not_selected',
+        tenantSelectionRequired: false,
+        tokenStatus: tokenStatusFromHealthError(error),
+        availableScopes: scopesFromJson(connection.scopes),
+        errorCategory,
+        message: safeErrorMessage(error)
+      };
+    }
   },
 
   async startConnect(providerInput: string, actor: AuthUser): Promise<IntegrationConnectResponse> {
