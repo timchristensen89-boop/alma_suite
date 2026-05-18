@@ -61,18 +61,26 @@ function textOrNull(value: string | undefined) {
 }
 
 const STAFF_RECORD_ATTACHMENT_MAX_DATA_URL_LENGTH = 5_700_000;
+const staffRecordAttachmentDataUrlSchema = z
+  .string()
+  .max(STAFF_RECORD_ATTACHMENT_MAX_DATA_URL_LENGTH, 'Document uploads must be smaller than 4MB.')
+  .refine(
+    (value) =>
+      /^data:(application\/pdf|image\/png|image\/jpeg|image\/jpg|image\/webp|image\/gif);base64,[A-Za-z0-9+/=]+$/i.test(value),
+    'Upload a PDF, PNG, JPEG, WebP, or GIF document.'
+  );
 const staffRecordAttachmentInputSchema = z.object({
   documentName: z.string().trim().min(1, 'Document name is required').max(180, 'Document name must be 180 characters or fewer'),
-  documentUrl: z
-    .string()
-    .max(STAFF_RECORD_ATTACHMENT_MAX_DATA_URL_LENGTH, 'Document uploads must be smaller than 4MB.')
-    .refine(
-      (value) =>
-        /^data:(application\/pdf|image\/png|image\/jpeg|image\/jpg|image\/webp|image\/gif);base64,[A-Za-z0-9+/=]+$/i.test(value),
-      'Upload a PDF, PNG, JPEG, WebP, or GIF document.'
-    ),
+  documentUrl: staffRecordAttachmentDataUrlSchema,
   status: z.literal('PENDING').optional()
 });
+
+function validateStaffRecordAttachmentOnCreate(documentUrl?: string) {
+  const value = documentUrl?.trim();
+  if (value?.startsWith('data:')) {
+    staffRecordAttachmentDataUrlSchema.parse(value);
+  }
+}
 
 function onboardingDetailCreateData(data: {
   dateOfBirth?: string;
@@ -1544,6 +1552,7 @@ export const staffService = {
   async addRecord(staffProfileId: string, input: unknown, actor?: AuthUser) {
     await this.getById(staffProfileId, actor);
     const data = staffComplianceRecordInputSchema.parse(input);
+    validateStaffRecordAttachmentOnCreate(data.documentUrl);
 
     return prisma.staffComplianceRecord.create({
       data: {

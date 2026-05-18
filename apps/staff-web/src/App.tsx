@@ -2622,6 +2622,22 @@ function AccessPage({
     }
   }
 
+  async function attachDocumentDraftFile(file: File) {
+    setMessageTarget('document');
+    setMessage(null);
+    try {
+      const upload = await readOnboardingUpload(file);
+      setDocumentDraft((current) => ({
+        ...current,
+        documentName: upload.name,
+        documentUrl: upload.url
+      }));
+      setMessage(`${upload.name} attached.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not attach file.');
+    }
+  }
+
   async function approveDocument(record: StaffComplianceRecord) {
     if (!selected) return;
     setSaving(true);
@@ -2963,7 +2979,45 @@ function AccessPage({
                   <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
                   <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
                   <Input label="Document name" value={documentDraft.documentName} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentName: event.currentTarget.value }))} />
-                  <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentUrl: event.currentTarget.value }))} />
+                  {documentDraft.documentUrl.startsWith('data:') ? (
+                    <Input label="Document attachment" value={documentDraft.documentName || 'Attached file'} disabled />
+                  ) : (
+                    <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentUrl: event.currentTarget.value }))} />
+                  )}
+                </div>
+                <div className="invite-row">
+                  <span>
+                    <strong>Attach document</strong>
+                    <span className="subtle">Upload a PDF, PNG, JPEG, WebP, or GIF under 4MB, or paste a document URL above.</span>
+                    {documentDraft.documentName ? <span className="subtle">{documentDraft.documentName}</span> : null}
+                  </span>
+                  <span className="invite-row-actions">
+                    <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
+                      Upload file
+                      <input
+                        type="file"
+                        accept={STAFF_DOCUMENT_ACCEPT}
+                        disabled={saving}
+                        style={{ display: 'none' }}
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          event.currentTarget.value = '';
+                          if (file) void attachDocumentDraftFile(file);
+                        }}
+                      />
+                    </label>
+                    {documentDraft.documentUrl.startsWith('data:') ? (
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        disabled={saving}
+                        onClick={() => setDocumentDraft((current) => ({ ...current, documentName: '', documentUrl: '' }))}
+                      >
+                        Remove attachment
+                      </Button>
+                    ) : null}
+                  </span>
                 </div>
                 <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
                 <div className="toolbar-right">
@@ -7232,7 +7286,7 @@ function ApprovalRecordRow({
           Upload document
           <input
             type="file"
-            accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+            accept={STAFF_DOCUMENT_ACCEPT}
             disabled={saving}
             style={{ display: 'none' }}
             onChange={(event) => {
@@ -9012,6 +9066,7 @@ function readUploadAsDataUrl(file: File): Promise<string> {
 }
 
 const ONBOARDING_UPLOAD_MAX_BYTES = 4 * 1024 * 1024;
+const STAFF_DOCUMENT_ACCEPT = 'application/pdf,image/png,image/jpeg,image/webp,image/gif,.pdf,.png,.jpg,.jpeg,.webp,.gif';
 const ONBOARDING_UPLOAD_TYPES = new Set(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']);
 const ONBOARDING_UPLOAD_EXTENSION_TYPES = new Map([
   ['.pdf', 'application/pdf'],
@@ -9471,7 +9526,7 @@ function PublicOnboardingPage() {
                         <input
                           aria-label={`Upload ${document.title}`}
                           type="file"
-                          accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                          accept={STAFF_DOCUMENT_ACCEPT}
                           onChange={(event) => {
                             const file = event.currentTarget.files?.[0];
                             event.currentTarget.value = '';
