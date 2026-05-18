@@ -121,6 +121,10 @@ function SidebarNav() {
 }
 
 function currentPage(pathname: string, navItems = NAV_ITEMS) {
+  const secondaryMatch = SECONDARY_PAGE_METADATA.find((item) =>
+    pathname === item.to || pathname.startsWith(`${item.to}/`)
+  );
+  if (secondaryMatch) return secondaryMatch;
   // longest-prefix match
   const match = [...navItems]
     .sort((a, b) => b.to.length - a.to.length)
@@ -130,10 +134,6 @@ function currentPage(pathname: string, navItems = NAV_ITEMS) {
         : pathname === item.to || pathname.startsWith(`${item.to}/`)
     );
   if (match) return match;
-  const secondaryMatch = SECONDARY_PAGE_METADATA.find((item) =>
-    pathname === item.to || pathname.startsWith(`${item.to}/`)
-  );
-  if (secondaryMatch) return secondaryMatch;
   return {
     to: pathname,
     label: 'Page not found',
