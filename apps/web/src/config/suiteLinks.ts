@@ -58,6 +58,10 @@ export function suiteAppHref(app: SuiteAppIdentity) {
     if (suiteUrls.settings) return `${trimTrailingSlash(suiteUrls.settings)}/`;
     return suiteUrls.compliance ? adminHref(suiteUrls.compliance) : undefined;
   }
+  if (app.id === 'comms') {
+    return COMMS_WEB_URL;
+  }
+
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 

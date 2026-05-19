@@ -50,6 +50,10 @@ export function suiteAppHref(app: SuiteAppIdentity) {
   if (app.id === 'giftcards') return suiteUrls.giftcards ? `${trimTrailingSlash(suiteUrls.giftcards)}/redeem` : undefined;
   if (app.id === 'training' || app.id === 'academy') return suiteUrls.staff ? `${trimTrailingSlash(suiteUrls.staff)}/academy` : undefined;
   if (app.id === 'settings') return suiteUrls.settings ? `${trimTrailingSlash(suiteUrls.settings)}/` : undefined;
+  if (app.id === 'comms') {
+    return COMMS_WEB_URL;
+  }
+
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 
