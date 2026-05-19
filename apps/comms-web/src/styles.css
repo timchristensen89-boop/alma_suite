@@ -219,7 +219,7 @@
   max-width: 68rem;
 }
 
-/* Comms content only. AppShell, sidebar, topbar, Suite app switcher, and global page layout live in suite-shell.css. */
+/* Comms content only. The real Suite stylesheet imported from Compliance owns AppShell, sidebar, topbar, app switcher, gutters, and global page layout. */
 .comms-page {
   display: grid;
   gap: 1rem;

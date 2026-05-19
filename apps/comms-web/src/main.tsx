@@ -18,7 +18,7 @@ IconBriefcase,
   IconStore,
   IconUpload
 } from '../../web/src/lib/icons';
-import './suite-shell.css';
+import '../../web/src/styles.css';
 import './styles.css';
 type AuthUser = {
   id?: string;
