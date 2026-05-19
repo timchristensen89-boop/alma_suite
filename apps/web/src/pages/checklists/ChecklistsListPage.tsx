@@ -1,6 +1,12 @@
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useMemo, useState } from 'react';
-import type { ChecklistRun, ChecklistTemplate } from '@alma/shared';
+import type {
+  ChecklistRun,
+  ChecklistTemplate,
+  ShiftTaskAssignment,
+  ShiftTaskListResponse,
+  StartAssignedChecklistResult
+} from '@alma/shared';
 import {
   Badge,
   Button,
@@ -45,14 +51,18 @@ function adminChecklistTemplatesHref() {
 
 export function ChecklistsListPage() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const managerAccess = canManage(user);
   const templates = useAsync<ChecklistTemplate[]>(() => api('/api/checklists/templates'), []);
   const runs = useAsync<ChecklistRun[]>(() => api('/api/checklists/runs'), []);
+  const shiftTasks = useAsync<ShiftTaskListResponse>(() => api('/api/checklists/shift-tasks'), []);
 
   const [statusFilter, setStatusFilter] = useState('');
   const [templateFilter, setTemplateFilter] = useState('');
   const [performerFilter, setPerformerFilter] = useState('');
   const [dateFilter, setDateFilter] = useState('');
+  const [startingAssignmentId, setStartingAssignmentId] = useState<string | null>(null);
+  const [shiftTaskActionError, setShiftTaskActionError] = useState<string | null>(null);
 
   const templateOptions = useMemo(
     () => [
@@ -101,6 +111,28 @@ export function ChecklistsListPage() {
   }).length;
   const totalTemplates = templates.data?.length ?? 0;
   const checklistTemplatesHref = adminChecklistTemplatesHref();
+  const assignedTasks = shiftTasks.data?.tasks ?? [];
+
+  async function startAssignedTask(task: ShiftTaskAssignment) {
+    if (task.checklistRunId) {
+      navigate(`/checklists/runs/${task.checklistRunId}`);
+      return;
+    }
+    try {
+      setShiftTaskActionError(null);
+      setStartingAssignmentId(task.id);
+      const payload = await api<StartAssignedChecklistResult>(`/api/shift-task-assignments/${task.id}/start-checklist`, {
+        method: 'POST'
+      });
+      void shiftTasks.reload();
+      void runs.reload();
+      navigate(`/checklists/runs/${payload.run.id}`);
+    } catch (err) {
+      setShiftTaskActionError(err instanceof Error ? err.message : 'Could not start assigned checklist.');
+    } finally {
+      setStartingAssignmentId(null);
+    }
+  }
 
   return (
     <div className="page-stack">
@@ -139,6 +171,56 @@ export function ChecklistsListPage() {
         <StatCard label="Last 30 days" value={last30} />
         <StatCard label="Templates" value={totalTemplates} />
       </div>
+
+      <Card title="Assigned from shifts" subtitle="Checklist work generated from opening, closing or manager roster rules appears here.">
+        {shiftTasks.loading ? <Spinner label="Loading assigned checklist work..." /> : null}
+        {shiftTasks.error ? <p className="error-text">{shiftTasks.error}</p> : null}
+        {shiftTaskActionError ? <p className="error-text">{shiftTaskActionError}</p> : null}
+        {!shiftTasks.loading && !shiftTasks.error && assignedTasks.length === 0 ? (
+          <EmptyState
+            icon={<IconChecklist size={22} />}
+            title="No shift-assigned checklist work due"
+            description="Use normal checklist start below, or ask an admin to create shift task rules."
+          />
+        ) : null}
+        {assignedTasks.length > 0 ? (
+          <div className="checklist-run-grid">
+            {assignedTasks.map((task) => (
+              <article key={task.id} className="checklist-run-card">
+                <div className="checklist-run-card-top">
+                  <div>
+                    <strong>{task.rule?.name || task.checklistTemplate?.name || 'Shift task'}</strong>
+                    <span className="subtle">
+                      {task.venue || task.rosterShift?.venue || 'Venue'} · due {task.dueAt ? new Date(task.dueAt).toLocaleString() : 'during shift'}
+                    </span>
+                  </div>
+                  <Badge tone={task.status === 'COMPLETED' ? 'positive' : task.status === 'IN_PROGRESS' ? 'info' : 'warning'} dot>
+                    {task.status.replace('_', ' ')}
+                  </Badge>
+                </div>
+                <div className="checklist-run-card-footer">
+                  <span className="subtle">
+                    {task.checklistTemplate?.name || (task.taskType === 'STOCKTAKE' ? 'Stocktake task linking coming next' : task.taskType.replace('_', ' '))}
+                  </span>
+                  {task.taskType === 'CHECKLIST' ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      rightIcon={<IconArrowRight size={14} />}
+                      onClick={() => void startAssignedTask(task)}
+                      disabled={startingAssignmentId === task.id}
+                    >
+                      {task.checklistRunId ? 'Open' : startingAssignmentId === task.id ? 'Starting...' : 'Start'}
+                    </Button>
+                  ) : (
+                    <Badge tone="muted">Planned</Badge>
+                  )}
+                </div>
+              </article>
+            ))}
+          </div>
+        ) : null}
+      </Card>
 
       {managerAccess ? (
         <Card

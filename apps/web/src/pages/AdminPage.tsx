@@ -29,6 +29,12 @@ import type {
   IntegrationProviderStatus,
   MarketingSocialAccount,
   MarketingSocialAccountStatus,
+  ChecklistTemplate,
+  ShiftTaskAssignmentTarget,
+  ShiftTaskDueTiming,
+  ShiftTaskRule,
+  ShiftTaskRulePreviewResult,
+  ShiftTaskType,
   SocialPlatform,
   StaffAppAccess,
   StaffAppAccessStatus,
@@ -85,6 +91,7 @@ export type AdminFeatureRoute =
   | 'staff-onboarding'
   | 'compliance-settings'
   | 'checklist-templates'
+  | 'shift-task-rules'
   | 'audit-templates'
   | 'integrations'
   | 'xero'
@@ -246,6 +253,11 @@ const ADMIN_SETUP_LINKS = [
     href: '/admin/checklist-templates'
   },
   {
+    title: 'Shift task rules',
+    body: 'Assign checklists from opening, closing, manager or venue-specific roster shifts.',
+    href: '/admin/shift-task-rules'
+  },
+  {
     title: 'Audit templates',
     body: 'Template management belongs in Admin; completing audits stays in Compliance.',
     href: '/admin/audit-templates'
@@ -299,6 +311,7 @@ const ADMIN_ROUTE_SECTIONS: Record<string, AdminFeatureRoute> = {
   '/staff-onboarding': 'staff-onboarding',
   '/compliance-settings': 'compliance-settings',
   '/checklist-templates': 'checklist-templates',
+  '/shift-task-rules': 'shift-task-rules',
   '/audit-templates': 'audit-templates',
   '/handbook': 'compliance-settings',
   '/integrations': 'integrations',
@@ -315,6 +328,7 @@ const ADMIN_ROUTE_SECTIONS: Record<string, AdminFeatureRoute> = {
   '/admin/staff-onboarding': 'staff-onboarding',
   '/admin/compliance-settings': 'compliance-settings',
   '/admin/checklist-templates': 'checklist-templates',
+  '/admin/shift-task-rules': 'shift-task-rules',
   '/admin/audit-templates': 'audit-templates',
   '/admin/handbook': 'compliance-settings',
   '/admin/integrations': 'integrations',
@@ -369,6 +383,10 @@ const ADMIN_ROUTE_COPY: Record<AdminFeatureRoute, { title: string; description: 
     title: 'Checklist templates',
     description: 'Template setup belongs in Admin; running checklists stays in Compliance.'
   },
+  'shift-task-rules': {
+    title: 'Shift task rules',
+    description: 'Assign required operational tasks from roster shifts.'
+  },
   'audit-templates': {
     title: 'Audit templates',
     description: 'Template setup belongs in Admin; completing audits stays in Compliance.'
@@ -415,6 +433,7 @@ const ADMIN_ROUTE_GROUPS = [
       { label: 'Compliance settings', href: '/compliance-settings', description: 'Compliance setup boundaries.' },
       { label: 'Handbook', href: '/handbook', description: 'Edit staff handbook content.' },
       { label: 'Checklist templates', href: '/checklist-templates', description: 'Checklist template management.' },
+      { label: 'Shift task rules', href: '/shift-task-rules', description: 'Assign checklists from roster shifts.' },
       { label: 'Audit templates', href: '/audit-templates', description: 'Audit template management.' }
     ]
   },
@@ -564,6 +583,421 @@ function VenueDevicePlanningCard() {
         </p>
       </div>
     </Card>
+  );
+}
+
+type ShiftTaskRuleForm = {
+  name: string;
+  enabled: boolean;
+  venue: string;
+  matchRoleTitle: string;
+  matchArea: string;
+  matchShiftLabel: string;
+  startBeforeMinutes: string;
+  startAfterMinutes: string;
+  endBeforeMinutes: string;
+  endAfterMinutes: string;
+  daysOfWeek: string[];
+  taskType: ShiftTaskType;
+  checklistTemplateId: string;
+  stocktakeTemplate: string;
+  dueTiming: ShiftTaskDueTiming;
+  dueOffsetMinutes: string;
+  assignmentTarget: ShiftTaskAssignmentTarget;
+};
+
+const DEFAULT_SHIFT_TASK_RULE_FORM: ShiftTaskRuleForm = {
+  name: '',
+  enabled: true,
+  venue: '',
+  matchRoleTitle: '',
+  matchArea: '',
+  matchShiftLabel: '',
+  startBeforeMinutes: '',
+  startAfterMinutes: '',
+  endBeforeMinutes: '',
+  endAfterMinutes: '',
+  daysOfWeek: [],
+  taskType: 'CHECKLIST',
+  checklistTemplateId: '',
+  stocktakeTemplate: '',
+  dueTiming: 'DURING_SHIFT',
+  dueOffsetMinutes: '',
+  assignmentTarget: 'ASSIGNED_STAFF'
+};
+
+const SHIFT_TASK_TYPE_OPTIONS: Array<{ label: string; value: ShiftTaskType }> = [
+  { label: 'Checklist', value: 'CHECKLIST' },
+  { label: 'Stocktake (planned)', value: 'STOCKTAKE' },
+  { label: 'Audit (planned)', value: 'AUDIT' },
+  { label: 'Incident check (planned)', value: 'INCIDENT_CHECK' }
+];
+
+const SHIFT_TASK_DUE_OPTIONS: Array<{ label: string; value: ShiftTaskDueTiming }> = [
+  { label: 'Before shift starts', value: 'BEFORE_SHIFT_START' },
+  { label: 'During shift', value: 'DURING_SHIFT' },
+  { label: 'Before shift ends', value: 'BEFORE_SHIFT_END' },
+  { label: 'After shift ends', value: 'AFTER_SHIFT_END' }
+];
+
+const SHIFT_TASK_TARGET_OPTIONS: Array<{ label: string; value: ShiftTaskAssignmentTarget }> = [
+  { label: 'Assigned staff member', value: 'ASSIGNED_STAFF' },
+  { label: 'Venue iPad queue', value: 'VENUE_QUEUE' },
+  { label: 'Manager on duty', value: 'MANAGER_ON_DUTY' },
+  { label: 'All on shift', value: 'ALL_ON_SHIFT' }
+];
+
+const SHIFT_TASK_DAY_OPTIONS = [
+  { label: 'Sun', value: '0' },
+  { label: 'Mon', value: '1' },
+  { label: 'Tue', value: '2' },
+  { label: 'Wed', value: '3' },
+  { label: 'Thu', value: '4' },
+  { label: 'Fri', value: '5' },
+  { label: 'Sat', value: '6' }
+];
+
+function minutesPayload(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return undefined;
+  return Number(trimmed);
+}
+
+function shiftTaskRulePayload(form: ShiftTaskRuleForm) {
+  return {
+    name: form.name,
+    enabled: form.enabled,
+    venue: form.venue,
+    matchRoleTitle: form.matchRoleTitle,
+    matchArea: form.matchArea,
+    matchShiftLabel: form.matchShiftLabel,
+    startBeforeMinutes: minutesPayload(form.startBeforeMinutes),
+    startAfterMinutes: minutesPayload(form.startAfterMinutes),
+    endBeforeMinutes: minutesPayload(form.endBeforeMinutes),
+    endAfterMinutes: minutesPayload(form.endAfterMinutes),
+    daysOfWeek: form.daysOfWeek.map((day) => Number(day)),
+    taskType: form.taskType,
+    checklistTemplateId: form.taskType === 'CHECKLIST' ? form.checklistTemplateId : '',
+    stocktakeTemplate: form.taskType === 'STOCKTAKE' ? form.stocktakeTemplate : '',
+    dueTiming: form.dueTiming,
+    dueOffsetMinutes: minutesPayload(form.dueOffsetMinutes),
+    assignmentTarget: form.assignmentTarget
+  };
+}
+
+function ShiftTaskRulesAdminSection({ venueOptions }: { venueOptions: Array<{ label: string; value: string }> }) {
+  const [rules, setRules] = useState<ShiftTaskRule[]>([]);
+  const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
+  const [form, setForm] = useState<ShiftTaskRuleForm>(DEFAULT_SHIFT_TASK_RULE_FORM);
+  const [preview, setPreview] = useState<ShiftTaskRulePreviewResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadShiftTaskRules() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [rulePayload, templatePayload] = await Promise.all([
+        api<ShiftTaskRule[]>('/api/shift-task-rules'),
+        api<ChecklistTemplate[]>('/api/checklists/templates')
+      ]);
+      setRules(rulePayload);
+      setTemplates(templatePayload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load shift task rules.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadShiftTaskRules();
+  }, []);
+
+  function updateForm<K extends keyof ShiftTaskRuleForm>(key: K, value: ShiftTaskRuleForm[K]) {
+    setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function toggleDay(day: string) {
+    setForm((current) => ({
+      ...current,
+      daysOfWeek: current.daysOfWeek.includes(day)
+        ? current.daysOfWeek.filter((entry) => entry !== day)
+        : [...current.daysOfWeek, day]
+    }));
+  }
+
+  async function createRule(event: FormEvent) {
+    event.preventDefault();
+    setBusy('create');
+    setError(null);
+    setFeedback(null);
+    try {
+      await api<ShiftTaskRule>('/api/shift-task-rules', {
+        method: 'POST',
+        body: JSON.stringify(shiftTaskRulePayload(form))
+      });
+      setForm(DEFAULT_SHIFT_TASK_RULE_FORM);
+      setPreview(null);
+      setFeedback('Shift task rule created.');
+      await loadShiftTaskRules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create shift task rule.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function previewRule() {
+    setBusy('preview');
+    setError(null);
+    try {
+      const payload = await api<ShiftTaskRulePreviewResult>('/api/shift-task-rules/preview', {
+        method: 'POST',
+        body: JSON.stringify({ rule: shiftTaskRulePayload(form), venue: form.venue })
+      });
+      setPreview(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not preview matching shifts.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function toggleRule(rule: ShiftTaskRule) {
+    setBusy(rule.id);
+    setError(null);
+    try {
+      await api<ShiftTaskRule>(`/api/shift-task-rules/${rule.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ enabled: !rule.enabled })
+      });
+      await loadShiftTaskRules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update shift task rule.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const createDisabled =
+    busy === 'create' ||
+    !form.name.trim() ||
+    (form.taskType === 'CHECKLIST' && !form.checklistTemplateId);
+
+  return (
+    <div className="admin-grid two">
+      <Card title="Create a shift task rule" subtitle="When a roster shift matches this rule, Alma creates the required task.">
+        <form className="admin-social-form" onSubmit={(event) => void createRule(event)}>
+          <div className="admin-form-grid">
+            <Input
+              label="Rule name"
+              value={form.name}
+              onChange={(event) => updateForm('name', event.target.value)}
+              placeholder="Opening checklist for opening shifts"
+              required
+            />
+            <Select
+              label="Venue"
+              value={form.venue}
+              onChange={(event) => updateForm('venue', event.target.value)}
+              options={[{ label: 'All venues', value: '' }, ...venueOptions]}
+            />
+            <Select
+              label="Task type"
+              value={form.taskType}
+              onChange={(event) => updateForm('taskType', event.target.value as ShiftTaskType)}
+              options={SHIFT_TASK_TYPE_OPTIONS}
+            />
+          </div>
+
+          <div className="admin-form-grid">
+            <Input
+              label="Match role/title"
+              value={form.matchRoleTitle}
+              onChange={(event) => updateForm('matchRoleTitle', event.target.value)}
+              placeholder="manager, bartender, kitchen"
+            />
+            <Input
+              label="Match area"
+              value={form.matchArea}
+              onChange={(event) => updateForm('matchArea', event.target.value)}
+              placeholder="Bar, Kitchen, Floor"
+            />
+            <Input
+              label="Match label/notes"
+              value={form.matchShiftLabel}
+              onChange={(event) => updateForm('matchShiftLabel', event.target.value)}
+              placeholder="opening, closing, prep"
+            />
+          </div>
+
+          <div className="admin-form-grid">
+            <Input
+              label="Starts before minute"
+              type="number"
+              min="0"
+              max="1440"
+              value={form.startBeforeMinutes}
+              onChange={(event) => updateForm('startBeforeMinutes', event.target.value)}
+              placeholder="540 for 9:00am"
+            />
+            <Input
+              label="Starts after minute"
+              type="number"
+              min="0"
+              max="1440"
+              value={form.startAfterMinutes}
+              onChange={(event) => updateForm('startAfterMinutes', event.target.value)}
+              placeholder="900 for 3:00pm"
+            />
+            <Input
+              label="Ends after minute"
+              type="number"
+              min="0"
+              max="1440"
+              value={form.endAfterMinutes}
+              onChange={(event) => updateForm('endAfterMinutes', event.target.value)}
+              placeholder="1260 for 9:00pm"
+            />
+          </div>
+
+          <div className="admin-chip-grid">
+            {SHIFT_TASK_DAY_OPTIONS.map((day) => (
+              <label key={day.value} className="admin-check-chip">
+                <input
+                  type="checkbox"
+                  checked={form.daysOfWeek.includes(day.value)}
+                  onChange={() => toggleDay(day.value)}
+                />
+                <span>{day.label}</span>
+              </label>
+            ))}
+          </div>
+
+          <div className="admin-form-grid">
+            {form.taskType === 'CHECKLIST' ? (
+              <Select
+                label="Checklist template"
+                value={form.checklistTemplateId}
+                onChange={(event) => updateForm('checklistTemplateId', event.target.value)}
+                options={[
+                  { label: 'Choose a checklist', value: '' },
+                  ...templates.map((template) => ({ label: template.name, value: template.id }))
+                ]}
+              />
+            ) : (
+              <Input
+                label="Planned task label"
+                value={form.stocktakeTemplate}
+                onChange={(event) => updateForm('stocktakeTemplate', event.target.value)}
+                placeholder="Stocktake task linking is coming next"
+              />
+            )}
+            <Select
+              label="Due timing"
+              value={form.dueTiming}
+              onChange={(event) => updateForm('dueTiming', event.target.value as ShiftTaskDueTiming)}
+              options={SHIFT_TASK_DUE_OPTIONS}
+            />
+            <Input
+              label="Due offset minutes"
+              type="number"
+              value={form.dueOffsetMinutes}
+              onChange={(event) => updateForm('dueOffsetMinutes', event.target.value)}
+              placeholder="30"
+            />
+          </div>
+
+          <div className="admin-form-grid">
+            <Select
+              label="Assignment target"
+              value={form.assignmentTarget}
+              onChange={(event) => updateForm('assignmentTarget', event.target.value as ShiftTaskAssignmentTarget)}
+              options={SHIFT_TASK_TARGET_OPTIONS}
+            />
+            <label className="admin-checkbox">
+              <input
+                type="checkbox"
+                checked={form.enabled}
+                onChange={(event) => updateForm('enabled', event.target.checked)}
+              />
+              <span>Enable this rule immediately</span>
+            </label>
+          </div>
+
+          {form.taskType !== 'CHECKLIST' ? (
+            <p className="muted">Only checklist tasks can be started from Staff and Compliance in this release.</p>
+          ) : null}
+
+          {error ? <p className="form-error">{error}</p> : null}
+          {feedback ? <p className="form-success">{feedback}</p> : null}
+
+          <div className="toolbar-right">
+            <Button type="button" variant="secondary" onClick={() => void previewRule()} disabled={busy === 'preview' || !form.name.trim()}>
+              {busy === 'preview' ? 'Previewing...' : 'Preview matches'}
+            </Button>
+            <Button type="submit" disabled={createDisabled}>
+              {busy === 'create' ? 'Creating...' : 'Create rule'}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Current rules" subtitle="Checklist rules are active. Stocktake, audit and incident task types are planned.">
+        {loading ? (
+          <Spinner label="Loading shift task rules..." />
+        ) : rules.length ? (
+          <div className="admin-card-list">
+            {rules.map((rule) => (
+              <article key={rule.id} className="admin-link-card">
+                <span>
+                  <strong>{rule.name}</strong>
+                  <small>
+                    {rule.venue || 'All venues'} · {rule.taskType.toLowerCase().replace(/_/g, ' ')}
+                    {rule.checklistTemplate?.name ? ` · ${rule.checklistTemplate.name}` : ''}
+                  </small>
+                </span>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={rule.enabled ? 'secondary' : 'ghost'}
+                  onClick={() => void toggleRule(rule)}
+                  disabled={busy === rule.id}
+                >
+                  {rule.enabled ? 'Enabled' : 'Disabled'}
+                </Button>
+              </article>
+            ))}
+          </div>
+        ) : (
+          <EmptyState
+            icon={<IconChecklist />}
+            title="No shift task rules yet"
+            description="Create an opening, closing or manager checklist rule to start assigning work from shifts."
+          />
+        )}
+
+        {preview ? (
+          <div className="admin-status-stack">
+            <StatusLine label="Preview matches" value={`${preview.matchCount}`} tone={preview.matchCount ? 'positive' : 'muted'} />
+            <div className="admin-card-list">
+              {preview.matches.slice(0, 5).map((match) => (
+                <div key={match.assignmentKey} className="admin-mini-card">
+                  <div>
+                    <strong>{match.staffName || 'Venue queue'}</strong>
+                    <small>{match.shiftLabel} · due {match.dueAt ? formatDate(match.dueAt) : 'during shift'}</small>
+                  </div>
+                  <Badge tone="info">{match.venue || 'All venues'}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
+      </Card>
+    </div>
   );
 }
 
@@ -1456,6 +1890,7 @@ export function AdminPage({
   const showStaffOnboarding = isAll || activeRoute === 'staff-onboarding';
   const showComplianceSettings = isAll || activeRoute === 'compliance-settings';
   const showChecklistTemplates = isAll || activeRoute === 'checklist-templates';
+  const showShiftTaskRules = isAll || activeRoute === 'shift-task-rules';
   const showAuditTemplates = isAll || activeRoute === 'audit-templates';
   const showIntegrations = isAll || activeRoute === 'integrations';
   const showXero = isAll || activeRoute === 'xero';
@@ -1548,6 +1983,7 @@ export function AdminPage({
         <a href="#permission-editor">Permission editor</a>
         <a href="#defaults">Apps and defaults</a>
         <a href="#compliance-settings">Compliance setup</a>
+        <a href="#shift-task-rules">Shift task rules</a>
         <a href="#integrations">Integrations</a>
         <a href="#human-agent-demo">Human Agent Demo</a>
         <a href="#imports">Data imports</a>
@@ -2040,7 +2476,7 @@ export function AdminPage({
       </section>
       ) : null}
 
-      {(showComplianceSettings || showChecklistTemplates || showAuditTemplates) ? (
+      {(showComplianceSettings || showChecklistTemplates || showShiftTaskRules || showAuditTemplates) ? (
       <section className="admin-section">
         <SectionHeading
           id="compliance-settings"
@@ -2048,14 +2484,18 @@ export function AdminPage({
           title={
             showChecklistTemplates && !showComplianceSettings && !showAuditTemplates
               ? 'Checklist templates.'
-              : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates
+              : showShiftTaskRules && !showComplianceSettings && !showChecklistTemplates && !showAuditTemplates
+                ? 'Shift task rules.'
+                : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates && !showShiftTaskRules
                 ? 'Audit templates.'
                 : 'Compliance settings.'
           }
           description={
             showChecklistTemplates && !showComplianceSettings && !showAuditTemplates
               ? 'Template management belongs in Admin; running checklists stays in Compliance.'
-              : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates
+              : showShiftTaskRules && !showComplianceSettings && !showChecklistTemplates && !showAuditTemplates
+                ? 'Assign opening, closing and manager checklists from roster shifts.'
+                : showAuditTemplates && !showComplianceSettings && !showChecklistTemplates && !showShiftTaskRules
                 ? 'Template management belongs in Admin; completing audits stays in Compliance.'
                 : 'Compliance keeps daily checklists, audits, incidents and register review. Admin manages setup work.'
           }
@@ -2067,6 +2507,7 @@ export function AdminPage({
                 .filter((link) => {
                   if (showComplianceSettings) return true;
                   if (showChecklistTemplates) return link.href.endsWith('/checklist-templates');
+                  if (showShiftTaskRules) return link.href.endsWith('/shift-task-rules');
                   if (showAuditTemplates) return link.href.endsWith('/audit-templates');
                   return true;
                 })
@@ -2103,6 +2544,11 @@ export function AdminPage({
             </div>
           </Card>
         </div>
+        {showShiftTaskRules ? (
+          <div className="admin-section" id="shift-task-rules">
+            <ShiftTaskRulesAdminSection venueOptions={venueOptions} />
+          </div>
+        ) : null}
       </section>
       ) : null}
 

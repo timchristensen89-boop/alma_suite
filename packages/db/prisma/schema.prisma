@@ -113,6 +113,35 @@ enum StocktakeStatus {
   SUBMITTED
 }
 
+enum ShiftTaskType {
+  CHECKLIST
+  STOCKTAKE
+  AUDIT
+  INCIDENT_CHECK
+}
+
+enum ShiftTaskDueTiming {
+  BEFORE_SHIFT_START
+  DURING_SHIFT
+  BEFORE_SHIFT_END
+  AFTER_SHIFT_END
+}
+
+enum ShiftTaskAssignmentTarget {
+  ASSIGNED_STAFF
+  VENUE_QUEUE
+  MANAGER_ON_DUTY
+  ALL_ON_SHIFT
+}
+
+enum ShiftTaskAssignmentStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  OVERDUE
+  CANCELLED
+}
+
 enum InventoryMovementType {
   STOCKTAKE_ADJUSTMENT
   STOCKTAKE_CORRECTION
@@ -428,6 +457,8 @@ model ChecklistTemplate {
   area      String?
   items     ChecklistItemTemplate[]
   runs      ChecklistRun[]
+  shiftTaskRules ShiftTaskRule[]
+  shiftTaskAssignments ShiftTaskAssignment[]
   createdAt DateTime                @default(now())
   updatedAt DateTime                @updatedAt
 }
@@ -453,6 +484,7 @@ model ChecklistRun {
   notes       String?
   template    ChecklistTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
   items       ChecklistItem[]
+  shiftTaskAssignments ShiftTaskAssignment[]
   createdAt   DateTime           @default(now())
   updatedAt   DateTime           @updatedAt
 }
@@ -579,6 +611,7 @@ model StaffProfile {
   passwordResetTokens StaffPasswordResetToken[]
   appAccess        StaffAppAccess[]
   rosterShifts     RosterShift[]
+  shiftTaskAssignments ShiftTaskAssignment[]
   shiftConfirmations StaffShiftConfirmation[]
   clockSessions    StaffClockSession[]
   clockEvents      StaffClockEvent[]
@@ -887,10 +920,73 @@ model RosterShift {
   updatedAt      DateTime          @updatedAt
   staffProfile   StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
   shiftConfirmations StaffShiftConfirmation[]
+  shiftTaskAssignments ShiftTaskAssignment[]
   clockSessions  StaffClockSession[]
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
+}
+
+model ShiftTaskRule {
+  id                 String                    @id @default(cuid())
+  name               String
+  enabled            Boolean                   @default(true)
+  venue              String?
+  matchRoleTitle     String?
+  matchArea          String?
+  matchShiftLabel    String?
+  startBeforeMinutes Int?
+  startAfterMinutes  Int?
+  endBeforeMinutes   Int?
+  endAfterMinutes    Int?
+  daysOfWeek         Json?
+  taskType           ShiftTaskType
+  checklistTemplateId String?
+  stocktakeTemplate  String?
+  dueTiming          ShiftTaskDueTiming        @default(DURING_SHIFT)
+  dueOffsetMinutes   Int?
+  assignmentTarget   ShiftTaskAssignmentTarget @default(ASSIGNED_STAFF)
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  checklistTemplate  ChecklistTemplate?        @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  assignments        ShiftTaskAssignment[]
+
+  @@index([enabled, venue])
+  @@index([taskType])
+  @@index([checklistTemplateId])
+}
+
+model ShiftTaskAssignment {
+  id                  String                    @id @default(cuid())
+  assignmentKey       String                    @unique
+  ruleId              String
+  rosterShiftId       String?
+  staffProfileId      String?
+  venue               String?
+  taskType            ShiftTaskType
+  checklistTemplateId String?
+  checklistRunId      String?
+  stocktakeId         String?
+  status              ShiftTaskAssignmentStatus @default(PENDING)
+  dueAt               DateTime?
+  completedAt         DateTime?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  rule                ShiftTaskRule             @relation(fields: [ruleId], references: [id], onDelete: Cascade)
+  rosterShift         RosterShift?              @relation(fields: [rosterShiftId], references: [id], onDelete: SetNull)
+  staffProfile        StaffProfile?             @relation(fields: [staffProfileId], references: [id], onDelete: SetNull)
+  checklistTemplate   ChecklistTemplate?        @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  checklistRun        ChecklistRun?             @relation(fields: [checklistRunId], references: [id], onDelete: SetNull)
+  stocktake           Stocktake?                @relation(fields: [stocktakeId], references: [id], onDelete: SetNull)
+
+  @@index([ruleId])
+  @@index([rosterShiftId])
+  @@index([staffProfileId])
+  @@index([venue, status])
+  @@index([dueAt])
+  @@index([checklistTemplateId])
+  @@index([checklistRunId])
+  @@index([stocktakeId])
 }
 
 model StaffShiftConfirmation {
@@ -1969,6 +2065,7 @@ model Stocktake {
   updatedAt         DateTime        @updatedAt
   lines             StocktakeLine[]
   movements         InventoryMovement[]
+  shiftTaskAssignments ShiftTaskAssignment[]
 
   @@index([countedAt])
   @@index([status])

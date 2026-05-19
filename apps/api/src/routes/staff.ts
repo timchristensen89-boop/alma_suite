@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
+import { shiftTaskService } from '../services/shift-task.service.js';
 import { staffService } from '../services/staff.service.js';
 
 export const staffRouter = Router();
@@ -239,6 +240,15 @@ staffRouter.get('/me/roster', async (req, res, next) => {
       start: typeof req.query.start === 'string' ? req.query.start : undefined,
       end: typeof req.query.end === 'string' ? req.query.end : undefined
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/me/shift-tasks', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await shiftTaskService.listForStaff(req.user));
   } catch (error) {
     next(error);
   }

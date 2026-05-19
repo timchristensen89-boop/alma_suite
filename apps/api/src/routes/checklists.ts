@@ -1,5 +1,7 @@
 import { Router } from 'express';
+import { HttpError } from '../lib/http.js';
 import { checklistService } from '../services/checklist.service.js';
+import { shiftTaskService } from '../services/shift-task.service.js';
 
 export const checklistsRouter = Router();
 
@@ -46,6 +48,18 @@ checklistsRouter.delete('/templates/:id', async (req, res, next) => {
 checklistsRouter.get('/runs', async (_req, res, next) => {
   try {
     res.json(await checklistService.listRuns());
+  } catch (error) {
+    next(error);
+  }
+});
+
+checklistsRouter.get('/shift-tasks', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await shiftTaskService.listForVenue(
+      req.user,
+      typeof req.query.venue === 'string' ? req.query.venue : undefined
+    ));
   } catch (error) {
     next(error);
   }

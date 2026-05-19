@@ -9,6 +9,8 @@ import type {
   OnboardingSettings,
   OnboardingStepSettings,
   RosterShift,
+  ShiftTaskAssignment,
+  ShiftTaskListResponse,
   StaffAppAccessStatus,
   StaffComplianceRecord,
   StaffClockSession,
@@ -34,6 +36,7 @@ import type {
   SuiteChatMessage,
   StaffTipsSummary,
   StaffTrainingRecord,
+  StartAssignedChecklistResult,
   SuiteCommunicationsPayload,
   SocialPlatform,
   Timesheet,
@@ -1091,8 +1094,11 @@ function StaffMemberHome({
   const navigate = useNavigate();
   const member = staff.find((item) => item.id === user?.id) ?? staff[0] ?? null;
   const [home, setHome] = useState<StaffDailyHomePayload | null>(null);
+  const [shiftTasks, setShiftTasks] = useState<ShiftTaskAssignment[]>([]);
   const [loadingHome, setLoadingHome] = useState(true);
+  const [loadingShiftTasks, setLoadingShiftTasks] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [startingShiftTaskId, setStartingShiftTaskId] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
 
@@ -1108,9 +1114,21 @@ function StaffMemberHome({
     }
   }, []);
 
+  const loadShiftTasks = useCallback(async () => {
+    setLoadingShiftTasks(true);
+    try {
+      const payload = await api<ShiftTaskListResponse>('/api/staff/me/shift-tasks');
+      setShiftTasks(payload.tasks);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load required shift tasks.');
+    } finally {
+      setLoadingShiftTasks(false);
+    }
+  }, []);
+
   useEffect(() => {
-    void loadHome();
-  }, [loadHome]);
+    void Promise.all([loadHome(), loadShiftTasks()]);
+  }, [loadHome, loadShiftTasks]);
 
   const activeSession = home?.clock.activeSession ?? null;
   const todayShift = home?.todayShift ?? null;
@@ -1130,6 +1148,27 @@ function StaffMemberHome({
       setMessage(err instanceof Error ? err.message : 'Could not confirm shift.');
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function startShiftTask(task: ShiftTaskAssignment) {
+    if (task.checklistRunId) {
+      window.location.assign(`${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/checklists/runs/${task.checklistRunId}`);
+      return;
+    }
+    setStartingShiftTaskId(task.id);
+    setMessage(null);
+    setMessageTarget(`shift-task:${task.id}`);
+    try {
+      const payload = await api<StartAssignedChecklistResult>(`/api/shift-task-assignments/${task.id}/start-checklist`, {
+        method: 'POST'
+      });
+      await loadShiftTasks();
+      window.location.assign(`${COMPLIANCE_WEB_URL.replace(/\/+$/, '')}/checklists/runs/${payload.run.id}`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not start required task.');
+    } finally {
+      setStartingShiftTaskId(null);
     }
   }
 
@@ -1186,7 +1225,7 @@ function StaffMemberHome({
         eyebrow="Staff daily"
         title={displayMember ? `Hi ${displayMember.firstName}` : 'Staff home'}
         description="Your shift, clock status, leave, compliance reminders, and venue announcements."
-        actions={<Button type="button" variant="secondary" disabled={loadingHome} onClick={() => void loadHome()}>{loadingHome ? 'Refreshing…' : 'Refresh'}</Button>}
+        actions={<Button type="button" variant="secondary" disabled={loadingHome || loadingShiftTasks} onClick={() => void Promise.all([loadHome(), loadShiftTasks()])}>{loadingHome || loadingShiftTasks ? 'Refreshing…' : 'Refresh'}</Button>}
       />
 
       <div className="stats-grid">
@@ -1213,6 +1252,51 @@ function StaffMemberHome({
           <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/compliance')}>Compliance</Button>
         </div>
+      </Card>
+
+      <Card title="Today’s required tasks" subtitle="Checklist work assigned from your rostered shifts.">
+        {loadingShiftTasks ? <Spinner label="Loading required tasks..." /> : null}
+        {!loadingShiftTasks && shiftTasks.length === 0 ? (
+          <EmptyState title="No shift tasks due" description="If a rostered opening, closing or manager task is required, it will appear here." />
+        ) : null}
+        {shiftTasks.length > 0 ? (
+          <div className="staff-expiry-list">
+            {shiftTasks.map((task) => (
+              <div key={task.id} className="staff-expiry-row">
+                <span>
+                  <strong>{task.rule?.name || task.checklistTemplate?.name || 'Shift task'}</strong>
+                  <span className="subtle">
+                    {task.checklistTemplate?.name || task.taskType.replaceAll('_', ' ')} · due {task.dueAt ? new Date(task.dueAt).toLocaleString() : 'during shift'}
+                  </span>
+                  {task.rosterShift ? (
+                    <span className="subtle">
+                      {timeOf(task.rosterShift.startsAt)}-{timeOf(task.rosterShift.endsAt)} · {task.rosterShift.area || task.rosterShift.roleTitle || 'Shift'}
+                    </span>
+                  ) : null}
+                </span>
+                <span className="staff-row-actions">
+                  <Badge tone={task.status === 'COMPLETED' ? 'positive' : task.status === 'IN_PROGRESS' ? 'info' : 'warning'}>
+                    {task.status.replaceAll('_', ' ')}
+                  </Badge>
+                  {task.taskType === 'CHECKLIST' ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={startingShiftTaskId === task.id}
+                      onClick={() => void startShiftTask(task)}
+                    >
+                      {task.checklistRunId ? 'Open' : startingShiftTaskId === task.id ? 'Starting…' : 'Start'}
+                    </Button>
+                  ) : (
+                    <Badge tone="muted">Planned</Badge>
+                  )}
+                  <ActionFeedback message={messageTarget === `shift-task:${task.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Card>
 
       <Card title={activeSession ? 'Clock status' : 'Ready to start'} subtitle={todayShift ? `${timeOf(todayShift.startsAt)}-${timeOf(todayShift.endsAt)} · ${todayShift.area || todayShift.roleTitle || 'Shift'}` : nextShift ? `Next: ${new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} ${timeOf(nextShift.startsAt)}` : 'No shift linked right now'}>

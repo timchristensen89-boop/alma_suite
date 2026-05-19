@@ -45,6 +45,10 @@ export function ChecklistTemplatesPage() {
   return <RoutedAdminPage route="checklist-templates" />;
 }
 
+export function ShiftTaskRulesPage() {
+  return <RoutedAdminPage route="shift-task-rules" />;
+}
+
 export function AuditTemplatesPage() {
   return <RoutedAdminPage route="audit-templates" />;
 }

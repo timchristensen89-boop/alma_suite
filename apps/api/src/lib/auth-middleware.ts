@@ -78,6 +78,7 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path.startsWith('/api/issues')) return true;
   if (req.path === '/api/incidents' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/checklists/runs')) return true;
+  if (/^\/api\/shift-task-assignments\/[^/]+\/start-checklist$/.test(req.path) && req.method === 'POST') return true;
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
   if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
@@ -122,7 +123,7 @@ export async function authMiddleware(
     return next(new HttpError(401, 'Not authenticated'));
   }
 
-  const settingsRequest = req.path.startsWith('/api/settings');
+  const settingsRequest = req.path.startsWith('/api/settings') || req.path.startsWith('/api/shift-task-rules');
 
   if (settingsRequest && !hasSettingsAccess(req.user)) {
     return next(new HttpError(403, 'Settings access required'));
@@ -170,5 +171,11 @@ export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
 export function requireManager(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new HttpError(401, 'Not authenticated'));
   if (!isManager(req.user)) return next(new HttpError(403, 'Manager access required'));
+  return next();
+}
+
+export function requireSettingsAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (!req.user) return next(new HttpError(401, 'Not authenticated'));
+  if (!hasSettingsAccess(req.user)) return next(new HttpError(403, 'Settings admin access required'));
   return next();
 }

@@ -321,6 +321,14 @@ export const checklistService = {
         data: { status: nextStatus }
       });
 
+      await tx.shiftTaskAssignment.updateMany({
+        where: { checklistRunId: runId, status: { not: 'CANCELLED' } },
+        data: {
+          status: nextStatus === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
+          completedAt: nextStatus === 'COMPLETED' ? new Date() : null
+        }
+      });
+
       return updatedItem;
     });
   }

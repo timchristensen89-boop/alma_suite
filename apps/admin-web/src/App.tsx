@@ -56,6 +56,7 @@ import {
   ImportsPage,
   IntegrationsPage,
   RolesPage,
+  ShiftTaskRulesPage,
   StaffOnboardingPage,
   StaffRecordTypesPage,
   StaffSettingsPage,
@@ -150,6 +151,12 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/checklist-templates',
     label: 'Checklist templates',
     description: 'Checklist template management',
+    icon: <IconChecklist />
+  },
+  {
+    to: '/shift-task-rules',
+    label: 'Shift task rules',
+    description: 'Assign checklists from roster shifts',
     icon: <IconChecklist />
   },
   {
@@ -432,6 +439,7 @@ function AdminWorkspace() {
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />
         <Route path="/compliance-settings" element={<ComplianceSettingsPage />} />
         <Route path="/checklist-templates" element={<ChecklistTemplatesPage />} />
+        <Route path="/shift-task-rules" element={<ShiftTaskRulesPage />} />
         <Route path="/audit-templates" element={<AuditTemplatesPage />} />
         <Route path="/handbook" element={<HandbookAdminPage staffHandbookHref={`${complianceUrl}/handbook`} />} />
         <Route path="/integrations" element={<IntegrationsPage />} />

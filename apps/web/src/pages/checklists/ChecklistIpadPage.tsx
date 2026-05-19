@@ -4,7 +4,10 @@ import type {
   ChecklistItemResult,
   ChecklistRun,
   ChecklistRunItem,
-  ChecklistTemplate
+  ChecklistTemplate,
+  ShiftTaskAssignment,
+  ShiftTaskListResponse,
+  StartAssignedChecklistResult
 } from '@alma/shared';
 import {
   Badge,
@@ -63,6 +66,9 @@ export function ChecklistIpadPage() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
   const [starting, setStarting] = useState(false);
+  const [assignedTasks, setAssignedTasks] = useState<ShiftTaskAssignment[]>([]);
+  const [assignedTasksLoading, setAssignedTasksLoading] = useState(false);
+  const [startingAssignmentId, setStartingAssignmentId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const orderedItems = useMemo(
@@ -89,6 +95,28 @@ export function ChecklistIpadPage() {
     setVenue((current) => current || user.venue || 'Alma Avalon');
   }, [user]);
 
+  useEffect(() => {
+    if (!venue) return;
+    let cancelled = false;
+    async function loadAssignedTasks() {
+      try {
+        setAssignedTasksLoading(true);
+        const payload = await api<ShiftTaskListResponse>(
+          `/api/checklists/shift-tasks?venue=${encodeURIComponent(venue)}`
+        );
+        if (!cancelled) setAssignedTasks(payload.tasks);
+      } catch (loadError) {
+        if (!cancelled) setError(loadError instanceof Error ? loadError.message : 'Could not load assigned shift tasks');
+      } finally {
+        if (!cancelled) setAssignedTasksLoading(false);
+      }
+    }
+    void loadAssignedTasks();
+    return () => {
+      cancelled = true;
+    };
+  }, [venue]);
+
   async function startRun(template: ChecklistTemplate) {
     try {
       setStarting(true);
@@ -113,6 +141,31 @@ export function ChecklistIpadPage() {
       setError(startError instanceof Error ? startError.message : 'Could not start checklist');
     } finally {
       setStarting(false);
+    }
+  }
+
+  async function startAssignedTask(task: ShiftTaskAssignment) {
+    try {
+      setStartingAssignmentId(task.id);
+      setError(null);
+      const payload = await api<StartAssignedChecklistResult>(`/api/shift-task-assignments/${task.id}/start-checklist`, {
+        method: 'POST'
+      });
+      setCurrentRun(payload.run);
+      setSelectedTemplateId(payload.run.templateId);
+      setVenue(payload.run.area ?? venue);
+      setNotes(
+        Object.fromEntries(payload.run.items.map((item) => [item.id, item.notes ?? '']))
+      );
+      void runs.reload();
+      const refreshedTasks = await api<ShiftTaskListResponse>(
+        `/api/checklists/shift-tasks?venue=${encodeURIComponent(venue)}`
+      );
+      setAssignedTasks(refreshedTasks.tasks);
+    } catch (startError) {
+      setError(startError instanceof Error ? startError.message : 'Could not start assigned checklist');
+    } finally {
+      setStartingAssignmentId(null);
     }
   }
 
@@ -236,6 +289,41 @@ export function ChecklistIpadPage() {
               </div>
             </Card>
           ) : null}
+
+          <Card title="Due for this shift" subtitle="Tasks assigned from roster rules for this venue appear first.">
+            {assignedTasksLoading ? <Spinner label="Loading assigned shift tasks..." /> : null}
+            {!assignedTasksLoading && assignedTasks.length === 0 ? (
+              <EmptyState
+                icon={<IconChecklist size={24} />}
+                title="No assigned tasks for this venue"
+                description="Start a checklist manually below when no shift task is due."
+              />
+            ) : null}
+            {assignedTasks.length > 0 ? (
+              <div className="ipad-continue-grid">
+                {assignedTasks.map((task) => (
+                  <button
+                    key={task.id}
+                    type="button"
+                    className="ipad-continue-card"
+                    disabled={startingAssignmentId === task.id || task.taskType !== 'CHECKLIST'}
+                    onClick={() => void startAssignedTask(task)}
+                  >
+                    <span>
+                      <strong>{task.rule?.name || task.checklistTemplate?.name || 'Shift task'}</strong>
+                      <small>
+                        {task.checklistTemplate?.name || task.taskType.replace('_', ' ')} · due{' '}
+                        {task.dueAt ? new Date(task.dueAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'during shift'}
+                      </small>
+                    </span>
+                    <Badge tone={task.status === 'IN_PROGRESS' ? 'info' : task.status === 'COMPLETED' ? 'positive' : 'warning'} dot>
+                      {task.taskType === 'CHECKLIST' ? task.status.replace('_', ' ') : 'planned'}
+                    </Badge>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </Card>
 
           <Card title="Choose checklist" subtitle="Tap a template to start recording results.">
             {templates.loading ? <Spinner label="Loading checklists…" /> : null}

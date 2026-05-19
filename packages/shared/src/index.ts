@@ -44,6 +44,26 @@ export const issueStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'RESO
 export const issueSeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 export const checklistRunStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'COMPLETED']);
 export const checklistItemResultSchema = z.enum(['PENDING', 'PASS', 'FAIL', 'NA']);
+export const shiftTaskTypeSchema = z.enum(['CHECKLIST', 'STOCKTAKE', 'AUDIT', 'INCIDENT_CHECK']);
+export const shiftTaskDueTimingSchema = z.enum([
+  'BEFORE_SHIFT_START',
+  'DURING_SHIFT',
+  'BEFORE_SHIFT_END',
+  'AFTER_SHIFT_END'
+]);
+export const shiftTaskAssignmentTargetSchema = z.enum([
+  'ASSIGNED_STAFF',
+  'VENUE_QUEUE',
+  'MANAGER_ON_DUTY',
+  'ALL_ON_SHIFT'
+]);
+export const shiftTaskAssignmentStatusSchema = z.enum([
+  'PENDING',
+  'IN_PROGRESS',
+  'COMPLETED',
+  'OVERDUE',
+  'CANCELLED'
+]);
 export const staffRecordTypeSchema = z.enum(['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER']);
 export const staffRecordStatusSchema = z.enum(['PENDING', 'APPROVED', 'EXPIRED']);
 export const staffHrRecordTypeSchema = z.enum(['CONTRACT', 'WARNING', 'PAY_CHANGE', 'RIGHT_TO_WORK', 'GENERAL']);
@@ -161,6 +181,39 @@ export const checklistTemplateInputSchema = z.object({
   name: z.string().min(2),
   area: z.string().optional().or(z.literal('')),
   items: z.array(checklistTemplateItemInputSchema).min(1)
+});
+
+const optionalMinutesOfDaySchema = z.coerce.number().int().min(0).max(24 * 60).optional();
+const optionalDueOffsetMinutesSchema = z.coerce.number().int().min(-24 * 60).max(24 * 60).optional();
+const daysOfWeekSchema = z.array(z.coerce.number().int().min(0).max(6)).max(7).optional();
+
+export const shiftTaskRuleInputSchema = z.object({
+  name: z.string().trim().min(2),
+  enabled: z.boolean().optional().default(true),
+  venue: z.string().trim().optional().or(z.literal('')),
+  matchRoleTitle: z.string().trim().optional().or(z.literal('')),
+  matchArea: z.string().trim().optional().or(z.literal('')),
+  matchShiftLabel: z.string().trim().optional().or(z.literal('')),
+  startBeforeMinutes: optionalMinutesOfDaySchema,
+  startAfterMinutes: optionalMinutesOfDaySchema,
+  endBeforeMinutes: optionalMinutesOfDaySchema,
+  endAfterMinutes: optionalMinutesOfDaySchema,
+  daysOfWeek: daysOfWeekSchema,
+  taskType: shiftTaskTypeSchema.default('CHECKLIST'),
+  checklistTemplateId: z.string().trim().optional().or(z.literal('')),
+  stocktakeTemplate: z.string().trim().optional().or(z.literal('')),
+  dueTiming: shiftTaskDueTimingSchema.default('DURING_SHIFT'),
+  dueOffsetMinutes: optionalDueOffsetMinutesSchema,
+  assignmentTarget: shiftTaskAssignmentTargetSchema.default('ASSIGNED_STAFF')
+});
+
+export const shiftTaskRuleUpdateInputSchema = shiftTaskRuleInputSchema.partial();
+
+export const shiftTaskRulePreviewInputSchema = z.object({
+  rule: shiftTaskRuleInputSchema,
+  start: z.string().optional().or(z.literal('')),
+  end: z.string().optional().or(z.literal('')),
+  venue: z.string().trim().optional().or(z.literal(''))
 });
 
 export const checklistItemUpdateInputSchema = z.object({
@@ -1896,6 +1949,10 @@ export type IssueStatus = z.infer<typeof issueStatusSchema>;
 export type IssueSeverity = z.infer<typeof issueSeveritySchema>;
 export type ChecklistRunStatus = z.infer<typeof checklistRunStatusSchema>;
 export type ChecklistItemResult = z.infer<typeof checklistItemResultSchema>;
+export type ShiftTaskType = z.infer<typeof shiftTaskTypeSchema>;
+export type ShiftTaskDueTiming = z.infer<typeof shiftTaskDueTimingSchema>;
+export type ShiftTaskAssignmentTarget = z.infer<typeof shiftTaskAssignmentTargetSchema>;
+export type ShiftTaskAssignmentStatus = z.infer<typeof shiftTaskAssignmentStatusSchema>;
 export type StaffRecordType = z.infer<typeof staffRecordTypeSchema>;
 export type StaffRecordStatus = z.infer<typeof staffRecordStatusSchema>;
 export type StaffHrRecordType = z.infer<typeof staffHrRecordTypeSchema>;
@@ -1962,6 +2019,9 @@ export type StaffClockInInput = z.infer<typeof staffClockInInputSchema>;
 export type StaffClockOutInput = z.infer<typeof staffClockOutInputSchema>;
 export type StaffClockBreakInput = z.infer<typeof staffClockBreakInputSchema>;
 export type StaffOwnLeaveRequestInput = z.infer<typeof staffOwnLeaveRequestInputSchema>;
+export type ShiftTaskRuleInput = z.infer<typeof shiftTaskRuleInputSchema>;
+export type ShiftTaskRuleUpdateInput = z.infer<typeof shiftTaskRuleUpdateInputSchema>;
+export type ShiftTaskRulePreviewInput = z.infer<typeof shiftTaskRulePreviewInputSchema>;
 export type TrainingModuleInput = z.infer<typeof trainingModuleInputSchema>;
 export type TrainingPayRuleInput = z.infer<typeof trainingPayRuleInputSchema>;
 export type StaffTrainingAssignInput = z.infer<typeof staffTrainingAssignInputSchema>;
@@ -3497,6 +3557,83 @@ export type ChecklistRun = {
   updatedAt: string;
   template: ChecklistTemplate;
   items: ChecklistRunItem[];
+};
+
+export type ShiftTaskRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  venue: string | null;
+  matchRoleTitle: string | null;
+  matchArea: string | null;
+  matchShiftLabel: string | null;
+  startBeforeMinutes: number | null;
+  startAfterMinutes: number | null;
+  endBeforeMinutes: number | null;
+  endAfterMinutes: number | null;
+  daysOfWeek: number[];
+  taskType: ShiftTaskType;
+  checklistTemplateId: string | null;
+  stocktakeTemplate: string | null;
+  dueTiming: ShiftTaskDueTiming;
+  dueOffsetMinutes: number | null;
+  assignmentTarget: ShiftTaskAssignmentTarget;
+  createdAt: string;
+  updatedAt: string;
+  checklistTemplate?: Pick<ChecklistTemplate, 'id' | 'name' | 'area'> | null;
+};
+
+export type ShiftTaskAssignment = {
+  id: string;
+  assignmentKey: string;
+  ruleId: string;
+  rosterShiftId: string | null;
+  staffProfileId: string | null;
+  venue: string | null;
+  taskType: ShiftTaskType;
+  checklistTemplateId: string | null;
+  checklistRunId: string | null;
+  stocktakeId: string | null;
+  status: ShiftTaskAssignmentStatus;
+  dueAt: string | null;
+  completedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  rule?: Pick<ShiftTaskRule, 'id' | 'name' | 'dueTiming' | 'assignmentTarget'> | null;
+  rosterShift?: RosterShift | null;
+  staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+  checklistTemplate?: Pick<ChecklistTemplate, 'id' | 'name' | 'area'> | null;
+  checklistRun?: Pick<ChecklistRun, 'id' | 'status' | 'runDate'> | null;
+};
+
+export type ShiftTaskPreviewAssignment = {
+  assignmentKey: string;
+  ruleId: string;
+  ruleName: string;
+  rosterShiftId: string;
+  staffProfileId: string | null;
+  staffName: string | null;
+  venue: string | null;
+  taskType: ShiftTaskType;
+  checklistTemplateId: string | null;
+  checklistTemplateName: string | null;
+  dueAt: string | null;
+  shiftLabel: string;
+};
+
+export type ShiftTaskRulePreviewResult = {
+  matches: ShiftTaskPreviewAssignment[];
+  matchCount: number;
+};
+
+export type ShiftTaskListResponse = {
+  tasks: ShiftTaskAssignment[];
+  generated: number;
+};
+
+export type StartAssignedChecklistResult = {
+  assignment: ShiftTaskAssignment;
+  run: ChecklistRun;
 };
 
 export type AuditTemplateSection = {
