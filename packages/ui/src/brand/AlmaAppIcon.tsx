@@ -301,6 +301,7 @@ export const ALMA_APP_LOGO_SRC = {
   reports: '/brand/alma-reports-logo.svg',
   staff: '/brand/alma-staff-logo.svg',
   reserve: '/brand/alma-reserve-logo.svg',
+  comms: CommsGlyph,
   marketing: '/brand/alma-marketing-logo.svg',
   giftcards: '/brand/alma-giftcards-logo.svg',
   audits: '/brand/alma-audits-logo.svg',
@@ -321,6 +322,16 @@ export const ALMA_APP_LOGO_SRC = {
  * proportional, so the same component drives the 24px sidebar mark and
  * the 1024px PNG export.
  */
+
+function CommsGlyph(props: React.SVGProps<SVGSVGElement>) {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
+      <path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5A3.5 3.5 0 0 1 15.5 15H11l-4.5 4v-4A3.5 3.5 0 0 1 3 11.5v-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
+      <path d="M8 8h8M8 11h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 export function AlmaAppIcon({
   label,
   colorFrom,
