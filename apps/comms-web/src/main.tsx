@@ -8,6 +8,17 @@ import {
   SuiteAppSwitcher,
   TopBar
 } from '@alma/ui';
+import {
+  IconBriefcase,
+  IconChecklist,
+  IconDashboard,
+  IconFileText,
+  IconIssues,
+  IconSettings,
+  IconStore,
+  IconUpload
+} from '../../web/src/lib/icons';
+import '../../web/src/styles.css';
 import './styles.css';
 
 type AuthUser = {
@@ -97,15 +108,22 @@ function setStoredToken(token: string | null) {
 }
 
 
-const navItems = [
-  { to: '/', label: 'Overview', icon: '⌂', end: true },
-  { to: '/inbox', label: 'Inbox', icon: '□' },
-  { to: '/venue', label: 'Venue', icon: '✉' },
-  { to: '/announcements', label: 'Announcements', icon: '!' },
-  { to: '/handover', label: 'Handover', icon: '↪' },
-  { to: '/tasks', label: 'Tasks', icon: '✓' },
-  { to: '/compose', label: 'Compose', icon: '+' },
-  { to: '/settings', label: 'Settings', icon: '⚙' }
+type CommsNavItem = {
+  to: string;
+  label: string;
+  icon: React.ReactNode;
+  end?: boolean;
+};
+
+const navItems: CommsNavItem[] = [
+  { to: '/', label: 'Overview', icon: <IconDashboard />, end: true },
+  { to: '/inbox', label: 'Inbox', icon: <IconFileText /> },
+  { to: '/venue', label: 'Venue', icon: <IconStore /> },
+  { to: '/announcements', label: 'Announcements', icon: <IconIssues /> },
+  { to: '/handover', label: 'Handover', icon: <IconBriefcase /> },
+  { to: '/tasks', label: 'Tasks', icon: <IconChecklist /> },
+  { to: '/compose', label: 'Compose', icon: <IconUpload /> },
+  { to: '/settings', label: 'Settings', icon: <IconSettings /> }
 ];
 
 function apiUrl(path: string) {
@@ -638,7 +656,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
       title={active.label}
       subtitle="Messages, handovers, alerts, and follow-ups"
       right={
-        <div className="comms-topbar-actions">
+        <div className="topbar-action-group">
           <SuiteAppSwitcher />
           <span>{user.name || user.email || 'Signed in'}</span>
           <a className="comms-admin-link" href="https://alma-suite-admin.web.app">Admin</a>
@@ -650,7 +668,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
 
   return (
     <AppShell
-      brand={<ProductLogo appId="comms" size="md" />}
+      brand={<ProductLogo appId="comms" size="md" showBrandMark={false} />}
       sidebar={sidebar}
       topBar={topBar}
     >
