@@ -9,7 +9,7 @@ import {
   TopBar
 } from '@alma/ui';
 import {
-  IconBriefcase,
+IconBriefcase,
   IconChecklist,
   IconDashboard,
   IconFileText,
@@ -18,9 +18,8 @@ import {
   IconStore,
   IconUpload
 } from '../../web/src/lib/icons';
-import '../../web/src/styles.css';
+import './suite-shell.css';
 import './styles.css';
-
 type AuthUser = {
   id?: string;
   email?: string;
