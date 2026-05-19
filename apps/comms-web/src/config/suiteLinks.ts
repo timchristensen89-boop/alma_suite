@@ -9,4 +9,4 @@ export const REPORTS_WEB_URL = trim(import.meta.env.VITE_REPORTS_WEB_URL, 'https
 export const GIFTCARDS_WEB_URL = trim(import.meta.env.VITE_GIFTCARDS_WEB_URL, 'https://alma-giftcards.web.app');
 export const RESERVE_WEB_URL = trim(import.meta.env.VITE_RESERVE_WEB_URL, 'https://alma-reserve.web.app');
 export const MARKETING_WEB_URL = trim(import.meta.env.VITE_MARKETING_WEB_URL, 'https://alma-marketing.web.app');
-export const COMMS_WEB_URL = trim(import.meta.env.VITE_COMMS_WEB_URL, 'https://alma-comms.web.app');
+export const COMMS_WEB_URL = (import.meta.env.VITE_COMMS_WEB_URL || 'https://alma-comms.web.app').replace(/\/+$/, '');
