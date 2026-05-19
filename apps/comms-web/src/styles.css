@@ -2,6 +2,13 @@
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   color: #253326;
   background: #f6f1e8;
+  --alma-green: #253326;
+  --alma-cream: #efe8dc;
+  --alma-soft: #f6f1e8;
+  --alma-pink: #f5dcce;
+  --alma-mauve: #684a4a;
+  --border: rgba(37, 51, 38, 0.12);
+  --shadow: 0 18px 50px rgba(37, 51, 38, 0.08);
 }
 
 * {
@@ -11,8 +18,8 @@
 body {
   margin: 0;
   background:
-    radial-gradient(circle at top left, rgba(245, 220, 206, 0.72), transparent 32rem),
-    linear-gradient(180deg, #f6f1e8 0%, #efe8dc 100%);
+    radial-gradient(circle at top left, rgba(245, 220, 206, 0.62), transparent 34rem),
+    linear-gradient(180deg, #f8f3ea 0%, #efe8dc 100%);
 }
 
 button,
@@ -27,8 +34,8 @@ button,
 .comms-admin-link {
   border: 0;
   border-radius: 999px;
-  background: #253326;
-  color: #efe8dc;
+  background: var(--alma-green);
+  color: var(--alma-cream);
   padding: 0.72rem 1rem;
   font-weight: 800;
   text-decoration: none;
@@ -42,39 +49,44 @@ button:disabled {
 
 .comms-button.ghost,
 .comms-admin-link {
-  background: rgba(255, 255, 255, 0.64);
-  color: #253326;
-  border: 1px solid rgba(37, 51, 38, 0.16);
+  background: rgba(255, 255, 255, 0.62);
+  color: var(--alma-green);
+  border: 1px solid rgba(37, 51, 38, 0.18);
 }
 
 .comms-shell {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 270px minmax(0, 1fr);
+  grid-template-columns: 276px minmax(0, 1fr);
 }
 
 .comms-sidebar {
+  position: sticky;
+  top: 0;
   min-height: 100vh;
-  background: #253326;
-  color: #efe8dc;
+  background:
+    radial-gradient(circle at top left, rgba(245, 220, 206, 0.12), transparent 14rem),
+    var(--alma-green);
+  color: var(--alma-cream);
   padding: 1rem;
   display: grid;
   align-content: start;
-  gap: 1.25rem;
+  gap: 1rem;
   border-right: 1px solid rgba(239, 232, 220, 0.12);
 }
 
 .comms-brand {
   display: grid;
-  gap: 0.2rem;
-  padding: 0.85rem;
+  gap: 0.28rem;
+  padding: 0.9rem;
   border-radius: 1.25rem;
   background: rgba(239, 232, 220, 0.08);
+  border: 1px solid rgba(239, 232, 220, 0.12);
 }
 
 .comms-brand strong {
-  font-size: 1.15rem;
-  letter-spacing: -0.02em;
+  font-size: 1.22rem;
+  letter-spacing: -0.03em;
 }
 
 .comms-brand span,
@@ -94,17 +106,18 @@ button:disabled {
 .comms-nav-link {
   display: flex;
   align-items: center;
-  gap: 0.7rem;
-  padding: 0.78rem 0.85rem;
+  gap: 0.72rem;
+  padding: 0.78rem 0.86rem;
   border-radius: 1rem;
-  color: inherit;
+  color: rgba(239, 232, 220, 0.86);
   text-decoration: none;
-  transition: background 0.15s ease, transform 0.15s ease;
+  transition: background 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .comms-nav-link.active,
 .comms-nav-link:hover {
-  background: rgba(239, 232, 220, 0.12);
+  background: rgba(239, 232, 220, 0.13);
+  color: #fff;
 }
 
 .comms-nav-link:hover {
@@ -114,8 +127,8 @@ button:disabled {
 .comms-line-icon {
   display: inline-grid;
   place-items: center;
-  width: 1.2rem;
-  height: 1.2rem;
+  width: 1.22rem;
+  height: 1.22rem;
   border: 1px solid currentColor;
   border-radius: 999px;
   font-size: 0.72rem;
@@ -133,11 +146,11 @@ button:disabled {
 .comms-topbar {
   position: sticky;
   top: 0;
-  z-index: 2;
-  background: rgba(246, 241, 232, 0.9);
+  z-index: 10;
+  background: rgba(246, 241, 232, 0.92);
   backdrop-filter: blur(14px);
-  border-bottom: 1px solid rgba(37, 51, 38, 0.12);
-  padding: 1rem clamp(1rem, 2vw, 2rem);
+  border-bottom: 1px solid var(--border);
+  padding: 0.92rem clamp(1rem, 2vw, 2rem);
   display: flex;
   justify-content: space-between;
   gap: 1rem;
@@ -151,34 +164,43 @@ button:disabled {
 
 .comms-topbar h2 {
   letter-spacing: -0.03em;
+  color: var(--alma-green);
 }
 
 .comms-topbar-actions {
   display: flex;
   align-items: center;
-  gap: 0.65rem;
+  gap: 0.6rem;
   flex-wrap: wrap;
   justify-content: flex-end;
+}
+
+.comms-topbar-actions > span {
+  color: rgba(37, 51, 38, 0.72);
+  font-weight: 700;
+  font-size: 0.9rem;
 }
 
 .comms-page {
   display: grid;
   gap: 1rem;
   padding: clamp(1rem, 2vw, 2rem);
+  max-width: 1280px;
+  width: 100%;
 }
 
 .comms-eyebrow {
   margin: 0;
-  color: #684a4a;
+  color: var(--alma-mauve);
 }
 
 .comms-page h1 {
   margin: 0;
   font-family: Georgia, "Times New Roman", serif;
-  font-size: clamp(2.2rem, 4vw, 4.2rem);
+  font-size: clamp(2.25rem, 4vw, 4.2rem);
   line-height: 0.95;
-  color: #253326;
-  letter-spacing: -0.05em;
+  color: var(--alma-green);
+  letter-spacing: -0.055em;
 }
 
 .comms-grid {
@@ -189,20 +211,26 @@ button:disabled {
 
 .comms-card,
 .comms-thread-card {
-  background: rgba(255, 255, 255, 0.68);
-  border: 1px solid rgba(37, 51, 38, 0.12);
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--border);
   border-radius: 1.5rem;
   padding: 1rem;
   color: inherit;
   text-decoration: none;
-  box-shadow: 0 18px 50px rgba(37, 51, 38, 0.07);
+  box-shadow: var(--shadow);
 }
 
 .comms-card h2,
 .comms-thread-card h3 {
   margin-top: 0;
-  color: #253326;
-  letter-spacing: -0.02em;
+  margin-bottom: 0.4rem;
+  color: var(--alma-green);
+  letter-spacing: -0.025em;
+}
+
+.comms-card p,
+.comms-thread-card p {
+  color: rgba(37, 51, 38, 0.72);
 }
 
 .comms-thread-list {
@@ -262,13 +290,13 @@ button:disabled {
 
 .priority-high,
 .priority-warning {
-  background: #f5dcce;
-  color: #684a4a;
+  background: var(--alma-pink);
+  color: var(--alma-mauve);
 }
 
 .priority-urgent,
 .priority-critical {
-  background: #684a4a;
+  background: var(--alma-mauve);
   color: #fff;
 }
 
@@ -296,7 +324,7 @@ button:disabled {
   border-radius: 1rem;
   padding: 0.8rem;
   background: rgba(255, 255, 255, 0.78);
-  color: #253326;
+  color: var(--alma-green);
 }
 
 .comms-form-grid {
@@ -356,8 +384,8 @@ button:disabled {
   }
 
   .comms-sidebar {
-    min-height: auto;
     position: static;
+    min-height: auto;
   }
 
   .comms-nav {
@@ -376,5 +404,9 @@ button:disabled {
 
   .comms-topbar-actions {
     justify-content: flex-start;
+  }
+
+  .comms-page {
+    padding: 1rem;
   }
 }

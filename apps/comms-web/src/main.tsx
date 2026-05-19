@@ -70,8 +70,8 @@ function AppLayout() {
     <div className="comms-shell">
       <aside className="comms-sidebar">
         <div className="comms-brand">
-          <strong>Alma Comms</strong>
-          <span>Messages</span>
+          <strong>ALMA Suites</strong>
+          <span>Comms</span>
         </div>
         <nav className="comms-nav">
           {navItems.map((item) => (
@@ -86,7 +86,7 @@ function AppLayout() {
       <main className="comms-main">
         <header className="comms-topbar">
           <div>
-            <p>Alma Suite</p>
+            <p>ALMA Suites · Comms</p>
             <h2>{active.label}</h2>
           </div>
           <a className="comms-admin-link" href="https://alma-suite-admin.web.app">
