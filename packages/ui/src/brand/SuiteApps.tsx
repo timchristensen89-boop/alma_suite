@@ -116,12 +116,17 @@ const LEGACY_APPS: SuiteAppIdentity[] = LEGACY_APP_SEEDS.map((seed) => ({
   icon: ICON_FACTORY[seed.iconKey]()
 }));
 
+const forceCommsSuiteUrl = (app: SuiteAppIdentity): SuiteAppIdentity =>
+  app.id === 'comms'
+    ? { ...app, href: 'https://alma-comms.web.app' }
+    : app;
+
 const ALL_APPS: SuiteAppIdentity[] = [
-  ...SUITE_APP_SEEDS.map((seed) => ({
+  ...SUITE_APP_SEEDS.map((seed) => forceCommsSuiteUrl({
     ...seed,
     icon: ICON_FACTORY[seed.iconKey]()
   })),
-  ...LEGACY_APPS
+  ...LEGACY_APPS.map(forceCommsSuiteUrl)
 ];
 
 export const SUITE_APPS: SuiteAppIdentity[] = ALL_APPS.filter((app) =>
