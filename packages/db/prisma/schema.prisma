@@ -676,6 +676,24 @@ model StaffHrRecord {
   @@index([followUpDate])
 }
 
+model StaffHrDocumentTemplate {
+  id              String   @id @default(cuid())
+  name            String
+  recordType      String
+  status          String   @default("DRAFT")
+  body            String
+  variables       Json     @default("[]")
+  optionalClauses Json     @default("[]")
+  createdById     String?
+  updatedById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([recordType, status])
+  @@index([status])
+  @@index([updatedAt])
+}
+
 model StaffLeaveRequest {
   id                String       @id @default(cuid())
   staffProfileId    String

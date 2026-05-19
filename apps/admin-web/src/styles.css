@@ -17,3 +17,75 @@
 .admin-login-page .login-shell {
   max-width: 460px;
 }
+
+.split-grid {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.28fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.record-button {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.record-button.active {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.record-button span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.settings-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.inline-checkbox {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.tag-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.admin-preview-text {
+  max-height: 520px;
+  overflow: auto;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font: 13px/1.55 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  white-space: pre-wrap;
+}
+
+@media (max-width: 900px) {
+  .split-grid {
+    grid-template-columns: 1fr;
+  }
+}

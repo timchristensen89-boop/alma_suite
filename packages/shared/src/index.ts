@@ -48,6 +48,7 @@ export const staffRecordTypeSchema = z.enum(['RSA', 'RSG', 'FSS', 'FIRST_AID', '
 export const staffRecordStatusSchema = z.enum(['PENDING', 'APPROVED', 'EXPIRED']);
 export const staffHrRecordTypeSchema = z.enum(['CONTRACT', 'WARNING', 'PAY_CHANGE', 'RIGHT_TO_WORK', 'GENERAL']);
 export const staffHrRecordStatusSchema = z.enum(['DRAFT', 'ISSUED', 'SENT', 'SIGNED', 'STORED', 'PENDING', 'APPROVED', 'EXPIRED', 'RE_REQUESTED']);
+export const staffHrDocumentTemplateStatusSchema = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']);
 export const incidentStatusSchema = z.enum(['OPEN', 'UNDER_REVIEW', 'CLOSED']);
 export const temperatureAssetStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 export const temperatureLogSourceSchema = z.enum(['MANUAL', 'GOVEE']);
@@ -215,6 +216,29 @@ export const staffHrRecordQuerySchema = z.object({
   staffProfileId: z.string().optional().or(z.literal('')),
   recordType: staffHrRecordTypeSchema.optional().or(z.literal('')),
   status: staffHrRecordStatusSchema.optional().or(z.literal(''))
+});
+
+export const staffHrDocumentTemplateVariableSchema = z.string().trim().min(1).max(80);
+export const staffHrDocumentTemplateOptionalClauseSchema = z.object({
+  key: z.string().trim().min(1).max(80),
+  label: z.string().trim().min(1).max(140),
+  body: z.string().trim().max(4000),
+  enabledByDefault: z.boolean().default(false)
+});
+
+export const staffHrDocumentTemplateInputSchema = z.object({
+  name: z.string().trim().min(2).max(180),
+  recordType: staffHrRecordTypeSchema,
+  status: staffHrDocumentTemplateStatusSchema.default('DRAFT'),
+  body: z.string().trim().min(10).max(20000),
+  variables: z.array(staffHrDocumentTemplateVariableSchema).default([]),
+  optionalClauses: z.array(staffHrDocumentTemplateOptionalClauseSchema).default([])
+});
+
+export const staffHrDocumentTemplateUpdateSchema = staffHrDocumentTemplateInputSchema.partial();
+
+export const staffHrDocumentTemplatePreviewSchema = z.object({
+  sampleData: z.record(z.string()).default({})
 });
 
 export const staffManagerNoteInputSchema = z.object({
@@ -1876,6 +1900,7 @@ export type StaffRecordType = z.infer<typeof staffRecordTypeSchema>;
 export type StaffRecordStatus = z.infer<typeof staffRecordStatusSchema>;
 export type StaffHrRecordType = z.infer<typeof staffHrRecordTypeSchema>;
 export type StaffHrRecordStatus = z.infer<typeof staffHrRecordStatusSchema>;
+export type StaffHrDocumentTemplateStatus = z.infer<typeof staffHrDocumentTemplateStatusSchema>;
 export type IncidentStatus = z.infer<typeof incidentStatusSchema>;
 export type TemperatureAssetStatus = z.infer<typeof temperatureAssetStatusSchema>;
 export type TemperatureLogSource = z.infer<typeof temperatureLogSourceSchema>;
@@ -1918,6 +1943,9 @@ export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
 export type StaffHrRecordInput = z.infer<typeof staffHrRecordInputSchema>;
 export type StaffHrRecordUpdateInput = z.infer<typeof staffHrRecordUpdateSchema>;
 export type StaffHrDocumentInput = z.infer<typeof staffHrDocumentInputSchema>;
+export type StaffHrDocumentTemplateInput = z.infer<typeof staffHrDocumentTemplateInputSchema>;
+export type StaffHrDocumentTemplateUpdateInput = z.infer<typeof staffHrDocumentTemplateUpdateSchema>;
+export type StaffHrDocumentTemplatePreviewInput = z.infer<typeof staffHrDocumentTemplatePreviewSchema>;
 export type StaffPayProfileInput = z.infer<typeof staffPayProfileInputSchema>;
 export type StaffMergeInput = z.infer<typeof staffMergeInputSchema>;
 export type StaffLeaveRequestInput = z.infer<typeof staffLeaveRequestInputSchema>;
@@ -2068,6 +2096,29 @@ export type StaffHrRecord = {
   createdAt: string;
   updatedAt: string;
   staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'>;
+};
+
+export type StaffHrDocumentTemplateOptionalClause = z.infer<typeof staffHrDocumentTemplateOptionalClauseSchema>;
+
+export type StaffHrDocumentTemplate = {
+  id: string;
+  name: string;
+  recordType: StaffHrRecordType;
+  status: StaffHrDocumentTemplateStatus;
+  body: string;
+  variables: string[];
+  optionalClauses: StaffHrDocumentTemplateOptionalClause[];
+  createdById: string | null;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StaffHrDocumentTemplatePreview = {
+  templateId: string;
+  renderedBody: string;
+  unresolvedVariables: string[];
+  sampleData: Record<string, string>;
 };
 
 export type StaffPayProfile = {

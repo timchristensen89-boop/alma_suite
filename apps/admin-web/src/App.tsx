@@ -56,6 +56,7 @@ import {
   VenuesPage,
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
+import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const complianceUrl = COMPLIANCE_WEB_URL
@@ -113,6 +114,12 @@ const NAV_ITEMS: AdminNavItem[] = [
     label: 'Record types',
     description: 'Staff document and record type setup',
     icon: <IconInbox />
+  },
+  {
+    to: '/staff-hr-templates',
+    label: 'HR templates',
+    description: 'Restricted HR document template setup',
+    icon: <IconStaff />
   },
   {
     to: '/staff-onboarding',
@@ -414,6 +421,7 @@ function AdminWorkspace() {
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
+        <Route path="/staff-hr-templates" element={<StaffHrTemplatesPage />} />
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />
         <Route path="/compliance-settings" element={<ComplianceSettingsPage />} />
         <Route path="/checklist-templates" element={<ChecklistTemplatesPage />} />

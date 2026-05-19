@@ -77,7 +77,7 @@ import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, createSuiteHandoffUrl } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, SETTINGS_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -5597,6 +5597,21 @@ function HrSectionPage({
         title={heading.title}
         description={mode === 'right-to-work' ? 'Right-to-work records are highly sensitive and restricted to HR-authorised users.' : heading.description}
       />
+      {mode === 'contracts' && canManage ? (
+        <Card title="Contract templates" subtitle="Admin owns editable HR templates and legal review warnings. Staff HR stores issued and signed final documents.">
+          <div className="toolbar-right">
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => {
+                window.location.href = SETTINGS_WEB_URL ? `${SETTINGS_WEB_URL.replace(/\/+$/, '')}/staff-hr-templates` : '/staff-hr-templates';
+              }}
+            >
+              Open HR templates
+            </Button>
+          </div>
+        </Card>
+      ) : null}
       <div className="stats-grid">
         <StatCard label="Records" value={sectionRecords.length} hint={type ? hrTypeLabel(type) : 'All HR documents'} loading={loading} />
         <StatCard label="Needs action" value={sectionRecords.filter((record) => record.status === 'RE_REQUESTED' || record.status === 'EXPIRED').length} hint="Replacement or expiry" loading={loading} />

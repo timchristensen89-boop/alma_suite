@@ -29,6 +29,11 @@ import {
   staffClockBreakInputSchema,
   staffClockInInputSchema,
   staffClockOutInputSchema,
+  staffHrDocumentTemplateInputSchema,
+  staffHrDocumentTemplateOptionalClauseSchema,
+  staffHrDocumentTemplatePreviewSchema,
+  staffHrDocumentTemplateUpdateSchema,
+  staffHrDocumentTemplateVariableSchema,
   staffOwnLeaveRequestInputSchema,
   staffShiftConfirmationInputSchema,
   timesheetCashPaymentInputSchema,
@@ -46,7 +51,16 @@ import {
   getAwardRateSet,
   normaliseStaffDefaults
 } from '@alma/shared';
-import type { AuthUser, OnboardingSettings, StaffDefaults, StaffHrRecord, StaffLeaveStatus, StaffLeaveType } from '@alma/shared';
+import type {
+  AuthUser,
+  OnboardingSettings,
+  StaffDefaults,
+  StaffHrDocumentTemplate,
+  StaffHrDocumentTemplatePreview,
+  StaffHrRecord,
+  StaffLeaveStatus,
+  StaffLeaveType
+} from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
@@ -451,6 +465,8 @@ type StaffHrRecordRow = Prisma.StaffHrRecordGetPayload<{
   };
 }>;
 
+type StaffHrDocumentTemplateRow = Prisma.StaffHrDocumentTemplateGetPayload<Record<string, never>>;
+
 function toStaffHrRecord(row: StaffHrRecordRow): StaffHrRecord {
   return {
     id: row.id,
@@ -474,6 +490,79 @@ function toStaffHrRecord(row: StaffHrRecordRow): StaffHrRecord {
     updatedAt: row.updatedAt.toISOString(),
     staffProfile: row.staffProfile
   };
+}
+
+function templateVariables(value: Prisma.JsonValue): string[] {
+  return z.array(staffHrDocumentTemplateVariableSchema).catch([]).parse(value);
+}
+
+function templateOptionalClauses(value: Prisma.JsonValue): StaffHrDocumentTemplate['optionalClauses'] {
+  return z.array(staffHrDocumentTemplateOptionalClauseSchema).catch([]).parse(value);
+}
+
+function toStaffHrDocumentTemplate(row: StaffHrDocumentTemplateRow): StaffHrDocumentTemplate {
+  return {
+    id: row.id,
+    name: row.name,
+    recordType: row.recordType as StaffHrDocumentTemplate['recordType'],
+    status: row.status as StaffHrDocumentTemplate['status'],
+    body: row.body,
+    variables: templateVariables(row.variables),
+    optionalClauses: templateOptionalClauses(row.optionalClauses),
+    createdById: row.createdById,
+    updatedById: row.updatedById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+function assertStaffHrTemplateAdmin(actor: AuthUser) {
+  if (!(actor.isAdmin || actor.role === 'ADMIN')) {
+    throw new HttpError(403, 'HR templates are restricted to Alma admins.');
+  }
+}
+
+const HR_TEMPLATE_SAMPLE_DATA: Record<string, string> = {
+  dateOfLetter: '19 May 2026',
+  employeeFirstName: 'Sample',
+  employeeLastName: 'Employee',
+  employeeFullName: 'Sample Employee',
+  employeeAddress: 'Employee address',
+  employerName: 'Alma Group',
+  employerEntity: 'Alma Group entity',
+  positionTitle: 'Team Member',
+  employmentType: 'Casual',
+  startDate: 'Start date',
+  awardName: 'Hospitality Industry Award',
+  classification: 'Classification',
+  primaryLocation: 'Primary work location',
+  hourlyRate: 'Hourly rate',
+  baseRate: 'Base rate',
+  casualLoading: 'Casual loading',
+  payFrequency: 'Pay frequency',
+  superannuationFund: 'Superannuation fund',
+  managerName: 'Manager name',
+  employerSignatureName: 'Employer signature name',
+  employerJobTitle: 'Employer job title',
+  additionalEntitlements: 'Additional entitlements',
+  companyProperty: 'Company property',
+  rightToDisconnectExamples: 'Right to disconnect examples',
+  additionalBenefits: 'Additional benefits',
+  venueName: 'Venue name',
+  venueAddress: 'Venue address'
+};
+
+function renderHrTemplate(body: string, sampleData: Record<string, string>) {
+  const unresolved = new Set<string>();
+  const renderedBody = body.replace(/\{\{\s*([a-zA-Z][a-zA-Z0-9]*)\s*\}\}/g, (match, variable: string) => {
+    const value = sampleData[variable];
+    if (!value) {
+      unresolved.add(variable);
+      return match;
+    }
+    return value;
+  });
+  return { renderedBody, unresolvedVariables: Array.from(unresolved).sort() };
 }
 
 function scopeVenueForActor(requestedVenue: string | undefined, actor?: AuthUser) {
@@ -1619,6 +1708,66 @@ export const staffService = {
       message: hasLoginEmail
         ? 'If this staff member has a login account, a reset link has been sent.'
         : 'No login email is linked to this profile.'
+    };
+  },
+
+  async listHrDocumentTemplates(actor: AuthUser): Promise<StaffHrDocumentTemplate[]> {
+    assertStaffHrTemplateAdmin(actor);
+    const rows = await prisma.staffHrDocumentTemplate.findMany({
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+    return rows.map(toStaffHrDocumentTemplate);
+  },
+
+  async createHrDocumentTemplate(input: unknown, actor: AuthUser): Promise<StaffHrDocumentTemplate> {
+    assertStaffHrTemplateAdmin(actor);
+    const data = staffHrDocumentTemplateInputSchema.parse(input);
+    const row = await prisma.staffHrDocumentTemplate.create({
+      data: {
+        name: data.name,
+        recordType: data.recordType,
+        status: data.status,
+        body: data.body,
+        variables: data.variables,
+        optionalClauses: data.optionalClauses,
+        createdById: actor.id,
+        updatedById: actor.id
+      }
+    });
+    return toStaffHrDocumentTemplate(row);
+  },
+
+  async updateHrDocumentTemplate(templateId: string, input: unknown, actor: AuthUser): Promise<StaffHrDocumentTemplate> {
+    assertStaffHrTemplateAdmin(actor);
+    const existing = await prisma.staffHrDocumentTemplate.findUnique({ where: { id: templateId } });
+    if (!existing) throw new HttpError(404, 'HR template not found');
+    const data = staffHrDocumentTemplateUpdateSchema.parse(input);
+    const row = await prisma.staffHrDocumentTemplate.update({
+      where: { id: templateId },
+      data: {
+        ...(data.name !== undefined && { name: data.name }),
+        ...(data.recordType !== undefined && { recordType: data.recordType }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.body !== undefined && { body: data.body }),
+        ...(data.variables !== undefined && { variables: data.variables }),
+        ...(data.optionalClauses !== undefined && { optionalClauses: data.optionalClauses }),
+        updatedById: actor.id
+      }
+    });
+    return toStaffHrDocumentTemplate(row);
+  },
+
+  async previewHrDocumentTemplate(templateId: string, input: unknown, actor: AuthUser): Promise<StaffHrDocumentTemplatePreview> {
+    assertStaffHrTemplateAdmin(actor);
+    const template = await prisma.staffHrDocumentTemplate.findUnique({ where: { id: templateId } });
+    if (!template) throw new HttpError(404, 'HR template not found');
+    const data = staffHrDocumentTemplatePreviewSchema.parse(input);
+    const sampleData = { ...HR_TEMPLATE_SAMPLE_DATA, ...data.sampleData };
+    const rendered = renderHrTemplate(template.body, sampleData);
+    return {
+      templateId: template.id,
+      sampleData,
+      ...rendered
     };
   },
 

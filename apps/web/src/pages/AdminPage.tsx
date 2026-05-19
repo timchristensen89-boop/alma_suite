@@ -231,6 +231,11 @@ const ADMIN_SETUP_LINKS = [
     href: '/admin/staff-record-types'
   },
   {
+    title: 'HR document templates',
+    body: 'Restricted employment templates belong in Admin. Draft wording must be reviewed before issue.',
+    href: '/admin/staff-hr-templates'
+  },
+  {
     title: 'Compliance settings',
     body: 'Venue compliance setup, required documents and category defaults belong here.',
     href: '/admin/compliance-settings'
@@ -405,6 +410,7 @@ const ADMIN_ROUTE_GROUPS = [
     links: [
       { label: 'Staff settings', href: '/staff-settings', description: 'Defaults and Staff setup entry points.' },
       { label: 'Staff record types', href: '/staff-record-types', description: 'Certificates and required document rules.' },
+      { label: 'HR templates', href: '/staff-hr-templates', description: 'Restricted HR document template setup.' },
       { label: 'Staff onboarding', href: '/staff-onboarding', description: 'Onboarding setup and upload requirements.' },
       { label: 'Compliance settings', href: '/compliance-settings', description: 'Compliance setup boundaries.' },
       { label: 'Handbook', href: '/handbook', description: 'Edit staff handbook content.' },

@@ -133,6 +133,42 @@ staffRouter.get('/management-events', requireManager, async (req, res, next) => 
   }
 });
 
+staffRouter.get('/hr/templates', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listHrDocumentTemplates(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/hr/templates', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.createHrDocumentTemplate(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/hr/templates/:templateId', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.updateHrDocumentTemplate(String(req.params.templateId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/hr/templates/:templateId/preview', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.previewHrDocumentTemplate(String(req.params.templateId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/hr/records', async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
