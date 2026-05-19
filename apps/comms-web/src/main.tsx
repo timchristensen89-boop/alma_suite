@@ -1,6 +1,13 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import {
+  AppShell,
+  Card,
+  ProductLogo,
+  SuiteAppSwitcher,
+  TopBar
+} from '@alma/ui';
 import './styles.css';
 
 type AuthUser = {
@@ -78,18 +85,6 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: '⚙' }
 ];
 
-const suiteApps = [
-  { label: 'Compliance', href: 'https://alma-compliance.web.app', tone: 'red', icon: '◈' },
-  { label: 'Stock', href: 'https://alma-stock-v18.web.app', tone: 'green', icon: '●' },
-  { label: 'Reports', href: 'https://alma-reports.web.app', tone: 'slate', icon: '▥' },
-  { label: 'Staff', href: 'https://alma-staff.web.app', tone: 'blue', icon: '♟' },
-  { label: 'Handbook', href: 'https://alma-compliance.web.app/handbook', tone: 'teal', icon: '▣' },
-  { label: 'Search', href: 'https://alma-marketing.web.app', tone: 'pink', icon: '⌕' },
-  { label: 'Docs', href: 'https://alma-giftcards.web.app', tone: 'gold', icon: '▤' },
-  { label: 'Admin', href: 'https://alma-suite-admin.web.app', tone: 'dark', icon: '⚙' },
-  { label: 'Comms', href: 'https://alma-comms.web.app', tone: 'purple', icon: '✉' }
-];
-
 function apiUrl(path: string) {
   return path.startsWith('/api') ? path : `/api${path}`;
 }
@@ -132,24 +127,22 @@ function priorityLabel(priority: string) {
   return priority.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
-function Card({ children, className = '' }: { children: React.ReactNode; className?: string }) {
-  return <article className={`suite-card ${className}`.trim()}>{children}</article>;
-}
-
-function AppTile({ app }: { app: typeof suiteApps[number] }) {
+function PageShell({
+  title,
+  eyebrow,
+  subtitle,
+  children
+}: {
+  title: string;
+  eyebrow: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) {
   return (
-    <a className={`suite-app-tile tone-${app.tone}`} href={app.href} title={app.label}>
-      <span>{app.icon}</span>
-    </a>
-  );
-}
-
-function PageShell({ title, eyebrow, subtitle, children }: { title: string; eyebrow: string; subtitle?: string; children: React.ReactNode }) {
-  return (
-    <section className="suite-page">
-      <p className="suite-eyebrow">{eyebrow}</p>
+    <section className="comms-page">
+      <p className="comms-eyebrow">{eyebrow}</p>
       <h1>{title}</h1>
-      {subtitle ? <p className="suite-subtitle">{subtitle}</p> : null}
+      {subtitle ? <p className="comms-subtitle">{subtitle}</p> : null}
       {children}
     </section>
   );
@@ -180,18 +173,12 @@ function LoginGate({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <main className="suite-login">
-      <Card className="suite-login-card">
-        <div className="suite-product-lockup compact">
-          <span className="suite-product-mark">✉</span>
-          <div>
-            <strong>ALMA Suites</strong>
-            <span>COMMS</span>
-          </div>
-        </div>
+    <main className="comms-login">
+      <Card className="comms-login-card">
+        <ProductLogo appId="comms" size="lg" />
         <h1>Sign in to Comms</h1>
         <p>Messages, handovers, alerts, and follow-ups are restricted to authorised Alma users.</p>
-        <form onSubmit={submit} className="suite-form">
+        <form onSubmit={submit} className="comms-form">
           <label>
             Email
             <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
@@ -200,7 +187,7 @@ function LoginGate({ onSignedIn }: { onSignedIn: () => void }) {
             Password
             <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
           </label>
-          {message ? <p className="suite-error">{message}</p> : null}
+          {message ? <p className="comms-error">{message}</p> : null}
           <button type="submit" disabled={busy}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
@@ -215,7 +202,7 @@ function ThreadList({ threads }: { threads: ThreadSummary[] }) {
     return (
       <Card>
         <h2>No messages yet</h2>
-        <p className="suite-muted">There are no Comms items in this view.</p>
+        <p className="comms-muted">There are no Comms items in this view.</p>
       </Card>
     );
   }
@@ -273,21 +260,21 @@ function HomePage() {
 
   return (
     <PageShell title="Alma Comms" eyebrow="Operational messages" subtitle="Messages, handovers, alerts, and follow-ups for the group.">
-      <div className="suite-grid">
+      <div className="comms-grid">
         <Card>
           <h2>Inbox</h2>
-          <p className="suite-muted">Messages, announcements, handovers, and follow-ups that need attention.</p>
-          <NavLink className="suite-button ghost" to="/inbox">Open inbox</NavLink>
+          <p className="comms-muted">Messages, announcements, handovers, and follow-ups that need attention.</p>
+          <NavLink className="comms-button ghost" to="/inbox">Open inbox</NavLink>
         </Card>
         <Card>
           <h2>Venue handover</h2>
-          <p className="suite-muted">Keep opening, service, and closing notes visible for the next person.</p>
-          <NavLink className="suite-button ghost" to="/handover">Open handover</NavLink>
+          <p className="comms-muted">Keep opening, service, and closing notes visible for the next person.</p>
+          <NavLink className="comms-button ghost" to="/handover">Open handover</NavLink>
         </Card>
         <Card>
           <h2>Alerts</h2>
-          <p className="suite-muted">COGS, stock variance, fridge temperature, and failed checks will land here first.</p>
-          <NavLink className="suite-button ghost" to="/tasks">Review alerts</NavLink>
+          <p className="comms-muted">COGS, stock variance, fridge temperature, and failed checks will land here first.</p>
+          <NavLink className="comms-button ghost" to="/tasks">Review alerts</NavLink>
         </Card>
       </div>
 
@@ -295,11 +282,11 @@ function HomePage() {
         <div className="section-heading">
           <div>
             <h2>Needs attention</h2>
-            <p className="suite-muted">Urgent, high-priority, or action-required threads.</p>
+            <p className="comms-muted">Urgent, high-priority, or action-required threads.</p>
           </div>
         </div>
         {loading ? <p>Loading…</p> : null}
-        {message ? <p className="suite-error">{message}</p> : null}
+        {message ? <p className="comms-error">{message}</p> : null}
         {!loading && !message ? <ThreadList threads={urgentThreads} /> : null}
       </Card>
     </PageShell>
@@ -313,10 +300,10 @@ function InboxPage() {
     <PageShell title="Inbox" eyebrow="Personal messages">
       <div className="toolbar">
         <button type="button" onClick={reload}>Refresh</button>
-        <NavLink className="suite-button" to="/compose">New message</NavLink>
+        <NavLink className="comms-button" to="/compose">New message</NavLink>
       </div>
       {loading ? <Card><p>Loading inbox…</p></Card> : null}
-      {message ? <Card><p className="suite-error">{message}</p></Card> : null}
+      {message ? <Card><p className="comms-error">{message}</p></Card> : null}
       {!loading && !message ? <ThreadList threads={threads} /> : null}
     </PageShell>
   );
@@ -329,7 +316,7 @@ function FilteredThreadsPage({ title, eyebrow, category }: { title: string; eyeb
   return (
     <PageShell title={title} eyebrow={eyebrow}>
       {loading ? <Card><p>Loading…</p></Card> : null}
-      {message ? <Card><p className="suite-error">{message}</p></Card> : null}
+      {message ? <Card><p className="comms-error">{message}</p></Card> : null}
       {!loading && !message ? <ThreadList threads={filtered} /> : null}
     </PageShell>
   );
@@ -369,7 +356,7 @@ function TasksPage() {
         <div className="section-heading">
           <div>
             <h2>Alert dry run</h2>
-            <p className="suite-muted">Checks alert rules without sending emails.</p>
+            <p className="comms-muted">Checks alert rules without sending emails.</p>
           </div>
           <button type="button" onClick={evaluate} disabled={evaluating}>
             {evaluating ? 'Checking…' : 'Evaluate alerts'}
@@ -397,7 +384,7 @@ function TasksPage() {
       </Card>
 
       {loading ? <Card><p>Loading tasks…</p></Card> : null}
-      {message ? <Card><p className="suite-error">{message}</p></Card> : null}
+      {message ? <Card><p className="comms-error">{message}</p></Card> : null}
       {!loading && !message ? <ThreadList threads={actionThreads} /> : null}
     </PageShell>
   );
@@ -454,14 +441,14 @@ function ThreadDetailPage() {
   return (
     <PageShell title={thread?.subject ?? 'Thread'} eyebrow="Message thread">
       {loading ? <Card><p>Loading thread…</p></Card> : null}
-      {message ? <Card><p className="suite-error">{message}</p></Card> : null}
+      {message ? <Card><p className="comms-error">{message}</p></Card> : null}
       {thread ? (
         <>
           <Card>
             <div className="section-heading">
               <div>
                 <h2>{thread.subject}</h2>
-                <p className="suite-muted">{thread.venue || 'All venues'} · {thread.category} · {thread.priority}</p>
+                <p className="comms-muted">{thread.venue || 'All venues'} · {thread.category} · {thread.priority}</p>
               </div>
               <div className="toolbar">
                 <button type="button" onClick={markRead}>Mark read</button>
@@ -480,7 +467,7 @@ function ThreadDetailPage() {
           </div>
 
           <Card>
-            <form onSubmit={sendReply} className="suite-form">
+            <form onSubmit={sendReply} className="comms-form">
               <label>
                 Reply
                 <textarea value={reply} onChange={(event) => setReply(event.target.value)} rows={4} required />
@@ -533,7 +520,7 @@ function ComposePage() {
   return (
     <PageShell title="New message" eyebrow="Compose">
       <Card>
-        <form onSubmit={submit} className="suite-form">
+        <form onSubmit={submit} className="comms-form">
           <label>
             Subject
             <input value={subject} onChange={(event) => setSubject(event.target.value)} required />
@@ -572,7 +559,7 @@ function ComposePage() {
             <input type="checkbox" checked={actionRequired} onChange={(event) => setActionRequired(event.target.checked)} />
             Action required
           </label>
-          {message ? <p className="suite-error">{message}</p> : null}
+          {message ? <p className="comms-error">{message}</p> : null}
           <button type="submit" disabled={busy}>
             {busy ? 'Creating…' : 'Create thread'}
           </button>
@@ -587,14 +574,20 @@ function SettingsPage() {
     <PageShell title="Comms settings" eyebrow="Admin only">
       <Card>
         <h2>Alert rules</h2>
-        <p className="suite-muted">Roster forecast COGS, stock variance, fridge temperatures, checklist failures, and expiring documents will be configured here.</p>
-        <p className="suite-muted">Email sending is not enabled yet. Alerts should create Comms tasks first, then email managers only when explicitly configured.</p>
+        <p className="comms-muted">Roster forecast COGS, stock variance, fridge temperatures, checklist failures, and expiring documents will be configured here.</p>
+        <p className="comms-muted">Email sending is not enabled yet. Alerts should create Comms tasks first, then email managers only when explicitly configured.</p>
       </Card>
     </PageShell>
   );
 }
 
 function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => void }) {
+  const location = window.location.pathname;
+  const active =
+    [...navItems].sort((a, b) => b.to.length - a.to.length).find((item) =>
+      item.to === '/' ? location === '/' : location.startsWith(item.to)
+    ) ?? navItems[0]!;
+
   async function signOut() {
     try {
       await api('/auth/logout', { method: 'POST' });
@@ -603,52 +596,51 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
     }
   }
 
-  return (
-    <div className="suite-shell">
-      <header className="suite-topbar">
-        <div className="suite-product-lockup">
-          <span className="suite-product-mark">✉</span>
-          <div>
-            <strong>ALMA Suites</strong>
-            <span>COMMS</span>
-          </div>
-        </div>
+  const sidebar = (
+    <nav className="comms-nav">
+      {navItems.map((item) => (
+        <NavLink key={item.to} to={item.to} end={item.end} className="comms-nav-link">
+          <span className="comms-line-icon" aria-hidden="true">{item.icon}</span>
+          <span>{item.label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
 
-        <div className="suite-topbar-menu">
-          <NavLink to="/" className="suite-topbar-chip">Overview</NavLink>
-          <NavLink to="/inbox" className="suite-topbar-chip">Inbox</NavLink>
-          <NavLink to="/tasks" className="suite-topbar-chip">Tasks</NavLink>
-          <NavLink to="/compose" className="suite-topbar-chip">Compose</NavLink>
-        </div>
-
-        <div className="suite-topbar-actions">
+  const topBar = (
+    <TopBar
+      title={active.label}
+      subtitle="Messages, handovers, alerts, and follow-ups"
+      right={
+        <div className="comms-topbar-actions">
+          <SuiteAppSwitcher />
           <span>{user.name || user.email || 'Signed in'}</span>
-          <a className="suite-admin-link" href="https://alma-suite-admin.web.app">Admin</a>
+          <a className="comms-admin-link" href="https://alma-suite-admin.web.app">Admin</a>
           <button type="button" onClick={signOut}>Sign out</button>
         </div>
-      </header>
+      }
+    />
+  );
 
-      <div className="suite-app-row">
-        <div className="suite-apps">
-          {suiteApps.map((app) => <AppTile key={app.label} app={app} />)}
-        </div>
-      </div>
-
-      <main className="suite-content">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/inbox" element={<InboxPage />} />
-          <Route path="/venue" element={<FilteredThreadsPage title="Venue messages" eyebrow="Venue comms" category="VENUE" />} />
-          <Route path="/announcements" element={<FilteredThreadsPage title="Announcements" eyebrow="Broadcasts" category="ANNOUNCEMENT" />} />
-          <Route path="/handover" element={<FilteredThreadsPage title="Shift handover" eyebrow="Handover" category="HANDOVER" />} />
-          <Route path="/tasks" element={<TasksPage />} />
-          <Route path="/threads/:id" element={<ThreadDetailPage />} />
-          <Route path="/compose" element={<ComposePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          <Route path="*" element={<PageShell title="Page not found" eyebrow="Comms"><Card><p>Choose a Comms page from the navigation.</p></Card></PageShell>} />
-        </Routes>
-      </main>
-    </div>
+  return (
+    <AppShell
+      brand={<ProductLogo appId="comms" size="md" />}
+      sidebar={sidebar}
+      topBar={topBar}
+    >
+      <Routes>
+        <Route path="/" element={<HomePage />} />
+        <Route path="/inbox" element={<InboxPage />} />
+        <Route path="/venue" element={<FilteredThreadsPage title="Venue messages" eyebrow="Venue comms" category="VENUE" />} />
+        <Route path="/announcements" element={<FilteredThreadsPage title="Announcements" eyebrow="Broadcasts" category="ANNOUNCEMENT" />} />
+        <Route path="/handover" element={<FilteredThreadsPage title="Shift handover" eyebrow="Handover" category="HANDOVER" />} />
+        <Route path="/tasks" element={<TasksPage />} />
+        <Route path="/threads/:id" element={<ThreadDetailPage />} />
+        <Route path="/compose" element={<ComposePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="*" element={<PageShell title="Page not found" eyebrow="Comms"><Card><p>Choose a Comms page from the navigation.</p></Card></PageShell>} />
+      </Routes>
+    </AppShell>
   );
 }
 
@@ -669,7 +661,7 @@ function Root() {
   }, []);
 
   if (user === undefined) {
-    return <main className="suite-login"><Card><p>Loading Comms…</p></Card></main>;
+    return <main className="comms-login"><Card><p>Loading Comms…</p></Card></main>;
   }
 
   if (!user) {
