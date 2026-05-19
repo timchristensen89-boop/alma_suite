@@ -160,7 +160,7 @@ function LoginGate({ onSignedIn }: { onSignedIn: () => void }) {
     setMessage('');
 
     try {
-      await api('/auth/login', {
+      await api('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
@@ -590,7 +590,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
 
   async function signOut() {
     try {
-      await api('/auth/logout', { method: 'POST' });
+      await api('/api/auth/logout', { method: 'POST' });
     } finally {
       onSignedOut();
     }
@@ -649,7 +649,7 @@ function Root() {
 
   async function loadUser() {
     try {
-      const data = await api<AuthResponse>('/auth/me');
+      const data = await api<AuthResponse>('/api/auth/me');
       setUser(data.user);
     } catch {
       setUser(null);
