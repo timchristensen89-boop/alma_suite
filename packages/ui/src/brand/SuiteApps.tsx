@@ -5,6 +5,7 @@ import {
   BookIcon,
   CapIcon,
   ChartIcon,
+  CommsGlyph,
   DocumentIcon,
   GearIcon,
   PeopleIcon,
@@ -81,7 +82,8 @@ const ICON_FACTORY: Record<AlmaAppIconKey, () => ReactNode> = {
   cap: () => <CapIcon />,
   produce: () => <ProduceIcon />,
   people: () => <PeopleIcon />,
-  gear: () => <GearIcon />
+  gear: () => <GearIcon />,
+  comms: () => <CommsGlyph />
 };
 
 const LEGACY_APP_SEEDS: SuiteAppSeed[] = [];
@@ -97,6 +99,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'staff' ||
     app.id === 'reserve' ||
     app.id === 'marketing' ||
+    app.id === 'comms' ||
     app.id === 'giftcards' ||
     app.id === 'reports' ||
     app.id === 'training' ||
@@ -146,6 +149,8 @@ function descriptionFor(id: string) {
       return 'Reservations, guests, table diary, waitlist, and covers forecast.';
     case 'marketing':
       return 'Guest contacts, segments, campaign drafts, and send-ready lists.';
+    case 'comms':
+      return 'Messages, handovers, alerts, and operational follow-ups.';
     case 'giftcards':
       return 'Gift card sales, balances, redemptions, and Stripe checkout.';
     case 'policies':

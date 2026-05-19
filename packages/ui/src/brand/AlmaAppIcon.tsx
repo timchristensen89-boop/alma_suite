@@ -36,7 +36,8 @@ export type AlmaAppIconKey =
   | 'cap'
   | 'produce'
   | 'people'
-  | 'gear';
+  | 'gear'
+  | 'comms';
 
 export type AlmaAppDefinition = {
   id: string;
@@ -220,6 +221,8 @@ export function getAlmaAppIcon(iconKey: AlmaAppIconKey, size = 22) {
       return <PeopleIcon {...props} />;
     case 'gear':
       return <GearIcon {...props} />;
+    case 'comms':
+      return <CommsGlyph {...props} />;
   }
 }
 
@@ -323,7 +326,7 @@ export const ALMA_APP_LOGO_SRC = {
  * the 1024px PNG export.
  */
 
-function CommsGlyph(props: React.SVGProps<SVGSVGElement>) {
+export function CommsGlyph(props: IconProps) {
   return (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true" {...props}>
       <path d="M5 6.5A3.5 3.5 0 0 1 8.5 3h7A3.5 3.5 0 0 1 19 6.5v5A3.5 3.5 0 0 1 15.5 15H11l-4.5 4v-4A3.5 3.5 0 0 1 3 11.5v-5Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
