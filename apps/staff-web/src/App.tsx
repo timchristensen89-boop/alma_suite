@@ -19,6 +19,9 @@ import type {
   StaffProfile,
   StaffRecordType,
   StaffDefaults,
+  StaffHrRecord,
+  StaffHrRecordStatus,
+  StaffHrRecordType,
   StaffLeaveRequest,
   StaffLeaveStatus,
   StaffLeaveType,
@@ -203,6 +206,10 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
   STAFF: [
     { key: 'staffView', label: 'View staff' },
     { key: 'staffEdit', label: 'Edit staff profiles' },
+    { key: 'staffHrView', label: 'View HR records' },
+    { key: 'staffHrManage', label: 'Manage HR records' },
+    { key: 'staffHrRightToWork', label: 'Right-to-work HR records' },
+    { key: 'staffHrPayChanges', label: 'Pay-change HR records' },
     { key: 'rosterView', label: 'View roster' },
     { key: 'rosterManage', label: 'Manage roster' },
     { key: 'rosterPublish', label: 'Publish roster' },
@@ -302,6 +309,12 @@ const NAV_ITEMS = [
     to: '/compliance',
     label: 'Compliance',
     description: 'Staff compliance reminders',
+    icon: <DocumentIcon />
+  },
+  {
+    to: '/hr',
+    label: 'HR',
+    description: 'Restricted employment records',
     icon: <DocumentIcon />
   },
   {
@@ -443,10 +456,52 @@ function canAccessSettings(user: ReturnType<typeof useAuth>['user']) {
   );
 }
 
+function canAccessStaffHr(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    user.role !== 'STAFF' &&
+    (user.isAdmin ||
+      user.role === 'ADMIN' ||
+      permissions.admin ||
+      permissions.staffHrView ||
+      permissions.staffHrManage)
+  );
+}
+
+function canManageStaffHr(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    user.role !== 'STAFF' &&
+    (user.isAdmin || user.role === 'ADMIN' || permissions.admin || permissions.staffHrManage)
+  );
+}
+
+function canAccessRightToWorkHr(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    user.role !== 'STAFF' &&
+    (user.isAdmin || user.role === 'ADMIN' || permissions.admin || permissions.staffHrRightToWork)
+  );
+}
+
+function canAccessPayChangeHr(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    user.role !== 'STAFF' &&
+    (user.isAdmin || user.role === 'ADMIN' || permissions.admin || permissions.staffHrPayChanges)
+  );
+}
+
 function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
   if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
-  if (canAccessSettings(user)) return NAV_ITEMS;
-  return NAV_ITEMS.filter((item) => item.to !== '/settings' && item.to !== '/admin');
+  const items = canAccessSettings(user)
+    ? NAV_ITEMS
+    : NAV_ITEMS.filter((item) => item.to !== '/settings' && item.to !== '/admin');
+  return canAccessStaffHr(user) ? items : items.filter((item) => item.to !== '/hr');
 }
 
 function suiteAppsForUser(user: ReturnType<typeof useAuth>['user']) {
@@ -5217,6 +5272,481 @@ type LeaveDraft = {
   managerNote: string;
 };
 
+const HR_SECTION_LINKS: Array<{
+  to: string;
+  title: string;
+  description: string;
+  type?: StaffHrRecordType;
+}> = [
+  {
+    to: '/hr/contracts',
+    title: 'Contracts',
+    description: 'Upload signed contracts and issued employment agreements.',
+    type: 'CONTRACT'
+  },
+  {
+    to: '/hr/warnings',
+    title: 'Written warnings',
+    description: 'Store written warnings, reasons, notes and follow-up dates.',
+    type: 'WARNING'
+  },
+  {
+    to: '/hr/pay-changes',
+    title: 'Pay changes',
+    description: 'Record approved pay-change letters and effective dates.',
+    type: 'PAY_CHANGE'
+  },
+  {
+    to: '/hr/right-to-work',
+    title: 'Right to work',
+    description: 'Restricted visa and work-rights records.',
+    type: 'RIGHT_TO_WORK'
+  },
+  {
+    to: '/hr/documents',
+    title: 'Documents',
+    description: 'General HR document register with staff and status filters.'
+  }
+];
+
+const HR_RECORD_STATUS_OPTIONS: StaffHrRecordStatus[] = [
+  'DRAFT',
+  'ISSUED',
+  'SENT',
+  'SIGNED',
+  'STORED',
+  'PENDING',
+  'APPROVED',
+  'EXPIRED',
+  'RE_REQUESTED'
+];
+
+const HR_RECORD_TYPE_OPTIONS: StaffHrRecordType[] = [
+  'CONTRACT',
+  'WARNING',
+  'PAY_CHANGE',
+  'RIGHT_TO_WORK',
+  'GENERAL'
+];
+
+type HrRecordDraft = {
+  staffProfileId: string;
+  recordType: StaffHrRecordType;
+  title: string;
+  status: StaffHrRecordStatus;
+  issueDate: string;
+  effectiveDate: string;
+  expiryDate: string;
+  followUpDate: string;
+  reason: string;
+  oldRate: string;
+  newRate: string;
+  documentName: string;
+  documentUrl: string;
+  notes: string;
+};
+
+function hrTypeLabel(type: StaffHrRecordType) {
+  return type.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (letter: string) => letter.toUpperCase());
+}
+
+function hrStatusTone(status: StaffHrRecordStatus): 'positive' | 'warning' | 'danger' | 'info' | 'muted' {
+  if (['SIGNED', 'STORED', 'APPROVED'].includes(status)) return 'positive';
+  if (['DRAFT', 'PENDING', 'SENT', 'ISSUED', 'RE_REQUESTED'].includes(status)) return 'warning';
+  if (status === 'EXPIRED') return 'danger';
+  return 'muted';
+}
+
+function centsFromCurrencyInput(value: string) {
+  const cleaned = value.replace(/[$,\s]/g, '');
+  if (!cleaned) return undefined;
+  const amount = Number(cleaned);
+  if (!Number.isFinite(amount) || amount < 0) return undefined;
+  return Math.round(amount * 100);
+}
+
+function defaultHrTitle(type: StaffHrRecordType) {
+  if (type === 'CONTRACT') return 'Employment contract';
+  if (type === 'WARNING') return 'Written warning';
+  if (type === 'PAY_CHANGE') return 'Pay change letter';
+  if (type === 'RIGHT_TO_WORK') return 'Right-to-work document';
+  return 'HR document';
+}
+
+function emptyHrDraft(staff: StaffProfile[], type: StaffHrRecordType): HrRecordDraft {
+  return {
+    staffProfileId: staff.find((member) => member.employmentStatus !== 'ARCHIVED')?.id ?? '',
+    recordType: type,
+    title: defaultHrTitle(type),
+    status: type === 'CONTRACT' ? 'ISSUED' : 'STORED',
+    issueDate: toDateInput(new Date()),
+    effectiveDate: '',
+    expiryDate: '',
+    followUpDate: '',
+    reason: '',
+    oldRate: '',
+    newRate: '',
+    documentName: '',
+    documentUrl: '',
+    notes: ''
+  };
+}
+
+function staffLabel(member?: Pick<StaffProfile, 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null) {
+  if (!member) return 'Unknown staff';
+  return `${member.firstName} ${member.lastName} · ${member.roleTitle}${member.venue ? ` · ${member.venue}` : ''}`;
+}
+
+function HrOverviewPage({ records, loading }: { records: StaffHrRecord[]; loading: boolean }) {
+  const attentionItems = records.filter((record) =>
+    record.status === 'RE_REQUESTED' ||
+    record.status === 'EXPIRED' ||
+    (record.expiryDate && new Date(record.expiryDate).getTime() < Date.now() + 30 * 24 * 60 * 60 * 1000)
+  );
+  const recentRecords = records.slice(0, 6);
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Restricted HR"
+        title="HR records"
+        description="HR records are restricted. Only authorised managers can view these documents."
+      />
+      <div className="stats-grid">
+        <StatCard label="HR records" value={records.length} hint="Restricted register" loading={loading} />
+        <StatCard label="Attention items" value={attentionItems.length} hint="Expiry or re-request" tone={attentionItems.length ? 'warning' : 'positive'} loading={loading} />
+        <StatCard label="Right-to-work" value={records.filter((record) => record.recordType === 'RIGHT_TO_WORK').length} hint="Sensitive work-rights records" loading={loading} />
+      </div>
+      <Card title="HR sections" subtitle="Each workflow has its own page. Admin owns setup and permissions.">
+        <div className="app-access-grid">
+          {HR_SECTION_LINKS.map((link) => (
+            <NavLink key={link.to} className="app-access-tile" to={link.to}>
+              <strong>{link.title}</strong>
+              <span className="subtle">{link.description}</span>
+              <Badge tone="info">{link.type ? records.filter((record) => record.recordType === link.type).length : records.length} records</Badge>
+            </NavLink>
+          ))}
+        </div>
+      </Card>
+      <Card title="Recent HR actions" subtitle="Record activity from the restricted HR register.">
+        <HrRecordList records={recentRecords} emptyTitle="No HR actions yet" />
+      </Card>
+    </div>
+  );
+}
+
+function HrSectionPage({
+  staff,
+  records,
+  type,
+  mode,
+  loading,
+  reload,
+  canManage
+}: {
+  staff: StaffProfile[];
+  records: StaffHrRecord[];
+  type?: StaffHrRecordType;
+  mode: 'contracts' | 'warnings' | 'pay-changes' | 'right-to-work' | 'documents';
+  loading: boolean;
+  reload: () => Promise<void>;
+  canManage: boolean;
+}) {
+  const [staffFilter, setStaffFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
+  const [draft, setDraft] = useState<HrRecordDraft>(() => emptyHrDraft(staff, type ?? 'GENERAL'));
+
+  useEffect(() => {
+    setDraft((current) => ({
+      ...current,
+      recordType: type ?? current.recordType,
+      title: current.title || defaultHrTitle(type ?? current.recordType),
+      staffProfileId: current.staffProfileId || staff.find((member) => member.employmentStatus !== 'ARCHIVED')?.id || ''
+    }));
+  }, [staff, type]);
+
+  const sectionRecords = records.filter((record) => {
+    if (type && record.recordType !== type) return false;
+    if (staffFilter && record.staffProfileId !== staffFilter) return false;
+    if (statusFilter && record.status !== statusFilter) return false;
+    return true;
+  });
+
+  const staffOptions = [
+    { label: 'Choose staff', value: '' },
+    ...staff
+      .filter((member) => member.employmentStatus !== 'ARCHIVED')
+      .map((member) => ({ label: staffLabel(member), value: member.id }))
+  ];
+  const filterStaffOptions = [{ label: 'All staff', value: '' }, ...staffOptions.slice(1)];
+  const statusOptions = [
+    { label: 'All statuses', value: '' },
+    ...HR_RECORD_STATUS_OPTIONS.map((status) => ({ label: status.replaceAll('_', ' '), value: status }))
+  ];
+
+  const heading = HR_SECTION_LINKS.find((link) => link.to.endsWith(mode)) ?? HR_SECTION_LINKS[4];
+  const showCreateForm = canManage && mode !== 'documents';
+
+  function updateDraft<K extends keyof HrRecordDraft>(key: K, value: HrRecordDraft[K]) {
+    setDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function attachDraftFile(file: File) {
+    try {
+      const upload = await readOnboardingUpload(file);
+      updateDraft('documentName', upload.name);
+      updateDraft('documentUrl', upload.url);
+      setMessage(null);
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not upload document.');
+    }
+  }
+
+  async function createRecord() {
+    if (!draft.staffProfileId) {
+      setMessageTone('error');
+      setMessage('Choose a staff member before filing this HR record.');
+      return;
+    }
+    if (!draft.title.trim()) {
+      setMessageTone('error');
+      setMessage('Title is required.');
+      return;
+    }
+    if ((mode === 'pay-changes') && (!draft.effectiveDate || !draft.documentUrl)) {
+      setMessageTone('error');
+      setMessage('Record the effective date and upload the approved letter before filing.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>('/api/staff/hr/records', {
+        method: 'POST',
+        body: JSON.stringify({
+          staffProfileId: draft.staffProfileId,
+          recordType: type ?? draft.recordType,
+          title: draft.title.trim(),
+          status: draft.status,
+          issueDate: draft.issueDate,
+          effectiveDate: draft.effectiveDate,
+          expiryDate: draft.expiryDate,
+          followUpDate: draft.followUpDate,
+          reason: draft.reason.trim(),
+          oldRateCents: centsFromCurrencyInput(draft.oldRate),
+          newRateCents: centsFromCurrencyInput(draft.newRate),
+          documentName: draft.documentName,
+          documentUrl: draft.documentUrl,
+          notes: draft.notes.trim()
+        })
+      });
+      setDraft(emptyHrDraft(staff, type ?? 'GENERAL'));
+      setMessageTone('success');
+      setMessage('HR record filed.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not file HR record.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeDocument(record: StaffHrRecord) {
+    if (!window.confirm(`Remove the document from "${record.title}"? The HR record will remain.`)) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>(`/api/staff/${record.staffProfileId}/hr/documents/${record.id}`, { method: 'DELETE' });
+      setMessageTone('success');
+      setMessage('Document removed. HR record kept.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not remove HR document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestDocument(record: StaffHrRecord) {
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>(`/api/staff/${record.staffProfileId}/hr/documents/${record.id}/request`, { method: 'POST' });
+      setMessageTone('success');
+      setMessage('Replacement requested.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not request replacement.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Restricted HR"
+        title={heading.title}
+        description={mode === 'right-to-work' ? 'Right-to-work records are highly sensitive and restricted to HR-authorised users.' : heading.description}
+      />
+      <div className="stats-grid">
+        <StatCard label="Records" value={sectionRecords.length} hint={type ? hrTypeLabel(type) : 'All HR documents'} loading={loading} />
+        <StatCard label="Needs action" value={sectionRecords.filter((record) => record.status === 'RE_REQUESTED' || record.status === 'EXPIRED').length} hint="Replacement or expiry" loading={loading} />
+        <StatCard label="With document" value={sectionRecords.filter((record) => record.documentUrl).length} hint="Viewable files" loading={loading} />
+      </div>
+
+      {showCreateForm ? (
+        <Card title={`File ${heading.title.toLowerCase()}`} subtitle="Upload the signed contract, approved letter, or supporting HR document.">
+          <form
+            className="staff-profile-form"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void createRecord();
+            }}
+          >
+            <div className="form-grid three">
+              <Select label="Staff member" value={draft.staffProfileId} onChange={(event) => updateDraft('staffProfileId', event.currentTarget.value)} options={staffOptions} />
+              {!type ? (
+                <Select label="Document type" value={draft.recordType} onChange={(event) => updateDraft('recordType', event.currentTarget.value as StaffHrRecordType)} options={HR_RECORD_TYPE_OPTIONS.map((item) => ({ label: hrTypeLabel(item), value: item }))} />
+              ) : null}
+              <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffHrRecordStatus)} options={HR_RECORD_STATUS_OPTIONS.map((item) => ({ label: item.replaceAll('_', ' '), value: item }))} />
+              <Input label="Title" value={draft.title} onChange={(event) => updateDraft('title', event.currentTarget.value)} />
+              <Input label="Issue date" type="date" value={draft.issueDate} onChange={(event) => updateDraft('issueDate', event.currentTarget.value)} />
+              <Input label="Effective date" type="date" value={draft.effectiveDate} onChange={(event) => updateDraft('effectiveDate', event.currentTarget.value)} />
+              <Input label="Expiry date" type="date" value={draft.expiryDate} onChange={(event) => updateDraft('expiryDate', event.currentTarget.value)} />
+              <Input label="Follow-up date" type="date" value={draft.followUpDate} onChange={(event) => updateDraft('followUpDate', event.currentTarget.value)} />
+              {mode === 'pay-changes' ? (
+                <>
+                  <Input label="Old rate" value={draft.oldRate} onChange={(event) => updateDraft('oldRate', event.currentTarget.value)} />
+                  <Input label="New rate" value={draft.newRate} onChange={(event) => updateDraft('newRate', event.currentTarget.value)} />
+                </>
+              ) : null}
+            </div>
+            <Textarea label={mode === 'warnings' ? 'Reason / category' : 'Reason'} rows={2} value={draft.reason} onChange={(event) => updateDraft('reason', event.currentTarget.value)} />
+            <div className="invite-row">
+              <span>
+                <strong>Document upload</strong>
+                <span className="subtle">PDF, PNG, JPEG, WebP or GIF under 4MB. Do not upload draft legal templates unless they have been approved.</span>
+                {draft.documentName ? <span className="subtle">{draft.documentName}</span> : null}
+              </span>
+              <span className="invite-row-actions">
+                <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
+                  Upload file
+                  <input
+                    type="file"
+                    accept={STAFF_DOCUMENT_ACCEPT}
+                    disabled={saving}
+                    style={{ display: 'none' }}
+                    onChange={(event) => {
+                      const file = event.currentTarget.files?.[0];
+                      event.currentTarget.value = '';
+                      if (file) void attachDraftFile(file);
+                    }}
+                  />
+                </label>
+                {draft.documentUrl ? (
+                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => { updateDraft('documentName', ''); updateDraft('documentUrl', ''); }}>
+                    Remove attachment
+                  </Button>
+                ) : null}
+              </span>
+            </div>
+            <Textarea label="HR notes" rows={2} value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
+            <div className="toolbar-right">
+              <Button type="submit" disabled={saving}>{saving ? 'Filing...' : 'File HR record'}</Button>
+              <ActionFeedback message={message} tone={messageTone} />
+            </div>
+          </form>
+        </Card>
+      ) : null}
+
+      <Card title={mode === 'documents' ? 'HR document register' : `${heading.title} register`} subtitle="Only authorised managers can view these documents.">
+        <div className="form-grid three">
+          <Select label="Staff" value={staffFilter} onChange={(event) => setStaffFilter(event.currentTarget.value)} options={filterStaffOptions} />
+          <Select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)} options={statusOptions} />
+        </div>
+        <HrRecordList
+          records={sectionRecords}
+          emptyTitle="No HR records found"
+          canManage={canManage}
+          saving={saving}
+          onRemoveDocument={removeDocument}
+          onRequestDocument={requestDocument}
+        />
+        {!showCreateForm ? <ActionFeedback message={message} tone={messageTone} /> : null}
+      </Card>
+    </div>
+  );
+}
+
+function HrRecordList({
+  records,
+  emptyTitle,
+  canManage = false,
+  saving = false,
+  onRemoveDocument,
+  onRequestDocument
+}: {
+  records: StaffHrRecord[];
+  emptyTitle: string;
+  canManage?: boolean;
+  saving?: boolean;
+  onRemoveDocument?: (record: StaffHrRecord) => Promise<void>;
+  onRequestDocument?: (record: StaffHrRecord) => Promise<void>;
+}) {
+  if (!records.length) {
+    return <EmptyState title={emptyTitle} description="HR records filed here stay separate from normal staff compliance documents." />;
+  }
+
+  return (
+    <div className="staff-list">
+      {records.map((record) => (
+        <div key={record.id} className="staff-expiry-row">
+          <span>
+            <strong>{record.title}</strong>
+            <span className="subtle">{hrTypeLabel(record.recordType)} · {staffLabel(record.staffProfile)} · {record.issueDate ? new Date(record.issueDate).toLocaleDateString() : 'No issue date'}</span>
+            {record.effectiveDate ? <span className="subtle">Effective {new Date(record.effectiveDate).toLocaleDateString()}</span> : null}
+            {record.expiryDate ? <span className="subtle">Expires {new Date(record.expiryDate).toLocaleDateString()}</span> : null}
+            {record.followUpDate ? <span className="subtle">Follow up {new Date(record.followUpDate).toLocaleDateString()}</span> : null}
+            {record.recordType === 'PAY_CHANGE' ? (
+              <span className="subtle">
+                {record.oldRateCents !== null ? `Old ${formatCents(record.oldRateCents)}` : 'Old rate not recorded'}
+                {' -> '}
+                {record.newRateCents !== null ? `New ${formatCents(record.newRateCents)}` : 'New rate not recorded'}
+              </span>
+            ) : null}
+            {record.reason ? <span className="subtle">{record.reason}</span> : null}
+            {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
+            <StaffDocumentViewLink documentUrl={record.documentUrl} />
+            {record.notes ? <span className="subtle">{record.notes}</span> : null}
+          </span>
+          <span className="invite-row-actions">
+            <Badge tone={hrStatusTone(record.status)}>{record.status.replaceAll('_', ' ')}</Badge>
+            {canManage && record.documentUrl && onRemoveDocument ? (
+              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void onRemoveDocument(record)}>
+                Remove document
+              </Button>
+            ) : null}
+            {canManage && onRequestDocument ? (
+              <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void onRequestDocument(record)}>
+                Re-request
+              </Button>
+            ) : null}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function leaveDraftFor(staff: StaffProfile[]): LeaveDraft {
   const today = toDateInput(new Date());
   return {
@@ -9902,13 +10432,40 @@ function StaffShell() {
   const { user } = useAuth();
   const { staff, roster, loading, error, reload } = useStaffData();
   const [selectedId, setSelectedId] = useState('');
+  const [hrRecords, setHrRecords] = useState<StaffHrRecord[]>([]);
+  const [hrLoading, setHrLoading] = useState(false);
+  const [hrError, setHrError] = useState<string | null>(null);
   const isStaffUser = user?.role === 'STAFF';
   const canOpenSettings = canAccessSettings(user);
+  const canOpenHr = canAccessStaffHr(user);
+  const canManageHr = canManageStaffHr(user);
+  const canManageRightToWorkHr = canManageHr && canAccessRightToWorkHr(user);
+  const canManagePayChangeHr = canManageHr && canAccessPayChangeHr(user);
   const navItems = navItemsForUser(user);
+
+  const loadHrRecords = useCallback(async () => {
+    if (!canOpenHr) {
+      setHrRecords([]);
+      return;
+    }
+    setHrLoading(true);
+    setHrError(null);
+    try {
+      setHrRecords(await api<StaffHrRecord[]>('/api/staff/hr/records'));
+    } catch (err) {
+      setHrError(err instanceof Error ? err.message : 'Could not load HR records.');
+    } finally {
+      setHrLoading(false);
+    }
+  }, [canOpenHr]);
 
   useEffect(() => {
     if (!selectedId && staff[0]) setSelectedId(staff[0].id);
   }, [selectedId, staff]);
+
+  useEffect(() => {
+    void loadHrRecords();
+  }, [loadHrRecords]);
 
   return (
     <AppShell
@@ -9919,6 +10476,11 @@ function StaffShell() {
       {error ? (
         <Card>
           <p className="error-text">{error}</p>
+        </Card>
+      ) : null}
+      {hrError && canOpenHr ? (
+        <Card>
+          <p className="error-text">{hrError}</p>
         </Card>
       ) : null}
       {isStaffUser ? (
@@ -9955,6 +10517,12 @@ function StaffShell() {
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<TipsPage staff={staff} />} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
+          <Route path="/hr" element={canOpenHr ? <HrOverviewPage records={hrRecords} loading={hrLoading} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/contracts" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="CONTRACT" mode="contracts" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/warnings" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="WARNING" mode="warnings" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/pay-changes" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="PAY_CHANGE" mode="pay-changes" loading={hrLoading} reload={loadHrRecords} canManage={canManagePayChangeHr} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/right-to-work" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="RIGHT_TO_WORK" mode="right-to-work" loading={hrLoading} reload={loadHrRecords} canManage={canManageRightToWorkHr} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/documents" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} mode="documents" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
         </Routes>
       )}
     </AppShell>

@@ -571,6 +571,7 @@ model StaffProfile {
   createdAt        DateTime                @default(now())
   updatedAt        DateTime                @updatedAt
   records          StaffComplianceRecord[]
+  hrRecords        StaffHrRecord[]
   managerNotes     StaffManagerNote[]
   payProfile       StaffPayProfile?
   managementEvents StaffManagementEvent[]
@@ -645,6 +646,34 @@ model StaffManagementEvent {
 
   @@index([staffProfileId, createdAt])
   @@index([eventType, createdAt])
+}
+
+model StaffHrRecord {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  recordType     String
+  title          String
+  status         String       @default("STORED")
+  issueDate      DateTime?
+  effectiveDate  DateTime?
+  expiryDate     DateTime?
+  followUpDate   DateTime?
+  reason         String?
+  oldRateCents   Int?
+  newRateCents   Int?
+  documentName   String?
+  documentUrl    String?
+  notes          String?
+  createdById    String?
+  updatedById    String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, recordType])
+  @@index([recordType, status])
+  @@index([expiryDate])
+  @@index([followUpDate])
 }
 
 model StaffLeaveRequest {

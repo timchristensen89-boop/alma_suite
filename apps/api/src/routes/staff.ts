@@ -133,6 +133,33 @@ staffRouter.get('/management-events', requireManager, async (req, res, next) => 
   }
 });
 
+staffRouter.get('/hr/records', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listHrRecords(req.query, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/hr/records', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.createHrRecord(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/hr/records/:recordId', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.updateHrRecord(String(req.params.recordId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/leave', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
@@ -611,6 +638,51 @@ staffRouter.put('/:id/pay-profile', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
     res.json(await staffService.updatePayProfile(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/:id/hr', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listStaffHrRecords(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/hr/documents', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.createHrRecord({ ...req.body, staffProfileId: String(req.params.id) }, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/:id/hr/documents/:documentId', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.attachHrDocument(String(req.params.id), String(req.params.documentId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/:id/hr/documents/:documentId', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.removeHrDocument(String(req.params.id), String(req.params.documentId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/hr/documents/:documentId/request', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.requestHrDocument(String(req.params.id), String(req.params.documentId), req.user));
   } catch (error) {
     next(error);
   }

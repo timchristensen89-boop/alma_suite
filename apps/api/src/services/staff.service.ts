@@ -10,6 +10,10 @@ import {
   staffMergeInputSchema,
   staffAppAccessInputSchema,
   staffComplianceRecordInputSchema,
+  staffHrDocumentInputSchema,
+  staffHrRecordInputSchema,
+  staffHrRecordQuerySchema,
+  staffHrRecordUpdateSchema,
   staffManagerNoteInputSchema,
   staffPasswordResetRequestSchema,
   staffPayProfileInputSchema,
@@ -42,7 +46,7 @@ import {
   getAwardRateSet,
   normaliseStaffDefaults
 } from '@alma/shared';
-import type { AuthUser, OnboardingSettings, StaffDefaults, StaffLeaveStatus, StaffLeaveType } from '@alma/shared';
+import type { AuthUser, OnboardingSettings, StaffDefaults, StaffHrRecord, StaffLeaveStatus, StaffLeaveType } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
@@ -89,6 +93,10 @@ function withoutStaffSecrets<T extends { passwordHash?: string | null }>(profile
 
 function appendRecordNote(existing: string | null | undefined, note: string) {
   return [existing?.trim(), note].filter(Boolean).join('\n');
+}
+
+function validateStaffHrDocument(documentUrl?: string) {
+  validateStaffRecordAttachmentOnCreate(documentUrl);
 }
 
 function onboardingDetailCreateData(data: {
@@ -379,6 +387,24 @@ async function assertManagerCanAccessStaffProfile(staffProfileId: string, actor:
   return assertActorCanAccessStaffProfile(staffProfileId, actor);
 }
 
+function hasStaffHrAccess(actor: AuthUser, options: { manage?: boolean; rightToWork?: boolean; payChanges?: boolean } = {}) {
+  if (actor.isAdmin || actor.role === 'ADMIN') return true;
+  const staffAccess = actor.appAccess.find((access) => access.appId === 'STAFF' && access.status === 'ENABLED');
+  if (!staffAccess) return false;
+  const permissions = staffAccess.permissions ?? {};
+  if (staffAccess.role === 'ADMIN' || permissions.admin) return true;
+  if (options.rightToWork && !permissions.staffHrRightToWork) return false;
+  if (options.payChanges && !permissions.staffHrPayChanges) return false;
+  if (options.manage) return Boolean(permissions.staffHrManage);
+  return Boolean(permissions.staffHrView || permissions.staffHrManage);
+}
+
+async function assertStaffHrAccess(actor: AuthUser, options: { manage?: boolean; rightToWork?: boolean; payChanges?: boolean } = {}) {
+  if (!hasStaffHrAccess(actor, options)) {
+    throw new HttpError(403, 'HR records are restricted.');
+  }
+}
+
 async function assertActorCanAccessStaffProfile(staffProfileId: string, actor: AuthUser) {
   const profile = await prisma.staffProfile.findUnique({
     where: { id: staffProfileId },
@@ -411,6 +437,43 @@ function actorVenueScope(actor?: AuthUser) {
   if (!actor || actor.isAdmin || actor.role === 'ADMIN') return null;
   if (actor.role === 'STAFF') return actor.venue || null;
   return actor.venue || '__no_manager_venue__';
+}
+
+function dateToIso(value: Date | null) {
+  return value ? value.toISOString() : null;
+}
+
+type StaffHrRecordRow = Prisma.StaffHrRecordGetPayload<{
+  include: {
+    staffProfile: {
+      select: { id: true; firstName: true; lastName: true; roleTitle: true; venue: true };
+    };
+  };
+}>;
+
+function toStaffHrRecord(row: StaffHrRecordRow): StaffHrRecord {
+  return {
+    id: row.id,
+    staffProfileId: row.staffProfileId,
+    recordType: row.recordType as StaffHrRecord['recordType'],
+    title: row.title,
+    status: row.status as StaffHrRecord['status'],
+    issueDate: dateToIso(row.issueDate),
+    effectiveDate: dateToIso(row.effectiveDate),
+    expiryDate: dateToIso(row.expiryDate),
+    followUpDate: dateToIso(row.followUpDate),
+    reason: row.reason,
+    oldRateCents: row.oldRateCents,
+    newRateCents: row.newRateCents,
+    documentName: row.documentName,
+    documentUrl: row.documentUrl,
+    notes: row.notes,
+    createdById: row.createdById,
+    updatedById: row.updatedById,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
+    staffProfile: row.staffProfile
+  };
 }
 
 function scopeVenueForActor(requestedVenue: string | undefined, actor?: AuthUser) {
@@ -1557,6 +1620,171 @@ export const staffService = {
         ? 'If this staff member has a login account, a reset link has been sent.'
         : 'No login email is linked to this profile.'
     };
+  },
+
+  async listHrRecords(input: unknown, actor: AuthUser): Promise<StaffHrRecord[]> {
+    await assertStaffHrAccess(actor);
+    const query = staffHrRecordQuerySchema.parse(input);
+    const requestedType = query.recordType || undefined;
+
+    if (requestedType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { rightToWork: true });
+    if (requestedType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { payChanges: true });
+
+    const excludedTypes: string[] = [];
+    if (!hasStaffHrAccess(actor, { rightToWork: true })) excludedTypes.push('RIGHT_TO_WORK');
+    if (!hasStaffHrAccess(actor, { payChanges: true })) excludedTypes.push('PAY_CHANGE');
+
+    const where: Prisma.StaffHrRecordWhereInput = {
+      ...(query.staffProfileId && { staffProfileId: query.staffProfileId }),
+      ...(requestedType ? { recordType: requestedType } : excludedTypes.length ? { recordType: { notIn: excludedTypes } } : {}),
+      ...(query.status && { status: query.status })
+    };
+
+    const rows = await prisma.staffHrRecord.findMany({
+      where,
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      },
+      orderBy: [{ updatedAt: 'desc' }, { createdAt: 'desc' }]
+    });
+
+    return rows.map(toStaffHrRecord);
+  },
+
+  async listStaffHrRecords(staffProfileId: string, actor: AuthUser): Promise<StaffHrRecord[]> {
+    await assertStaffHrAccess(actor);
+    await assertActorCanAccessStaffProfile(staffProfileId, actor);
+    return this.listHrRecords({ staffProfileId }, actor);
+  },
+
+  async createHrRecord(input: unknown, actor: AuthUser): Promise<StaffHrRecord> {
+    await assertStaffHrAccess(actor, { manage: true });
+    const data = staffHrRecordInputSchema.parse(input);
+    if (data.recordType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { manage: true, rightToWork: true });
+    if (data.recordType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    await assertActorCanAccessStaffProfile(data.staffProfileId, actor);
+    validateStaffHrDocument(data.documentUrl);
+
+    const row = await prisma.staffHrRecord.create({
+      data: {
+        staffProfileId: data.staffProfileId,
+        recordType: data.recordType,
+        title: data.title.trim(),
+        status: data.status,
+        issueDate: dateOrNull(data.issueDate),
+        effectiveDate: dateOrNull(data.effectiveDate),
+        expiryDate: dateOrNull(data.expiryDate),
+        followUpDate: dateOrNull(data.followUpDate),
+        reason: textOrNull(data.reason),
+        oldRateCents: data.oldRateCents ?? null,
+        newRateCents: data.newRateCents ?? null,
+        documentName: textOrNull(data.documentName),
+        documentUrl: textOrNull(data.documentUrl),
+        notes: textOrNull(data.notes),
+        createdById: actor.id,
+        updatedById: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: 'STAFF_HR_RECORD_CREATED',
+      summary: `HR record created: ${row.title}.`,
+      actor,
+      metadata: { hrRecordId: row.id, recordType: row.recordType, status: row.status }
+    });
+
+    return toStaffHrRecord(row);
+  },
+
+  async updateHrRecord(recordId: string, input: unknown, actor: AuthUser): Promise<StaffHrRecord> {
+    await assertStaffHrAccess(actor, { manage: true });
+    const existing = await prisma.staffHrRecord.findUnique({ where: { id: recordId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { manage: true, rightToWork: true });
+    if (existing.recordType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    await assertActorCanAccessStaffProfile(existing.staffProfileId, actor);
+
+    const data = staffHrRecordUpdateSchema.parse(input);
+    validateStaffHrDocument(data.documentUrl);
+
+    const row = await prisma.staffHrRecord.update({
+      where: { id: recordId },
+      data: {
+        ...(data.title !== undefined && { title: data.title.trim() }),
+        ...(data.status !== undefined && { status: data.status }),
+        ...(data.issueDate !== undefined && { issueDate: dateOrNull(data.issueDate) }),
+        ...(data.effectiveDate !== undefined && { effectiveDate: dateOrNull(data.effectiveDate) }),
+        ...(data.expiryDate !== undefined && { expiryDate: dateOrNull(data.expiryDate) }),
+        ...(data.followUpDate !== undefined && { followUpDate: dateOrNull(data.followUpDate) }),
+        ...(data.reason !== undefined && { reason: textOrNull(data.reason) }),
+        ...(data.oldRateCents !== undefined && { oldRateCents: data.oldRateCents ?? null }),
+        ...(data.newRateCents !== undefined && { newRateCents: data.newRateCents ?? null }),
+        ...(data.documentName !== undefined && { documentName: textOrNull(data.documentName) }),
+        ...(data.documentUrl !== undefined && { documentUrl: textOrNull(data.documentUrl) }),
+        ...(data.notes !== undefined && { notes: textOrNull(data.notes) }),
+        updatedById: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: 'STAFF_HR_RECORD_UPDATED',
+      summary: `HR record updated: ${row.title}.`,
+      actor,
+      metadata: { hrRecordId: row.id, recordType: row.recordType, status: row.status }
+    });
+
+    return toStaffHrRecord(row);
+  },
+
+  async attachHrDocument(staffProfileId: string, recordId: string, input: unknown, actor: AuthUser): Promise<StaffHrRecord> {
+    await assertStaffHrAccess(actor, { manage: true });
+    await assertActorCanAccessStaffProfile(staffProfileId, actor);
+    const existing = await prisma.staffHrRecord.findFirst({ where: { id: recordId, staffProfileId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { manage: true, rightToWork: true });
+    if (existing.recordType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    const data = staffHrDocumentInputSchema.parse(input);
+    validateStaffHrDocument(data.documentUrl);
+
+    return this.updateHrRecord(recordId, {
+      documentName: data.documentName,
+      documentUrl: data.documentUrl,
+      status: data.status ?? 'STORED'
+    }, actor);
+  },
+
+  async removeHrDocument(staffProfileId: string, recordId: string, actor: AuthUser): Promise<StaffHrRecord> {
+    await assertStaffHrAccess(actor, { manage: true });
+    await assertActorCanAccessStaffProfile(staffProfileId, actor);
+    const existing = await prisma.staffHrRecord.findFirst({ where: { id: recordId, staffProfileId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { manage: true, rightToWork: true });
+    if (existing.recordType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    return this.updateHrRecord(recordId, { documentName: '', documentUrl: '' }, actor);
+  },
+
+  async requestHrDocument(staffProfileId: string, recordId: string, actor: AuthUser): Promise<StaffHrRecord> {
+    await assertStaffHrAccess(actor, { manage: true });
+    await assertActorCanAccessStaffProfile(staffProfileId, actor);
+    const existing = await prisma.staffHrRecord.findFirst({ where: { id: recordId, staffProfileId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType === 'RIGHT_TO_WORK') await assertStaffHrAccess(actor, { manage: true, rightToWork: true });
+    if (existing.recordType === 'PAY_CHANGE') await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    return this.updateHrRecord(recordId, { status: 'RE_REQUESTED', documentName: '', documentUrl: '' }, actor);
   },
 
   async addRecord(staffProfileId: string, input: unknown, actor?: AuthUser) {

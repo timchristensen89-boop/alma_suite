@@ -46,6 +46,8 @@ export const checklistRunStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'COMPLETE
 export const checklistItemResultSchema = z.enum(['PENDING', 'PASS', 'FAIL', 'NA']);
 export const staffRecordTypeSchema = z.enum(['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER']);
 export const staffRecordStatusSchema = z.enum(['PENDING', 'APPROVED', 'EXPIRED']);
+export const staffHrRecordTypeSchema = z.enum(['CONTRACT', 'WARNING', 'PAY_CHANGE', 'RIGHT_TO_WORK', 'GENERAL']);
+export const staffHrRecordStatusSchema = z.enum(['DRAFT', 'ISSUED', 'SENT', 'SIGNED', 'STORED', 'PENDING', 'APPROVED', 'EXPIRED', 'RE_REQUESTED']);
 export const incidentStatusSchema = z.enum(['OPEN', 'UNDER_REVIEW', 'CLOSED']);
 export const temperatureAssetStatusSchema = z.enum(['ACTIVE', 'INACTIVE']);
 export const temperatureLogSourceSchema = z.enum(['MANUAL', 'GOVEE']);
@@ -180,6 +182,39 @@ export const staffComplianceRecordInputSchema = z.object({
   documentName: z.string().optional().or(z.literal('')),
   documentUrl: z.string().optional().or(z.literal('')),
   notes: z.string().optional().or(z.literal(''))
+});
+
+export const staffHrRecordInputSchema = z.object({
+  staffProfileId: z.string().min(1),
+  recordType: staffHrRecordTypeSchema,
+  title: z.string().trim().min(2).max(180),
+  status: staffHrRecordStatusSchema.default('STORED'),
+  issueDate: z.string().optional().or(z.literal('')),
+  effectiveDate: z.string().optional().or(z.literal('')),
+  expiryDate: z.string().optional().or(z.literal('')),
+  followUpDate: z.string().optional().or(z.literal('')),
+  reason: z.string().trim().max(1000).optional().or(z.literal('')),
+  oldRateCents: z.coerce.number().int().nonnegative().optional(),
+  newRateCents: z.coerce.number().int().nonnegative().optional(),
+  documentName: z.string().trim().max(180).optional().or(z.literal('')),
+  documentUrl: z.string().optional().or(z.literal('')),
+  notes: z.string().trim().max(2000).optional().or(z.literal(''))
+});
+
+export const staffHrRecordUpdateSchema = staffHrRecordInputSchema
+  .omit({ staffProfileId: true, recordType: true })
+  .partial();
+
+export const staffHrDocumentInputSchema = z.object({
+  documentName: z.string().trim().min(1).max(180),
+  documentUrl: z.string().min(1),
+  status: staffHrRecordStatusSchema.optional()
+});
+
+export const staffHrRecordQuerySchema = z.object({
+  staffProfileId: z.string().optional().or(z.literal('')),
+  recordType: staffHrRecordTypeSchema.optional().or(z.literal('')),
+  status: staffHrRecordStatusSchema.optional().or(z.literal(''))
 });
 
 export const staffManagerNoteInputSchema = z.object({
@@ -1839,6 +1874,8 @@ export type ChecklistRunStatus = z.infer<typeof checklistRunStatusSchema>;
 export type ChecklistItemResult = z.infer<typeof checklistItemResultSchema>;
 export type StaffRecordType = z.infer<typeof staffRecordTypeSchema>;
 export type StaffRecordStatus = z.infer<typeof staffRecordStatusSchema>;
+export type StaffHrRecordType = z.infer<typeof staffHrRecordTypeSchema>;
+export type StaffHrRecordStatus = z.infer<typeof staffHrRecordStatusSchema>;
 export type IncidentStatus = z.infer<typeof incidentStatusSchema>;
 export type TemperatureAssetStatus = z.infer<typeof temperatureAssetStatusSchema>;
 export type TemperatureLogSource = z.infer<typeof temperatureLogSourceSchema>;
@@ -1878,6 +1915,9 @@ export type IssueFormInput = z.infer<typeof issueCreateInputSchema>;
 export type StaffProfileCreateInput = z.infer<typeof staffProfileCreateInputSchema>;
 export type StaffProfileUpdateInput = z.infer<typeof staffProfileUpdateInputSchema>;
 export type StaffManagerNoteInput = z.infer<typeof staffManagerNoteInputSchema>;
+export type StaffHrRecordInput = z.infer<typeof staffHrRecordInputSchema>;
+export type StaffHrRecordUpdateInput = z.infer<typeof staffHrRecordUpdateSchema>;
+export type StaffHrDocumentInput = z.infer<typeof staffHrDocumentInputSchema>;
 export type StaffPayProfileInput = z.infer<typeof staffPayProfileInputSchema>;
 export type StaffMergeInput = z.infer<typeof staffMergeInputSchema>;
 export type StaffLeaveRequestInput = z.infer<typeof staffLeaveRequestInputSchema>;
@@ -2005,6 +2045,29 @@ export type StaffManagerNote = {
   createdByName: string;
   createdByEmail: string | null;
   createdAt: string;
+};
+
+export type StaffHrRecord = {
+  id: string;
+  staffProfileId: string;
+  recordType: StaffHrRecordType;
+  title: string;
+  status: StaffHrRecordStatus;
+  issueDate: string | null;
+  effectiveDate: string | null;
+  expiryDate: string | null;
+  followUpDate: string | null;
+  reason: string | null;
+  oldRateCents: number | null;
+  newRateCents: number | null;
+  documentName: string | null;
+  documentUrl: string | null;
+  notes: string | null;
+  createdById: string | null;
+  updatedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'>;
 };
 
 export type StaffPayProfile = {
