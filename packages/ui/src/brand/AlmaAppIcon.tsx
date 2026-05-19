@@ -281,6 +281,14 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
     icon: <SearchIcon />
   },
   {
+    id: 'comms',
+    label: 'COMMS',
+    from: '#4A345F',
+    to: '#241633',
+    iconKey: 'comms',
+    icon: <CommsGlyph />
+  },
+  {
     id: 'giftcards',
     label: 'GIFTCARDS',
     from: '#B98216',
@@ -304,7 +312,7 @@ export const ALMA_APP_LOGO_SRC = {
   reports: '/brand/alma-reports-logo.svg',
   staff: '/brand/alma-staff-logo.svg',
   reserve: '/brand/alma-reserve-logo.svg',
-  comms: CommsGlyph,
+  comms: '/brand/alma-comms-logo.svg',
   marketing: '/brand/alma-marketing-logo.svg',
   giftcards: '/brand/alma-giftcards-logo.svg',
   audits: '/brand/alma-audits-logo.svg',
