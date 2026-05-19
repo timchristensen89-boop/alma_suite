@@ -31,7 +31,7 @@ export type SuiteAppId =
   | 'stock'
   | 'staff'
   | 'reserve'
-  | 'marketing'
+  | 'marketing' | 'comms'
   | 'giftcards'
   | 'learning'
   | 'reports'

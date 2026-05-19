@@ -13,6 +13,7 @@ export const STAFF_WEB_URL = envUrl('VITE_STAFF_WEB_URL', 'http://localhost:5175
 export const REPORTS_WEB_URL = envUrl('VITE_REPORTS_WEB_URL', 'http://localhost:5176');
 export const RESERVE_WEB_URL = envUrl('VITE_RESERVE_WEB_URL', 'http://localhost:5177');
 export const MARKETING_WEB_URL = envUrl('VITE_MARKETING_WEB_URL', 'http://localhost:5178');
+export const COMMS_WEB_URL = trim(import.meta.env.VITE_COMMS_WEB_URL, 'https://alma-comms.web.app');
 export const GIFTCARDS_WEB_URL = envUrl('VITE_GIFTCARDS_WEB_URL', 'http://localhost:5179');
 export const SETTINGS_WEB_URL = envUrl('VITE_SETTINGS_WEB_URL', 'http://localhost:5180');
 
