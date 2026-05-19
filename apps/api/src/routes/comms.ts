@@ -1,3 +1,4 @@
+import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import {
   acknowledgeCommsThread,
@@ -12,9 +13,18 @@ import { requireManager } from '../lib/auth-middleware.js';
 
 export const commsRouter = Router();
 
-commsRouter.use(requireManager);
+function requireCommsAuth(req: Request, res: Response, next: NextFunction) {
+  if (!req.user) {
+    res.status(401).json({ error: 'Not authenticated' });
+    return;
+  }
 
-function handleError(res: any, error: unknown) {
+  next();
+}
+
+commsRouter.use(requireCommsAuth);
+
+function handleError(res: Response, error: unknown) {
   const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number((error as any).statusCode) : 400;
   const message = error instanceof Error ? error.message : 'Request failed';
   res.status(statusCode || 400).json({ error: message });
@@ -28,7 +38,7 @@ commsRouter.get('/inbox', async (req, res) => {
   }
 });
 
-commsRouter.post('/threads', async (req, res) => {
+commsRouter.post('/threads', requireManager, async (req, res) => {
   try {
     res.status(201).json({ thread: await createCommsThread(req.body, req.user) });
   } catch (error) {
@@ -77,7 +87,7 @@ commsRouter.get('/announcements', async (_req, res) => {
   res.json({ threads: [] });
 });
 
-commsRouter.post('/announcements', async (req, res) => {
+commsRouter.post('/announcements', requireManager, async (req, res) => {
   try {
     res.status(201).json({
       thread: await createCommsThread(
@@ -98,7 +108,7 @@ commsRouter.get('/handover', async (_req, res) => {
   res.json({ threads: [] });
 });
 
-commsRouter.post('/handover', async (req, res) => {
+commsRouter.post('/handover', requireManager, async (req, res) => {
   try {
     res.status(201).json({
       thread: await createCommsThread(
@@ -115,7 +125,7 @@ commsRouter.post('/handover', async (req, res) => {
   }
 });
 
-commsRouter.post('/alerts/evaluate', async (_req, res) => {
+commsRouter.post('/alerts/evaluate', requireManager, async (_req, res) => {
   try {
     res.json(await evaluateCommsAlertsDryRun());
   } catch (error) {
