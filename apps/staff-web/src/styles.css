@@ -1073,6 +1073,17 @@
   background: var(--color-surface);
 }
 
+.app-access-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.app-access-title .sidebar-nav-icon {
+  flex: 0 0 20px;
+}
+
 .roster-toolbar {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 220px;

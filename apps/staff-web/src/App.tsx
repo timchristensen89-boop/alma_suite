@@ -78,6 +78,23 @@ import { api, createSuiteHandoffUrl } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, SETTINGS_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import {
+  IconBadgeCheck,
+  IconBriefcase,
+  IconCalendarCheck,
+  IconCalendarClock,
+  IconClock,
+  IconDashboard,
+  IconFileLock,
+  IconFiles,
+  IconFileSignature,
+  IconFileText,
+  IconMail,
+  IconTriangle,
+  IconUserPlus,
+  IconUsers,
+  IconWallet
+} from '../../web/src/lib/icons';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -260,62 +277,62 @@ const NAV_ITEMS = [
     to: '/',
     label: 'People',
     description: 'Shared StaffProfile authority',
-    icon: <PeopleIcon />,
+    icon: <IconUsers />,
     end: true
   },
   {
     to: '/manager',
     label: 'Manager Today',
     description: 'Today’s staff, clock sessions, bookings and exceptions',
-    icon: <ChartIcon />
+    icon: <IconDashboard />
   },
   {
     to: '/clock',
     label: 'Clock',
     description: 'My clock in, out and breaks',
-    icon: <DocumentIcon />
+    icon: <IconClock />
   },
   {
     to: '/access',
     label: 'Profiles',
     description: 'Full staff profiles, permissions, documents, and tasks',
-    icon: <PeopleIcon />
+    icon: <IconFileText />
   },
   {
     to: '/invites',
     label: 'Invites',
     description: 'Staff onboarding links',
-    icon: <CapIcon />
+    icon: <IconUserPlus />
   },
   {
     to: '/approvals',
     label: 'Approvals',
     description: 'Review onboarding documents',
-    icon: <DocumentIcon />
+    icon: <IconBadgeCheck />
   },
   {
     to: '/roster',
     label: 'Roster',
     description: 'Roster board foundation',
-    icon: <ChartIcon />
+    icon: <IconCalendarClock />
   },
   {
     to: '/leave',
     label: 'Leave',
     description: 'Manager leave calendar',
-    icon: <DocumentIcon />
+    icon: <IconCalendarCheck />
   },
   {
     to: '/compliance',
     label: 'Compliance',
     description: 'Staff compliance reminders',
-    icon: <DocumentIcon />
+    icon: <IconFileLock />
   },
   {
     to: '/hr',
     label: 'HR',
     description: 'Restricted employment records',
-    icon: <DocumentIcon />
+    icon: <IconBriefcase />
   },
   {
     to: '/academy',
@@ -327,13 +344,13 @@ const NAV_ITEMS = [
     to: '/timesheets',
     label: 'Timesheets',
     description: 'Submit, approve, export',
-    icon: <DocumentIcon />
+    icon: <IconClock />
   },
   {
     to: '/tips',
     label: 'Tips',
     description: 'Cash tips and payout runs',
-    icon: <ChartIcon />
+    icon: <IconWallet />
   },
   {
     to: '/settings',
@@ -345,7 +362,7 @@ const NAV_ITEMS = [
     to: '/communications',
     label: 'Comms',
     description: 'Announcements, group chats, and messaging permissions',
-    icon: <DocumentIcon />
+    icon: <IconMail />
   }
 ];
 
@@ -354,32 +371,32 @@ const STAFF_MEMBER_NAV_ITEMS = [
     to: '/',
     label: 'Home',
     description: 'Today, clocking, reminders and announcements',
-    icon: <PeopleIcon />,
+    icon: <IconDashboard />,
     end: true
   },
   {
     to: '/roster',
     label: 'Roster',
     description: 'My upcoming and past shifts',
-    icon: <ChartIcon />
+    icon: <IconCalendarClock />
   },
   {
     to: '/clock',
     label: 'Clock',
     description: 'Clock in, out and breaks',
-    icon: <DocumentIcon />
+    icon: <IconClock />
   },
   {
     to: '/leave',
     label: 'Leave',
     description: 'Request leave and view approvals',
-    icon: <DocumentIcon />
+    icon: <IconCalendarCheck />
   },
   {
     to: '/compliance',
     label: 'Compliance',
     description: 'Documents, training and reminders',
-    icon: <DocumentIcon />
+    icon: <IconFileLock />
   }
 ];
 
@@ -5276,36 +5293,42 @@ const HR_SECTION_LINKS: Array<{
   to: string;
   title: string;
   description: string;
+  icon: JSX.Element;
   type?: StaffHrRecordType;
 }> = [
   {
     to: '/hr/contracts',
     title: 'Contracts',
     description: 'Upload signed contracts and issued employment agreements.',
+    icon: <IconFileSignature />,
     type: 'CONTRACT'
   },
   {
     to: '/hr/warnings',
     title: 'Written warnings',
     description: 'Store written warnings, reasons, notes and follow-up dates.',
+    icon: <IconTriangle />,
     type: 'WARNING'
   },
   {
     to: '/hr/pay-changes',
     title: 'Pay changes',
     description: 'Record approved pay-change letters and effective dates.',
+    icon: <IconWallet />,
     type: 'PAY_CHANGE'
   },
   {
     to: '/hr/right-to-work',
     title: 'Right to work',
     description: 'Restricted visa and work-rights records.',
+    icon: <IconBadgeCheck />,
     type: 'RIGHT_TO_WORK'
   },
   {
     to: '/hr/documents',
     title: 'Documents',
-    description: 'General HR document register with staff and status filters.'
+    description: 'General HR document register with staff and status filters.',
+    icon: <IconFiles />
   }
 ];
 
@@ -5421,7 +5444,10 @@ function HrOverviewPage({ records, loading }: { records: StaffHrRecord[]; loadin
         <div className="app-access-grid">
           {HR_SECTION_LINKS.map((link) => (
             <NavLink key={link.to} className="app-access-tile" to={link.to}>
-              <strong>{link.title}</strong>
+              <span className="app-access-title">
+                <span className="sidebar-nav-icon" aria-hidden="true">{link.icon}</span>
+                <strong>{link.title}</strong>
+              </span>
               <span className="subtle">{link.description}</span>
               <Badge tone="info">{link.type ? records.filter((record) => record.recordType === link.type).length : records.length} records</Badge>
             </NavLink>

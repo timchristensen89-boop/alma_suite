@@ -28,13 +28,20 @@ import { useDocumentTitle } from '../../web/src/hooks/useDocumentTitle';
 import {
   IconChecklist,
   IconChevronDown,
-  IconExternalLink,
+  IconBadgeCheck,
+  IconBriefcase,
+  IconDashboard,
+  IconFileSignature,
+  IconFileText,
   IconHandbook,
-  IconInbox,
+  IconIssues,
+  IconKeyRound,
   IconLogout,
-  IconMap,
+  IconPlug,
+  IconReceipt,
+  IconStore,
   IconSettings,
-  IconStaff,
+  IconUpload,
   IconUsers
 } from '../../web/src/lib/icons';
 import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
@@ -76,7 +83,7 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/',
     label: 'Overview',
     description: 'Launchpad for setup, integrations, imports, and system controls',
-    icon: <IconSettings />,
+    icon: <IconDashboard />,
     end: true
   },
   {
@@ -89,7 +96,7 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/venues',
     label: 'Venues',
     description: 'Venue setup and operating configuration',
-    icon: <IconMap />
+    icon: <IconStore />
   },
   {
     to: '/users',
@@ -101,31 +108,31 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/roles',
     label: 'Roles',
     description: 'Roles, permissions, and bulk access updates',
-    icon: <IconUsers />
+    icon: <IconKeyRound />
   },
   {
     to: '/staff-settings',
     label: 'Staff settings',
     description: 'Staff defaults and configuration',
-    icon: <IconStaff />
+    icon: <IconBriefcase />
   },
   {
     to: '/staff-record-types',
     label: 'Record types',
     description: 'Staff document and record type setup',
-    icon: <IconInbox />
+    icon: <IconFileText />
   },
   {
     to: '/staff-hr-templates',
     label: 'HR templates',
     description: 'Restricted HR document template setup',
-    icon: <IconStaff />
+    icon: <IconFileSignature />
   },
   {
     to: '/staff-onboarding',
     label: 'Onboarding',
     description: 'Staff onboarding setup',
-    icon: <IconStaff />
+    icon: <IconBadgeCheck />
   },
   {
     to: '/compliance-settings',
@@ -155,25 +162,25 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/integrations',
     label: 'Integrations',
     description: 'Connection health and external service setup',
-    icon: <IconExternalLink />
+    icon: <IconPlug />
   },
   {
     to: '/integrations/xero',
     label: 'Xero',
     description: 'Health checks, previews, and selected imports',
-    icon: <IconExternalLink />
+    icon: <IconReceipt />
   },
   {
     to: '/imports',
     label: 'Imports',
     description: 'Review and run explicit import actions',
-    icon: <IconInbox />
+    icon: <IconUpload />
   },
   {
     to: '/danger-zone',
     label: 'Danger zone',
     description: 'Restricted setup controls and irreversible actions',
-    icon: <IconSettings />
+    icon: <IconIssues />
   }
 ];
 

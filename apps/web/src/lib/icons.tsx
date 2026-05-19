@@ -33,6 +33,8 @@ export const IconIssues = (props: IconProps) => (
   </svg>
 );
 
+export const IconTriangle = IconIssues;
+
 export const IconChecklist = (props: IconProps) => (
   <svg {...base(props)}>
     <rect x="4" y="3" width="16" height="18" rx="2" />
@@ -267,5 +269,227 @@ export const IconLicences = (props: IconProps) => (
     <path d="M9 11h6" />
     <path d="M9 15h4" />
     <path d="m9 19 1.5 1.5L14 17" />
+  </svg>
+);
+
+export const IconFileText = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M6 3h9l3 3v15H6z" />
+    <path d="M15 3v4h4" />
+    <path d="M9 11h6" />
+    <path d="M9 15h6" />
+    <path d="M9 19h4" />
+  </svg>
+);
+
+export const IconFileSignature = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M6 3h9l3 3v15H6z" />
+    <path d="M15 3v4h4" />
+    <path d="M8 17c2-2 3.5-2 4.5 0 1-2 2.5-2 4 0" />
+    <path d="M8 12h7" />
+  </svg>
+);
+
+export const IconFiles = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M7 7V3h10l4 4v12H7z" />
+    <path d="M17 3v5h4" />
+    <path d="M4 7v14h13" />
+  </svg>
+);
+
+export const IconFileLock = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M6 3h9l3 3v15H6z" />
+    <path d="M15 3v4h4" />
+    <rect x="9" y="13" width="6" height="5" rx="1" />
+    <path d="M10.5 13v-1.5a1.5 1.5 0 0 1 3 0V13" />
+  </svg>
+);
+
+export const IconUserPlus = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="9" cy="7" r="4" />
+    <path d="M3 21v-2a5 5 0 0 1 10 0v2" />
+    <path d="M18 8v6" />
+    <path d="M15 11h6" />
+  </svg>
+);
+
+export const IconBadgeCheck = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3 4.5 6v5.5c0 4 2.6 7 7.5 9.5 4.9-2.5 7.5-5.5 7.5-9.5V6z" />
+    <path d="m8.5 12.5 2.3 2.3 4.7-5" />
+  </svg>
+);
+
+export const IconKeyRound = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="7.5" cy="14.5" r="4.5" />
+    <path d="M11 11 21 1" />
+    <path d="m16 6 3 3" />
+    <path d="m14 8 2 2" />
+  </svg>
+);
+
+export const IconBriefcase = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M9 6V4h6v2" />
+    <rect x="3" y="6" width="18" height="14" rx="2" />
+    <path d="M3 12h18" />
+    <path d="M10 12v2h4v-2" />
+  </svg>
+);
+
+export const IconCalendarCheck = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="5" width="16" height="16" rx="2" />
+    <path d="M8 3v4" />
+    <path d="M16 3v4" />
+    <path d="M4 10h16" />
+    <path d="m8.5 15 2.2 2.2 4.8-5" />
+  </svg>
+);
+
+export const IconCalendarClock = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="5" width="16" height="16" rx="2" />
+    <path d="M8 3v4" />
+    <path d="M16 3v4" />
+    <path d="M4 10h16" />
+    <circle cx="12" cy="15.5" r="3" />
+    <path d="M12 14v1.8l1.3.8" />
+  </svg>
+);
+
+export const IconWallet = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 7h15a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12" />
+    <path d="M16 13h5" />
+    <circle cx="16" cy="13" r="1" />
+  </svg>
+);
+
+export const IconPlug = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M9 7V3" />
+    <path d="M15 7V3" />
+    <path d="M7 7h10v4a5 5 0 0 1-10 0z" />
+    <path d="M12 16v5" />
+  </svg>
+);
+
+export const IconReceipt = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M6 3h12v18l-2-1-2 1-2-1-2 1-2-1-2 1z" />
+    <path d="M9 8h6" />
+    <path d="M9 12h6" />
+    <path d="M9 16h3" />
+  </svg>
+);
+
+export const IconUpload = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3v12" />
+    <path d="m7 8 5-5 5 5" />
+    <path d="M4 15v4a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-4" />
+  </svg>
+);
+
+export const IconStore = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 10h16l-1.5-6h-13z" />
+    <path d="M5 10v10h14V10" />
+    <path d="M9 20v-6h6v6" />
+    <path d="M4 10c0 2 3 2 4 0 1 2 3 2 4 0 1 2 3 2 4 0 1 2 4 2 4 0" />
+  </svg>
+);
+
+export const IconPackageCheck = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 7l9-4 9 4-9 4z" />
+    <path d="M3 7v10l9 4 9-4V7" />
+    <path d="M12 11v10" />
+    <path d="m15 15 1.5 1.5L20 13" />
+  </svg>
+);
+
+export const IconGift = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="3" y="8" width="18" height="13" rx="2" />
+    <path d="M12 8v13" />
+    <path d="M3 12h18" />
+    <path d="M12 8c-4 0-5-5-2-5 2 0 2 3 2 5z" />
+    <path d="M12 8c4 0 5-5 2-5-2 0-2 3-2 5z" />
+  </svg>
+);
+
+export const IconPieChart = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3v9h9" />
+    <path d="M21 12a9 9 0 1 1-9-9" />
+  </svg>
+);
+
+export const IconDownload = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3v12" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M4 21h16" />
+  </svg>
+);
+
+export const IconScan = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 7V5a1 1 0 0 1 1-1h2" />
+    <path d="M17 4h2a1 1 0 0 1 1 1v2" />
+    <path d="M20 17v2a1 1 0 0 1-1 1h-2" />
+    <path d="M7 20H5a1 1 0 0 1-1-1v-2" />
+    <path d="M7 12h10" />
+  </svg>
+);
+
+export const IconBadgePercent = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3 4.5 6v6c0 3.7 2.6 6.7 7.5 9 4.9-2.3 7.5-5.3 7.5-9V6z" />
+    <path d="m9 15 6-6" />
+    <circle cx="9" cy="9" r="1" />
+    <circle cx="15" cy="15" r="1" />
+  </svg>
+);
+
+export const IconMegaphone = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 13h3l10 5V6L7 11H4z" />
+    <path d="M7 13v5" />
+    <path d="M17 9a4 4 0 0 1 0 6" />
+  </svg>
+);
+
+export const IconImages = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="3" y="5" width="13" height="13" rx="2" />
+    <path d="M8 9h.01" />
+    <path d="m4 16 4-4 3 3 2-2 3 3" />
+    <path d="M8 3h11a2 2 0 0 1 2 2v11" />
+  </svg>
+);
+
+export const IconGlobe = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M3 12h18" />
+    <path d="M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9c-2.4-2.5-3.6-5.5-3.6-9S9.6 5.5 12 3z" />
+  </svg>
+);
+
+export const IconShare = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="m8.6 10.6 6.8-4.2" />
+    <path d="m8.6 13.4 6.8 4.2" />
   </svg>
 );
