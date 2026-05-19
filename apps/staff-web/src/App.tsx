@@ -359,7 +359,7 @@ const NAV_ITEMS = [
     icon: <GearIcon />
   },
   {
-    to: '/communications',
+    to: 'https://alma-comms.web.app',
     label: 'Comms',
     description: 'Announcements, group chats, and messaging permissions',
     icon: <IconMail />
