@@ -9,7 +9,8 @@ const URLS = {
   reports: 'https://alma-reports.web.app',
   giftcards: 'https://alma-giftcards.web.app',
   reserve: 'https://alma-reserve.web.app',
-  marketing: 'https://alma-marketing.web.app'
+  marketing: 'https://alma-marketing.web.app',
+  comms: 'https://alma-comms.web.app'
 };
 
 const APP_CONFIG = {
@@ -20,7 +21,9 @@ const APP_CONFIG = {
   'reports-web': { apiBase: URLS.reports, stockApiBase: `${URLS.reports}/stock-api` },
   'giftcards-web': { apiBase: URLS.giftcards },
   'reserve-web': { apiBase: URLS.reserve },
-  'marketing-web': { apiBase: URLS.marketing }
+  'marketing-web': { apiBase: URLS.marketing },
+  comms: { apiBase: URLS.comms },
+  'comms-web': { apiBase: URLS.comms }
 };
 
 const CROSS_APP_URLS = {
@@ -32,7 +35,8 @@ const CROSS_APP_URLS = {
   VITE_REPORTS_WEB_URL: URLS.reports,
   VITE_GIFTCARDS_WEB_URL: URLS.giftcards,
   VITE_RESERVE_WEB_URL: URLS.reserve,
-  VITE_MARKETING_WEB_URL: URLS.marketing
+  VITE_MARKETING_WEB_URL: URLS.marketing,
+  VITE_COMMS_WEB_URL: URLS.comms
 };
 
 function parseEnvFile(path) {
