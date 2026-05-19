@@ -2169,3 +2169,169 @@ model Venue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
+
+
+enum CommsThreadCategory {
+  INBOX
+  VENUE
+  ANNOUNCEMENT
+  HANDOVER
+  TASK
+  ALERT
+  GENERAL
+}
+
+enum CommsPriority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum CommsAlertType {
+  ROSTER_FORECAST_COGS_HIGH
+  STOCK_VARIANCE_HIGH
+  FRIDGE_TEMP_BREACH
+  STAFF_DOCUMENT_EXPIRING
+  CHECKLIST_CRITICAL_FAIL
+  AUDIT_CRITICAL_ISSUE
+  GENERAL
+}
+
+enum CommsAlertSeverity {
+  INFO
+  WARNING
+  CRITICAL
+}
+
+enum CommsRecipientMode {
+  STAFF
+  VENUE
+  ROLE
+  MANAGERS
+  ADMINS
+  CUSTOM_EMAILS
+}
+
+model CommsThread {
+  id          String              @id @default(cuid())
+  subject     String
+  venue       String?
+  category    CommsThreadCategory @default(GENERAL)
+  priority    CommsPriority       @default(NORMAL)
+  createdById String?
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+  archivedAt  DateTime?
+
+  messages    CommsMessage[]
+  recipients  CommsRecipient[]
+  links       CommsLink[]
+  alertEvents CommsAlertEvent[]
+
+  @@index([venue, category])
+  @@index([priority])
+  @@index([archivedAt])
+}
+
+model CommsMessage {
+  id          String    @id @default(cuid())
+  threadId    String
+  body        String
+  createdById String?
+  createdAt   DateTime  @default(now())
+  editedAt    DateTime?
+
+  thread      CommsThread       @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  attachments CommsAttachment[]
+
+  @@index([threadId, createdAt])
+}
+
+model CommsRecipient {
+  id             String    @id @default(cuid())
+  threadId       String
+  staffProfileId String?
+  venue          String?
+  role           String?
+  readAt         DateTime?
+  acknowledgedAt DateTime?
+  actionRequired Boolean   @default(false)
+  dueAt          DateTime?
+
+  thread         CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([staffProfileId, readAt])
+  @@index([venue, readAt])
+  @@index([role, readAt])
+  @@index([actionRequired, dueAt])
+}
+
+model CommsAttachment {
+  id           String   @id @default(cuid())
+  messageId    String
+  documentName String
+  documentUrl  String
+  mimeType     String?
+  createdAt    DateTime @default(now())
+
+  message      CommsMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+}
+
+model CommsLink {
+  id         String @id @default(cuid())
+  threadId   String
+  entityType String
+  entityId   String
+
+  thread     CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+
+  @@index([threadId])
+  @@index([entityType, entityId])
+}
+
+model CommsAlertRule {
+  id              String             @id @default(cuid())
+  name            String
+  enabled         Boolean            @default(true)
+  venue           String?
+  alertType       CommsAlertType
+  thresholdValue  Float?
+  thresholdUnit   String?
+  recipientMode   CommsRecipientMode @default(MANAGERS)
+  recipientEmails Json?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  events          CommsAlertEvent[]
+
+  @@index([enabled, alertType])
+  @@index([venue])
+}
+
+model CommsAlertEvent {
+  id             String              @id @default(cuid())
+  ruleId         String?
+  threadId       String?
+  alertType      CommsAlertType
+  venue          String?
+  severity       CommsAlertSeverity   @default(WARNING)
+  subject        String
+  body           String
+  sourceType     String?
+  sourceId       String?
+  value          Float?
+  thresholdValue Float?
+  emailedAt      DateTime?
+  createdAt      DateTime            @default(now())
+
+  rule           CommsAlertRule?      @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  thread         CommsThread?         @relation(fields: [threadId], references: [id], onDelete: SetNull)
+
+  @@index([alertType, createdAt])
+  @@index([venue, createdAt])
+  @@index([severity])
+}
