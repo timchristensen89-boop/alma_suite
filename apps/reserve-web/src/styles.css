@@ -522,17 +522,258 @@
   font-size: 13px;
 }
 
+.reserve-widget-page {
+  padding-top: 18px;
+}
+
+.reserve-widget-shell {
+  gap: 18px;
+}
+
+.reserve-public-hero {
+  min-height: clamp(360px, 48vw, 560px);
+  display: flex;
+  align-items: flex-end;
+  padding: clamp(24px, 5vw, 56px);
+  border-radius: 30px;
+  background-position: center;
+  background-size: cover;
+  box-shadow: 0 30px 90px rgba(37, 51, 38, 0.18);
+}
+
+.reserve-public-hero-copy {
+  width: min(680px, 100%);
+  color: #fffaf5;
+}
+
+.reserve-public-hero-copy .reserve-public-eyebrow,
+.reserve-public-hero-copy h1,
+.reserve-public-hero-copy p {
+  color: #fffaf5;
+}
+
+.reserve-public-hero-copy p:not(.reserve-public-eyebrow) {
+  color: rgba(255, 250, 245, 0.9);
+}
+
+.reserve-public-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 360px);
+  gap: 18px;
+  align-items: start;
+  margin-top: -58px;
+  position: relative;
+  z-index: 2;
+}
+
+.reserve-public-primary {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+
+.reserve-public-floating-panel {
+  border-radius: 999px;
+  padding: 14px;
+}
+
+.reserve-public-search {
+  display: grid;
+  gap: 12px;
+}
+
+.reserve-venue-tabs {
+  display: flex;
+  gap: 8px;
+  padding: 4px;
+  border-radius: 999px;
+  background: rgba(244, 235, 220, 0.68);
+}
+
+.reserve-venue-tab {
+  flex: 1;
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+  padding: 10px 16px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: #253326;
+  cursor: pointer;
+  text-align: left;
+}
+
+.reserve-venue-tab span {
+  font-weight: 900;
+}
+
+.reserve-venue-tab small {
+  color: rgba(37, 51, 38, 0.68);
+  font-size: 12px;
+}
+
+.reserve-venue-tab.active {
+  background: #173d2f;
+  color: #fffaf5;
+}
+
+.reserve-venue-tab.active small {
+  color: rgba(255, 250, 245, 0.78);
+}
+
+.reserve-public-floating-panel .reserve-public-search-grid {
+  grid-template-columns: minmax(110px, 0.7fr) minmax(150px, 1fr) minmax(140px, 0.9fr) auto;
+  align-items: end;
+}
+
+.reserve-public-floating-panel .btn-primary {
+  min-height: 48px;
+  border-radius: 999px;
+  padding-inline: 28px;
+}
+
+.reserve-public-info-card {
+  position: sticky;
+  top: 18px;
+  overflow: hidden;
+  border: 1px solid rgba(23, 61, 47, 0.14);
+  border-radius: 24px;
+  background: rgba(255, 250, 245, 0.96);
+  box-shadow: 0 24px 90px rgba(37, 51, 38, 0.1);
+}
+
+.reserve-public-info-card img {
+  width: 100%;
+  height: 220px;
+  display: block;
+  object-fit: cover;
+}
+
+.reserve-public-info-card > div {
+  display: grid;
+  gap: 14px;
+  padding: 20px;
+}
+
+.reserve-public-info-card h2,
+.reserve-public-ready-state h2 {
+  margin: 0;
+  color: #253326;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 30px;
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.reserve-public-info-card p,
+.reserve-public-ready-state p,
+.reserve-public-selection-summary {
+  margin: 0;
+  color: rgba(37, 51, 38, 0.72);
+  line-height: 1.55;
+}
+
+.reserve-public-info-card dl {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.reserve-public-info-card dl div {
+  display: grid;
+  gap: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(23, 61, 47, 0.12);
+}
+
+.reserve-public-info-card dt {
+  color: rgba(37, 51, 38, 0.62);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.reserve-public-info-card dd {
+  margin: 0;
+  color: #253326;
+  font-weight: 800;
+}
+
+.reserve-public-info-card a,
+.reserve-change-time {
+  color: #173d2f;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.reserve-change-time {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.reserve-slot-date-groups,
+.reserve-slot-date-group,
+.reserve-empty-availability {
+  display: grid;
+  gap: 14px;
+}
+
+.reserve-slot-date-group h3 {
+  margin: 0;
+  color: #253326;
+  font-size: 15px;
+}
+
+.reserve-slot-button {
+  min-height: 92px;
+}
+
+.reserve-slot-button small {
+  color: rgba(37, 51, 38, 0.58);
+  font-size: 12px;
+}
+
+.reserve-alternate-dates {
+  display: grid;
+  gap: 10px;
+}
+
+.reserve-alternate-dates p {
+  margin: 0;
+  color: #253326;
+  font-weight: 900;
+}
+
+.reserve-alternate-dates > div {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+}
+
+.reserve-alternate-dates button {
+  min-height: 48px;
+  border: 1px solid rgba(23, 61, 47, 0.16);
+  border-radius: 999px;
+  background: #fffaf5;
+  color: #253326;
+  cursor: pointer;
+}
+
 @media (max-width: 960px) {
   .reserve-layout,
-  .reserve-public-hero,
   .reserve-public-venue-picker,
   .reserve-public-search-grid,
+  .reserve-public-layout,
   .reserve-section-grid {
     grid-template-columns: 1fr;
   }
 
   .reserve-public-hero {
-    padding-top: 12px;
+    min-height: 380px;
+    padding-top: 120px;
   }
 
   .reserve-public-image-card {
@@ -549,6 +790,22 @@
 
   .reserve-venue-thumb {
     width: 84px;
+  }
+
+  .reserve-public-layout {
+    margin-top: -46px;
+  }
+
+  .reserve-public-info-card {
+    position: static;
+  }
+
+  .reserve-public-floating-panel {
+    border-radius: 24px;
+  }
+
+  .reserve-public-floating-panel .reserve-public-search-grid {
+    grid-template-columns: 1fr;
   }
 }
 
@@ -621,6 +878,31 @@
   }
 
   .reserve-public-actions .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .reserve-public-hero {
+    min-height: 330px;
+    padding: 100px 18px 22px;
+    border-radius: 24px;
+  }
+
+  .reserve-public-layout {
+    margin-top: -32px;
+  }
+
+  .reserve-venue-tabs {
+    border-radius: 18px;
+    flex-direction: column;
+  }
+
+  .reserve-venue-tab {
+    border-radius: 16px;
+  }
+
+  .reserve-public-floating-panel .btn-primary,
+  .reserve-public-floating-panel .reserve-public-search-grid > .btn-primary {
     width: 100%;
     justify-content: center;
   }

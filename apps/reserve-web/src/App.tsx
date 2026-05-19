@@ -51,18 +51,24 @@ const GOOGLE_STATUSES = ['SETUP_REQUIRED', 'PENDING', 'ACTIVE', 'ERROR'] as cons
 const DEFAULT_RESERVE_PUBLIC_VENUE = {
   location: 'Alma Group',
   image: '/images/alma-avalon-margaritas.jpg',
-  summary: 'Alma Group dining with online booking availability.'
+  summary: 'Alma Group dining with online booking availability.',
+  description: 'Choose your venue, check available times, and send a booking request through to the restaurant team.',
+  website: 'https://almagroup.com.au/'
 };
-const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; summary: string }> = {
+const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; summary: string; description: string; website: string }> = {
   'Alma Avalon': {
     location: 'Avalon Beach',
     image: '/images/alma-avalon-margaritas.jpg',
-    summary: 'Beachside Mexican dining, margaritas, long lunches, and relaxed evening bookings.'
+    summary: 'Beachside Mexican dining, margaritas, long lunches, and relaxed evening bookings.',
+    description: 'A relaxed coastal dining room for tacos, shared plates, margaritas, birthdays, and long lunches near the beach.',
+    website: 'https://almagroup.com.au/'
   },
   'St Alma': {
     location: 'Freshwater',
     image: '/images/st-alma-food.JPG',
-    summary: 'Coastal dining in Freshwater with bright share plates, cocktails, and group tables.'
+    summary: 'Coastal dining in Freshwater with bright share plates, cocktails, and group tables.',
+    description: 'A bright Freshwater venue for coastal dining, cocktails, group tables, and neighbourhood catch-ups.',
+    website: 'https://almagroup.com.au/'
   }
 };
 const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
@@ -238,8 +244,33 @@ function shortDate(value: string) {
   });
 }
 
+function longDate(value: string) {
+  return new Date(value).toLocaleDateString(undefined, {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long'
+  });
+}
+
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+function dateInputFromIso(value: string) {
+  return toDateInput(new Date(value));
+}
+
+function nextDateOptions(date: string) {
+  const start = date ? new Date(`${date}T00:00:00`) : new Date();
+  return [1, 2, 3, 4].map((offset) => toDateInput(addDays(start, offset)));
+}
+
+function slotDateKey(value: string) {
+  return dateInputFromIso(value);
+}
+
+function serviceCopy(period: ReserveServicePeriod | null | undefined) {
+  return period ? servicePeriodLabels[period] : 'Dining room';
 }
 
 function isAdmin(user: AuthUser) {
@@ -524,8 +555,7 @@ function PublicBookingWidget() {
     void loadConfig();
   }, [loadConfig]);
 
-  async function checkAvailability(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  const requestAvailability = useCallback(async (nextSearch: WidgetSearchForm) => {
     setSearching(true);
     setFeedback(defaultFeedback());
     setSelectedSlot(null);
@@ -535,10 +565,10 @@ function PublicBookingWidget() {
         await api<ReservePublicAvailabilityResponse>('/api/reserve/public-widget/availability', {
           method: 'POST',
           body: JSON.stringify({
-            venue: search.venue,
-            date: `${search.date}T00:00:00`,
-            partySize: Number(search.partySize || 1),
-            servicePeriod: search.servicePeriod
+            venue: nextSearch.venue,
+            date: `${nextSearch.date}T00:00:00`,
+            partySize: Number(nextSearch.partySize || 1),
+            servicePeriod: nextSearch.servicePeriod
           })
         })
       );
@@ -551,6 +581,17 @@ function PublicBookingWidget() {
     } finally {
       setSearching(false);
     }
+  }, []);
+
+  async function checkAvailability(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    await requestAvailability(search);
+  }
+
+  async function tryAnotherDate(date: string) {
+    const nextSearch = { ...search, date };
+    setSearch(nextSearch);
+    await requestAvailability(nextSearch);
   }
 
   async function submitBooking(event: FormEvent<HTMLFormElement>) {
@@ -600,6 +641,18 @@ function PublicBookingWidget() {
     }));
   const selectedVenue = venueOptions.find((venue) => venue.value === search.venue) ?? venueOptions[0];
   const selectedVenueDetail = selectedVenue?.detail ?? RESERVE_PUBLIC_VENUES[search.venue] ?? DEFAULT_RESERVE_PUBLIC_VENUE;
+  const groupedSlots = useMemo(() => {
+    const groups = new Map<string, ReservePublicAvailabilityResponse['slots']>();
+    for (const slot of availability?.slots ?? []) {
+      const key = slotDateKey(slot.startsAt);
+      groups.set(key, [...(groups.get(key) ?? []), slot]);
+    }
+    return Array.from(groups.entries()).map(([date, slots]) => ({ date, slots }));
+  }, [availability]);
+  const alternateDates = nextDateOptions(search.date);
+  const noAvailabilityTitle = selectedVenue?.onlineEnabled
+    ? `No online tables for ${longDate(`${search.date}T00:00:00`)}`
+    : `${search.venue} is not taking online bookings for this service`;
 
   function chooseVenue(venue: string) {
     setSearch((current) => ({ ...current, venue }));
@@ -619,130 +672,146 @@ function PublicBookingWidget() {
           </div>
           <a href="https://almagroup.com.au/">Visit website</a>
         </header>
-        <section className="reserve-public-hero">
-          <div>
+        <section className="reserve-public-hero" style={{ backgroundImage: `linear-gradient(180deg, rgba(20, 35, 27, 0.1), rgba(20, 35, 27, 0.62)), url(${selectedVenueDetail.image})` }}>
+          <div className="reserve-public-hero-copy">
             <p className="reserve-public-eyebrow">Alma Group reservations</p>
-            <h1>Book a table by the beach.</h1>
-            <p>Choose Alma Avalon or St Alma, find a time, and send your booking request through to the restaurant.</p>
-            <ol className="reserve-public-steps" aria-label="Booking steps">
-              <li>Choose venue</li>
-              <li>Find a table</li>
-              <li>Your details</li>
-            </ol>
+            <h1>{search.venue}</h1>
+            <p>{selectedVenueDetail.summary}</p>
           </div>
-          <figure className="reserve-public-image-card">
-            <img src={selectedVenueDetail.image} alt={`${search.venue} dining`} />
-            <figcaption>
-              <span>{selectedVenueDetail.location}</span>
-              <strong>{search.venue}</strong>
-            </figcaption>
-          </figure>
         </section>
-        <section className="reserve-public-booking-panel" aria-label="Book a table">
-          {loading ? <Spinner label="Loading booking form..." /> : null}
-          {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
-          {!loading && config ? (
-            <div className="reserve-widget-stack">
-              <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
-                <section className="reserve-public-venue-picker" aria-label="Choose a venue">
-                  <div>
-                    <p className="reserve-public-eyebrow">Choose a venue</p>
-                    <h2>{search.venue}</h2>
-                    <p>{selectedVenueDetail.summary}</p>
-                  </div>
-                  <div className="reserve-venue-button-grid">
+        <section className="reserve-public-layout" aria-label="Book a table">
+          <div className="reserve-public-primary">
+            <section className="reserve-public-booking-panel reserve-public-floating-panel">
+              {loading ? <Spinner label="Loading booking form..." /> : null}
+              {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
+              {!loading && config ? (
+                <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
+                  <div className="reserve-venue-tabs" aria-label="Choose a venue">
                     {venueOptions.map((venue) => (
                       <button
                         key={venue.value}
                         type="button"
-                        className={`reserve-venue-button ${search.venue === venue.value ? 'active' : ''}`}
+                        className={`reserve-venue-tab ${search.venue === venue.value ? 'active' : ''}`}
                         onClick={() => chooseVenue(venue.value)}
                         aria-pressed={search.venue === venue.value}
                       >
-                        <img className="reserve-venue-thumb" src={venue.detail.image} alt="" />
-                        <span className="reserve-venue-button-copy">
-                          <strong>{venue.value}</strong>
-                          <span>{venue.detail.location}</span>
-                          <small>{venue.onlineEnabled && venue.activeRules > 0 ? 'Online bookings available' : 'Limited online availability'}</small>
-                        </span>
+                        <span>{venue.value}</span>
+                        <small>{venue.detail.location}</small>
                       </button>
                     ))}
                   </div>
-                </section>
-                <div className="reserve-public-flow-heading">
-                  <p className="reserve-public-eyebrow">Find a table</p>
-                  <h2>Party size, date, and service</h2>
-                </div>
-                <div className="reserve-public-search-grid">
-                  <Input
-                    label="Date"
-                    type="date"
-                    value={search.date}
-                    onChange={(event) => setSearch((current) => ({ ...current, date: event.currentTarget.value }))}
-                  />
-                  <Input
-                    label="Party size"
-                    type="number"
-                    min="1"
-                    max="20"
-                    value={search.partySize}
-                    onChange={(event) => setSearch((current) => ({ ...current, partySize: event.currentTarget.value }))}
-                  />
-                  <Select
-                    label="Service"
-                    value={search.servicePeriod}
-                    onChange={(event) => setSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))}
-                    options={[{ label: 'Any service', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: servicePeriodLabels[value], value }))]}
-                  />
-                </div>
-                <div className="reserve-public-actions">
+                  <div className="reserve-public-search-grid">
+                    <Input
+                      label="Guests"
+                      type="number"
+                      min="1"
+                      max="20"
+                      value={search.partySize}
+                      onChange={(event) => setSearch((current) => ({ ...current, partySize: event.currentTarget.value }))}
+                    />
+                    <Input
+                      label="Date"
+                      type="date"
+                      value={search.date}
+                      onChange={(event) => setSearch((current) => ({ ...current, date: event.currentTarget.value }))}
+                    />
+                    <Select
+                      label="Time"
+                      value={search.servicePeriod}
+                      onChange={(event) => setSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))}
+                      options={[{ label: 'Any time', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: servicePeriodLabels[value], value }))]}
+                    />
+                    <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Search'}</Button>
+                  </div>
                   <ActionFeedback
                     message={feedback.target === 'widget-search' ? feedback.message : null}
                     tone={feedback.tone}
                   />
-                  <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Find a table'}</Button>
+                </form>
+              ) : null}
+            </section>
+
+            <p className="reserve-public-help-note">
+              For larger groups or special requests, the venue team may follow up before confirming the booking details.
+            </p>
+
+            {availability ? (
+              <section className="reserve-public-section">
+                <div className="reserve-public-section-heading">
+                  <div>
+                    <p className="reserve-public-eyebrow">Available times</p>
+                    <h2>{availability.partySize} guests at {search.venue} on {shortDate(availability.serviceDate)}</h2>
+                  </div>
+                  {selectedSlot ? (
+                    <button type="button" className="reserve-change-time" onClick={() => setSelectedSlot(null)}>
+                      Change time
+                    </button>
+                  ) : null}
                 </div>
-              </form>
-
-              <p className="reserve-public-help-note">
-                For larger groups or special requests, the venue team may follow up before confirming the booking details.
-              </p>
-
-              {availability ? (
-                <section className="reserve-public-section">
-                  <div className="reserve-public-section-heading">
-                    <div>
-                      <p className="reserve-public-eyebrow">Select a time</p>
-                      <h2>{availability.partySize} guests at {search.venue} on {shortDate(availability.serviceDate)}</h2>
+                {availability.slots.length === 0 ? (
+                  <div className="reserve-empty-availability">
+                    <EmptyState
+                      title={noAvailabilityTitle}
+                      description="We would still love to see you. Choose another date below or adjust the time and guest count."
+                    />
+                    <div className="reserve-alternate-dates" aria-label="Try another date">
+                      <p>Try another date</p>
+                      <div>
+                        {alternateDates.map((date) => (
+                          <button key={date} type="button" onClick={() => void tryAnotherDate(date)} disabled={searching}>
+                            <strong>{shortDate(`${date}T00:00:00`)}</strong>
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
-                  {availability.slots.length === 0 ? (
-                    <EmptyState title="No online slots available" description="Try a different time, party size, or venue." />
-                  ) : (
-                    <div className="reserve-slot-grid">
-                      {availability.slots.map((slot) => (
-                        <button
-                          key={`${slot.startsAt}-${slot.availabilityRuleId ?? 'any'}`}
-                          type="button"
-                          className={`reserve-slot-button ${selectedSlot?.startsAt === slot.startsAt ? 'active' : ''}`}
-                          onClick={() => setSelectedSlot(slot)}
-                        >
-                          <strong>{slot.label}</strong>
-                          <span>{slot.capacityRemaining} covers left</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                ) : (
+                  <div className="reserve-slot-date-groups">
+                    {groupedSlots.map((group) => (
+                      <section key={group.date} className="reserve-slot-date-group">
+                        <h3>{shortDate(`${group.date}T00:00:00`)}</h3>
+                        <div className="reserve-slot-grid">
+                          {group.slots.map((slot) => (
+                            <button
+                              key={`${slot.startsAt}-${slot.availabilityRuleId ?? 'any'}`}
+                              type="button"
+                              className={`reserve-slot-button ${selectedSlot?.startsAt === slot.startsAt ? 'active' : ''}`}
+                              onClick={() => setSelectedSlot(slot)}
+                            >
+                              <strong>{slot.label}</strong>
+                              <span>{serviceCopy(slot.servicePeriod)}</span>
+                              <small>{slot.capacityRemaining} covers left</small>
+                            </button>
+                          ))}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
+                )}
+              </section>
+            ) : (
+              !loading && config ? (
+                <section className="reserve-public-section reserve-public-ready-state">
+                  <p className="reserve-public-eyebrow">Find a table</p>
+                  <h2>Choose guests, date, and time to see live availability.</h2>
+                  <p>No demo times are shown here. Results come from the venue availability rules in Alma Reserve.</p>
                 </section>
-              ) : null}
+              ) : null
+            )}
 
-              {selectedSlot ? (
-                <section className="reserve-public-section">
+            {selectedSlot ? (
+              <section className="reserve-public-section">
                   <div className="reserve-public-section-heading">
                     <div>
                       <p className="reserve-public-eyebrow">Guest details</p>
                       <h2>{timeLabel(selectedSlot.startsAt)} at {search.venue}</h2>
+                      <p className="reserve-public-selection-summary">
+                        {search.partySize} guests · {shortDate(selectedSlot.startsAt)} · {serviceCopy(selectedSlot.servicePeriod)}
+                      </p>
                     </div>
+                    <button type="button" className="reserve-change-time" onClick={() => setSelectedSlot(null)}>
+                      Change time
+                    </button>
                   </div>
                   <form className="reserve-form" onSubmit={(event) => void submitBooking(event)}>
                     <div className="form-grid two">
@@ -808,9 +877,27 @@ function PublicBookingWidget() {
                     </div>
                   ) : null}
                 </section>
-              ) : null}
+            ) : null}
+          </div>
+          <aside className="reserve-public-info-card" aria-label="Venue information">
+            <img src={selectedVenueDetail.image} alt={`${search.venue} venue`} />
+            <div>
+              <p className="reserve-public-eyebrow">Venue</p>
+              <h2>{search.venue}</h2>
+              <p>{selectedVenueDetail.description}</p>
+              <dl>
+                <div>
+                  <dt>Location</dt>
+                  <dd>{selectedVenueDetail.location}</dd>
+                </div>
+                <div>
+                  <dt>Booking status</dt>
+                  <dd>{selectedVenue?.onlineEnabled ? 'Online booking requests open' : 'Limited online availability'}</dd>
+                </div>
+              </dl>
+              <a href={selectedVenueDetail.website} target="_blank" rel="noreferrer">Open venue website</a>
             </div>
-          ) : null}
+          </aside>
         </section>
       </div>
     </main>
