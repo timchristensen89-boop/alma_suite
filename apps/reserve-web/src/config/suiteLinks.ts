@@ -62,8 +62,15 @@ export function suiteAppHref(app: SuiteAppIdentity) {
 }
 
 export function withSuiteAppLinks(apps: SuiteAppIdentity[]) {
-  return apps.map((app) => ({
+  return apps.map((app) => forceCommsLink({
     ...app,
     href: suiteAppHref(app)
   }));
+}
+
+
+export function forceCommsLink<T extends { id?: string; href?: string; url?: string }>(app: T): T {
+  return app.id === 'comms'
+    ? { ...app, href: COMMS_WEB_URL, url: COMMS_WEB_URL }
+    : app;
 }
