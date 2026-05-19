@@ -1,228 +1,10 @@
-.comms-button.ghost,
-.comms-admin-link {
-  background: rgba(255, 255, 255, 0.64);
-  color: #253326;
-  border: 1px solid rgba(37, 51, 38, 0.18);
-}
+/* Comms content only.
+   The imported Suite stylesheet owns AppShell, sidebar, topbar, app switcher, gutters, and global layout. */
 
-.comms-nav {
-  display: grid;
-  gap: 0.35rem;
-}
-
-.comms-nav-link {
-  display: flex;
-  align-items: center;
-  gap: 0.72rem;
-  padding: 0.78rem 0.86rem;
-  border-radius: 1rem;
-  color: inherit;
-  text-decoration: none;
-}
-
-.comms-nav-link.active,
-.comms-nav-link:hover {
-  background: rgba(37, 51, 38, 0.08);
-}
-
-.comms-line-icon {
-  display: inline-grid;
-  place-items: center;
-  width: 1.22rem;
-  height: 1.22rem;
-  border: 1px solid currentColor;
-  border-radius: 999px;
-  font-size: 0.72rem;
-  line-height: 1;
-  font-weight: 900;
-  flex: 0 0 auto;
-}
-
-.comms-eyebrow {
-  margin: 0;
-  color: #684a4a;
-  text-transform: uppercase;
-  letter-spacing: 0.14em;
-  font-size: 0.72rem;
-  font-weight: 800;
-}
-
-.comms-subtitle,
-.comms-muted {
-  color: rgba(37, 51, 38, 0.72);
-}
-
-.comms-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-}
-
-.thread-list,
-.message-list,
-.alert-result {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.thread-card {
-  display: grid;
-  gap: 0.45rem;
-  background: rgba(255, 255, 255, 0.72);
-  border: 1px solid rgba(37, 51, 38, 0.12);
-  border-radius: 1.5rem;
-  padding: 1rem;
-  color: inherit;
-  text-decoration: none;
-  box-shadow: 0 18px 50px rgba(37, 51, 38, 0.08);
-}
-
-.thread-card:hover {
-  border-color: rgba(37, 51, 38, 0.3);
-}
-
-.thread-card.static {
-  cursor: default;
-}
-
-.thread-topline,
-.thread-meta,
-.toolbar,
-.section-heading {
-  display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  flex-wrap: wrap;
-}
-
-.thread-topline,
-.thread-meta {
-  justify-content: space-between;
-  color: rgba(37, 51, 38, 0.72);
-  font-size: 0.86rem;
-}
-
-.section-heading {
-  justify-content: space-between;
-}
-
-.section-heading h2,
-.section-heading p,
-.thread-card h3,
-.thread-card p {
-  margin: 0;
-}
-
-.priority-pill {
-  display: inline-flex;
-  width: fit-content;
-  border-radius: 999px;
-  padding: 0.22rem 0.55rem;
-  font-size: 0.72rem;
-  font-weight: 800;
-  background: rgba(37, 51, 38, 0.1);
-}
-
-.priority-high,
-.priority-warning {
-  background: #f5dcce;
-  color: #684a4a;
-}
-
-.priority-urgent,
-.priority-critical {
-  background: #684a4a;
-  color: #fff;
-}
-
-.priority-low,
-.priority-info {
-  background: rgba(37, 51, 38, 0.08);
-}
-
-.comms-form {
-  display: grid;
-  gap: 0.85rem;
-}
-
-.comms-form label {
-  display: grid;
-  gap: 0.35rem;
-  font-weight: 800;
-}
-
-.comms-form input,
-.comms-form select,
-.comms-form textarea {
-  width: 100%;
-  border: 1px solid rgba(37, 51, 38, 0.18);
-  border-radius: 1rem;
-  padding: 0.8rem;
-  background: rgba(255, 255, 255, 0.78);
-  color: #253326;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 0.85rem;
-}
-
-.check-row {
-  display: flex !important;
-  align-items: center;
-  grid-template-columns: auto 1fr;
-}
-
-.check-row input {
-  width: auto;
-}
-
-.comms-error {
-  color: #9f1d1d;
-  font-weight: 800;
-}
-
-.comms-login {
-  min-height: 100vh;
-  display: grid;
-  place-items: center;
-  padding: 1rem;
-  background: #efe8dc;
-}
-
-.comms-login-card {
-  width: min(100%, 460px);
-}
-
-.message-card {
-  max-width: 760px;
-}
-
-.message-card span {
-  color: rgba(37, 51, 38, 0.68);
-  font-size: 0.84rem;
-}
-
-@media (max-width: 860px) {
-.comms-grid,
-  .form-grid {
-    grid-template-columns: 1fr;
-  }
-}
-
-.comms-eyebrow {
-  margin-bottom: -0.25rem;
-}
-
-.comms-subtitle {
-  max-width: 68rem;
-}
-
-/* Comms content only. The real Suite stylesheet imported from Compliance owns AppShell, sidebar, topbar, app switcher, gutters, and global page layout. */
 .comms-page {
-  display: grid;
-  gap: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
   margin: 0;
   padding: 0;
   max-width: none;
@@ -235,26 +17,295 @@
 
 .comms-page > .comms-eyebrow {
   margin: 0;
-  font-size: 0.72rem;
-  line-height: 1;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
 }
 
 .comms-page > h1 {
   margin: 0;
+  font-size: clamp(22px, 2vw, 28px);
   line-height: 1.1;
+  letter-spacing: -0.02em;
 }
 
 .comms-page > .comms-subtitle {
-  margin: -0.35rem 0 0;
-  max-width: 68rem;
+  margin: -4px 0 0;
+}
+
+.comms-eyebrow {
+  color: var(--color-accent-text, var(--color-text-muted));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.comms-subtitle,
+.comms-muted {
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  line-height: 1.55;
+}
+
+.comms-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.thread-list,
+.message-list,
+.alert-result {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease, transform 0.12s ease;
+}
+
+.thread-card:hover {
+  border-color: var(--color-border-strong);
+  box-shadow: var(--shadow-sm);
+}
+
+.thread-card.static,
+.thread-card.static:hover {
+  border-color: var(--color-border);
+  box-shadow: var(--shadow-xs);
+  transform: none;
+  cursor: default;
+}
+
+.thread-card h3,
+.thread-card p,
+.section-heading h2,
+.section-heading p {
+  margin: 0;
+}
+
+.thread-card h3 {
+  font-size: 14.5px;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.thread-card p {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-muted);
+}
+
+.thread-topline,
+.thread-meta,
+.toolbar,
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.thread-topline,
+.thread-meta {
+  justify-content: space-between;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+}
+
+.section-heading {
+  justify-content: space-between;
+}
+
+.priority-pill {
+  display: inline-flex;
+  align-items: center;
+  width: fit-content;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+  background: var(--tone-muted-bg, var(--color-surface-muted));
+  color: var(--tone-muted-fg, var(--color-text-muted));
+  text-transform: capitalize;
+}
+
+.priority-high,
+.priority-warning {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+
+.priority-urgent,
+.priority-critical {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+.priority-low,
+.priority-info {
+  background: var(--tone-info-bg);
+  color: var(--tone-info-fg);
+}
+
+.comms-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.comms-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--color-text);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.comms-form input,
+.comms-form select,
+.comms-form textarea {
+  width: 100%;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13.5px;
+  box-shadow: var(--shadow-xs);
+  transition: border-color 0.12s ease, box-shadow 0.12s ease;
+}
+
+.comms-form textarea {
+  min-height: 88px;
+  resize: vertical;
+  line-height: 1.5;
+}
+
+.comms-form input:focus,
+.comms-form select:focus,
+.comms-form textarea:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(158, 59, 59, 0.14);
+}
+
+.comms-form button[type="submit"],
+.comms-page button:not(.btn) {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  min-height: 34px;
+  padding: 7px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: var(--shadow-xs);
+  cursor: pointer;
+}
+
+.comms-form button[type="submit"] {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.comms-page button:not(.btn):hover {
+  background: var(--color-surface-hover);
+  border-color: var(--color-border-strong);
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 12px;
+}
+
+.check-row {
+  display: flex !important;
+  align-items: center;
+  gap: 8px;
+}
+
+.check-row input {
+  width: auto;
+  min-height: auto;
+  box-shadow: none;
+}
+
+.comms-error {
+  margin: 0;
+  color: var(--tone-danger-fg, #991b1b);
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.message-card {
+  max-width: 760px;
+}
+
+.message-card span {
+  color: var(--color-text-muted);
+  font-size: 12.5px;
 }
 
 .topbar-action-group {
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 0.75rem;
+  gap: 6px;
   flex-wrap: wrap;
+}
+
+.topbar-user-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+.comms-login {
+  min-height: 100vh;
+  min-height: 100svh;
+  display: grid;
+  place-items: center;
+  padding: 32px 16px;
+  background: var(--color-bg);
+}
+
+.comms-login-card {
+  width: 100%;
+  max-width: 420px;
+}
+
+@media (max-width: 860px) {
+  .comms-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .topbar-action-group {
+    justify-content: flex-start;
+  }
 }

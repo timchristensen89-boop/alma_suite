@@ -1,10 +1,16 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter, NavLink, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import {
-  AppShell,
+  createRoot } from 'react-dom/client'; import { BrowserRouter,
+  NavLink,
+  Route,
+  Routes,
+  useNavigate,
+  useParams,
+  useLocation
+} from 'react-router-dom'; import {   AppShell,
   Card,
   ProductLogo,
+  SUITE_APPS,
   SuiteAppSwitcher,
   TopBar
 } from '@alma/ui';
@@ -20,6 +26,8 @@ IconBriefcase,
 } from '../../web/src/lib/icons';
 import '../../web/src/styles.css';
 import './styles.css';
+const suiteApps = SUITE_APPS;
+
 type AuthUser = {
   id?: string;
   email?: string;
@@ -624,10 +632,10 @@ function SettingsPage() {
 }
 
 function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => void }) {
-  const location = window.location.pathname;
+  const location = useLocation();
   const active =
     [...navItems].sort((a, b) => b.to.length - a.to.length).find((item) =>
-      item.to === '/' ? location === '/' : location.startsWith(item.to)
+      item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
     ) ?? navItems[0]!;
 
   async function signOut() {
@@ -640,14 +648,17 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   }
 
   const sidebar = (
-    <nav className="comms-nav">
+    <ul className="sidebar-nav">
+      <li className="sidebar-nav-section">Comms</li>
       {navItems.map((item) => (
-        <NavLink key={item.to} to={item.to} end={item.end} className="comms-nav-link">
-          <span className="comms-line-icon" aria-hidden="true">{item.icon}</span>
-          <span>{item.label}</span>
-        </NavLink>
+        <li key={item.to}>
+          <NavLink to={item.to} end={item.end}>
+            <span className="sidebar-nav-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </NavLink>
+        </li>
       ))}
-    </nav>
+    </ul>
   );
 
   const topBar = (
@@ -656,10 +667,10 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
       subtitle="Messages, handovers, alerts, and follow-ups"
       right={
         <div className="topbar-action-group">
-          <SuiteAppSwitcher />
-          <span>{user.name || user.email || 'Signed in'}</span>
-          <a className="comms-admin-link" href="https://alma-suite-admin.web.app">Admin</a>
-          <button type="button" onClick={signOut}>Sign out</button>
+          <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
+          <span className="topbar-user-label">{user.name || user.email || 'Signed in'}</span>
+          <a className="btn btn-secondary btn-sm" href="https://alma-suite-admin.web.app">Admin</a>
+          <button type="button" className="btn btn-secondary btn-sm" onClick={signOut}>Sign out</button>
         </div>
       }
     />
