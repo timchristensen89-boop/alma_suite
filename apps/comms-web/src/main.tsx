@@ -74,6 +74,29 @@ type AlertDryRunResult = {
   events: AlertDryRunEvent[];
 };
 
+const TOKEN_STORAGE_KEY = 'alma-comms-token';
+
+function getStoredToken() {
+  try {
+    return window.localStorage.getItem(TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+function setStoredToken(token: string | null) {
+  try {
+    if (token) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, token);
+    } else {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // Ignore storage errors.
+  }
+}
+
+
 const navItems = [
   { to: '/', label: 'Overview', icon: '⌂', end: true },
   { to: '/inbox', label: 'Inbox', icon: '□' },
@@ -95,6 +118,7 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
     credentials: 'include',
     headers: {
       Accept: 'application/json',
+      ...(getStoredToken() ? { Authorization: `Bearer ${getStoredToken()}` } : {}),
       ...(options.body ? { 'Content-Type': 'application/json' } : {}),
       ...(options.headers ?? {})
     }
@@ -160,10 +184,11 @@ function LoginGate({ onSignedIn }: { onSignedIn: () => void }) {
     setMessage('');
 
     try {
-      await api('/api/auth/login', {
+      const data = await api<{ user: AuthUser; token?: string }>('/api/auth/login', {
         method: 'POST',
         body: JSON.stringify({ email, password })
       });
+      setStoredToken(data.token ?? null);
       onSignedIn();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not sign in.');
@@ -592,6 +617,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
     try {
       await api('/api/auth/logout', { method: 'POST' });
     } finally {
+      setStoredToken(null);
       onSignedOut();
     }
   }
