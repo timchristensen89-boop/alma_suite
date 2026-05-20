@@ -1,6 +1,12 @@
 import { useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { Issue, IssueFormInput, IssueSeverity, IssueStatus } from '@alma/shared';
+import type {
+  Issue,
+  IssueAssigneeOption,
+  IssueFormInput,
+  IssueSeverity,
+  IssueStatus
+} from '@alma/shared';
 import {
   ActionFeedback,
   Button,
@@ -75,11 +81,48 @@ const statuses: IssueStatus[] = [
   'CLOSED'
 ];
 
+function assigneeValue(
+  value: string | null | undefined,
+  assignees: IssueAssigneeOption[]
+) {
+  if (!value) return '';
+  const match = assignees.find((assignee) =>
+    assignee.id === value ||
+    assignee.name === value ||
+    assignee.label === value ||
+    assignee.email === value
+  );
+  return match?.id ?? value;
+}
+
+function assigneeOptions(
+  value: string | null | undefined,
+  assignees: IssueAssigneeOption[]
+) {
+  const selectedValue = assigneeValue(value, assignees);
+  const options = [
+    { label: 'Unassigned', value: '' },
+    ...assignees.map((assignee) => ({
+      label: assignee.label,
+      value: assignee.id
+    }))
+  ];
+
+  if (selectedValue && !options.some((option) => option.value === selectedValue)) {
+    options.push({ label: value ?? selectedValue, value: selectedValue });
+  }
+
+  return options;
+}
+
 type Props = {
   initialValue?: Issue;
   mode: 'create' | 'edit';
   submitting: boolean;
   error?: string | null;
+  assignees?: IssueAssigneeOption[];
+  assigneesLoading?: boolean;
+  assigneesError?: string | null;
   onSubmit: (value: IssueFormInput) => Promise<void>;
 };
 
@@ -88,6 +131,9 @@ export function IssueForm({
   mode,
   submitting,
   error,
+  assignees = [],
+  assigneesLoading = false,
+  assigneesError,
   onSubmit
 }: Props) {
   const [form, setForm] = useState<IssueFormInput>(() =>
@@ -224,10 +270,19 @@ export function IssueForm({
               value
             }))}
           />
-          <Input
+          <Select
             label="Assignee"
-            value={form.assignee ?? ''}
+            value={assigneeValue(form.assignee, assignees)}
             onChange={(event) => update('assignee', event.target.value)}
+            options={assigneeOptions(form.assignee, assignees)}
+            disabled={assigneesLoading}
+            hint={
+              assigneesLoading
+                ? 'Loading active staff...'
+                : assigneesError
+                  ? `Could not load staff: ${assigneesError}`
+                  : 'Choose an active staff member.'
+            }
           />
           <Input
             label="Due date"

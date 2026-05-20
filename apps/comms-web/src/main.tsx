@@ -739,6 +739,7 @@ function CommsSidebar() {
 function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => void }) {
   const location = useLocation();
   const active = currentCommsPage(location.pathname);
+  const adminUrl = 'https://alma-suite-admin.web.app';
 
   async function signOut() {
     try {
@@ -749,17 +750,32 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
     }
   }
 
+  function openWithHandoff(event: React.MouseEvent<HTMLAnchorElement>, href: string) {
+    event.preventDefault();
+    void createSuiteHandoffUrl(href).then((nextHref) => {
+      window.location.assign(nextHref);
+    }).catch(() => {
+      window.location.assign(href);
+    });
+  }
+
   const topBar = (
     <TopBar
       title={active.label}
       subtitle="Messages, handovers, alerts, and follow-ups"
       right={
-        <>
+        <div className="topbar-action-group">
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <span className="topbar-user-label">{user.name || user.email || 'Signed in'}</span>
-          <a className="btn btn-secondary btn-sm" href="https://alma-suite-admin.web.app">Admin</a>
+          <a
+            className="btn btn-secondary btn-sm"
+            href={adminUrl}
+            onClick={(event) => openWithHandoff(event, adminUrl)}
+          >
+            Admin
+          </a>
           <button type="button" className="btn btn-secondary btn-sm" onClick={signOut}>Sign out</button>
-        </>
+        </div>
       }
     />
   );
@@ -806,7 +822,9 @@ function Root() {
   }
 
   useEffect(() => {
+    const cleanup = installSuiteHandoff();
     loadUser();
+    return cleanup;
   }, []);
 
   if (user === undefined) {

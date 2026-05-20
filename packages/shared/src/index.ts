@@ -2045,6 +2045,15 @@ export type IssueSummary = {
   critical: number;
 };
 
+export type IssueAssigneeOption = {
+  id: string;
+  name: string;
+  label: string;
+  email: string | null;
+  roleTitle: string;
+  venue: string | null;
+};
+
 export type StaffComplianceRecord = {
   id: string;
   staffProfileId: string;

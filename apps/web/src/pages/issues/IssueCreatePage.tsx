@@ -1,13 +1,15 @@
 import { useNavigate } from 'react-router-dom';
-import type { Issue, IssueFormInput } from '@alma/shared';
+import type { Issue, IssueAssigneeOption, IssueFormInput } from '@alma/shared';
 import { useState } from 'react';
 import { api } from '../../lib/api';
 import { IssueForm } from '../../features/issues/IssueForm';
+import { useAsync } from '../../hooks/useAsync';
 
 export function IssueCreatePage() {
   const navigate = useNavigate();
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const assignees = useAsync<IssueAssigneeOption[]>(() => api('/api/issues/assignees'), []);
 
   async function handleSubmit(value: IssueFormInput) {
     try {
@@ -25,5 +27,15 @@ export function IssueCreatePage() {
     }
   }
 
-  return <IssueForm mode="create" submitting={submitting} error={error} onSubmit={handleSubmit} />;
+  return (
+    <IssueForm
+      mode="create"
+      submitting={submitting}
+      error={error}
+      assignees={assignees.data ?? []}
+      assigneesLoading={assignees.loading}
+      assigneesError={assignees.error}
+      onSubmit={handleSubmit}
+    />
+  );
 }

@@ -19,7 +19,7 @@ issuesRouter.get('/', async (req, res, next) => {
 
 issuesRouter.post('/', async (req, res, next) => {
   try {
-    const issue = await issueService.create(req.body);
+    const issue = await issueService.create(req.body, req.user);
     res.status(201).json(issue);
   } catch (error) {
     next(error);
@@ -28,6 +28,10 @@ issuesRouter.post('/', async (req, res, next) => {
 
 issuesRouter.get('/meta', async (_req, res) => {
   res.json(await issueService.meta());
+});
+
+issuesRouter.get('/assignees', async (_req, res) => {
+  res.json(await issueService.assignees());
 });
 
 issuesRouter.get('/:id', async (req, res, next) => {
@@ -41,7 +45,7 @@ issuesRouter.get('/:id', async (req, res, next) => {
 
 issuesRouter.put('/:id', async (req, res, next) => {
   try {
-    const issue = await issueService.update(req.params.id, req.body);
+    const issue = await issueService.update(req.params.id, req.body, req.user);
     res.json(issue);
   } catch (error) {
     next(error);
