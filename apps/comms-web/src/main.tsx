@@ -1,13 +1,16 @@
 import React, { FormEvent, useEffect, useMemo, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import {
-  createRoot } from 'react-dom/client'; import { BrowserRouter,
+  BrowserRouter,
   NavLink,
   Route,
   Routes,
+  useLocation,
   useNavigate,
-  useParams,
-  useLocation
-} from 'react-router-dom'; import {   AppShell,
+  useParams
+} from 'react-router-dom';
+import {
+  AppShell,
   Card,
   ProductLogo,
   SUITE_APPS,
@@ -15,8 +18,9 @@ import {
   TopBar
 } from '@alma/ui';
 import {
-IconBriefcase,
+  IconBriefcase,
   IconChecklist,
+  IconChevronDown,
   IconDashboard,
   IconFileText,
   IconIssues,
@@ -24,9 +28,11 @@ IconBriefcase,
   IconStore,
   IconUpload
 } from '../../web/src/lib/icons';
+import { withSuiteAppLinks } from './config/suiteLinks';
 import '../../web/src/styles.css';
 import './styles.css';
-const suiteApps = SUITE_APPS;
+
+const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
 type AuthUser = {
   id?: string;
@@ -157,6 +163,56 @@ async function api<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   return data as T;
+}
+
+
+function urlWithSuiteToken(href: string, token: string) {
+  const url = new URL(href, window.location.origin);
+  url.searchParams.set('suite_token', token);
+  url.searchParams.set('suite_from', window.location.origin);
+  return url.toString();
+}
+
+async function createSuiteHandoffUrl(href: string) {
+  const data = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
+  return urlWithSuiteToken(href, data.token);
+}
+
+async function consumeSuiteHandoffToken() {
+  const params = new URLSearchParams(window.location.search);
+  const token = params.get('suite_token');
+
+  if (!token) return null;
+
+  const data = await api<{ user: AuthUser; token?: string }>('/api/auth/handoff/consume', {
+    method: 'POST',
+    body: JSON.stringify({ token })
+  });
+
+  setStoredToken(data.token ?? null);
+  params.delete('suite_token');
+  params.delete('suite_from');
+
+  const nextSearch = params.toString();
+  window.history.replaceState(
+    null,
+    '',
+    `${window.location.pathname}${nextSearch ? `?${nextSearch}` : ''}${window.location.hash}`
+  );
+
+  return data.user;
+}
+
+function installSuiteHandoff() {
+  (globalThis as typeof globalThis & {
+    almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+  }).almaCreateSuiteHandoffUrl = createSuiteHandoffUrl;
+
+  return () => {
+    delete (globalThis as typeof globalThis & {
+      almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+  };
 }
 
 function formatDateTime(value: string) {
@@ -631,12 +687,58 @@ function SettingsPage() {
   );
 }
 
+
+function currentCommsPage(pathname: string) {
+  return [...navItems]
+    .sort((a, b) => b.to.length - a.to.length)
+    .find((item) =>
+      item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)
+    ) ?? navItems[0]!;
+}
+
+function CommsSidebar() {
+  const location = useLocation();
+  const active = currentCommsPage(location.pathname);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  useEffect(() => {
+    setMobileMenuOpen(false);
+  }, [location.pathname]);
+
+  return (
+    <div className="mobile-nav-layer">
+      <button
+        className="mobile-nav-toggle"
+        type="button"
+        aria-expanded={mobileMenuOpen}
+        aria-controls="comms-mobile-nav"
+        onClick={() => setMobileMenuOpen((open) => !open)}
+      >
+        <span className="mobile-nav-toggle-current">
+          <span className="sidebar-nav-icon">{active.icon}</span>
+          <span>{active.label}</span>
+        </span>
+        <IconChevronDown className="mobile-nav-toggle-caret" size={16} />
+      </button>
+
+      <ul id="comms-mobile-nav" className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}>
+        <li className="sidebar-nav-section">Comms</li>
+        {navItems.map((item) => (
+          <li key={item.to}>
+            <NavLink to={item.to} end={item.end}>
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => void }) {
   const location = useLocation();
-  const active =
-    [...navItems].sort((a, b) => b.to.length - a.to.length).find((item) =>
-      item.to === '/' ? location.pathname === '/' : location.pathname.startsWith(item.to)
-    ) ?? navItems[0]!;
+  const active = currentCommsPage(location.pathname);
 
   async function signOut() {
     try {
@@ -647,31 +749,17 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
     }
   }
 
-  const sidebar = (
-    <ul className="sidebar-nav">
-      <li className="sidebar-nav-section">Comms</li>
-      {navItems.map((item) => (
-        <li key={item.to}>
-          <NavLink to={item.to} end={item.end}>
-            <span className="sidebar-nav-icon">{item.icon}</span>
-            <span>{item.label}</span>
-          </NavLink>
-        </li>
-      ))}
-    </ul>
-  );
-
   const topBar = (
     <TopBar
       title={active.label}
       subtitle="Messages, handovers, alerts, and follow-ups"
       right={
-        <div className="topbar-action-group">
+        <>
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <span className="topbar-user-label">{user.name || user.email || 'Signed in'}</span>
           <a className="btn btn-secondary btn-sm" href="https://alma-suite-admin.web.app">Admin</a>
           <button type="button" className="btn btn-secondary btn-sm" onClick={signOut}>Sign out</button>
-        </div>
+        </>
       }
     />
   );
@@ -679,7 +767,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   return (
     <AppShell
       brand={<ProductLogo appId="comms" size="md" showBrandMark={false} />}
-      sidebar={sidebar}
+      sidebar={<CommsSidebar />}
       topBar={topBar}
     >
       <Routes>
@@ -703,6 +791,13 @@ function Root() {
 
   async function loadUser() {
     try {
+      const handoffUser = await consumeSuiteHandoffToken();
+
+      if (handoffUser) {
+        setUser(handoffUser);
+        return;
+      }
+
       const data = await api<AuthResponse>('/api/auth/me');
       setUser(data.user);
     } catch {

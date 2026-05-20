@@ -309,3 +309,63 @@
     justify-content: flex-start;
   }
 }
+
+/* Comms topbar and mobile shell pass */
+.topbar-user-label {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .topbar-user-label {
+    display: none;
+  }
+
+  .comms-page {
+    gap: 12px;
+  }
+
+  .thread-topline,
+  .thread-meta,
+  .toolbar,
+  .section-heading {
+    align-items: flex-start;
+  }
+}
+
+@media (max-width: 760px) {
+  .comms-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .thread-card {
+    padding: 12px 14px;
+  }
+
+  .message-card {
+    max-width: 100%;
+  }
+
+  .section-heading,
+  .toolbar {
+    flex-direction: column;
+  }
+
+  .comms-form input,
+  .comms-form select,
+  .comms-form textarea {
+    min-height: 40px;
+  }
+}
+
+@media (max-width: 420px) {
+  .comms-page > h1 {
+    font-size: 21px;
+  }
+
+  .comms-page > .comms-subtitle {
+    font-size: 13px;
+  }
+}
