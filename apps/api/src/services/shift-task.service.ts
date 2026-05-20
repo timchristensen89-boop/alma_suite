@@ -73,6 +73,31 @@ function isManager(user: AuthUser) {
   return user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin;
 }
 
+function isAdmin(user: AuthUser) {
+  return user.role === 'ADMIN' || user.isAdmin;
+}
+
+function canManageVenue(user: AuthUser, venue: string | null | undefined) {
+  if (isAdmin(user)) return true;
+  if (user.role !== 'MANAGER') return false;
+  if (!user.venue || !venue) return true;
+  return normalise(user.venue) === normalise(venue);
+}
+
+function managedVenueForRequest(user: AuthUser, venue?: string) {
+  const requestedVenue = cleanString(venue);
+  if (isAdmin(user)) return requestedVenue ?? user.venue;
+  if (!isManager(user)) return user.venue;
+  if (
+    requestedVenue &&
+    user.venue &&
+    normalise(requestedVenue) !== normalise(user.venue)
+  ) {
+    throw new HttpError(403, 'Venue access required');
+  }
+  return requestedVenue ?? user.venue;
+}
+
 function canManageSettings(user: AuthUser) {
   if (user.isAdmin || user.role === 'ADMIN') return true;
   const settingsAccess = user.appAccess.find((access) => access.appId === 'SETTINGS' && access.status === 'ENABLED');
@@ -307,27 +332,44 @@ async function ensureAssignmentsForShifts(shifts: RosterShiftRecord[]) {
       if (!ruleMatchesShift(rule, shift)) continue;
       const staffProfileId = shouldAssignToStaff(rule) ? shift.staffProfileId : null;
       const assignmentKey = assignmentKeyFor(rule, shift, staffProfileId);
-      const existing = await prisma.shiftTaskAssignment.findUnique({ where: { assignmentKey } });
-      if (existing) continue;
 
-      await prisma.shiftTaskAssignment.create({
-        data: {
-          assignmentKey,
-          ruleId: rule.id,
-          rosterShiftId: shift.id,
-          staffProfileId,
-          venue: shift.venue,
-          taskType: rule.taskType,
-          checklistTemplateId: rule.checklistTemplateId,
-          status: 'PENDING',
-          dueAt: dueAtForRule(rule, shift)
-        }
-      });
-      generated += 1;
+      try {
+        await prisma.shiftTaskAssignment.create({
+          data: {
+            assignmentKey,
+            ruleId: rule.id,
+            rosterShiftId: shift.id,
+            staffProfileId,
+            venue: shift.venue,
+            taskType: rule.taskType,
+            checklistTemplateId: rule.checklistTemplateId,
+            status: 'PENDING',
+            dueAt: dueAtForRule(rule, shift)
+          }
+        });
+        generated += 1;
+      } catch (error) {
+        if ((error as { code?: string }).code !== 'P2002') throw error;
+      }
     }
   }
 
   return generated;
+}
+
+function assertAssignmentAccess(
+  user: AuthUser,
+  assignment: { staffProfileId: string | null; venue: string | null }
+) {
+  if (assignment.staffProfileId) {
+    if (assignment.staffProfileId === user.id) return;
+    if (canManageVenue(user, assignment.venue)) return;
+    throw new HttpError(403, 'Shift task access required');
+  }
+
+  if (!canManageVenue(user, assignment.venue)) {
+    throw new HttpError(403, 'Shift task access required');
+  }
 }
 
 async function assignmentsForWhere(where: Record<string, unknown>) {
@@ -484,7 +526,35 @@ export const shiftTaskService = {
   },
 
   async listForVenue(user: AuthUser, venue?: string): Promise<ShiftTaskListResponse> {
-    const targetVenue = cleanString(venue) ?? user.venue;
+    if (!isManager(user)) {
+      const { from, to } = coerceWindow(undefined, undefined, VENUE_QUEUE_LOOKAHEAD_DAYS);
+      const shifts = await prisma.rosterShift.findMany({
+        where: {
+          staffProfileId: user.id,
+          startsAt: { gte: from, lte: to }
+        },
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              roleTitle: true,
+              venue: true,
+              employmentStatus: true
+            }
+          }
+        }
+      });
+      const generated = await ensureAssignmentsForShifts(shifts);
+      const tasks = await assignmentsForWhere({
+        staffProfileId: user.id,
+        status: { not: 'CANCELLED' }
+      });
+      return { tasks, generated };
+    }
+
+    const targetVenue = managedVenueForRequest(user, venue);
     const { from, to } = coerceWindow(undefined, undefined, VENUE_QUEUE_LOOKAHEAD_DAYS);
     const shifts = await prisma.rosterShift.findMany({
       where: {
@@ -506,14 +576,8 @@ export const shiftTaskService = {
     });
     const generated = await ensureAssignmentsForShifts(shifts);
     const venueWhere = targetVenue ? { venue: targetVenue } : {};
-    const accessWhere = isManager(user)
-      ? venueWhere
-      : {
-          ...venueWhere,
-          OR: [{ staffProfileId: user.id }, { staffProfileId: null }]
-        };
     const tasks = await assignmentsForWhere({
-      ...accessWhere,
+      ...venueWhere,
       status: { not: 'CANCELLED' }
     });
     return { tasks, generated };
@@ -530,35 +594,81 @@ export const shiftTaskService = {
       }
     });
     if (!assignment) throw new HttpError(404, 'Shift task assignment not found');
-    const sameVenue = assignment.venue && user.venue && normalise(assignment.venue) === normalise(user.venue);
-    const canAccess = isManager(user) || assignment.staffProfileId === user.id || (!assignment.staffProfileId && sameVenue);
-    if (!canAccess) throw new HttpError(403, 'Shift task access required');
+    assertAssignmentAccess(user, assignment);
     if (assignment.taskType !== 'CHECKLIST' || !assignment.checklistTemplateId || !assignment.checklistTemplate) {
       throw new HttpError(400, 'Only checklist shift tasks can be started in this release.');
     }
 
-    if (assignment.checklistRunId) {
-      const run = await prisma.checklistRun.findUnique({
-        where: { id: assignment.checklistRunId },
+    const run = await prisma.$transaction(async (tx) => {
+      const current = await tx.shiftTaskAssignment.findUnique({
+        where: { id: assignment.id },
         include: {
-          template: { include: { items: { orderBy: [{ position: 'asc' }] } } },
-          items: { include: { linkedIssue: true }, orderBy: [{ position: 'asc' }] }
+          rule: true,
+          rosterShift: assignmentInclude.rosterShift,
+          staffProfile: assignmentInclude.staffProfile,
+          checklistRun: assignmentInclude.checklistRun,
+          checklistTemplate: {
+            include: { items: { orderBy: [{ position: 'asc' }] } }
+          }
         }
       });
-      if (!run) throw new HttpError(404, 'Checklist run not found');
-      return { assignment: toAssignmentPayload(assignment), run: run as any };
-    }
 
-    const run = await prisma.$transaction(async (tx) => {
+      if (!current) throw new HttpError(404, 'Shift task assignment not found');
+      assertAssignmentAccess(user, current);
+
+      if (current.checklistRunId) {
+        const existingRun = await tx.checklistRun.findUnique({
+          where: { id: current.checklistRunId },
+          include: {
+            template: { include: { items: { orderBy: [{ position: 'asc' }] } } },
+            items: { include: { linkedIssue: true }, orderBy: [{ position: 'asc' }] }
+          }
+        });
+        if (!existingRun) throw new HttpError(404, 'Checklist run not found');
+        return existingRun;
+      }
+
+      if (current.taskType !== 'CHECKLIST' || !current.checklistTemplateId || !current.checklistTemplate) {
+        throw new HttpError(400, 'Only checklist shift tasks can be started in this release.');
+      }
+
+      const claim = await tx.shiftTaskAssignment.updateMany({
+        where: {
+          id: current.id,
+          checklistRunId: null,
+          status: { in: ['PENDING', 'OVERDUE'] }
+        },
+        data: { status: 'IN_PROGRESS' }
+      });
+
+      if (claim.count === 0) {
+        const latest = await tx.shiftTaskAssignment.findUnique({
+          where: { id: current.id },
+          select: { checklistRunId: true }
+        });
+        if (latest?.checklistRunId) {
+          const existingRun = await tx.checklistRun.findUnique({
+            where: { id: latest.checklistRunId },
+            include: {
+              template: { include: { items: { orderBy: [{ position: 'asc' }] } } },
+              items: { include: { linkedIssue: true }, orderBy: [{ position: 'asc' }] }
+            }
+          });
+          if (!existingRun) throw new HttpError(404, 'Checklist run not found');
+          return existingRun;
+        }
+        throw new HttpError(409, 'Shift task is not available to start.');
+      }
+
       const createdRun = await tx.checklistRun.create({
         data: {
-          templateId: assignment.checklistTemplateId!,
+          templateId: current.checklistTemplateId,
           performedBy: `${user.firstName} ${user.lastName}`.trim() || user.email || 'Staff',
-          area: assignment.venue || assignment.checklistTemplate?.area || null,
-          notes: `Started from shift task: ${assignment.rule?.name ?? 'Shift task'}`,
+          area: current.venue || current.checklistTemplate.area || null,
+          notes: `Started from shift task: ${current.rule?.name ?? 'Shift task'}`,
           status: 'OPEN',
           items: {
-            create: assignment.checklistTemplate!.items.map((item) => ({
+            create: current.checklistTemplate.items.map((item) => ({
               templateItemId: item.id,
               label: item.label,
               description: item.description,
@@ -573,7 +683,7 @@ export const shiftTaskService = {
         }
       });
       await tx.shiftTaskAssignment.update({
-        where: { id: assignment.id },
+        where: { id: current.id },
         data: {
           checklistRunId: createdRun.id,
           status: 'IN_PROGRESS'

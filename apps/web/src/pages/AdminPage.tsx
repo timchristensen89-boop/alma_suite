@@ -854,6 +854,15 @@ function ShiftTaskRulesAdminSection({ venueOptions }: { venueOptions: Array<{ la
               placeholder="900 for 3:00pm"
             />
             <Input
+              label="Ends before minute"
+              type="number"
+              min="0"
+              max="1440"
+              value={form.endBeforeMinutes}
+              onChange={(event) => updateForm('endBeforeMinutes', event.target.value)}
+              placeholder="1020 for 5:00pm"
+            />
+            <Input
               label="Ends after minute"
               type="number"
               min="0"
