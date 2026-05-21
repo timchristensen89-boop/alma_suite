@@ -74,6 +74,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteNotificationsWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
@@ -636,6 +637,7 @@ function TopBarWithContext() {
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={canManageCommunications(user)}
             />
+            <SuiteNotificationsWidget api={api} currentApp="staff" />
             <Button
               size="sm"
               variant="secondary"

@@ -180,6 +180,10 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Gift cards access disabled'));
       }
+    } else if (req.path.startsWith('/api/notifications')) {
+      if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
+        return next(new HttpError(403, 'Suite access disabled'));
+      }
     } else if (!hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
       return next(new HttpError(403, 'Compliance access disabled'));
     }

@@ -32,6 +32,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteNotificationsWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
@@ -1054,6 +1055,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
+              <SuiteNotificationsWidget api={api} currentApp="giftcards" />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }

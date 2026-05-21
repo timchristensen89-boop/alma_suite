@@ -17,11 +17,13 @@ import {
   Spinner,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteNotificationsWidget,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
 import { ForgotPasswordPage, ResetPasswordPage } from '../../web/src/pages/PasswordRecoveryPages';
 import { HandbookAdminPage } from '../../web/src/pages/handbook/HandbookIndexPage';
+import { api } from '../../web/src/lib/api';
 import { AuthProvider, useAuth } from '../../web/src/lib/auth';
 import { canAdmin } from '../../web/src/lib/rbac';
 import { useDocumentTitle } from '../../web/src/hooks/useDocumentTitle';
@@ -319,6 +321,7 @@ function AdminTopBar() {
       right={
         <>
           <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
+          <SuiteNotificationsWidget api={api} currentApp="settings" />
           <UserMenu />
         </>
       }

@@ -15,6 +15,7 @@ import {
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteNotificationsWidget,
   TopBar
 } from '@alma/ui';
 import {
@@ -766,6 +767,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
       right={
         <div className="topbar-action-group">
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
+          <SuiteNotificationsWidget api={api} currentApp="comms" />
           <span className="topbar-user-label">{user.name || user.email || 'Signed in'}</span>
           <a
             className="btn btn-secondary btn-sm"

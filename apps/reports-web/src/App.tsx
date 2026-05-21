@@ -30,6 +30,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteNotificationsWidget,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -1840,6 +1841,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
+              <SuiteNotificationsWidget api={staffApi} currentApp="reports" />
               <Button size="sm" variant="secondary" onClick={() => void onLogout()}>
                 Sign out
               </Button>
