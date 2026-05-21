@@ -16,6 +16,8 @@ import {
   staffHrRecordUpdateSchema,
   staffManagerNoteInputSchema,
   staffPasswordResetRequestSchema,
+  staffPinChangeInputSchema,
+  staffPinResetInputSchema,
   staffPayProfileInputSchema,
   staffInviteCompleteInputSchema,
   staffInviteCreateInputSchema,
@@ -100,8 +102,8 @@ function validateStaffRecordAttachmentOnCreate(documentUrl?: string) {
   }
 }
 
-function withoutStaffSecrets<T extends { passwordHash?: string | null }>(profile: T) {
-  const { passwordHash: _passwordHash, ...safeProfile } = profile;
+function withoutStaffSecrets<T extends { passwordHash?: string | null; pinHash?: string | null }>(profile: T) {
+  const { passwordHash: _passwordHash, pinHash: _pinHash, ...safeProfile } = profile;
   return safeProfile;
 }
 
@@ -669,7 +671,10 @@ async function assertActorCanAccessClockSession(id: string, actor: AuthUser) {
 }
 
 function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
-  const where: Prisma.StaffProfileWhereInput = { employmentStatus: { not: 'ARCHIVED' } };
+  const where: Prisma.StaffProfileWhereInput = {
+    employmentStatus: { not: 'ARCHIVED' },
+    accountType: 'HUMAN'
+  };
 
   if (actor && !actor.isAdmin && actor.role !== 'ADMIN') {
     if (actor.role === 'STAFF') {
@@ -4623,6 +4628,63 @@ export const staffService = {
       }
     });
     return withoutStaffSecrets(approvedProfile);
+  },
+
+  async changeOwnPin(actor: AuthUser, input: unknown) {
+    if (actor.accountType === 'VENUE_DEVICE') {
+      throw new HttpError(403, 'Device accounts cannot set a personal PIN.');
+    }
+    const data = staffPinChangeInputSchema.parse(input);
+    const profile = await prisma.staffProfile.findFirst({
+      where: {
+        id: actor.id,
+        accountType: 'HUMAN',
+        employmentStatus: 'ACTIVE',
+        mergedIntoStaffProfileId: null
+      },
+      select: { id: true, pinHash: true }
+    });
+    if (!profile) throw new HttpError(404, 'Staff profile not found.');
+    if (profile.pinHash) {
+      if (!data.currentPin) throw new HttpError(400, 'Current PIN is required.');
+      const ok = await authService.comparePin(data.currentPin, profile.pinHash);
+      if (!ok) throw new HttpError(401, 'Current PIN is incorrect.');
+    }
+    const pinHash = await authService.hashPin(data.newPin);
+    await prisma.staffProfile.update({
+      where: { id: profile.id },
+      data: { pinHash, pinUpdatedAt: new Date() }
+    });
+    return { ok: true, pinUpdatedAt: new Date().toISOString() };
+  },
+
+  async resetPin(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    const data = staffPinResetInputSchema.parse(input);
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const profile = await prisma.staffProfile.findFirst({
+      where: { id: staffProfileId, accountType: 'HUMAN', mergedIntoStaffProfileId: null },
+      select: { id: true, firstName: true, lastName: true }
+    });
+    if (!profile) throw new HttpError(404, 'Staff profile not found.');
+    const now = new Date();
+    const pinHash = await authService.hashPin(data.pin);
+    await prisma.staffProfile.update({
+      where: { id: profile.id },
+      data: { pinHash, pinUpdatedAt: now }
+    });
+    await prisma.staffManagementEvent.create({
+      data: {
+        staffProfileId: profile.id,
+        eventType: 'STAFF_PIN_RESET',
+        summary: 'Staff PIN reset by manager or admin.',
+        createdById: actor?.id ?? null,
+        createdByName: actor ? actorName(actor) : null,
+        createdByEmail: actor?.email ?? null,
+        metadata: {}
+      }
+    });
+    return { ok: true, pinUpdatedAt: now.toISOString() };
   },
 
   async summary(actor?: AuthUser) {

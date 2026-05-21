@@ -3,11 +3,13 @@ import type { AuthUser } from '@alma/shared';
 import { env } from '../env.js';
 import { authService } from '../services/auth.service.js';
 import { HttpError } from './http.js';
-import { parseSessionToken } from './session.js';
+import { DEVICE_PIN_SESSION_COOKIE, parseDevicePinSessionToken, parseSessionToken } from './session.js';
 
 declare module 'express-serve-static-core' {
   interface Request {
     user?: AuthUser;
+    deviceUser?: AuthUser;
+    pinUser?: AuthUser;
   }
 }
 
@@ -60,10 +62,12 @@ function hasAnyEnabledAppAccess(user: AuthUser, appIds: AuthUser['appAccess'][nu
 }
 
 function isManager(user: AuthUser) {
+  if (user.accountType === 'VENUE_DEVICE') return false;
   return user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin;
 }
 
 function hasSettingsAccess(user: AuthUser) {
+  if (user.accountType === 'VENUE_DEVICE' || user.deviceAccount) return false;
   if (user.isAdmin || user.role === 'ADMIN') return true;
   const settingsAccess = user.appAccess.find((access) => access.appId === 'SETTINGS' && access.status === 'ENABLED');
   return Boolean(settingsAccess?.role === 'ADMIN' || settingsAccess?.permissions?.admin);
@@ -81,6 +85,9 @@ function isStaffWriteAllowed(req: Request) {
   if (/^\/api\/shift-task-assignments\/[^/]+\/start-checklist$/.test(req.path) && req.method === 'POST') return true;
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
   if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
+  if (req.path === '/api/device/pin-login' && req.method === 'POST') return true;
+  if (req.path === '/api/device/pin-logout' && req.method === 'POST') return true;
+  if (req.path === '/api/staff/me/pin' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock/out' && req.method === 'POST') return true;
@@ -111,8 +118,26 @@ export async function authMiddleware(
   const payload = parseSessionToken(cookieToken) ?? parseSessionToken(bearerToken(req) ?? undefined);
 
   if (payload) {
-    const user = await authService.getById(payload.userId);
-    if (user) req.user = user;
+    const sessionUser = await authService.getById(payload.userId);
+    if (sessionUser) {
+      req.user = sessionUser;
+      if (sessionUser.accountType === 'VENUE_DEVICE') {
+        const pinPayload = parseDevicePinSessionToken(req.cookies?.[DEVICE_PIN_SESSION_COOKIE] as string | undefined);
+        if (pinPayload?.deviceUserId === sessionUser.id) {
+          const pinUser = await authService.getActiveHumanById(pinPayload.pinUserId);
+          if (
+            pinUser &&
+            pinUser.venue &&
+            sessionUser.venue &&
+            pinUser.venue.trim().toLowerCase() === sessionUser.venue.trim().toLowerCase()
+          ) {
+            req.deviceUser = sessionUser;
+            req.pinUser = pinUser;
+            req.user = authService.effectiveDeviceUser(sessionUser, pinUser);
+          }
+        }
+      }
+    }
   }
 
   if (isPublic(req.path)) {
@@ -121,6 +146,10 @@ export async function authMiddleware(
 
   if (!req.user) {
     return next(new HttpError(401, 'Not authenticated'));
+  }
+
+  if (req.user.accountType === 'VENUE_DEVICE' && isWrite(req) && !req.path.startsWith('/api/device')) {
+    return next(new HttpError(403, 'Staff PIN required on this shared device.'));
   }
 
   const settingsRequest = req.path.startsWith('/api/settings') || req.path.startsWith('/api/shift-task-rules');
@@ -164,6 +193,7 @@ export async function authMiddleware(
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
   if (!req.user) return next(new HttpError(401, 'Not authenticated'));
+  if (req.user.accountType === 'VENUE_DEVICE' || req.user.deviceAccount) return next(new HttpError(403, 'Admin access required'));
   if (!req.user.isAdmin) return next(new HttpError(403, 'Admin access required'));
   return next();
 }

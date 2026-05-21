@@ -4,6 +4,8 @@ import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams }
 import type {
   AppSettingsPayload,
   AlmaAppId,
+  DeviceStaffListResponse,
+  DeviceStaffOption,
   MarketingContentDashboardSummary,
   MarketingSocialAccount,
   OnboardingSettings,
@@ -403,6 +405,16 @@ const STAFF_MEMBER_NAV_ITEMS = [
   }
 ];
 
+const DEVICE_NAV_ITEMS = [
+  {
+    to: '/device',
+    label: 'Device',
+    description: 'Switch staff user with PIN',
+    icon: <IconUsers />,
+    end: true
+  }
+];
+
 const VENUE_OPTIONS = [
   { label: 'Select venue / group', value: '' },
   { label: 'Alma Avalon', value: 'Alma Avalon' },
@@ -546,6 +558,7 @@ function canAccessPayChangeHr(user: ReturnType<typeof useAuth>['user']) {
 }
 
 function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
+  if (user?.accountType === 'VENUE_DEVICE') return DEVICE_NAV_ITEMS;
   if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
   const items = canAccessSettings(user)
     ? NAV_ITEMS
@@ -586,7 +599,7 @@ function canDirectMessage(user: ReturnType<typeof useAuth>['user']) {
 function TopBarWithContext() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { logout, user } = useAuth();
+  const { logout, refresh, user } = useAuth();
   const navItems = navItemsForUser(user);
   const active = currentPage(location.pathname, navItems);
   useDocumentTitle(active.label);
@@ -598,6 +611,22 @@ function TopBarWithContext() {
       right={
         user ? (
           <>
+            {user.deviceAccount ? (
+              <div className="staff-device-active-user">
+                <span>Using as {user.firstName}</span>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  onClick={async () => {
+                    await api('/api/device/pin-logout', { method: 'POST' });
+                    await refresh();
+                    navigate('/device', { replace: true });
+                  }}
+                >
+                  Lock
+                </Button>
+              </div>
+            ) : null}
             <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
             <SuiteCommsWidget
               appId="STAFF"
@@ -10784,6 +10813,184 @@ function AlmaAdminRedirect() {
   );
 }
 
+function DeviceHomePage() {
+  const { refresh, user } = useAuth();
+  const [payload, setPayload] = useState<DeviceStaffListResponse | null>(null);
+  const [selected, setSelected] = useState<DeviceStaffOption | null>(null);
+  const [pin, setPin] = useState('');
+  const [newPin, setNewPin] = useState('');
+  const [currentPin, setCurrentPin] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setPayload(await api<DeviceStaffListResponse>('/api/device/staff'));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load staff for this device.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function submitPin() {
+    if (!selected || pin.length < 4) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await api('/api/device/pin-login', {
+        method: 'POST',
+        body: JSON.stringify({ staffProfileId: selected.id, pin })
+      });
+      setPin('');
+      setSelected(null);
+      await refresh();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'PIN login failed.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changePin() {
+    if (newPin.length < 4) return;
+    setBusy(true);
+    setError(null);
+    setFeedback(null);
+    try {
+      await api('/api/staff/me/pin', {
+        method: 'POST',
+        body: JSON.stringify({ currentPin: currentPin || undefined, newPin })
+      });
+      setCurrentPin('');
+      setNewPin('');
+      setFeedback('PIN updated.');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update PIN.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function lock() {
+    setBusy(true);
+    try {
+      await api('/api/device/pin-logout', { method: 'POST' });
+      await refresh();
+      await load();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const digits = ['1','2','3','4','5','6','7','8','9','0'];
+
+  return (
+    <div className="page-stack staff-device-page">
+      <PageHeader
+        eyebrow="Venue iPad"
+        title={user?.deviceAccount ? `Using as ${user.firstName}` : `Staff PIN switcher${payload?.venue ? ` · ${payload.venue}` : ''}`}
+        description="Tap your name and enter your PIN. Device-safe permissions are applied on top of your normal staff access."
+      />
+
+      {error ? <div className="error-banner">{error}</div> : null}
+      {feedback ? <div className="success-banner">{feedback}</div> : null}
+
+      {user?.deviceAccount ? (
+        <Card title="Active staff context" subtitle={`Device: ${user.deviceAccount.name}`}>
+          <div className="staff-device-active-panel">
+            <Badge tone="positive">Using as {user.firstName} {user.lastName}</Badge>
+            <div className="staff-device-actions">
+              <Button type="button" onClick={lock} disabled={busy}>Lock</Button>
+              <Button type="button" variant="secondary" onClick={lock} disabled={busy}>Switch user</Button>
+            </div>
+          </div>
+          <details className="staff-pin-details">
+            <summary>Change my PIN</summary>
+            <div className="staff-pin-form">
+              <Input
+                label="Current PIN"
+                inputMode="numeric"
+                type="password"
+                value={currentPin}
+                onChange={(event) => setCurrentPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="Required if you already have a PIN"
+              />
+              <Input
+                label="New PIN"
+                inputMode="numeric"
+                type="password"
+                value={newPin}
+                onChange={(event) => setNewPin(event.target.value.replace(/\D/g, '').slice(0, 6))}
+                placeholder="4 to 6 digits"
+              />
+              <Button type="button" onClick={changePin} disabled={busy || newPin.length < 4}>Update PIN</Button>
+            </div>
+          </details>
+        </Card>
+      ) : null}
+
+      {loading ? <Spinner label="Loading venue staff" /> : null}
+      {!loading && !payload?.staff.length ? (
+        <EmptyState title="No venue staff available" description="Only active human staff assigned to this device venue can use PIN switching." />
+      ) : null}
+
+      {!user?.deviceAccount ? (
+        <div className="staff-device-layout">
+          <div className="staff-device-grid">
+            {(payload?.staff ?? []).map((staffMember) => (
+              <button
+                key={staffMember.id}
+                type="button"
+                className={`staff-device-card ${selected?.id === staffMember.id ? 'selected' : ''}`}
+                onClick={() => {
+                  setSelected(staffMember);
+                  setPin('');
+                  setError(null);
+                }}
+              >
+                <span className="staff-device-avatar">{staffMember.name.slice(0, 2).toUpperCase()}</span>
+                <strong>{staffMember.name}</strong>
+                <small>{staffMember.roleTitle}{staffMember.hasPin ? '' : ' · PIN not set'}</small>
+              </button>
+            ))}
+          </div>
+
+          <Card title={selected ? selected.name : 'Select staff'} subtitle="Enter your personal PIN on this shared device.">
+            <div className="staff-pin-display" aria-label="PIN length">{'•'.repeat(pin.length) || 'PIN'}</div>
+            <div className="staff-pin-keypad">
+              {digits.map((digit) => (
+                <button
+                  key={digit}
+                  type="button"
+                  onClick={() => setPin((current) => `${current}${digit}`.slice(0, 6))}
+                  disabled={!selected || busy}
+                >
+                  {digit}
+                </button>
+              ))}
+              <button type="button" onClick={() => setPin((current) => current.slice(0, -1))} disabled={!pin || busy}>Back</button>
+              <button type="button" onClick={() => setPin('')} disabled={!pin || busy}>Clear</button>
+            </div>
+            <Button type="button" onClick={submitPin} disabled={!selected || pin.length < 4 || busy}>
+              {busy ? 'Checking...' : 'Use this account'}
+            </Button>
+          </Card>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function StaffShell() {
   const { user } = useAuth();
   const { staff, roster, loading, error, reload } = useStaffData();
@@ -10829,6 +11036,13 @@ function StaffShell() {
       sidebar={<SidebarNav items={navItems} />}
       topBar={<TopBarWithContext />}
     >
+      {user?.accountType === 'VENUE_DEVICE' ? (
+        <Routes>
+          <Route path="/device" element={<DeviceHomePage />} />
+          <Route path="*" element={<Navigate to="/device" replace />} />
+        </Routes>
+      ) : (
+      <>
       {error ? (
         <Card>
           <p className="error-text">{error}</p>
@@ -10841,6 +11055,7 @@ function StaffShell() {
       ) : null}
       {isStaffUser ? (
         <Routes>
+          <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
           <Route path="/roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
@@ -10857,6 +11072,7 @@ function StaffShell() {
         </Routes>
       ) : (
         <Routes>
+          <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
@@ -10880,6 +11096,8 @@ function StaffShell() {
           <Route path="/hr/right-to-work" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="RIGHT_TO_WORK" mode="right-to-work" loading={hrLoading} reload={loadHrRecords} canManage={canManageRightToWorkHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/documents" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} mode="documents" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
         </Routes>
+      )}
+      </>
       )}
     </AppShell>
   );

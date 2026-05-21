@@ -8,6 +8,14 @@ type SessionPayload = {
   purpose?: 'session' | 'suite-handoff';
 };
 
+type DevicePinSessionPayload = {
+  deviceUserId: string;
+  pinUserId: string;
+  issuedAt: number;
+  purpose: 'device-pin';
+};
+
+export const DEVICE_PIN_SESSION_COOKIE = 'alma_device_pin_session';
 const SEP = '.';
 
 function base64url(input: string | Buffer) {
@@ -55,8 +63,46 @@ function parseSignedToken(token: string | undefined, secret: string, maxAgeMs: n
   }
 }
 
+function parseDevicePinSignedToken(token: string | undefined, maxAgeMs: number): DevicePinSessionPayload | null {
+  if (!token) return null;
+  const [body, sig] = token.split(SEP);
+  if (!body || !sig) return null;
+
+  const expected = sign(body, env.sessionSecret);
+  const sigBuf = Buffer.from(sig);
+  const expectedBuf = Buffer.from(expected);
+  if (sigBuf.length !== expectedBuf.length) return null;
+  if (!timingSafeEqual(sigBuf, expectedBuf)) return null;
+
+  try {
+    const payload = JSON.parse(fromBase64url(body).toString('utf8')) as DevicePinSessionPayload;
+    if (!payload?.deviceUserId || !payload.pinUserId || typeof payload.issuedAt !== 'number') return null;
+    if (payload.purpose !== 'device-pin') return null;
+    if (Date.now() - payload.issuedAt > maxAgeMs) return null;
+    return payload;
+  } catch {
+    return null;
+  }
+}
+
 export function parseSessionToken(token: string | undefined): SessionPayload | null {
   return parseSignedToken(token, env.sessionSecret, env.sessionMaxAgeMs);
+}
+
+export function createDevicePinSessionToken(deviceUserId: string, pinUserId: string): string {
+  const payload: DevicePinSessionPayload = {
+    deviceUserId,
+    pinUserId,
+    issuedAt: Date.now(),
+    purpose: 'device-pin'
+  };
+  const body = base64url(JSON.stringify(payload));
+  const sig = sign(body);
+  return `${body}${SEP}${sig}`;
+}
+
+export function parseDevicePinSessionToken(token: string | undefined): DevicePinSessionPayload | null {
+  return parseDevicePinSignedToken(token, 12 * 60 * 60 * 1000);
 }
 
 export function createSuiteHandoffToken(userId: string): string {
@@ -90,4 +136,15 @@ export function setSessionCookie(res: Response, token: string) {
 
 export function clearSessionCookie(res: Response) {
   res.clearCookie(env.sessionCookieName, { path: '/' });
+}
+
+export function setDevicePinSessionCookie(res: Response, token: string) {
+  res.cookie(DEVICE_PIN_SESSION_COOKIE, token, {
+    ...cookieOptions(),
+    maxAge: 12 * 60 * 60 * 1000
+  });
+}
+
+export function clearDevicePinSessionCookie(res: Response) {
+  res.clearCookie(DEVICE_PIN_SESSION_COOKIE, { path: '/' });
 }

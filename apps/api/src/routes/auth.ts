@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { HttpError } from '../lib/http.js';
 import {
+  clearDevicePinSessionCookie,
   clearSessionCookie,
   createSuiteHandoffToken,
   createSessionToken,
@@ -23,6 +24,7 @@ authRouter.post('/login', async (req, res, next) => {
 });
 
 authRouter.post('/logout', (_req, res) => {
+  clearDevicePinSessionCookie(res);
   clearSessionCookie(res);
   res.json({ ok: true });
 });

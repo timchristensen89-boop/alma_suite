@@ -143,6 +143,7 @@ async function createIssueAssigneeNotification(
 async function activeAssigneeStaff() {
   return prisma.staffProfile.findMany({
     where: {
+      accountType: 'HUMAN',
       employmentStatus: 'ACTIVE',
       mergedIntoStaffProfileId: null
     },

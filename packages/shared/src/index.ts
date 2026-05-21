@@ -83,6 +83,7 @@ export const stockInvoiceMatchingStatusSchema = z.enum([
 ]);
 export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
+export const staffAccountTypeSchema = z.enum(['HUMAN', 'VENUE_DEVICE']);
 export const rosterShiftStatusSchema = z.enum(['DRAFT', 'PUBLISHED', 'COMPLETED', 'CANCELLED']);
 export const staffLeaveTypeSchema = z.enum(['ANNUAL', 'SICK', 'PERSONAL', 'UNPAID', 'OTHER']);
 export const staffLeaveStatusSchema = z.enum(['PENDING', 'APPROVED', 'DECLINED', 'CANCELLED']);
@@ -664,6 +665,36 @@ export const adminAccessUserCreateInputSchema = z.object({
   roleTitle: z.string().trim().optional().or(z.literal('')),
   staffRole: z.enum(['USER', 'MANAGER', 'ADMIN']).default('USER'),
   enableStaffApp: z.boolean().default(true)
+});
+
+const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4 to 6 digits');
+
+export const adminVenueDeviceCreateInputSchema = z.object({
+  displayName: z.string().trim().min(2),
+  email: z.string().email(),
+  venue: z.string().trim().min(1),
+  enabled: z.boolean().default(true)
+});
+
+export const adminVenueDeviceUpdateInputSchema = z.object({
+  displayName: z.string().trim().min(2).optional(),
+  email: z.string().email().optional(),
+  venue: z.string().trim().min(1).optional(),
+  enabled: z.boolean().optional()
+});
+
+export const devicePinLoginInputSchema = z.object({
+  staffProfileId: z.string().min(1),
+  pin: pinSchema
+});
+
+export const staffPinChangeInputSchema = z.object({
+  currentPin: pinSchema.optional(),
+  newPin: pinSchema
+});
+
+export const staffPinResetInputSchema = z.object({
+  pin: pinSchema
 });
 
 export const adminAccessBulkUpdateInputSchema = z.object({
@@ -1447,9 +1478,15 @@ export type AuthUser = {
   email: string | null;
   roleTitle: string;
   venue: string | null;
+  accountType: z.infer<typeof staffAccountTypeSchema>;
   isAdmin: boolean;
   role: 'ADMIN' | 'MANAGER' | 'STAFF';
   appAccess: Array<Pick<StaffAppAccess, 'appId' | 'status' | 'role' | 'permissions'>>;
+  deviceAccount?: {
+    id: string;
+    name: string;
+    venue: string | null;
+  } | null;
 };
 
 export type AppSettingsPayload = {
@@ -1557,8 +1594,11 @@ export type AdminAccessUserSummary = {
   venue: string | null;
   roleTitle: string;
   employmentStatus: string;
+  accountType: z.infer<typeof staffAccountTypeSchema>;
   isAdmin: boolean;
   hasPassword: boolean;
+  hasPin: boolean;
+  pinUpdatedAt: string | null;
   appAccess: StaffAppAccess[];
 };
 
@@ -1576,6 +1616,45 @@ export type AdminAccessBulkUpdateResult = {
 
 export type AdminAccessUserCreateInput = z.infer<typeof adminAccessUserCreateInputSchema>;
 export type AdminAccessBulkUpdateInput = z.infer<typeof adminAccessBulkUpdateInputSchema>;
+export type AdminVenueDeviceCreateInput = z.infer<typeof adminVenueDeviceCreateInputSchema>;
+export type AdminVenueDeviceUpdateInput = z.infer<typeof adminVenueDeviceUpdateInputSchema>;
+export type DevicePinLoginInput = z.infer<typeof devicePinLoginInputSchema>;
+export type StaffPinChangeInput = z.infer<typeof staffPinChangeInputSchema>;
+export type StaffPinResetInput = z.infer<typeof staffPinResetInputSchema>;
+
+export type AdminVenueDeviceSummary = {
+  id: string;
+  displayName: string;
+  email: string | null;
+  venue: string | null;
+  employmentStatus: string;
+  enabled: boolean;
+  hasPassword: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  appAccess: StaffAppAccess[];
+};
+
+export type AdminVenueDevicesPayload = {
+  generatedAt: string;
+  devices: AdminVenueDeviceSummary[];
+};
+
+export type DeviceStaffOption = {
+  id: string;
+  name: string;
+  roleTitle: string;
+  venue: string | null;
+  email: string | null;
+  hasPin: boolean;
+};
+
+export type DeviceStaffListResponse = {
+  venue: string | null;
+  activeUser: AuthUser | null;
+  staff: DeviceStaffOption[];
+};
 
 export type IntegrationProviderKey = 'square' | 'xero';
 export type AdminMetaIntegrationStatus = {
@@ -3343,6 +3422,8 @@ export type StaffProfile = {
   phone: string | null;
   venue: string | null;
   employmentStatus: string;
+  accountType: z.infer<typeof staffAccountTypeSchema>;
+  pinUpdatedAt: string | null;
   startDate: string | null;
   dateOfBirth: string | null;
   addressLine1: string | null;

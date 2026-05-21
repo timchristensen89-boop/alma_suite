@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAdmin } from '../lib/auth-middleware.js';
 import { adminService } from '../services/admin.service.js';
+import { deviceService } from '../services/device.service.js';
 
 export const adminRouter = Router();
 
@@ -33,6 +34,30 @@ adminRouter.post('/access/users', async (req, res, next) => {
 adminRouter.post('/access/bulk-update', async (req, res, next) => {
   try {
     res.json(await adminService.bulkUpdateAccess(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get('/venue-devices', async (_req, res, next) => {
+  try {
+    res.json(await deviceService.listVenueDevices());
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/venue-devices', async (req, res, next) => {
+  try {
+    res.status(201).json(await deviceService.createVenueDevice(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.patch('/venue-devices/:id', async (req, res, next) => {
+  try {
+    res.json(await deviceService.updateVenueDevice(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }

@@ -166,6 +166,11 @@ enum StaffAppAccessStatus {
   PENDING
 }
 
+enum StaffAccountType {
+  HUMAN
+  VENUE_DEVICE
+}
+
 enum RosterShiftStatus {
   DRAFT
   PUBLISHED
@@ -559,6 +564,7 @@ model StaffProfile {
   phone            String?
   venue            String?
   employmentStatus String                  @default("ACTIVE")
+  accountType      StaffAccountType        @default(HUMAN)
   startDate        DateTime?
   dateOfBirth      DateTime?
   addressLine1     String?
@@ -598,6 +604,8 @@ model StaffProfile {
   mergedAt         DateTime?
   mergedByUserId   String?
   passwordHash     String?
+  pinHash          String?
+  pinUpdatedAt     DateTime?
   isAdmin          Boolean                 @default(false)
   lastLoginAt      DateTime?
   createdAt        DateTime                @default(now())
@@ -620,6 +628,7 @@ model StaffProfile {
   tipPaymentRunLines StaffTipPaymentRunLine[]
 
   @@index([venue])
+  @@index([accountType, venue])
   @@index([mergedIntoStaffProfileId])
   @@index([xeroEmployeeId])
 }

@@ -26,18 +26,23 @@ function toAuthUser(profile: {
   email: string | null;
   roleTitle: string;
   venue: string | null;
+  accountType?: 'HUMAN' | 'VENUE_DEVICE';
   isAdmin: boolean;
   appAccess: Array<Pick<AuthUser['appAccess'][number], 'appId' | 'status' | 'role'> & { permissions: unknown }>;
 }): AuthUser {
+  const accountType = profile.accountType ?? 'HUMAN';
   const complianceAccess = profile.appAccess.find(
     (access) => access.appId === 'COMPLIANCE' && access.status === 'ENABLED'
   );
   const accessRole = complianceAccess?.role?.toUpperCase() ?? '';
   const isManager =
-    profile.isAdmin ||
-    accessRole === 'ADMIN' ||
-    accessRole === 'MANAGER' ||
-    /manager|supervisor|lead|owner|admin/i.test(profile.roleTitle);
+    accountType === 'HUMAN' &&
+    (
+      profile.isAdmin ||
+      accessRole === 'ADMIN' ||
+      accessRole === 'MANAGER' ||
+      /manager|supervisor|lead|owner|admin/i.test(profile.roleTitle)
+    );
 
   return {
     id: profile.id,
@@ -46,8 +51,9 @@ function toAuthUser(profile: {
     email: profile.email,
     roleTitle: profile.roleTitle,
     venue: profile.venue,
-    isAdmin: profile.isAdmin,
-    role: profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
+    accountType,
+    isAdmin: accountType === 'HUMAN' ? profile.isAdmin : false,
+    role: accountType === 'HUMAN' && profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
     appAccess: profile.appAccess.map((access) => ({
       appId: access.appId,
       status: access.status,
@@ -55,6 +61,28 @@ function toAuthUser(profile: {
       permissions: permissionRecord(access.permissions)
     }))
   };
+}
+
+function intersectAppAccess(staffUser: AuthUser, deviceUser: AuthUser): AuthUser['appAccess'] {
+  return staffUser.appAccess.flatMap((staffAccess) => {
+    const deviceAccess = deviceUser.appAccess.find((access) => access.appId === staffAccess.appId);
+    if (!deviceAccess || staffAccess.status !== 'ENABLED' || deviceAccess.status !== 'ENABLED') return [];
+    const staffPermissions = staffAccess.permissions ?? {};
+    const devicePermissions = deviceAccess.permissions ?? {};
+    const permissions = Object.fromEntries(
+      Object.entries(staffPermissions).filter(([key, allowed]) => allowed && devicePermissions[key] === true)
+    );
+    return [{
+      appId: staffAccess.appId,
+      status: 'ENABLED' as const,
+      role: staffAccess.role === 'ADMIN' || deviceAccess.role === 'ADMIN'
+        ? (staffAccess.role === 'ADMIN' && deviceAccess.role === 'ADMIN' ? 'ADMIN' : 'USER')
+        : staffAccess.role === 'MANAGER' && deviceAccess.role === 'MANAGER'
+          ? 'MANAGER'
+          : 'USER',
+      permissions
+    }];
+  });
 }
 
 const PASSWORD_RESET_TTL_MS = 60 * 60 * 1000;
@@ -168,6 +196,29 @@ export const authService = {
     return bcrypt.hash(plain, 10);
   },
 
+  async hashPin(pin: string) {
+    return bcrypt.hash(pin, 10);
+  },
+
+  async comparePin(pin: string, pinHash: string) {
+    return bcrypt.compare(pin, pinHash);
+  },
+
+  effectiveDeviceUser(deviceUser: AuthUser, staffUser: AuthUser): AuthUser {
+    return {
+      ...staffUser,
+      isAdmin: false,
+      role: 'STAFF',
+      venue: deviceUser.venue,
+      appAccess: intersectAppAccess(staffUser, deviceUser),
+      deviceAccount: {
+        id: deviceUser.id,
+        name: `${deviceUser.firstName} ${deviceUser.lastName}`.trim() || deviceUser.email || 'Venue device',
+        venue: deviceUser.venue
+      }
+    };
+  },
+
   async login(input: unknown) {
     const { email, password } = authLoginSchema.parse(input);
 
@@ -181,6 +232,9 @@ export const authService = {
     });
 
     if (!profile || !profile.passwordHash) {
+      throw new HttpError(401, 'Email or password is incorrect');
+    }
+    if (profile.accountType === 'VENUE_DEVICE' && profile.employmentStatus !== 'ACTIVE') {
       throw new HttpError(401, 'Email or password is incorrect');
     }
 
@@ -200,6 +254,24 @@ export const authService = {
   async getById(userId: string): Promise<AuthUser | null> {
     const profile = await prisma.staffProfile.findUnique({
       where: { id: userId },
+      include: {
+        appAccess: {
+          select: { appId: true, status: true, role: true, permissions: true }
+        }
+      }
+    });
+    if (!profile) return null;
+    return toAuthUser(profile);
+  },
+
+  async getActiveHumanById(userId: string): Promise<AuthUser | null> {
+    const profile = await prisma.staffProfile.findFirst({
+      where: {
+        id: userId,
+        accountType: 'HUMAN',
+        employmentStatus: 'ACTIVE',
+        mergedIntoStaffProfileId: null
+      },
       include: {
         appAccess: {
           select: { appId: true, status: true, role: true, permissions: true }

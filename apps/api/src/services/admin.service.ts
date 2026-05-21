@@ -77,6 +77,7 @@ const ACCESS_PERMISSION_KEYS = [
 ];
 
 const activeStaffWhere: Prisma.StaffProfileWhereInput = {
+  accountType: 'HUMAN',
   employmentStatus: 'ACTIVE',
   mergedIntoStaffProfileId: null
 };
@@ -201,8 +202,11 @@ export const adminService = {
         venue: true,
         roleTitle: true,
         employmentStatus: true,
+        accountType: true,
         isAdmin: true,
         passwordHash: true,
+        pinHash: true,
+        pinUpdatedAt: true,
         appAccess: { orderBy: [{ appId: 'asc' }] }
       }
     });
@@ -219,8 +223,11 @@ export const adminService = {
         venue: user.venue,
         roleTitle: user.roleTitle,
         employmentStatus: user.employmentStatus,
+        accountType: user.accountType,
         isAdmin: user.isAdmin,
         hasPassword: Boolean(user.passwordHash),
+        hasPin: Boolean(user.pinHash),
+        pinUpdatedAt: user.pinUpdatedAt?.toISOString() ?? null,
         appAccess: user.appAccess.map((access) => ({
           ...access,
           createdAt: access.createdAt.toISOString(),

@@ -70,6 +70,7 @@ const assignmentInclude = {
 } as const;
 
 function isManager(user: AuthUser) {
+  if (user.accountType === 'VENUE_DEVICE') return false;
   return user.role === 'ADMIN' || user.role === 'MANAGER' || user.isAdmin;
 }
 
@@ -82,6 +83,20 @@ function canManageVenue(user: AuthUser, venue: string | null | undefined) {
   if (user.role !== 'MANAGER') return false;
   if (!user.venue || !venue) return true;
   return normalise(user.venue) === normalise(venue);
+}
+
+function isVenueDeviceContext(user: AuthUser) {
+  return user.accountType === 'VENUE_DEVICE' || Boolean(user.deviceAccount);
+}
+
+function deviceVenue(user: AuthUser) {
+  return user.deviceAccount?.venue ?? user.venue;
+}
+
+function canUseVenueQueue(user: AuthUser, venue: string | null | undefined) {
+  if (!isVenueDeviceContext(user)) return false;
+  const scope = deviceVenue(user);
+  return Boolean(scope && venue && normalise(scope) === normalise(venue));
 }
 
 function managedVenueForRequest(user: AuthUser, venue?: string) {
@@ -367,6 +382,8 @@ function assertAssignmentAccess(
     throw new HttpError(403, 'Shift task access required');
   }
 
+  if (canUseVenueQueue(user, assignment.venue)) return;
+
   if (!canManageVenue(user, assignment.venue)) {
     throw new HttpError(403, 'Shift task access required');
   }
@@ -526,6 +543,41 @@ export const shiftTaskService = {
   },
 
   async listForVenue(user: AuthUser, venue?: string): Promise<ShiftTaskListResponse> {
+    if (isVenueDeviceContext(user)) {
+      const targetVenue = deviceVenue(user);
+      if (!targetVenue) throw new HttpError(403, 'Venue device scope required');
+      const requestedVenue = cleanString(venue);
+      if (requestedVenue && normalise(requestedVenue) !== normalise(targetVenue)) {
+        throw new HttpError(403, 'Venue access required');
+      }
+      const { from, to } = coerceWindow(undefined, undefined, VENUE_QUEUE_LOOKAHEAD_DAYS);
+      const shifts = await prisma.rosterShift.findMany({
+        where: {
+          venue: targetVenue,
+          startsAt: { gte: from, lte: to }
+        },
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              roleTitle: true,
+              venue: true,
+              employmentStatus: true
+            }
+          }
+        }
+      });
+      const generated = await ensureAssignmentsForShifts(shifts);
+      const tasks = await assignmentsForWhere({
+        venue: targetVenue,
+        staffProfileId: null,
+        status: { not: 'CANCELLED' }
+      });
+      return { tasks, generated };
+    }
+
     if (!isManager(user)) {
       const { from, to } = coerceWindow(undefined, undefined, VENUE_QUEUE_LOOKAHEAD_DAYS);
       const shifts = await prisma.rosterShift.findMany({

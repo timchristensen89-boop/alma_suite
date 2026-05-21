@@ -84,8 +84,38 @@
   white-space: pre-wrap;
 }
 
+.admin-collapsible {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.admin-collapsible > summary {
+  cursor: pointer;
+  font-weight: 800;
+  padding: 14px 16px;
+}
+
+.admin-collapsible > .card {
+  border: 0;
+  box-shadow: none;
+}
+
+.admin-form-actions,
+.admin-row-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
 @media (max-width: 900px) {
   .split-grid {
     grid-template-columns: 1fr;
+  }
+
+  .admin-form-actions .btn,
+  .admin-row-actions .btn {
+    width: 100%;
   }
 }

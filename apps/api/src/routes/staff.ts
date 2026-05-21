@@ -245,6 +245,15 @@ staffRouter.get('/me/roster', async (req, res, next) => {
   }
 });
 
+staffRouter.post('/me/pin', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.changeOwnPin(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/me/shift-tasks', async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
@@ -760,6 +769,14 @@ staffRouter.post('/:id/password-reset', requireManager, async (req, res, next) =
       requestIp: req.ip,
       userAgent: req.header('user-agent')
     }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/pin/reset', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.resetPin(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }

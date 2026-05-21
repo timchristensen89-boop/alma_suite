@@ -65,6 +65,7 @@ import {
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
+import { VenueDevicesPage } from './pages/VenueDevicesPage';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const complianceUrl = COMPLIANCE_WEB_URL
@@ -97,6 +98,12 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/venues',
     label: 'Venues',
     description: 'Venue setup and operating configuration',
+    icon: <IconStore />
+  },
+  {
+    to: '/venue-devices',
+    label: 'Venue iPads',
+    description: 'Shared iPad accounts, PIN switching, and venue device access',
     icon: <IconStore />
   },
   {
@@ -431,6 +438,7 @@ function AdminWorkspace() {
         <Route path="/" element={<AdminOverviewPage />} />
         <Route path="/settings" element={<GeneralSettingsPage />} />
         <Route path="/venues" element={<VenuesPage />} />
+        <Route path="/venue-devices" element={<VenueDevicesPage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />

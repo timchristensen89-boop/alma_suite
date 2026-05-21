@@ -3623,3 +3623,126 @@
     width: 100%;
   }
 }
+.staff-device-active-user {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.staff-device-layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 360px);
+}
+
+.staff-device-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+}
+
+.staff-device-card {
+  align-items: flex-start;
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #d9dde6);
+  border-radius: 8px;
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 132px;
+  padding: 16px;
+  text-align: left;
+}
+
+.staff-device-card.selected {
+  border-color: var(--accent, #4f46e5);
+  box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.14);
+}
+
+.staff-device-avatar {
+  align-items: center;
+  background: #eef2ff;
+  border-radius: 999px;
+  color: #3730a3;
+  display: inline-flex;
+  font-weight: 700;
+  height: 44px;
+  justify-content: center;
+  width: 44px;
+}
+
+.staff-pin-display {
+  align-items: center;
+  background: #f6f7fb;
+  border: 1px solid #dce1ec;
+  border-radius: 8px;
+  display: flex;
+  font-size: 28px;
+  font-weight: 700;
+  justify-content: center;
+  letter-spacing: 6px;
+  min-height: 64px;
+}
+
+.staff-pin-keypad {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, 1fr);
+  margin-block: 14px;
+}
+
+.staff-pin-keypad button,
+.staff-device-actions .btn {
+  min-height: 48px;
+}
+
+.staff-pin-keypad button {
+  background: #fff;
+  border: 1px solid #d9dde6;
+  border-radius: 8px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.staff-device-active-panel,
+.staff-device-actions,
+.staff-pin-form {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.staff-pin-details {
+  margin-top: 16px;
+}
+
+.staff-pin-form {
+  align-items: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 760px) {
+  .staff-device-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-device-active-user {
+    align-items: stretch;
+    flex-direction: column;
+    white-space: normal;
+  }
+
+  .staff-pin-form {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-pin-form .btn,
+  .staff-device-actions .btn {
+    width: 100%;
+  }
+}
