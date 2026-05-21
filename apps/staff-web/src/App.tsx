@@ -21,6 +21,7 @@ import type {
   StaffTipHistory,
   StaffManagerOperationsPayload,
   StaffProfile,
+  StaffRoleTemplate,
   StaffRecordType,
   StaffDefaults,
   StaffHrRecord,
@@ -715,6 +716,7 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
 function useStaffData() {
   const [staff, setStaff] = useState<StaffProfile[]>([]);
   const [roster, setRoster] = useState<RosterShift[]>([]);
+  const [roleTemplates, setRoleTemplates] = useState<StaffRoleTemplate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -726,12 +728,14 @@ function useStaffData() {
         rosterStart && rosterEnd
           ? `?start=${encodeURIComponent(rosterStart.toISOString())}&end=${encodeURIComponent(rosterEnd.toISOString())}`
           : '';
-      const [staffData, rosterData] = await Promise.all([
+      const [staffData, rosterData, roleTemplateData] = await Promise.all([
         api<StaffProfile[]>('/api/staff'),
-        api<RosterShift[]>(`/api/staff/roster${rosterQuery}`)
+        api<RosterShift[]>(`/api/staff/roster${rosterQuery}`),
+        api<StaffRoleTemplate[]>('/api/staff/role-templates').catch(() => [])
       ]);
       setStaff(staffData);
       setRoster(rosterData);
+      setRoleTemplates(roleTemplateData);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load staff');
     } finally {
@@ -744,7 +748,7 @@ function useStaffData() {
     void load(start, addDays(start, 14));
   }, []);
 
-  return { staff, roster, loading, error, reload: load };
+  return { staff, roster, roleTemplates, loading, error, reload: load };
 }
 
 type StaffFormState =
@@ -754,11 +758,13 @@ type StaffFormState =
 
 function StaffHome({
   staff,
+  roleTemplates,
   loading,
   onSelect,
   reload
 }: {
   staff: StaffProfile[];
+  roleTemplates: StaffRoleTemplate[];
   loading: boolean;
   onSelect: (id: string) => void;
   reload: () => Promise<void>;
@@ -1110,6 +1116,7 @@ function StaffHome({
           <StaffProfileForm
             mode={form.mode}
             initial={form.mode === 'edit' ? form.member : undefined}
+            roleTemplates={roleTemplates}
             onSaved={(member) => void handleSaved(member)}
             onCancel={() => setForm({ mode: 'closed' })}
           />
@@ -2032,6 +2039,7 @@ function StaffMemberAcademyPage({ staff, loading }: { staff: StaffProfile[]; loa
 type StaffDraft = {
   firstName: string;
   lastName: string;
+  roleTemplateId: string;
   roleTitle: string;
   email: string;
   phone: string;
@@ -2076,6 +2084,7 @@ function emptyStaffDraft(): StaffDraft {
   return {
     firstName: '',
     lastName: '',
+    roleTemplateId: '',
     roleTitle: '',
     email: '',
     phone: '',
@@ -2121,6 +2130,7 @@ function draftFromStaff(member: StaffProfile): StaffDraft {
   return {
     firstName: member.firstName,
     lastName: member.lastName,
+    roleTemplateId: member.roleTemplateId ?? '',
     roleTitle: member.roleTitle,
     email: member.email ?? '',
     phone: member.phone ?? '',
@@ -2167,6 +2177,7 @@ function staffPayloadFromDraft(draft: StaffDraft) {
   return {
     firstName: draft.firstName.trim(),
     lastName: draft.lastName.trim(),
+    roleTemplateId: draft.roleTemplateId || undefined,
     roleTitle: draft.roleTitle.trim(),
     email: draft.email.trim(),
     phone: draft.phone.trim(),
@@ -2271,14 +2282,26 @@ function StaffModal({
   );
 }
 
+function roleTemplateAccessSummary(template?: StaffRoleTemplate | null) {
+  if (!template) return 'Choose a role template to apply app access.';
+  const enabled = template.access.filter((access) => access.status === 'ENABLED');
+  if (!enabled.length) return 'No apps enabled by this role yet.';
+  return enabled
+    .map((access) => `${access.appId.toLowerCase()}: ${access.role.toLowerCase()}`)
+    .slice(0, 4)
+    .join(' · ');
+}
+
 function StaffProfileForm({
   mode,
   initial,
+  roleTemplates,
   onSaved,
   onCancel
 }: {
   mode: 'create' | 'edit';
   initial?: StaffProfile;
+  roleTemplates: StaffRoleTemplate[];
   onSaved: (member: StaffProfile) => void;
   onCancel: () => void;
 }) {
@@ -2291,10 +2314,25 @@ function StaffProfileForm({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function selectRoleTemplate(roleTemplateId: string) {
+    const template = roleTemplates.find((item) => item.id === roleTemplateId);
+    setDraft((current) => ({
+      ...current,
+      roleTemplateId,
+      roleTitle: template ? template.roleTitle || template.name : current.roleTitle,
+      venue: template?.venue || current.venue
+    }));
+  }
+
   async function submit() {
     setFeedback(null);
-    if (!draft.firstName.trim() || !draft.lastName.trim() || !draft.roleTitle.trim()) {
+    if (!draft.firstName.trim() || !draft.lastName.trim() || (!draft.roleTemplateId && !draft.roleTitle.trim())) {
       setFeedback('First name, last name and role are required');
+      setFeedbackTone('error');
+      return;
+    }
+    if (roleTemplates.length && !draft.roleTemplateId) {
+      setFeedback('Choose a role template before saving.');
       setFeedbackTone('error');
       return;
     }
@@ -2340,9 +2378,36 @@ function StaffProfileForm({
         <Input label="Last name" required value={draft.lastName} onChange={(event) => update('lastName', event.currentTarget.value)} />
       </div>
       <div className="form-grid two">
-        <Input label="Role" required value={draft.roleTitle} onChange={(event) => update('roleTitle', event.currentTarget.value)} />
+        {roleTemplates.length ? (
+          <Select
+            label="Role"
+            required
+            value={draft.roleTemplateId}
+            onChange={(event) => selectRoleTemplate(event.currentTarget.value)}
+            options={[
+              { label: 'Choose a role template', value: '' },
+              ...roleTemplates.map((template) => ({
+                label: template.roleTitle && template.roleTitle !== template.name ? `${template.name} (${template.roleTitle})` : template.name,
+                value: template.id
+              }))
+            ]}
+          />
+        ) : (
+          <Input label="Role" required value={draft.roleTitle} onChange={(event) => update('roleTitle', event.currentTarget.value)} />
+        )}
         <Select label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
       </div>
+      {roleTemplates.length ? (
+        <details className="staff-role-preview">
+          <summary>{draft.roleTemplateId ? 'Role access preview' : 'Choose a role to preview access'}</summary>
+          <p className="subtle">{roleTemplateAccessSummary(roleTemplates.find((template) => template.id === draft.roleTemplateId))}</p>
+          {mode === 'edit' && draft.roleTemplateId !== (initial?.roleTemplateId ?? '') ? (
+            <p className="subtle">Changing role will update this person’s app access to match the selected role.</p>
+          ) : null}
+        </details>
+      ) : (
+        <p className="subtle">No role templates exist yet. Admins can create them in Alma Admin / Roles.</p>
+      )}
       <div className="form-grid three">
         <Input label="Email" type="email" value={draft.email} onChange={(event) => update('email', event.currentTarget.value)} />
         <Input label="Phone" value={draft.phone} onChange={(event) => update('phone', event.currentTarget.value)} />
@@ -2384,6 +2449,7 @@ type CreatedStaffInvite = StaffInvite & {
 type InviteDraft = {
   firstName: string;
   lastName: string;
+  roleTemplateId: string;
   roleTitle: string;
   email: string;
   venue: string;
@@ -2397,6 +2463,7 @@ type ReonboardDraft = {
   email: string;
   firstName: string;
   lastName: string;
+  roleTemplateId: string;
   roleTitle: string;
   venue: string;
   note: string;
@@ -2407,6 +2474,7 @@ function emptyInviteDraft(): InviteDraft {
   return {
     firstName: '',
     lastName: '',
+    roleTemplateId: '',
     roleTitle: '',
     email: '',
     venue: '',
@@ -2420,6 +2488,7 @@ function emptyReonboardDraft(): ReonboardDraft {
     email: '',
     firstName: '',
     lastName: '',
+    roleTemplateId: '',
     roleTitle: '',
     venue: '',
     note: '',
@@ -2427,7 +2496,7 @@ function emptyReonboardDraft(): ReonboardDraft {
   };
 }
 
-function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaff: () => Promise<void> }) {
+function InvitesPage({ staff, roleTemplates, reloadStaff }: { staff: StaffProfile[]; roleTemplates: StaffRoleTemplate[]; reloadStaff: () => Promise<void> }) {
   const [invites, setInvites] = useState<StaffInvite[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -2464,11 +2533,31 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
     setReonboardDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function selectInviteRole(roleTemplateId: string) {
+    const template = roleTemplates.find((item) => item.id === roleTemplateId);
+    setDraft((current) => ({
+      ...current,
+      roleTemplateId,
+      roleTitle: template ? template.roleTitle || template.name : current.roleTitle,
+      venue: template?.venue || current.venue
+    }));
+  }
+
+  function selectReonboardRole(roleTemplateId: string) {
+    const template = roleTemplates.find((item) => item.id === roleTemplateId);
+    setReonboardDraft((current) => ({
+      ...current,
+      roleTemplateId,
+      roleTitle: template ? template.roleTitle || template.name : current.roleTitle,
+      venue: template?.venue || current.venue
+    }));
+  }
+
   async function createInvite() {
     setError(null);
     setMessage(null);
     setMessageTarget('create-invite');
-    if (!draft.firstName.trim() || !draft.lastName.trim() || !draft.roleTitle.trim()) {
+    if (!draft.firstName.trim() || !draft.lastName.trim() || (!draft.roleTemplateId && !draft.roleTitle.trim())) {
       const next = 'First name, last name and role are required';
       setError(next);
       setMessage(next);
@@ -2482,6 +2571,7 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
         body: JSON.stringify({
           firstName: draft.firstName.trim(),
           lastName: draft.lastName.trim(),
+          roleTemplateId: draft.roleTemplateId || undefined,
           roleTitle: draft.roleTitle.trim(),
           email: draft.email.trim(),
           venue: draft.venue.trim(),
@@ -2532,6 +2622,7 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
           email: reonboardDraft.email.trim(),
           firstName: reonboardDraft.firstName.trim(),
           lastName: reonboardDraft.lastName.trim(),
+          roleTemplateId: reonboardDraft.roleTemplateId || undefined,
           roleTitle: reonboardDraft.roleTitle.trim(),
           venue: reonboardDraft.venue.trim(),
           note: reonboardDraft.note.trim(),
@@ -2609,9 +2700,25 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
               <Input label="Last name" required value={draft.lastName} onChange={(event) => update('lastName', event.currentTarget.value)} />
             </div>
             <div className="form-grid two">
-              <Input label="Role" required value={draft.roleTitle} onChange={(event) => update('roleTitle', event.currentTarget.value)} />
+              {roleTemplates.length ? (
+                <Select
+                  label="Role"
+                  required
+                  value={draft.roleTemplateId}
+                  onChange={(event) => selectInviteRole(event.currentTarget.value)}
+                  options={[
+                    { label: 'Choose a role template', value: '' },
+                    ...roleTemplates.map((template) => ({ label: template.name, value: template.id }))
+                  ]}
+                />
+              ) : (
+                <Input label="Role" required value={draft.roleTitle} onChange={(event) => update('roleTitle', event.currentTarget.value)} />
+              )}
               <Select label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
             </div>
+            {draft.roleTemplateId ? (
+              <p className="subtle">{roleTemplateAccessSummary(roleTemplates.find((template) => template.id === draft.roleTemplateId))}</p>
+            ) : null}
             <div className="form-grid two">
               <Input label="Email" type="email" value={draft.email} onChange={(event) => update('email', event.currentTarget.value)} />
               <Input label="Expires in days" type="number" min="1" value={draft.expiresInDays} onChange={(event) => update('expiresInDays', event.currentTarget.value)} />
@@ -2648,7 +2755,15 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
               <Input label="Last name override" value={reonboardDraft.lastName} onChange={(event) => updateReonboard('lastName', event.currentTarget.value)} />
             </div>
             <div className="form-grid two">
-              <Input label="Role override" value={reonboardDraft.roleTitle} onChange={(event) => updateReonboard('roleTitle', event.currentTarget.value)} />
+              <Select
+                label="Role override"
+                value={reonboardDraft.roleTemplateId}
+                onChange={(event) => selectReonboardRole(event.currentTarget.value)}
+                options={[
+                  { label: 'Keep current role', value: '' },
+                  ...roleTemplates.map((template) => ({ label: template.name, value: template.id }))
+                ]}
+              />
               <Select label="Venue override" value={reonboardDraft.venue} onChange={(event) => updateReonboard('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
             </div>
             <div className="form-grid two">
@@ -2733,11 +2848,13 @@ function InvitesPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadStaf
 
 function AccessPage({
   staff,
+  roleTemplates,
   selectedId,
   setSelectedId,
   reload
 }: {
   staff: StaffProfile[];
+  roleTemplates: StaffRoleTemplate[];
   selectedId: string;
   setSelectedId: (id: string) => void;
   reload: () => Promise<void>;
@@ -2769,9 +2886,7 @@ function AccessPage({
   const selectedTrainingRecords = training?.records.filter((record) => record.staffProfileId === selected?.id) ?? selected?.trainingRecords ?? [];
   const canManageSettings = canAccessSettings(user);
   const visibleStaffApps = canManageSettings ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
-  const visibleProfilePresets = canManageSettings
-    ? STAFF_PROFILE_PRESETS
-    : STAFF_PROFILE_PRESETS.filter((preset) => preset.id !== 'admin');
+  const selectedRoleTemplate = roleTemplates.find((template) => template.id === profileDraft.roleTemplateId) ?? null;
 
   function permissionsFor(appId: AlmaAppId) {
     return accessByApp.get(appId)?.permissions ?? {};
@@ -2799,6 +2914,16 @@ function AccessPage({
 
   function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
     setProfileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  function selectProfileRoleTemplate(roleTemplateId: string) {
+    const template = roleTemplates.find((item) => item.id === roleTemplateId);
+    setProfileDraft((current) => ({
+      ...current,
+      roleTemplateId,
+      roleTitle: template ? template.roleTitle || template.name : current.roleTitle,
+      venue: template?.venue || current.venue
+    }));
   }
 
   async function setAccess(appId: AlmaAppId, status: StaffAppAccessStatus) {
@@ -3150,26 +3275,30 @@ function AccessPage({
               <StatCard label="Pay" value={formatCents(selected.trainingPayRateCents ?? selected.payRateCents)} hint={selected.payType || 'No pay type'} />
             </div>
 
-            <Card title="Profile type" subtitle="Use these as starting points, then tweak the person below.">
-              <div className="app-access-grid">
-                {visibleProfilePresets.map((preset) => (
-                  <button
-                    key={preset.id}
-                    type="button"
-                    className="app-access-tile"
-                    disabled={saving}
-                    onClick={() => void saveAppAccessWithPreset(preset.id)}
-                  >
-                    <strong>{preset.label}</strong>
-                    <span className="subtle">{preset.roleTitle}</span>
-                    <Badge tone="info">{Object.values(preset.appAccess).filter((access) => access.status === 'ENABLED').length} apps</Badge>
-                    <ActionFeedback
-                      message={messageTarget === `preset:${preset.id}` ? message : null}
-                      tone={message?.includes('Could') ? 'error' : 'success'}
-                    />
-                  </button>
-                ))}
+            <Card title="Assigned role" subtitle="Roles come from Alma Admin and apply app access automatically.">
+              <div className="form-grid two">
+                <Select
+                  label="Role template"
+                  value={profileDraft.roleTemplateId}
+                  onChange={(event) => selectProfileRoleTemplate(event.currentTarget.value)}
+                  options={[
+                    { label: roleTemplates.length ? 'Choose a role template' : 'No role templates configured', value: '' },
+                    ...roleTemplates.map((template) => ({ label: template.name, value: template.id }))
+                  ]}
+                />
+                <Input label="Role title" value={profileDraft.roleTitle} readOnly />
               </div>
+              <details className="staff-role-preview">
+                <summary>Role access preview</summary>
+                <p className="subtle">{roleTemplateAccessSummary(selectedRoleTemplate)}</p>
+                {profileDraft.roleTemplateId && profileDraft.roleTemplateId !== (selected.roleTemplateId ?? '') ? (
+                  <p className="subtle">Changing role will update this person’s app access to match the selected role when you save profile details.</p>
+                ) : null}
+                <p className="subtle">Custom permission controls remain available below for one-off overrides.</p>
+              </details>
+              {!roleTemplates.length ? (
+                <p className="subtle">Create role templates in Alma Admin / Roles before assigning them here.</p>
+              ) : null}
             </Card>
 
             <Card
@@ -3223,7 +3352,7 @@ function AccessPage({
                   <div className="form-grid three">
                     <Input label="First name" value={profileDraft.firstName} onChange={(event) => updateProfile('firstName', event.currentTarget.value)} />
                     <Input label="Last name" value={profileDraft.lastName} onChange={(event) => updateProfile('lastName', event.currentTarget.value)} />
-                    <Input label="Role title" value={profileDraft.roleTitle} onChange={(event) => updateProfile('roleTitle', event.currentTarget.value)} />
+                    <Input label="Role title" value={profileDraft.roleTitle} readOnly />
                     <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
@@ -10604,7 +10733,7 @@ function PublicOnboardingPage() {
             <div className="form-grid two">
               <Input label="First name" required value={draft.firstName} onChange={(event) => update('firstName', event.currentTarget.value)} />
               <Input label="Last name" required value={draft.lastName} onChange={(event) => update('lastName', event.currentTarget.value)} />
-              <Input label="Role" required value={draft.roleTitle} onChange={(event) => update('roleTitle', event.currentTarget.value)} />
+              <Input label="Role" required value={draft.roleTitle} readOnly />
               <Select label="Venue" required value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
             </div>
             <div className="form-grid two">
@@ -10993,7 +11122,7 @@ function DeviceHomePage() {
 
 function StaffShell() {
   const { user } = useAuth();
-  const { staff, roster, loading, error, reload } = useStaffData();
+  const { staff, roster, roleTemplates, loading, error, reload } = useStaffData();
   const [selectedId, setSelectedId] = useState('');
   const [hrRecords, setHrRecords] = useState<StaffHrRecord[]>([]);
   const [hrLoading, setHrLoading] = useState(false);
@@ -11073,14 +11202,14 @@ function StaffShell() {
       ) : (
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />
-          <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
+          <Route path="/" element={<StaffHome staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
-          <Route path="/invites" element={<InvitesPage staff={staff} reloadStaff={reload} />} />
+          <Route path="/invites" element={<InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
-          <Route path="/access" element={<AccessPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
+          <Route path="/access" element={<AccessPage staff={staff} roleTemplates={roleTemplates} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />

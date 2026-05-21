@@ -59,6 +59,23 @@
   white-space: nowrap;
 }
 
+.staff-role-preview {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface-muted);
+}
+
+.staff-role-preview summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.staff-role-preview p {
+  margin: 8px 0 0;
+}
+
 .staff-readiness-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));

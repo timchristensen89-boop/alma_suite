@@ -27,6 +27,9 @@ import {
   staffProfileReonboardInputSchema,
   staffProfileUpdateInputSchema,
   staffReonboardInputSchema,
+  staffRoleTemplateApplyInputSchema,
+  staffRoleTemplateInputSchema,
+  staffRoleTemplateUpdateInputSchema,
   timesheetApprovalInputSchema,
   staffClockBreakInputSchema,
   staffClockInInputSchema,
@@ -779,6 +782,91 @@ function defaultStaffAppAccessCreateData(defaults: StaffDefaults = DEFAULT_STAFF
   };
 }
 
+const staffRoleTemplateInclude = {
+  access: { orderBy: [{ appId: 'asc' as const }] },
+  _count: { select: { staffProfiles: true } }
+} satisfies Prisma.StaffRoleTemplateInclude;
+
+type StaffRoleTemplateWithAccess = Prisma.StaffRoleTemplateGetPayload<{ include: typeof staffRoleTemplateInclude }>;
+
+function permissionRecord(value: unknown): Record<string, boolean> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).filter(([, allowed]) => typeof allowed === 'boolean')
+  ) as Record<string, boolean>;
+}
+
+function roleTemplateAccessCreateData(template: StaffRoleTemplateWithAccess) {
+  return template.access.map((access) => ({
+    appId: access.appId,
+    status: access.status,
+    role: access.role,
+    permissions: permissionRecord(access.permissions),
+    notes: `Role template: ${template.name}`
+  }));
+}
+
+function toStaffRoleTemplatePayload(template: StaffRoleTemplateWithAccess) {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description,
+    roleTitle: template.roleTitle,
+    venue: template.venue,
+    isActive: template.isActive,
+    createdAt: template.createdAt.toISOString(),
+    updatedAt: template.updatedAt.toISOString(),
+    assignedStaffCount: template._count.staffProfiles,
+    access: template.access.map((access) => ({
+      id: access.id,
+      roleTemplateId: access.roleTemplateId,
+      appId: access.appId,
+      status: access.status,
+      role: access.role,
+      permissions: permissionRecord(access.permissions),
+      createdAt: access.createdAt.toISOString(),
+      updatedAt: access.updatedAt.toISOString()
+    }))
+  };
+}
+
+function assertCanManageRoleTemplates(actor?: AuthUser | null) {
+  if (!actor) throw new HttpError(401, 'Not authenticated');
+  if (actor.isAdmin || actor.role === 'ADMIN') return;
+  throw new HttpError(403, 'Admin access is required to manage role templates.');
+}
+
+function assertTemplateGrantAllowed(template: StaffRoleTemplateWithAccess, actor?: AuthUser | null) {
+  if (!actor || actor.isAdmin || actor.role === 'ADMIN') return;
+  const grantsAdmin = template.access.some((access) => {
+    const permissions = permissionRecord(access.permissions);
+    return access.role.toUpperCase() === 'ADMIN' || permissions.admin === true;
+  });
+  const grantsSettings = template.access.some((access) => access.appId === 'SETTINGS' && access.status !== 'DISABLED');
+  if (grantsAdmin || grantsSettings) {
+    throw new HttpError(403, 'Admin access is required to assign admin or Settings role templates.');
+  }
+}
+
+async function loadActiveRoleTemplateForAssignment(roleTemplateId: string, actor?: AuthUser | null) {
+  const template = await prisma.staffRoleTemplate.findUnique({
+    where: { id: roleTemplateId },
+    include: staffRoleTemplateInclude
+  });
+  if (!template || !template.isActive) {
+    throw new HttpError(404, 'Active role template not found.');
+  }
+  assertTemplateGrantAllowed(template, actor);
+  return template;
+}
+
+function roleTemplateStaffUpdateData(template: StaffRoleTemplateWithAccess) {
+  return {
+    roleTemplate: { connect: { id: template.id } },
+    roleTitle: template.roleTitle || template.name
+  };
+}
+
 function dateOnlyUtc(value: string) {
   return new Date(`${value}T00:00:00.000Z`);
 }
@@ -1234,6 +1322,135 @@ export const staffService = {
     return AWARD_RATE_SETS;
   },
 
+  async listRoleTemplates(query: unknown = {}, actor?: AuthUser | null) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    if (actor.role === 'STAFF' && !actor.isAdmin) throw new HttpError(403, 'Manager access required');
+    const includeInactive =
+      Boolean((query as { includeInactive?: unknown })?.includeInactive === 'true' || (query as { includeInactive?: unknown })?.includeInactive === true) &&
+      Boolean(actor.isAdmin || actor.role === 'ADMIN');
+    const templates = await prisma.staffRoleTemplate.findMany({
+      where: includeInactive ? undefined : { isActive: true },
+      orderBy: [{ isActive: 'desc' }, { name: 'asc' }],
+      include: staffRoleTemplateInclude
+    });
+    return templates.map(toStaffRoleTemplatePayload);
+  },
+
+  async getRoleTemplate(id: string, actor?: AuthUser | null) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    if (actor.role === 'STAFF' && !actor.isAdmin) throw new HttpError(403, 'Manager access required');
+    const template = await prisma.staffRoleTemplate.findUnique({
+      where: { id },
+      include: staffRoleTemplateInclude
+    });
+    if (!template || (!template.isActive && !actor.isAdmin && actor.role !== 'ADMIN')) {
+      throw new HttpError(404, 'Role template not found');
+    }
+    return toStaffRoleTemplatePayload(template);
+  },
+
+  async createRoleTemplate(input: unknown, actor?: AuthUser | null) {
+    assertCanManageRoleTemplates(actor);
+    const data = staffRoleTemplateInputSchema.parse(input);
+    const template = await prisma.staffRoleTemplate.create({
+      data: {
+        name: data.name,
+        description: data.description || null,
+        roleTitle: data.roleTitle || data.name,
+        venue: data.venue || null,
+        isActive: data.isActive,
+        access: {
+          create: data.access.map((access) => ({
+            appId: access.appId,
+            status: access.status,
+            role: access.role,
+            permissions: access.permissions
+          }))
+        }
+      },
+      include: staffRoleTemplateInclude
+    });
+    return toStaffRoleTemplatePayload(template);
+  },
+
+  async updateRoleTemplate(id: string, input: unknown, actor?: AuthUser | null) {
+    assertCanManageRoleTemplates(actor);
+    const data = staffRoleTemplateUpdateInputSchema.parse(input);
+    const existing = await prisma.staffRoleTemplate.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Role template not found');
+
+    const template = await prisma.$transaction(async (tx) => {
+      await tx.staffRoleTemplate.update({
+        where: { id },
+        data: {
+          ...(data.name !== undefined && { name: data.name }),
+          ...(data.description !== undefined && { description: data.description || null }),
+          ...(data.roleTitle !== undefined && { roleTitle: data.roleTitle || data.name || existing.name }),
+          ...(data.venue !== undefined && { venue: data.venue || null }),
+          ...(data.isActive !== undefined && { isActive: data.isActive })
+        }
+      });
+      if (data.access !== undefined) {
+        await tx.staffRoleTemplateAccess.deleteMany({ where: { roleTemplateId: id } });
+        if (data.access.length) {
+          await tx.staffRoleTemplateAccess.createMany({
+            data: data.access.map((access) => ({
+              roleTemplateId: id,
+              appId: access.appId,
+              status: access.status,
+              role: access.role,
+              permissions: access.permissions
+            }))
+          });
+        }
+      }
+      const next = await tx.staffRoleTemplate.findUnique({ where: { id }, include: staffRoleTemplateInclude });
+      if (!next) throw new HttpError(404, 'Role template not found');
+      return next;
+    });
+
+    return toStaffRoleTemplatePayload(template);
+  },
+
+  async archiveRoleTemplate(id: string, actor?: AuthUser | null) {
+    assertCanManageRoleTemplates(actor);
+    const template = await prisma.staffRoleTemplate.update({
+      where: { id },
+      data: { isActive: false },
+      include: staffRoleTemplateInclude
+    }).catch(() => null);
+    if (!template) throw new HttpError(404, 'Role template not found');
+    return toStaffRoleTemplatePayload(template);
+  },
+
+  async duplicateRoleTemplate(id: string, actor?: AuthUser | null) {
+    assertCanManageRoleTemplates(actor);
+    const source = await prisma.staffRoleTemplate.findUnique({
+      where: { id },
+      include: staffRoleTemplateInclude
+    });
+    if (!source) throw new HttpError(404, 'Role template not found');
+    const template = await prisma.staffRoleTemplate.create({
+      data: {
+        name: `${source.name} copy`,
+        description: source.description,
+        roleTitle: source.roleTitle,
+        venue: source.venue,
+        isActive: false,
+        access: {
+          create: source.access.map((access) => ({
+            appId: access.appId,
+            status: access.status,
+            role: access.role,
+            permissions: permissionRecord(access.permissions)
+          }))
+        }
+      },
+      include: staffRoleTemplateInclude
+    });
+    return toStaffRoleTemplatePayload(template);
+  },
+
   async list(actor?: AuthUser) {
     const staffDefaults = await getStaffDefaults();
     const profiles = await prisma.staffProfile.findMany({
@@ -1244,6 +1461,7 @@ export const staffService = {
         appAccess: {
           orderBy: [{ appId: 'asc' }]
         },
+        roleTemplate: true,
         records: {
           orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }]
         },
@@ -1276,6 +1494,7 @@ export const staffService = {
         appAccess: {
           orderBy: [{ appId: 'asc' }]
         },
+        roleTemplate: true,
         records: {
           orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }]
         },
@@ -1299,8 +1518,11 @@ export const staffService = {
   async create(input: unknown, actor?: AuthUser) {
     const data = staffProfileCreateInputSchema.parse(input);
     const staffDefaults = await getStaffDefaults();
+    const roleTemplate = data.roleTemplateId
+      ? await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor)
+      : null;
     const email = normaliseEmail(data.email);
-    const targetVenue = data.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
+    const targetVenue = data.venue || roleTemplate?.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
 
     if (
       actor &&
@@ -1322,7 +1544,8 @@ export const staffService = {
       data: {
         firstName: data.firstName,
         lastName: data.lastName,
-        roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
+        roleTitle: roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle || staffDefaults.defaultRoleTitle,
+        roleTemplateId: roleTemplate?.id ?? null,
         email,
         phone: data.phone || null,
         venue: targetVenue || null,
@@ -1333,7 +1556,7 @@ export const staffService = {
         payProfile: !hasLegacyPaySetup(data)
           ? { create: defaultPayProfileCreateData(actor?.id, staffDefaults) }
           : undefined,
-        appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) },
+        appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) },
         records: data.records?.length
           ? {
               create: data.records.map((record) => ({
@@ -1356,6 +1579,7 @@ export const staffService = {
           orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }]
         },
         appAccess: { orderBy: [{ appId: 'asc' }] },
+        roleTemplate: true,
         payProfile: true,
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
@@ -1368,6 +1592,9 @@ export const staffService = {
     if (actor) await assertManagerCanAccessStaffProfile(id, actor);
     const existing = await this.getById(id);
     const data = staffProfileUpdateInputSchema.parse(input);
+    const roleTemplate = data.roleTemplateId
+      ? await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor)
+      : null;
     const email =
       data.email !== undefined ? normaliseEmail(data.email) : existing.email;
 
@@ -1390,12 +1617,12 @@ export const staffService = {
       }
     }
 
-    const updated = await prisma.staffProfile.update({
-      where: { id },
-      data: {
+    const profileUpdateData: Prisma.StaffProfileUpdateInput = {
         ...(data.firstName !== undefined && { firstName: data.firstName }),
         ...(data.lastName !== undefined && { lastName: data.lastName }),
-        ...(data.roleTitle !== undefined && { roleTitle: data.roleTitle }),
+        ...(data.roleTitle !== undefined && !roleTemplate && { roleTitle: data.roleTitle }),
+        ...(data.roleTemplateId !== undefined && { roleTemplate: roleTemplate ? { connect: { id: roleTemplate.id } } : { disconnect: true } }),
+        ...(roleTemplate && { roleTitle: roleTemplate.roleTitle || roleTemplate.name }),
         ...(data.email !== undefined && { email }),
         ...(data.phone !== undefined && { phone: data.phone || null }),
         ...(data.venue !== undefined && { venue: data.venue || null }),
@@ -1407,23 +1634,53 @@ export const staffService = {
         }),
         ...onboardingDetailUpdateData(data),
         ...(data.notes !== undefined && { notes: data.notes || null })
-      },
-      include: {
+    };
+
+    const include = {
         payProfile: true,
         appAccess: { orderBy: [{ appId: 'asc' }] },
+        roleTemplate: true,
         records: { orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }] },
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] },
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
-      }
-    });
+    } satisfies Prisma.StaffProfileInclude;
 
-    if (actor && data.roleTitle !== undefined && data.roleTitle !== existing.roleTitle) {
+    const updated = roleTemplate
+      ? await prisma.$transaction(async (tx) => {
+          await tx.staffProfile.update({
+            where: { id },
+            data: profileUpdateData
+          });
+          await tx.staffAppAccess.deleteMany({ where: { staffProfileId: id } });
+          const accessRows = roleTemplateAccessCreateData(roleTemplate).map((access) => ({
+            ...access,
+            staffProfileId: id
+          }));
+          if (accessRows.length) {
+            await tx.staffAppAccess.createMany({ data: accessRows });
+          }
+          const profile = await tx.staffProfile.findUnique({ where: { id }, include });
+          if (!profile) throw new HttpError(404, 'Staff profile not found');
+          return profile;
+        })
+      : await prisma.staffProfile.update({
+          where: { id },
+          data: profileUpdateData,
+          include
+        });
+
+    const nextRoleTitle = roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle;
+    if (actor && nextRoleTitle !== undefined && nextRoleTitle !== existing.roleTitle) {
       await recordStaffManagementEvent({
         staffProfileId: id,
         eventType: 'ROLE_UPDATED',
-        summary: `Role changed from "${existing.roleTitle}" to "${data.roleTitle}".`,
+        summary: `Role changed from "${existing.roleTitle}" to "${nextRoleTitle}".`,
         actor,
-        metadata: { previousRoleTitle: existing.roleTitle, nextRoleTitle: data.roleTitle }
+        metadata: {
+          previousRoleTitle: existing.roleTitle,
+          nextRoleTitle,
+          roleTemplateId: roleTemplate?.id ?? data.roleTemplateId ?? null
+        }
       });
     }
 
@@ -2109,6 +2366,43 @@ export const staffService = {
     }
 
     return this.getById(staffProfileId);
+  },
+
+  async applyRoleTemplate(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const data = staffRoleTemplateApplyInputSchema.parse(input);
+    const template = await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor);
+    const existing = await this.getById(staffProfileId);
+
+    await prisma.$transaction(async (tx) => {
+      await tx.staffProfile.update({
+        where: { id: staffProfileId },
+        data: roleTemplateStaffUpdateData(template)
+      });
+      await tx.staffAppAccess.deleteMany({ where: { staffProfileId } });
+      const accessRows = roleTemplateAccessCreateData(template).map((access) => ({
+        ...access,
+        staffProfileId
+      }));
+      if (accessRows.length) {
+        await tx.staffAppAccess.createMany({ data: accessRows });
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId,
+      eventType: 'ROLE_TEMPLATE_APPLIED',
+      summary: `Role template "${template.name}" applied.`,
+      actor,
+      metadata: {
+        roleTemplateId: template.id,
+        previousRoleTitle: existing.roleTitle,
+        nextRoleTitle: template.roleTitle || template.name
+      }
+    });
+
+    return this.getById(staffProfileId, actor);
   },
 
   async updatePayProfile(staffProfileId: string, input: unknown, actor: AuthUser) {
@@ -4180,11 +4474,14 @@ export const staffService = {
   async createInvite(input: unknown, actor?: AuthUser) {
     const data = staffInviteCreateInputSchema.parse(input);
     const staffDefaults = await getStaffDefaults();
+    const roleTemplate = data.roleTemplateId
+      ? await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor)
+      : null;
     const days = data.expiresInDays ?? 30;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const email = normaliseEmail(data.email);
     const onboardingBaseUrl = normaliseBaseUrl(data.onboardingBaseUrl);
-    const targetVenue = data.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
+    const targetVenue = data.venue || roleTemplate?.venue || staffDefaults.defaultVenue || (actor && !actor.isAdmin && actor.role !== 'ADMIN' ? actor.venue ?? '' : '');
 
     if (
       actor &&
@@ -4210,13 +4507,14 @@ export const staffService = {
         data: {
           firstName: data.firstName,
           lastName: data.lastName,
-          roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
+          roleTitle: roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle || staffDefaults.defaultRoleTitle,
+          roleTemplateId: roleTemplate?.id ?? null,
           email,
           venue: targetVenue || null,
           employmentStatus: 'PENDING',
           notes: data.note || null,
           payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
-          appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) }
+          appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) }
         }
       });
 
@@ -4237,7 +4535,7 @@ export const staffService = {
         ? await mailService.sendStaffInvite({
             to: email,
             firstName: data.firstName,
-            roleTitle: data.roleTitle || staffDefaults.defaultRoleTitle,
+            roleTitle: roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle || staffDefaults.defaultRoleTitle,
             venue: targetVenue || null,
             note: data.note || null,
             inviteLink,
@@ -4254,6 +4552,9 @@ export const staffService = {
   async reonboardStaff(input: unknown, actor?: AuthUser) {
     const data = staffReonboardInputSchema.parse(input);
     const staffDefaults = await getStaffDefaults();
+    const roleTemplate = data.roleTemplateId
+      ? await loadActiveRoleTemplateForAssignment(data.roleTemplateId, actor)
+      : null;
     const days = data.expiresInDays ?? 30;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
     const email = normaliseEmail(data.email);
@@ -4263,7 +4564,7 @@ export const staffService = {
       where: { email },
       select: { id: true, venue: true }
     });
-    const targetVenue = data.venue || (existingForScope ? existingForScope.venue ?? '' : staffDefaults.defaultVenue) || '';
+    const targetVenue = data.venue || roleTemplate?.venue || (existingForScope ? existingForScope.venue ?? '' : staffDefaults.defaultVenue) || '';
 
     if (
       actor &&
@@ -4286,7 +4587,8 @@ export const staffService = {
             data: {
               firstName: data.firstName?.trim() || existing.firstName,
               lastName: data.lastName?.trim() || existing.lastName,
-              roleTitle: data.roleTitle?.trim() || existing.roleTitle,
+              roleTitle: roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle?.trim() || existing.roleTitle,
+              ...(roleTemplate && { roleTemplate: { connect: { id: roleTemplate.id } } }),
               venue: data.venue !== undefined ? data.venue || null : existing.venue,
               employmentStatus: 'PENDING',
               passwordHash: null,
@@ -4304,15 +4606,27 @@ export const staffService = {
             data: {
               firstName: data.firstName?.trim() || 'Pending',
               lastName: data.lastName?.trim() || 'Staff',
-              roleTitle: data.roleTitle?.trim() || staffDefaults.defaultRoleTitle,
+              roleTitle: roleTemplate ? roleTemplate.roleTitle || roleTemplate.name : data.roleTitle?.trim() || staffDefaults.defaultRoleTitle,
+              roleTemplateId: roleTemplate?.id ?? null,
               email,
               venue: targetVenue || null,
               employmentStatus: 'PENDING',
               notes: data.note || null,
               payProfile: { create: defaultPayProfileCreateData(undefined, staffDefaults) },
-              appAccess: { create: defaultStaffAppAccessCreateData(staffDefaults) }
+              appAccess: { create: roleTemplate ? roleTemplateAccessCreateData(roleTemplate) : defaultStaffAppAccessCreateData(staffDefaults) }
             }
           });
+
+      if (roleTemplate) {
+        await tx.staffAppAccess.deleteMany({ where: { staffProfileId: profile.id } });
+        const accessRows = roleTemplateAccessCreateData(roleTemplate).map((access) => ({
+          ...access,
+          staffProfileId: profile.id
+        }));
+        if (accessRows.length) {
+          await tx.staffAppAccess.createMany({ data: accessRows });
+        }
+      }
 
       await tx.staffInvite.updateMany({
         where: {

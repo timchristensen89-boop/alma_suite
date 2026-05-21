@@ -621,6 +621,8 @@ model StaffProfile {
   leaveRequests    StaffLeaveRequest[]
   passwordResetTokens StaffPasswordResetToken[]
   appAccess        StaffAppAccess[]
+  roleTemplateId   String?
+  roleTemplate     StaffRoleTemplate?      @relation(fields: [roleTemplateId], references: [id], onDelete: SetNull)
   rosterShifts     RosterShift[]
   shiftTaskAssignments ShiftTaskAssignment[]
   shiftConfirmations StaffShiftConfirmation[]
@@ -632,8 +634,40 @@ model StaffProfile {
 
   @@index([venue])
   @@index([accountType, venue])
+  @@index([roleTemplateId])
   @@index([mergedIntoStaffProfileId])
   @@index([xeroEmployeeId])
+}
+
+model StaffRoleTemplate {
+  id            String                    @id @default(cuid())
+  name          String                    @unique
+  description   String?
+  roleTitle     String?
+  venue         String?
+  isActive      Boolean                   @default(true)
+  createdAt     DateTime                  @default(now())
+  updatedAt     DateTime                  @updatedAt
+  access        StaffRoleTemplateAccess[]
+  staffProfiles StaffProfile[]
+
+  @@index([isActive])
+  @@index([venue])
+}
+
+model StaffRoleTemplateAccess {
+  id             String               @id @default(cuid())
+  roleTemplateId String
+  appId          AlmaAppId
+  status         StaffAppAccessStatus @default(DISABLED)
+  role           String               @default("USER")
+  permissions    Json                 @default("{}")
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  roleTemplate   StaffRoleTemplate    @relation(fields: [roleTemplateId], references: [id], onDelete: Cascade)
+
+  @@unique([roleTemplateId, appId])
+  @@index([appId, status])
 }
 
 model StaffManagerNote {

@@ -483,6 +483,7 @@ export const staffLeaveRequestUpdateSchema = z.object({
 export const staffProfileCreateInputSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
+  roleTemplateId: z.string().optional().or(z.literal('')),
   roleTitle: z.string().min(2).optional().or(z.literal('')),
   email: z.string().email().optional().or(z.literal('')),
   phone: z.string().optional().or(z.literal('')),
@@ -529,6 +530,7 @@ export const staffProfileUpdateInputSchema = staffProfileCreateInputSchema.parti
 export const staffInviteCreateInputSchema = z.object({
   firstName: z.string().min(2),
   lastName: z.string().min(2),
+  roleTemplateId: z.string().optional().or(z.literal('')),
   roleTitle: z.string().min(2).optional().or(z.literal('')),
   email: z.string().email().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
@@ -541,6 +543,7 @@ export const staffReonboardInputSchema = z.object({
   email: z.string().email(),
   firstName: z.string().optional().or(z.literal('')),
   lastName: z.string().optional().or(z.literal('')),
+  roleTemplateId: z.string().optional().or(z.literal('')),
   roleTitle: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
   note: z.string().optional().or(z.literal('')),
@@ -655,6 +658,28 @@ export const staffAppAccessInputSchema = z.object({
     permissions: z.record(z.string(), z.boolean()).optional().default({}),
     notes: z.string().optional().or(z.literal(''))
   }))
+});
+
+export const staffRoleTemplateAccessInputSchema = z.object({
+  appId: almaAppIdSchema,
+  status: staffAppAccessStatusSchema,
+  role: z.string().trim().min(1).default('USER'),
+  permissions: z.record(z.string(), z.boolean()).optional().default({})
+});
+
+export const staffRoleTemplateInputSchema = z.object({
+  name: z.string().trim().min(2).max(120),
+  description: z.string().trim().max(1000).optional().or(z.literal('')),
+  roleTitle: z.string().trim().max(120).optional().or(z.literal('')),
+  venue: z.string().trim().max(120).optional().or(z.literal('')),
+  isActive: z.boolean().optional().default(true),
+  access: z.array(staffRoleTemplateAccessInputSchema).default([])
+});
+
+export const staffRoleTemplateUpdateInputSchema = staffRoleTemplateInputSchema.partial();
+
+export const staffRoleTemplateApplyInputSchema = z.object({
+  roleTemplateId: z.string().min(1)
 });
 
 export const adminAccessUserCreateInputSchema = z.object({
@@ -2336,6 +2361,30 @@ export type StaffAppAccess = {
   updatedAt: string;
 };
 
+export type StaffRoleTemplateAccess = {
+  id: string;
+  roleTemplateId: string;
+  appId: AlmaAppId;
+  status: StaffAppAccessStatus;
+  role: string;
+  permissions: Record<string, boolean>;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type StaffRoleTemplate = {
+  id: string;
+  name: string;
+  description: string | null;
+  roleTitle: string | null;
+  venue: string | null;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+  access: StaffRoleTemplateAccess[];
+  assignedStaffCount?: number;
+};
+
 export type SuiteAnnouncement = {
   id: string;
   title: string;
@@ -3417,6 +3466,8 @@ export type StaffProfile = {
   id: string;
   firstName: string;
   lastName: string;
+  roleTemplateId: string | null;
+  roleTemplate?: Pick<StaffRoleTemplate, 'id' | 'name' | 'roleTitle' | 'isActive'> | null;
   roleTitle: string;
   email: string | null;
   phone: string | null;

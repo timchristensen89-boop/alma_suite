@@ -38,6 +38,7 @@ import type {
   SocialPlatform,
   StaffAppAccess,
   StaffAppAccessStatus,
+  StaffRoleTemplate,
   XeroConnectionHealthPayload,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
@@ -77,6 +78,7 @@ type AdminLoadState = {
   integrations: AdminIntegrationsStatusPayload | null;
   systemHealth: AdminSystemHealthPayload | null;
   socialAccounts: MarketingSocialAccount[];
+  roleTemplates: StaffRoleTemplate[];
 };
 
 export type AdminFeatureRoute =
@@ -149,6 +151,76 @@ const DEFAULT_ACCESS_PERMISSIONS = {
   delete: false,
   admin: false
 };
+
+type RoleTemplateForm = {
+  id: string | null;
+  name: string;
+  description: string;
+  roleTitle: string;
+  venue: string;
+  isActive: boolean;
+  access: Partial<Record<AlmaAppId, {
+    status: StaffAppAccessStatus;
+    role: AccessRole;
+    permissions: Record<string, boolean>;
+  }>>;
+};
+
+const DEFAULT_ROLE_TEMPLATE_FORM: RoleTemplateForm = {
+  id: null,
+  name: '',
+  description: '',
+  roleTitle: '',
+  venue: '',
+  isActive: true,
+  access: {}
+};
+
+function roleTemplateFormFromTemplate(template: StaffRoleTemplate): RoleTemplateForm {
+  return {
+    id: template.id,
+    name: template.name,
+    description: template.description ?? '',
+    roleTitle: template.roleTitle ?? '',
+    venue: template.venue ?? '',
+    isActive: template.isActive,
+    access: Object.fromEntries(
+      template.access.map((access) => [
+        access.appId,
+        {
+          status: access.status,
+          role: access.role.toUpperCase() as AccessRole,
+          permissions: access.permissions
+        }
+      ])
+    )
+  };
+}
+
+function roleTemplatePayload(form: RoleTemplateForm, appIds: AlmaAppId[]) {
+  return {
+    name: form.name.trim(),
+    description: form.description.trim(),
+    roleTitle: form.roleTitle.trim(),
+    venue: form.venue.trim(),
+    isActive: form.isActive,
+    access: appIds.map((appId) => {
+      const access = form.access[appId];
+      return {
+        appId,
+        status: access?.status ?? 'DISABLED',
+        role: access?.role ?? 'USER',
+        permissions: access?.permissions ?? {}
+      };
+    })
+  };
+}
+
+function roleTemplateSummary(template: StaffRoleTemplate) {
+  const enabled = template.access.filter((access) => access.status === 'ENABLED');
+  if (!enabled.length) return 'No apps enabled';
+  return enabled.slice(0, 4).map((access) => `${access.appId.toLowerCase()} ${access.role.toLowerCase()}`).join(' · ');
+}
 
 function accessFor(user: AdminAccessUserSummary, appId: AlmaAppId): StaffAppAccess | undefined {
   return user.appAccess.find((access) => access.appId === appId);
@@ -1414,7 +1486,8 @@ export function AdminPage({
     accessUsers: null,
     integrations: null,
     systemHealth: null,
-    socialAccounts: []
+    socialAccounts: [],
+    roleTemplates: []
   });
   const [audit, setAudit] = useState<AdminAuditEventsPayload | null>(null);
   const [auditFilter, setAuditFilter] = useState('');
@@ -1450,6 +1523,9 @@ export function AdminPage({
   const [bulkPermissions, setBulkPermissions] = useState<Record<string, boolean>>(DEFAULT_ACCESS_PERMISSIONS);
   const [accessBusy, setAccessBusy] = useState(false);
   const [accessFeedback, setAccessFeedback] = useState<string | null>(null);
+  const [roleTemplateForm, setRoleTemplateForm] = useState<RoleTemplateForm>(DEFAULT_ROLE_TEMPLATE_FORM);
+  const [roleTemplateBusy, setRoleTemplateBusy] = useState<string | null>(null);
+  const [roleTemplateFeedback, setRoleTemplateFeedback] = useState<string | null>(null);
   const [newUserForm, setNewUserForm] = useState({
     firstName: '',
     lastName: '',
@@ -1464,12 +1540,13 @@ export function AdminPage({
     setLoading(true);
     setError(null);
     try {
-      const [overviewResult, accessUsersResult, integrationsResult, systemHealthResult, socialAccountsResult] = await Promise.allSettled([
+      const [overviewResult, accessUsersResult, integrationsResult, systemHealthResult, socialAccountsResult, roleTemplatesResult] = await Promise.allSettled([
         api<AdminOverviewPayload>('/api/admin/overview'),
         api<AdminAccessUsersPayload>('/api/admin/access/users'),
         api<AdminIntegrationsStatusPayload>('/api/admin/integrations/status'),
         api<AdminSystemHealthPayload>('/api/admin/system-health'),
-        api<MarketingSocialAccount[]>('/api/marketing/content/social-accounts')
+        api<MarketingSocialAccount[]>('/api/marketing/content/social-accounts'),
+        api<StaffRoleTemplate[]>('/api/staff/role-templates?includeInactive=true')
       ]);
 
       if (overviewResult.status === 'rejected') throw overviewResult.reason;
@@ -1480,7 +1557,8 @@ export function AdminPage({
         accessUsers: accessUsersResult.status === 'fulfilled' ? accessUsersResult.value : null,
         integrations: integrationsResult.status === 'fulfilled' ? integrationsResult.value : null,
         systemHealth: systemHealthResult.value,
-        socialAccounts: socialAccountsResult.status === 'fulfilled' ? socialAccountsResult.value : []
+        socialAccounts: socialAccountsResult.status === 'fulfilled' ? socialAccountsResult.value : [],
+        roleTemplates: roleTemplatesResult.status === 'fulfilled' ? roleTemplatesResult.value : []
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load Admin.');
@@ -1824,6 +1902,89 @@ export function AdminPage({
     }
   }
 
+  function updateRoleTemplateAccess(
+    appId: AlmaAppId,
+    patch: Partial<{ status: StaffAppAccessStatus; role: AccessRole; permissions: Record<string, boolean> }>
+  ) {
+    setRoleTemplateForm((form) => {
+      const current = form.access[appId] ?? { status: 'DISABLED' as StaffAppAccessStatus, role: 'USER' as AccessRole, permissions: {} };
+      return {
+        ...form,
+        access: {
+          ...form.access,
+          [appId]: {
+            ...current,
+            ...patch,
+            permissions: patch.permissions ?? current.permissions
+          }
+        }
+      };
+    });
+  }
+
+  function toggleRoleTemplatePermission(appId: AlmaAppId, key: string, checked: boolean) {
+    const current = roleTemplateForm.access[appId] ?? { status: 'DISABLED' as StaffAppAccessStatus, role: 'USER' as AccessRole, permissions: {} };
+    updateRoleTemplateAccess(appId, {
+      permissions: {
+        ...current.permissions,
+        [key]: checked
+      }
+    });
+  }
+
+  async function saveRoleTemplate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!state.accessUsers) return;
+    setRoleTemplateBusy('save');
+    setRoleTemplateFeedback(null);
+    try {
+      const payload = roleTemplatePayload(roleTemplateForm, state.accessUsers.apps.map((app) => app.appId));
+      await api<StaffRoleTemplate>(roleTemplateForm.id ? `/api/staff/role-templates/${roleTemplateForm.id}` : '/api/staff/role-templates', {
+        method: roleTemplateForm.id ? 'PATCH' : 'POST',
+        body: JSON.stringify(payload)
+      });
+      setRoleTemplateForm(DEFAULT_ROLE_TEMPLATE_FORM);
+      setRoleTemplateFeedback(roleTemplateForm.id ? 'Role template saved.' : 'Role template created.');
+      await loadDashboard();
+    } catch (err) {
+      setRoleTemplateFeedback(err instanceof Error ? err.message : 'Could not save role template.');
+    } finally {
+      setRoleTemplateBusy(null);
+    }
+  }
+
+  async function archiveRoleTemplate(template: StaffRoleTemplate) {
+    const confirmed = window.confirm(`Archive ${template.name}? Staff already assigned keep the role label until changed.`);
+    if (!confirmed) return;
+    setRoleTemplateBusy(template.id);
+    setRoleTemplateFeedback(null);
+    try {
+      await api<StaffRoleTemplate>(`/api/staff/role-templates/${template.id}`, { method: 'DELETE' });
+      if (roleTemplateForm.id === template.id) setRoleTemplateForm(DEFAULT_ROLE_TEMPLATE_FORM);
+      setRoleTemplateFeedback(`${template.name} archived.`);
+      await loadDashboard();
+    } catch (err) {
+      setRoleTemplateFeedback(err instanceof Error ? err.message : 'Could not archive role template.');
+    } finally {
+      setRoleTemplateBusy(null);
+    }
+  }
+
+  async function duplicateRoleTemplate(template: StaffRoleTemplate) {
+    setRoleTemplateBusy(`duplicate:${template.id}`);
+    setRoleTemplateFeedback(null);
+    try {
+      const copy = await api<StaffRoleTemplate>(`/api/staff/role-templates/${template.id}/duplicate`, { method: 'POST' });
+      setRoleTemplateForm(roleTemplateFormFromTemplate(copy));
+      setRoleTemplateFeedback(`${template.name} duplicated. Review and activate the copy before use.`);
+      await loadDashboard();
+    } catch (err) {
+      setRoleTemplateFeedback(err instanceof Error ? err.message : 'Could not duplicate role template.');
+    } finally {
+      setRoleTemplateBusy(null);
+    }
+  }
+
   useEffect(() => {
     let cancelled = false;
     async function loadAudit() {
@@ -1846,6 +2007,7 @@ export function AdminPage({
 
   const overview = state.overview;
   const accessUsers = state.accessUsers;
+  const roleTemplates = state.roleTemplates;
   const integrations = state.integrations;
   const systemHealth = state.systemHealth;
   const auditOptions = useMemo(
@@ -2162,10 +2324,149 @@ export function AdminPage({
       <section className="admin-section">
         <SectionHeading
           id="permission-editor"
-          eyebrow="Permission editor"
-          title="Update user access in one place."
-          description="Create users, select staff in bulk, and apply app roles or permission flags without opening each profile."
+          eyebrow="Roles and permissions"
+          title="Role templates control staff app access."
+          description="Create a role once, then assign it to staff from the Staff app. Direct user access remains available as an override."
         />
+
+        <div className="admin-grid two">
+          <Card title="Role templates" subtitle="Active templates appear in Staff role dropdowns. Archived templates stay out of new assignments.">
+            <div className="admin-card-list">
+              {roleTemplates.map((template) => (
+                <article key={template.id} className="admin-link-card">
+                  <span>
+                    <strong>{template.name}</strong>
+                    <small>
+                      {template.isActive ? 'Active' : 'Archived'} · {template.assignedStaffCount ?? 0} assigned · {roleTemplateSummary(template)}
+                    </small>
+                  </span>
+                  <span className="inline-actions">
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setRoleTemplateForm(roleTemplateFormFromTemplate(template))}>
+                      Edit
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={roleTemplateBusy === `duplicate:${template.id}`} onClick={() => void duplicateRoleTemplate(template)}>
+                      Duplicate
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={roleTemplateBusy === template.id || !template.isActive} onClick={() => void archiveRoleTemplate(template)}>
+                      Archive
+                    </Button>
+                  </span>
+                </article>
+              ))}
+              {!roleTemplates.length ? (
+                <EmptyState
+                  icon={<IconUsers />}
+                  title="No role templates yet"
+                  description="Create the first role template, then use it from Staff when adding or editing people."
+                />
+              ) : null}
+            </div>
+          </Card>
+
+          <Card title={roleTemplateForm.id ? 'Edit role template' : 'Create role template'} subtitle="App permission groups are collapsed by default. Save applies this template to future role changes.">
+            <form className="admin-social-form" onSubmit={(event) => void saveRoleTemplate(event)}>
+              <div className="admin-form-grid">
+                <Input
+                  label="Role name"
+                  value={roleTemplateForm.name}
+                  onChange={(event) => setRoleTemplateForm((form) => ({ ...form, name: event.target.value }))}
+                  placeholder="Venue Manager"
+                  required
+                />
+                <Input
+                  label="Role title"
+                  value={roleTemplateForm.roleTitle}
+                  onChange={(event) => setRoleTemplateForm((form) => ({ ...form, roleTitle: event.target.value }))}
+                  placeholder="Venue Manager"
+                />
+                <Select
+                  label="Default venue"
+                  value={roleTemplateForm.venue}
+                  onChange={(event) => setRoleTemplateForm((form) => ({ ...form, venue: event.target.value }))}
+                  options={[{ label: 'No default venue', value: '' }, ...venueOptions]}
+                />
+              </div>
+              <Textarea
+                label="Description"
+                rows={2}
+                value={roleTemplateForm.description}
+                onChange={(event) => setRoleTemplateForm((form) => ({ ...form, description: event.target.value }))}
+                placeholder="What this role is allowed to do"
+              />
+
+              {accessUsers ? (
+                <div className="admin-role-template-apps">
+                  {accessUsers.apps.map((app) => {
+                    const access = roleTemplateForm.access[app.appId] ?? { status: 'DISABLED' as StaffAppAccessStatus, role: 'USER' as AccessRole, permissions: {} };
+                    return (
+                      <details key={app.appId} className="admin-role-app-group">
+                        <summary>
+                          <span>{app.label}</span>
+                          <Badge tone={access.status === 'ENABLED' ? 'positive' : 'muted'}>{access.status.toLowerCase()}</Badge>
+                        </summary>
+                        <div className="admin-form-grid">
+                          <Select
+                            label="Status"
+                            value={access.status}
+                            onChange={(event) => updateRoleTemplateAccess(app.appId, { status: event.target.value as StaffAppAccessStatus })}
+                            options={ACCESS_STATUS_OPTIONS}
+                          />
+                          <Select
+                            label="Role"
+                            value={access.role}
+                            onChange={(event) => updateRoleTemplateAccess(app.appId, { role: event.target.value as AccessRole })}
+                            options={ACCESS_ROLE_OPTIONS}
+                          />
+                        </div>
+                        <div className="admin-permission-grid">
+                          {accessUsers.permissionKeys.map((permission) => (
+                            <label key={`${app.appId}:${permission.key}`} className={`admin-permission-toggle ${permission.dangerous ? 'danger' : ''}`}>
+                              <input
+                                type="checkbox"
+                                checked={Boolean(access.permissions[permission.key])}
+                                onChange={(event) => toggleRoleTemplatePermission(app.appId, permission.key, event.target.checked)}
+                              />
+                              <span>
+                                <strong>{permission.label}</strong>
+                                <small>{permission.description}</small>
+                              </span>
+                            </label>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })}
+                </div>
+              ) : (
+                <EmptyState title="Permission keys unavailable" description="Admin access data did not load, so role template permissions cannot be edited yet." />
+              )}
+
+              <label className="admin-checkbox">
+                <input
+                  type="checkbox"
+                  checked={roleTemplateForm.isActive}
+                  onChange={(event) => setRoleTemplateForm((form) => ({ ...form, isActive: event.target.checked }))}
+                />
+                <span>Active for Staff role dropdowns</span>
+              </label>
+              {roleTemplateFeedback ? (
+                <p className={roleTemplateFeedback.toLowerCase().includes('could not') ? 'form-error' : 'form-success'}>
+                  {roleTemplateFeedback}
+                </p>
+              ) : null}
+              <div className="toolbar-right">
+                {roleTemplateForm.id ? (
+                  <Button type="button" variant="ghost" onClick={() => setRoleTemplateForm(DEFAULT_ROLE_TEMPLATE_FORM)}>
+                    Cancel
+                  </Button>
+                ) : null}
+                <Button type="submit" disabled={roleTemplateBusy === 'save' || !roleTemplateForm.name.trim() || !accessUsers}>
+                  {roleTemplateBusy === 'save' ? 'Saving...' : roleTemplateForm.id ? 'Save role' : 'Create role'}
+                </Button>
+              </div>
+            </form>
+          </Card>
+        </div>
 
         {!accessUsers ? (
           <Card>
@@ -2177,6 +2478,11 @@ export function AdminPage({
           </Card>
         ) : (
           <>
+            <details className="admin-role-app-group">
+              <summary>
+                <span>Direct user access overrides</span>
+                <Badge tone="info">Advanced</Badge>
+              </summary>
             <div className="admin-grid two">
               <Card title="Add a user" subtitle="Creates a Staff profile and optional Staff app access">
                 <form className="admin-social-form" onSubmit={(event) => void createAccessUser(event)}>
@@ -2422,6 +2728,7 @@ export function AdminPage({
                 />
               ) : null}
             </Card>
+            </details>
           </>
         )}
       </section>

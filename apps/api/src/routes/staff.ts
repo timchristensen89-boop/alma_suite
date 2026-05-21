@@ -60,6 +60,54 @@ function redactManagerOnlyPay<T extends { payProfile?: unknown }>(profile: T): T
   return { ...profile, payProfile: null };
 }
 
+staffRouter.get('/role-templates', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listRoleTemplates(req.query, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/role-templates', requireAdmin, async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.createRoleTemplate(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/role-templates/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.getRoleTemplate(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/role-templates/:id', requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await staffService.updateRoleTemplate(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/role-templates/:id', requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await staffService.archiveRoleTemplate(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/role-templates/:id/duplicate', requireAdmin, async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.duplicateRoleTemplate(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/', async (_req, res, next) => {
   try {
     if (_req.user?.role === 'STAFF') {
@@ -684,6 +732,14 @@ staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
       throw new HttpError(403, 'Settings access required to change Admin access.');
     }
     res.json(await staffService.updateAppAccess(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/:id/role-template', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.applyRoleTemplate(String(req.params.id), req.body, req.user));
   } catch (error) {
     next(error);
   }

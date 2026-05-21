@@ -5276,6 +5276,36 @@ a.suite-app-tile:hover {
   font-size: 13px;
 }
 
+.admin-role-template-apps {
+  display: grid;
+  gap: 10px;
+}
+
+.admin-role-app-group {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.admin-role-app-group > summary {
+  display: flex;
+  min-height: 48px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  font-weight: 800;
+}
+
+.admin-role-app-group > .admin-form-grid,
+.admin-role-app-group > .admin-permission-grid,
+.admin-role-app-group > .admin-grid,
+.admin-role-app-group > .admin-warning-item,
+.admin-role-app-group > .card {
+  margin: 0 14px 14px;
+}
+
 .admin-chip-grid,
 .admin-permission-grid {
   display: grid;
