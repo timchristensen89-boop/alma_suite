@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
@@ -104,6 +104,7 @@ function TopBarWithContext() {
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={user.role !== 'STAFF'}
             />
+            <SuiteNotificationsWidget api={api} currentApp="stock" />
             <IconButton
               label="Sign out"
               icon={<IconExternal size={15} />}
