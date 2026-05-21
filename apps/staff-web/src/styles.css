@@ -1561,6 +1561,156 @@
   margin-top: 14px;
 }
 
+.staff-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 145;
+  display: grid;
+  place-items: start center;
+  padding: 24px;
+  overflow: auto;
+  background: rgba(15, 23, 42, 0.46);
+  backdrop-filter: blur(3px);
+}
+
+.staff-modal {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  width: min(780px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  margin-top: 24px;
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-lg);
+}
+
+.staff-modal-wide {
+  width: min(920px, calc(100vw - 32px));
+}
+
+.staff-modal:focus {
+  outline: none;
+}
+
+.staff-modal-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.staff-modal-header h2 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1.15;
+}
+
+.staff-modal-header p {
+  margin: 5px 0 0;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.staff-modal-close {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  color: var(--color-text);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.staff-modal-close:hover {
+  border-color: var(--color-border-strong);
+  background: var(--color-surface-hover);
+}
+
+.staff-modal-body {
+  min-height: 0;
+  padding: 18px 20px 20px;
+  overflow-y: auto;
+}
+
+.staff-modal-section {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+
+.staff-modal-section + .staff-modal-section,
+.staff-profile-modal-form .staff-modal-section + .staff-modal-footer {
+  margin-top: 14px;
+}
+
+.staff-modal-section h3 {
+  margin: 0;
+  color: var(--color-text);
+  font-size: 15px;
+}
+
+.staff-modal-details summary {
+  cursor: pointer;
+  color: var(--color-text);
+  font-weight: 700;
+}
+
+.staff-modal-details[open] summary {
+  margin-bottom: 12px;
+}
+
+.staff-modal-footer {
+  position: sticky;
+  bottom: -20px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0), var(--color-surface) 24%);
+}
+
+.staff-profile-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.staff-profile-summary-grid > div {
+  display: grid;
+  gap: 4px;
+  min-height: 68px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.staff-profile-summary-grid strong {
+  color: var(--color-text);
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
 .roster-publish-grid {
   display: grid;
   grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.65fr);
@@ -2922,6 +3072,30 @@
 }
 
 @media (max-width: 760px) {
+  .staff-modal-backdrop {
+    place-items: center;
+    padding: 12px;
+  }
+
+  .staff-modal,
+  .staff-modal-wide {
+    width: calc(100vw - 24px);
+    max-height: calc(100svh - 24px);
+    margin-top: 0;
+  }
+
+  .staff-modal-header {
+    padding: 14px 16px;
+  }
+
+  .staff-modal-body {
+    padding: 14px 16px 16px;
+  }
+
+  .staff-profile-summary-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .tips-page .page-header {
     align-items: stretch;
   }
@@ -3174,6 +3348,32 @@
 }
 
 @media (max-width: 520px) {
+  .staff-modal-header {
+    gap: 12px;
+  }
+
+  .staff-modal-header h2 {
+    font-size: 19px;
+  }
+
+  .staff-modal-section {
+    padding: 12px;
+  }
+
+  .staff-profile-summary-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-modal-footer {
+    align-items: stretch;
+    justify-content: stretch;
+  }
+
+  .staff-modal-footer .btn {
+    flex: 1 1 100%;
+    justify-content: center;
+  }
+
   .staff-settings-page .page-header {
     align-items: stretch;
   }

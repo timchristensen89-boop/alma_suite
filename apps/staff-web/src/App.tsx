@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, MouseEvent } from 'react';
+import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import type {
   AppSettingsPayload,
@@ -973,16 +973,80 @@ function StaffHome({
       </Card>
 
       <Card
-        title={form.mode === 'closed' ? 'Staff register' : form.mode === 'edit' ? `Editing ${form.member.firstName}` : 'New staff profile'}
-        subtitle={form.mode === 'closed' ? 'Shared StaffProfile records for Staff, Compliance, Stock and Training.' : 'Create or update the shared staff authority.'}
-        padding={form.mode === 'closed' ? 'none' : 'default'}
+        title="Staff register"
+        subtitle="Shared StaffProfile records for Staff, Compliance, Stock and Training."
+        padding="none"
         action={
-          form.mode === 'closed' ? (
-            <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
-              New staff
-            </Button>
-          ) : null
+          <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
+            New staff
+          </Button>
         }
+      >
+        {loading ? <Spinner label="Loading staff…" /> : null}
+        {!loading && staff.length === 0 ? (
+          <EmptyState
+            title="No staff profiles yet"
+            description="Create staff here, then manage roster and app access."
+            action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>Create first staff profile</Button>}
+          />
+        ) : null}
+        <div className="staff-list" style={{ padding: 12 }}>
+          {staff.map((member) => {
+            const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
+            return (
+              <div key={member.id} className="staff-list-button">
+                <button type="button" className="staff-list-main" onClick={() => onSelect(member.id)}>
+                  <span>
+                    <strong>
+                      {member.firstName} {member.lastName}
+                    </strong>
+                    <span className="subtle" style={{ display: 'block' }}>
+                      {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
+                    </span>
+                    {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
+                  </span>
+                </button>
+                <span className="staff-row-actions">
+                  {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
+                  {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
+                  <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+                  {isDeputyImportedProfile(member) ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      disabled={reonboardingId === member.id}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        void reonboardLightweightProfile(member);
+                      }}
+                    >
+                      {reonboardingId === member.id ? 'Sending…' : 'Re-onboard'}
+                    </Button>
+                  ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      setForm({ mode: 'edit', member });
+                    }}
+                  >
+                    Edit
+                  </Button>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+
+      <StaffModal
+        open={form.mode !== 'closed'}
+        title={form.mode === 'edit' ? `Edit ${form.member.firstName} ${form.member.lastName}` : 'New staff profile'}
+        subtitle="Create or update the shared staff authority without losing your place in the register."
+        onClose={() => setForm({ mode: 'closed' })}
       >
         {form.mode !== 'closed' ? (
           <StaffProfileForm
@@ -992,67 +1056,7 @@ function StaffHome({
             onCancel={() => setForm({ mode: 'closed' })}
           />
         ) : null}
-        {loading ? <Spinner label="Loading staff…" /> : null}
-        {!loading && staff.length === 0 && form.mode === 'closed' ? (
-          <EmptyState
-            title="No staff profiles yet"
-            description="Create staff here, then manage roster and app access."
-            action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>Create first staff profile</Button>}
-          />
-        ) : null}
-        {form.mode === 'closed' ? (
-          <div className="staff-list" style={{ padding: 12 }}>
-            {staff.map((member) => {
-              const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
-              return (
-                <div key={member.id} className="staff-list-button">
-                  <button type="button" className="staff-list-main" onClick={() => onSelect(member.id)}>
-                    <span>
-                      <strong>
-                        {member.firstName} {member.lastName}
-                      </strong>
-                      <span className="subtle" style={{ display: 'block' }}>
-                        {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
-                      </span>
-                      {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
-                    </span>
-                  </button>
-                  <span className="staff-row-actions">
-                    {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
-                    {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
-                    <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
-                    {isDeputyImportedProfile(member) ? (
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant="secondary"
-                        disabled={reonboardingId === member.id}
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          void reonboardLightweightProfile(member);
-                        }}
-                      >
-                        {reonboardingId === member.id ? 'Sending…' : 'Re-onboard'}
-                      </Button>
-                    ) : null}
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        setForm({ mode: 'edit', member });
-                      }}
-                    >
-                      Edit
-                    </Button>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        ) : null}
-      </Card>
+      </StaffModal>
 
       <Card title="Compliance watch" subtitle="Staff certificates and records needing attention">
         {expiringSoon.length === 0 ? (
@@ -2146,6 +2150,69 @@ function staffPayloadFromDraft(draft: StaffDraft) {
   };
 }
 
+function StaffModal({
+  open,
+  title,
+  subtitle,
+  children,
+  onClose,
+  width = 'wide'
+}: {
+  open: boolean;
+  title: string;
+  subtitle?: string;
+  children: ReactNode;
+  onClose: () => void;
+  width?: 'standard' | 'wide';
+}) {
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    const timer = window.setTimeout(() => panelRef.current?.focus(), 0);
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.clearTimeout(timer);
+      window.removeEventListener('keydown', onKeyDown);
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [onClose, open]);
+
+  if (!open) return null;
+
+  return (
+    <div className="staff-modal-backdrop">
+      <section
+        ref={panelRef}
+        className={`staff-modal staff-modal-${width}`}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="staff-modal-title"
+        tabIndex={-1}
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <header className="staff-modal-header">
+          <span>
+            <h2 id="staff-modal-title">{title}</h2>
+            {subtitle ? <p>{subtitle}</p> : null}
+          </span>
+          <button type="button" className="staff-modal-close" onClick={onClose} aria-label="Close dialog">
+            ×
+          </button>
+        </header>
+        <div className="staff-modal-body">
+          {children}
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function StaffProfileForm({
   mode,
   initial,
@@ -2638,6 +2705,7 @@ function AccessPage({
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [documentPrompt, setDocumentPrompt] = useState<{ action: StaffDocumentPromptAction; recordId: string } | null>(null);
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
   const accessByApp = new Map(selected?.appAccess.map((access) => [access.appId, access]));
   const activeModules = (training?.modules ?? []).filter((module) => module.status === 'ACTIVE');
   const selectedTrainingRecords = training?.records.filter((record) => record.staffProfileId === selected?.id) ?? selected?.trainingRecords ?? [];
@@ -2664,6 +2732,7 @@ function AccessPage({
   useEffect(() => {
     setProfileDraft(selected ? draftFromStaff(selected) : emptyStaffDraft());
     setDocumentPrompt(null);
+    setProfileModalOpen(false);
   }, [selected?.id]);
 
   useEffect(() => {
@@ -2792,6 +2861,7 @@ function AccessPage({
       });
       await reload();
       setMessage('Staff profile saved.');
+      setProfileModalOpen(false);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not save staff profile.');
     } finally {
@@ -2810,6 +2880,7 @@ function AccessPage({
       await reload();
       const next = staff.find((member) => member.id !== selected.id);
       setSelectedId(next?.id ?? '');
+      setProfileModalOpen(false);
       setMessage('Staff profile archived.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not archive staff profile.');
@@ -3043,73 +3114,133 @@ function AccessPage({
               </div>
             </Card>
 
-            <Card title="Personal and payroll details" subtitle="Admin view of the shared StaffProfile authority.">
+            <Card
+              title="Profile details"
+              subtitle="Role, personal details, payroll fields, and manager notes."
+              action={
+                <Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>
+                  Edit profile
+                </Button>
+              }
+            >
+              <div className="staff-profile-summary-grid">
+                <div>
+                  <span className="subtle">Role</span>
+                  <strong>{selected.roleTitle || 'No role'}</strong>
+                </div>
+                <div>
+                  <span className="subtle">Contact</span>
+                  <strong>{selected.email || selected.phone || 'No contact recorded'}</strong>
+                </div>
+                <div>
+                  <span className="subtle">Employment</span>
+                  <strong>{selected.employmentStatus} · {selected.employmentType || 'No type'}</strong>
+                </div>
+                <div>
+                  <span className="subtle">Pay</span>
+                  <strong>{selected.payType || 'No pay type'} · {formatCents(selected.payRateCents)}</strong>
+                </div>
+              </div>
+              <p className="subtle">Editing opens in a modal so this profile stays in place.</p>
+            </Card>
+
+            <StaffModal
+              open={profileModalOpen}
+              title={`Edit ${selected.firstName} ${selected.lastName}`}
+              subtitle="Update profile, role, payroll, and work-rights details."
+              onClose={() => {
+                setProfileDraft(draftFromStaff(selected));
+                setProfileModalOpen(false);
+              }}
+            >
               <form
-                className="staff-profile-form"
+                className="staff-profile-form staff-profile-modal-form"
                 onSubmit={(event) => {
                   event.preventDefault();
                   void saveProfile();
                 }}
               >
-                <div className="form-grid three">
-                  <Input label="First name" value={profileDraft.firstName} onChange={(event) => updateProfile('firstName', event.currentTarget.value)} />
-                  <Input label="Last name" value={profileDraft.lastName} onChange={(event) => updateProfile('lastName', event.currentTarget.value)} />
-                  <Input label="Role title" value={profileDraft.roleTitle} onChange={(event) => updateProfile('roleTitle', event.currentTarget.value)} />
-                  <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
-                  <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
-                  <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
-                  <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
-                  <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
-                  <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
-                </div>
-                <div className="form-grid three">
-                  <Input label="Address" value={profileDraft.addressLine1} onChange={(event) => updateProfile('addressLine1', event.currentTarget.value)} />
-                  <Input label="Address 2" value={profileDraft.addressLine2} onChange={(event) => updateProfile('addressLine2', event.currentTarget.value)} />
-                  <Input label="Suburb" value={profileDraft.suburb} onChange={(event) => updateProfile('suburb', event.currentTarget.value)} />
-                  <Input label="State" value={profileDraft.state} onChange={(event) => updateProfile('state', event.currentTarget.value)} />
-                  <Input label="Postcode" value={profileDraft.postcode} onChange={(event) => updateProfile('postcode', event.currentTarget.value)} />
-                  <Input label="Employment type" value={profileDraft.employmentType} onChange={(event) => updateProfile('employmentType', event.currentTarget.value)} />
-                </div>
-                <div className="form-grid three">
-                  <Input label="Emergency contact" value={profileDraft.emergencyContactName} onChange={(event) => updateProfile('emergencyContactName', event.currentTarget.value)} />
-                  <Input label="Relationship" value={profileDraft.emergencyContactRelationship} onChange={(event) => updateProfile('emergencyContactRelationship', event.currentTarget.value)} />
-                  <Input label="Emergency phone" value={profileDraft.emergencyContactPhone} onChange={(event) => updateProfile('emergencyContactPhone', event.currentTarget.value)} />
-                  <Input label="Pay type" value={profileDraft.payType} onChange={(event) => updateProfile('payType', event.currentTarget.value)} />
-                  <Input label="Pay rate" value={profileDraft.payRate} onChange={(event) => updateProfile('payRate', event.currentTarget.value)} />
-                  <Input label="Award" value={profileDraft.payAward} onChange={(event) => updateProfile('payAward', event.currentTarget.value)} />
-                </div>
-                <div className="form-grid three">
-                  <Input label="TFN" value={profileDraft.taxFileNumber} onChange={(event) => updateProfile('taxFileNumber', event.currentTarget.value)} />
-                  <Input label="Tax residency" value={profileDraft.taxResidencyStatus} onChange={(event) => updateProfile('taxResidencyStatus', event.currentTarget.value)} />
-                  <Input label="Super fund" value={profileDraft.superFundName} onChange={(event) => updateProfile('superFundName', event.currentTarget.value)} />
-                  <Input label="Super ABN" value={profileDraft.superFundAbn} onChange={(event) => updateProfile('superFundAbn', event.currentTarget.value)} />
-                  <Input label="Super USI" value={profileDraft.superFundUsi} onChange={(event) => updateProfile('superFundUsi', event.currentTarget.value)} />
-                  <Input label="Member number" value={profileDraft.superMemberNumber} onChange={(event) => updateProfile('superMemberNumber', event.currentTarget.value)} />
-                  <Input label="Bank account name" value={profileDraft.bankAccountName} onChange={(event) => updateProfile('bankAccountName', event.currentTarget.value)} />
-                  <Input label="BSB" value={profileDraft.bankBsb} onChange={(event) => updateProfile('bankBsb', event.currentTarget.value)} />
-                  <Input label="Account number" value={profileDraft.bankAccountNumber} onChange={(event) => updateProfile('bankAccountNumber', event.currentTarget.value)} />
-                </div>
-                <div className="onboarding-toggle-row">
-                  <label className="check-row">
-                    <input type="checkbox" checked={profileDraft.taxFreeThreshold} onChange={(event) => updateProfile('taxFreeThreshold', event.currentTarget.checked)} />
-                    Claims tax-free threshold
-                  </label>
-                  <label className="check-row">
-                    <input type="checkbox" checked={profileDraft.hasStudyTrainingLoan} onChange={(event) => updateProfile('hasStudyTrainingLoan', event.currentTarget.checked)} />
-                    Study or training loan
-                  </label>
-                </div>
-                <div className="form-grid three">
-                  <Input label="Visa status" value={profileDraft.visaStatus} onChange={(event) => updateProfile('visaStatus', event.currentTarget.value)} />
-                  <Input label="Visa subclass" value={profileDraft.visaSubclass} onChange={(event) => updateProfile('visaSubclass', event.currentTarget.value)} />
-                  <Input label="Visa expiry" type="date" value={profileDraft.visaExpiryDate} onChange={(event) => updateProfile('visaExpiryDate', event.currentTarget.value)} />
-                  <Input label="Xero employee ID" value={profileDraft.xeroEmployeeId} onChange={(event) => updateProfile('xeroEmployeeId', event.currentTarget.value)} />
-                  <Input label="Xero payroll calendar" value={profileDraft.xeroPayrollCalendarId} onChange={(event) => updateProfile('xeroPayrollCalendarId', event.currentTarget.value)} />
-                  <Input label="Xero earnings rate" value={profileDraft.xeroEarningsRateId} onChange={(event) => updateProfile('xeroEarningsRateId', event.currentTarget.value)} />
-                </div>
-                <Textarea label="Work rights notes" rows={2} value={profileDraft.workRightsNotes} onChange={(event) => updateProfile('workRightsNotes', event.currentTarget.value)} />
-                <Textarea label="Manager notes" rows={3} value={profileDraft.notes} onChange={(event) => updateProfile('notes', event.currentTarget.value)} />
-                <div className="toolbar-right">
+                <section className="staff-modal-section">
+                  <h3>Identity</h3>
+                  <div className="form-grid three">
+                    <Input label="First name" value={profileDraft.firstName} onChange={(event) => updateProfile('firstName', event.currentTarget.value)} />
+                    <Input label="Last name" value={profileDraft.lastName} onChange={(event) => updateProfile('lastName', event.currentTarget.value)} />
+                    <Input label="Role title" value={profileDraft.roleTitle} onChange={(event) => updateProfile('roleTitle', event.currentTarget.value)} />
+                    <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
+                    <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
+                    <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
+                    <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
+                    <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
+                    <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
+                  </div>
+                  <div className="form-grid three">
+                    <Input label="Address" value={profileDraft.addressLine1} onChange={(event) => updateProfile('addressLine1', event.currentTarget.value)} />
+                    <Input label="Address 2" value={profileDraft.addressLine2} onChange={(event) => updateProfile('addressLine2', event.currentTarget.value)} />
+                    <Input label="Suburb" value={profileDraft.suburb} onChange={(event) => updateProfile('suburb', event.currentTarget.value)} />
+                    <Input label="State" value={profileDraft.state} onChange={(event) => updateProfile('state', event.currentTarget.value)} />
+                    <Input label="Postcode" value={profileDraft.postcode} onChange={(event) => updateProfile('postcode', event.currentTarget.value)} />
+                    <Input label="Employment type" value={profileDraft.employmentType} onChange={(event) => updateProfile('employmentType', event.currentTarget.value)} />
+                  </div>
+                  <div className="form-grid three">
+                    <Input label="Emergency contact" value={profileDraft.emergencyContactName} onChange={(event) => updateProfile('emergencyContactName', event.currentTarget.value)} />
+                    <Input label="Relationship" value={profileDraft.emergencyContactRelationship} onChange={(event) => updateProfile('emergencyContactRelationship', event.currentTarget.value)} />
+                    <Input label="Emergency phone" value={profileDraft.emergencyContactPhone} onChange={(event) => updateProfile('emergencyContactPhone', event.currentTarget.value)} />
+                    <Input label="Pay type" value={profileDraft.payType} onChange={(event) => updateProfile('payType', event.currentTarget.value)} />
+                    <Input label="Pay rate" value={profileDraft.payRate} onChange={(event) => updateProfile('payRate', event.currentTarget.value)} />
+                    <Input label="Award" value={profileDraft.payAward} onChange={(event) => updateProfile('payAward', event.currentTarget.value)} />
+                  </div>
+                </section>
+
+                <details className="staff-modal-section staff-modal-details">
+                  <summary>Payroll, tax, and work-rights fields</summary>
+                  <div className="form-grid three">
+                    <Input label="TFN" value={profileDraft.taxFileNumber} onChange={(event) => updateProfile('taxFileNumber', event.currentTarget.value)} />
+                    <Input label="Tax residency" value={profileDraft.taxResidencyStatus} onChange={(event) => updateProfile('taxResidencyStatus', event.currentTarget.value)} />
+                    <Input label="Super fund" value={profileDraft.superFundName} onChange={(event) => updateProfile('superFundName', event.currentTarget.value)} />
+                    <Input label="Super ABN" value={profileDraft.superFundAbn} onChange={(event) => updateProfile('superFundAbn', event.currentTarget.value)} />
+                    <Input label="Super USI" value={profileDraft.superFundUsi} onChange={(event) => updateProfile('superFundUsi', event.currentTarget.value)} />
+                    <Input label="Member number" value={profileDraft.superMemberNumber} onChange={(event) => updateProfile('superMemberNumber', event.currentTarget.value)} />
+                    <Input label="Bank account name" value={profileDraft.bankAccountName} onChange={(event) => updateProfile('bankAccountName', event.currentTarget.value)} />
+                    <Input label="BSB" value={profileDraft.bankBsb} onChange={(event) => updateProfile('bankBsb', event.currentTarget.value)} />
+                    <Input label="Account number" value={profileDraft.bankAccountNumber} onChange={(event) => updateProfile('bankAccountNumber', event.currentTarget.value)} />
+                  </div>
+                  <div className="onboarding-toggle-row">
+                    <label className="check-row">
+                      <input type="checkbox" checked={profileDraft.taxFreeThreshold} onChange={(event) => updateProfile('taxFreeThreshold', event.currentTarget.checked)} />
+                      Claims tax-free threshold
+                    </label>
+                    <label className="check-row">
+                      <input type="checkbox" checked={profileDraft.hasStudyTrainingLoan} onChange={(event) => updateProfile('hasStudyTrainingLoan', event.currentTarget.checked)} />
+                      Study or training loan
+                    </label>
+                  </div>
+                  <div className="form-grid three">
+                    <Input label="Visa status" value={profileDraft.visaStatus} onChange={(event) => updateProfile('visaStatus', event.currentTarget.value)} />
+                    <Input label="Visa subclass" value={profileDraft.visaSubclass} onChange={(event) => updateProfile('visaSubclass', event.currentTarget.value)} />
+                    <Input label="Visa expiry" type="date" value={profileDraft.visaExpiryDate} onChange={(event) => updateProfile('visaExpiryDate', event.currentTarget.value)} />
+                    <Input label="Xero employee ID" value={profileDraft.xeroEmployeeId} onChange={(event) => updateProfile('xeroEmployeeId', event.currentTarget.value)} />
+                    <Input label="Xero payroll calendar" value={profileDraft.xeroPayrollCalendarId} onChange={(event) => updateProfile('xeroPayrollCalendarId', event.currentTarget.value)} />
+                    <Input label="Xero earnings rate" value={profileDraft.xeroEarningsRateId} onChange={(event) => updateProfile('xeroEarningsRateId', event.currentTarget.value)} />
+                  </div>
+                  <Textarea label="Work rights notes" rows={2} value={profileDraft.workRightsNotes} onChange={(event) => updateProfile('workRightsNotes', event.currentTarget.value)} />
+                </details>
+
+                <section className="staff-modal-section">
+                  <h3>Notes</h3>
+                  <Textarea label="Manager notes" rows={3} value={profileDraft.notes} onChange={(event) => updateProfile('notes', event.currentTarget.value)} />
+                </section>
+
+                <div className="staff-modal-footer">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    onClick={() => {
+                      setProfileDraft(draftFromStaff(selected));
+                      setProfileModalOpen(false);
+                    }}
+                  >
+                    Cancel
+                  </Button>
                   <Button type="button" variant="danger" disabled={saving || selected.isAdmin} onClick={() => void archiveProfile()}>Archive profile</Button>
                   <Button type="submit" disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</Button>
                   <ActionFeedback
@@ -3118,7 +3249,7 @@ function AccessPage({
                   />
                 </div>
               </form>
-            </Card>
+            </StaffModal>
 
             <div className="app-access-grid">
               {visibleStaffApps.map((app) => {
