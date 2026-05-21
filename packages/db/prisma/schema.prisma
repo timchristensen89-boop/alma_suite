@@ -1901,6 +1901,7 @@ model IntegrationConnection {
   tokenSecretRef         String?
   refreshTokenSecretRef  String?
   tokenExpiresAt         DateTime?
+  metadata               Json                        @default("{}")
   createdAt              DateTime                    @default(now())
   updatedAt              DateTime                    @updatedAt
   updatedByUserId        String?

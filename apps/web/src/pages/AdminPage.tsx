@@ -1123,6 +1123,8 @@ function IntegrationCard({
   onConnect,
   onDisconnect,
   onHealthCheck,
+  onRefresh,
+  onSyncLocations,
   xeroHealth
 }: {
   integration: IntegrationProviderStatus;
@@ -1130,11 +1132,16 @@ function IntegrationCard({
   onConnect: (provider: IntegrationProviderStatus['provider']) => void;
   onDisconnect: (provider: IntegrationProviderStatus['provider']) => void;
   onHealthCheck?: () => void;
+  onRefresh?: () => void;
+  onSyncLocations?: () => void;
   xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
   const isBusy = busy === integration.provider;
-  const isHealthBusy = busy === 'xero-health';
+  const isHealthBusy = busy === `${integration.provider}-health`;
+  const isRefreshBusy = busy === 'square-refresh';
+  const isSyncBusy = busy === 'square-sync-locations';
   const isXero = integration.provider === 'xero';
+  const isSquare = integration.provider === 'square';
 
   return (
     <Card title={integration.label} subtitle={integration.configured ? 'Connection ready' : 'Setup required'}>
@@ -1146,6 +1153,10 @@ function IntegrationCard({
           <p>{integration.powers.join(', ')}</p>
         </div>
         <div>
+          <strong>Scopes</strong>
+          <p>{integration.scopes.length ? integration.scopes.join(', ') : 'No scopes stored yet'}</p>
+        </div>
+        <div>
           <strong>Account</strong>
           <p>{integration.providerAccountName ?? integration.providerAccountId ?? 'Not connected yet'}</p>
         </div>
@@ -1153,6 +1164,36 @@ function IntegrationCard({
           <strong>Last sync</strong>
           <p>{integration.lastSyncAt ? formatDate(integration.lastSyncAt) : 'No syncs yet'}</p>
         </div>
+        {isSquare ? (
+          <>
+            <div>
+              <strong>Redirect URI</strong>
+              <p>{integration.redirectUri ?? 'Not configured'}</p>
+            </div>
+            <div>
+              <strong>Setup steps</strong>
+              <p>Create a Square app, add the redirect URI above, store the application ID and secret in API env/secrets, then connect from here.</p>
+            </div>
+            <div className="admin-status-stack">
+              <StatusLine label="Environment" value={integration.environment ?? 'Not configured'} tone={integration.environment === 'production' ? 'warning' : 'info'} />
+              <StatusLine label="API version" value={integration.apiVersion ?? 'Not configured'} tone="muted" />
+              <StatusLine label="Locations" value={integration.locationCount === null || integration.locationCount === undefined ? 'Not synced' : String(integration.locationCount)} tone={integration.locationCount ? 'positive' : 'muted'} />
+              <StatusLine label="Location sync" value={integration.lastLocationSyncAt ? formatDate(integration.lastLocationSyncAt) : 'No location sync yet'} tone="muted" />
+            </div>
+            {integration.locations?.length ? (
+              <div className="admin-status-stack">
+                {integration.locations.slice(0, 5).map((location) => (
+                  <StatusLine
+                    key={location.id}
+                    label={location.name}
+                    value={[location.status, location.currency, location.timezone].filter(Boolean).join(' · ') || 'Square location'}
+                    tone={location.status === 'ACTIVE' ? 'positive' : 'muted'}
+                  />
+                ))}
+              </div>
+            ) : null}
+          </>
+        ) : null}
         {isXero ? (
           <div>
             <strong>Accounting sync</strong>
@@ -1199,6 +1240,21 @@ function IntegrationCard({
           {isXero && onHealthCheck ? (
             <Button variant="secondary" disabled={isHealthBusy} onClick={onHealthCheck}>
               {isHealthBusy ? 'Checking...' : 'Check Xero health'}
+            </Button>
+          ) : null}
+          {isSquare && onHealthCheck ? (
+            <Button variant="secondary" disabled={isHealthBusy} onClick={onHealthCheck}>
+              {isHealthBusy ? 'Checking...' : 'Check Square health'}
+            </Button>
+          ) : null}
+          {isSquare && onSyncLocations ? (
+            <Button variant="secondary" disabled={isSyncBusy} onClick={onSyncLocations}>
+              {isSyncBusy ? 'Syncing...' : 'Sync locations'}
+            </Button>
+          ) : null}
+          {isSquare && onRefresh ? (
+            <Button variant="ghost" disabled={isRefreshBusy} onClick={onRefresh}>
+              {isRefreshBusy ? 'Refreshing...' : 'Refresh token'}
             </Button>
           ) : null}
         </div>
@@ -1621,6 +1677,45 @@ export function AdminPage({
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check Xero health.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function checkSquareHealth() {
+    setIntegrationBusy('square-health');
+    setError(null);
+    try {
+      await api('/api/integrations/square/health-check', { method: 'POST' });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not check Square health.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function refreshSquareToken() {
+    setIntegrationBusy('square-refresh');
+    setError(null);
+    try {
+      await api('/api/integrations/square/refresh', { method: 'POST' });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not refresh Square token.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function syncSquareLocations() {
+    setIntegrationBusy('square-sync-locations');
+    setError(null);
+    try {
+      await api('/api/integrations/square/sync-locations', { method: 'POST' });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync Square locations.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -2886,7 +2981,15 @@ export function AdminPage({
                   busy={integrationBusy}
                   onConnect={(provider) => void connectIntegration(provider)}
                   onDisconnect={(provider) => void disconnectIntegration(provider)}
-                  onHealthCheck={integration.provider === 'xero' && showXero ? () => void checkXeroHealth() : undefined}
+                  onHealthCheck={
+                    integration.provider === 'xero' && showXero
+                      ? () => void checkXeroHealth()
+                      : integration.provider === 'square'
+                        ? () => void checkSquareHealth()
+                        : undefined
+                  }
+                  onRefresh={integration.provider === 'square' ? () => void refreshSquareToken() : undefined}
+                  onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations() : undefined}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
               ))}

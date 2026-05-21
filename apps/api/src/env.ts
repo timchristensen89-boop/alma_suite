@@ -93,7 +93,11 @@ export const env = {
       applicationId: process.env.SQUARE_APPLICATION_ID ?? '',
       applicationSecret: process.env.SQUARE_APPLICATION_SECRET ?? '',
       environment: (process.env.SQUARE_ENVIRONMENT ?? 'sandbox').toLowerCase(),
-      redirectUrl: process.env.SQUARE_REDIRECT_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/callback`,
+      apiVersion: process.env.SQUARE_API_VERSION ?? '2025-12-17',
+      redirectUrl:
+        process.env.SQUARE_REDIRECT_URI ??
+        process.env.SQUARE_REDIRECT_URL ??
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/callback`,
       webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? '',
       webhookUrl: process.env.SQUARE_WEBHOOK_URL ?? process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/webhooks/square`
     },

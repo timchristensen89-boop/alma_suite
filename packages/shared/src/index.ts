@@ -1717,6 +1717,8 @@ export type IntegrationProviderStatus = {
   lastError: string | null;
   scopes: string[];
   environment: string | null;
+  apiVersion?: string | null;
+  redirectUri?: string | null;
   webhookConfigured: boolean;
   webhookStatus: 'configured' | 'missing';
   powers: string[];
@@ -1724,6 +1726,16 @@ export type IntegrationProviderStatus = {
   missingEnvVars: string[];
   actionLabel: string;
   actionDisabled: boolean;
+  locationCount?: number | null;
+  locations?: Array<{
+    id: string;
+    name: string;
+    status: string | null;
+    businessName: string | null;
+    currency: string | null;
+    timezone: string | null;
+  }>;
+  lastLocationSyncAt?: string | null;
 };
 
 export type IntegrationSyncRunSummary = {

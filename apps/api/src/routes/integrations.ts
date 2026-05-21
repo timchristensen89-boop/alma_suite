@@ -33,6 +33,15 @@ integrationsRouter.get('/meta/connect', async (req, res, next) => {
   }
 });
 
+integrationsRouter.get('/square/connect', async (req, res, next) => {
+  try {
+    const payload = await integrationService.startConnect('square', req.user!);
+    res.redirect(302, payload.authorizationUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/', async (_req, res, next) => {
   try {
     res.json(await integrationService.status());
@@ -46,6 +55,30 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
     const payload = await integrationService.status();
     const provider = integrationService.normaliseProvider(String(_req.params.provider));
     res.json(provider === 'SQUARE' ? payload.square : payload.xero);
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/square/health-check', async (req, res, next) => {
+  try {
+    res.json(await integrationService.checkSquareHealth(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/square/refresh', async (req, res, next) => {
+  try {
+    res.json(await integrationService.refreshSquare(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/square/sync-locations', async (req, res, next) => {
+  try {
+    res.json(await integrationService.syncSquareLocations(req.user!));
   } catch (error) {
     next(error);
   }
