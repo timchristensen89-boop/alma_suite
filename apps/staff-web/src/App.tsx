@@ -461,6 +461,35 @@ type RosterScheduleRow = {
   isVenueHeader?: boolean;
 };
 
+function RosterCollapsiblePanel({
+  title,
+  summary,
+  open,
+  onToggle,
+  children
+}: {
+  title: string;
+  summary: string;
+  open: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <section className={`roster-control-panel ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="roster-control-panel-toggle"
+        aria-expanded={open}
+        onClick={onToggle}
+      >
+        <span>{title}</span>
+        <small>{summary}</small>
+      </button>
+      {open ? <div className="roster-control-panel-body">{children}</div> : null}
+    </section>
+  );
+}
+
 function staffPermissions(user: ReturnType<typeof useAuth>['user']) {
   return user?.appAccess.find((access) => access.appId === 'STAFF' && access.status === 'ENABLED')?.permissions ?? {};
 }
@@ -6340,6 +6369,9 @@ function RosterPage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
+  const [toolsOpen, setToolsOpen] = useState(false);
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
@@ -7109,41 +7141,55 @@ function RosterPage({
     await moveShiftToCell(shift, row, day);
   }
 
+  const activeFilterChips = [
+    search.trim()
+      ? {
+          key: 'search',
+          label: `Search: ${search.trim()}`,
+          clear: () => setSearch('')
+        }
+      : null,
+    venueFilter !== 'all'
+      ? {
+          key: 'venue',
+          label: `Venue: ${venueFilter}`,
+          clear: () => setVenueFilter('all')
+        }
+      : null,
+    statusFilter !== 'all'
+      ? {
+          key: 'status',
+          label: `Status: ${statusFilter.toLowerCase()}`,
+          clear: () => setStatusFilter('all')
+        }
+      : null
+  ].filter(Boolean) as Array<{ key: string; label: string; clear: () => void }>;
+  const rosterRangeEnd = addDays(weekStart, boardDays - 1);
+  const viewOptionsSummary = `${viewMode === 'team' ? 'Team member' : 'Area'} · ${boardDays === 7 ? 'Week' : '2 weeks'}`;
+  const toolSummary = draftCount > 0 ? `${draftCount} draft${draftCount === 1 ? '' : 's'} ready` : 'Copy, review and publish';
+
   return (
     <div className="page-stack">
       <div className="deputy-roster-header">
         <div>
           <p className="eyebrow">Schedule</p>
           <h1>Weekly roster</h1>
-          <p className="subtle">Build, copy, edit and publish the week from one grid.</p>
+          <p className="subtle">{formatRange(weekStart, rosterRangeEnd)} · {roundHours(totalHours)} roster hours</p>
         </div>
-        <div className="deputy-roster-actions">
-          <Button type="button" variant="secondary" size="sm" onClick={newShift}>
+        <div className="deputy-roster-actions roster-compact-actions">
+          <Button type="button" size="sm" onClick={newShift}>
             Add shift
-          </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
-            Copy last week
-          </Button>
-          <ActionFeedback
-            message={messageTarget === 'copy-week' ? message : null}
-            tone={message?.includes('Could') ? 'error' : 'success'}
-          />
-          <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-            Review drafts
-          </Button>
-          <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-            Publish shifts
           </Button>
         </div>
       </div>
 
-      <div className="deputy-roster-commandbar">
+      <div className="roster-primary-bar">
         <div className="roster-week-controls" aria-label="Roster week controls">
           <Button type="button" variant="secondary" size="sm" onClick={() => setRosterWeek(addDays(weekStart, -7))}>
             Prev
           </Button>
           <div className="roster-week-label">
-            <strong>{formatRange(weekStart, addDays(weekStart, 13))}</strong>
+            <strong>{formatRange(weekStart, rosterRangeEnd)}</strong>
             <span>{draftCount} draft · {roundHours(totalHours)}</span>
           </div>
           <Button type="button" variant="secondary" size="sm" onClick={() => setRosterWeek(addDays(weekStart, 7))}>
@@ -7163,43 +7209,106 @@ function RosterPage({
           </Button>
         </div>
 
-        <div className="deputy-view-toggle" aria-label="Schedule view">
-          <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>
-            Team member
-          </button>
-          <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>
-            Area
-          </button>
-        </div>
-
-        <div className="deputy-view-toggle" aria-label="Roster range">
-          <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>
-            Week
-          </button>
-          <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>
-            2 weeks
-          </button>
-        </div>
-
-        <Input label="Search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search team or area" />
         <Select
           label="Venue"
           value={venueFilter}
           onChange={(event) => setVenueFilter(event.currentTarget.value)}
           options={[{ label: 'All venues', value: 'all' }, ...venues.map((venue) => ({ label: venue, value: venue }))]}
         />
-        <Select
-          label="Status"
-          value={statusFilter}
-          onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
-          options={[
-            { label: 'All statuses', value: 'all' },
-            { label: 'Draft', value: 'DRAFT' },
-            { label: 'Published', value: 'PUBLISHED' },
-            { label: 'Completed', value: 'COMPLETED' },
-            { label: 'Cancelled', value: 'CANCELLED' }
-          ]}
-        />
+      </div>
+
+      {activeFilterChips.length > 0 ? (
+        <div className="roster-filter-chips" aria-label="Active roster filters">
+          {activeFilterChips.map((chip) => (
+            <button key={chip.key} type="button" onClick={chip.clear}>
+              <span>{chip.label}</span>
+              <strong aria-hidden="true">x</strong>
+            </button>
+          ))}
+        </div>
+      ) : null}
+
+      <div className="roster-control-drawer">
+        <RosterCollapsiblePanel
+          title="Filters"
+          summary={activeFilterChips.length > 0 ? `${activeFilterChips.length} active` : 'Search and status'}
+          open={filtersOpen}
+          onToggle={() => setFiltersOpen((current) => !current)}
+        >
+          <div className="roster-toolbar-inline">
+            <Input label="Search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search team or area" />
+            <Select
+              label="Status"
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
+              options={[
+                { label: 'All statuses', value: 'all' },
+                { label: 'Draft', value: 'DRAFT' },
+                { label: 'Published', value: 'PUBLISHED' },
+                { label: 'Completed', value: 'COMPLETED' },
+                { label: 'Cancelled', value: 'CANCELLED' }
+              ]}
+            />
+          </div>
+        </RosterCollapsiblePanel>
+
+        <RosterCollapsiblePanel
+          title="View options"
+          summary={viewOptionsSummary}
+          open={viewOptionsOpen}
+          onToggle={() => setViewOptionsOpen((current) => !current)}
+        >
+          <div className="roster-toolbar-inline">
+            <div className="deputy-view-toggle" aria-label="Schedule view">
+              <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>
+                Team member
+              </button>
+              <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>
+                Area
+              </button>
+            </div>
+
+            <div className="deputy-view-toggle" aria-label="Roster range">
+              <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>
+                Week
+              </button>
+              <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>
+                2 weeks
+              </button>
+            </div>
+          </div>
+          <div className="deputy-area-legend roster-collapsed-legend" aria-label="Roster section colours">
+            {activeAreas.map((item) => (
+              <span key={item} style={areaStyle(item)}>
+                <i aria-hidden="true" />
+                {item}
+              </span>
+            ))}
+          </div>
+        </RosterCollapsiblePanel>
+
+        <RosterCollapsiblePanel
+          title="Roster tools"
+          summary={toolSummary}
+          open={toolsOpen}
+          onToggle={() => setToolsOpen((current) => !current)}
+        >
+          <div className="roster-toolbar-inline">
+            <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
+              Copy last week
+            </Button>
+            <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
+              Review drafts
+            </Button>
+            <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
+              Publish shifts
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'copy-week' ? message : null}
+              tone={message?.includes('Could') ? 'error' : 'success'}
+            />
+          </div>
+        </RosterCollapsiblePanel>
       </div>
 
       <div className="deputy-roster-summary">
@@ -7221,15 +7330,6 @@ function RosterPage({
             <span>{summary.people} people</span>
             <small>{roundHours(summary.hours)}</small>
           </div>
-        ))}
-      </div>
-
-      <div className="deputy-area-legend" aria-label="Roster section colours">
-        {activeAreas.map((item) => (
-          <span key={item} style={areaStyle(item)}>
-            <i aria-hidden="true" />
-            {item}
-          </span>
         ))}
       </div>
 
