@@ -28,6 +28,22 @@ auditsRouter.get('/templates/:id', async (req, res, next) => {
   }
 });
 
+auditsRouter.put('/templates/:id', async (req, res, next) => {
+  try {
+    res.json(await auditService.updateTemplate(req.params.id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+auditsRouter.delete('/templates/:id', async (req, res, next) => {
+  try {
+    res.json(await auditService.deleteTemplate(req.params.id));
+  } catch (error) {
+    next(error);
+  }
+});
+
 auditsRouter.get('/runs', async (_req, res, next) => {
   try {
     res.json(await auditService.listRuns());

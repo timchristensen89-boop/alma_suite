@@ -1,4 +1,9 @@
 import { AdminPage, type AdminFeatureRoute } from '../../../web/src/pages/AdminPage';
+import {
+  AuditTemplatesPage as RoutedAuditTemplatesPage,
+  ChecklistTemplatesPage as RoutedChecklistTemplatesPage,
+  ComplianceSettingsPage as RoutedComplianceSettingsPage
+} from './ComplianceSetupPages';
 
 // Admin features should live on their own route. Do not add new major admin workflows to the overview page.
 function RoutedAdminPage({ route }: { route: AdminFeatureRoute }) {
@@ -38,11 +43,11 @@ export function StaffOnboardingPage() {
 }
 
 export function ComplianceSettingsPage() {
-  return <RoutedAdminPage route="compliance-settings" />;
+  return <RoutedComplianceSettingsPage />;
 }
 
 export function ChecklistTemplatesPage() {
-  return <RoutedAdminPage route="checklist-templates" />;
+  return <RoutedChecklistTemplatesPage />;
 }
 
 export function ShiftTaskRulesPage() {
@@ -50,7 +55,7 @@ export function ShiftTaskRulesPage() {
 }
 
 export function AuditTemplatesPage() {
-  return <RoutedAdminPage route="audit-templates" />;
+  return <RoutedAuditTemplatesPage />;
 }
 
 export function IntegrationsPage() {

@@ -447,6 +447,10 @@ function AdminWorkspace() {
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/danger-zone" element={<DangerZonePage />} />
         <Route path="/meta-human-agent-demo" element={<HumanAgentDemoPage />} />
+        <Route path="/admin/compliance-settings" element={<Navigate to="/compliance-settings" replace />} />
+        <Route path="/admin/checklist-templates" element={<Navigate to="/checklist-templates" replace />} />
+        <Route path="/admin/shift-task-rules" element={<Navigate to="/shift-task-rules" replace />} />
+        <Route path="/admin/audit-templates" element={<Navigate to="/audit-templates" replace />} />
         <Route path="/admin/handbook" element={<Navigate to="/handbook" replace />} />
         <Route path="/admin/*" element={<Navigate to="/" replace />} />
         <Route

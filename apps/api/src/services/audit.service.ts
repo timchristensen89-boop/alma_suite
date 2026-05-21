@@ -202,6 +202,46 @@ export const auditService = {
     });
   },
 
+  async updateTemplate(id: string, input: unknown) {
+    const data = auditTemplateInputSchema.parse(input);
+    const existing = await this.getTemplate(id);
+
+    return prisma.$transaction(async (tx) => {
+      await tx.auditTemplate.update({
+        where: { id: existing.id },
+        data: { name: data.name }
+      });
+
+      await tx.auditTemplateSection.deleteMany({
+        where: { templateId: existing.id }
+      });
+
+      await tx.auditTemplateSection.createMany({
+        data: data.sections.map((section, index) => ({
+          templateId: existing.id,
+          title: section.title,
+          description: section.description || null,
+          position: section.position ?? index
+        }))
+      });
+
+      return tx.auditTemplate.findUnique({
+        where: { id: existing.id },
+        include: { sections: { orderBy: [{ position: 'asc' }] } }
+      });
+    });
+  },
+
+  async deleteTemplate(id: string) {
+    await this.getTemplate(id);
+    const runCount = await prisma.auditRun.count({ where: { templateId: id } });
+    if (runCount > 0) {
+      throw new HttpError(409, 'Cannot delete a template that has audit runs.');
+    }
+    await prisma.auditTemplate.delete({ where: { id } });
+    return { ok: true };
+  },
+
   async listRuns() {
     await ensureCoreAuditTemplates();
     return prisma.auditRun.findMany({
