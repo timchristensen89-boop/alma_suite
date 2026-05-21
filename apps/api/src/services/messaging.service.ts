@@ -240,11 +240,12 @@ async function resolveRecipients(input: z.infer<typeof createMessageThreadSchema
 }
 
 function actorRecipientWhere(actor: AuthUser) {
+  const scopedVenue = actorVenue(actor);
   const parts = [
     actor.id ? { staffProfileId: actor.id } : undefined,
-    actorVenue(actor) ? { venue: actorVenue(actor) } : undefined,
-    actor.roleTitle ? { role: actor.roleTitle } : undefined,
-    actor.role ? { role: actor.role } : undefined
+    scopedVenue ? { staffProfileId: null, venue: scopedVenue } : undefined,
+    actor.roleTitle ? { staffProfileId: null, role: actor.roleTitle } : undefined,
+    actor.role ? { staffProfileId: null, role: actor.role } : undefined
   ].filter(Boolean) as Array<Record<string, unknown>>;
   return parts.length ? parts : [{ staffProfileId: '__none__' }];
 }
@@ -323,9 +324,9 @@ export async function getThreadForUser(threadId: string, actor: AuthUser) {
   if (!canManageMessaging(actor)) {
     const allowed = thread.createdById === actor.id || thread.recipients.some((recipient) =>
       recipient.staffProfileId === actor.id ||
-      (actorVenue(actor) && recipient.venue === actorVenue(actor)) ||
-      (actor.roleTitle && recipient.role === actor.roleTitle) ||
-      recipient.role === actor.role
+      (!recipient.staffProfileId && actorVenue(actor) && recipient.venue === actorVenue(actor)) ||
+      (!recipient.staffProfileId && actor.roleTitle && recipient.role === actor.roleTitle) ||
+      (!recipient.staffProfileId && recipient.role === actor.role)
     );
     if (!allowed) throw new HttpError(403, 'Message access required');
   }
