@@ -85,11 +85,9 @@ const CORE_CHECKLIST_TEMPLATES: CoreChecklistTemplate[] = [
     area: template.area,
     items: template.items.map(([label, description]) => [
       label,
-      `${description} Source: ${template.sourceFile}. ${
-        template.reviewStatus === 'active'
-          ? 'Imported from current operating spreadsheet.'
-          : 'Needs manager review before active use.'
-      }`
+      template.reviewStatus === 'active'
+        ? description
+        : `${description} Needs manager review before active use.`
     ] as [string, string])
   }))
 ];

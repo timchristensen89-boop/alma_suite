@@ -302,9 +302,7 @@ function buildPayload(input: {
       {
         legacyId: `v14:checklist-template:${row.id}:item:1`,
         label: `Complete ${row.name}`,
-        description: row.checklist_type
-          ? `Legacy checklist type: ${row.checklist_type}. Imported from alma_compliance_v14.`
-          : 'Imported from alma_compliance_v14.',
+        description: row.checklist_type ? `Legacy checklist type: ${row.checklist_type}.` : null,
         position: 1
       }
     ]
@@ -323,7 +321,7 @@ function buildPayload(input: {
       status: normalizeLegacyChecklistRunStatus(row.status),
       area: row.area,
       performedBy: row.assigned_to,
-      notes: 'Imported directly from alma_compliance_v14 checklist_runs.',
+      notes: null,
       items: [
         {
           legacyId: `v14:checklist-run:${row.id}:item:1`,
@@ -350,7 +348,7 @@ function buildPayload(input: {
               {
                 legacyId: `v14:audit-template:${key}:section:1`,
                 title: 'Legacy audit summary',
-                description: 'Synthetic section generated from alma_compliance_v14 audit_runs.',
+                description: null,
                 position: 1
               }
             ]
@@ -368,7 +366,7 @@ function buildPayload(input: {
       templateLegacyId: `v14:audit-template:${key}`,
       title: row.title,
       score: row.score,
-      summary: `Imported from alma_compliance_v14 audit_runs with status ${normalizeLegacyAuditStatus(row.status)}.`,
+      summary: `Legacy audit status: ${normalizeLegacyAuditStatus(row.status)}.`,
       runDate: row.completed_at ?? row.created_at,
       findings: [
         {

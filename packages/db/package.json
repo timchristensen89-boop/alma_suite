@@ -25,6 +25,7 @@
     "import:legacy-stock": "tsx prisma/import-legacy-stock.ts",
     "extract:legacy-compliance": "tsx prisma/extract-legacy-compliance.ts",
     "extract:legacy-stock": "tsx prisma/extract-legacy-stock.ts",
+    "cleanup:import-source-text": "tsx prisma/cleanup-import-source-text.ts",
     "sync:govee-temperature": "tsx prisma/sync-govee-temperature.ts"
   },
   "dependencies": {

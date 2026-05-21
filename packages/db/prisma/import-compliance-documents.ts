@@ -20,12 +20,6 @@ async function importChecklistTemplates() {
       include: { items: true }
     });
 
-    const sourceDescription = `Imported from ${template.sourceFile}. ${
-      template.reviewStatus === 'active'
-        ? 'Active operating checklist.'
-        : 'Needs manager review before active use.'
-    }`;
-
     if (!existing) {
       await prisma.checklistTemplate.create({
         data: {
@@ -34,7 +28,9 @@ async function importChecklistTemplates() {
           items: {
             create: template.items.map(([label, description], index) => ({
               label,
-              description: `${description} ${sourceDescription}`,
+              description: template.reviewStatus === 'active'
+                ? description
+                : `${description} Needs manager review before active use.`,
               position: index
             }))
           }
@@ -57,7 +53,9 @@ async function importChecklistTemplates() {
         data: template.items.map(([label, description], index) => ({
           templateId: existing.id,
           label,
-          description: `${description} ${sourceDescription}`,
+          description: template.reviewStatus === 'active'
+            ? description
+            : `${description} Needs manager review before active use.`,
           position: index
         }))
       });

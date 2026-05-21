@@ -35,6 +35,24 @@ export function nullableString(value: unknown): string | null {
   return normalized ? normalized : null;
 }
 
+export function cleanImportedChecklistAuditText(value: unknown): string | null {
+  const normalized = nullableString(value);
+  if (!normalized) return null;
+
+  const cleaned = normalized
+    .replace(/https?:\/\/\S+/gi, '')
+    .replace(/legacy:\/\/\S+/gi, '')
+    .replace(/Imported from alma_compliance_v14 audit_runs with status ([^.]+)\./gi, 'Legacy audit status: $1.')
+    .replace(/\bSource:\s*[^.]+(?:\.[a-z0-9_-]+)?\.\s*/gi, '')
+    .replace(/\bImported\s+(?:directly\s+)?from\s+[^.]+(?:\.[a-z0-9_-]+)?[^.]*\.\s*/gi, '')
+    .replace(/\bActive operating checklist\.\s*/gi, '')
+    .replace(/\s+\./g, '.')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  return cleaned && cleaned !== '.' ? cleaned : null;
+}
+
 export function asNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -305,7 +323,7 @@ async function importChecklistTemplates(items: unknown[]) {
             `${legacyId}:item:${itemIndex + 1}`,
           templateId: upserted.id,
           label: asString(item.label, `Item ${itemIndex + 1}`),
-          description: nullableString(item.description),
+          description: cleanImportedChecklistAuditText(item.description),
           position: asNumber(item.position) ?? itemIndex + 1
         }
       ];
@@ -353,7 +371,7 @@ async function importChecklistRuns(items: unknown[], issueIdByLegacyId: Map<stri
         status: normalizeChecklistRunStatus(run.status),
         area: nullableString(run.area),
         performedBy: nullableString(run.performedBy),
-        notes: nullableString(run.notes),
+        notes: cleanImportedChecklistAuditText(run.notes),
         items: {
           deleteMany: {}
         }
@@ -365,7 +383,7 @@ async function importChecklistRuns(items: unknown[], issueIdByLegacyId: Map<stri
         status: normalizeChecklistRunStatus(run.status),
         area: nullableString(run.area),
         performedBy: nullableString(run.performedBy),
-        notes: nullableString(run.notes)
+        notes: cleanImportedChecklistAuditText(run.notes)
       }
     });
 
@@ -389,10 +407,10 @@ async function importChecklistRuns(items: unknown[], issueIdByLegacyId: Map<stri
           runId: upserted.id,
           templateItemId: null,
           label: asString(item.label, `Checklist item ${itemIndex + 1}`),
-          description: nullableString(item.description),
+          description: cleanImportedChecklistAuditText(item.description),
           position: asNumber(item.position) ?? itemIndex + 1,
           result: normalizeChecklistItemResult(item.result),
-          notes: nullableString(item.notes),
+          notes: cleanImportedChecklistAuditText(item.notes),
           linkedIssueId: linkedIssueLegacyId ? issueIdByLegacyId.get(linkedIssueLegacyId) ?? null : null
         }
       ];
@@ -451,7 +469,7 @@ async function importAuditTemplates(items: unknown[]) {
             `${legacyId}:section:${sectionIndex + 1}`,
           templateId: upserted.id,
           title: asString(section.title, `Section ${sectionIndex + 1}`),
-          description: nullableString(section.description),
+          description: cleanImportedChecklistAuditText(section.description),
           position: asNumber(section.position) ?? sectionIndex + 1
         }
       ];
@@ -497,7 +515,7 @@ async function importAuditRuns(items: unknown[], issueIdByLegacyId: Map<string, 
         templateId,
         title: asString(run.title, `Imported audit run ${index + 1}`),
         score: asNumber(run.score),
-        summary: nullableString(run.summary),
+        summary: cleanImportedChecklistAuditText(run.summary),
         runDate: asDate(run.runDate) ?? new Date(),
         findings: {
           deleteMany: {}
@@ -508,7 +526,7 @@ async function importAuditRuns(items: unknown[], issueIdByLegacyId: Map<string, 
         templateId,
         title: asString(run.title, `Imported audit run ${index + 1}`),
         score: asNumber(run.score),
-        summary: nullableString(run.summary),
+        summary: cleanImportedChecklistAuditText(run.summary),
         runDate: asDate(run.runDate) ?? new Date()
       }
     });
@@ -532,7 +550,7 @@ async function importAuditRuns(items: unknown[], issueIdByLegacyId: Map<string, 
             `${legacyId}:finding:${findingIndex + 1}`,
           auditRunId: upserted.id,
           sectionTitle: asString(finding.sectionTitle, `Section ${findingIndex + 1}`),
-          finding: asString(finding.finding, 'Imported audit finding'),
+          finding: cleanImportedChecklistAuditText(finding.finding) ?? 'Audit finding',
           score: asNumber(finding.score),
           linkedIssueId: linkedIssueLegacyId ? issueIdByLegacyId.get(linkedIssueLegacyId) ?? null : null
         }
