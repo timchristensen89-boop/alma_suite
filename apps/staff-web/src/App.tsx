@@ -868,9 +868,14 @@ function StaffHome({
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
 
+  function openProfile(id: string, section = 'personal') {
+    onSelect(id);
+    navigate(`/staff/${id}/${section}`);
+  }
+
   async function handleSaved(member: StaffProfile) {
     await reload();
-    onSelect(member.id);
+    openProfile(member.id);
     setForm({ mode: 'closed' });
   }
 
@@ -998,7 +1003,7 @@ function StaffHome({
                 <strong>Possible duplicate profile</strong>
                 <small>{group.map((member) => `${member.firstName} ${member.lastName}`).join(', ')}</small>
               </span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => onSelect(group[0]!.id)}>
+              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(group[0]!.id)}>
                 View profile
               </Button>
             </div>
@@ -1086,14 +1091,7 @@ function StaffHome({
             const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
             return (
               <div key={member.id} className="staff-list-button">
-                <button
-                  type="button"
-                  className="staff-list-main"
-                  onClick={() => {
-                    onSelect(member.id);
-                    navigate('/access');
-                  }}
-                >
+                <button type="button" className="staff-list-main" onClick={() => openProfile(member.id)}>
                   <span>
                     <strong>
                       {member.firstName} {member.lastName}
@@ -1124,6 +1122,17 @@ function StaffHome({
                       {reonboardingId === member.id ? 'Sending…' : 'Re-onboard'}
                     </Button>
                   ) : null}
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openProfile(member.id, 'documents');
+                    }}
+                  >
+                    Documents
+                  </Button>
                   <Button
                     type="button"
                     size="sm"
@@ -2604,6 +2613,878 @@ function StaffProfileForm({
         <ActionFeedback message={feedback} tone={feedbackTone} />
       </div>
     </form>
+  );
+}
+
+type StaffProfileSectionId = 'personal' | 'employment' | 'access' | 'payroll' | 'journals' | 'onboarding' | 'right-to-work' | 'documents' | 'shifts' | 'leave' | 'pin';
+
+const STAFF_PROFILE_SECTIONS: Array<{ id: StaffProfileSectionId; label: string; group: 'Profile' | 'Scheduling' | 'Compliance / HR' | 'Device / Security'; sensitive?: boolean }> = [
+  { id: 'personal', label: 'Personal', group: 'Profile' },
+  { id: 'employment', label: 'Employment', group: 'Profile' },
+  { id: 'access', label: 'Access & roles', group: 'Profile' },
+  { id: 'payroll', label: 'Payroll', group: 'Profile', sensitive: true },
+  { id: 'journals', label: 'Journals / Notes', group: 'Profile', sensitive: true },
+  { id: 'onboarding', label: 'Onboarding form', group: 'Compliance / HR' },
+  { id: 'right-to-work', label: 'Right to work', group: 'Compliance / HR', sensitive: true },
+  { id: 'documents', label: 'Documents', group: 'Compliance / HR' },
+  { id: 'shifts', label: 'Shifts', group: 'Scheduling' },
+  { id: 'leave', label: 'Leave', group: 'Scheduling' },
+  { id: 'pin', label: 'PIN access', group: 'Device / Security' }
+];
+
+const STAFF_PROFILE_SECTION_IDS = new Set(STAFF_PROFILE_SECTIONS.map((section) => section.id));
+
+function normaliseStaffProfileSection(value: string | undefined): StaffProfileSectionId {
+  return STAFF_PROFILE_SECTION_IDS.has(value as StaffProfileSectionId) ? value as StaffProfileSectionId : 'personal';
+}
+
+function staffFullName(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
+  return `${member.firstName} ${member.lastName}`.trim() || 'Staff profile';
+}
+
+function staffInitials(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
+  return `${member.firstName?.[0] ?? ''}${member.lastName?.[0] ?? ''}`.trim().toUpperCase() || 'SP';
+}
+
+function profileDate(value?: string | null) {
+  if (!value) return 'Not recorded';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? value : date.toLocaleDateString();
+}
+
+function complianceStatusTone(status: StaffComplianceRecord['status']): 'positive' | 'warning' | 'danger' | 'muted' {
+  if (status === 'APPROVED') return 'positive';
+  if (status === 'EXPIRED') return 'danger';
+  return status === 'PENDING' ? 'warning' : 'muted';
+}
+
+function profileSectionIsLocked(section: StaffProfileSectionId, options: { canOpenHr: boolean; canOpenRightToWork: boolean; canOpenPayroll: boolean }) {
+  if (section === 'payroll') return !options.canOpenPayroll;
+  if (section === 'right-to-work') return !options.canOpenRightToWork;
+  if (section === 'journals') return !options.canOpenHr;
+  return false;
+}
+
+function ProfileInfoGrid({ items }: { items: Array<{ label: string; value: ReactNode; sensitive?: boolean }> }) {
+  return (
+    <div className="staff-profile-info-grid">
+      {items.map((item) => (
+        <div key={item.label} className={item.sensitive ? 'is-sensitive' : undefined}>
+          <span className="subtle">{item.label}</span>
+          <strong>{item.value || 'Not recorded'}</strong>
+          {item.sensitive ? <Badge tone="warning">Restricted</Badge> : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function StaffProfileWorkspacePage({
+  staff,
+  roleTemplates,
+  hrRecords,
+  loading,
+  reload,
+  reloadHr,
+  canOpenHr,
+  canManageHr,
+  canOpenRightToWork,
+  canManageRightToWork,
+  canOpenPayChanges
+}: {
+  staff: StaffProfile[];
+  roleTemplates: StaffRoleTemplate[];
+  hrRecords: StaffHrRecord[];
+  loading: boolean;
+  reload: () => Promise<void>;
+  reloadHr: () => Promise<void>;
+  canOpenHr: boolean;
+  canManageHr: boolean;
+  canOpenRightToWork: boolean;
+  canManageRightToWork: boolean;
+  canOpenPayChanges: boolean;
+}) {
+  const { staffId, section } = useParams();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const activeSection = normaliseStaffProfileSection(section);
+  const selected = staff.find((item) => item.id === staffId) ?? null;
+  const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [documentPrompt, setDocumentPrompt] = useState<{ action: StaffDocumentPromptAction; recordId: string } | null>(null);
+  const [documentDraft, setDocumentDraft] = useState({
+    recordType: 'TRAINING' as StaffRecordType,
+    title: '',
+    issuer: '',
+    certificateNumber: '',
+    issueDate: '',
+    expiryDate: '',
+    status: 'PENDING',
+    documentName: '',
+    documentUrl: '',
+    notes: ''
+  });
+  const [profileDraft, setProfileDraft] = useState<StaffDraft>(() => selected ? draftFromStaff(selected) : emptyStaffDraft());
+  const [documentRequestDraft, setDocumentRequestDraft] = useState<StaffDocumentRequestDraft>(() => emptyStaffDocumentRequestDraft());
+  const [documentRequestOpen, setDocumentRequestOpen] = useState(false);
+
+  useEffect(() => {
+    setMessage(null);
+    setMessageTarget(null);
+    setDocumentPrompt(null);
+    setDocumentRequestDraft(emptyStaffDocumentRequestDraft());
+    setDocumentRequestOpen(false);
+    setProfileDraft(selected ? draftFromStaff(selected) : emptyStaffDraft());
+  }, [activeSection, selected?.id]);
+
+  if (staffId && section !== activeSection) {
+    return <Navigate to={`/staff/${staffId}/${activeSection}`} replace />;
+  }
+
+  if (loading) return <Spinner label="Loading staff profile..." />;
+
+  if (!selected) {
+    return (
+      <div className="page-stack">
+        <PageHeader eyebrow="Staff profile" title="Profile not found" description="This staff profile is not available in your current Staff register." />
+        <NavLink to="/"><Button type="button" variant="secondary">Back to staff register</Button></NavLink>
+      </div>
+    );
+  }
+
+  const member = selected;
+  const canManageProfileAccess = Boolean(user && user.accountType !== 'VENUE_DEVICE' && user.role !== 'STAFF');
+  const canManageDocuments = canManageProfileAccess;
+  const canManageSettings = canAccessSettings(user);
+  const visibleStaffApps = canManageSettings ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
+  const accessByApp = new Map(member.appAccess.map((access) => [access.appId, access]));
+  const selectedRoleTemplate = roleTemplates.find((template) => template.id === profileDraft.roleTemplateId) ?? null;
+  const canOpenPayroll = canOpenHr || canOpenPayChanges;
+  const locked = profileSectionIsLocked(activeSection, { canOpenHr, canOpenRightToWork, canOpenPayroll });
+  const profileHrRecords = canOpenHr ? hrRecords.filter((record) => record.staffProfileId === member.id) : [];
+  const visibleHrRecords = profileHrRecords.filter((record) => {
+    if (record.recordType === 'RIGHT_TO_WORK') return canOpenRightToWork;
+    if (record.recordType === 'PAY_CHANGE') return canOpenPayChanges;
+    return true;
+  });
+  const rightToWorkRecords = profileHrRecords.filter((record) => record.recordType === 'RIGHT_TO_WORK' && canOpenRightToWork);
+  const payRecords = profileHrRecords.filter((record) => record.recordType === 'PAY_CHANGE' && canOpenPayChanges);
+  const recentShifts = [...member.rosterShifts]
+    .sort((left, right) => new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime())
+    .slice(0, 6);
+  const sectionTitle = STAFF_PROFILE_SECTIONS.find((item) => item.id === activeSection)?.label ?? 'Personal';
+  const approvedDocuments = member.records.filter((record) => record.status === 'APPROVED').length;
+  const attentionDocuments = member.records.filter((record) => record.status !== 'APPROVED' || recordDocumentRequested(record)).length;
+  const sidebarGroups = STAFF_PROFILE_SECTIONS.reduce<Record<string, typeof STAFF_PROFILE_SECTIONS>>((groups, item) => {
+    groups[item.group] = [...(groups[item.group] ?? []), item];
+    return groups;
+  }, {});
+
+  async function handleProfileSaved(saved: StaffProfile) {
+    await reload();
+    setProfileModalOpen(false);
+    if (saved.id !== member.id) navigate(`/staff/${saved.id}/${activeSection}`);
+  }
+
+  function selectProfileRoleTemplate(roleTemplateId: string) {
+    const template = roleTemplates.find((item) => item.id === roleTemplateId);
+    setProfileDraft((current) => ({
+      ...current,
+      roleTemplateId,
+      roleTitle: template ? template.roleTitle || template.name : current.roleTitle,
+      venue: template?.venue || current.venue
+    }));
+  }
+
+  function permissionsFor(appId: AlmaAppId) {
+    return accessByApp.get(appId)?.permissions ?? {};
+  }
+
+  async function saveAssignedRole() {
+    if (!canManageProfileAccess) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('assigned-role');
+    try {
+      const saved = await api<StaffProfile>(`/api/staff/${member.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(staffPayloadFromDraft(profileDraft))
+      });
+      setProfileDraft(draftFromStaff(saved));
+      await reload();
+      setMessage('Assigned role saved. App access now matches the selected role.');
+      if (saved.id !== member.id) navigate(`/staff/${saved.id}/access`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save assigned role.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setAccess(appId: AlmaAppId, status: StaffAppAccessStatus) {
+    if (!canManageProfileAccess) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`access:${appId}`);
+    try {
+      await api(`/api/staff/${member.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          apps: visibleStaffApps.map((app) => {
+            const current = accessByApp.get(app.id);
+            return {
+              appId: app.id,
+              status: app.id === appId ? status : current?.status ?? 'DISABLED',
+              role: current?.role ?? app.role,
+              permissions: current?.permissions ?? {},
+              notes: current?.notes ?? ''
+            };
+          })
+        })
+      });
+      await reload();
+      setMessage('App access updated.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update app access.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function setPermission(appId: AlmaAppId, permissionKey: string, enabled: boolean) {
+    if (!canManageProfileAccess) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`permission:${appId}`);
+    try {
+      await api(`/api/staff/${member.id}/app-access`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          apps: visibleStaffApps.map((app) => {
+            const current = accessByApp.get(app.id);
+            const currentPermissions = current?.permissions ?? {};
+            return {
+              appId: app.id,
+              status: current?.status ?? 'DISABLED',
+              role: current?.role ?? app.role,
+              permissions: app.id === appId ? { ...currentPermissions, [permissionKey]: enabled } : currentPermissions,
+              notes: current?.notes ?? ''
+            };
+          })
+        })
+      });
+      await reload();
+      setMessage('Custom permission updated.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update permission.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addDocument() {
+    setMessageTarget('document');
+    if (!documentDraft.title.trim()) {
+      setMessage('Document title is required.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/${member.id}/records`, { method: 'POST', body: JSON.stringify(documentDraft) });
+      setDocumentDraft({ recordType: 'TRAINING', title: '', issuer: '', certificateNumber: '', issueDate: '', expiryDate: '', status: 'PENDING', documentName: '', documentUrl: '', notes: '' });
+      await reload();
+      setMessage(documentDraft.documentUrl ? 'Document uploaded.' : 'Document request added.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not add document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestDocument() {
+    setMessageTarget('document-request');
+    if (!documentRequestDraft.title.trim()) {
+      setMessage('Document title is required.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/${member.id}/documents/request`, {
+        method: 'POST',
+        body: JSON.stringify(documentRequestDraft)
+      });
+      setDocumentRequestDraft(emptyStaffDocumentRequestDraft());
+      setDocumentRequestOpen(false);
+      await reload();
+      setMessage('Document request sent.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function attachDocumentDraftFile(file: File) {
+    setMessageTarget('document');
+    setMessage(null);
+    try {
+      const upload = await readOnboardingUpload(file);
+      setDocumentDraft((current) => ({ ...current, documentName: upload.name, documentUrl: upload.url }));
+      setMessage(`${upload.name} attached.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not attach file.');
+    }
+  }
+
+  async function approveDocument(record: StaffComplianceRecord) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:approve`);
+    try {
+      await api(`/api/staff/${member.id}/records/${record.id}/approve`, { method: 'POST' });
+      await reload();
+      setMessage('Document approved.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not approve document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rejectDocument(record: StaffComplianceRecord) {
+    const reason = window.prompt('Reason for rejecting this document?') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:reject`);
+    try {
+      await api(`/api/staff/${member.id}/records/${record.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      await reload();
+      setMessage('Document rejected.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reject document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function confirmDocumentAction() {
+    if (!documentPrompt) return;
+    const record = member.records.find((item) => item.id === documentPrompt.recordId);
+    if (!record) {
+      setDocumentPrompt(null);
+      return;
+    }
+    const actionKey = documentPrompt.action === 'delete' ? 'remove' : 'request';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:${actionKey}`);
+    try {
+      await api(`/api/staff/${member.id}/records/${record.id}/${documentPrompt.action === 'delete' ? 'document' : 'request-document'}`, {
+        method: documentPrompt.action === 'delete' ? 'DELETE' : 'POST'
+      });
+      await reload();
+      setDocumentPrompt(null);
+      setMessage(documentPrompt.action === 'delete' ? 'Document removed. The staff record is still available.' : 'Document requested. The profile now shows it as pending.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function requestHrDocument(record: StaffHrRecord) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`hr:${record.id}:request`);
+    try {
+      await api<StaffHrRecord>(`/api/staff/${record.staffProfileId}/hr/documents/${record.id}/request`, { method: 'POST' });
+      await reloadHr();
+      setMessage('Replacement requested.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request replacement.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeHrDocument(record: StaffHrRecord) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`hr:${record.id}:remove`);
+    try {
+      await api<StaffHrRecord>(`/api/staff/${record.staffProfileId}/hr/documents/${record.id}`, { method: 'DELETE' });
+      await reloadHr();
+      setMessage('HR document removed. The HR record remains.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove HR document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function renderLockedSection(title: string) {
+    return (
+      <Card title={title} subtitle="This section contains restricted staff information.">
+        <div className="staff-profile-locked">
+          <IconFileLock />
+          <span>
+            <strong>Restricted section</strong>
+            <span className="subtle">You need the matching Staff HR permission to view or manage this staff profile section.</span>
+          </span>
+        </div>
+      </Card>
+    );
+  }
+
+  function renderComplianceDocument(record: StaffComplianceRecord) {
+    return (
+      <div key={record.id} className="staff-profile-document-row">
+        <span className="staff-profile-document-icon"><IconFileText /></span>
+        <span className="staff-profile-document-main">
+          <strong>{record.title}</strong>
+          <span className="subtle">{record.recordType.replaceAll('_', ' ')} · {record.issuer || 'No issuer'}</span>
+          <span className="subtle">Expiry: {profileDate(record.expiryDate)}</span>
+          {record.dueAt ? <span className="subtle">Due: {profileDate(record.dueAt)}</span> : null}
+          {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
+          <StaffDocumentViewLink documentUrl={record.documentUrl} />
+          {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
+          {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
+          {record.notes ? <span className="subtle">{record.notes}</span> : null}
+        </span>
+        <span className="staff-profile-document-actions">
+          <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
+          {canManageDocuments ? (
+            <>
+              <Button type="button" size="sm" variant="secondary" disabled={saving || record.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
+              {record.documentUrl && record.status !== 'APPROVED' ? <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void rejectDocument(record)}>Reject</Button> : null}
+              {record.documentUrl ? <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => setDocumentPrompt({ action: 'delete', recordId: record.id })}>Remove file</Button> : null}
+              <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => setDocumentPrompt({ action: 'request', recordId: record.id })}>Request</Button>
+            </>
+          ) : null}
+          <ActionFeedback message={messageTarget?.startsWith(`record:${record.id}:`) ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+        </span>
+        {documentPrompt?.recordId === record.id ? (
+          <StaffDocumentActionPrompt
+            action={documentPrompt.action}
+            saving={saving}
+            feedback={messageTarget?.startsWith(`record:${record.id}:`) ? message : null}
+            onCancel={() => setDocumentPrompt(null)}
+            onConfirm={() => void confirmDocumentAction()}
+          />
+        ) : null}
+      </div>
+    );
+  }
+
+  function renderHrDocument(record: StaffHrRecord) {
+    const canManageRecord = canManageHr && (record.recordType !== 'RIGHT_TO_WORK' || canManageRightToWork) && (record.recordType !== 'PAY_CHANGE' || canOpenPayChanges);
+    return (
+      <div key={record.id} className="staff-profile-document-row is-sensitive">
+        <span className="staff-profile-document-icon"><IconFileLock /></span>
+        <span className="staff-profile-document-main">
+          <strong>{record.title}</strong>
+          <span className="subtle">{hrTypeLabel(record.recordType)} · Restricted HR</span>
+          {record.expiryDate ? <span className="subtle">Expiry: {profileDate(record.expiryDate)}</span> : null}
+          {record.effectiveDate ? <span className="subtle">Effective: {profileDate(record.effectiveDate)}</span> : null}
+          {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
+          <StaffDocumentViewLink documentUrl={record.documentUrl} />
+          {record.notes ? <span className="subtle">{record.notes}</span> : null}
+        </span>
+        <span className="staff-profile-document-actions">
+          <Badge tone={hrStatusTone(record.status)}>{record.status.replaceAll('_', ' ')}</Badge>
+          {canManageRecord ? (
+            <>
+              {record.documentUrl ? <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void removeHrDocument(record)}>Remove file</Button> : null}
+              <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void requestHrDocument(record)}>Request</Button>
+            </>
+          ) : null}
+          <ActionFeedback message={messageTarget?.startsWith(`hr:${record.id}:`) ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+        </span>
+      </div>
+    );
+  }
+
+  function renderDocumentComposer() {
+    if (!canManageDocuments) return null;
+    return (
+      <details className="staff-profile-collapsible">
+        <summary>Upload or request a document</summary>
+        <form className="staff-profile-form" onSubmit={(event) => { event.preventDefault(); void addDocument(); }}>
+          <div className="form-grid three">
+            <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+            <Input label="Document name" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
+            <Input label="Expiry" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
+            <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
+            <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
+            <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
+          </div>
+          <div className="invite-row staff-profile-upload-row">
+            <span>
+              <strong>{documentDraft.documentName || 'No file attached'}</strong>
+              <span className="subtle">Upload PDF/image evidence, or save with no file to request it from the staff member.</span>
+            </span>
+            <span className="invite-row-actions">
+              <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
+                Upload file
+                <input type="file" accept={STAFF_DOCUMENT_ACCEPT} disabled={saving} style={{ display: 'none' }} onChange={(event) => { const file = event.currentTarget.files?.[0]; event.currentTarget.value = ''; if (file) void attachDocumentDraftFile(file); }} />
+              </label>
+              {documentDraft.documentUrl ? <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => setDocumentDraft((current) => ({ ...current, documentName: '', documentUrl: '' }))}>Remove attachment</Button> : null}
+            </span>
+          </div>
+          <Textarea label="Notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <div className="toolbar-right">
+            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : documentDraft.documentUrl ? 'Upload document' : 'Request document'}</Button>
+            <ActionFeedback message={messageTarget === 'document' ? message : null} tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'} />
+          </div>
+        </form>
+      </details>
+    );
+  }
+
+  function renderDocumentRequestModal() {
+    if (!canManageDocuments) return null;
+    return (
+      <StaffModal
+        open={documentRequestOpen}
+        title="Request document"
+        subtitle={`Send a document request to ${staffFullName(member)}.`}
+        width="standard"
+        onClose={() => setDocumentRequestOpen(false)}
+      >
+        <form
+          className="staff-profile-form staff-profile-modal-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void requestDocument();
+          }}
+        >
+          <section className="staff-modal-section">
+            <div className="form-grid">
+              <Select
+                label="Document type"
+                value={documentRequestDraft.recordType}
+                onChange={(event) => {
+                  const recordType = event.currentTarget.value as StaffRecordType;
+                  setDocumentRequestDraft((current) => ({
+                    ...current,
+                    recordType,
+                    title: current.title || recordType.replaceAll('_', ' ')
+                  }));
+                }}
+                options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
+              />
+              <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
+              <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+              <Select
+                label="Priority"
+                value={documentRequestDraft.priority}
+                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
+              />
+            </div>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={documentRequestDraft.expiryRequired}
+                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+              />
+              Expiry date required where applicable
+            </label>
+            <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          </section>
+          <div className="staff-modal-footer">
+            <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Sending...' : 'Send request'}</Button>
+            <ActionFeedback message={messageTarget === 'document-request' ? message : null} tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'} />
+          </div>
+        </form>
+      </StaffModal>
+    );
+  }
+
+  function renderSection() {
+    if (locked) return renderLockedSection(sectionTitle);
+    if (activeSection === 'personal') {
+      return (
+        <Card title="Personal" subtitle="Core identity and contact details for this staff member." action={<Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>Edit</Button>}>
+          <ProfileInfoGrid items={[
+            { label: 'Legal name', value: staffFullName(member) },
+            { label: 'Email', value: member.email },
+            { label: 'Phone', value: member.phone },
+            { label: 'Date of birth', value: profileDate(member.dateOfBirth), sensitive: true },
+            { label: 'Address', value: [member.addressLine1, member.addressLine2, member.suburb, member.state, member.postcode].filter(Boolean).join(', ') },
+            { label: 'Emergency contact', value: member.emergencyContactName ? `${member.emergencyContactName} · ${member.emergencyContactRelationship || 'Relationship not recorded'} · ${member.emergencyContactPhone || 'No phone'}` : null }
+          ]} />
+        </Card>
+      );
+    }
+    if (activeSection === 'employment') {
+      return (
+        <Card title="Employment" subtitle="Role, venue, onboarding, and access summary." action={<Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>Edit</Button>}>
+          <ProfileInfoGrid items={[
+            { label: 'Role', value: member.roleTemplate?.name ?? member.roleTitle },
+            { label: 'Role title', value: member.roleTitle },
+            { label: 'Venue', value: member.venue },
+            { label: 'Status', value: member.employmentStatus },
+            { label: 'Employment type', value: member.employmentType },
+            { label: 'Start date', value: profileDate(member.startDate) }
+          ]} />
+          <div className="staff-profile-chip-row">
+            {member.appAccess.filter((access) => access.status === 'ENABLED').map((access) => <Badge key={access.appId} tone="info">{access.appId.toLowerCase()} · {access.role.toLowerCase()}</Badge>)}
+            {!member.appAccess.some((access) => access.status === 'ENABLED') ? <span className="subtle">No app access enabled.</span> : null}
+          </div>
+        </Card>
+      );
+    }
+    if (activeSection === 'access') {
+      const roleChanged = profileDraft.roleTemplateId !== (member.roleTemplateId ?? '');
+      return (
+        <div className="page-stack">
+          <Card title="Assigned role" subtitle="Roles come from Alma Admin and apply app access automatically.">
+            <div className="form-grid two">
+              <Select
+                label="Role template"
+                value={profileDraft.roleTemplateId}
+                disabled={!canManageProfileAccess}
+                onChange={(event) => selectProfileRoleTemplate(event.currentTarget.value)}
+                options={[
+                  { label: roleTemplates.length ? 'Choose a role template' : 'No role templates configured', value: '' },
+                  ...roleTemplates.map((template) => ({ label: template.name, value: template.id }))
+                ]}
+              />
+              <Input label="Role title" value={profileDraft.roleTitle} readOnly />
+            </div>
+            <details className="staff-role-preview">
+              <summary>Role access preview</summary>
+              <p className="subtle">{roleTemplateAccessSummary(selectedRoleTemplate)}</p>
+              {roleChanged ? (
+                <p className="subtle">Changing role will update this person’s app access to match the selected role when you apply it.</p>
+              ) : null}
+              <p className="subtle">Custom permission overrides remain collapsed below for one-off exceptions.</p>
+            </details>
+            {!roleTemplates.length ? <p className="subtle">No role templates yet. Create roles in Alma Admin before assigning them here.</p> : null}
+            {canManageProfileAccess ? (
+              <div className="toolbar-right">
+                <Button type="button" disabled={saving || !roleChanged} onClick={() => void saveAssignedRole()}>{saving ? 'Saving...' : roleChanged ? 'Apply role' : 'No role changes'}</Button>
+                <ActionFeedback message={messageTarget === 'assigned-role' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+              </div>
+            ) : <p className="subtle">You do not have permission to change assigned roles.</p>}
+          </Card>
+
+          <Card title="App access" subtitle="Summary of enabled Alma apps for this staff member.">
+            <div className="app-access-grid">
+              {visibleStaffApps.map((app) => {
+                const current = accessByApp.get(app.id);
+                const enabled = current?.status === 'ENABLED';
+                return (
+                  <div key={app.id} className="app-access-tile">
+                    <strong>{app.label}</strong>
+                    <span className="subtle">Role: {current?.role ?? app.role}</span>
+                    <Badge tone={enabled ? 'positive' : 'muted'} dot>{current?.status ?? 'DISABLED'}</Badge>
+                    <span className="subtle">{Object.entries(current?.permissions ?? {}).filter(([, allowed]) => allowed).length} custom permissions</span>
+                    {canManageProfileAccess ? (
+                      <Button size="sm" variant={enabled ? 'secondary' : 'primary'} disabled={saving} onClick={() => void setAccess(app.id, enabled ? 'DISABLED' : 'ENABLED')}>
+                        {enabled ? 'Disable' : 'Enable'}
+                      </Button>
+                    ) : null}
+                    <ActionFeedback message={messageTarget === `access:${app.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <details className="staff-profile-collapsible">
+            <summary>
+              <span>
+                <strong>Custom permissions</strong>
+                <span className="subtle">Advanced app access overrides are collapsed by default.</span>
+              </span>
+              <Badge tone={member.appAccess.some((access) => Object.values(access.permissions ?? {}).some(Boolean)) ? 'warning' : 'muted'}>
+                {member.appAccess.reduce((count, access) => count + Object.values(access.permissions ?? {}).filter(Boolean).length, 0)} enabled
+              </Badge>
+            </summary>
+            <div className="app-access-grid">
+              {visibleStaffApps.map((app) => {
+                const permissions = ACCESS_PERMISSION_GROUPS[app.id] ?? [];
+                if (!permissions.length) return null;
+                const current = accessByApp.get(app.id);
+                const appPermissions = permissionsFor(app.id);
+                return (
+                  <div key={app.id} className="app-access-tile">
+                    <strong>{app.label}</strong>
+                    <span className="subtle">{current?.status ?? 'DISABLED'} · {current?.role ?? app.role}</span>
+                    <div className="onboarding-toggle-row">
+                      {permissions.map((permission) => (
+                        <label key={permission.key} className="check-row">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(appPermissions[permission.key] || appPermissions.admin)}
+                            disabled={!canManageProfileAccess || saving || Boolean(appPermissions.admin && permission.key !== 'admin')}
+                            onChange={(event) => void setPermission(app.id, permission.key, event.currentTarget.checked)}
+                          />
+                          {permission.label}
+                        </label>
+                      ))}
+                    </div>
+                    <ActionFeedback message={messageTarget === `permission:${app.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+                  </div>
+                );
+              })}
+            </div>
+          </details>
+        </div>
+      );
+    }
+    if (activeSection === 'payroll') {
+      return (
+        <Card title="Payroll" subtitle="Sensitive payroll fields are restricted to authorised Staff HR users." action={<Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>Edit</Button>}>
+          <ProfileInfoGrid items={[
+            { label: 'Pay type', value: member.payType, sensitive: true },
+            { label: 'Base rate', value: formatCents(member.payRateCents), sensitive: true },
+            { label: 'Award', value: member.payAward, sensitive: true },
+            { label: 'Tax residency', value: member.taxResidencyStatus, sensitive: true },
+            { label: 'Super fund', value: member.superFundName, sensitive: true },
+            { label: 'Bank account', value: member.bankAccountName ? `${member.bankAccountName} · ${member.bankBsb || 'No BSB'} · ${member.bankAccountNumber || 'No account number'}` : null, sensitive: true },
+            { label: 'Xero employee', value: member.xeroEmployeeId, sensitive: true }
+          ]} />
+          {payRecords.length ? <div className="staff-profile-document-list">{payRecords.map(renderHrDocument)}</div> : <p className="subtle">No pay-change HR records filed for this profile.</p>}
+        </Card>
+      );
+    }
+    if (activeSection === 'journals') {
+      return <Card title="Journals" subtitle="Restricted manager notes and profile history."><div className="staff-profile-note"><strong>Manager notes</strong><p>{member.notes || 'No manager notes recorded.'}</p></div><p className="subtle">Detailed management event history remains in the existing Staff admin workspace.</p></Card>;
+    }
+    if (activeSection === 'onboarding') {
+      const requiredRecords = member.records.filter((record) => ['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY'].includes(record.recordType));
+      return (
+        <Card title="Onboarding form" subtitle="Onboarding status and required documents for this profile.">
+          <ProfileInfoGrid items={[{ label: 'Status', value: member.employmentStatus }, { label: 'Created', value: profileDate(member.createdAt) }, { label: 'Last updated', value: profileDate(member.updatedAt) }, { label: 'Required records', value: requiredRecords.length }]} />
+          <details className="staff-profile-collapsible">
+            <summary>Imported onboarding resources</summary>
+            <p className="subtle">Deputy/source documents such as Welcome Pack, FOH Onboarding Doc, Menu Notes, and Allergens Table are treated as onboarding resources, not randomly attached to individual profiles. Exact-match RSA certificates appear below and in Documents.</p>
+          </details>
+          <div className="staff-profile-document-list">{requiredRecords.length ? requiredRecords.map(renderComplianceDocument) : <EmptyState title="No onboarding records" description="Requested onboarding documents will appear here when created." />}</div>
+        </Card>
+      );
+    }
+    if (activeSection === 'right-to-work') {
+      return (
+        <Card title="Right to work" subtitle="Visa and work-rights information is restricted to authorised HR users." action={<Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>Edit</Button>}>
+          <ProfileInfoGrid items={[
+            { label: 'Visa status', value: member.visaStatus, sensitive: true },
+            { label: 'Visa subclass', value: member.visaSubclass, sensitive: true },
+            { label: 'Visa expiry', value: profileDate(member.visaExpiryDate), sensitive: true },
+            { label: 'Work-rights notes', value: member.workRightsNotes, sensitive: true }
+          ]} />
+          <div className="staff-profile-document-list">{rightToWorkRecords.length ? rightToWorkRecords.map(renderHrDocument) : <EmptyState title="No right-to-work records" description="Right-to-work HR records filed for this person will appear here." />}</div>
+        </Card>
+      );
+    }
+    if (activeSection === 'documents') {
+      return (
+        <Card
+          title="Documents"
+          subtitle="Documents are held on this staff profile. Sensitive HR records remain permission-gated."
+          action={canManageDocuments ? <Button type="button" size="sm" onClick={() => setDocumentRequestOpen(true)}>Request document</Button> : undefined}
+        >
+          <div className="staff-profile-document-toolbar"><span><strong>{member.records.length + visibleHrRecords.length} documents</strong><span className="subtle">{approvedDocuments} approved · {attentionDocuments} needing attention</span></span><Badge tone={visibleHrRecords.length ? 'warning' : 'info'}>{visibleHrRecords.length} restricted HR</Badge></div>
+          {renderDocumentRequestModal()}
+          <ActionFeedback message={messageTarget === 'document-request' ? message : null} tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'} />
+          {renderDocumentComposer()}
+          <div className="staff-profile-document-list">{member.records.length || visibleHrRecords.length ? <>{member.records.map(renderComplianceDocument)}{visibleHrRecords.map(renderHrDocument)}</> : <EmptyState title="No documents" description="Upload or request RSA, onboarding, right-to-work, contract, and training documents from this profile." />}</div>
+        </Card>
+      );
+    }
+    if (activeSection === 'shifts') {
+      return (
+        <Card title="Shifts" subtitle="Recent roster shifts attached to this staff profile.">
+          <div className="staff-profile-document-list">
+            {recentShifts.length ? recentShifts.map((shift) => (
+              <div key={shift.id} className="staff-profile-document-row">
+                <span className="staff-profile-document-icon"><IconCalendarClock /></span>
+                <span className="staff-profile-document-main"><strong>{shift.roleTitle || member.roleTitle || 'Rostered shift'}</strong><span className="subtle">{shift.venue || member.venue || 'No venue'} · {new Date(shift.startsAt).toLocaleString()} - {new Date(shift.endsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{shift.notes ? <span className="subtle">{shift.notes}</span> : null}</span>
+                <Badge tone={shift.status === 'PUBLISHED' ? 'positive' : 'warning'}>{shift.status}</Badge>
+              </div>
+            )) : <EmptyState title="No shifts" description="Published and draft roster shifts for this person will appear here." />}
+          </div>
+        </Card>
+      );
+    }
+    if (activeSection === 'pin') {
+      return (
+        <Card title="PIN access" subtitle="Shared-device PIN status for iPad staff switching.">
+          <ProfileInfoGrid items={[
+            { label: 'PIN status', value: member.pinUpdatedAt ? 'Set' : 'Not set' },
+            { label: 'Last updated', value: profileDate(member.pinUpdatedAt) },
+            { label: 'Account type', value: member.accountType.replaceAll('_', ' ') }
+          ]} />
+          <details className="staff-profile-collapsible">
+            <summary>Device security notes</summary>
+            <p className="subtle">PINs are managed through the staff PIN reset/change flow. Venue device accounts cannot use this profile workspace to access staff documents, payroll, or HR settings.</p>
+          </details>
+        </Card>
+      );
+    }
+    return <Card title="Leave" subtitle="Leave summary for this staff profile."><EmptyState title="Leave details live in the Leave calendar" description="Open the Leave page to manage requests and approvals. This profile keeps the section available for staff-context navigation." /><NavLink to="/leave"><Button type="button" variant="secondary">Open Leave calendar</Button></NavLink></Card>;
+  }
+
+  return (
+    <div className="page-stack staff-profile-workspace">
+      <div className="staff-profile-topline">
+        <NavLink to="/"><Button type="button" variant="ghost" size="sm">Back to staff</Button></NavLink>
+        <span className="subtle">Staff profile workspace</span>
+      </div>
+      <div className="staff-profile-layout">
+        <aside className="staff-profile-rail" aria-label="Staff profile sections">
+          <div className="staff-profile-identity">
+            <span className="staff-profile-avatar">{staffInitials(member)}</span>
+            <span>
+              <strong>{staffFullName(member)}</strong>
+              <span className="subtle">{member.roleTitle || 'No role'} · {member.venue || 'No venue'}</span>
+              <span className="staff-profile-chip-row">
+                <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+                {member.accountType === 'VENUE_DEVICE' ? <Badge tone="warning">Venue device</Badge> : null}
+                {attentionDocuments ? <Badge tone="warning">{attentionDocuments} docs need attention</Badge> : null}
+              </span>
+            </span>
+          </div>
+          <Select label="Profile section" value={activeSection} onChange={(event) => navigate(`/staff/${member.id}/${event.currentTarget.value}`)} options={STAFF_PROFILE_SECTIONS.map((item) => ({ label: item.sensitive ? `${item.label} (restricted)` : item.label, value: item.id }))} />
+          <nav className="staff-profile-section-nav">
+            {Object.entries(sidebarGroups).map(([group, items]) => (
+              <div key={group}>
+                <span className="staff-profile-nav-group">{group}</span>
+                {items.map((item) => {
+                  const itemLocked = profileSectionIsLocked(item.id, { canOpenHr, canOpenRightToWork, canOpenPayroll });
+                  return <NavLink key={item.id} to={`/staff/${member.id}/${item.id}`} className={({ isActive }) => `${isActive ? 'is-active' : ''} ${itemLocked ? 'is-locked' : ''}`}><span>{item.label}</span>{item.sensitive ? <IconFileLock /> : null}</NavLink>;
+                })}
+              </div>
+            ))}
+          </nav>
+        </aside>
+        <main className="staff-profile-main">
+          <PageHeader eyebrow={sectionTitle} title={staffFullName(member)} description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections." actions={<Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>} />
+          <div className="stats-grid staff-profile-stats">
+            <StatCard label="Documents" value={member.records.length + visibleHrRecords.length} hint={`${attentionDocuments} need attention`} />
+            <StatCard label="Training" value={member.trainingRecords.length} hint={`Level ${member.trainingLevel ?? 0}`} />
+            <StatCard label="Shifts" value={member.rosterShifts.length} hint="Roster records" />
+            <StatCard label="PIN" value={member.pinUpdatedAt ? 'Set' : 'Not set'} hint={member.pinUpdatedAt ? profileDate(member.pinUpdatedAt) : 'Staff iPad access'} />
+          </div>
+          {renderSection()}
+        </main>
+      </div>
+      <StaffModal open={profileModalOpen} title={`Edit ${staffFullName(member)}`} subtitle="Profile edits stay in a modal so the staff workspace remains in place." onClose={() => setProfileModalOpen(false)}>
+        <StaffProfileForm mode="edit" initial={member} roleTemplates={roleTemplates} onSaved={(saved) => void handleProfileSaved(saved)} onCancel={() => setProfileModalOpen(false)} />
+      </StaffModal>
+    </div>
   );
 }
 
@@ -11838,7 +12719,9 @@ function StaffShell() {
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
-          <Route path="/access" element={<AccessPage staff={staff} roleTemplates={roleTemplates} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} />} />
+          <Route path="/access" element={<Navigate to={selectedId ? `/staff/${selectedId}/access` : staff[0] ? `/staff/${staff[0].id}/access` : '/'} replace />} />
+          <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
+          <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
           <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
