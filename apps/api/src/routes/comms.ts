@@ -6,6 +6,7 @@ import {
   createCommsThread,
   evaluateCommsAlertsDryRun,
   getCommsThread,
+  listCommsRecipientOptions,
   listCommsInbox,
   markCommsThreadRead
 } from '../services/comms.service.js';
@@ -32,15 +33,23 @@ function handleError(res: Response, error: unknown) {
 
 commsRouter.get('/inbox', async (req, res) => {
   try {
-    res.json({ threads: await listCommsInbox(req.user) });
+    res.json({ threads: await listCommsInbox(req.user!) });
   } catch (error) {
     handleError(res, error);
   }
 });
 
-commsRouter.post('/threads', requireManager, async (req, res) => {
+commsRouter.get('/recipient-options', async (req, res) => {
   try {
-    res.status(201).json({ thread: await createCommsThread(req.body, req.user) });
+    res.json(await listCommsRecipientOptions(req.user!));
+  } catch (error) {
+    handleError(res, error);
+  }
+});
+
+commsRouter.post('/threads', async (req, res) => {
+  try {
+    res.status(201).json({ thread: await createCommsThread(req.body, req.user!) });
   } catch (error) {
     handleError(res, error);
   }
@@ -48,7 +57,7 @@ commsRouter.post('/threads', requireManager, async (req, res) => {
 
 commsRouter.get('/threads/:id', async (req, res) => {
   try {
-    const thread = await getCommsThread(req.params.id, req.user);
+    const thread = await getCommsThread(req.params.id, req.user!);
     if (!thread) {
       res.status(404).json({ error: 'Thread not found' });
       return;
@@ -61,7 +70,7 @@ commsRouter.get('/threads/:id', async (req, res) => {
 
 commsRouter.post('/threads/:id/messages', async (req, res) => {
   try {
-    res.status(201).json({ message: await addCommsMessage(req.params.id, req.body, req.user) });
+    res.status(201).json({ message: await addCommsMessage(req.params.id, req.body, req.user!) });
   } catch (error) {
     handleError(res, error);
   }
@@ -69,7 +78,7 @@ commsRouter.post('/threads/:id/messages', async (req, res) => {
 
 commsRouter.post('/threads/:id/read', async (req, res) => {
   try {
-    res.json(await markCommsThreadRead(req.params.id, req.user));
+    res.json(await markCommsThreadRead(req.params.id, req.user!));
   } catch (error) {
     handleError(res, error);
   }
@@ -77,7 +86,7 @@ commsRouter.post('/threads/:id/read', async (req, res) => {
 
 commsRouter.post('/threads/:id/acknowledge', async (req, res) => {
   try {
-    res.json(await acknowledgeCommsThread(req.params.id, req.user));
+    res.json(await acknowledgeCommsThread(req.params.id, req.user!));
   } catch (error) {
     handleError(res, error);
   }
@@ -96,7 +105,7 @@ commsRouter.post('/announcements', requireManager, async (req, res) => {
           category: 'ANNOUNCEMENT',
           priority: req.body.priority ?? 'NORMAL'
         },
-        req.user
+        req.user!
       )
     });
   } catch (error) {
@@ -117,7 +126,7 @@ commsRouter.post('/handover', requireManager, async (req, res) => {
           category: 'HANDOVER',
           priority: req.body.priority ?? 'NORMAL'
         },
-        req.user
+        req.user!
       )
     });
   } catch (error) {

@@ -99,6 +99,22 @@ type AlertDryRunResult = {
   events: AlertDryRunEvent[];
 };
 
+type RecipientOption = {
+  id: string;
+  type: 'STAFF' | 'VENUE' | 'ROLE' | 'ROLE_TEMPLATE' | 'MANAGERS';
+  label: string;
+  description?: string;
+  venue?: string | null;
+  count?: number;
+};
+
+type RecipientOptionsPayload = {
+  staff: RecipientOption[];
+  groups: RecipientOption[];
+  canBroadcast: boolean;
+  canDirect: boolean;
+};
+
 const TOKEN_STORAGE_KEY = 'alma-comms-token';
 
 function getStoredToken() {
@@ -596,11 +612,56 @@ function ComposePage() {
   const [category, setCategory] = useState('GENERAL');
   const [priority, setPriority] = useState('NORMAL');
   const [actionRequired, setActionRequired] = useState(false);
+  const [recipientOptions, setRecipientOptions] = useState<RecipientOptionsPayload>({ staff: [], groups: [], canBroadcast: false, canDirect: false });
+  const [selectedStaffIds, setSelectedStaffIds] = useState<string[]>([]);
+  const [selectedGroups, setSelectedGroups] = useState<Array<{ type: RecipientOption['type']; id: string }>>([]);
+  const [recipientSearch, setRecipientSearch] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
 
+  useEffect(() => {
+    let cancelled = false;
+    api<RecipientOptionsPayload>('/messages/recipient-options')
+      .then((data) => {
+        if (!cancelled) setRecipientOptions(data);
+      })
+      .catch((error) => {
+        if (!cancelled) setMessage(error instanceof Error ? error.message : 'Could not load recipients.');
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const filteredStaff = useMemo(() => {
+    const query = recipientSearch.trim().toLowerCase();
+    if (!query) return recipientOptions.staff;
+    return recipientOptions.staff.filter((option) =>
+      [option.label, option.description, option.venue].some((value) => value?.toLowerCase().includes(query))
+    );
+  }, [recipientOptions.staff, recipientSearch]);
+
+  const selectedRecipientCount = selectedStaffIds.length + selectedGroups.length;
+
+  function toggleStaff(id: string) {
+    setSelectedStaffIds((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
+  }
+
+  function toggleGroup(option: RecipientOption) {
+    setSelectedGroups((current) => {
+      const exists = current.some((item) => item.type === option.type && item.id === option.id);
+      return exists
+        ? current.filter((item) => !(item.type === option.type && item.id === option.id))
+        : [...current, { type: option.type, id: option.id }];
+    });
+  }
+
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (selectedRecipientCount === 0) {
+      setMessage('Choose at least one person or group.');
+      return;
+    }
     setBusy(true);
     setMessage('');
 
@@ -613,7 +674,9 @@ function ComposePage() {
           venue: venue || undefined,
           category,
           priority,
-          actionRequired
+          actionRequired,
+          staffProfileIds: selectedStaffIds,
+          recipientGroups: selectedGroups
         })
       });
       navigate(`/threads/${data.thread.id}`);
@@ -636,6 +699,55 @@ function ComposePage() {
             Message
             <textarea value={body} onChange={(event) => setBody(event.target.value)} rows={7} required />
           </label>
+          <div className="recipient-picker">
+            <div className="section-heading">
+              <div>
+                <h2>Recipients</h2>
+                <p className="comms-muted">Choose staff, venue groups, managers, or role-based groups. Device accounts and inactive staff are excluded.</p>
+              </div>
+              <span className="recipient-count">{selectedRecipientCount} selected</span>
+            </div>
+            <label>
+              Find staff
+              <input value={recipientSearch} onChange={(event) => setRecipientSearch(event.target.value)} placeholder="Search by name, role, or venue" />
+            </label>
+            <div className="recipient-grid">
+              <div className="recipient-column">
+                <strong>Staff</strong>
+                {filteredStaff.length === 0 ? <p className="comms-muted">No matching staff.</p> : null}
+                {filteredStaff.slice(0, 30).map((option) => (
+                  <label key={option.id} className="recipient-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedStaffIds.includes(option.id)}
+                      onChange={() => toggleStaff(option.id)}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      {option.description ? <small>{option.description}</small> : null}
+                    </span>
+                  </label>
+                ))}
+              </div>
+              <div className="recipient-column">
+                <strong>Groups</strong>
+                {recipientOptions.groups.length === 0 ? <p className="comms-muted">No groups available.</p> : null}
+                {recipientOptions.groups.map((option) => (
+                  <label key={`${option.type}:${option.id}`} className="recipient-option">
+                    <input
+                      type="checkbox"
+                      checked={selectedGroups.some((item) => item.type === option.type && item.id === option.id)}
+                      onChange={() => toggleGroup(option)}
+                    />
+                    <span>
+                      <strong>{option.label}</strong>
+                      <small>{[option.description, option.count ? `${option.count} staff` : null].filter(Boolean).join(' · ')}</small>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
           <div className="form-grid">
             <label>
               Venue

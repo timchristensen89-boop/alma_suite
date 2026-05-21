@@ -18,6 +18,7 @@ import { integrationsRouter, squareWebhookReceiver, xeroWebhookReceiver } from '
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
+import { messagesRouter } from './routes/messages.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
 import { reserveRouter } from './routes/reserve.js';
@@ -108,6 +109,7 @@ app.use('/api/shift-task-rules', shiftTaskRulesRouter);
 app.use('/api/shift-task-assignments', shiftTaskAssignmentsRouter);
 app.use('/api/communications', communicationsRouter);
 app.use('/api/comms', commsRouter);
+app.use('/api/messages', messagesRouter);
 app.use('/api/notifications', notificationsRouter);
 app.use('/api/reports', reportsRouter);
 app.use('/api/reserve', reserveRouter);

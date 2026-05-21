@@ -199,7 +199,7 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
             <strong>General team chat</strong>
             <div style={{ display: 'grid', gap: 8 }}>
               {data.chat.length === 0 ? (
-                <p className="subtle">No general chat messages yet. Use Staff communications for direct messages.</p>
+                <p className="subtle">No general chat messages yet. New messages use the same Comms inbox.</p>
               ) : (
                 data.chat.map((item) => (
                   <div key={item.id} style={{ ...cardStyle, display: 'grid', gap: 4 }}>
@@ -223,7 +223,7 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
               </button>
             </form>
             <p className="subtle" style={{ margin: 0 }}>
-              Direct one-to-one chat is managed inside the Staff app so recipient permissions stay clear.
+              Direct one-to-one messages are available from Comms and the Staff Messages page.
             </p>
           </div>
 

@@ -17,6 +17,13 @@ import {
   type SuiteCommunicationsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import {
+  addMessage,
+  canManageMessaging,
+  createThread,
+  getThreadForUser,
+  listInboxForUser
+} from './messaging.service.js';
 
 type ListInput = {
   appId?: string;
@@ -27,6 +34,15 @@ type ListInput = {
 };
 
 const DEFAULT_GROUPS = ['Kitchen', 'Bar', 'Floor', 'Management'];
+
+type ChatChannelLike = {
+  id: string;
+  name: string;
+  channelKey: string;
+  type: SuiteChatChannelType;
+  appId: AlmaAppId | null;
+  venue: string | null;
+};
 
 function clean(value: string | null | undefined) {
   const trimmed = value?.trim();
@@ -188,6 +204,98 @@ function toChatMessage(row: {
   };
 }
 
+function toCommsBackedChatMessage(row: {
+  id: string;
+  threadId: string;
+  body: string;
+  createdById: string | null;
+  createdAt: Date;
+  editedAt: Date | null;
+  thread: {
+    category: string;
+    venue: string | null;
+    createdById: string | null;
+    links?: Array<{ entityType: string; entityId: string }>;
+    recipients?: Array<{ staffProfileId: string | null }>;
+  };
+}, options: { channel?: ChatChannelLike | null; recipientName?: string | null; appId?: AlmaAppId | null } = {}): SuiteChatMessage {
+  const direct = row.thread.category === 'INBOX';
+  return {
+    id: row.id,
+    channelId: options.channel?.id ?? null,
+    channel: direct ? row.threadId : options.channel?.channelKey ?? row.threadId,
+    channelType: direct ? 'DIRECT' : options.channel?.type ?? 'GENERAL',
+    appId: options.channel?.appId ?? options.appId ?? 'STAFF',
+    venue: row.thread.venue,
+    recipientId: direct ? row.thread.recipients?.find((recipient) => recipient.staffProfileId !== row.createdById)?.staffProfileId ?? null : null,
+    recipientName: options.recipientName ?? null,
+    body: row.body,
+    createdById: row.createdById,
+    createdByName: null,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: (row.editedAt ?? row.createdAt).toISOString(),
+    editedAt: row.editedAt?.toISOString() ?? null,
+    deletedAt: null,
+    deletedById: null,
+    deletedByName: null
+  };
+}
+
+async function staffNameById(id: string | null | undefined) {
+  if (!id) return null;
+  const staff = await prisma.staffProfile.findUnique({
+    where: { id },
+    select: { firstName: true, lastName: true, email: true }
+  });
+  return staff ? `${staff.firstName} ${staff.lastName}`.trim() || staff.email || 'Staff member' : null;
+}
+
+async function commsMessagesForList(input: {
+  user?: AuthUser;
+  selectedChannel?: ChatChannelLike | null;
+  recipientId?: string;
+  appId: AlmaAppId;
+}) {
+  if (!input.user) return [];
+
+  if (input.recipientId) {
+    const messages = await prisma.commsMessage.findMany({
+      where: {
+        thread: {
+          category: 'INBOX',
+          archivedAt: null,
+          AND: [
+            { recipients: { some: { staffProfileId: input.user.id } } },
+            { recipients: { some: { staffProfileId: input.recipientId } } }
+          ]
+        }
+      },
+      include: { thread: { include: { recipients: true, links: true } } },
+      orderBy: { createdAt: 'desc' },
+      take: 50
+    });
+    const recipient = await staffNameById(input.recipientId);
+    return messages.reverse().map((message) => toCommsBackedChatMessage(message, { recipientName: recipient, appId: input.appId }));
+  }
+
+  const channel = input.selectedChannel;
+  if (!channel) return [];
+
+  const messages = await prisma.commsMessage.findMany({
+    where: {
+      thread: {
+        archivedAt: null,
+        links: { some: { entityType: 'SUITE_CHAT_CHANNEL', entityId: channel.id } }
+      }
+    },
+    include: { thread: { include: { recipients: true, links: true } } },
+    orderBy: { createdAt: 'desc' },
+    take: 50
+  });
+
+  return messages.reverse().map((message) => toCommsBackedChatMessage(message, { channel, appId: input.appId }));
+}
+
 async function ensureDefaultChannels(appId: AlmaAppId = 'STAFF', venue?: string) {
   const defaults: SuiteChatChannelInput[] = [
     {
@@ -281,33 +389,11 @@ export const communicationsService = {
     const selectedChannel = clean(input.channelId)
       ? await prisma.suiteChatChannel.findFirst({ where: { id: clean(input.channelId), isActive: true } })
       : null;
+    const chatChannel = selectedChannel ?? channels[0] ?? null;
 
     if (selectedChannel?.postPermission && !hasPermission(user, selectedChannel.postPermission, selectedChannel.appId ?? 'STAFF')) {
       throw new HttpError(403, 'You do not have permission for this chat channel.');
     }
-
-    const chatWhere = recipientId
-      ? {
-          channel: directChannelKey(user?.id ?? '', recipientId),
-          channelType: 'DIRECT' as const,
-          deletedAt: null
-        }
-      : selectedChannel
-        ? {
-            channelId: selectedChannel.id,
-            deletedAt: null
-          }
-        : {
-            channel: channelName,
-            deletedAt: null,
-            OR: [
-              { appId: null },
-              { appId }
-            ],
-            AND: [
-              { OR: [{ venue: null }, ...(venue ? [{ venue }] : [])] }
-            ]
-          };
 
     if (recipientId && !canDirectMessage(user)) {
       throw new HttpError(403, 'Direct messaging is not enabled for your profile.');
@@ -326,17 +412,13 @@ export const communicationsService = {
         orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
         take: 10
       }),
-      prisma.suiteChatMessage.findMany({
-        where: chatWhere,
-        orderBy: { createdAt: 'desc' },
-        take: 50
-      })
+      commsMessagesForList({ user, selectedChannel: recipientId ? null : chatChannel, recipientId, appId })
     ]);
 
     return {
       announcements: announcements.map(toAnnouncement),
       channels,
-      chat: chat.reverse().map(toChatMessage)
+      chat
     };
   },
 
@@ -351,16 +433,30 @@ export const communicationsService = {
       prisma.suiteChatChannel.findMany({
         orderBy: [{ isActive: 'desc' }, { type: 'asc' }, { name: 'asc' }]
       }),
-      prisma.suiteChatMessage.findMany({
-        where: { deletedAt: null },
-        orderBy: { createdAt: 'desc' },
-        take: 100
-      })
+      listInboxForUser(user!).then((threads): SuiteChatMessage[] => threads.map((thread) => ({
+        id: thread.id,
+        channelId: null,
+        channel: thread.category,
+        channelType: thread.category === 'INBOX' ? 'DIRECT' as const : 'GENERAL' as const,
+        appId: 'STAFF' as AlmaAppId,
+        venue: thread.venue,
+        recipientId: null,
+        recipientName: null,
+        body: thread.latestMessage ?? thread.subject,
+        createdById: thread.createdById,
+        createdByName: null,
+        createdAt: thread.createdAt,
+        updatedAt: thread.updatedAt,
+        editedAt: null,
+        deletedAt: null,
+        deletedById: null,
+        deletedByName: null
+      })))
     ]);
     return {
       announcements: announcements.map(toAnnouncement),
       channels: channels.map(toChannel),
-      chat: chat.reverse().map(toChatMessage)
+      chat
     };
   },
 
@@ -495,6 +591,7 @@ export const communicationsService = {
   },
 
   async createChatMessage(input: unknown, user: AuthUser | undefined) {
+    if (!user) throw new HttpError(401, 'Not authenticated');
     const data = suiteChatMessageInputSchema.parse(input);
     const appId = data.appId ?? 'STAFF';
     const channelId = clean(data.channelId);
@@ -502,7 +599,13 @@ export const communicationsService = {
     const direct = Boolean(recipientId);
     const channel = channelId
       ? await prisma.suiteChatChannel.findUnique({ where: { id: channelId } })
-      : null;
+      : await prisma.suiteChatChannel.findFirst({
+          where: {
+            isActive: true,
+            OR: [{ appId: null }, { appId }],
+            channelKey: channelKeyFor({ name: 'Team', type: 'GENERAL', appId })
+          }
+        });
 
     if (direct && !canDirectMessage(user)) {
       throw new HttpError(403, 'Direct messaging is not enabled for your profile.');
@@ -514,28 +617,137 @@ export const communicationsService = {
       throw new HttpError(403, 'Chat posting is not enabled for your profile.');
     }
 
-    const directRecipientName = recipientId ? await recipientName(recipientId) : null;
-    const message = await prisma.suiteChatMessage.create({
-      data: {
-        channelId: channel?.id ?? null,
-        channel: direct
-          ? directChannelKey(user?.id ?? '', recipientId!)
-          : channel?.channelKey ?? clean(data.channel) ?? 'general',
-        channelType: direct ? 'DIRECT' : channel?.type ?? data.channelType ?? 'GENERAL',
-        appId: channel?.appId ?? appId,
-        venue: channel?.venue ?? clean(data.venue) ?? null,
-        recipientId: recipientId ?? null,
-        recipientName: directRecipientName,
-        body: data.body.trim(),
-        createdById: user?.id,
-        createdByName: actorName(user)
+    if (direct) {
+      const existingThread = await prisma.commsThread.findFirst({
+        where: {
+          category: 'INBOX',
+          archivedAt: null,
+          AND: [
+            { recipients: { some: { staffProfileId: user.id } } },
+            { recipients: { some: { staffProfileId: recipientId! } } }
+          ]
+        },
+        include: { recipients: true, links: true },
+        orderBy: { updatedAt: 'desc' }
+      });
+      if (existingThread) {
+        const message = await addMessage(user, existingThread.id, { body: data.body.trim() });
+        return toCommsBackedChatMessage({
+          ...message,
+          thread: {
+            category: existingThread.category,
+            venue: existingThread.venue,
+            createdById: existingThread.createdById,
+            recipients: existingThread.recipients,
+            links: existingThread.links
+          }
+        }, { recipientName: await recipientName(recipientId!), appId });
       }
+
+      const thread = await createThread(user, {
+        subject: `Direct message with ${await recipientName(recipientId!)}`,
+        body: data.body.trim(),
+        venue: user.venue ?? '',
+        category: 'INBOX',
+        priority: 'NORMAL',
+        staffProfileIds: [recipientId!]
+      });
+      const message = thread.messages[0];
+      if (!message) throw new HttpError(500, 'Message was not created.');
+      return toCommsBackedChatMessage({
+        ...message,
+        threadId: thread.id,
+        thread: {
+          category: thread.category,
+          venue: thread.venue,
+          createdById: thread.createdById,
+          recipients: thread.recipients,
+          links: []
+        }
+      }, { recipientName: await recipientName(recipientId!), appId });
+    }
+
+    const messageVenue = channel?.venue ?? clean(data.venue) ?? user.venue ?? null;
+    const recipientWhere = {
+      accountType: 'HUMAN' as const,
+      employmentStatus: 'ACTIVE' as const,
+      mergedIntoStaffProfileId: null,
+      ...(messageVenue ? { venue: messageVenue } : {}),
+      id: { not: user.id }
+    };
+    const recipients = await prisma.staffProfile.findMany({
+      where: recipientWhere,
+      select: { id: true, venue: true, roleTitle: true }
     });
 
-    return toChatMessage(message);
+    const thread = await prisma.commsThread.create({
+      data: {
+        subject: `${channel?.name ?? clean(data.channel) ?? 'Team'} chat`,
+        venue: messageVenue,
+        category: channel?.type === 'VENUE' ? 'VENUE' : 'GENERAL',
+        priority: 'NORMAL',
+        createdById: user.id,
+        messages: {
+          create: {
+            body: data.body.trim(),
+            createdById: user.id
+          }
+        },
+        recipients: {
+          create: [
+            {
+              staffProfileId: user.id,
+              venue: user.venue ?? messageVenue,
+              role: user.roleTitle,
+              readAt: new Date()
+            },
+            ...recipients.map((recipient) => ({
+              staffProfileId: recipient.id,
+              venue: recipient.venue,
+              role: recipient.roleTitle
+            }))
+          ]
+        },
+        ...(channel ? { links: { create: { entityType: 'SUITE_CHAT_CHANNEL', entityId: channel.id } } } : {})
+      },
+      include: { messages: true, recipients: true, links: true }
+    });
+
+    const firstMessage = thread.messages[0];
+    if (!firstMessage) throw new HttpError(500, 'Message was not created.');
+    return toCommsBackedChatMessage({
+      ...firstMessage,
+      threadId: thread.id,
+      thread: {
+        category: thread.category,
+        venue: thread.venue,
+        createdById: thread.createdById,
+        recipients: thread.recipients,
+        links: thread.links
+      }
+    }, { channel, appId });
   },
 
   async updateChatMessage(id: string, input: unknown, user: AuthUser | undefined) {
+    const commsMessage = await prisma.commsMessage.findUnique({
+      where: { id },
+      include: { thread: { include: { recipients: true, links: true } } }
+    });
+    if (commsMessage) {
+      if (!user) throw new HttpError(401, 'Not authenticated');
+      await getThreadForUser(commsMessage.threadId, user);
+      if (!canManageMessaging(user) && commsMessage.createdById !== user.id) {
+        throw new HttpError(403, 'You can only edit your own message.');
+      }
+      const data = suiteChatMessageUpdateSchema.parse(input);
+      const message = await prisma.commsMessage.update({
+        where: { id },
+        data: { body: data.body.trim(), editedAt: new Date() },
+        include: { thread: { include: { recipients: true, links: true } } }
+      });
+      return toCommsBackedChatMessage(message);
+    }
+
     const existing = await prisma.suiteChatMessage.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw new HttpError(404, 'Chat message not found.');
     if (!canManageCommunications(user) && existing.createdById !== user?.id) {
@@ -553,6 +765,21 @@ export const communicationsService = {
   },
 
   async removeChatMessage(id: string, user: AuthUser | undefined) {
+    const commsMessage = await prisma.commsMessage.findUnique({
+      where: { id },
+      include: { thread: { include: { recipients: true, links: true } } }
+    });
+    if (commsMessage) {
+      if (!user) throw new HttpError(401, 'Not authenticated');
+      await getThreadForUser(commsMessage.threadId, user);
+      if (!canManageMessaging(user) && commsMessage.createdById !== user.id) {
+        throw new HttpError(403, 'You can only delete your own message.');
+      }
+      const message = toCommsBackedChatMessage(commsMessage);
+      await prisma.commsMessage.delete({ where: { id } });
+      return message;
+    }
+
     const existing = await prisma.suiteChatMessage.findUnique({ where: { id } });
     if (!existing || existing.deletedAt) throw new HttpError(404, 'Chat message not found.');
     if (!canManageCommunications(user) && existing.createdById !== user?.id) {

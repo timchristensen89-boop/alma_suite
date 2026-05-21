@@ -3781,6 +3781,32 @@ type ChannelDraft = {
   directMessagesAllowed: boolean;
 };
 
+type StaffMessageThreadSummary = {
+  id: string;
+  subject: string;
+  venue: string | null;
+  category: string;
+  priority: string;
+  updatedAt: string;
+  unread?: boolean;
+  actionRequired?: boolean;
+  latestMessage?: string | null;
+};
+
+type StaffMessageThreadDetail = {
+  id: string;
+  subject: string;
+  venue: string | null;
+  category: string;
+  priority: string;
+  messages: Array<{
+    id: string;
+    body: string;
+    createdById: string | null;
+    createdAt: string;
+  }>;
+};
+
 function emptyAnnouncementDraft(): AnnouncementDraft {
   return {
     title: '',
@@ -3827,6 +3853,9 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
   const [directRecipientId, setDirectRecipientId] = useState('');
   const [directSearch, setDirectSearch] = useState('');
   const [chatText, setChatText] = useState('');
+  const [inboxThreads, setInboxThreads] = useState<StaffMessageThreadSummary[]>([]);
+  const [selectedMessageThread, setSelectedMessageThread] = useState<StaffMessageThreadDetail | null>(null);
+  const [threadReply, setThreadReply] = useState('');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -3858,10 +3887,14 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
       if (user?.venue) params.set('venue', user.venue);
       if (options?.channelId) params.set('channelId', options.channelId);
       if (options?.recipientId) params.set('recipientId', options.recipientId);
-      const data = canManage && !options?.channelId && !options?.recipientId
-        ? await api<SuiteCommunicationsPayload>('/api/communications/admin')
-        : await api<SuiteCommunicationsPayload>(`/api/communications?${params.toString()}`);
+      const [data, inbox] = await Promise.all([
+        canManage && !options?.channelId && !options?.recipientId
+          ? api<SuiteCommunicationsPayload>('/api/communications/admin')
+          : api<SuiteCommunicationsPayload>(`/api/communications?${params.toString()}`),
+        api<{ threads: StaffMessageThreadSummary[] }>('/api/messages/inbox')
+      ]);
       setPayload(data);
+      setInboxThreads(inbox.threads ?? []);
       if (!selectedChannelId && data.channels[0]) setSelectedChannelId(data.channels[0].id);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not load communications.');
@@ -4002,13 +4035,53 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
   async function openChannel(channel: SuiteChatChannel) {
     setSelectedChannelId(channel.id);
     setDirectRecipientId('');
+    setSelectedMessageThread(null);
     await loadCommunications({ channelId: channel.id });
   }
 
   async function openDirect(recipientId: string) {
     setDirectRecipientId(recipientId);
     setSelectedChannelId('');
+    setSelectedMessageThread(null);
     await loadCommunications({ recipientId });
+  }
+
+  async function openInboxThread(threadId: string) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`thread:${threadId}:open`);
+    try {
+      const data = await api<{ thread: StaffMessageThreadDetail }>(`/api/messages/threads/${threadId}`);
+      setSelectedMessageThread(data.thread);
+      setDirectRecipientId('');
+      setSelectedChannelId('');
+      setThreadReply('');
+      await api(`/api/messages/threads/${threadId}/read`, { method: 'POST' });
+      await loadCommunications();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not open message thread.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function sendInboxReply() {
+    if (!selectedMessageThread || !threadReply.trim()) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`thread:${selectedMessageThread.id}:reply`);
+    try {
+      await api(`/api/messages/threads/${selectedMessageThread.id}/messages`, {
+        method: 'POST',
+        body: JSON.stringify({ body: threadReply.trim() })
+      });
+      setThreadReply('');
+      await openInboxThread(selectedMessageThread.id);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send reply.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   async function sendMessage() {
@@ -4109,6 +4182,74 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
         <StatCard label="Messages" value={payload.chat.length} hint="Current thread" loading={loading} />
         <StatCard label="Direct messages" value={canDirect ? 'On' : 'Off'} hint="Controlled in Profiles" loading={loading} />
       </div>
+
+      <Card title="Messages inbox" subtitle="Comms and Staff messages now share the same conversations.">
+        <div className="comms-layout">
+          <div className="comms-sidebar">
+            <section className="comms-sidebar-section" aria-label="Messages inbox">
+              <div className="comms-section-heading">
+                <strong>Recent threads</strong>
+                <span>{inboxThreads.length} visible</span>
+              </div>
+              {inboxThreads.length === 0 ? (
+                <p className="subtle">No messages have been sent to you yet.</p>
+              ) : (
+                inboxThreads.slice(0, 12).map((thread) => (
+                  <button
+                    key={thread.id}
+                    type="button"
+                    className={`staff-list-button comms-thread-button ${selectedMessageThread?.id === thread.id ? 'is-selected' : ''}`}
+                    onClick={() => void openInboxThread(thread.id)}
+                  >
+                    <span>
+                      <strong>{thread.subject}</strong>
+                      <span className="subtle">
+                        {[thread.category, thread.venue, thread.unread ? 'Unread' : null].filter(Boolean).join(' · ')}
+                      </span>
+                    </span>
+                  </button>
+                ))
+              )}
+            </section>
+          </div>
+          <div className="staff-mobile-chat">
+            {selectedMessageThread ? (
+              <>
+                <div className="comms-thread-header">
+                  <span>
+                    <strong>{selectedMessageThread.subject}</strong>
+                    <span className="subtle">{selectedMessageThread.category} · {selectedMessageThread.venue || 'All venues'}</span>
+                  </span>
+                  <Badge tone={selectedMessageThread.priority === 'URGENT' || selectedMessageThread.priority === 'HIGH' ? 'warning' : 'muted'}>{selectedMessageThread.priority}</Badge>
+                </div>
+                <div className="staff-mobile-comms-list">
+                  {selectedMessageThread.messages.map((item) => (
+                    <div key={item.id} className={`comms-message ${item.createdById === user?.id ? 'is-mine' : 'is-theirs'}`}>
+                      <span className="comms-message-body">{item.body}</span>
+                      <small>{formatDateTime(item.createdAt)}</small>
+                    </div>
+                  ))}
+                </div>
+                <div className="staff-mobile-chat-form">
+                  <Input label="Reply" value={threadReply} onChange={(event) => setThreadReply(event.currentTarget.value)} placeholder="Reply to this message" />
+                  <Button type="button" disabled={saving || !threadReply.trim()} onClick={() => void sendInboxReply()}>
+                    Reply
+                  </Button>
+                  <ActionFeedback
+                    message={messageTarget === `thread:${selectedMessageThread.id}:reply` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                </div>
+              </>
+            ) : (
+              <div className="comms-empty-thread">
+                <strong>Select a message</strong>
+                <span className="subtle">Open a Comms or Staff thread to read and reply from here.</span>
+              </div>
+            )}
+          </div>
+        </div>
+      </Card>
 
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('permission') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
