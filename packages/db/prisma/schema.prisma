@@ -606,6 +606,9 @@ model StaffProfile {
   passwordHash     String?
   pinHash          String?
   pinUpdatedAt     DateTime?
+  pinFailedAttempts Int                    @default(0)
+  pinLockedUntil   DateTime?
+  pinLastFailedAt  DateTime?
   isAdmin          Boolean                 @default(false)
   lastLoginAt      DateTime?
   createdAt        DateTime                @default(now())

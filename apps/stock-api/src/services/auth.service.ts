@@ -18,18 +18,23 @@ function toAuthUser(profile: {
   email: string | null;
   roleTitle: string;
   venue: string | null;
+  accountType?: 'HUMAN' | 'VENUE_DEVICE';
   isAdmin: boolean;
   appAccess: Array<Pick<AuthUser['appAccess'][number], 'appId' | 'status' | 'role'> & { permissions: unknown }>;
 }): AuthUser {
+  const accountType = profile.accountType ?? 'HUMAN';
   const stockAccess = profile.appAccess.find(
     (access) => access.appId === 'STOCK' && access.status === 'ENABLED'
   );
   const accessRole = stockAccess?.role?.toUpperCase() ?? '';
   const isManager =
-    profile.isAdmin ||
-    accessRole === 'ADMIN' ||
-    accessRole === 'MANAGER' ||
-    /manager|supervisor|lead|owner|admin/i.test(profile.roleTitle);
+    accountType === 'HUMAN' &&
+    (
+      profile.isAdmin ||
+      accessRole === 'ADMIN' ||
+      accessRole === 'MANAGER' ||
+      /manager|supervisor|lead|owner|admin/i.test(profile.roleTitle)
+    );
 
   return {
     id: profile.id,
@@ -38,8 +43,9 @@ function toAuthUser(profile: {
     email: profile.email,
     roleTitle: profile.roleTitle,
     venue: profile.venue,
-    isAdmin: profile.isAdmin,
-    role: profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
+    accountType,
+    isAdmin: accountType === 'HUMAN' ? profile.isAdmin : false,
+    role: accountType === 'HUMAN' && profile.isAdmin ? 'ADMIN' : isManager ? 'MANAGER' : 'STAFF',
     appAccess: profile.appAccess.map((access) => ({
       appId: access.appId,
       status: access.status,
@@ -63,6 +69,9 @@ export const authService = {
     });
 
     if (!profile || !profile.passwordHash) {
+      throw new HttpError(401, 'Email or password is incorrect');
+    }
+    if (profile.accountType === 'VENUE_DEVICE' && profile.employmentStatus !== 'ACTIVE') {
       throw new HttpError(401, 'Email or password is incorrect');
     }
 

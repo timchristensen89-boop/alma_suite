@@ -17,6 +17,9 @@ const DEVICE_APP_ACCESS = [
   { appId: 'STAFF' as const, role: 'USER', permissions: { view: true, rosterView: true } },
   { appId: 'COMPLIANCE' as const, role: 'USER', permissions: { view: true, checklists: true, create: true } }
 ];
+const PIN_FAILURE_LIMIT = 5;
+const PIN_LOCK_MS = 5 * 60 * 1000;
+const PIN_LOGIN_FAILED_MESSAGE = 'PIN login failed';
 
 function displayName(profile: { firstName: string; lastName: string; email?: string | null }) {
   return `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim() || profile.email || 'Venue device';
@@ -30,6 +33,29 @@ function nameParts(value: string) {
 
 function normaliseVenue(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase();
+}
+
+async function recordPinFailure(profile: { id: string; pinFailedAttempts: number }) {
+  const failedAttempts = profile.pinFailedAttempts + 1;
+  await prisma.staffProfile.update({
+    where: { id: profile.id },
+    data: {
+      pinFailedAttempts: failedAttempts,
+      pinLastFailedAt: new Date(),
+      pinLockedUntil: failedAttempts >= PIN_FAILURE_LIMIT ? new Date(Date.now() + PIN_LOCK_MS) : null
+    }
+  });
+}
+
+async function resetPinFailures(staffProfileId: string) {
+  await prisma.staffProfile.update({
+    where: { id: staffProfileId },
+    data: {
+      pinFailedAttempts: 0,
+      pinLockedUntil: null,
+      pinLastFailedAt: null
+    }
+  });
 }
 
 function requireDeviceAccount(user: AuthUser | undefined | null): AuthUser {
@@ -237,16 +263,25 @@ export const deviceService = {
       select: {
         id: true,
         venue: true,
-        pinHash: true
+        pinHash: true,
+        pinFailedAttempts: true,
+        pinLockedUntil: true
       }
     });
     if (!profile || !profile.pinHash || normaliseVenue(profile.venue) !== normaliseVenue(device.venue)) {
-      throw new HttpError(401, 'PIN login failed.');
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    }
+    if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) {
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
     }
     const ok = await authService.comparePin(data.pin, profile.pinHash);
-    if (!ok) throw new HttpError(401, 'PIN login failed.');
+    if (!ok) {
+      await recordPinFailure(profile);
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    }
     const staffUser = await authService.getActiveHumanById(profile.id);
-    if (!staffUser) throw new HttpError(401, 'PIN login failed.');
+    if (!staffUser) throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    await resetPinFailures(profile.id);
     return authService.effectiveDeviceUser(device, staffUser);
   }
 };

@@ -28,6 +28,9 @@ export const searchService = {
       }),
       prisma.staffProfile.findMany({
         where: {
+          accountType: 'HUMAN',
+          employmentStatus: { not: 'ARCHIVED' },
+          mergedIntoStaffProfileId: null,
           OR: [
             { firstName: { contains: query, mode: 'insensitive' } },
             { lastName: { contains: query, mode: 'insensitive' } },

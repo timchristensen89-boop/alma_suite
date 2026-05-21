@@ -27,8 +27,13 @@ async function recalculateStaffTrainingPay(staffProfileId: string) {
         orderBy: { level: 'desc' }
       })
     : null;
-  const staff = await prisma.staffProfile.findUnique({
-    where: { id: staffProfileId },
+  const staff = await prisma.staffProfile.findFirst({
+    where: {
+      id: staffProfileId,
+      accountType: 'HUMAN',
+      employmentStatus: { not: 'ARCHIVED' },
+      mergedIntoStaffProfileId: null
+    },
     select: { payRateCents: true }
   });
 
@@ -58,6 +63,11 @@ export const trainingService = {
         orderBy: [{ level: 'asc' }]
       }),
       prisma.staffTrainingRecord.findMany({
+        where: {
+          staffProfile: {
+            accountType: 'HUMAN'
+          }
+        },
         orderBy: [{ updatedAt: 'desc' }],
         include: {
           module: true,
@@ -76,7 +86,11 @@ export const trainingService = {
         }
       }),
       prisma.staffProfile.findMany({
-        where: { employmentStatus: { not: 'ARCHIVED' } },
+        where: {
+          accountType: 'HUMAN',
+          employmentStatus: { not: 'ARCHIVED' },
+          mergedIntoStaffProfileId: null
+        },
         orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
         select: {
           id: true,
@@ -152,7 +166,14 @@ export const trainingService = {
   async assign(input: unknown) {
     const data = staffTrainingAssignInputSchema.parse(input);
     const [staff, module] = await Promise.all([
-      prisma.staffProfile.findUnique({ where: { id: data.staffProfileId } }),
+      prisma.staffProfile.findFirst({
+        where: {
+          id: data.staffProfileId,
+          accountType: 'HUMAN',
+          employmentStatus: { not: 'ARCHIVED' },
+          mergedIntoStaffProfileId: null
+        }
+      }),
       prisma.trainingModule.findUnique({ where: { id: data.moduleId } })
     ]);
 

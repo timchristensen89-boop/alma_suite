@@ -317,7 +317,7 @@ async function venueOptions(actor?: AuthUser | null) {
       orderBy: { venue: 'asc' }
     }),
     prisma.staffProfile.findMany({
-      where: { venue: { not: null }, employmentStatus: { not: 'ARCHIVED' } },
+      where: { accountType: 'HUMAN', venue: { not: null }, employmentStatus: { not: 'ARCHIVED' } },
       distinct: ['venue'],
       select: { venue: true },
       orderBy: { venue: 'asc' }

@@ -133,6 +133,7 @@ export async function authMiddleware(
           ) {
             req.deviceUser = sessionUser;
             req.pinUser = pinUser;
+            // TODO: add durable deviceUserId audit fields for shared device actions.
             req.user = authService.effectiveDeviceUser(sessionUser, pinUser);
           }
         }

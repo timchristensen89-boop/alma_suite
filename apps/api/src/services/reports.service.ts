@@ -48,6 +48,7 @@ function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
 function staffProfileScope(actor?: AuthUser | null, requestedVenue?: string | null): Prisma.StaffProfileWhereInput {
   const venue = actorVenueScope(actor, requestedVenue);
   return {
+    accountType: 'HUMAN',
     employmentStatus: { not: 'ARCHIVED' },
     ...(venue ? { venue } : {})
   };

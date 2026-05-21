@@ -31,6 +31,10 @@ function hasEnabledStockAccess(user: AuthUser) {
   return user.appAccess.some((access) => access.appId === 'STOCK' && access.status === 'ENABLED');
 }
 
+function isWrite(req: Request) {
+  return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
+}
+
 function bearerToken(req: Request) {
   const header = req.header('authorization') ?? '';
   const match = header.match(/^bearer\s+(.+)$/i);
@@ -60,6 +64,10 @@ export async function authMiddleware(
 
   if (!hasEnabledStockAccess(req.user)) {
     return next(new HttpError(403, 'Stock access disabled'));
+  }
+
+  if (req.user.accountType === 'VENUE_DEVICE' && isWrite(req)) {
+    return next(new HttpError(403, 'Staff PIN context is required on this shared device.'));
   }
 
   return next();

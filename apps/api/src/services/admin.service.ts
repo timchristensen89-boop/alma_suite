@@ -190,6 +190,7 @@ export const adminService = {
   async accessUsers(): Promise<AdminAccessUsersPayload> {
     const users = await prisma.staffProfile.findMany({
       where: {
+        accountType: 'HUMAN',
         mergedIntoStaffProfileId: null,
         NOT: { employmentStatus: 'ARCHIVED' }
       },
@@ -300,6 +301,7 @@ export const adminService = {
     const users = await prisma.staffProfile.findMany({
       where: {
         id: { in: data.staffProfileIds },
+        accountType: 'HUMAN',
         mergedIntoStaffProfileId: null,
         NOT: { employmentStatus: 'ARCHIVED' }
       },

@@ -4653,7 +4653,13 @@ export const staffService = {
     const pinHash = await authService.hashPin(data.newPin);
     await prisma.staffProfile.update({
       where: { id: profile.id },
-      data: { pinHash, pinUpdatedAt: new Date() }
+      data: {
+        pinHash,
+        pinUpdatedAt: new Date(),
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        pinLastFailedAt: null
+      }
     });
     return { ok: true, pinUpdatedAt: new Date().toISOString() };
   },
@@ -4671,7 +4677,13 @@ export const staffService = {
     const pinHash = await authService.hashPin(data.pin);
     await prisma.staffProfile.update({
       where: { id: profile.id },
-      data: { pinHash, pinUpdatedAt: now }
+      data: {
+        pinHash,
+        pinUpdatedAt: now,
+        pinFailedAttempts: 0,
+        pinLockedUntil: null,
+        pinLastFailedAt: null
+      }
     });
     await prisma.staffManagementEvent.create({
       data: {

@@ -1,0 +1,4 @@
+ALTER TABLE "StaffProfile"
+ADD COLUMN "pinFailedAttempts" INTEGER NOT NULL DEFAULT 0,
+ADD COLUMN "pinLockedUntil" TIMESTAMP(3),
+ADD COLUMN "pinLastFailedAt" TIMESTAMP(3);
