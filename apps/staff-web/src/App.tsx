@@ -793,6 +793,7 @@ function StaffHome({
   onSelect: (id: string) => void;
   reload: () => Promise<void>;
 }) {
+  const navigate = useNavigate();
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const pending = staff.filter((member) => member.employmentStatus === 'PENDING');
   const withStaffAccess = staff.filter((member) =>
@@ -1081,9 +1082,18 @@ function StaffHome({
         <div className="staff-list" style={{ padding: 12 }}>
           {staff.map((member) => {
             const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
+            const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
+            const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
             return (
               <div key={member.id} className="staff-list-button">
-                <button type="button" className="staff-list-main" onClick={() => onSelect(member.id)}>
+                <button
+                  type="button"
+                  className="staff-list-main"
+                  onClick={() => {
+                    onSelect(member.id);
+                    navigate('/access');
+                  }}
+                >
                   <span>
                     <strong>
                       {member.firstName} {member.lastName}
@@ -1091,10 +1101,12 @@ function StaffHome({
                     <span className="subtle" style={{ display: 'block' }}>
                       {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
                     </span>
+                    {uploadedDocuments ? <span className="subtle" style={{ display: 'block' }}>{uploadedDocuments} uploaded document{uploadedDocuments === 1 ? '' : 's'} in profile</span> : null}
                     {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
                   </span>
                 </button>
                 <span className="staff-row-actions">
+                  {uploadedRsa ? <Badge tone="positive">RSA uploaded</Badge> : null}
                   {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
                   {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
                   <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
