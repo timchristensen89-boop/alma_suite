@@ -35,7 +35,7 @@ integrationsRouter.get('/meta/connect', async (req, res, next) => {
 
 integrationsRouter.get('/square/connect', async (req, res, next) => {
   try {
-    const payload = await integrationService.startConnect('square', req.user!);
+    const payload = await integrationService.startConnect('square', req.user!, req.query.account);
     res.redirect(302, payload.authorizationUrl);
   } catch (error) {
     next(error);
@@ -54,7 +54,7 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
   try {
     const payload = await integrationService.status();
     const provider = integrationService.normaliseProvider(String(_req.params.provider));
-    res.json(provider === 'SQUARE' ? payload.square : payload.xero);
+    res.json(provider === 'SQUARE' ? (payload.squareAccounts ?? { primary: payload.square }) : payload.xero);
   } catch (error) {
     next(error);
   }
@@ -62,7 +62,7 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
 
 integrationsRouter.post('/square/health-check', async (req, res, next) => {
   try {
-    res.json(await integrationService.checkSquareHealth(req.user!));
+    res.json(await integrationService.checkSquareHealth(req.user!, req.query.account));
   } catch (error) {
     next(error);
   }
@@ -70,7 +70,7 @@ integrationsRouter.post('/square/health-check', async (req, res, next) => {
 
 integrationsRouter.post('/square/refresh', async (req, res, next) => {
   try {
-    res.json(await integrationService.refreshSquare(req.user!));
+    res.json(await integrationService.refreshSquare(req.user!, req.query.account));
   } catch (error) {
     next(error);
   }
@@ -78,7 +78,7 @@ integrationsRouter.post('/square/refresh', async (req, res, next) => {
 
 integrationsRouter.post('/square/sync-locations', async (req, res, next) => {
   try {
-    res.json(await integrationService.syncSquareLocations(req.user!));
+    res.json(await integrationService.syncSquareLocations(req.user!, req.query.account));
   } catch (error) {
     next(error);
   }
@@ -126,7 +126,7 @@ integrationsRouter.post('/xero/supplier-bills/import', async (req, res, next) =>
 
 integrationsRouter.post('/:provider/connect', async (req, res, next) => {
   try {
-    res.json(await integrationService.startConnect(String(req.params.provider), req.user!));
+    res.json(await integrationService.startConnect(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));
   } catch (error) {
     next(error);
   }
@@ -134,7 +134,7 @@ integrationsRouter.post('/:provider/connect', async (req, res, next) => {
 
 integrationsRouter.post('/:provider/disconnect', async (req, res, next) => {
   try {
-    res.json(await integrationService.disconnect(String(req.params.provider), req.user!));
+    res.json(await integrationService.disconnect(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));
   } catch (error) {
     next(error);
   }
@@ -142,7 +142,7 @@ integrationsRouter.post('/:provider/disconnect', async (req, res, next) => {
 
 integrationsRouter.post('/:provider/test', async (req, res, next) => {
   try {
-    res.json(await integrationService.test(String(req.params.provider), req.user!));
+    res.json(await integrationService.test(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));
   } catch (error) {
     next(error);
   }
@@ -150,7 +150,7 @@ integrationsRouter.post('/:provider/test', async (req, res, next) => {
 
 export async function squareWebhookReceiver(req: Request, res: Response, next: NextFunction) {
   try {
-    res.json(await integrationService.handleSquareWebhook(req));
+    res.json(await integrationService.handleSquareWebhook(req, req.params.accountKey));
   } catch (error) {
     next(error);
   }

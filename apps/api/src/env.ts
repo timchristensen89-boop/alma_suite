@@ -90,16 +90,30 @@ export const env = {
     tokenEncryptionKey: process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY ?? '',
     allowOAuthConnections: process.env.INTEGRATION_OAUTH_CONNECTIONS_ENABLED === 'true',
     square: {
-      applicationId: process.env.SQUARE_APPLICATION_ID ?? '',
-      applicationSecret: process.env.SQUARE_APPLICATION_SECRET ?? '',
+      accounts: {
+        primary: {
+          applicationId: process.env.SQUARE_PRIMARY_APPLICATION_ID ?? process.env.SQUARE_APPLICATION_ID ?? '',
+          applicationSecret: process.env.SQUARE_PRIMARY_APPLICATION_SECRET ?? process.env.SQUARE_APPLICATION_SECRET ?? '',
+          webhookSignatureKey: process.env.SQUARE_PRIMARY_WEBHOOK_SIGNATURE_KEY ?? process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? '',
+          label: process.env.SQUARE_PRIMARY_LABEL ?? 'St Alma'
+        },
+        secondary: {
+          applicationId: process.env.SQUARE_SECONDARY_APPLICATION_ID ?? '',
+          applicationSecret: process.env.SQUARE_SECONDARY_APPLICATION_SECRET ?? '',
+          webhookSignatureKey: process.env.SQUARE_SECONDARY_WEBHOOK_SIGNATURE_KEY ?? '',
+          label: process.env.SQUARE_SECONDARY_LABEL ?? 'Alma Avalon'
+        }
+      },
       environment: (process.env.SQUARE_ENVIRONMENT ?? 'sandbox').toLowerCase(),
       apiVersion: process.env.SQUARE_API_VERSION ?? '2025-12-17',
       redirectUrl:
         process.env.SQUARE_REDIRECT_URI ??
         process.env.SQUARE_REDIRECT_URL ??
         `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/callback`,
-      webhookSignatureKey: process.env.SQUARE_WEBHOOK_SIGNATURE_KEY ?? '',
-      webhookUrl: process.env.SQUARE_WEBHOOK_URL ?? process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/webhooks/square`
+      webhookUrl:
+        process.env.SQUARE_WEBHOOK_URL ??
+        process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ??
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/webhook`
     },
     xero: {
       clientId: process.env.XERO_CLIENT_ID ?? '',

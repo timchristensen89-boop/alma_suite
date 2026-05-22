@@ -31,6 +31,9 @@ import {
 import { HttpError } from '../lib/http.js';
 
 type Provider = 'SQUARE' | 'XERO';
+type SquareAccountKey = 'primary' | 'secondary';
+
+const SQUARE_ACCOUNT_KEYS: SquareAccountKey[] = ['primary', 'secondary'];
 
 const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ',
@@ -94,6 +97,15 @@ function hashState(state: string) {
   return crypto.createHash('sha256').update(state).digest('hex');
 }
 
+function createSquareState(accountKey: SquareAccountKey) {
+  return `${accountKey}.${crypto.randomBytes(32).toString('hex')}`;
+}
+
+function squareAccountKeyFromState(state: string) {
+  const [accountKey] = state.split('.');
+  return normaliseSquareAccountKey(accountKey);
+}
+
 function base64UrlEncode(value: string) {
   return Buffer.from(value, 'utf8').toString('base64url');
 }
@@ -140,18 +152,33 @@ function normaliseProvider(provider: string): Provider {
   throw new HttpError(404, 'Integration provider not found.');
 }
 
-function providerConfig(provider: Provider) {
+function normaliseSquareAccountKey(value: unknown): SquareAccountKey {
+  if (value === 'secondary') return 'secondary';
+  if (value === 'primary' || value === undefined || value === null || value === '') return 'primary';
+  throw new HttpError(400, 'Unknown Square account.');
+}
+
+function squareAccountConfig(accountKey: SquareAccountKey) {
+  return env.integrations.square.accounts[accountKey];
+}
+
+function squareWebhookUrl(accountKey: SquareAccountKey) {
+  return `${env.integrations.square.webhookUrl.replace(/\/+$/, '')}/${accountKey}`;
+}
+
+function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'primary') {
   if (provider === 'SQUARE') {
     const isProduction = env.integrations.square.environment === 'production';
+    const account = squareAccountConfig(accountKey);
     return {
       configured: Boolean(
-        env.integrations.square.applicationId &&
-          env.integrations.square.applicationSecret &&
+        account.applicationId &&
+          account.applicationSecret &&
           env.integrations.square.redirectUrl
       ),
       missingEnvVars: [
-        env.integrations.square.applicationId ? null : 'SQUARE_APPLICATION_ID',
-        env.integrations.square.applicationSecret ? null : 'SQUARE_APPLICATION_SECRET',
+        account.applicationId ? null : `SQUARE_${accountKey.toUpperCase()}_APPLICATION_ID`,
+        account.applicationSecret ? null : `SQUARE_${accountKey.toUpperCase()}_APPLICATION_SECRET`,
         env.integrations.square.redirectUrl ? null : 'SQUARE_REDIRECT_URI'
       ].filter((value): value is string => Boolean(value)),
       environment: isProduction ? 'production' : 'sandbox',
@@ -159,7 +186,8 @@ function providerConfig(provider: Provider) {
       apiBaseUrl: isProduction ? 'https://connect.squareup.com/v2' : 'https://connect.squareupsandbox.com/v2',
       apiVersion: env.integrations.square.apiVersion,
       redirectUri: env.integrations.square.redirectUrl,
-      webhookConfigured: Boolean(env.integrations.square.webhookSignatureKey && env.integrations.square.webhookUrl)
+      webhookUrl: squareWebhookUrl(accountKey),
+      webhookConfigured: Boolean(account.webhookSignatureKey && env.integrations.square.webhookUrl)
     };
   }
 
@@ -179,6 +207,7 @@ function providerConfig(provider: Provider) {
     apiBaseUrl: null,
     apiVersion: null,
     redirectUri: env.integrations.xero.redirectUrl,
+    webhookUrl: null,
     webhookConfigured: Boolean(env.integrations.xero.webhookKey)
   };
 }
@@ -198,11 +227,26 @@ function metaConfig() {
   };
 }
 
-function connectionSelect(provider: Provider) {
-  return prisma.integrationConnection.findFirst({
-    where: { provider, scopeType: 'BUSINESS' },
+async function connectionSelect(provider: Provider, accountKey?: SquareAccountKey) {
+  const where: Prisma.IntegrationConnectionWhereInput = { provider, scopeType: 'BUSINESS' };
+  if (provider === 'SQUARE' && accountKey) {
+    where.metadata = { path: ['squareAccountKey'], equals: accountKey };
+  }
+  const connection = await prisma.integrationConnection.findFirst({
+    where,
     orderBy: { updatedAt: 'desc' }
   });
+  if (connection || provider !== 'SQUARE' || accountKey !== 'primary') return connection;
+
+  const legacyConnections = await prisma.integrationConnection.findMany({
+    where: { provider, scopeType: 'BUSINESS' },
+    orderBy: { updatedAt: 'desc' },
+    take: 10
+  });
+  return legacyConnections.find((candidate) => {
+    const key = optionalText(metadataRecord(candidate.metadata).squareAccountKey);
+    return key !== 'primary' && key !== 'secondary';
+  }) ?? null;
 }
 
 function isMissingIntegrationStorage(error: unknown) {
@@ -313,6 +357,11 @@ function metadataRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function squareAccountKeyFromConnection(connection: IntegrationConnection | null | undefined): SquareAccountKey {
+  const key = optionalText(metadataRecord(connection?.metadata).squareAccountKey);
+  return key === 'secondary' ? 'secondary' : 'primary';
+}
+
 function squareLocationSummary(location: SquareLocation) {
   return {
     id: optionalText(location.id) ?? '',
@@ -325,6 +374,7 @@ function squareLocationSummary(location: SquareLocation) {
 }
 
 function squareMetadata(input: {
+  accountKey: SquareAccountKey;
   existing?: unknown;
   locations?: SquareLocation[];
   syncedAt?: Date;
@@ -332,9 +382,12 @@ function squareMetadata(input: {
   const locations = input.locations?.map(squareLocationSummary).filter((location) => location.id) ?? [];
   return {
     ...metadataRecord(input.existing),
-    squareEnvironment: providerConfig('SQUARE').environment,
+    squareAccountKey: input.accountKey,
+    squareAccountLabel: squareAccountConfig(input.accountKey).label,
+    squareEnvironment: providerConfig('SQUARE', input.accountKey).environment,
     squareApiVersion: env.integrations.square.apiVersion,
     squareRedirectUri: env.integrations.square.redirectUrl,
+    squareWebhookUrl: squareWebhookUrl(input.accountKey),
     ...(input.locations ? { squareLocations: locations, squareLocationCount: locations.length } : {}),
     ...(input.syncedAt ? { squareLocationsSyncedAt: input.syncedAt.toISOString() } : {})
   };
@@ -362,14 +415,45 @@ function squareMetadataStatus(connection: IntegrationConnection | null | undefin
   };
 }
 
-async function providerStatus(provider: Provider): Promise<IntegrationProviderStatus> {
+async function squareWebhookStats(accountKey: SquareAccountKey) {
+  try {
+    const [latest, latestProcessed, total, failed] = await Promise.all([
+      prisma.integrationWebhookEvent.findFirst({
+        where: { provider: 'SQUARE', accountKey },
+        orderBy: { receivedAt: 'desc' }
+      }),
+      prisma.integrationWebhookEvent.findFirst({
+        where: { provider: 'SQUARE', accountKey, processedAt: { not: null } },
+        orderBy: { processedAt: 'desc' }
+      }),
+      prisma.integrationWebhookEvent.count({ where: { provider: 'SQUARE', accountKey } }),
+      prisma.integrationWebhookEvent.count({ where: { provider: 'SQUARE', accountKey, status: 'ERROR' } })
+    ]);
+    return {
+      webhookLastReceivedAt: toIso(latest?.receivedAt),
+      webhookLastProcessedAt: toIso(latestProcessed?.processedAt),
+      webhookEventCount: total,
+      webhookFailedEventCount: failed
+    };
+  } catch (error) {
+    if (!isMissingIntegrationStorage(error)) throw error;
+    return {
+      webhookLastReceivedAt: null,
+      webhookLastProcessedAt: null,
+      webhookEventCount: 0,
+      webhookFailedEventCount: 0
+    };
+  }
+}
+
+async function providerStatus(provider: Provider, accountKey: SquareAccountKey = 'primary'): Promise<IntegrationProviderStatus> {
   const copy = PROVIDER_COPY[provider];
-  const config = providerConfig(provider);
+  const config = providerConfig(provider, accountKey);
   const tokenStorage = integrationTokenEncryptionStatus();
   let connection: Awaited<ReturnType<typeof connectionSelect>> | null = null;
   let storageReady = true;
   try {
-    connection = await connectionSelect(provider);
+    connection = await connectionSelect(provider, provider === 'SQUARE' ? accountKey : undefined);
   } catch (error) {
     if (!isMissingIntegrationStorage(error)) throw error;
     storageReady = false;
@@ -386,10 +470,19 @@ async function providerStatus(provider: Provider): Promise<IntegrationProviderSt
     ? 'NOT_CONFIGURED'
     : connection?.status ?? 'NOT_CONNECTED';
   const squareStatus = provider === 'SQUARE' ? squareMetadataStatus(connection) : null;
+  const webhookStats = provider === 'SQUARE'
+    ? await squareWebhookStats(accountKey)
+    : {
+        webhookLastReceivedAt: null,
+        webhookLastProcessedAt: null,
+        webhookEventCount: 0,
+        webhookFailedEventCount: 0
+      };
 
   return {
     provider: copy.key,
-    label: copy.label,
+    accountKey: provider === 'SQUARE' ? accountKey : undefined,
+    label: provider === 'SQUARE' ? squareAccountConfig(accountKey).label : copy.label,
     status,
     configured: config.configured && tokenStorage.configured,
     canConnect: !reason,
@@ -405,8 +498,10 @@ async function providerStatus(provider: Provider): Promise<IntegrationProviderSt
     environment: config.environment,
     apiVersion: config.apiVersion,
     redirectUri: config.redirectUri,
+    webhookUrl: config.webhookUrl,
     webhookConfigured: config.webhookConfigured,
     webhookStatus: config.webhookConfigured ? 'configured' : 'missing',
+    ...webhookStats,
     powers: copy.powers,
     requiredSetup: copy.requiredSetup,
     missingEnvVars,
@@ -443,16 +538,18 @@ async function latestSyncRuns() {
   }));
 }
 
-async function exchangeSquareToken(code: string) {
-  const response = await fetch(`${providerConfig('SQUARE').oauthBaseUrl}/token`, {
+async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
+  const config = providerConfig('SQUARE', accountKey);
+  const account = squareAccountConfig(accountKey);
+  const response = await fetch(`${config.oauthBaseUrl}/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
     body: JSON.stringify({
-      client_id: env.integrations.square.applicationId,
-      client_secret: env.integrations.square.applicationSecret,
+      client_id: account.applicationId,
+      client_secret: account.applicationSecret,
       code,
       grant_type: 'authorization_code',
       redirect_uri: env.integrations.square.redirectUrl
@@ -467,16 +564,18 @@ async function exchangeSquareToken(code: string) {
   return body as SquareTokenResponse;
 }
 
-async function refreshSquareToken(refreshToken: string): Promise<SquareTokenResponse> {
-  const response = await fetch(`${providerConfig('SQUARE').oauthBaseUrl}/token`, {
+async function refreshSquareToken(refreshToken: string, accountKey: SquareAccountKey): Promise<SquareTokenResponse> {
+  const config = providerConfig('SQUARE', accountKey);
+  const account = squareAccountConfig(accountKey);
+  const response = await fetch(`${config.oauthBaseUrl}/token`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Accept': 'application/json'
     },
     body: JSON.stringify({
-      client_id: env.integrations.square.applicationId,
-      client_secret: env.integrations.square.applicationSecret,
+      client_id: account.applicationId,
+      client_secret: account.applicationSecret,
       refresh_token: refreshToken,
       grant_type: 'refresh_token'
     })
@@ -498,7 +597,8 @@ async function refreshSquareConnection(connection: IntegrationConnection) {
     throw new HttpError(409, 'Square refresh token is missing.');
   }
 
-  const token = await refreshSquareToken(decryptIntegrationSecret(connection.refreshTokenEncrypted));
+  const accountKey = squareAccountKeyFromConnection(connection);
+  const token = await refreshSquareToken(decryptIntegrationSecret(connection.refreshTokenEncrypted), accountKey);
   if (!token.access_token || !token.refresh_token) {
     throw new HttpError(502, 'Square did not return refreshed OAuth tokens.');
   }
@@ -512,7 +612,7 @@ async function refreshSquareConnection(connection: IntegrationConnection) {
       scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : scopesFromJson(connection.scopes),
       status: 'CONNECTED',
       lastError: null,
-      metadata: squareMetadata({ existing: connection.metadata })
+      metadata: squareMetadata({ accountKey, existing: connection.metadata })
     }
   });
 }
@@ -545,8 +645,8 @@ async function validSquareToken(connection: IntegrationConnection) {
   };
 }
 
-async function squareGetJsonWithAccessToken<T>(path: string, accessToken: string): Promise<T> {
-  const config = providerConfig('SQUARE');
+async function squareGetJsonWithAccessToken<T>(path: string, accessToken: string, accountKey: SquareAccountKey): Promise<T> {
+  const config = providerConfig('SQUARE', accountKey);
   const response = await fetch(`${config.apiBaseUrl}${path}`, {
     method: 'GET',
     headers: {
@@ -568,10 +668,10 @@ async function squareGetJsonWithAccessToken<T>(path: string, accessToken: string
   return response.json() as Promise<T>;
 }
 
-async function connectedSquareConnection() {
-  const connection = await connectionSelect('SQUARE');
+async function connectedSquareConnection(accountKey: SquareAccountKey) {
+  const connection = await connectionSelect('SQUARE', accountKey);
   if (!connection || connection.status !== 'CONNECTED') {
-    throw new HttpError(409, 'Square is not connected.');
+    throw new HttpError(409, `${squareAccountConfig(accountKey).label} Square is not connected.`);
   }
   return connection;
 }
@@ -587,7 +687,7 @@ async function squareGetJson<T>(
 
   try {
     return {
-      data: await squareGetJsonWithAccessToken<T>(path, accessToken),
+      data: await squareGetJsonWithAccessToken<T>(path, accessToken, squareAccountKeyFromConnection(connection)),
       connection,
       tokenStatus
     };
@@ -1176,10 +1276,10 @@ function metaStatus(): AdminMetaIntegrationStatus {
   };
 }
 
-function verifySquareSignature(req: Request, rawBody: string) {
+function verifySquareSignature(req: Request, rawBody: string, accountKey: SquareAccountKey) {
   const signature = req.header('x-square-hmacsha256-signature');
-  const key = env.integrations.square.webhookSignatureKey;
-  const url = env.integrations.square.webhookUrl;
+  const key = squareAccountConfig(accountKey).webhookSignatureKey;
+  const url = squareWebhookUrl(accountKey);
   if (!key || !url) throw new HttpError(503, 'Square webhook verification is not configured.');
   const generated = crypto.createHmac('sha256', key).update(`${url}${rawBody}`).digest('base64');
   return safeCompareBase64(signature, generated);
@@ -1199,34 +1299,51 @@ function rawBodyFromRequest(req: Request) {
   return JSON.stringify(req.body ?? {});
 }
 
-async function recordWebhook(provider: Provider, rawBody: string) {
+function providerDate(value: unknown) {
+  if (typeof value !== 'string' || !value) return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+async function recordWebhook(provider: Provider, rawBody: string, accountKey: SquareAccountKey | 'default' = 'default') {
   const parsed = JSON.parse(rawBody || '{}') as Record<string, unknown>;
+  const squareEventId = typeof parsed.event_id === 'string' ? parsed.event_id : null;
+  const squareEventType = typeof parsed.type === 'string' ? parsed.type : null;
+  if (provider === 'SQUARE' && (!squareEventId || !squareEventType)) {
+    throw new HttpError(400, 'Invalid Square webhook payload.');
+  }
   const eventId =
-    typeof parsed.event_id === 'string'
-      ? parsed.event_id
-      : typeof parsed.eventId === 'string'
-        ? parsed.eventId
-        : typeof parsed.id === 'string'
-          ? parsed.id
-          : crypto.createHash('sha256').update(rawBody).digest('hex');
+    squareEventId ??
+    (typeof parsed.eventId === 'string'
+      ? parsed.eventId
+      : typeof parsed.id === 'string'
+        ? parsed.id
+        : crypto.createHash('sha256').update(rawBody).digest('hex'));
   const eventType =
-    typeof parsed.type === 'string'
-      ? parsed.type
-      : typeof parsed.eventType === 'string'
-        ? parsed.eventType
-        : Array.isArray(parsed.events)
-          ? 'batch'
-          : null;
-  const connection = await connectionSelect(provider);
+    squareEventType ??
+    (typeof parsed.eventType === 'string'
+      ? parsed.eventType
+      : Array.isArray(parsed.events)
+        ? 'batch'
+        : null);
+  const merchantId = typeof parsed.merchant_id === 'string' ? parsed.merchant_id : null;
+  const locationId = typeof parsed.location_id === 'string' ? parsed.location_id : null;
+  const providerCreatedAt = providerDate(parsed.created_at);
+  const connection = await connectionSelect(provider, provider === 'SQUARE' && accountKey !== 'default' ? accountKey : undefined);
 
   try {
-    await prisma.integrationWebhookEvent.create({
+    const webhookEvent = await prisma.integrationWebhookEvent.create({
       data: {
         provider,
         connectionId: connection?.id ?? null,
+        accountKey,
         providerEventId: eventId,
+        merchantId,
+        locationId,
         eventType,
+        providerCreatedAt,
         status: 'RECEIVED',
+        payload: parsed as Prisma.InputJsonObject,
         processedAt: new Date()
       }
     });
@@ -1239,6 +1356,26 @@ async function recordWebhook(provider: Provider, rawBody: string) {
         finishedAt: new Date()
       }
     });
+    if (provider === 'SQUARE' && eventType === 'oauth.authorization.revoked' && connection) {
+      await prisma.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          status: 'REVOKED',
+          disconnectedAt: new Date(),
+          tokenEncrypted: null,
+          refreshTokenEncrypted: null,
+          tokenExpiresAt: null,
+          lastError: 'Square OAuth authorization revoked by merchant.'
+        }
+      });
+      await recordEvent({
+        provider,
+        connectionId: connection.id,
+        eventType: 'OAUTH_REVOKED',
+        summary: `${accountKey === 'default' ? 'Square' : squareAccountConfig(accountKey).label} Square OAuth authorization was revoked.`,
+        metadata: { accountKey, providerEventId: webhookEvent.providerEventId, merchantId }
+      });
+    }
     return { received: true, duplicate: false };
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
@@ -1310,15 +1447,20 @@ export const integrationService = {
   },
 
   async status(): Promise<IntegrationStatusPayload> {
-    const [square, xero, syncRuns] = await Promise.all([
-      providerStatus('SQUARE'),
+    const [primarySquare, secondarySquare, xero, syncRuns] = await Promise.all([
+      providerStatus('SQUARE', 'primary'),
+      providerStatus('SQUARE', 'secondary'),
       providerStatus('XERO'),
       latestSyncRuns()
     ]);
 
     return {
       generatedAt: new Date().toISOString(),
-      square,
+      square: primarySquare,
+      squareAccounts: {
+        primary: primarySquare,
+        secondary: secondarySquare
+      },
       xero,
       meta: metaStatus(),
       latestSyncRuns: syncRuns,
@@ -1326,12 +1468,15 @@ export const integrationService = {
     };
   },
 
-  async checkSquareHealth(actor: AuthUser) {
+  async checkSquareHealth(actor: AuthUser, accountInput?: unknown) {
+    const accountKey = normaliseSquareAccountKey(accountInput);
     const checkedAt = new Date();
-    const config = providerConfig('SQUARE');
+    const config = providerConfig('SQUARE', accountKey);
     const tokenStorage = integrationTokenEncryptionStatus();
     const base = {
       provider: 'square' as const,
+      accountKey,
+      label: squareAccountConfig(accountKey).label,
       checkedAt: checkedAt.toISOString(),
       environment: config.environment,
       apiVersion: config.apiVersion
@@ -1350,7 +1495,7 @@ export const integrationService = {
 
     let connection: Awaited<ReturnType<typeof connectionSelect>> | null = null;
     try {
-      connection = await connectionSelect('SQUARE');
+      connection = await connectionSelect('SQUARE', accountKey);
     } catch (error) {
       if (!isMissingIntegrationStorage(error)) throw error;
       return {
@@ -1386,6 +1531,7 @@ export const integrationService = {
           lastSyncStatus: 'SUCCESS',
           lastError: null,
           metadata: squareMetadata({
+            accountKey,
             existing: response.connection.metadata,
             locations: response.locations,
             syncedAt
@@ -1410,6 +1556,7 @@ export const integrationService = {
         actor,
         metadata: {
           tokenStatus: response.tokenStatus,
+          accountKey,
           locationCount: locations.length
         }
       });
@@ -1463,25 +1610,28 @@ export const integrationService = {
     }
   },
 
-  async refreshSquare(actor: AuthUser) {
-    const connection = await connectedSquareConnection();
+  async refreshSquare(actor: AuthUser, accountInput?: unknown) {
+    const accountKey = normaliseSquareAccountKey(accountInput);
+    const connection = await connectedSquareConnection(accountKey);
     const refreshed = await refreshSquareConnection(connection);
     await recordEvent({
       provider: 'SQUARE',
       connectionId: refreshed.id,
       eventType: 'TOKEN_REFRESHED',
-      summary: 'Square OAuth token was refreshed manually.',
+      summary: `${squareAccountConfig(accountKey).label} Square OAuth token was refreshed manually.`,
       actor
     });
     return {
       ok: true,
       provider: 'square' as const,
+      accountKey,
       expiresAt: toIso(refreshed.tokenExpiresAt)
     };
   },
 
-  async syncSquareLocations(actor: AuthUser) {
-    const connection = await connectedSquareConnection();
+  async syncSquareLocations(actor: AuthUser, accountInput?: unknown) {
+    const accountKey = normaliseSquareAccountKey(accountInput);
+    const connection = await connectedSquareConnection(accountKey);
     const response = await listSquareLocations(connection);
     const syncedAt = new Date();
     const locations = response.locations.map(squareLocationSummary).filter((location) => location.id);
@@ -1493,6 +1643,7 @@ export const integrationService = {
         lastSyncStatus: 'SUCCESS',
         lastError: null,
         metadata: squareMetadata({
+          accountKey,
           existing: response.connection.metadata,
           locations: response.locations,
           syncedAt
@@ -1513,14 +1664,15 @@ export const integrationService = {
       provider: 'SQUARE',
       connectionId: updated.id,
       eventType: 'LOCATIONS_SYNCED',
-      summary: `Square location sync finished: ${locations.length} locations read.`,
+      summary: `${squareAccountConfig(accountKey).label} Square location sync finished: ${locations.length} locations read.`,
       actor,
-      metadata: { locationCount: locations.length }
+      metadata: { accountKey, locationCount: locations.length }
     });
     return {
       provider: 'square' as const,
+      accountKey,
       generatedAt: syncedAt.toISOString(),
-      environment: providerConfig('SQUARE').environment,
+      environment: providerConfig('SQUARE', accountKey).environment,
       apiVersion: env.integrations.square.apiVersion,
       locationCount: locations.length,
       locations,
@@ -2084,14 +2236,15 @@ export const integrationService = {
     };
   },
 
-  async startConnect(providerInput: string, actor: AuthUser): Promise<IntegrationConnectResponse> {
+  async startConnect(providerInput: string, actor: AuthUser, accountInput?: unknown): Promise<IntegrationConnectResponse> {
     const provider = normaliseProvider(providerInput);
-    const status = await providerStatus(provider);
+    const accountKey = provider === 'SQUARE' ? normaliseSquareAccountKey(accountInput) : undefined;
+    const status = await providerStatus(provider, accountKey);
     if (!status.canConnect) {
       throw new HttpError(503, status.connectBlockedReason ?? 'Integration connection is not configured.');
     }
 
-    const rawState = crypto.randomBytes(32).toString('hex');
+    const rawState = provider === 'SQUARE' && accountKey ? createSquareState(accountKey) : crypto.randomBytes(32).toString('hex');
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
     await prisma.integrationOAuthState.create({
       data: {
@@ -2105,13 +2258,18 @@ export const integrationService = {
     await recordEvent({
       provider,
       eventType: 'CONNECT_STARTED',
-      summary: `${PROVIDER_COPY[provider].label} OAuth connection started.`,
-      actor
+      summary: provider === 'SQUARE' && accountKey
+        ? `${squareAccountConfig(accountKey).label} Square OAuth connection started.`
+        : `${PROVIDER_COPY[provider].label} OAuth connection started.`,
+      actor,
+      metadata: provider === 'SQUARE' && accountKey ? { accountKey } : {}
     });
 
-    if (provider === 'SQUARE') {
-      const url = new URL(`${providerConfig('SQUARE').oauthBaseUrl}/authorize`);
-      url.searchParams.set('client_id', env.integrations.square.applicationId);
+    if (provider === 'SQUARE' && accountKey) {
+      const config = providerConfig('SQUARE', accountKey);
+      const account = squareAccountConfig(accountKey);
+      const url = new URL(`${config.oauthBaseUrl}/authorize`);
+      url.searchParams.set('client_id', account.applicationId);
       url.searchParams.set('scope', SQUARE_SCOPES.join(' '));
       url.searchParams.set('session', 'false');
       url.searchParams.set('state', rawState);
@@ -2133,6 +2291,7 @@ export const integrationService = {
     const state = typeof query.state === 'string' ? query.state : '';
     const error = typeof query.error === 'string' ? query.error : '';
     const code = typeof query.code === 'string' ? query.code : '';
+    const squareAccountKey = provider === 'SQUARE' ? squareAccountKeyFromState(state) : undefined;
     const stateRow = state
       ? await prisma.integrationOAuthState.findUnique({ where: { stateHash: hashState(state) } })
       : null;
@@ -2157,13 +2316,13 @@ export const integrationService = {
     }
 
     try {
-      if (provider === 'SQUARE') {
-        const token = await exchangeSquareToken(code);
+      if (provider === 'SQUARE' && squareAccountKey) {
+        const token = await exchangeSquareToken(code, squareAccountKey);
         if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Square did not return OAuth tokens.');
-        const locationResponse = await squareGetJsonWithAccessToken<SquareLocationsResponse>('/locations', token.access_token);
+        const locationResponse = await squareGetJsonWithAccessToken<SquareLocationsResponse>('/locations', token.access_token, squareAccountKey);
         const syncedAt = new Date();
         const connection = await prisma.integrationConnection.upsert({
-          where: { id: (await connectionSelect('SQUARE'))?.id ?? '__new_square_connection__' },
+          where: { id: (await connectionSelect('SQUARE', squareAccountKey))?.id ?? `__new_square_${squareAccountKey}_connection__` },
           update: {
             status: 'CONNECTED',
             connectedAt: new Date(),
@@ -2177,7 +2336,7 @@ export const integrationService = {
             tokenEncrypted: encryptIntegrationSecret(token.access_token),
             refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
             tokenExpiresAt: token.expires_at ? new Date(token.expires_at) : null,
-            metadata: squareMetadata({ locations: locationResponse.locations ?? [], syncedAt }),
+            metadata: squareMetadata({ accountKey: squareAccountKey, locations: locationResponse.locations ?? [], syncedAt }),
             updatedByUserId: stateRow.createdByUserId
           },
           create: {
@@ -2192,7 +2351,7 @@ export const integrationService = {
             tokenEncrypted: encryptIntegrationSecret(token.access_token),
             refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
             tokenExpiresAt: token.expires_at ? new Date(token.expires_at) : null,
-            metadata: squareMetadata({ locations: locationResponse.locations ?? [], syncedAt }),
+            metadata: squareMetadata({ accountKey: squareAccountKey, locations: locationResponse.locations ?? [], syncedAt }),
             updatedByUserId: stateRow.createdByUserId
           }
         });
@@ -2210,9 +2369,10 @@ export const integrationService = {
           provider,
           connectionId: connection.id,
           eventType: 'CONNECTED',
-          summary: 'Square connected successfully and locations were verified.',
+          summary: `${squareAccountConfig(squareAccountKey).label} Square connected successfully and locations were verified.`,
           metadata: {
-            environment: providerConfig('SQUARE').environment,
+            accountKey: squareAccountKey,
+            environment: providerConfig('SQUARE', squareAccountKey).environment,
             locationCount: locationResponse.locations?.length ?? 0
           }
         });
@@ -2267,9 +2427,10 @@ export const integrationService = {
     }
   },
 
-  async disconnect(providerInput: string, actor: AuthUser) {
+  async disconnect(providerInput: string, actor: AuthUser, accountInput?: unknown) {
     const provider = normaliseProvider(providerInput);
-    const connection = await connectionSelect(provider);
+    const accountKey = provider === 'SQUARE' ? normaliseSquareAccountKey(accountInput) : undefined;
+    const connection = await connectionSelect(provider, accountKey);
     if (!connection) throw new HttpError(404, 'Integration connection not found.');
     await prisma.integrationConnection.update({
       where: { id: connection.id },
@@ -2287,16 +2448,19 @@ export const integrationService = {
       provider,
       connectionId: connection.id,
       eventType: 'DISCONNECTED',
-      summary: `${PROVIDER_COPY[provider].label} disconnected locally.`,
-      actor
+      summary: provider === 'SQUARE' && accountKey
+        ? `${squareAccountConfig(accountKey).label} Square disconnected locally.`
+        : `${PROVIDER_COPY[provider].label} disconnected locally.`,
+      actor,
+      metadata: provider === 'SQUARE' && accountKey ? { accountKey } : {}
     });
     return { ok: true };
   },
 
-  async test(providerInput: string, actor: AuthUser) {
+  async test(providerInput: string, actor: AuthUser, accountInput?: unknown) {
     const provider = normaliseProvider(providerInput);
     if (provider === 'SQUARE') {
-      return integrationService.checkSquareHealth(actor);
+      return integrationService.checkSquareHealth(actor, accountInput);
     }
     const connection = await connectionSelect(provider);
     if (!connection || connection.status !== 'CONNECTED') {
@@ -2321,12 +2485,13 @@ export const integrationService = {
     return { ok: true, mode: 'local_metadata_only' };
   },
 
-  async handleSquareWebhook(req: Request) {
+  async handleSquareWebhook(req: Request, accountInput?: unknown) {
+    const accountKey = normaliseSquareAccountKey(accountInput);
     const rawBody = rawBodyFromRequest(req);
-    if (!verifySquareSignature(req, rawBody)) {
+    if (!verifySquareSignature(req, rawBody, accountKey)) {
       throw new HttpError(401, 'Invalid Square webhook signature.');
     }
-    return recordWebhook('SQUARE', rawBody);
+    return recordWebhook('SQUARE', rawBody, accountKey);
   },
 
   async handleXeroWebhook(req: Request) {

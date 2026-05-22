@@ -1129,17 +1129,18 @@ function IntegrationCard({
 }: {
   integration: IntegrationProviderStatus;
   busy: string | null;
-  onConnect: (provider: IntegrationProviderStatus['provider']) => void;
-  onDisconnect: (provider: IntegrationProviderStatus['provider']) => void;
+  onConnect: (integration: IntegrationProviderStatus) => void;
+  onDisconnect: (integration: IntegrationProviderStatus) => void;
   onHealthCheck?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
   xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
-  const isBusy = busy === integration.provider;
-  const isHealthBusy = busy === `${integration.provider}-health`;
-  const isRefreshBusy = busy === 'square-refresh';
-  const isSyncBusy = busy === 'square-sync-locations';
+  const accountSuffix = integration.accountKey ? `:${integration.accountKey}` : '';
+  const isBusy = busy === `${integration.provider}${accountSuffix}`;
+  const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
+  const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
+  const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isXero = integration.provider === 'xero';
   const isSquare = integration.provider === 'square';
 
@@ -1171,12 +1172,20 @@ function IntegrationCard({
               <p>{integration.redirectUri ?? 'Not configured'}</p>
             </div>
             <div>
+              <strong>Webhook URL</strong>
+              <p>{integration.webhookUrl ?? 'Not configured'}</p>
+            </div>
+            <div>
               <strong>Setup steps</strong>
-              <p>Create a Square app, add the redirect URI above, store the application ID and secret in API env/secrets, then connect from here.</p>
+              <p>Create this Square app, add the redirect URI and webhook URL above, store this account's app credentials and webhook signature key in API env/secrets, then connect from here.</p>
             </div>
             <div className="admin-status-stack">
               <StatusLine label="Environment" value={integration.environment ?? 'Not configured'} tone={integration.environment === 'production' ? 'warning' : 'info'} />
               <StatusLine label="API version" value={integration.apiVersion ?? 'Not configured'} tone="muted" />
+              <StatusLine label="Webhook key" value={integration.webhookConfigured ? 'Configured' : 'Missing'} tone={integration.webhookConfigured ? 'positive' : 'warning'} />
+              <StatusLine label="Webhook events" value={String(integration.webhookEventCount ?? 0)} tone={(integration.webhookEventCount ?? 0) ? 'info' : 'muted'} />
+              <StatusLine label="Last webhook" value={integration.webhookLastReceivedAt ? formatDate(integration.webhookLastReceivedAt) : 'No events yet'} tone="muted" />
+              <StatusLine label="Webhook failures" value={String(integration.webhookFailedEventCount ?? 0)} tone={(integration.webhookFailedEventCount ?? 0) ? 'danger' : 'muted'} />
               <StatusLine label="Locations" value={integration.locationCount === null || integration.locationCount === undefined ? 'Not synced' : String(integration.locationCount)} tone={integration.locationCount ? 'positive' : 'muted'} />
               <StatusLine label="Location sync" value={integration.lastLocationSyncAt ? formatDate(integration.lastLocationSyncAt) : 'No location sync yet'} tone="muted" />
             </div>
@@ -1228,12 +1237,12 @@ function IntegrationCard({
           <Button
             variant="secondary"
             disabled={integration.actionDisabled || isBusy}
-            onClick={() => onConnect(integration.provider)}
+            onClick={() => onConnect(integration)}
           >
             {isBusy ? 'Opening...' : integration.actionLabel}
           </Button>
           {integration.status === 'CONNECTED' ? (
-            <Button variant="ghost" disabled={isBusy} onClick={() => onDisconnect(integration.provider)}>
+            <Button variant="ghost" disabled={isBusy} onClick={() => onDisconnect(integration)}>
               Disconnect locally
             </Button>
           ) : null}
@@ -1635,10 +1644,19 @@ export function AdminPage({
     });
   }, [location.pathname]);
 
-  async function connectIntegration(provider: IntegrationProviderStatus['provider']) {
-    setIntegrationBusy(provider);
+  function integrationAccountQuery(integration: IntegrationProviderStatus) {
+    return integration.provider === 'square' && integration.accountKey ? `?account=${encodeURIComponent(integration.accountKey)}` : '';
+  }
+
+  function integrationBusyKey(integration: IntegrationProviderStatus, action = '') {
+    const accountSuffix = integration.accountKey ? `:${integration.accountKey}` : '';
+    return `${integration.provider}${accountSuffix}${action}`;
+  }
+
+  async function connectIntegration(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration));
     try {
-      const payload = await api<IntegrationConnectResponse>(`/api/integrations/${provider}/connect`, {
+      const payload = await api<IntegrationConnectResponse>(`/api/integrations/${integration.provider}/connect${integrationAccountQuery(integration)}`, {
         method: 'POST'
       });
       window.location.href = payload.authorizationUrl;
@@ -1653,11 +1671,11 @@ export function AdminPage({
     window.location.assign(apiUrl('/api/integrations/meta/connect'));
   }
 
-  async function disconnectIntegration(provider: IntegrationProviderStatus['provider']) {
-    setIntegrationBusy(provider);
+  async function disconnectIntegration(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration));
     try {
-      await api(`/api/integrations/${provider}/disconnect`, { method: 'POST' });
-      if (provider === 'xero') setXeroHealth(null);
+      await api(`/api/integrations/${integration.provider}/disconnect${integrationAccountQuery(integration)}`, { method: 'POST' });
+      if (integration.provider === 'xero') setXeroHealth(null);
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not disconnect integration.');
@@ -1682,11 +1700,11 @@ export function AdminPage({
     }
   }
 
-  async function checkSquareHealth() {
-    setIntegrationBusy('square-health');
+  async function checkSquareHealth(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration, '-health'));
     setError(null);
     try {
-      await api('/api/integrations/square/health-check', { method: 'POST' });
+      await api(`/api/integrations/square/health-check${integrationAccountQuery(integration)}`, { method: 'POST' });
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check Square health.');
@@ -1695,11 +1713,11 @@ export function AdminPage({
     }
   }
 
-  async function refreshSquareToken() {
-    setIntegrationBusy('square-refresh');
+  async function refreshSquareToken(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration, '-refresh'));
     setError(null);
     try {
-      await api('/api/integrations/square/refresh', { method: 'POST' });
+      await api(`/api/integrations/square/refresh${integrationAccountQuery(integration)}`, { method: 'POST' });
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not refresh Square token.');
@@ -1708,11 +1726,11 @@ export function AdminPage({
     }
   }
 
-  async function syncSquareLocations() {
-    setIntegrationBusy('square-sync-locations');
+  async function syncSquareLocations(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration, '-sync-locations'));
     setError(null);
     try {
-      await api('/api/integrations/square/sync-locations', { method: 'POST' });
+      await api(`/api/integrations/square/sync-locations${integrationAccountQuery(integration)}`, { method: 'POST' });
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sync Square locations.');
@@ -2974,22 +2992,29 @@ export function AdminPage({
         <div className="admin-integration-list">
           {integrations ? (
             <>
-              {(showXero && !showIntegrations ? [integrations.xero] : [integrations.square, integrations.xero]).map((integration) => (
+              {(showXero && !showIntegrations
+                ? [integrations.xero]
+                : [
+                    integrations.squareAccounts?.primary ?? integrations.square,
+                    integrations.squareAccounts?.secondary,
+                    integrations.xero
+                  ].filter((integration): integration is IntegrationProviderStatus => Boolean(integration))
+              ).map((integration) => (
                 <IntegrationCard
-                  key={integration.provider}
+                  key={`${integration.provider}:${integration.accountKey ?? 'default'}`}
                   integration={integration}
                   busy={integrationBusy}
-                  onConnect={(provider) => void connectIntegration(provider)}
-                  onDisconnect={(provider) => void disconnectIntegration(provider)}
+                  onConnect={(nextIntegration) => void connectIntegration(nextIntegration)}
+                  onDisconnect={(nextIntegration) => void disconnectIntegration(nextIntegration)}
                   onHealthCheck={
                     integration.provider === 'xero' && showXero
                       ? () => void checkXeroHealth()
                       : integration.provider === 'square'
-                        ? () => void checkSquareHealth()
+                        ? () => void checkSquareHealth(integration)
                         : undefined
                   }
-                  onRefresh={integration.provider === 'square' ? () => void refreshSquareToken() : undefined}
-                  onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations() : undefined}
+                  onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
+                  onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
               ))}

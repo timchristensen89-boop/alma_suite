@@ -2002,19 +2002,25 @@ model IntegrationEvent {
 }
 
 model IntegrationWebhookEvent {
-  id              String                        @id @default(cuid())
-  connectionId    String?
-  provider        IntegrationProvider
-  providerEventId String
-  eventType       String?
-  status          IntegrationWebhookEventStatus @default(RECEIVED)
-  receivedAt      DateTime                      @default(now())
-  processedAt     DateTime?
-  errorSummary    String?
-  connection      IntegrationConnection?        @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  id                    String                        @id @default(cuid())
+  connectionId          String?
+  provider              IntegrationProvider
+  accountKey            String                        @default("default")
+  providerEventId       String
+  merchantId            String?
+  locationId            String?
+  eventType             String?
+  providerCreatedAt     DateTime?
+  status                IntegrationWebhookEventStatus @default(RECEIVED)
+  payload               Json                          @default("{}")
+  receivedAt            DateTime                      @default(now())
+  processedAt           DateTime?
+  errorSummary          String?
+  connection            IntegrationConnection?        @relation(fields: [connectionId], references: [id], onDelete: SetNull)
 
-  @@unique([provider, providerEventId])
-  @@index([provider, receivedAt])
+  @@unique([provider, accountKey, providerEventId])
+  @@index([provider, accountKey, receivedAt])
+  @@index([provider, eventType, receivedAt])
 }
 
 model TemperatureSensor {

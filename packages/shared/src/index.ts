@@ -1713,9 +1713,11 @@ export type AdminMetaIntegrationStatus = {
 };
 export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
+export type SquareAccountKey = 'primary' | 'secondary';
 
 export type IntegrationProviderStatus = {
   provider: IntegrationProviderKey;
+  accountKey?: SquareAccountKey;
   label: string;
   status: IntegrationConnectionStatus;
   configured: boolean;
@@ -1732,8 +1734,13 @@ export type IntegrationProviderStatus = {
   environment: string | null;
   apiVersion?: string | null;
   redirectUri?: string | null;
+  webhookUrl?: string | null;
   webhookConfigured: boolean;
   webhookStatus: 'configured' | 'missing';
+  webhookLastReceivedAt?: string | null;
+  webhookLastProcessedAt?: string | null;
+  webhookEventCount?: number;
+  webhookFailedEventCount?: number;
   powers: string[];
   requiredSetup: string[];
   missingEnvVars: string[];
@@ -1766,6 +1773,7 @@ export type IntegrationSyncRunSummary = {
 export type IntegrationStatusPayload = {
   generatedAt: string;
   square: IntegrationProviderStatus;
+  squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: IntegrationProviderStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
@@ -1920,6 +1928,7 @@ export type LegacyAdminIntegrationProviderStatus = {
 export type AdminIntegrationsStatusPayload = {
   generatedAt: string;
   square: AdminIntegrationProviderStatus;
+  squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: AdminIntegrationProviderStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
