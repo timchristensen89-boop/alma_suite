@@ -1155,6 +1155,109 @@ tbody tr:hover {
 }
 
 /* ==========================================================================
+   Temperature graph
+   ========================================================================== */
+
+.temperature-graph-controls {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.35fr) repeat(2, minmax(160px, 0.8fr));
+  gap: 14px;
+  align-items: end;
+  margin-bottom: 18px;
+}
+
+.temperature-graph-layout {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.temperature-chart-wrap {
+  width: 100%;
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  -webkit-overflow-scrolling: touch;
+}
+
+.temperature-chart-svg {
+  display: block;
+  width: 100%;
+  min-width: 720px;
+  height: auto;
+  min-height: 260px;
+}
+
+.temperature-chart-safe-band {
+  fill: rgba(22, 163, 74, 0.1);
+}
+
+.temperature-chart-grid {
+  stroke: rgba(148, 163, 184, 0.34);
+  stroke-width: 1;
+}
+
+.temperature-chart-grid.vertical {
+  stroke-dasharray: 4 8;
+}
+
+.temperature-chart-grid.threshold {
+  stroke: rgba(22, 163, 74, 0.72);
+  stroke-dasharray: 7 5;
+}
+
+.temperature-chart-label {
+  fill: var(--color-text-subtle);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.temperature-chart-label.threshold-label {
+  fill: #15803d;
+}
+
+.temperature-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+}
+
+.temperature-chart-legend-item {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+
+.temperature-chart-color {
+  width: 10px;
+  height: 10px;
+  flex: 0 0 auto;
+  border-radius: 999px;
+}
+
+.temperature-graph-table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.temperature-graph-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.45fr) minmax(120px, 0.7fr) minmax(180px, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+/* ==========================================================================
    Helpers
    ========================================================================== */
 
@@ -2157,6 +2260,15 @@ tbody tr:hover {
   .detail-list > div {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .temperature-graph-controls,
+  .temperature-graph-row {
+    grid-template-columns: 1fr;
+  }
+
+  .temperature-chart-svg {
+    min-width: 640px;
   }
 
   .suite-fish {

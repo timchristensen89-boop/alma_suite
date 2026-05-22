@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { TemperatureAsset, TemperatureIntegration, TemperatureSensor, TemperatureSummary } from '@alma/shared';
+import type { TemperatureAsset, TemperatureIntegration, TemperatureLog, TemperatureSensor, TemperatureSummary } from '@alma/shared';
 import { ActionFeedback, Button, Card, Input, Select } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
@@ -20,14 +20,279 @@ type DiscoveryResult = {
 };
 
 const BASE_VENUES = ['Alma Avalon', 'St Alma'];
+const TEMPERATURE_CHART_COLORS = ['#2563eb', '#16a34a', '#dc2626', '#9333ea', '#c2410c', '#0891b2', '#be123c', '#4f46e5'];
+const shortDayFormatter = new Intl.DateTimeFormat('en-AU', { weekday: 'short', day: 'numeric' });
+
+type TemperatureGraphRange = {
+  fromDate: string;
+  toDate: string;
+};
 
 function toDateTimeLocal(date: Date) {
   const offsetMs = date.getTimezoneOffset() * 60 * 1000;
   return new Date(date.getTime() - offsetMs).toISOString().slice(0, 16);
 }
 
+function toDateInput(date: Date) {
+  const offsetMs = date.getTimezoneOffset() * 60 * 1000;
+  return new Date(date.getTime() - offsetMs).toISOString().slice(0, 10);
+}
+
+function defaultGraphRange(): TemperatureGraphRange {
+  const today = new Date();
+  const from = new Date(today);
+  from.setDate(today.getDate() - 6);
+  return {
+    fromDate: toDateInput(from),
+    toDate: toDateInput(today)
+  };
+}
+
+function dateAtStart(value: string) {
+  const date = new Date(`${value}T00:00:00`);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function dateAtEnd(value: string) {
+  const date = new Date(`${value}T23:59:59.999`);
+  return Number.isNaN(date.getTime()) ? new Date() : date;
+}
+
+function graphDays(from: Date, to: Date) {
+  const cursor = new Date(from);
+  cursor.setHours(0, 0, 0, 0);
+  const end = new Date(to);
+  end.setHours(0, 0, 0, 0);
+  const days: Date[] = [];
+
+  while (cursor <= end && days.length < 32) {
+    days.push(new Date(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return days;
+}
+
 function uniqueSorted(values: Array<string | null | undefined>) {
   return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))].sort();
+}
+
+function temperatureAssetLabel(log: TemperatureLog) {
+  if (!log.asset) {
+    return log.assetId;
+  }
+
+  return `${log.asset.name}${log.asset.area ? ` · ${log.asset.area}` : ''}`;
+}
+
+function FridgeTemperatureGraph({
+  error,
+  from,
+  loading,
+  logs,
+  selectedAsset,
+  to
+}: {
+  error: string | null;
+  from: Date;
+  loading: boolean;
+  logs: TemperatureLog[];
+  selectedAsset: TemperatureAsset | null;
+  to: Date;
+}) {
+  const chart = useMemo(() => {
+    const fromMs = from.getTime();
+    const toMs = to.getTime();
+    const validLogs = logs
+      .map((log) => ({
+        ...log,
+        recordedAtDate: new Date(log.recordedAt)
+      }))
+      .filter((log) =>
+        Number.isFinite(log.temperatureC) &&
+        !Number.isNaN(log.recordedAtDate.getTime()) &&
+        log.recordedAtDate.getTime() >= fromMs &&
+        log.recordedAtDate.getTime() <= toMs
+      )
+      .sort((a, b) => a.recordedAtDate.getTime() - b.recordedAtDate.getTime());
+
+    const seriesMap = new Map<string, {
+      color: string;
+      label: string;
+      points: Array<{ date: Date; id: string; status: string; temperatureC: number }>;
+    }>();
+
+    validLogs.forEach((log) => {
+      const key = log.assetId;
+      if (!seriesMap.has(key)) {
+        seriesMap.set(key, {
+          color: TEMPERATURE_CHART_COLORS[seriesMap.size % TEMPERATURE_CHART_COLORS.length] ?? '#2563eb',
+          label: temperatureAssetLabel(log),
+          points: []
+        });
+      }
+
+      seriesMap.get(key)?.points.push({
+        date: log.recordedAtDate,
+        id: log.id,
+        status: log.status,
+        temperatureC: log.temperatureC
+      });
+    });
+
+    return {
+      pointCount: validLogs.length,
+      recentLogs: [...validLogs].reverse().slice(0, 10),
+      series: [...seriesMap.values()]
+    };
+  }, [from, logs, to]);
+
+  const width = 820;
+  const height = 300;
+  const margin = { bottom: 48, left: 54, right: 24, top: 24 };
+  const plotWidth = width - margin.left - margin.right;
+  const plotHeight = height - margin.top - margin.bottom;
+  const selectedSafeRange = selectedAsset ? { min: selectedAsset.minTempC, max: selectedAsset.maxTempC } : null;
+  const temperatures = chart.series.flatMap((series) => series.points.map((point) => point.temperatureC));
+  const safeTemperatures = selectedSafeRange ? [selectedSafeRange.min, selectedSafeRange.max] : [];
+  const rawMin = Math.min(...temperatures, ...safeTemperatures, 0);
+  const rawMax = Math.max(...temperatures, ...safeTemperatures, 1);
+  const yMin = rawMin === rawMax ? rawMin - 1 : Math.floor(rawMin - 1);
+  const yMax = rawMin === rawMax ? rawMax + 1 : Math.ceil(rawMax + 1);
+  const yTicks = Array.from({ length: 5 }, (_, index) => yMin + ((yMax - yMin) / 4) * index);
+  const days = graphDays(from, to);
+  const startMs = from.getTime();
+  const endMs = to.getTime();
+  const xForDate = (date: Date) => margin.left + ((date.getTime() - startMs) / Math.max(endMs - startMs, 1)) * plotWidth;
+  const yForTemp = (temperatureC: number) => margin.top + ((yMax - temperatureC) / Math.max(yMax - yMin, 1)) * plotHeight;
+
+  if (loading) {
+    return <p className="muted">Loading temperature history...</p>;
+  }
+
+  if (error) {
+    return <p className="error-text">{error}</p>;
+  }
+
+  if (!chart.pointCount) {
+    return <p className="muted">No fridge temperature readings recorded for this filter.</p>;
+  }
+
+  return (
+    <div className="temperature-graph-layout">
+      <div className="temperature-chart-wrap" aria-label="Line chart of fridge temperatures recorded over time">
+        <svg className="temperature-chart-svg" viewBox={`0 0 ${width} ${height}`} role="img">
+          {selectedSafeRange ? (
+            <rect
+              x={margin.left}
+              y={yForTemp(selectedSafeRange.max)}
+              width={plotWidth}
+              height={Math.max(yForTemp(selectedSafeRange.min) - yForTemp(selectedSafeRange.max), 1)}
+              className="temperature-chart-safe-band"
+            />
+          ) : null}
+
+          {yTicks.map((tick) => {
+            const y = yForTemp(tick);
+            return (
+              <g key={tick}>
+                <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} className="temperature-chart-grid" />
+                <text x={margin.left - 10} y={y + 4} textAnchor="end" className="temperature-chart-label">
+                  {tick.toFixed(1)}°C
+                </text>
+              </g>
+            );
+          })}
+
+          {selectedSafeRange ? (
+            <>
+              {[selectedSafeRange.min, selectedSafeRange.max].map((temperature) => {
+                const y = yForTemp(temperature);
+                return (
+                  <g key={`safe-${temperature}`}>
+                    <line x1={margin.left} x2={width - margin.right} y1={y} y2={y} className="temperature-chart-grid threshold" />
+                    <text x={width - margin.right} y={y - 6} textAnchor="end" className="temperature-chart-label threshold-label">
+                      {temperature.toFixed(1)}°C safe limit
+                    </text>
+                  </g>
+                );
+              })}
+            </>
+          ) : null}
+
+          {days.map((day) => {
+            const x = xForDate(day);
+            return (
+              <g key={day.toISOString()}>
+                <line x1={x} x2={x} y1={margin.top} y2={height - margin.bottom} className="temperature-chart-grid vertical" />
+                <text x={x} y={height - 14} textAnchor="middle" className="temperature-chart-label">
+                  {shortDayFormatter.format(day)}
+                </text>
+              </g>
+            );
+          })}
+
+          {chart.series.map((series) => {
+            const path = series.points
+              .map((point, index) => `${index === 0 ? 'M' : 'L'} ${xForDate(point.date).toFixed(2)} ${yForTemp(point.temperatureC).toFixed(2)}`)
+              .join(' ');
+
+            return (
+              <g key={series.label}>
+                <path d={path} fill="none" stroke={series.color} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                {series.points.map((point) => (
+                  <circle
+                    key={point.id}
+                    cx={xForDate(point.date)}
+                    cy={yForTemp(point.temperatureC)}
+                    r={point.status === 'OUT_OF_RANGE' ? '5' : '4'}
+                    fill={point.status === 'OUT_OF_RANGE' ? '#dc2626' : series.color}
+                    stroke="#ffffff"
+                    strokeWidth="1.5"
+                  />
+                ))}
+              </g>
+            );
+          })}
+        </svg>
+      </div>
+
+      <div className="temperature-chart-legend" aria-label="Temperature asset legend">
+        {selectedSafeRange ? (
+          <span className="pill status-resolved">
+            Safe range {selectedSafeRange.min.toFixed(1)}°C to {selectedSafeRange.max.toFixed(1)}°C
+          </span>
+        ) : (
+          <span className="muted">Select one fridge/equipment item to overlay its safe range.</span>
+        )}
+        {chart.series.map((series) => (
+          <span key={series.label} className="temperature-chart-legend-item">
+            <span className="temperature-chart-color" style={{ background: series.color }} />
+            {series.label}
+          </span>
+        ))}
+      </div>
+
+      <div className="temperature-graph-table" aria-label="Temperature readings in selected range">
+        {chart.recentLogs.map((log) => (
+          <div key={log.id} className="temperature-graph-row">
+            <div className="cell-stack">
+              <strong>{temperatureAssetLabel(log)}</strong>
+              <span className="muted">{log.asset?.venue || 'Venue not set'} · {log.asset?.assetType || 'Asset'}</span>
+            </div>
+            <div className="cell-stack">
+              <strong>{log.temperatureC.toFixed(1)}°C</strong>
+              <span className={`pill ${log.status === 'OUT_OF_RANGE' ? 'status-blocked' : 'status-resolved'}`}>{log.status}</span>
+            </div>
+            <div className="cell-stack">
+              <strong>{new Date(log.recordedAt).toLocaleString()}</strong>
+              <span className="muted">{log.source}{log.recordedBy ? ` · ${log.recordedBy}` : ''}</span>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function TemperaturesPage() {
@@ -49,6 +314,8 @@ export function TemperaturesPage() {
     venue: ''
   });
   const [selectedVenue, setSelectedVenue] = useState('all');
+  const [selectedGraphAssetId, setSelectedGraphAssetId] = useState('all');
+  const [graphRange, setGraphRange] = useState<TemperatureGraphRange>(() => defaultGraphRange());
   const [manualLog, setManualLog] = useState({
     assetId: '',
     correctiveAction: '',
@@ -86,6 +353,28 @@ export function TemperaturesPage() {
   const filteredAssets = selectedVenue === 'all'
     ? allAssets
     : allAssets.filter((asset) => asset.venue === selectedVenue);
+  const selectedGraphAsset = selectedGraphAssetId === 'all'
+    ? null
+    : allAssets.find((asset) => asset.id === selectedGraphAssetId) ?? null;
+  const graphFrom = useMemo(() => dateAtStart(graphRange.fromDate), [graphRange.fromDate]);
+  const graphTo = useMemo(() => dateAtEnd(graphRange.toDate), [graphRange.toDate]);
+  const historyLogs = useAsync<TemperatureLog[]>(() => {
+    const params = new URLSearchParams({
+      from: graphFrom.toISOString(),
+      limit: '500',
+      to: graphTo.toISOString()
+    });
+
+    if (selectedVenue !== 'all') {
+      params.set('venue', selectedVenue);
+    }
+
+    if (selectedGraphAssetId !== 'all') {
+      params.set('assetId', selectedGraphAssetId);
+    }
+
+    return api(`/api/temperatures/logs?${params.toString()}`);
+  }, [graphFrom, graphTo, selectedGraphAssetId, selectedVenue]);
   const filteredSensors = (sensors.data ?? []).filter((sensor) =>
     selectedVenue === 'all' ? true : sensor.asset?.venue === selectedVenue
   );
@@ -122,6 +411,12 @@ export function TemperaturesPage() {
     }
   }, [filteredAssets, manualLog.assetId]);
 
+  useEffect(() => {
+    if (selectedGraphAssetId !== 'all' && !filteredAssets.some((asset) => asset.id === selectedGraphAssetId)) {
+      setSelectedGraphAssetId('all');
+    }
+  }, [filteredAssets, selectedGraphAssetId]);
+
   async function handleCreate(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setSubmitting(true);
@@ -145,7 +440,7 @@ export function TemperaturesPage() {
         name: '',
         venue: ''
       });
-      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload(), historyLogs.reload()]);
       setMessage('Temperature asset saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save temperature asset.');
@@ -185,7 +480,7 @@ export function TemperaturesPage() {
         recordedAt: toDateTimeLocal(new Date()),
         temperatureC: ''
       }));
-      await Promise.all([assets.reload(), summary.reload()]);
+      await Promise.all([assets.reload(), summary.reload(), historyLogs.reload()]);
       setMessage('Manual temperature log saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to save manual temperature log.');
@@ -209,7 +504,7 @@ export function TemperaturesPage() {
         throw new Error('govee sync did not return success.');
       }
 
-      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload(), historyLogs.reload()]);
       setMessage(`govee sync ran across ${result.assetsScanned} assets and synced ${result.synced}.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'govee sync failed.');
@@ -230,7 +525,7 @@ export function TemperaturesPage() {
       });
 
       setApiKey('');
-      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload(), historyLogs.reload()]);
       setMessage(`govee discovery found ${result.importedCount} sensors.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'govee discovery failed.');
@@ -249,7 +544,7 @@ export function TemperaturesPage() {
         body: JSON.stringify({ assetId })
       });
 
-      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload()]);
+      await Promise.all([assets.reload(), integrations.reload(), sensors.reload(), summary.reload(), historyLogs.reload()]);
       setMessage('Sensor mapping saved.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Failed to map sensor.');
@@ -299,6 +594,47 @@ export function TemperaturesPage() {
         <Card title="Missing today">{assets.loading ? '...' : filteredStats.missingToday}</Card>
         <Card title="Synced today">{assets.loading ? '...' : filteredStats.syncedToday}</Card>
       </div>
+
+      <Card
+        title="Fridge temperature graph"
+        subtitle="Recorded fridge and equipment readings over the selected date range."
+      >
+        <div className="temperature-graph-controls">
+          <Select
+            label="Fridge / equipment"
+            value={selectedGraphAssetId}
+            onChange={(event) => setSelectedGraphAssetId(event.target.value)}
+            options={[
+              { label: filteredAssets.length ? 'All fridges/equipment' : 'No assets for this venue', value: 'all' },
+              ...filteredAssets.map((asset) => ({
+                label: `${asset.name}${asset.area ? ` · ${asset.area}` : ''}`,
+                value: asset.id
+              }))
+            ]}
+          />
+          <Input
+            label="From"
+            type="date"
+            value={graphRange.fromDate}
+            onChange={(event) => setGraphRange((current) => ({ ...current, fromDate: event.target.value }))}
+          />
+          <Input
+            label="To"
+            type="date"
+            value={graphRange.toDate}
+            onChange={(event) => setGraphRange((current) => ({ ...current, toDate: event.target.value }))}
+          />
+        </div>
+
+        <FridgeTemperatureGraph
+          error={historyLogs.error}
+          from={graphFrom}
+          loading={historyLogs.loading}
+          logs={historyLogs.data ?? []}
+          selectedAsset={selectedGraphAsset}
+          to={graphTo}
+        />
+      </Card>
 
       <div className="grid two">
         <Card title="Add manual fridge log" subtitle="Use this for daily checks, service reads, and any fridge without a govee sensor.">

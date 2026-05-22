@@ -3608,6 +3608,7 @@ export type TemperatureLog = {
   recordedBy: string | null;
   externalReadingId: string | null;
   createdAt: string;
+  asset?: Pick<TemperatureAsset, 'id' | 'name' | 'area' | 'venue' | 'assetType' | 'minTempC' | 'maxTempC'> | null;
 };
 
 export type TemperatureIntegration = {

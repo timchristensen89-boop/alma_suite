@@ -35,9 +35,9 @@ temperaturesRouter.post('/assets/:id/logs', async (req, res, next) => {
   }
 });
 
-temperaturesRouter.get('/logs', async (_req, res, next) => {
+temperaturesRouter.get('/logs', async (req, res, next) => {
   try {
-    res.json(await temperatureService.listLogs());
+    res.json(await temperatureService.listLogs(req.query));
   } catch (error) {
     next(error);
   }

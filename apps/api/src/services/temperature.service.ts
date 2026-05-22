@@ -1,3 +1,4 @@
+import type { Prisma } from '@prisma/client';
 import { listGoveeDevices, prisma, syncTemperatureAssetsWithGovee } from '@alma/db';
 import {
   temperatureAssetCreateInputSchema,
@@ -19,6 +20,44 @@ function normaliseGoveeBaseUrl(value: string | null | undefined) {
 
 function determineStatus(temperatureC: number, minTempC: number, maxTempC: number) {
   return temperatureC >= minTempC && temperatureC <= maxTempC ? 'IN_RANGE' : 'OUT_OF_RANGE';
+}
+
+function queryString(input: unknown, key: string) {
+  if (!input || typeof input !== 'object') {
+    return undefined;
+  }
+
+  const value = (input as Record<string, unknown>)[key];
+  const firstValue = Array.isArray(value) ? value[0] : value;
+  return typeof firstValue === 'string' && firstValue.trim() ? firstValue.trim() : undefined;
+}
+
+function queryDate(input: unknown, key: string) {
+  const raw = queryString(input, key);
+  if (!raw) {
+    return undefined;
+  }
+
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpError(400, `Temperature log ${key} date is invalid.`);
+  }
+
+  return date;
+}
+
+function queryLimit(input: unknown) {
+  const raw = queryString(input, 'limit');
+  if (!raw) {
+    return 50;
+  }
+
+  const limit = Number(raw);
+  if (!Number.isFinite(limit) || limit < 1) {
+    throw new HttpError(400, 'Temperature log limit is invalid.');
+  }
+
+  return Math.min(Math.floor(limit), 500);
 }
 
 async function maybeCreateIssue(asset: { id: string; name: string; minTempC: number; maxTempC: number }, temperatureC: number) {
@@ -202,13 +241,45 @@ export const temperatureService = {
     });
   },
 
-  async listLogs() {
+  async listLogs(input: unknown = {}) {
+    const from = queryDate(input, 'from');
+    const to = queryDate(input, 'to');
+    const assetId = queryString(input, 'assetId');
+    const venue = queryString(input, 'venue');
+    const where: Prisma.TemperatureLogWhereInput = {};
+
+    if (from || to) {
+      where.recordedAt = {
+        ...(from ? { gte: from } : {}),
+        ...(to ? { lte: to } : {})
+      };
+    }
+
+    if (assetId && assetId !== 'all') {
+      where.assetId = assetId;
+    }
+
+    if (venue && venue !== 'all') {
+      where.asset = { venue };
+    }
+
     return prisma.temperatureLog.findMany({
+      where,
       orderBy: [{ recordedAt: 'desc' }],
       include: {
-        asset: true
+        asset: {
+          select: {
+            id: true,
+            name: true,
+            area: true,
+            venue: true,
+            assetType: true,
+            minTempC: true,
+            maxTempC: true
+          }
+        }
       },
-      take: 50
+      take: queryLimit(input)
     });
   },
 
