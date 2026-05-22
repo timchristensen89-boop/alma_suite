@@ -404,6 +404,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     label: 'Compliance',
     description: 'Documents, training and reminders',
     icon: <IconFileLock />
+  },
+  {
+    to: '/documents',
+    label: 'Documents',
+    description: 'Requests and uploads',
+    icon: <DocumentIcon />
   }
 ];
 
@@ -1338,6 +1344,7 @@ function StaffMemberHome({
           <Button type="button" variant="secondary" onClick={() => navigate('/clock')}>Open clock</Button>
           <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/compliance')}>Compliance</Button>
+          <Button type="button" variant="ghost" onClick={() => navigate('/documents')}>Documents</Button>
         </div>
       </Card>
 
@@ -1995,6 +2002,127 @@ function StaffMemberCompliancePage() {
   );
 }
 
+function StaffMemberDocumentsPage() {
+  const [records, setRecords] = useState<StaffComplianceRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [savingRecordId, setSavingRecordId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const loadDocuments = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setRecords(await api<StaffComplianceRecord[]>('/api/staff/me/documents'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load document requests.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadDocuments();
+  }, [loadDocuments]);
+
+  async function uploadDocument(record: StaffComplianceRecord, file: File) {
+    setSavingRecordId(record.id);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:upload`);
+    try {
+      const upload = await readOnboardingUpload(file);
+      await api(`/api/staff/me/documents/${record.id}/upload`, {
+        method: 'POST',
+        body: JSON.stringify({
+          documentName: upload.name,
+          documentUrl: upload.url,
+          status: 'UPLOADED'
+        })
+      });
+      await loadDocuments();
+      setMessage('Document uploaded for review.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not upload document.');
+    } finally {
+      setSavingRecordId(null);
+    }
+  }
+
+  const requested = records.filter((record) => record.status === 'REQUESTED' || record.status === 'REJECTED');
+  const uploaded = records.filter((record) => record.status === 'UPLOADED' || record.status === 'PENDING');
+  const approved = records.filter((record) => record.status === 'APPROVED');
+
+  return (
+    <div className="page-stack staff-documents-page">
+      <PageHeader
+        eyebrow="My documents"
+        title="Document requests"
+        description="Upload requested certificates and documents here. Managers review and approve them inside your staff profile."
+        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadDocuments()}>{loading ? 'Refreshing…' : 'Refresh'}</Button>}
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Requested" value={requested.length} hint="Needs your upload" loading={loading} />
+        <StatCard label="In review" value={uploaded.length} hint="Manager approval" loading={loading} />
+        <StatCard label="Approved" value={approved.length} hint="Stored in profile" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card title="Requested documents" subtitle="Upload the requested file so a manager can review it.">
+        {loading ? <Spinner label="Loading document requests…" /> : null}
+        {!loading && records.length === 0 ? (
+          <EmptyState title="No document requests" description="Requests from managers will appear here." />
+        ) : null}
+        <div className="staff-expiry-list">
+          {records.map((record) => {
+            const canUpload = record.status !== 'APPROVED' && record.status !== 'EXPIRED';
+            return (
+              <div key={record.id} className="staff-expiry-row">
+                <span>
+                  <strong>{record.title}</strong>
+                  <span className="subtle">
+                    {record.recordType.replaceAll('_', ' ')}
+                    {record.dueAt ? ` · due ${new Date(record.dueAt).toLocaleDateString()}` : ''}
+                    {record.expiryDate ? ` · expires ${new Date(record.expiryDate).toLocaleDateString()}` : ''}
+                  </span>
+                  {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
+                  {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
+                  {record.notes ? <span className="subtle">{record.notes}</span> : null}
+                  <StaffDocumentViewLink documentUrl={record.documentUrl} />
+                  <ActionFeedback
+                    message={messageTarget === `record:${record.id}:upload` ? message : null}
+                    tone={message?.includes('Could') ? 'error' : 'success'}
+                  />
+                </span>
+                <span className="invite-row-actions">
+                  <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
+                  {canUpload ? (
+                    <label className="btn btn-secondary btn-sm" style={{ cursor: savingRecordId ? 'not-allowed' : 'pointer' }}>
+                      {savingRecordId === record.id ? 'Uploading…' : record.documentUrl ? 'Replace upload' : 'Upload'}
+                      <input
+                        type="file"
+                        accept={STAFF_DOCUMENT_ACCEPT}
+                        disabled={Boolean(savingRecordId)}
+                        style={{ display: 'none' }}
+                        onChange={(event) => {
+                          const file = event.currentTarget.files?.[0];
+                          event.currentTarget.value = '';
+                          if (file) void uploadDocument(record, file);
+                        }}
+                      />
+                    </label>
+                  ) : null}
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function StaffMemberAcademyPage({ staff, loading }: { staff: StaffProfile[]; loading: boolean }) {
   const { user } = useAuth();
   const member = staff.find((item) => item.id === user?.id) ?? staff[0] ?? null;
@@ -2097,6 +2225,26 @@ type StaffDraft = {
   xeroEarningsRateId: string;
   notes: string;
 };
+
+type StaffDocumentRequestDraft = {
+  recordType: StaffRecordType;
+  title: string;
+  dueAt: string;
+  expiryRequired: boolean;
+  priority: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+  notes: string;
+};
+
+function emptyStaffDocumentRequestDraft(): StaffDocumentRequestDraft {
+  return {
+    recordType: 'RSA',
+    title: 'RSA Certificate',
+    dueAt: '',
+    expiryRequired: true,
+    priority: 'NORMAL',
+    notes: ''
+  };
+}
 
 function emptyStaffDraft(): StaffDraft {
   return {
@@ -2894,6 +3042,8 @@ function AccessPage({
     documentUrl: '',
     notes: ''
   });
+  const [documentRequestDraft, setDocumentRequestDraft] = useState<StaffDocumentRequestDraft>(() => emptyStaffDocumentRequestDraft());
+  const [documentRequestOpen, setDocumentRequestOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -2923,6 +3073,8 @@ function AccessPage({
   useEffect(() => {
     setProfileDraft(selected ? draftFromStaff(selected) : emptyStaffDraft());
     setDocumentPrompt(null);
+    setDocumentRequestDraft(emptyStaffDocumentRequestDraft());
+    setDocumentRequestOpen(false);
     setProfileModalOpen(false);
   }, [selected?.id]);
 
@@ -3125,6 +3277,31 @@ function AccessPage({
     }
   }
 
+  async function requestDocument() {
+    setMessageTarget('document-request');
+    if (!selected || !documentRequestDraft.title.trim()) {
+      setMessage('Document title is required.');
+      return;
+    }
+
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/${selected.id}/documents/request`, {
+        method: 'POST',
+        body: JSON.stringify(documentRequestDraft)
+      });
+      setDocumentRequestDraft(emptyStaffDocumentRequestDraft());
+      setDocumentRequestOpen(false);
+      await reload();
+      setMessage('Document request sent.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function attachDocumentDraftFile(file: File) {
     setMessageTarget('document');
     setMessage(null);
@@ -3152,6 +3329,26 @@ function AccessPage({
       setMessage('Document approved.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not approve document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rejectDocument(record: StaffComplianceRecord) {
+    if (!selected) return;
+    const reason = window.prompt('Reason for rejecting this document?') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${record.id}:reject`);
+    try {
+      await api(`/api/staff/${selected.id}/records/${record.id}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      await reload();
+      setMessage('Document rejected.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reject document.');
     } finally {
       setSaving(false);
     }
@@ -3521,7 +3718,67 @@ function AccessPage({
               </div>
             </Card>
 
-            <Card title="Documents" subtitle="View uploaded documents and add certificates or admin-only notes.">
+            <Card
+              title="Documents"
+              subtitle="View uploaded documents, request missing evidence, and approve submitted files."
+              action={<Button type="button" size="sm" onClick={() => setDocumentRequestOpen(true)}>Request document</Button>}
+            >
+              <StaffModal
+                open={documentRequestOpen}
+                title="Request document"
+                subtitle={selected ? `Send a document request to ${selected.firstName} ${selected.lastName}.` : undefined}
+                width="standard"
+                onClose={() => setDocumentRequestOpen(false)}
+              >
+                <form
+                  className="staff-profile-form staff-profile-modal-form"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    void requestDocument();
+                  }}
+                >
+                  <section className="staff-modal-section">
+                    <div className="form-grid">
+                      <Select
+                        label="Document type"
+                        value={documentRequestDraft.recordType}
+                        onChange={(event) => {
+                          const recordType = event.currentTarget.value as StaffRecordType;
+                          setDocumentRequestDraft((current) => ({
+                            ...current,
+                            recordType,
+                            title: current.title || recordType.replaceAll('_', ' ')
+                          }));
+                        }}
+                        options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
+                      />
+                      <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
+                      <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+                      <Select
+                        label="Priority"
+                        value={documentRequestDraft.priority}
+                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                        options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
+                      />
+                    </div>
+                    <label className="check-row">
+                      <input
+                        type="checkbox"
+                        checked={documentRequestDraft.expiryRequired}
+                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+                      />
+                      Expiry date required where applicable
+                    </label>
+                    <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                  </section>
+                  <div className="staff-modal-footer">
+                    <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
+                    <Button type="submit" disabled={saving}>{saving ? 'Sending…' : 'Send request'}</Button>
+                    <ActionFeedback message={messageTarget === 'document-request' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+                  </div>
+                </form>
+              </StaffModal>
+              <ActionFeedback message={messageTarget === 'document-request' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
               <div className="staff-list">
                 {selected.records.length === 0 ? <EmptyState title="No documents" description="Add RSA, visa, payroll or training documents below." /> : null}
                 {selected.records.map((record) => (
@@ -3529,16 +3786,25 @@ function AccessPage({
                     <span>
                       <strong>{record.title}</strong>
                       <span className="subtle">{record.recordType} · {record.issuer || 'No issuer'} · expires {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}</span>
+                      {record.dueAt ? <span className="subtle">Due {new Date(record.dueAt).toLocaleDateString()}</span> : null}
                       {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
                       <StaffDocumentViewLink documentUrl={record.documentUrl} />
-                      {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
+                      {recordDocumentRequested(record) ? <span className="subtle">Document requested{record.requestedAt ? ` ${new Date(record.requestedAt).toLocaleDateString()}` : ''}</span> : null}
+                      {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
                       {record.notes ? <span className="subtle">{record.notes}</span> : null}
                     </span>
                     <span className="invite-row-actions">
-                      <Badge tone={record.status === 'APPROVED' ? 'positive' : record.status === 'EXPIRED' ? 'danger' : 'warning'}>{record.status}</Badge>
+                      <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
                       <Button type="button" size="sm" variant="secondary" disabled={saving || record.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
                       <ActionFeedback
                         message={messageTarget === `record:${record.id}:approve` ? message : null}
+                        tone={message?.includes('Could') ? 'error' : 'success'}
+                      />
+                      {record.documentUrl && record.status !== 'APPROVED' ? (
+                        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void rejectDocument(record)}>Reject</Button>
+                      ) : null}
+                      <ActionFeedback
+                        message={messageTarget === `record:${record.id}:reject` ? message : null}
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
                       {record.documentUrl ? (
@@ -3596,7 +3862,7 @@ function AccessPage({
                   <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
                   <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, issueDate: event.currentTarget.value }))} />
                   <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
-                  <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
+                  <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED'].map((value) => ({ label: value.replaceAll('_', ' '), value }))} />
                   <Input label="Document name" value={documentDraft.documentName} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentName: event.currentTarget.value }))} />
                   {documentDraft.documentUrl.startsWith('data:') ? (
                     <Input label="Document attachment" value={documentDraft.documentName || 'Attached file'} disabled />
@@ -8569,6 +8835,7 @@ function ApprovalRecordRow({
   record,
   saving,
   onApprove,
+  onReject,
   onUpload,
   onDelete,
   onRequest,
@@ -8582,6 +8849,7 @@ function ApprovalRecordRow({
   record: StaffComplianceRecord;
   saving: boolean;
   onApprove: (memberId: string, recordId: string) => void;
+  onReject: (memberId: string, recordId: string) => void;
   onUpload: (memberId: string, record: StaffComplianceRecord, file: File) => void;
   onDelete: (memberId: string, recordId: string) => void;
   onRequest: (memberId: string, recordId: string) => void;
@@ -8603,10 +8871,11 @@ function ApprovalRecordRow({
         ) : (
           <span className="subtle">No document attached</span>
         )}
+        {record.dueAt ? <span className="subtle">Due {new Date(record.dueAt).toLocaleDateString()}</span> : null}
         {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
       </span>
       <span className="invite-row-actions">
-        <Badge tone={record.status === 'APPROVED' ? 'positive' : 'warning'}>{record.status}</Badge>
+        <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
         <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
           Upload document
           <input
@@ -8629,6 +8898,17 @@ function ApprovalRecordRow({
         >
           Approve document
         </Button>
+        {record.documentUrl && record.status !== 'APPROVED' ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            disabled={saving}
+            onClick={() => onReject(member.id, record.id)}
+          >
+            Reject
+          </Button>
+        ) : null}
         <ActionFeedback
           message={feedback}
           tone={feedback?.includes('Could') ? 'error' : 'success'}
@@ -8678,7 +8958,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
   const pendingRecords = staff.flatMap((member) =>
     member.records
-      .filter((record) => record.status === 'PENDING')
+      .filter((record) => (record.status === 'PENDING' || record.status === 'UPLOADED') && Boolean(record.documentUrl))
       .map((record) => ({ member, record }))
   );
   const documentReviewStaff = staff.filter((member) =>
@@ -8730,6 +9010,25 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
     }
   }
 
+  async function rejectRecord(memberId: string, recordId: string) {
+    const reason = window.prompt('Reason for rejecting this document?') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`record:${recordId}`);
+    try {
+      await api(`/api/staff/${memberId}/records/${recordId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason })
+      });
+      await reload();
+      setMessage('Document rejected.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reject document.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function uploadRecordDocument(memberId: string, record: StaffComplianceRecord, file: File) {
     setSaving(true);
     setMessage(null);
@@ -8741,7 +9040,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
         body: JSON.stringify({
           documentName: upload.name,
           documentUrl: upload.url,
-          status: 'PENDING'
+          status: 'UPLOADED'
         })
       });
       await reload();
@@ -8995,6 +9294,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                 record={record}
                 saving={saving}
                 onApprove={(memberId, recordId) => void approveRecord(memberId, recordId)}
+                onReject={(memberId, recordId) => void rejectRecord(memberId, recordId)}
                 onUpload={(memberId, approvalRecord, file) => void uploadRecordDocument(memberId, approvalRecord, file)}
                 onDelete={(memberId, recordId) => setDocumentPrompt({ action: 'delete', memberId, recordId })}
                 onRequest={(memberId, recordId) => setDocumentPrompt({ action: 'request', memberId, recordId })}
@@ -10764,7 +11064,19 @@ function StaffDocumentViewLink({ documentUrl }: { documentUrl?: string | null })
 }
 
 function recordDocumentRequested(record: Pick<StaffComplianceRecord, 'notes' | 'documentUrl' | 'status'>) {
-  return !record.documentUrl && record.status === 'PENDING' && Boolean(record.notes?.includes('Document requested again'));
+  return !record.documentUrl && (record.status === 'REQUESTED' || (record.status === 'PENDING' && Boolean(record.notes?.includes('Document requested again'))));
+}
+
+function staffRecordStatusTone(status: StaffComplianceRecord['status']) {
+  if (status === 'APPROVED') return 'positive';
+  if (status === 'EXPIRED' || status === 'REJECTED') return 'danger';
+  if (status === 'UPLOADED') return 'info';
+  if (status === 'REQUESTED' || status === 'PENDING') return 'warning';
+  return 'muted';
+}
+
+function staffRecordStatusLabel(status: StaffComplianceRecord['status']) {
+  return status.replaceAll('_', ' ').toLowerCase().replace(/^\w/, (value) => value.toUpperCase());
 }
 
 function formatDateTime(value: string) {
@@ -11494,6 +11806,7 @@ function StaffShell() {
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
+          <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />

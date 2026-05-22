@@ -65,7 +65,7 @@ export const shiftTaskAssignmentStatusSchema = z.enum([
   'CANCELLED'
 ]);
 export const staffRecordTypeSchema = z.enum(['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER']);
-export const staffRecordStatusSchema = z.enum(['PENDING', 'APPROVED', 'EXPIRED']);
+export const staffRecordStatusSchema = z.enum(['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED']);
 export const staffHrRecordTypeSchema = z.enum(['CONTRACT', 'WARNING', 'PAY_CHANGE', 'RIGHT_TO_WORK', 'GENERAL']);
 export const staffHrRecordStatusSchema = z.enum(['DRAFT', 'ISSUED', 'SENT', 'SIGNED', 'STORED', 'PENDING', 'APPROVED', 'EXPIRED', 'RE_REQUESTED']);
 export const staffHrDocumentTemplateStatusSchema = z.enum(['DRAFT', 'ACTIVE', 'ARCHIVED']);
@@ -233,6 +233,7 @@ export const staffComplianceRecordInputSchema = z.object({
   certificateNumber: z.string().optional().or(z.literal('')),
   issueDate: z.string().optional().or(z.literal('')),
   expiryDate: z.string().optional().or(z.literal('')),
+  dueAt: z.string().optional().or(z.literal('')),
   status: staffRecordStatusSchema.default('PENDING'),
   documentName: z.string().optional().or(z.literal('')),
   documentUrl: z.string().optional().or(z.literal('')),
@@ -2239,10 +2240,18 @@ export type StaffComplianceRecord = {
   certificateNumber: string | null;
   issueDate: string | null;
   expiryDate: string | null;
+  dueAt: string | null;
   status: StaffRecordStatus;
   documentName: string | null;
   documentUrl: string | null;
   notes: string | null;
+  requestedAt: string | null;
+  requestedById: string | null;
+  approvedAt: string | null;
+  approvedById: string | null;
+  rejectedAt: string | null;
+  rejectedById: string | null;
+  rejectionReason: string | null;
   mergedIntoStaffProfileId: string | null;
   mergedAt: string | null;
   mergedByUserId: string | null;

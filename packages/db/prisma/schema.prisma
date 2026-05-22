@@ -47,8 +47,11 @@ enum StaffRecordType {
 }
 
 enum StaffRecordStatus {
+  REQUESTED
   PENDING
+  UPLOADED
   APPROVED
+  REJECTED
   EXPIRED
 }
 
@@ -1803,11 +1806,21 @@ model StaffComplianceRecord {
   documentName      String?
   documentUrl       String?
   notes             String?
+  dueAt             DateTime?
+  requestedAt       DateTime?
+  requestedById     String?
+  approvedAt        DateTime?
+  approvedById      String?
+  rejectedAt        DateTime?
+  rejectedById      String?
+  rejectionReason   String?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
   staffProfile      StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([staffProfileId, recordType])
+  @@index([status, dueAt])
+  @@index([requestedById])
 }
 
 model StaffDocumentReview {

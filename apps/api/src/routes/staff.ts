@@ -281,6 +281,24 @@ staffRouter.get('/me/home', async (req, res, next) => {
   }
 });
 
+staffRouter.get('/me/documents', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listMyDocuments(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/documents/:recordId/upload', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.uploadMyDocument(String(req.params.recordId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/me/roster', async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');
@@ -879,9 +897,25 @@ staffRouter.post('/:id/records', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.post('/:id/documents/request', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.requestDocument(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.approveRecord(String(req.params.id), String(req.params.recordId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/records/:recordId/reject', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.rejectRecord(String(req.params.id), String(req.params.recordId), req.body, req.user));
   } catch (error) {
     next(error);
   }

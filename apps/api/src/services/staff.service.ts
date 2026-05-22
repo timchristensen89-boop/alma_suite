@@ -70,6 +70,7 @@ import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
+import { createThread } from './messaging.service.js';
 
 function generateToken() {
   return randomBytes(24).toString('base64url');
@@ -95,7 +96,18 @@ const staffRecordAttachmentDataUrlSchema = z
 const staffRecordAttachmentInputSchema = z.object({
   documentName: z.string().trim().min(1, 'Document name is required').max(180, 'Document name must be 180 characters or fewer'),
   documentUrl: staffRecordAttachmentDataUrlSchema,
-  status: z.literal('PENDING').optional()
+  status: z.enum(['PENDING', 'UPLOADED']).optional()
+});
+const staffDocumentRequestInputSchema = z.object({
+  recordType: z.enum(['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER']).default('RSA'),
+  title: z.string().trim().min(2, 'Document title is required').max(180, 'Document title must be 180 characters or fewer'),
+  dueAt: z.string().trim().optional().or(z.literal('')),
+  expiryRequired: z.boolean().optional(),
+  priority: z.enum(['LOW', 'NORMAL', 'HIGH', 'URGENT']).optional().default('NORMAL'),
+  notes: z.string().trim().max(1000, 'Note must be 1000 characters or fewer').optional().or(z.literal(''))
+});
+const staffRecordRejectInputSchema = z.object({
+  reason: z.string().trim().max(500, 'Reason must be 500 characters or fewer').optional().or(z.literal(''))
 });
 const staffDocumentReviewApproveSchema = z.object({
   staffProfileId: z.string().trim().min(1, 'Choose a staff member before approving this document.')
@@ -118,6 +130,16 @@ function withoutStaffSecrets<T extends { passwordHash?: string | null; pinHash?:
 
 function appendRecordNote(existing: string | null | undefined, note: string) {
   return [existing?.trim(), note].filter(Boolean).join('\n');
+}
+
+function recordDueDate(value: string | undefined) {
+  if (!value) return null;
+  const normalised = value.length === 10 ? `${value}T00:00:00.000Z` : value;
+  const date = new Date(normalised);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpError(400, 'Document due date is invalid.');
+  }
+  return date;
 }
 
 function validateStaffHrDocument(documentUrl?: string) {
@@ -730,6 +752,26 @@ function staffProfileScope(actor?: AuthUser): Prisma.StaffProfileWhereInput {
 
 function actorName(actor: AuthUser) {
   return `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email || actor.roleTitle || 'Unknown manager';
+}
+
+async function createStaffDocumentRequestMessage(input: {
+  actor: AuthUser;
+  staffProfile: { id: string; firstName: string; lastName: string; email: string | null };
+  record: { title: string; dueAt: Date | null };
+  note?: string | null;
+  priority?: 'LOW' | 'NORMAL' | 'HIGH' | 'URGENT';
+}) {
+  const dueLine = input.record.dueAt ? `\nDue: ${input.record.dueAt.toLocaleDateString('en-AU')}` : '';
+  const noteLine = input.note ? `\n\n${input.note}` : '';
+  await createThread(input.actor, {
+    subject: `Document requested: ${input.record.title}`,
+    body: `${actorName(input.actor)} requested ${input.record.title} from ${staffName(input.staffProfile)}.${dueLine}${noteLine}`,
+    category: 'TASK',
+    priority: input.priority ?? 'NORMAL',
+    staffProfileIds: [input.staffProfile.id],
+    actionRequired: true,
+    dueAt: input.record.dueAt?.toISOString() ?? ''
+  });
 }
 
 function hasLegacyPaySetup(profile: {
@@ -2248,12 +2290,113 @@ export const staffService = {
         certificateNumber: data.certificateNumber || null,
         issueDate: dateOrNull(data.issueDate),
         expiryDate: dateOrNull(data.expiryDate),
+        dueAt: recordDueDate(data.dueAt),
         status: data.status,
         documentName: data.documentName || null,
         documentUrl: data.documentUrl || null,
         notes: data.notes || null
       }
     });
+  },
+
+  async requestDocument(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const profile = await this.getById(staffProfileId, actor);
+    const data = staffDocumentRequestInputSchema.parse(input);
+    const dueAt = recordDueDate(data.dueAt);
+    const note = data.notes?.trim() || null;
+
+    const record = await prisma.staffComplianceRecord.create({
+      data: {
+        staffProfileId,
+        recordType: data.recordType,
+        title: data.title,
+        status: 'REQUESTED',
+        dueAt,
+        requestedAt: new Date(),
+        requestedById: actor.id,
+        notes: note
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId,
+      eventType: 'COMPLIANCE_DOCUMENT_REQUESTED',
+      summary: `Document requested: "${record.title}".`,
+      actor,
+      metadata: {
+        recordId: record.id,
+        recordTitle: record.title,
+        dueAt: dueAt?.toISOString() ?? null,
+        expiryRequired: Boolean(data.expiryRequired),
+        priority: data.priority
+      }
+    });
+
+    await createStaffDocumentRequestMessage({
+      actor,
+      staffProfile: profile,
+      record,
+      note,
+      priority: data.priority
+    });
+
+    return record;
+  },
+
+  async listMyDocuments(actor: AuthUser) {
+    if (actor.accountType === 'VENUE_DEVICE') {
+      throw new HttpError(403, 'Shared device accounts cannot access staff documents.');
+    }
+    const records = await prisma.staffComplianceRecord.findMany({
+      where: { staffProfileId: actor.id },
+      orderBy: [{ status: 'asc' }, { dueAt: 'asc' }, { expiryDate: 'asc' }, { createdAt: 'desc' }]
+    });
+    return records;
+  },
+
+  async uploadMyDocument(recordId: string, input: unknown, actor: AuthUser) {
+    if (actor.accountType === 'VENUE_DEVICE') {
+      throw new HttpError(403, 'Shared device accounts cannot access staff documents.');
+    }
+    const record = await prisma.staffComplianceRecord.findFirst({
+      where: { id: recordId, staffProfileId: actor.id }
+    });
+
+    if (!record) {
+      throw new HttpError(404, 'Staff document request not found');
+    }
+
+    if (record.status === 'APPROVED') {
+      throw new HttpError(400, 'Approved documents cannot be replaced here.');
+    }
+
+    const data = staffRecordAttachmentInputSchema.parse(input);
+    const updated = await prisma.staffComplianceRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'UPLOADED',
+        documentName: data.documentName,
+        documentUrl: data.documentUrl,
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: actor.id,
+      eventType: 'COMPLIANCE_DOCUMENT_UPLOADED',
+      summary: `Document uploaded for "${record.title}".`,
+      actor,
+      metadata: {
+        recordId,
+        recordTitle: record.title,
+        documentName: data.documentName
+      }
+    });
+
+    return updated;
   },
 
   async attachRecordDocument(staffProfileId: string, recordId: string, input: unknown, actor?: AuthUser) {
@@ -2271,9 +2414,12 @@ export const staffService = {
     const updated = await prisma.staffComplianceRecord.update({
       where: { id: recordId },
       data: {
-        status: 'PENDING',
+        status: data.status ?? 'UPLOADED',
         documentName: data.documentName,
-        documentUrl: data.documentUrl
+        documentUrl: data.documentUrl,
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null
       }
     });
 
@@ -2330,7 +2476,8 @@ export const staffService = {
   },
 
   async requestRecordDocument(staffProfileId: string, recordId: string, actor?: AuthUser) {
-    await this.getById(staffProfileId, actor);
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const profile = await this.getById(staffProfileId, actor);
     const record = await prisma.staffComplianceRecord.findFirst({
       where: { id: recordId, staffProfileId }
     });
@@ -2339,18 +2486,33 @@ export const staffService = {
       throw new HttpError(404, 'Staff document not found');
     }
 
-    return prisma.staffComplianceRecord.update({
+    const updated = await prisma.staffComplianceRecord.update({
       where: { id: recordId },
       data: {
         documentName: null,
         documentUrl: null,
-        status: 'PENDING',
+        status: 'REQUESTED',
+        requestedAt: new Date(),
+        requestedById: actor.id,
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null,
         notes: appendRecordNote(
           record.notes,
           `Document requested again ${new Date().toISOString()}. Marked for follow-up; ask the staff member to upload again.`
         )
       }
     });
+
+    await createStaffDocumentRequestMessage({
+      actor,
+      staffProfile: profile,
+      record: updated,
+      note: 'Please upload this document again.',
+      priority: 'NORMAL'
+    });
+
+    return updated;
   },
 
   async updateAppAccess(staffProfileId: string, input: unknown, actor?: AuthUser) {
@@ -3620,7 +3782,10 @@ export const staffService = {
     const complianceReminders = [
       ...member.records
         .filter((record) =>
+          record.status === 'REQUESTED' ||
           record.status === 'PENDING' ||
+          record.status === 'UPLOADED' ||
+          record.status === 'REJECTED' ||
           record.status === 'EXPIRED' ||
           (record.expiryDate && new Date(record.expiryDate) <= reminderCutoff)
         )
@@ -4941,7 +5106,40 @@ export const staffService = {
 
     return prisma.staffComplianceRecord.update({
       where: { id: recordId },
-      data: { status: 'APPROVED' }
+      data: {
+        status: 'APPROVED',
+        approvedAt: new Date(),
+        approvedById: actor?.id ?? null,
+        rejectedAt: null,
+        rejectedById: null,
+        rejectionReason: null
+      }
+    });
+  },
+
+  async rejectRecord(staffProfileId: string, recordId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    await this.getById(staffProfileId, actor);
+    const record = await prisma.staffComplianceRecord.findFirst({
+      where: { id: recordId, staffProfileId }
+    });
+
+    if (!record) {
+      throw new HttpError(404, 'Staff document not found');
+    }
+
+    const data = staffRecordRejectInputSchema.parse(input);
+    return prisma.staffComplianceRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'REJECTED',
+        rejectedAt: new Date(),
+        rejectedById: actor.id,
+        rejectionReason: data.reason || null,
+        approvedAt: null,
+        approvedById: null,
+        notes: data.reason ? appendRecordNote(record.notes, `Document rejected ${new Date().toISOString()}: ${data.reason}`) : record.notes
+      }
     });
   },
 
@@ -4993,7 +5191,7 @@ export const staffService = {
         recordType: review.recordType,
         title: review.title,
         issuer: review.recordType === 'RSA' ? 'NSW RSA' : null,
-        status: 'PENDING' as const,
+        status: 'UPLOADED' as const,
         documentName: review.documentName,
         documentUrl: review.documentUrl,
         notes: appendRecordNote(
@@ -5187,7 +5385,7 @@ export const staffService = {
       prisma.staffComplianceRecord.count({
         where: {
           staffProfile: profileScope,
-          status: 'PENDING'
+          status: { in: ['REQUESTED', 'PENDING', 'UPLOADED', 'REJECTED'] }
         }
       })
     ]);
