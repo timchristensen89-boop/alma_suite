@@ -471,6 +471,13 @@ type StaffDocumentReviewItem = {
   createdAt: string;
 };
 
+type StaffComplianceDocumentRecord = Omit<StaffComplianceRecord, 'status'> & {
+  dueAt?: string | null;
+  rejectionReason?: string | null;
+  requestedAt?: string | null;
+  status: string;
+};
+
 type RosterForecastDraft = {
   forecastSales: string;
   targetWagePercent: string;
@@ -486,6 +493,8 @@ type RosterAreaSettings = {
 type RosterSidePanelMode = 'staff' | 'history' | 'shift';
 
 type MobileRosterGroupKey = 'late' | 'onShift' | 'scheduled' | 'unassigned' | 'completed';
+
+const MOBILE_ROSTER_MEDIA_QUERY = '(max-width: 900px)';
 
 const MOBILE_ROSTER_GROUPS: Array<{ key: MobileRosterGroupKey; label: string }> = [
   { key: 'late', label: 'Late' },
@@ -534,6 +543,32 @@ function RosterCollapsiblePanel({
       {open ? <div className="roster-control-panel-body">{children}</div> : null}
     </section>
   );
+}
+
+function useIsMobileRosterViewport() {
+  const [isMobile, setIsMobile] = useState(() =>
+    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_ROSTER_MEDIA_QUERY).matches
+  );
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return undefined;
+    }
+
+    const query = window.matchMedia(MOBILE_ROSTER_MEDIA_QUERY);
+    const update = () => setIsMobile(query.matches);
+    update();
+
+    if (typeof query.addEventListener === 'function') {
+      query.addEventListener('change', update);
+      return () => query.removeEventListener('change', update);
+    }
+
+    query.addListener(update);
+    return () => query.removeListener(update);
+  }, []);
+
+  return isMobile;
 }
 
 function staffPermissions(user: ReturnType<typeof useAuth>['user']) {
@@ -2079,9 +2114,15 @@ function StaffMemberDocumentsPage() {
     }
   }
 
-  const requested = records.filter((record) => record.status === 'REQUESTED' || record.status === 'REJECTED');
-  const uploaded = records.filter((record) => record.status === 'UPLOADED' || record.status === 'PENDING');
-  const approved = records.filter((record) => record.status === 'APPROVED');
+  const requested = records.filter((record) => {
+    const status = staffComplianceDocumentRecord(record).status;
+    return status === 'REQUESTED' || status === 'REJECTED';
+  });
+  const uploaded = records.filter((record) => {
+    const status = staffComplianceDocumentRecord(record).status;
+    return status === 'UPLOADED' || status === 'PENDING';
+  });
+  const approved = records.filter((record) => staffComplianceDocumentRecord(record).status === 'APPROVED');
 
   return (
     <div className="page-stack staff-documents-page">
@@ -2107,18 +2148,19 @@ function StaffMemberDocumentsPage() {
         ) : null}
         <div className="staff-expiry-list">
           {records.map((record) => {
-            const canUpload = record.status !== 'APPROVED' && record.status !== 'EXPIRED';
+            const documentRecord = staffComplianceDocumentRecord(record);
+            const canUpload = documentRecord.status !== 'APPROVED' && documentRecord.status !== 'EXPIRED';
             return (
               <div key={record.id} className="staff-expiry-row">
                 <span>
                   <strong>{record.title}</strong>
                   <span className="subtle">
                     {record.recordType.replaceAll('_', ' ')}
-                    {record.dueAt ? ` · due ${new Date(record.dueAt).toLocaleDateString()}` : ''}
+                    {documentRecord.dueAt ? ` · due ${new Date(documentRecord.dueAt).toLocaleDateString()}` : ''}
                     {record.expiryDate ? ` · expires ${new Date(record.expiryDate).toLocaleDateString()}` : ''}
                   </span>
                   {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
-                  {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
+                  {documentRecord.rejectionReason ? <span className="subtle">Rejected: {documentRecord.rejectionReason}</span> : null}
                   {record.notes ? <span className="subtle">{record.notes}</span> : null}
                   <StaffDocumentViewLink documentUrl={record.documentUrl} />
                   <ActionFeedback
@@ -2127,7 +2169,7 @@ function StaffMemberDocumentsPage() {
                   />
                 </span>
                 <span className="invite-row-actions">
-                  <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
+                  <Badge tone={staffRecordStatusTone(documentRecord.status)}>{staffRecordStatusLabel(documentRecord.status)}</Badge>
                   {canUpload ? (
                     <label className="btn btn-secondary btn-sm" style={{ cursor: savingRecordId ? 'not-allowed' : 'pointer' }}>
                       {savingRecordId === record.id ? 'Uploading…' : record.documentUrl ? 'Replace upload' : 'Upload'}
@@ -3055,6 +3097,7 @@ function StaffProfileWorkspacePage({
   }
 
   function renderComplianceDocument(record: StaffComplianceRecord) {
+    const documentRecord = staffComplianceDocumentRecord(record);
     return (
       <div key={record.id} className="staff-profile-document-row">
         <span className="staff-profile-document-icon"><IconFileText /></span>
@@ -3062,15 +3105,15 @@ function StaffProfileWorkspacePage({
           <strong>{record.title}</strong>
           <span className="subtle">{record.recordType.replaceAll('_', ' ')} · {record.issuer || 'No issuer'}</span>
           <span className="subtle">Expiry: {profileDate(record.expiryDate)}</span>
-          {record.dueAt ? <span className="subtle">Due: {profileDate(record.dueAt)}</span> : null}
+          {documentRecord.dueAt ? <span className="subtle">Due: {profileDate(documentRecord.dueAt)}</span> : null}
           {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
           <StaffDocumentViewLink documentUrl={record.documentUrl} />
-          {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
-          {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
+          {recordDocumentRequested(documentRecord) ? <span className="subtle">Document requested</span> : null}
+          {documentRecord.rejectionReason ? <span className="subtle">Rejected: {documentRecord.rejectionReason}</span> : null}
           {record.notes ? <span className="subtle">{record.notes}</span> : null}
         </span>
         <span className="staff-profile-document-actions">
-          <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
+          <Badge tone={staffRecordStatusTone(documentRecord.status)}>{staffRecordStatusLabel(documentRecord.status)}</Badge>
           {canManageDocuments ? (
             <>
               <Button type="button" size="sm" variant="secondary" disabled={saving || record.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
@@ -4684,26 +4727,28 @@ function AccessPage({
               <ActionFeedback message={messageTarget === 'document-request' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
               <div className="staff-list">
                 {selected.records.length === 0 ? <EmptyState title="No documents" description="Add RSA, visa, payroll or training documents below." /> : null}
-                {selected.records.map((record) => (
+                {selected.records.map((record) => {
+                  const documentRecord = staffComplianceDocumentRecord(record);
+                  return (
                   <div key={record.id} className="staff-expiry-row">
                     <span>
                       <strong>{record.title}</strong>
                       <span className="subtle">{record.recordType} · {record.issuer || 'No issuer'} · expires {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}</span>
-                      {record.dueAt ? <span className="subtle">Due {new Date(record.dueAt).toLocaleDateString()}</span> : null}
+                      {documentRecord.dueAt ? <span className="subtle">Due {new Date(documentRecord.dueAt).toLocaleDateString()}</span> : null}
                       {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
                       <StaffDocumentViewLink documentUrl={record.documentUrl} />
-                      {recordDocumentRequested(record) ? <span className="subtle">Document requested{record.requestedAt ? ` ${new Date(record.requestedAt).toLocaleDateString()}` : ''}</span> : null}
-                      {record.rejectionReason ? <span className="subtle">Rejected: {record.rejectionReason}</span> : null}
+                      {recordDocumentRequested(documentRecord) ? <span className="subtle">Document requested{documentRecord.requestedAt ? ` ${new Date(documentRecord.requestedAt).toLocaleDateString()}` : ''}</span> : null}
+                      {documentRecord.rejectionReason ? <span className="subtle">Rejected: {documentRecord.rejectionReason}</span> : null}
                       {record.notes ? <span className="subtle">{record.notes}</span> : null}
                     </span>
                     <span className="invite-row-actions">
-                      <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
-                      <Button type="button" size="sm" variant="secondary" disabled={saving || record.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
+                      <Badge tone={staffRecordStatusTone(documentRecord.status)}>{staffRecordStatusLabel(documentRecord.status)}</Badge>
+                      <Button type="button" size="sm" variant="secondary" disabled={saving || documentRecord.status === 'APPROVED' || !record.documentUrl} onClick={() => void approveDocument(record)}>Approve</Button>
                       <ActionFeedback
                         message={messageTarget === `record:${record.id}:approve` ? message : null}
                         tone={message?.includes('Could') ? 'error' : 'success'}
                       />
-                      {record.documentUrl && record.status !== 'APPROVED' ? (
+                      {record.documentUrl && documentRecord.status !== 'APPROVED' ? (
                         <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void rejectDocument(record)}>Reject</Button>
                       ) : null}
                       <ActionFeedback
@@ -4749,7 +4794,8 @@ function AccessPage({
                       />
                     ) : null}
                   </div>
-                ))}
+                  );
+                })}
               </div>
               <form
                 className="staff-profile-form"
@@ -7859,6 +7905,7 @@ function RosterPage({
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [mobileSelectedDay, setMobileSelectedDay] = useState(() => toDateInput(new Date()));
+  const isMobileRoster = useIsMobileRosterViewport();
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
@@ -8829,30 +8876,35 @@ function RosterPage({
         {message && !messageTarget ? <span className="deputy-roster-message">{message}</span> : null}
       </div>
 
-      <div className="deputy-day-summary-strip">
-        {dailySummaries.map((summary) => (
-          <div key={summary.day.toISOString()} className={sameDay(summary.day, new Date()) ? 'is-today' : ''}>
-            <strong>{summary.day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
-            <span>{summary.shifts} shifts</span>
-            <span>{summary.people} people</span>
-            <small>{roundHours(summary.hours)}</small>
-          </div>
-        ))}
-      </div>
+      {!isMobileRoster ? (
+        <div className="deputy-day-summary-strip desktop-roster-surface">
+          {dailySummaries.map((summary) => (
+            <div key={summary.day.toISOString()} className={sameDay(summary.day, new Date()) ? 'is-today' : ''}>
+              <strong>{summary.day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
+              <span>{summary.shifts} shifts</span>
+              <span>{summary.people} people</span>
+              <small>{roundHours(summary.hours)}</small>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
-      <MobileRosterView
-        dailySummaries={dailySummaries}
-        selectedDate={mobileSelectedDate}
-        selectedSummary={mobileSelectedSummary}
-        shifts={mobileDayShifts}
-        groups={mobileShiftGroups}
-        venueLabel={venueFilter === 'all' ? 'All venues' : venueFilter}
-        onSelectDay={setMobileSelectedDay}
-        onAddShift={() => newShift(mobileSelectedDay)}
-        onOpenShift={startEditShift}
-      />
+      {isMobileRoster ? (
+        <MobileRosterView
+          dailySummaries={dailySummaries}
+          selectedDate={mobileSelectedDate}
+          selectedSummary={mobileSelectedSummary}
+          shifts={mobileDayShifts}
+          groups={mobileShiftGroups}
+          venueLabel={venueFilter === 'all' ? 'All venues' : venueFilter}
+          onSelectDay={setMobileSelectedDay}
+          onAddShift={() => newShift(mobileSelectedDay)}
+          onOpenShift={startEditShift}
+        />
+      ) : null}
 
-      <div className={`deputy-roster-layout ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
+      {!isMobileRoster || editorOpen ? (
+        <div className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
@@ -9276,7 +9328,8 @@ function RosterPage({
             </>
           )}
         </aside>
-      </div>
+        </div>
+      ) : null}
       {publishPreviewOpen ? (
         <div
           className="roster-modal-backdrop"
@@ -9435,7 +9488,7 @@ function MobileRosterView({
   const hours = selectedSummary?.hours ?? shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
 
   return (
-    <section className="mobile-roster" aria-label="Mobile roster">
+    <section className="mobile-roster-surface mobile-roster" aria-label="Mobile roster">
       <div className="mobile-roster-topbar">
         <div>
           <p className="eyebrow">Roster</p>
@@ -9949,6 +10002,7 @@ function ApprovalRecordRow({
   feedback?: string | null;
   promptFeedback?: string | null;
 }) {
+  const documentRecord = staffComplianceDocumentRecord(record);
   return (
     <div className="invite-row">
       <span>
@@ -9961,11 +10015,11 @@ function ApprovalRecordRow({
         ) : (
           <span className="subtle">No document attached</span>
         )}
-        {record.dueAt ? <span className="subtle">Due {new Date(record.dueAt).toLocaleDateString()}</span> : null}
-        {recordDocumentRequested(record) ? <span className="subtle">Document requested</span> : null}
+        {documentRecord.dueAt ? <span className="subtle">Due {new Date(documentRecord.dueAt).toLocaleDateString()}</span> : null}
+        {recordDocumentRequested(documentRecord) ? <span className="subtle">Document requested</span> : null}
       </span>
       <span className="invite-row-actions">
-        <Badge tone={staffRecordStatusTone(record.status)}>{staffRecordStatusLabel(record.status)}</Badge>
+        <Badge tone={staffRecordStatusTone(documentRecord.status)}>{staffRecordStatusLabel(documentRecord.status)}</Badge>
         <label className="btn btn-secondary btn-sm" style={{ cursor: saving ? 'not-allowed' : 'pointer' }}>
           Upload document
           <input
@@ -9983,12 +10037,12 @@ function ApprovalRecordRow({
         <Button
           type="button"
           size="sm"
-          disabled={saving || record.status === 'APPROVED' || !record.documentUrl}
+          disabled={saving || documentRecord.status === 'APPROVED' || !record.documentUrl}
           onClick={() => onApprove(member.id, record.id)}
         >
           Approve document
         </Button>
-        {record.documentUrl && record.status !== 'APPROVED' ? (
+        {record.documentUrl && documentRecord.status !== 'APPROVED' ? (
           <Button
             type="button"
             size="sm"
@@ -10048,7 +10102,10 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
   const pendingRecords = staff.flatMap((member) =>
     member.records
-      .filter((record) => (record.status === 'PENDING' || record.status === 'UPLOADED') && Boolean(record.documentUrl))
+      .filter((record) => {
+        const status = staffComplianceDocumentRecord(record).status;
+        return (status === 'PENDING' || status === 'UPLOADED') && Boolean(record.documentUrl);
+      })
       .map((record) => ({ member, record }))
   );
   const documentReviewStaff = staff.filter((member) =>
@@ -12153,11 +12210,15 @@ function StaffDocumentViewLink({ documentUrl }: { documentUrl?: string | null })
   return <span className="subtle">Document link unavailable</span>;
 }
 
-function recordDocumentRequested(record: Pick<StaffComplianceRecord, 'notes' | 'documentUrl' | 'status'>) {
+function staffComplianceDocumentRecord(record: StaffComplianceRecord): StaffComplianceDocumentRecord {
+  return record as StaffComplianceDocumentRecord;
+}
+
+function recordDocumentRequested(record: Pick<StaffComplianceRecord, 'notes' | 'documentUrl'> & { status: string }) {
   return !record.documentUrl && (record.status === 'REQUESTED' || (record.status === 'PENDING' && Boolean(record.notes?.includes('Document requested again'))));
 }
 
-function staffRecordStatusTone(status: StaffComplianceRecord['status']) {
+function staffRecordStatusTone(status: string) {
   if (status === 'APPROVED') return 'positive';
   if (status === 'EXPIRED' || status === 'REJECTED') return 'danger';
   if (status === 'UPLOADED') return 'info';
@@ -12165,7 +12226,7 @@ function staffRecordStatusTone(status: StaffComplianceRecord['status']) {
   return 'muted';
 }
 
-function staffRecordStatusLabel(status: StaffComplianceRecord['status']) {
+function staffRecordStatusLabel(status: string) {
   return status.replaceAll('_', ' ').toLowerCase().replace(/^\w/, (value) => value.toUpperCase());
 }
 

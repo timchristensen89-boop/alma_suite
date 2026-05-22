@@ -2428,7 +2428,8 @@
   color: var(--color-text);
 }
 
-.mobile-roster {
+.mobile-roster,
+.mobile-roster-surface {
   display: none;
 }
 
@@ -3775,7 +3776,7 @@
   min-width: min(620px, 100%);
 }
 
-@media (max-width: 860px) {
+@media (max-width: 900px) {
   .comms-layout {
     grid-template-columns: 1fr;
   }
@@ -3786,29 +3787,34 @@
     width: 100%;
   }
 
-  .deputy-day-summary-strip,
-  .deputy-roster-layout:not(.is-shift-editor-open) {
+  .desktop-roster-surface {
+    display: none !important;
+  }
+
+  .desktop-roster-surface.is-shift-editor-open {
+    display: block !important;
+  }
+
+  .desktop-roster-surface.is-shift-editor-open .deputy-schedule-panel {
     display: none;
   }
 
-  .deputy-roster-layout.is-shift-editor-open {
-    display: block;
-  }
-
-  .deputy-roster-layout.is-shift-editor-open .deputy-schedule-panel {
-    display: none;
-  }
-
-  .deputy-roster-layout.is-shift-editor-open .roster-right-rail {
+  .desktop-roster-surface.is-shift-editor-open .roster-right-rail {
     position: static;
     max-height: none;
     overflow: visible;
   }
 
-  .mobile-roster {
-    display: grid;
+  .mobile-roster-surface.mobile-roster {
+    display: grid !important;
     gap: 14px;
     padding-bottom: 72px;
+  }
+}
+
+@media (min-width: 901px) {
+  .mobile-roster-surface {
+    display: none !important;
   }
 }
 
