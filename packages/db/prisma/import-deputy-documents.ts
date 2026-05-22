@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
 import type { StaffComplianceRecord, StaffProfile } from '@prisma/client';
 import { prisma } from '../src/prisma.js';
@@ -36,7 +37,11 @@ type DocumentResult = {
     | 'would_update_existing'
     | 'updated_existing'
     | 'already_attached'
+    | 'would_create_review'
+    | 'review_created'
+    | 'review_existing'
     | 'skipped_generic'
+    | 'skipped_sensitive'
     | 'skipped_uncertain'
     | 'skipped_unrecognised'
     | 'skipped_missing_file'
@@ -47,19 +52,35 @@ type DocumentResult = {
   staffProfileId?: string;
   staffName?: string;
   recordId?: string;
-  targetModel?: 'StaffComplianceRecord';
+  reviewId?: string;
+  candidateName?: string;
+  candidateStaff?: Array<{ id: string; name: string; venue: string | null; email: string | null }>;
+  reviewReason?: string;
+  sourceFileHash?: string;
+  targetModel?: 'StaffComplianceRecord' | 'StaffDocumentReview';
 };
 
 type ImportReport = {
   staffReportPath: string;
   documentsDir: string;
   applied: boolean;
+  reviewUncertainRsa: boolean;
   filesScanned: number;
   wouldAttach: number;
   wouldUpdateExisting: number;
   attached: number;
   updatedExisting: number;
   alreadyAttached: number;
+  exactAttached: number;
+  exactUpdated: number;
+  exactCreated: number;
+  reviewCreated: number;
+  reviewExisting: number;
+  skippedGeneric: number;
+  skippedSensitive: number;
+  skippedDuplicate: number;
+  ambiguous: number;
+  rejectedByRule: number;
   skipped: number;
   results: DocumentResult[];
   reportPath: string;
@@ -69,6 +90,7 @@ const DEFAULT_STAFF_REPORT = '/tmp/alma-deputy-employee-sync-prod-applied.json';
 const DEFAULT_REPORT = '/tmp/alma-deputy-documents-report.json';
 const SUPPORTED_EXTENSIONS = new Set(['.pdf', '.png', '.jpg', '.jpeg']);
 const MAX_DATA_URL_BYTES = 5_700_000;
+const DEPUTY_DOCUMENT_REVIEW_SOURCE = 'deputy-document-import';
 
 const KNOWN_RSA_DOCUMENTS: KnownDocument[] = [
   {
@@ -117,7 +139,8 @@ function parseArgs() {
     staffReportPath: flag('staff-report') ?? DEFAULT_STAFF_REPORT,
     documentsDir: flag('documents-dir') ?? args[0] ?? '',
     reportPath: flag('report') ?? DEFAULT_REPORT,
-    apply: args.includes('--apply')
+    apply: args.includes('--apply'),
+    reviewUncertainRsa: args.includes('--review-uncertain-rsa')
   };
 }
 
@@ -149,6 +172,13 @@ function mimeTypeFor(file: string) {
 
 async function readJson<T>(file: string): Promise<T> {
   return JSON.parse(await fs.readFile(file, 'utf8')) as T;
+}
+
+function isMissingReviewTableError(error: unknown) {
+  if (!error || typeof error !== 'object') return false;
+  const code = 'code' in error ? String((error as { code?: unknown }).code) : '';
+  const message = error instanceof Error ? error.message : '';
+  return code === 'P2021' || /StaffDocumentReview|relation .* does not exist/i.test(message);
 }
 
 async function listFiles(dir: string): Promise<string[]> {
@@ -202,6 +232,38 @@ async function resolveStaffProfile(report: StaffReport, document: KnownDocument)
   return { profile: null, reason: 'not-found' };
 }
 
+async function candidateStaffForName(candidateName: string | null) {
+  if (!candidateName) return [];
+  const parts = normaliseName(candidateName).split(' ').filter(Boolean);
+  if (parts.length < 2) return [];
+  const first = parts[0];
+  const last = parts.at(-1) ?? '';
+  const candidates = await prisma.staffProfile.findMany({
+    where: {
+      accountType: 'HUMAN',
+      mergedIntoStaffProfileId: null,
+      OR: [
+        {
+          firstName: { contains: first, mode: 'insensitive' },
+          lastName: { contains: last, mode: 'insensitive' }
+        },
+        {
+          firstName: { contains: last, mode: 'insensitive' },
+          lastName: { contains: first, mode: 'insensitive' }
+        }
+      ]
+    },
+    select: { id: true, firstName: true, lastName: true, venue: true, email: true },
+    take: 8
+  });
+  return candidates.map((profile) => ({
+    id: profile.id,
+    name: staffName(profile),
+    venue: profile.venue,
+    email: profile.email
+  }));
+}
+
 async function findTargetRecord(staffProfileId: string, documentName: string) {
   const alreadyAttached = await prisma.staffComplianceRecord.findFirst({
     where: { staffProfileId, recordType: 'RSA', documentName }
@@ -225,6 +287,124 @@ function createSkipResult(file: string, action: DocumentResult['action'], reason
   return { file, basename: path.basename(file), action, reason };
 }
 
+async function fileHash(file: string) {
+  return createHash('sha256').update(await fs.readFile(file)).digest('hex');
+}
+
+async function dataUrlForFile(file: string) {
+  const mimeType = mimeTypeFor(file);
+  if (!mimeType) return null;
+  const buffer = await fs.readFile(file);
+  const documentUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
+  if (documentUrl.length > MAX_DATA_URL_BYTES) return null;
+  return documentUrl;
+}
+
+function uncertainReviewReason(file: string) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.png' || ext === '.jpg' || ext === '.jpeg') return 'image-rendered';
+  return 'no confident staff match';
+}
+
+function parsedCandidateNameForUncertainRsa(_file: string) {
+  return null;
+}
+
+async function findExistingReview(sourceFileHash: string, apply: boolean) {
+  try {
+    return await prisma.staffDocumentReview.findUnique({
+      where: {
+        source_sourceFileHash: {
+          source: DEPUTY_DOCUMENT_REVIEW_SOURCE,
+          sourceFileHash
+        }
+      }
+    });
+  } catch (error) {
+    if (!apply && isMissingReviewTableError(error)) return null;
+    throw error;
+  }
+}
+
+async function createReviewResult(file: string, apply: boolean): Promise<DocumentResult> {
+  const basename = path.basename(file);
+  const documentUrl = await dataUrlForFile(file);
+  const sourceFileHash = await fileHash(file);
+  const reviewReason = uncertainReviewReason(file);
+  const candidateName = parsedCandidateNameForUncertainRsa(file);
+  const candidateStaff = await candidateStaffForName(candidateName);
+
+  if (!documentUrl) {
+    return {
+      file,
+      basename,
+      action: 'skipped_unrecognised',
+      reason: 'Review file is unsupported or larger than Staff document upload limit.',
+      sourceFileHash
+    };
+  }
+
+  const existing = await findExistingReview(sourceFileHash, apply);
+  if (existing) {
+    return {
+      file,
+      basename,
+      action: 'review_existing',
+      reason: 'Manual review item already exists for this RSA file hash.',
+      reviewId: existing.id,
+      candidateName: existing.candidateName ?? candidateName ?? undefined,
+      candidateStaff,
+      reviewReason: existing.reviewReason,
+      sourceFileHash,
+      targetModel: 'StaffDocumentReview'
+    };
+  }
+
+  if (!apply) {
+    return {
+      file,
+      basename,
+      action: 'would_create_review',
+      reason: 'Would create a manual review item for uncertain RSA certificate.',
+      candidateName: candidateName ?? undefined,
+      candidateStaff,
+      reviewReason,
+      sourceFileHash,
+      targetModel: 'StaffDocumentReview'
+    };
+  }
+
+  const review = await prisma.staffDocumentReview.create({
+    data: {
+      recordType: 'RSA',
+      title: 'RSA Certificate',
+      status: 'PENDING_REVIEW',
+      source: DEPUTY_DOCUMENT_REVIEW_SOURCE,
+      sourceFileName: basename,
+      sourceFileHash,
+      candidateName,
+      candidateStaffIds: candidateStaff.map((candidate) => candidate.id),
+      reviewReason,
+      documentName: basename,
+      documentUrl,
+      notes: `Imported from Deputy document archive for manual review. Reason: ${reviewReason}.`
+    }
+  });
+
+  return {
+    file,
+    basename,
+    action: 'review_created',
+    reason: 'Created a manual review item for uncertain RSA certificate.',
+    reviewId: review.id,
+    candidateName: candidateName ?? undefined,
+    candidateStaff,
+    reviewReason,
+    sourceFileHash,
+    targetModel: 'StaffDocumentReview'
+  };
+}
+
 async function importDocumentFile(
   file: string,
   document: KnownDocument,
@@ -240,12 +420,8 @@ async function importDocumentFile(
     );
   }
 
-  const mimeType = mimeTypeFor(file);
-  if (!mimeType) return createSkipResult(file, 'skipped_unrecognised', 'Unsupported file type.');
-
-  const buffer = await fs.readFile(file);
-  const documentUrl = `data:${mimeType};base64,${buffer.toString('base64')}`;
-  if (documentUrl.length > MAX_DATA_URL_BYTES) {
+  const documentUrl = await dataUrlForFile(file);
+  if (!documentUrl) {
     return createSkipResult(file, 'skipped_unrecognised', 'Encoded document is larger than Staff document upload limit.');
   }
 
@@ -313,7 +489,13 @@ async function importDocumentFile(
   };
 }
 
-async function importDeputyDocuments(staffReportPath: string, documentsDir: string, reportPath: string, apply: boolean): Promise<ImportReport> {
+async function importDeputyDocuments(
+  staffReportPath: string,
+  documentsDir: string,
+  reportPath: string,
+  apply: boolean,
+  reviewUncertainRsa: boolean
+): Promise<ImportReport> {
   if (!documentsDir) {
     throw new Error('Pass --documents-dir=/path/to/extracted/deputy/documents.');
   }
@@ -344,8 +526,17 @@ async function importDeputyDocuments(staffReportPath: string, documentsDir: stri
       continue;
     }
 
+    if (/about_blank/i.test(basename)) {
+      results.push(createSkipResult(file, 'skipped_sensitive', 'Sensitive or blank browser export is excluded from Deputy document imports.'));
+      continue;
+    }
+
     if (UNCERTAIN_RSA_BASENAMES.has(basename)) {
-      results.push(createSkipResult(file, 'skipped_uncertain', 'RSA file was not an exact staff match. Leave for manual mapping.'));
+      results.push(
+        reviewUncertainRsa
+          ? await createReviewResult(file, apply)
+          : createSkipResult(file, 'skipped_uncertain', 'RSA file was not an exact staff match. Leave for manual mapping.')
+      );
       continue;
     }
 
@@ -372,12 +563,23 @@ async function importDeputyDocuments(staffReportPath: string, documentsDir: stri
     staffReportPath,
     documentsDir,
     applied: apply,
+    reviewUncertainRsa,
     filesScanned: files.length,
     wouldAttach: results.filter((result) => result.action === 'would_attach').length,
     wouldUpdateExisting: results.filter((result) => result.action === 'would_update_existing').length,
     attached: results.filter((result) => result.action === 'attached').length,
     updatedExisting: results.filter((result) => result.action === 'updated_existing').length,
     alreadyAttached: results.filter((result) => result.action === 'already_attached').length,
+    exactAttached: results.filter((result) => ['would_attach', 'would_update_existing', 'attached', 'updated_existing'].includes(result.action)).length,
+    exactUpdated: results.filter((result) => ['would_update_existing', 'updated_existing'].includes(result.action)).length,
+    exactCreated: results.filter((result) => ['would_attach', 'attached'].includes(result.action)).length,
+    reviewCreated: results.filter((result) => ['would_create_review', 'review_created'].includes(result.action)).length,
+    reviewExisting: results.filter((result) => result.action === 'review_existing').length,
+    skippedGeneric: results.filter((result) => result.action === 'skipped_generic').length,
+    skippedSensitive: results.filter((result) => result.action === 'skipped_sensitive').length,
+    skippedDuplicate: results.filter((result) => result.action === 'skipped_duplicate_filename').length,
+    ambiguous: results.filter((result) => result.action === 'skipped_staff_ambiguous' || result.reviewReason === 'ambiguous name' || result.reviewReason === 'multiple possible staff').length,
+    rejectedByRule: results.filter((result) => ['skipped_uncertain', 'skipped_unrecognised', 'skipped_staff_not_found'].includes(result.action)).length,
     skipped: results.filter((result) => result.action.startsWith('skipped_')).length,
     results,
     reportPath
@@ -389,18 +591,29 @@ async function importDeputyDocuments(staffReportPath: string, documentsDir: stri
 }
 
 async function main() {
-  const { staffReportPath, documentsDir, reportPath, apply } = parseArgs();
-  const report = await importDeputyDocuments(staffReportPath, documentsDir, reportPath, apply);
+  const { staffReportPath, documentsDir, reportPath, apply, reviewUncertainRsa } = parseArgs();
+  const report = await importDeputyDocuments(staffReportPath, documentsDir, reportPath, apply, reviewUncertainRsa);
   console.log(JSON.stringify({
     staffReportPath: report.staffReportPath,
     documentsDir: report.documentsDir,
     applied: report.applied,
+    reviewUncertainRsa: report.reviewUncertainRsa,
     filesScanned: report.filesScanned,
     wouldAttach: report.wouldAttach,
     wouldUpdateExisting: report.wouldUpdateExisting,
     attached: report.attached,
     updatedExisting: report.updatedExisting,
     alreadyAttached: report.alreadyAttached,
+    exactAttached: report.exactAttached,
+    exactUpdated: report.exactUpdated,
+    exactCreated: report.exactCreated,
+    reviewCreated: report.reviewCreated,
+    reviewExisting: report.reviewExisting,
+    skippedGeneric: report.skippedGeneric,
+    skippedSensitive: report.skippedSensitive,
+    skippedDuplicate: report.skippedDuplicate,
+    ambiguous: report.ambiguous,
+    rejectedByRule: report.rejectedByRule,
     skipped: report.skipped,
     reportPath: report.reportPath
   }, null, 2));

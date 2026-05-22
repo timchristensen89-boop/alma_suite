@@ -449,6 +449,22 @@ type RosterShiftContextMenu = {
   y: number;
 };
 
+type StaffDocumentReviewItem = {
+  id: string;
+  recordType: string;
+  title: string;
+  status: string;
+  sourceFileName: string;
+  sourceFileHash: string;
+  candidateName: string | null;
+  candidateStaffIds: string[];
+  reviewReason: string;
+  documentName: string | null;
+  documentUrl: string | null;
+  notes: string | null;
+  createdAt: string;
+};
+
 type RosterForecastDraft = {
   forecastSales: string;
   targetWagePercent: string;
@@ -8656,12 +8672,45 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [documentPrompt, setDocumentPrompt] = useState<{ action: StaffDocumentPromptAction; memberId: string; recordId: string } | null>(null);
+  const [reviewItems, setReviewItems] = useState<StaffDocumentReviewItem[]>([]);
+  const [reviewStaffSelection, setReviewStaffSelection] = useState<Record<string, string>>({});
+  const [reviewError, setReviewError] = useState<string | null>(null);
   const pendingProfiles = staff.filter((member) => member.employmentStatus === 'PENDING');
   const pendingRecords = staff.flatMap((member) =>
     member.records
       .filter((record) => record.status === 'PENDING')
       .map((record) => ({ member, record }))
   );
+  const documentReviewStaff = staff.filter((member) =>
+    member.employmentStatus !== 'ARCHIVED' &&
+    (member as StaffProfile & { accountType?: string }).accountType !== 'VENUE_DEVICE'
+  );
+  const staffById = new Map(staff.map((member) => [member.id, member]));
+
+  const loadReviewItems = useCallback(async () => {
+    try {
+      setReviewError(null);
+      setReviewItems(await api<StaffDocumentReviewItem[]>('/api/staff/document-reviews'));
+    } catch (err) {
+      setReviewError(err instanceof Error ? err.message : 'Could not load manual document reviews.');
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadReviewItems();
+  }, [loadReviewItems]);
+
+  useEffect(() => {
+    setReviewStaffSelection((current) => {
+      const next = { ...current };
+      for (const item of reviewItems) {
+        if (!next[item.id] && item.candidateStaffIds.length === 1) {
+          next[item.id] = item.candidateStaffIds[0]!;
+        }
+      }
+      return next;
+    });
+  }, [reviewItems]);
 
   async function approveRecord(memberId: string, recordId: string) {
     setSaving(true);
@@ -8758,6 +8807,49 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
     }
   }
 
+  async function approveReviewItem(reviewId: string) {
+    const staffProfileId = reviewStaffSelection[reviewId];
+    if (!staffProfileId) {
+      setMessageTarget(`review:${reviewId}`);
+      setMessage('Choose a staff member before approving this RSA document.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`review:${reviewId}`);
+    try {
+      await api(`/api/staff/document-reviews/${reviewId}/approve`, {
+        method: 'POST',
+        body: JSON.stringify({ staffProfileId })
+      });
+      await Promise.all([reload(), loadReviewItems()]);
+      setMessage('Review approved. RSA document is now attached to the selected staff profile for document approval.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not approve document review.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function rejectReviewItem(reviewId: string) {
+    if (!window.confirm('Reject this imported RSA document review item?')) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(`review:${reviewId}`);
+    try {
+      await api(`/api/staff/document-reviews/${reviewId}/reject`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: 'Rejected from Staff approvals.' })
+      });
+      await loadReviewItems();
+      setMessage('Review item rejected.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reject document review.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -8769,6 +8861,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
       <div className="stats-grid">
         <StatCard label="Pending profiles" value={pendingProfiles.length} hint="Awaiting manager approval" />
         <StatCard label="Pending documents" value={pendingRecords.length} hint="Uploaded or waiting" />
+        <StatCard label="Manual RSA reviews" value={reviewItems.length} hint="Imported files to map" />
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could not') || message.includes('Missing') ? 'error-text' : 'subtle'}>{message}</p> : null}
@@ -8806,6 +8899,74 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <ActionFeedback
                       message={messageTarget === `profile:${member.id}` ? message : null}
                       tone={message?.includes('Could') ? 'error' : 'success'}
+                    />
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </ActionPanel>
+
+      <ActionPanel
+        title="Manual RSA review queue"
+        description="Uncertain Deputy RSA files sit here until a manager selects the right staff member. They are not attached to staff profiles until approved."
+        count={reviewItems.length}
+        tone={reviewItems.length ? 'warning' : 'positive'}
+        defaultOpen={reviewItems.length === 1}
+        empty={<EmptyState title="No RSA documents waiting for manual review" description="Run the Deputy document importer with --review-uncertain-rsa to populate this queue." />}
+      >
+        {reviewError ? <p className="error-text">{reviewError}</p> : null}
+        {reviewItems.length === 0 ? (
+          <EmptyState title="No RSA documents waiting for manual review" description="Run the Deputy document importer with --review-uncertain-rsa to populate this queue." />
+        ) : (
+          <div className="invite-list">
+            {reviewItems.map((item) => {
+              const candidateStaff = item.candidateStaffIds
+                .map((id) => staffById.get(id))
+                .filter((member): member is StaffProfile => Boolean(member));
+              const selectedStaffId = reviewStaffSelection[item.id] ?? '';
+              return (
+                <div key={item.id} className="invite-row">
+                  <span>
+                    <strong>{item.title}</strong>
+                    <span className="subtle">
+                      {item.sourceFileName} · {item.reviewReason.replaceAll('_', ' ')}
+                    </span>
+                    {item.candidateName ? <span className="subtle">Candidate name: {item.candidateName}</span> : null}
+                    {candidateStaff.length ? (
+                      <span className="subtle">
+                        Candidate staff: {candidateStaff.map((member) => `${member.firstName} ${member.lastName}`).join(', ')}
+                      </span>
+                    ) : (
+                      <span className="subtle">No confident candidate staff match.</span>
+                    )}
+                    <StaffDocumentViewLink documentUrl={item.documentUrl} />
+                    {item.notes ? <span className="subtle">{item.notes}</span> : null}
+                  </span>
+                  <span className="invite-row-actions staff-review-actions">
+                    <Badge tone="warning">Manual review</Badge>
+                    <Select
+                      label="Attach to staff"
+                      value={selectedStaffId}
+                      onChange={(event) => setReviewStaffSelection((current) => ({ ...current, [item.id]: event.currentTarget.value }))}
+                      options={[
+                        { label: 'Choose staff', value: '' },
+                        ...documentReviewStaff.map((member) => ({
+                          label: `${member.firstName} ${member.lastName}${member.venue ? ` · ${member.venue}` : ''}`,
+                          value: member.id
+                        }))
+                      ]}
+                    />
+                    <Button type="button" size="sm" disabled={saving || !selectedStaffId} onClick={() => void approveReviewItem(item.id)}>
+                      Approve and attach
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void rejectReviewItem(item.id)}>
+                      Reject
+                    </Button>
+                    <ActionFeedback
+                      message={messageTarget === `review:${item.id}` ? message : null}
+                      tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
                     />
                   </span>
                 </div>

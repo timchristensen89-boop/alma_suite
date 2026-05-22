@@ -1810,6 +1810,32 @@ model StaffComplianceRecord {
   @@index([staffProfileId, recordType])
 }
 
+model StaffDocumentReview {
+  id                     String          @id @default(cuid())
+  recordType             StaffRecordType @default(RSA)
+  title                  String
+  status                 String          @default("PENDING_REVIEW")
+  source                 String          @default("deputy-document-import")
+  sourceFileName         String
+  sourceFileHash         String
+  candidateName          String?
+  candidateStaffIds      Json            @default("[]")
+  reviewReason           String
+  documentName           String?
+  documentUrl            String?
+  notes                  String?
+  resolvedStaffProfileId String?
+  resolvedRecordId       String?
+  resolvedById           String?
+  resolvedAt             DateTime?
+  createdAt              DateTime        @default(now())
+  updatedAt              DateTime        @updatedAt
+
+  @@unique([source, sourceFileHash])
+  @@index([status, createdAt])
+  @@index([recordType, status])
+}
+
 model IncidentReport {
   id                String           @id @default(cuid())
   title             String

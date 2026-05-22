@@ -1017,6 +1017,14 @@
   justify-content: flex-end;
 }
 
+.staff-review-actions {
+  max-width: min(100%, 540px);
+}
+
+.staff-review-actions .field {
+  min-width: min(100%, 240px);
+}
+
 .staff-document-confirm {
   display: flex;
   align-items: center;

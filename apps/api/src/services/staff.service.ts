@@ -97,6 +97,12 @@ const staffRecordAttachmentInputSchema = z.object({
   documentUrl: staffRecordAttachmentDataUrlSchema,
   status: z.literal('PENDING').optional()
 });
+const staffDocumentReviewApproveSchema = z.object({
+  staffProfileId: z.string().trim().min(1, 'Choose a staff member before approving this document.')
+});
+const staffDocumentReviewRejectSchema = z.object({
+  reason: z.string().trim().max(500, 'Reason must be 500 characters or fewer').optional()
+});
 
 function validateStaffRecordAttachmentOnCreate(documentUrl?: string) {
   const value = documentUrl?.trim();
@@ -470,7 +476,37 @@ type StaffHrRecordRow = Prisma.StaffHrRecordGetPayload<{
   };
 }>;
 
+type StaffDocumentReviewRow = Prisma.StaffDocumentReviewGetPayload<Record<string, never>>;
+
 type StaffHrDocumentTemplateRow = Prisma.StaffHrDocumentTemplateGetPayload<Record<string, never>>;
+
+function jsonStringArray(value: Prisma.JsonValue): string[] {
+  return z.array(z.string()).catch([]).parse(value);
+}
+
+function toStaffDocumentReview(row: StaffDocumentReviewRow) {
+  return {
+    id: row.id,
+    recordType: row.recordType,
+    title: row.title,
+    status: row.status,
+    source: row.source,
+    sourceFileName: row.sourceFileName,
+    sourceFileHash: row.sourceFileHash,
+    candidateName: row.candidateName,
+    candidateStaffIds: jsonStringArray(row.candidateStaffIds),
+    reviewReason: row.reviewReason,
+    documentName: row.documentName,
+    documentUrl: row.documentUrl,
+    notes: row.notes,
+    resolvedStaffProfileId: row.resolvedStaffProfileId,
+    resolvedRecordId: row.resolvedRecordId,
+    resolvedById: row.resolvedById,
+    resolvedAt: dateToIso(row.resolvedAt),
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
 
 function toStaffHrRecord(row: StaffHrRecordRow): StaffHrRecord {
   return {
@@ -4907,6 +4943,116 @@ export const staffService = {
       where: { id: recordId },
       data: { status: 'APPROVED' }
     });
+  },
+
+  async listDocumentReviews(query: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    const parsed = z.object({
+      status: z.string().trim().optional()
+    }).parse(query ?? {});
+    const rows = await prisma.staffDocumentReview.findMany({
+      where: {
+        status: parsed.status || 'PENDING_REVIEW'
+      },
+      orderBy: [{ createdAt: 'asc' }]
+    });
+    return rows.map(toStaffDocumentReview);
+  },
+
+  async approveDocumentReview(reviewId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    const data = staffDocumentReviewApproveSchema.parse(input);
+    await assertManagerCanAccessStaffProfile(data.staffProfileId, actor);
+
+    return prisma.$transaction(async (tx) => {
+      const review = await tx.staffDocumentReview.findUnique({ where: { id: reviewId } });
+      if (!review) throw new HttpError(404, 'Document review item not found');
+      if (review.status !== 'PENDING_REVIEW') throw new HttpError(400, 'Document review item is already resolved');
+      if (!review.documentUrl || !review.documentName) throw new HttpError(400, 'Review item has no document attached');
+
+      const existingByName = await tx.staffComplianceRecord.findFirst({
+        where: {
+          staffProfileId: data.staffProfileId,
+          recordType: review.recordType,
+          documentName: review.documentName
+        }
+      });
+      const pendingWithoutDocument = existingByName
+        ? null
+        : await tx.staffComplianceRecord.findFirst({
+          where: {
+            staffProfileId: data.staffProfileId,
+            recordType: review.recordType,
+            documentUrl: null
+          },
+          orderBy: { createdAt: 'asc' }
+        });
+      const recordData = {
+        recordType: review.recordType,
+        title: review.title,
+        issuer: review.recordType === 'RSA' ? 'NSW RSA' : null,
+        status: 'PENDING' as const,
+        documentName: review.documentName,
+        documentUrl: review.documentUrl,
+        notes: appendRecordNote(
+          review.notes,
+          `Deputy document review approved ${new Date().toISOString()}. Review reason: ${review.reviewReason}.`
+        )
+      };
+      const record = existingByName
+        ? await tx.staffComplianceRecord.update({
+          where: { id: existingByName.id },
+          data: recordData
+        })
+        : pendingWithoutDocument
+          ? await tx.staffComplianceRecord.update({
+            where: { id: pendingWithoutDocument.id },
+            data: recordData
+          })
+          : await tx.staffComplianceRecord.create({
+            data: {
+              ...recordData,
+              staffProfileId: data.staffProfileId
+            }
+          });
+
+      const resolved = await tx.staffDocumentReview.update({
+        where: { id: review.id },
+        data: {
+          status: 'APPROVED',
+          resolvedStaffProfileId: data.staffProfileId,
+          resolvedRecordId: record.id,
+          resolvedById: actor.id,
+          resolvedAt: new Date()
+        }
+      });
+
+      return {
+        review: toStaffDocumentReview(resolved),
+        record
+      };
+    });
+  },
+
+  async rejectDocumentReview(reviewId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    if (actor.role === 'STAFF') throw new HttpError(403, 'Managers can review imported staff documents.');
+    const data = staffDocumentReviewRejectSchema.parse(input);
+    const review = await prisma.staffDocumentReview.findUnique({ where: { id: reviewId } });
+    if (!review) throw new HttpError(404, 'Document review item not found');
+    if (review.status !== 'PENDING_REVIEW') throw new HttpError(400, 'Document review item is already resolved');
+    const resolved = await prisma.staffDocumentReview.update({
+      where: { id: reviewId },
+      data: {
+        status: 'REJECTED',
+        notes: appendRecordNote(review.notes, `Review rejected ${new Date().toISOString()}${data.reason ? `: ${data.reason}` : '.'}`),
+        resolvedById: actor.id,
+        resolvedAt: new Date()
+      }
+    });
+    return toStaffDocumentReview(resolved);
   },
 
   async approveOnboarding(staffProfileId: string, actor?: AuthUser) {

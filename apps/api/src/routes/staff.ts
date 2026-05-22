@@ -723,6 +723,30 @@ staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/document-reviews', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listDocumentReviews(req.query, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/document-reviews/:reviewId/approve', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.approveDocumentReview(String(req.params.reviewId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/document-reviews/:reviewId/reject', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.rejectDocumentReview(String(req.params.reviewId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.put('/:id/app-access', requireManager, async (req, res, next) => {
   try {
     if (grantsAdminAppAccess(req.body) && !canGrantAdminAppAccess(req)) {
