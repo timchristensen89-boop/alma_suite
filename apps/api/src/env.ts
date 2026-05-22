@@ -113,7 +113,13 @@ export const env = {
       webhookUrl:
         process.env.SQUARE_WEBHOOK_URL ??
         process.env.SQUARE_WEBHOOK_NOTIFICATION_URL ??
-        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/webhook`
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/square/webhook`,
+      configuredFromEnv: {
+        redirectUri: Boolean(process.env.SQUARE_REDIRECT_URI ?? process.env.SQUARE_REDIRECT_URL),
+        webhookUrl: Boolean(process.env.SQUARE_WEBHOOK_URL ?? process.env.SQUARE_WEBHOOK_NOTIFICATION_URL),
+        apiVersion: Boolean(process.env.SQUARE_API_VERSION),
+        environment: Boolean(process.env.SQUARE_ENVIRONMENT)
+      }
     },
     xero: {
       clientId: process.env.XERO_CLIENT_ID ?? '',

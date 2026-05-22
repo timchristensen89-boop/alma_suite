@@ -227,6 +227,8 @@ function accessFor(user: AdminAccessUserSummary, appId: AlmaAppId): StaffAppAcce
 }
 
 type CallbackBanner = {
+  integration: string | null;
+  account: string | null;
   status: string;
   next: string | null;
   reason: string | null;
@@ -1109,8 +1111,11 @@ function metaChecklistTone(status: AdminMetaIntegrationStatus['checklist'][numbe
 
 function currentCallbackBanner(): CallbackBanner {
   const params = new URLSearchParams(window.location.search);
-  if (params.get('integration') !== 'meta') return null;
+  const integration = params.get('integration');
+  if (integration !== 'meta' && integration !== 'square') return null;
   return {
+    integration,
+    account: params.get('account'),
     status: params.get('status') ?? 'unknown',
     next: params.get('next'),
     reason: params.get('reason')
@@ -1125,6 +1130,7 @@ function IntegrationCard({
   onHealthCheck,
   onRefresh,
   onSyncLocations,
+  callbackBanner,
   xeroHealth
 }: {
   integration: IntegrationProviderStatus;
@@ -1134,6 +1140,7 @@ function IntegrationCard({
   onHealthCheck?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
+  callbackBanner?: CallbackBanner;
   xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
   const accountSuffix = integration.accountKey ? `:${integration.accountKey}` : '';
@@ -1143,11 +1150,51 @@ function IntegrationCard({
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isXero = integration.provider === 'xero';
   const isSquare = integration.provider === 'square';
+  const squareSetup = integration.squareSetup;
+  const squareAccountTitle = isSquare
+    ? `${integration.accountKey === 'secondary' ? 'Secondary Square' : 'Primary Square'}, ${squareSetup?.label ?? integration.label}`
+    : integration.label;
+  const squareMissingLabels = squareSetup?.missingLabels ?? [];
+  const squareSetupComplete = squareSetup?.configured ?? integration.configured;
+  const cardSubtitle = isSquare
+    ? squareSetupComplete
+      ? integration.status === 'CONNECTED'
+        ? 'Connected and ready'
+        : 'Ready to connect'
+      : 'Setup incomplete'
+    : integration.configured
+      ? 'Connection ready'
+      : 'Setup required';
+  const squareWebhookUrl = squareSetup?.webhookUrl ?? integration.webhookUrl ?? null;
+  const squareRedirectUri = squareSetup?.redirectUri ?? integration.redirectUri ?? null;
+  const squareLocationCount = squareSetup?.locationCount ?? integration.locationCount ?? null;
+  const squareLastWebhookAt = squareSetup?.lastWebhookAt ?? integration.webhookLastReceivedAt ?? null;
+  const squareWebhookEventCount = squareSetup?.webhookEventCount ?? integration.webhookEventCount ?? 0;
+  const squareCallbackBanner = isSquare && callbackBanner?.integration === 'square' && (!callbackBanner.account || callbackBanner.account === integration.accountKey)
+    ? callbackBanner
+    : null;
 
   return (
-    <Card title={integration.label} subtitle={integration.configured ? 'Connection ready' : 'Setup required'}>
+    <Card title={squareAccountTitle} subtitle={cardSubtitle}>
       <div className="admin-provider-card">
         <Badge tone={integrationTone(integration.status)}>{integration.status.replace(/_/g, ' ')}</Badge>
+        {isSquare ? (
+          <Badge tone={squareSetupComplete ? 'positive' : 'warning'}>
+            {squareSetupComplete ? 'Ready to connect' : 'Setup incomplete'}
+          </Badge>
+        ) : null}
+        {squareCallbackBanner ? (
+          <div className="admin-warning-item">
+            <Badge tone={squareCallbackBanner.status === 'connected' ? 'positive' : 'warning'}>
+              {squareCallbackBanner.status.replace(/_/g, ' ')}
+            </Badge>
+            <p>
+              {squareCallbackBanner.reason
+                ? `Square OAuth returned: ${squareCallbackBanner.reason.replace(/_/g, ' ')}.`
+                : 'Square OAuth returned to Admin.'}
+            </p>
+          </div>
+        ) : null}
         <p className="muted">Connection tokens are stored securely on the server and are never exposed in the browser.</p>
         <div>
           <strong>Powers</strong>
@@ -1169,26 +1216,47 @@ function IntegrationCard({
           <>
             <div>
               <strong>Redirect URI</strong>
-              <p>{integration.redirectUri ?? 'Not configured'}</p>
+              <p>{squareRedirectUri ?? 'Not configured'}</p>
             </div>
             <div>
               <strong>Webhook URL</strong>
-              <p>{integration.webhookUrl ?? 'Not configured'}</p>
+              <p>{squareWebhookUrl ?? 'Not configured'}</p>
             </div>
             <div>
               <strong>Setup steps</strong>
               <p>Create this Square app, add the redirect URI and webhook URL above, store this account's app credentials and webhook signature key in API env/secrets, then connect from here.</p>
             </div>
             <div className="admin-status-stack">
+              <StatusLine label="OAuth config" value={squareSetup?.oauthConfigured ? 'Configured' : 'Missing'} tone={squareSetup?.oauthConfigured ? 'positive' : 'warning'} />
               <StatusLine label="Environment" value={integration.environment ?? 'Not configured'} tone={integration.environment === 'production' ? 'warning' : 'info'} />
               <StatusLine label="API version" value={integration.apiVersion ?? 'Not configured'} tone="muted" />
-              <StatusLine label="Webhook key" value={integration.webhookConfigured ? 'Configured' : 'Missing'} tone={integration.webhookConfigured ? 'positive' : 'warning'} />
-              <StatusLine label="Webhook events" value={String(integration.webhookEventCount ?? 0)} tone={(integration.webhookEventCount ?? 0) ? 'info' : 'muted'} />
-              <StatusLine label="Last webhook" value={integration.webhookLastReceivedAt ? formatDate(integration.webhookLastReceivedAt) : 'No events yet'} tone="muted" />
+              <StatusLine label="Webhook key" value={squareSetup?.webhookConfigured ? 'Configured' : 'Missing'} tone={squareSetup?.webhookConfigured ? 'positive' : 'warning'} />
+              <StatusLine label="Webhook events" value={String(squareWebhookEventCount)} tone={squareWebhookEventCount ? 'info' : 'muted'} />
+              <StatusLine label="Last webhook" value={squareLastWebhookAt ? formatDate(squareLastWebhookAt) : 'No events yet'} tone="muted" />
               <StatusLine label="Webhook failures" value={String(integration.webhookFailedEventCount ?? 0)} tone={(integration.webhookFailedEventCount ?? 0) ? 'danger' : 'muted'} />
-              <StatusLine label="Locations" value={integration.locationCount === null || integration.locationCount === undefined ? 'Not synced' : String(integration.locationCount)} tone={integration.locationCount ? 'positive' : 'muted'} />
+              <StatusLine label="Locations" value={squareLocationCount === null || squareLocationCount === undefined ? 'Not synced' : String(squareLocationCount)} tone={squareLocationCount ? 'positive' : 'muted'} />
               <StatusLine label="Location sync" value={integration.lastLocationSyncAt ? formatDate(integration.lastLocationSyncAt) : 'No location sync yet'} tone="muted" />
             </div>
+            {squareMissingLabels.length ? (
+              <div>
+                <strong>Missing</strong>
+                <ul className="admin-device-policy-list">
+                  {squareMissingLabels.map((label) => (
+                    <li key={label}>{label}</li>
+                  ))}
+                </ul>
+              </div>
+            ) : squareSetupComplete ? (
+              <div>
+                <strong>Setup</strong>
+                <p>Ready to connect. Use the account-scoped Connect button for this Square app.</p>
+              </div>
+            ) : (
+              <div>
+                <strong>Setup</strong>
+                <p>{integration.connectBlockedReason ?? 'Server-side Square setup is incomplete.'}</p>
+              </div>
+            )}
             {integration.locations?.length ? (
               <div className="admin-status-stack">
                 {integration.locations.slice(0, 5).map((location) => (
@@ -1221,7 +1289,7 @@ function IntegrationCard({
             <p className="muted">{xeroHealth.message}</p>
           </div>
         ) : null}
-        {integration.missingEnvVars.length ? (
+        {!isSquare && integration.missingEnvVars.length ? (
           <div>
             <strong>Setup needed</strong>
             <p>{integration.missingEnvVars.join(', ')}</p>
@@ -3015,6 +3083,7 @@ export function AdminPage({
                   }
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
+                  callbackBanner={callbackBanner}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
               ))}
@@ -3022,7 +3091,7 @@ export function AdminPage({
                 <MetaIntegrationCard
                   meta={integrations.meta}
                   busy={integrationBusy}
-                  callbackBanner={callbackBanner}
+                  callbackBanner={callbackBanner?.integration === 'meta' ? callbackBanner : null}
                   onConnect={connectMeta}
                 />
               ) : null}

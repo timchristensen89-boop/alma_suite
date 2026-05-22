@@ -1715,12 +1715,41 @@ export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
 export type SquareAccountKey = 'primary' | 'secondary';
 
+export type SquareConfigMissingMap = {
+  applicationId: boolean;
+  applicationSecret: boolean;
+  webhookSignatureKey: boolean;
+  redirectUri: boolean;
+  webhookUrl: boolean;
+  apiVersion: boolean;
+  environment: boolean;
+};
+
+export type SquareSetupDiagnostics = {
+  accountKey: SquareAccountKey;
+  label: string;
+  configured: boolean;
+  oauthConfigured: boolean;
+  webhookConfigured: boolean;
+  connected: boolean;
+  missing: SquareConfigMissingMap;
+  missingLabels: string[];
+  redirectUri: string | null;
+  webhookUrl: string | null;
+  lastWebhookAt: string | null;
+  webhookEventCount: number;
+  locationCount: number | null;
+};
+
 export type IntegrationProviderStatus = {
   provider: IntegrationProviderKey;
   accountKey?: SquareAccountKey;
   label: string;
   status: IntegrationConnectionStatus;
   configured: boolean;
+  oauthConfigured?: boolean;
+  connected?: boolean;
+  squareSetup?: SquareSetupDiagnostics;
   canConnect: boolean;
   connectBlockedReason: string | null;
   providerAccountId: string | null;

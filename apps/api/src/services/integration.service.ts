@@ -9,6 +9,7 @@ import type {
   IntegrationProviderKey,
   IntegrationProviderStatus,
   IntegrationStatusPayload,
+  SquareConfigMissingMap,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
   XeroSupplierBillPreview,
@@ -166,28 +167,67 @@ function squareWebhookUrl(accountKey: SquareAccountKey) {
   return `${env.integrations.square.webhookUrl.replace(/\/+$/, '')}/${accountKey}`;
 }
 
+const SQUARE_CONFIG_LABELS: Record<keyof SquareConfigMissingMap, string> = {
+  applicationId: 'Application ID',
+  applicationSecret: 'Application secret',
+  webhookSignatureKey: 'Webhook signature key',
+  redirectUri: 'OAuth redirect URI',
+  webhookUrl: 'Webhook URL',
+  apiVersion: 'Square API version',
+  environment: 'Square environment'
+};
+
+function squareMissingConfig(accountKey: SquareAccountKey): SquareConfigMissingMap {
+  const account = squareAccountConfig(accountKey);
+  return {
+    applicationId: !account.applicationId,
+    applicationSecret: !account.applicationSecret,
+    webhookSignatureKey: !account.webhookSignatureKey,
+    redirectUri: !env.integrations.square.configuredFromEnv.redirectUri || !env.integrations.square.redirectUrl,
+    webhookUrl: !env.integrations.square.configuredFromEnv.webhookUrl || !env.integrations.square.webhookUrl,
+    apiVersion: !env.integrations.square.configuredFromEnv.apiVersion || !env.integrations.square.apiVersion,
+    environment: !env.integrations.square.configuredFromEnv.environment || !env.integrations.square.environment
+  };
+}
+
+function squareMissingLabels(missing: SquareConfigMissingMap) {
+  return (Object.entries(missing) as Array<[keyof SquareConfigMissingMap, boolean]>)
+    .filter(([, isMissing]) => isMissing)
+    .map(([key]) => SQUARE_CONFIG_LABELS[key]);
+}
+
+function squareMissingEnvVars(accountKey: SquareAccountKey, missing: SquareConfigMissingMap) {
+  const prefix = `SQUARE_${accountKey.toUpperCase()}`;
+  return [
+    missing.applicationId ? `${prefix}_APPLICATION_ID` : null,
+    missing.applicationSecret ? `${prefix}_APPLICATION_SECRET` : null,
+    missing.webhookSignatureKey ? `${prefix}_WEBHOOK_SIGNATURE_KEY` : null,
+    missing.redirectUri ? 'SQUARE_REDIRECT_URI' : null,
+    missing.webhookUrl ? 'SQUARE_WEBHOOK_URL' : null,
+    missing.apiVersion ? 'SQUARE_API_VERSION' : null,
+    missing.environment ? 'SQUARE_ENVIRONMENT' : null
+  ].filter((value): value is string => Boolean(value));
+}
+
 function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'primary') {
   if (provider === 'SQUARE') {
     const isProduction = env.integrations.square.environment === 'production';
-    const account = squareAccountConfig(accountKey);
+    const missing = squareMissingConfig(accountKey);
+    const oauthConfigured = !missing.applicationId && !missing.applicationSecret && !missing.redirectUri && !missing.apiVersion && !missing.environment;
+    const webhookConfigured = !missing.webhookSignatureKey && !missing.webhookUrl;
     return {
-      configured: Boolean(
-        account.applicationId &&
-          account.applicationSecret &&
-          env.integrations.square.redirectUrl
-      ),
-      missingEnvVars: [
-        account.applicationId ? null : `SQUARE_${accountKey.toUpperCase()}_APPLICATION_ID`,
-        account.applicationSecret ? null : `SQUARE_${accountKey.toUpperCase()}_APPLICATION_SECRET`,
-        env.integrations.square.redirectUrl ? null : 'SQUARE_REDIRECT_URI'
-      ].filter((value): value is string => Boolean(value)),
+      configured: oauthConfigured && webhookConfigured,
+      oauthConfigured,
+      missingConfig: missing,
+      missingLabels: squareMissingLabels(missing),
+      missingEnvVars: squareMissingEnvVars(accountKey, missing),
       environment: isProduction ? 'production' : 'sandbox',
       oauthBaseUrl: isProduction ? 'https://connect.squareup.com/oauth2' : 'https://connect.squareupsandbox.com/oauth2',
       apiBaseUrl: isProduction ? 'https://connect.squareup.com/v2' : 'https://connect.squareupsandbox.com/v2',
       apiVersion: env.integrations.square.apiVersion,
       redirectUri: env.integrations.square.redirectUrl,
       webhookUrl: squareWebhookUrl(accountKey),
-      webhookConfigured: Boolean(account.webhookSignatureKey && env.integrations.square.webhookUrl)
+      webhookConfigured
     };
   }
 
@@ -208,7 +248,10 @@ function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'prim
     apiVersion: null,
     redirectUri: env.integrations.xero.redirectUrl,
     webhookUrl: null,
-    webhookConfigured: Boolean(env.integrations.xero.webhookKey)
+    webhookConfigured: Boolean(env.integrations.xero.webhookKey),
+    oauthConfigured: Boolean(env.integrations.xero.clientId && env.integrations.xero.clientSecret && env.integrations.xero.redirectUrl),
+    missingConfig: null,
+    missingLabels: []
   };
 }
 
@@ -464,7 +507,9 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     ...(storageReady ? [] : ['Integration database setup'])
   ];
   const reason = storageReady
-    ? blockedReason(provider, config.missingEnvVars, tokenStorage.configured)
+    ? provider === 'SQUARE' && config.missingLabels.length
+      ? `Missing ${config.missingLabels.join(', ')}.`
+      : blockedReason(provider, config.missingEnvVars, tokenStorage.configured)
     : 'Integration database setup is not active yet.';
   const status = !config.configured || !tokenStorage.configured
     ? 'NOT_CONFIGURED'
@@ -478,6 +523,24 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
         webhookEventCount: 0,
         webhookFailedEventCount: 0
       };
+  const connected = connection?.status === 'CONNECTED';
+  const squareSetup = provider === 'SQUARE'
+    ? {
+        accountKey,
+        label: squareAccountConfig(accountKey).label,
+        configured: config.configured && tokenStorage.configured,
+        oauthConfigured: config.oauthConfigured,
+        webhookConfigured: config.webhookConfigured,
+        connected,
+        missing: config.missingConfig as SquareConfigMissingMap,
+        missingLabels: config.missingLabels,
+        redirectUri: config.redirectUri,
+        webhookUrl: config.webhookUrl,
+        lastWebhookAt: webhookStats.webhookLastReceivedAt,
+        webhookEventCount: webhookStats.webhookEventCount,
+        locationCount: squareStatus?.locationCount ?? null
+      }
+    : undefined;
 
   return {
     provider: copy.key,
@@ -485,6 +548,9 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     label: provider === 'SQUARE' ? squareAccountConfig(accountKey).label : copy.label,
     status,
     configured: config.configured && tokenStorage.configured,
+    oauthConfigured: config.oauthConfigured,
+    connected,
+    squareSetup,
     canConnect: !reason,
     connectBlockedReason: reason,
     providerAccountId: provider === 'XERO' ? maskIdentifier(connection?.providerAccountId) : connection?.providerAccountId ?? null,
@@ -505,7 +571,11 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     powers: copy.powers,
     requiredSetup: copy.requiredSetup,
     missingEnvVars,
-    actionLabel: connection?.status === 'CONNECTED' ? `Reconnect ${copy.label}` : `Connect ${copy.label}`,
+    actionLabel: reason && provider === 'SQUARE'
+      ? 'Complete Square config first'
+      : connection?.status === 'CONNECTED'
+        ? `Reconnect ${provider === 'SQUARE' ? squareAccountConfig(accountKey).label : copy.label}`
+        : `Connect ${provider === 'SQUARE' ? squareAccountConfig(accountKey).label : copy.label}`,
     actionDisabled: Boolean(reason),
     locationCount: squareStatus?.locationCount ?? null,
     locations: squareStatus?.locations ?? undefined,
@@ -1227,6 +1297,53 @@ function frontendAdminRedirect(params: Record<string, string>) {
   const base = (process.env.COMPLIANCE_WEB_URL ?? process.env.FRONTEND_URL ?? 'http://localhost:5173').replace(/\/+$/, '');
   const search = new URLSearchParams(params);
   return `${base}/admin?${search.toString()}`;
+}
+
+function squareCallbackRedirect(reason: string, accountKey?: SquareAccountKey) {
+  return frontendAdminRedirect({
+    integration: 'square',
+    status: 'failed',
+    ...(accountKey ? { account: accountKey } : {}),
+    reason
+  });
+}
+
+function squareCallbackReason(error: unknown) {
+  const message = error instanceof Error ? error.message.toLowerCase() : '';
+  const details = error instanceof HttpError ? JSON.stringify(error.details ?? '').toLowerCase() : '';
+  if (message.includes('token exchange') || details.includes('oauth')) {
+    if (details.includes('redirect')) return 'redirect_uri_mismatch_possible';
+    return 'token_exchange_failed';
+  }
+  if (message.includes('unknown square account')) return 'unknown_account';
+  if (message.includes('not configured') || message.includes('missing')) return 'missing_env';
+  return 'token_exchange_failed';
+}
+
+async function recordSquareCallbackFailure(input: {
+  reason: string;
+  accountKey?: SquareAccountKey;
+  provider?: Provider;
+  metadata?: Record<string, unknown>;
+}) {
+  const provider = input.provider ?? 'SQUARE';
+  console.warn('[integrations] OAuth callback failed', {
+    provider,
+    accountKey: input.accountKey ?? null,
+    reason: input.reason
+  });
+  await recordEvent({
+    provider,
+    eventType: 'CONNECT_FAILED',
+    summary: provider === 'SQUARE' && input.accountKey
+      ? `${squareAccountConfig(input.accountKey).label} Square OAuth callback failed.`
+      : `${PROVIDER_COPY[provider].label} OAuth callback failed.`,
+    metadata: {
+      reason: input.reason,
+      ...(input.accountKey ? { accountKey: input.accountKey } : {}),
+      ...(input.metadata ?? {})
+    }
+  });
 }
 
 function metaStatus(): AdminMetaIntegrationStatus {
@@ -2291,12 +2408,28 @@ export const integrationService = {
     const state = typeof query.state === 'string' ? query.state : '';
     const error = typeof query.error === 'string' ? query.error : '';
     const code = typeof query.code === 'string' ? query.code : '';
-    const squareAccountKey = provider === 'SQUARE' ? squareAccountKeyFromState(state) : undefined;
+    let squareAccountKey: SquareAccountKey | undefined;
+    if (provider === 'SQUARE') {
+      if (!state) {
+        await recordSquareCallbackFailure({ reason: 'missing_account' });
+        return squareCallbackRedirect('missing_account');
+      }
+      try {
+        squareAccountKey = squareAccountKeyFromState(state);
+      } catch {
+        await recordSquareCallbackFailure({ reason: 'unknown_account' });
+        return squareCallbackRedirect('unknown_account');
+      }
+    }
     const stateRow = state
       ? await prisma.integrationOAuthState.findUnique({ where: { stateHash: hashState(state) } })
       : null;
 
     if (!stateRow || stateRow.provider !== provider || stateRow.consumedAt || stateRow.expiresAt < new Date()) {
+      if (provider === 'SQUARE') {
+        await recordSquareCallbackFailure({ reason: 'invalid_state', accountKey: squareAccountKey });
+        return squareCallbackRedirect('invalid_state', squareAccountKey);
+      }
       return frontendAdminRedirect({ integration: PROVIDER_COPY[provider].key, status: 'invalid_state' });
     }
 
@@ -2306,6 +2439,11 @@ export const integrationService = {
     });
 
     if (error || !code) {
+      if (provider === 'SQUARE') {
+        const reason = error ? 'square_error_param' : 'token_exchange_failed';
+        await recordSquareCallbackFailure({ reason, accountKey: squareAccountKey });
+        return squareCallbackRedirect(reason, squareAccountKey);
+      }
       await recordEvent({
         provider,
         eventType: 'CONNECT_FAILED',
@@ -2317,6 +2455,8 @@ export const integrationService = {
 
     try {
       if (provider === 'SQUARE' && squareAccountKey) {
+        const config = providerConfig('SQUARE', squareAccountKey);
+        if (!config.oauthConfigured) throw new HttpError(503, 'Square OAuth configuration is missing.');
         const token = await exchangeSquareToken(code, squareAccountKey);
         if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Square did not return OAuth tokens.');
         const locationResponse = await squareGetJsonWithAccessToken<SquareLocationsResponse>('/locations', token.access_token, squareAccountKey);
@@ -2413,8 +2553,17 @@ export const integrationService = {
         });
         await recordEvent({ provider, connectionId: connection.id, eventType: 'CONNECTED', summary: 'Xero connected successfully.' });
       }
-      return frontendAdminRedirect({ integration: PROVIDER_COPY[provider].key, status: 'connected' });
+      return frontendAdminRedirect({
+        integration: PROVIDER_COPY[provider].key,
+        status: 'connected',
+        ...(provider === 'SQUARE' && squareAccountKey ? { account: squareAccountKey } : {})
+      });
     } catch (callbackError) {
+      if (provider === 'SQUARE') {
+        const reason = squareCallbackReason(callbackError);
+        await recordSquareCallbackFailure({ reason, accountKey: squareAccountKey });
+        return squareCallbackRedirect(reason, squareAccountKey);
+      }
       await recordEvent({
         provider,
         eventType: 'CONNECT_FAILED',
