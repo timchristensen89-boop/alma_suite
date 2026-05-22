@@ -149,6 +149,8 @@ enum InventoryMovementType {
   STOCKTAKE_ADJUSTMENT
   STOCKTAKE_CORRECTION
   STOCKTAKE_REVERSAL
+  WASTAGE
+  DELIVERY_RECEIPT
 }
 
 enum AlmaAppId {
@@ -2106,6 +2108,9 @@ model StockItem {
   stocktakeLines StocktakeLine[]
   movements      InventoryMovement[]
   invoiceLines   SupplierInvoiceLine[]
+  wastageRecords StockWastageRecord[]
+  deliveryCheckItems StockDeliveryCheckItem[]
+  reorderNotices StockReorderNotice[]
 
   @@index([categoryId])
   @@index([status])
@@ -2131,6 +2136,98 @@ model VenueStockItem {
   @@index([venue, active])
   @@index([venue, reorderPoint])
   @@index([updatedAt])
+}
+
+model StockWastageRecord {
+  id              String   @id @default(cuid())
+  stockItemId     String
+  venue           String
+  quantity        Float
+  unit            String
+  reason          String
+  note            String?
+  wastedAt        DateTime @default(now())
+  recordedById    String?
+  costImpactCents Int?
+  status          String   @default("RECORDED")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  stockItem       StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  movements       InventoryMovement[]
+
+  @@index([venue, wastedAt])
+  @@index([stockItemId, wastedAt])
+  @@index([reason])
+}
+
+model StockDeliveryCheck {
+  id                String   @id @default(cuid())
+  supplierId        String?
+  supplierName      String
+  venue             String
+  invoiceNumber     String?
+  deliveryDate      DateTime @default(now())
+  invoiceReference  String?
+  status            String   @default("DRAFT")
+  notes             String?
+  createdById       String?
+  completedAt       DateTime?
+  completedById     String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  supplier          Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items             StockDeliveryCheckItem[]
+
+  @@index([venue, status])
+  @@index([supplierId, deliveryDate])
+  @@index([invoiceNumber])
+}
+
+model StockDeliveryCheckItem {
+  id                  String   @id @default(cuid())
+  deliveryCheckId     String
+  stockItemId         String?
+  description         String
+  expectedQuantity    Float?
+  receivedQuantity    Float?
+  unit                String?
+  checked             Boolean  @default(false)
+  discrepancy         Boolean  @default(false)
+  discrepancyReason   String?
+  notes               String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  deliveryCheck       StockDeliveryCheck @relation(fields: [deliveryCheckId], references: [id], onDelete: Cascade)
+  stockItem           StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  movements           InventoryMovement[]
+
+  @@index([deliveryCheckId])
+  @@index([stockItemId])
+  @@index([discrepancy])
+}
+
+model StockReorderNotice {
+  id              String   @id @default(cuid())
+  stockItemId     String
+  venue           String
+  status          String   @default("OPEN")
+  currentOnHand   Float?
+  parLevel        Float?
+  reorderPoint    Float?
+  reorderQuantity Float?
+  unit            String?
+  message         String
+  createdAt       DateTime @default(now())
+  resolvedAt      DateTime?
+  resolvedById    String?
+  dismissedAt     DateTime?
+  dismissedById   String?
+  updatedAt       DateTime @updatedAt
+  stockItem       StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@index([venue, status])
+  @@index([venue, stockItemId, status])
+  @@index([stockItemId])
 }
 
 model Stocktake {
@@ -2192,16 +2289,22 @@ model InventoryMovement {
   unit                  String?
   sourceStocktakeId     String?
   sourceStocktakeLineId String?
+  sourceWastageId       String?
+  sourceDeliveryCheckItemId String?
   notes                 String?
   createdAt             DateTime              @default(now())
   item                  StockItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
   sourceStocktake       Stocktake?            @relation(fields: [sourceStocktakeId], references: [id], onDelete: SetNull)
   sourceStocktakeLine   StocktakeLine?        @relation(fields: [sourceStocktakeLineId], references: [id], onDelete: SetNull)
+  sourceWastage         StockWastageRecord?   @relation(fields: [sourceWastageId], references: [id], onDelete: SetNull)
+  sourceDeliveryCheckItem StockDeliveryCheckItem? @relation(fields: [sourceDeliveryCheckItemId], references: [id], onDelete: SetNull)
 
   @@index([itemId, createdAt])
   @@index([movementType])
   @@index([sourceStocktakeId])
   @@index([sourceStocktakeLineId])
+  @@index([sourceWastageId])
+  @@index([sourceDeliveryCheckItemId])
 }
 
 model Recipe {
@@ -2274,6 +2377,7 @@ model Supplier {
   createdAt     DateTime       @default(now())
   updatedAt     DateTime       @updatedAt
   invoices      SupplierInvoice[]
+  deliveryChecks StockDeliveryCheck[]
 
   @@index([status])
   @@index([name])

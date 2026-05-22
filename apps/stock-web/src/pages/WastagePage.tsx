@@ -1,0 +1,161 @@
+import { FormEvent, useEffect, useMemo, useState } from 'react';
+import type { StockItem, StockWastagePayload, StockWastageReason } from '@alma/shared';
+import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { ApiError, api } from '../lib/api';
+
+const REASONS: Array<{ label: string; value: StockWastageReason }> = [
+  { label: 'Spoiled', value: 'SPOILED' },
+  { label: 'Broken', value: 'BROKEN' },
+  { label: 'Over poured', value: 'OVER_POURED' },
+  { label: 'Kitchen error', value: 'KITCHEN_ERROR' },
+  { label: 'Returned', value: 'RETURNED' },
+  { label: 'Expired', value: 'EXPIRED' },
+  { label: 'Staff meal', value: 'STAFF_MEAL' },
+  { label: 'Other', value: 'OTHER' }
+];
+
+function cents(value: number | null | undefined) {
+  if (!value) return '—';
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'AUD' }).format(value / 100);
+}
+
+function qty(value: number, unit: string) {
+  return `${new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(value)} ${unit}`;
+}
+
+function itemUnit(item: StockItem | undefined) {
+  return item?.venueStock?.unitOverride ?? item?.unit ?? '';
+}
+
+export function WastagePage() {
+  useDocumentTitle('Wastage');
+  const [data, setData] = useState<StockWastagePayload | null>(null);
+  const [selectedVenue, setSelectedVenue] = useState('');
+  const [draft, setDraft] = useState({ stockItemId: '', quantity: '', unit: '', reason: 'SPOILED' as StockWastageReason, note: '', wastedAt: '' });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function load(venue = selectedVenue) {
+    setLoading(true);
+    try {
+      const query = venue ? `?venue=${encodeURIComponent(venue)}` : '';
+      const payload = await api<StockWastagePayload>(`/api/operations/wastage${query}`);
+      setData(payload);
+      if (!venue && payload.scope.venue) setSelectedVenue(payload.scope.venue);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load wastage records.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void load();
+  }, [selectedVenue]);
+
+  const activeVenue = selectedVenue || data?.scope.venue || '';
+  const selectedItem = data?.items.find((item) => item.id === draft.stockItemId);
+  const venueOptions = [
+    ...(data?.scope.admin ? [{ label: 'All venues', value: '' }] : []),
+    ...(data?.venues ?? []).map((venue) => ({ label: venue, value: venue }))
+  ];
+  const itemOptions = [
+    { label: 'Choose item', value: '' },
+    ...(data?.items ?? []).map((item) => ({ label: `${item.name}${item.sku ? ` · ${item.sku}` : ''}`, value: item.id }))
+  ];
+  const totals = useMemo(() => ({
+    count: data?.records.length ?? 0,
+    cost: data?.records.reduce((sum, record) => sum + (record.costImpactCents ?? 0), 0) ?? 0,
+    quantity: data?.records.reduce((sum, record) => sum + record.quantity, 0) ?? 0
+  }), [data]);
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!activeVenue) {
+      setError('Choose a venue before recording wastage.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api('/api/operations/wastage', {
+        method: 'POST',
+        body: JSON.stringify({ ...draft, venue: activeVenue, quantity: Number(draft.quantity), unit: draft.unit || itemUnit(selectedItem) })
+      });
+      setDraft({ stockItemId: '', quantity: '', unit: '', reason: 'SPOILED', note: '', wastedAt: '' });
+      await load(activeVenue);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not record wastage.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <Card title="Wastage" subtitle="Record spoiled, broken, over-poured, expired, or staff-meal stock. Wastage posts a ledger movement against venue stock.">
+        <div className="stock-filter-toolbar">
+          <Select label="Venue" value={selectedVenue} onChange={(event) => setSelectedVenue(event.currentTarget.value)} options={venueOptions} />
+          <p className="subtle">{activeVenue ? `Recording wastage for ${activeVenue}.` : 'Choose a venue to start.'}</p>
+        </div>
+      </Card>
+
+      <div className="stat-grid">
+        <StatCard label="Recent records" value={String(totals.count)} hint="Latest 100" />
+        <StatCard label="Quantity wasted" value={new Intl.NumberFormat(undefined, { maximumFractionDigits: 2 }).format(totals.quantity)} hint="Across current filter" />
+        <StatCard label="Estimated cost" value={cents(totals.cost)} hint="Uses item average cost where available" tone={totals.cost > 0 ? 'warning' : 'neutral'} />
+      </div>
+
+      <div className="stock-operations-grid">
+        <Card title="Record wastage" subtitle="Use clear reasons so managers can spot repeat issues.">
+          <form className="stock-operation-form" onSubmit={submit}>
+            <Select
+              label="Item"
+              value={draft.stockItemId}
+              onChange={(event) => {
+                const item = data?.items.find((candidate) => candidate.id === event.currentTarget.value);
+                setDraft((current) => ({ ...current, stockItemId: event.currentTarget.value, unit: itemUnit(item) }));
+              }}
+              options={itemOptions}
+            />
+            <div className="stock-filter-toolbar">
+              <Input label="Quantity" type="number" min="0.01" step="0.01" value={draft.quantity} onChange={(event) => setDraft((current) => ({ ...current, quantity: event.currentTarget.value }))} />
+              <Input label="Unit" value={draft.unit} onChange={(event) => setDraft((current) => ({ ...current, unit: event.currentTarget.value }))} />
+            </div>
+            <div className="stock-filter-toolbar">
+              <Select label="Reason" value={draft.reason} onChange={(event) => setDraft((current) => ({ ...current, reason: event.currentTarget.value as StockWastageReason }))} options={REASONS} />
+              <Input label="Date/time" type="datetime-local" value={draft.wastedAt} onChange={(event) => setDraft((current) => ({ ...current, wastedAt: event.currentTarget.value }))} />
+            </div>
+            <Textarea label="Note" rows={3} value={draft.note} onChange={(event) => setDraft((current) => ({ ...current, note: event.currentTarget.value }))} />
+            {error ? <p className="error-text">{error}</p> : null}
+            <Button type="submit" disabled={saving || !draft.stockItemId || !draft.quantity || !activeVenue}>{saving ? 'Saving...' : 'Record wastage'}</Button>
+          </form>
+        </Card>
+
+        <Card title="Recent wastage" subtitle="Latest wastage records for the selected venue." padding="none">
+          {loading ? <Spinner label="Loading wastage" /> : null}
+          {!loading && !data?.records.length ? <EmptyState title="No wastage recorded" description="Wastage records will appear here." /> : null}
+          {data?.records.length ? (
+            <div className="stock-mobile-list">
+              {data.records.map((record) => (
+                <div key={record.id} className="stock-operation-row">
+                  <span>
+                    <strong>{record.stockItem?.name ?? 'Unknown item'}</strong>
+                    <span className="subtle">{qty(record.quantity, record.unit)} · {record.reason.replaceAll('_', ' ').toLowerCase()} · {new Date(record.wastedAt).toLocaleString()}</span>
+                    {record.note ? <span className="subtle">{record.note}</span> : null}
+                  </span>
+                  <span className="stock-operation-row-actions">
+                    <Badge tone="warning">{cents(record.costImpactCents)}</Badge>
+                    <Badge tone="muted">{record.venue}</Badge>
+                  </span>
+                </div>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+      </div>
+    </div>
+  );
+}

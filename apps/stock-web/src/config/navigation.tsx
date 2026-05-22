@@ -50,6 +50,24 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconInvoices />
   },
   {
+    to: '/deliveries',
+    label: 'Deliveries',
+    description: 'Invoice checklists when stock arrives',
+    icon: <IconInvoices />
+  },
+  {
+    to: '/wastage',
+    label: 'Wastage',
+    description: 'Record broken, spoiled or expired stock',
+    icon: <IconStocktake />
+  },
+  {
+    to: '/reorder',
+    label: 'Reorder',
+    description: 'Below-par notices and reorder actions',
+    icon: <IconItems />
+  },
+  {
     to: '/recipes',
     label: 'Item Recipes',
     description: 'Menu item ingredients and cost checks',

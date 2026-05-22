@@ -270,6 +270,18 @@ export function DashboardPage() {
             <IconInvoices size={18} />
             <span>Match supplier invoice lines</span>
           </Link>
+          <Link to="/deliveries">
+            <IconInvoices size={18} />
+            <span>Check a delivery invoice</span>
+          </Link>
+          <Link to="/wastage">
+            <IconStocktake size={18} />
+            <span>Record wastage</span>
+          </Link>
+          <Link to="/reorder">
+            <IconItems size={18} />
+            <span>Review reorder notices</span>
+          </Link>
         </div>
       </Card>
     </div>

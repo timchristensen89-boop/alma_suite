@@ -76,6 +76,18 @@ export const temperatureLogStatusSchema = z.enum(['IN_RANGE', 'OUT_OF_RANGE']);
 export const stockItemStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const supplierStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED']);
+export const stockWastageReasonSchema = z.enum([
+  'SPOILED',
+  'BROKEN',
+  'OVER_POURED',
+  'KITCHEN_ERROR',
+  'RETURNED',
+  'EXPIRED',
+  'STAFF_MEAL',
+  'OTHER'
+]);
+export const stockDeliveryCheckStatusSchema = z.enum(['DRAFT', 'IN_REVIEW', 'COMPLETED', 'DISCREPANCY']);
+export const stockReorderNoticeStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMISSED']);
 export const stockInvoiceMatchingStatusSchema = z.enum([
   'AUTO_MATCHED',
   'MANUAL_MATCHED',
@@ -4034,6 +4046,103 @@ export type StockLowStockItem = {
   suggestedAction: string;
 };
 
+export type StockWastageReason = z.infer<typeof stockWastageReasonSchema>;
+export type StockDeliveryCheckStatus = z.infer<typeof stockDeliveryCheckStatusSchema>;
+export type StockReorderNoticeStatus = z.infer<typeof stockReorderNoticeStatusSchema>;
+
+export type StockWastageRecord = {
+  id: string;
+  stockItemId: string;
+  venue: string;
+  quantity: number;
+  unit: string;
+  reason: string;
+  note: string | null;
+  wastedAt: string;
+  recordedById: string | null;
+  costImpactCents: number | null;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'avgCostCents' | 'category'> | null;
+};
+
+export type StockWastagePayload = {
+  records: StockWastageRecord[];
+  items: StockItem[];
+  venues: string[];
+  scope: { venue: string | null; admin: boolean };
+};
+
+export type StockDeliveryCheckItem = {
+  id: string;
+  deliveryCheckId: string;
+  stockItemId: string | null;
+  description: string;
+  expectedQuantity: number | null;
+  receivedQuantity: number | null;
+  unit: string | null;
+  checked: boolean;
+  discrepancy: boolean;
+  discrepancyReason: string | null;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'avgCostCents'> | null;
+};
+
+export type StockDeliveryCheck = {
+  id: string;
+  supplierId: string | null;
+  supplierName: string;
+  venue: string;
+  invoiceNumber: string | null;
+  deliveryDate: string;
+  invoiceReference: string | null;
+  status: string;
+  notes: string | null;
+  createdById: string | null;
+  completedAt: string | null;
+  completedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  supplier?: Pick<Supplier, 'id' | 'name'> | null;
+  items: StockDeliveryCheckItem[];
+};
+
+export type StockDeliveryChecksPayload = {
+  checks: StockDeliveryCheck[];
+  items: StockItem[];
+  suppliers: Supplier[];
+  venues: string[];
+  scope: { venue: string | null; admin: boolean };
+};
+
+export type StockReorderNotice = {
+  id: string;
+  stockItemId: string;
+  venue: string;
+  status: string;
+  currentOnHand: number | null;
+  parLevel: number | null;
+  reorderPoint: number | null;
+  reorderQuantity: number | null;
+  unit: string | null;
+  message: string;
+  createdAt: string;
+  resolvedAt: string | null;
+  dismissedAt: string | null;
+  updatedAt: string;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'category'> | null;
+};
+
+export type StockReorderNoticesPayload = {
+  notices: StockReorderNotice[];
+  lowStockItems: StockLowStockItem[];
+  venues: string[];
+  scope: { venue: string | null; admin: boolean };
+};
+
 const emptyStringToUndefined = (value: unknown) => (value === '' || value === null ? undefined : value);
 
 export const venueStockItemUpdateInputSchema = z.object({
@@ -4048,6 +4157,48 @@ export const venueStockItemUpdateInputSchema = z.object({
   ),
   unitOverride: z.string().optional().or(z.literal('')),
   active: z.boolean().optional()
+});
+
+export const stockWastageCreateInputSchema = z.object({
+  stockItemId: z.string().min(1, 'Select a stock item'),
+  venue: z.string().min(1, 'Venue is required'),
+  quantity: z.coerce.number().positive('Quantity must be greater than zero'),
+  unit: z.string().min(1, 'Unit is required'),
+  reason: stockWastageReasonSchema,
+  note: z.string().optional().or(z.literal('')),
+  wastedAt: z.string().optional().or(z.literal(''))
+});
+
+export const stockDeliveryCheckItemInputSchema = z.object({
+  stockItemId: z.string().optional().or(z.literal('')),
+  description: z.string().min(1, 'Description is required'),
+  expectedQuantity: z.preprocess(emptyStringToUndefined, z.coerce.number().nonnegative().optional()),
+  receivedQuantity: z.preprocess(emptyStringToUndefined, z.coerce.number().nonnegative().optional()),
+  unit: z.string().optional().or(z.literal('')),
+  checked: z.boolean().optional(),
+  discrepancy: z.boolean().optional(),
+  discrepancyReason: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal(''))
+});
+
+export const stockDeliveryCheckCreateInputSchema = z.object({
+  supplierId: z.string().optional().or(z.literal('')),
+  supplierName: z.string().min(1, 'Supplier is required'),
+  venue: z.string().min(1, 'Venue is required'),
+  invoiceNumber: z.string().optional().or(z.literal('')),
+  deliveryDate: z.string().optional().or(z.literal('')),
+  invoiceReference: z.string().optional().or(z.literal('')),
+  notes: z.string().optional().or(z.literal('')),
+  items: z.array(stockDeliveryCheckItemInputSchema).min(1, 'Add at least one delivery line')
+});
+
+export const stockDeliveryCheckUpdateInputSchema = stockDeliveryCheckCreateInputSchema.partial().extend({
+  status: stockDeliveryCheckStatusSchema.optional(),
+  items: z.array(stockDeliveryCheckItemInputSchema).optional()
+});
+
+export const stockReorderNoticeResolveInputSchema = z.object({
+  status: stockReorderNoticeStatusSchema.extract(['RESOLVED', 'DISMISSED'])
 });
 
 export const stockCategoryCreateInputSchema = z.object({
@@ -4090,6 +4241,10 @@ export type StockItemBulkDeleteInput = z.infer<
   typeof stockItemBulkDeleteInputSchema
 >;
 export type VenueStockItemUpdateInput = z.infer<typeof venueStockItemUpdateInputSchema>;
+export type StockWastageCreateInput = z.infer<typeof stockWastageCreateInputSchema>;
+export type StockDeliveryCheckCreateInput = z.infer<typeof stockDeliveryCheckCreateInputSchema>;
+export type StockDeliveryCheckUpdateInput = z.infer<typeof stockDeliveryCheckUpdateInputSchema>;
+export type StockReorderNoticeResolveInput = z.infer<typeof stockReorderNoticeResolveInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Suppliers                                                                  */
@@ -4460,6 +4615,7 @@ export type StockDashboardPayload = {
     readyForReviewStocktakes: number;
   };
   lowStockItems: StockLowStockItem[];
+  reorderNotices?: StockReorderNotice[];
   recentItems: StockItem[];
   readyForReviewStocktakes: StocktakeReviewItem[];
   recentSubmittedStocktakes: StocktakeReviewItem[];
@@ -4598,7 +4754,9 @@ export const stocktakeBulkDeleteInputSchema = z.object({
 export const inventoryMovementTypeSchema = z.enum([
   'STOCKTAKE_ADJUSTMENT',
   'STOCKTAKE_CORRECTION',
-  'STOCKTAKE_REVERSAL'
+  'STOCKTAKE_REVERSAL',
+  'WASTAGE',
+  'DELIVERY_RECEIPT'
 ]);
 
 export const stocktakeCorrectionLineInputSchema = z.object({
@@ -4636,6 +4794,8 @@ export type InventoryMovement = {
   unit: string | null;
   sourceStocktakeId: string | null;
   sourceStocktakeLineId: string | null;
+  sourceWastageId?: string | null;
+  sourceDeliveryCheckItemId?: string | null;
   notes: string | null;
   createdAt: string;
 };

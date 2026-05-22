@@ -6,8 +6,11 @@ import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
+import { DeliveriesPage } from './pages/DeliveriesPage';
 import { RecipesPage } from './pages/RecipesPage';
+import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
 import { SettingsPage } from './pages/SettingsPage';
+import { WastagePage } from './pages/WastagePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
@@ -133,6 +136,9 @@ function StockAppShell() {
         <Route path="/stocktake" element={<StocktakePage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
+        <Route path="/deliveries" element={<DeliveriesPage />} />
+        <Route path="/wastage" element={<WastagePage />} />
+        <Route path="/reorder" element={<ReorderNoticesPage />} />
         <Route path="/recipes" element={<RecipesPage mode="item" />} />
         <Route path="/production-recipes" element={<RecipesPage mode="production" />} />
         <Route path="/settings" element={<SettingsPage />} />

@@ -415,6 +415,64 @@ tbody tr.row-interactive {
   align-items: end;
 }
 
+/* Stock operations — wastage, delivery checks, and reorder notices. */
+.stock-operations-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.95fr) minmax(0, 1.35fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.stock-operation-form {
+  display: grid;
+  gap: 14px;
+}
+
+.stock-mobile-list {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+}
+
+.stock-operation-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+}
+
+.stock-operation-row > span:first-child {
+  display: grid;
+  gap: 4px;
+}
+
+.stock-operation-row-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.stock-delivery-lines {
+  display: grid;
+  gap: 12px;
+}
+
+.stock-delivery-line {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
 /* Settings — category admin rows for stock and recipes. */
 .settings-category-stack {
   display: flex;
@@ -558,6 +616,7 @@ tbody tr.row-interactive {
 
   .stock-invoice-import-grid,
   .stock-invoice-layout,
+  .stock-operations-grid,
   .stock-invoice-line-actions {
     grid-template-columns: 1fr;
   }
@@ -612,6 +671,18 @@ tbody tr.row-interactive {
 
   .stock-invoice-line-main {
     flex-direction: column;
+  }
+
+  .stock-operation-row {
+    display: grid;
+  }
+
+  .stock-operation-row-actions {
+    justify-content: flex-start;
+  }
+
+  .stock-delivery-line {
+    grid-template-columns: 1fr;
   }
 }
 
