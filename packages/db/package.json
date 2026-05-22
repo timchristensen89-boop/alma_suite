@@ -18,6 +18,7 @@
     "create:master-user": "tsx prisma/create-master-user.ts",
     "import:alma-control": "tsx ../../scripts/import-alma-control.ts",
     "import:compliance-documents": "tsx prisma/import-compliance-documents.ts",
+    "import:deputy-employee-sync": "tsx prisma/import-deputy-employee-sync.ts",
     "import:deputy-roster": "tsx prisma/import-deputy-roster.ts",
     "import:sevenrooms-reserve": "tsx prisma/import-sevenrooms-reserve.ts",
     "import:sevenrooms-marketing": "tsx prisma/import-sevenrooms-marketing.ts",
