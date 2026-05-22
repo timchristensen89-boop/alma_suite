@@ -2429,7 +2429,8 @@
 }
 
 .mobile-roster,
-.mobile-roster-surface {
+.mobile-roster-surface,
+.mobile-roster-runtime {
   display: none;
 }
 
@@ -3787,25 +3788,26 @@
     width: 100%;
   }
 
-  .desktop-roster-surface {
+  [data-roster-view="desktop"],
+  .desktop-roster-surface,
+  .roster-grid,
+  .roster-table {
     display: none !important;
   }
 
-  .desktop-roster-surface.is-shift-editor-open {
+  [data-roster-view="mobile"],
+  .mobile-roster-runtime,
+  .mobile-roster-surface,
+  .mobile-roster {
     display: block !important;
   }
 
-  .desktop-roster-surface.is-shift-editor-open .deputy-schedule-panel {
-    display: none;
-  }
-
-  .desktop-roster-surface.is-shift-editor-open .roster-right-rail {
-    position: static;
-    max-height: none;
-    overflow: visible;
-  }
-
   .mobile-roster-surface.mobile-roster {
+    display: grid !important;
+    gap: 14px;
+  }
+
+  .mobile-roster-runtime {
     display: grid !important;
     gap: 14px;
     padding-bottom: 72px;
@@ -3813,7 +3815,9 @@
 }
 
 @media (min-width: 901px) {
-  .mobile-roster-surface {
+  [data-roster-view="mobile"],
+  .mobile-roster-surface,
+  .mobile-roster {
     display: none !important;
   }
 }

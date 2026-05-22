@@ -545,9 +545,11 @@ function RosterCollapsiblePanel({
   );
 }
 
-function useIsMobileRosterViewport() {
+function useRosterMobileMode() {
   const [isMobile, setIsMobile] = useState(() =>
-    typeof window === 'undefined' ? false : window.matchMedia(MOBILE_ROSTER_MEDIA_QUERY).matches
+    typeof window === 'undefined'
+      ? false
+      : window.matchMedia(MOBILE_ROSTER_MEDIA_QUERY).matches || new URLSearchParams(window.location.search).get('force-mobile-runtime') === '1'
   );
 
   useEffect(() => {
@@ -556,7 +558,10 @@ function useIsMobileRosterViewport() {
     }
 
     const query = window.matchMedia(MOBILE_ROSTER_MEDIA_QUERY);
-    const update = () => setIsMobile(query.matches);
+    const update = () => {
+      const forced = new URLSearchParams(window.location.search).get('force-mobile-runtime') === '1';
+      setIsMobile(query.matches || forced);
+    };
     update();
 
     if (typeof query.addEventListener === 'function') {
@@ -7905,7 +7910,7 @@ function RosterPage({
   const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [mobileSelectedDay, setMobileSelectedDay] = useState(() => toDateInput(new Date()));
-  const isMobileRoster = useIsMobileRosterViewport();
+  const isMobileRoster = useRosterMobileMode();
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
@@ -8890,21 +8895,117 @@ function RosterPage({
       ) : null}
 
       {isMobileRoster ? (
-        <MobileRosterView
-          dailySummaries={dailySummaries}
-          selectedDate={mobileSelectedDate}
-          selectedSummary={mobileSelectedSummary}
-          shifts={mobileDayShifts}
-          groups={mobileShiftGroups}
-          venueLabel={venueFilter === 'all' ? 'All venues' : venueFilter}
-          onSelectDay={setMobileSelectedDay}
-          onAddShift={() => newShift(mobileSelectedDay)}
-          onOpenShift={startEditShift}
-        />
+        <div data-roster-view="mobile" className="mobile-roster-runtime">
+          <MobileRosterView
+            dailySummaries={dailySummaries}
+            selectedDate={mobileSelectedDate}
+            selectedSummary={mobileSelectedSummary}
+            shifts={mobileDayShifts}
+            groups={mobileShiftGroups}
+            venueLabel={venueFilter === 'all' ? 'All venues' : venueFilter}
+            onSelectDay={setMobileSelectedDay}
+            onAddShift={() => newShift(mobileSelectedDay)}
+            onOpenShift={startEditShift}
+          />
+
+          {editorOpen ? (
+            <Card
+              className="mobile-roster-shift-editor roster-side-card"
+              title={editingShift ? 'Edit shift' : 'Add shift'}
+              subtitle={editingShift ? 'Selected shift details' : 'Create a shift for the selected day'}
+              action={
+                <Button type="button" size="sm" variant="ghost" onClick={closeShiftPanel}>
+                  Close
+                </Button>
+              }
+            >
+              <div className="staff-profile-form">
+                <Select
+                  label="Team member"
+                  value={staffProfileId}
+                  onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+                  options={activeStaff.map((member) => ({
+                    label: `${member.firstName} ${member.lastName}`,
+                    value: member.id
+                  }))}
+                />
+                <Select
+                  label="Venue"
+                  value={shiftVenue}
+                  onChange={(event) => setShiftVenue(event.currentTarget.value)}
+                  options={venues.map((venue) => ({ label: venue, value: venue }))}
+                />
+                <div className="form-grid two">
+                  <Select
+                    label="Area"
+                    value={area}
+                    onChange={(event) => setArea(event.currentTarget.value)}
+                    options={areaSelectOptions}
+                  />
+                  <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
+                </div>
+                <Select
+                  label="Status"
+                  value={shiftStatus}
+                  onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
+                  options={[
+                    { label: 'Draft', value: 'DRAFT' },
+                    { label: 'Published', value: 'PUBLISHED' },
+                    { label: 'Completed', value: 'COMPLETED' },
+                    { label: 'Cancelled', value: 'CANCELLED' }
+                  ]}
+                />
+                <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+                <div className="form-grid two">
+                  <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
+                  <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
+                </div>
+                {selectedShiftHours ? (
+                  <p className="subtle roster-duration-hint">
+                    {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
+                    {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
+                  </p>
+                ) : null}
+                {shiftConflicts.length > 0 ? (
+                  <div className="roster-conflict-warning">
+                    <strong>{shiftConflicts.length} overlap warning</strong>
+                    <span>
+                      {shiftConflicts
+                        .slice(0, 2)
+                        .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
+                        .join(', ')}
+                    </span>
+                  </div>
+                ) : null}
+                <Input label="Meal break" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
+                <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
+                <div className="deputy-editor-actions">
+                  {editingShift ? (
+                    <>
+                      <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
+                        Duplicate
+                      </Button>
+                      <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
+                        Delete
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
+                    {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
+                  </Button>
+                  <ActionFeedback
+                    message={messageTarget === 'shift-save' || messageTarget === 'shift-copy' || messageTarget === 'shift-delete' ? message : null}
+                    tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Check') ? 'error' : 'success'}
+                  />
+                </div>
+              </div>
+            </Card>
+          ) : null}
+        </div>
       ) : null}
 
-      {!isMobileRoster || editorOpen ? (
-        <div className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
+      {!isMobileRoster ? (
+        <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
