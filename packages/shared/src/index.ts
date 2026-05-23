@@ -1816,6 +1816,7 @@ export type AdminMetaIntegrationStatus = {
 export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
 export type SquareAccountKey = 'primary' | 'secondary';
+export type SquareMenuMappingStatus = 'UNMAPPED' | 'MAPPED' | 'IGNORED' | 'NEEDS_REVIEW';
 
 export type SquareConfigMissingMap = {
   applicationId: boolean;
@@ -1913,6 +1914,101 @@ export type IntegrationStatusPayload = {
     requiredEnvVar: 'INTEGRATION_TOKEN_ENCRYPTION_KEY';
   };
 };
+
+export const squareMenuMappingStatusSchema = z.enum(['UNMAPPED', 'MAPPED', 'IGNORED', 'NEEDS_REVIEW']);
+
+export const squareMenuMappingQuerySchema = z.object({
+  accountKey: z.enum(['primary', 'secondary']).default('primary'),
+  status: squareMenuMappingStatusSchema.optional().or(z.literal('')),
+  search: z.string().trim().optional().or(z.literal('')),
+  venue: z.string().trim().optional().or(z.literal('')),
+  category: z.string().trim().optional().or(z.literal(''))
+});
+
+export const squareMenuMappingUpdateSchema = z.object({
+  almaRecipeId: z.string().optional().nullable().or(z.literal('')),
+  stockItemId: z.string().optional().nullable().or(z.literal('')),
+  status: squareMenuMappingStatusSchema.optional(),
+  notes: z.string().trim().max(1000).optional().nullable().or(z.literal(''))
+});
+
+export type SquareMenuRecipeMapping = {
+  id: string;
+  accountKey: SquareAccountKey;
+  venue: string | null;
+  squareItemId: string;
+  squareVariationId: string;
+  squareItemName: string;
+  squareVariationName: string | null;
+  categoryName: string | null;
+  priceMoneyAmount: number | null;
+  currency: string | null;
+  almaRecipeId: string | null;
+  stockItemId: string | null;
+  status: SquareMenuMappingStatus;
+  confidence: number | null;
+  notes: string | null;
+  mappedAt: string | null;
+  mappedById: string | null;
+  createdAt: string;
+  updatedAt: string;
+  almaRecipe: Pick<Recipe, 'id' | 'title' | 'venue' | 'category' | 'estimatedCost' | 'salePriceCents'> | null;
+  stockItem: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
+  margin: {
+    salePriceCents: number | null;
+    recipeCostCents: number | null;
+    grossProfitCents: number | null;
+    foodCostPercent: number | null;
+  };
+};
+
+export type SquareMenuMappingPayload = {
+  generatedAt: string;
+  accountKey: SquareAccountKey;
+  summary: {
+    total: number;
+    mapped: number;
+    unmapped: number;
+    ignored: number;
+    needsReview: number;
+    lastSyncedAt: string | null;
+  };
+  filters: z.infer<typeof squareMenuMappingQuerySchema>;
+  categories: string[];
+  mappings: SquareMenuRecipeMapping[];
+};
+
+export type SquareMenuMappingSyncResult = {
+  provider: 'square';
+  accountKey: SquareAccountKey;
+  label: string;
+  syncedAt: string;
+  catalogItemsRead: number;
+  candidatesUpserted: number;
+  mappingsCreated: number;
+  mappingsPreserved: number;
+  deletedMarked: number;
+  warnings: string[];
+};
+
+export type SquareRecipeOption = {
+  id: string;
+  title: string;
+  venue: string | null;
+  category: string | null;
+  estimatedCost: number;
+  salePriceCents: number | null;
+  lineCount: number;
+};
+
+export type SquareMenuRecipeOptionsPayload = {
+  generatedAt: string;
+  recipes: SquareRecipeOption[];
+  stockItems: Array<{ id: string; name: string; unit: string; avgCostCents: number | null }>;
+};
+
+export type SquareMenuMappingQuery = z.infer<typeof squareMenuMappingQuerySchema>;
+export type SquareMenuMappingUpdate = z.infer<typeof squareMenuMappingUpdateSchema>;
 
 export type IntegrationConnectResponse = {
   provider: IntegrationProviderKey;

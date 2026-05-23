@@ -2152,6 +2152,7 @@ model StockItem {
   wastageRecords StockWastageRecord[]
   deliveryCheckItems StockDeliveryCheckItem[]
   reorderNotices StockReorderNotice[]
+  squareMenuMappings SquareMenuRecipeMapping[]
 
   @@index([categoryId])
   @@index([status])
@@ -2370,11 +2371,68 @@ model Recipe {
   lines         RecipeLine[] @relation("RecipeLines")
   usedByLines   RecipeLine[] @relation("SubRecipeLines")
   itemSales     SalesItemActualEntry[]
+  squareMenuMappings SquareMenuRecipeMapping[]
 
   @@index([title])
   @@index([category])
   @@index([isPrepRecipe])
   @@index([status])
+}
+
+model SquareCatalogItem {
+  id                 String   @id @default(cuid())
+  accountKey         String
+  squareItemId       String
+  squareVariationId  String   @default("")
+  name               String
+  variationName      String?
+  categoryName       String?
+  sku                String?
+  priceMoneyAmount   Int?
+  currency           String?
+  enabledLocationIds Json     @default("[]")
+  raw                Json     @default("{}")
+  isDeleted          Boolean  @default(false)
+  syncedAt           DateTime @default(now())
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([accountKey, squareItemId, squareVariationId])
+  @@index([accountKey, isDeleted])
+  @@index([name])
+  @@index([categoryName])
+  @@index([syncedAt])
+}
+
+model SquareMenuRecipeMapping {
+  id                  String   @id @default(cuid())
+  accountKey          String
+  venue               String?
+  squareItemId        String
+  squareVariationId   String   @default("")
+  squareItemName      String
+  squareVariationName String?
+  categoryName        String?
+  priceMoneyAmount    Int?
+  currency            String?
+  almaRecipeId        String?
+  stockItemId         String?
+  status              String   @default("UNMAPPED")
+  confidence          Float?
+  notes               String?
+  mappedAt            DateTime?
+  mappedById          String?
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  almaRecipe          Recipe?  @relation(fields: [almaRecipeId], references: [id], onDelete: SetNull)
+  stockItem           StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+
+  @@unique([accountKey, squareItemId, squareVariationId])
+  @@index([accountKey, status])
+  @@index([almaRecipeId])
+  @@index([stockItemId])
+  @@index([venue])
+  @@index([squareItemName])
 }
 
 model RecipeCategory {

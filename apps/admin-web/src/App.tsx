@@ -67,6 +67,7 @@ import {
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
+import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 import { VenueDevicesPage } from './pages/VenueDevicesPage';
 
@@ -191,6 +192,12 @@ const NAV_ITEMS: AdminNavItem[] = [
     to: '/integrations/xero',
     label: 'Xero',
     description: 'Health checks, previews, and selected imports',
+    icon: <IconReceipt />
+  },
+  {
+    to: '/integrations/square/menu-mapping',
+    label: 'Menu mapping',
+    description: 'Match Square menu items to Alma recipes',
     icon: <IconReceipt />
   },
   {
@@ -463,6 +470,7 @@ function AdminWorkspace() {
         <Route path="/handbook" element={<HandbookAdminPage staffHandbookHref={`${complianceUrl}/handbook`} />} />
         <Route path="/integrations" element={<IntegrationsPage />} />
         <Route path="/integrations/xero" element={<XeroIntegrationPage />} />
+        <Route path="/integrations/square/menu-mapping" element={<SquareMenuMappingPage />} />
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/danger-zone" element={<DangerZonePage />} />
         <Route path="/meta-human-agent-demo" element={<HumanAgentDemoPage />} />
