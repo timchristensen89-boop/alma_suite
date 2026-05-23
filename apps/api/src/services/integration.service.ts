@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { Request } from 'express';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
+import { z } from 'zod';
 import type {
   AdminMetaIntegrationStatus,
   AuthUser,
@@ -424,6 +425,7 @@ type SquarePayment = {
   amount_money?: SquareMoney;
   total_money?: SquareMoney;
   refunded_money?: SquareMoney;
+  tip_money?: SquareMoney;
 };
 
 type SquarePaymentsResponse = {
@@ -1012,32 +1014,41 @@ async function listSquarePayments(input: {
   connection: IntegrationConnection;
   beginTime: Date;
   endTime: Date;
-  limit: number;
+  limit?: number;
+  locationIds?: string[];
 }) {
   let connection = input.connection;
   const payments: SquarePayment[] = [];
-  let cursor: string | undefined;
   let tokenStatus: 'healthy' | 'refreshed' = 'healthy';
+  const limit = input.limit ?? 1000;
   const pageLimit = 100;
+  const locationIds = input.locationIds?.length ? input.locationIds : [undefined];
+  let limited = false;
 
-  while (payments.length < input.limit) {
-    const params = new URLSearchParams({
-      begin_time: input.beginTime.toISOString(),
-      end_time: input.endTime.toISOString(),
-      sort_order: 'ASC',
-      limit: String(Math.min(pageLimit, input.limit - payments.length))
-    });
-    if (cursor) params.set('cursor', cursor);
+  for (const locationId of locationIds) {
+    let cursor: string | undefined;
+    while (payments.length < limit) {
+      const params = new URLSearchParams({
+        begin_time: input.beginTime.toISOString(),
+        end_time: input.endTime.toISOString(),
+        sort_order: 'ASC',
+        limit: String(Math.min(pageLimit, limit - payments.length))
+      });
+      if (locationId) params.set('location_id', locationId);
+      if (cursor) params.set('cursor', cursor);
 
-    const response = await squareGetJson<SquarePaymentsResponse>(`/payments?${params.toString()}`, { connection });
-    connection = response.connection;
-    if (response.tokenStatus === 'refreshed') tokenStatus = 'refreshed';
-    payments.push(...(response.data.payments ?? []));
-    cursor = response.data.cursor;
-    if (!cursor || payments.length >= input.limit) break;
+      const response = await squareGetJson<SquarePaymentsResponse>(`/payments?${params.toString()}`, { connection });
+      connection = response.connection;
+      if (response.tokenStatus === 'refreshed') tokenStatus = 'refreshed';
+      payments.push(...(response.data.payments ?? []));
+      cursor = response.data.cursor;
+      if (cursor && payments.length >= limit) limited = true;
+      if (!cursor || payments.length >= limit) break;
+    }
+    if (payments.length >= limit) break;
   }
 
-  return { connection, payments, tokenStatus, limited: Boolean(cursor) };
+  return { connection, payments, tokenStatus, limited };
 }
 
 async function searchSquareOrders(input: {
@@ -1152,6 +1163,52 @@ function squareImportDateRange(input: Record<string, unknown>, defaultLookbackDa
   if (!input.startDate) start.setDate(start.getDate() - defaultLookbackDays);
   if (end <= start) throw new HttpError(400, 'Square sales import end date must be after the start date.');
   return { start, end };
+}
+
+const squareTipsImportInputSchema = z.object({
+  start: z.string().min(4),
+  end: z.string().min(4),
+  venue: z.string().min(1),
+  accountKey: z.enum(['primary', 'secondary']).optional(),
+  account: z.enum(['primary', 'secondary']).optional(),
+  locationId: z.string().optional().or(z.literal(''))
+});
+
+function parseIntegrationDate(value: string, label: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new HttpError(400, `${label} is invalid.`);
+  }
+  return date;
+}
+
+function localServiceDate(value: string | undefined, timezone?: string | null) {
+  const date = value ? new Date(value) : new Date();
+  if (Number.isNaN(date.getTime())) return new Date();
+  const timeZone = timezone || 'Australia/Sydney';
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(date);
+  const lookup = new Map(parts.map((part) => [part.type, part.value]));
+  return new Date(`${lookup.get('year')}-${lookup.get('month')}-${lookup.get('day')}T00:00:00.000Z`);
+}
+
+function squareTipImportKey(input: {
+  venue: string;
+  paymentId: string;
+}) {
+  return `square:${input.venue.trim().toLowerCase()}:${input.paymentId}`.slice(0, 240);
+}
+
+function squareLocationMatchesVenue(location: SquareLocation, venue: string) {
+  const venueText = normaliseMatchText(venue);
+  if (!venueText) return false;
+  return [location.name, location.business_name]
+    .map((value) => normaliseMatchText(value ?? ''))
+    .some((value) => value && (value.includes(venueText) || venueText.includes(value)));
 }
 
 async function exchangeXeroToken(code: string) {
@@ -2180,6 +2237,130 @@ export const integrationService = {
       locationCount: locations.length,
       locations,
       tokenStatus: response.tokenStatus
+    };
+  },
+
+  async importSquareTips(input: unknown, actor: AuthUser) {
+    const data = squareTipsImportInputSchema.parse(input ?? {});
+    const accountKey = normaliseSquareAccountKey(data.accountKey ?? data.account);
+    const startDate = parseIntegrationDate(data.start, 'Tips start date');
+    const endDate = parseIntegrationDate(data.end, 'Tips end date');
+    if (endDate <= startDate) throw new HttpError(400, 'Tips end date must be after start date.');
+
+    const connection = await connectedSquareConnection(accountKey);
+    const locationResponse = await listSquareLocations(connection);
+    const locations = locationResponse.locations.filter((location) => location.id);
+    const matchedLocations = data.locationId
+      ? locations.filter((location) => location.id === data.locationId)
+      : locations.filter((location) => squareLocationMatchesVenue(location, data.venue));
+    const locationIds = matchedLocations.map((location) => location.id).filter((id): id is string => Boolean(id));
+    const paymentResponse = await listSquarePayments({
+      connection: locationResponse.connection,
+      beginTime: startDate,
+      endTime: endDate,
+      locationIds
+    });
+    const locationById = new Map(locations.map((location) => [location.id, location]));
+    const source = 'square';
+    const rows = paymentResponse.payments
+      .filter((payment) => payment.status === 'COMPLETED')
+      .map((payment) => {
+        const paymentId = optionalText(payment.id);
+        const amountCents = typeof payment.tip_money?.amount === 'number' ? Math.round(payment.tip_money.amount) : 0;
+        if (!paymentId || amountCents <= 0) return null;
+        const location = payment.location_id ? locationById.get(payment.location_id) : undefined;
+        const serviceDate = localServiceDate(payment.created_at, location?.timezone);
+        return {
+          venue: data.venue.trim(),
+          serviceDate,
+          amountCents,
+          source,
+          externalId: paymentId,
+          importKey: squareTipImportKey({ venue: data.venue, paymentId }),
+          notes: [
+            'Square tip',
+            location?.name ? `Location: ${location.name}` : null,
+            payment.receipt_number ? `Receipt: ${payment.receipt_number}` : null,
+            payment.order_id ? `Order: ${payment.order_id}` : null
+          ].filter(Boolean).join(' · ')
+        };
+      })
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    let imported = 0;
+    let updated = 0;
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        const existing = await tx.staffTipCardEntry.findUnique({
+          where: { importKey: row.importKey },
+          select: { id: true }
+        });
+        await tx.staffTipCardEntry.upsert({
+          where: { importKey: row.importKey },
+          create: row,
+          update: {
+            venue: row.venue,
+            serviceDate: row.serviceDate,
+            amountCents: row.amountCents,
+            source: row.source,
+            externalId: row.externalId,
+            notes: row.notes
+          }
+        });
+        if (existing) updated += 1;
+        else imported += 1;
+      }
+
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'SQUARE',
+          connectionId: paymentResponse.connection.id,
+          syncType: 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          recordsImported: imported,
+          recordsUpdated: updated
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      connectionId: paymentResponse.connection.id,
+      eventType: 'SQUARE_TIPS_IMPORTED',
+      summary: `${squareAccountConfig(accountKey).label} Square tips import finished: ${imported} new, ${updated} updated.`,
+      actor,
+      metadata: {
+        accountKey,
+        venue: data.venue,
+        start: startDate.toISOString(),
+        end: endDate.toISOString(),
+        locationsMatched: locationIds.length,
+        paymentsRead: paymentResponse.payments.length,
+        imported,
+        updated,
+        limited: paymentResponse.limited
+      }
+    });
+
+    return {
+      label: squareAccountConfig(accountKey).label,
+      accountKey,
+      venue: data.venue,
+      start: startDate.toISOString(),
+      end: endDate.toISOString(),
+      paymentsRead: paymentResponse.payments.length,
+      tipRows: rows.length,
+      imported,
+      updated,
+      amountCents: rows.reduce((sum, row) => sum + row.amountCents, 0),
+      locationsMatched: locationIds.length,
+      warnings: [
+        ...(locationIds.length
+          ? []
+          : [`No Square location name clearly matched ${data.venue}; imported completed tip payments from the whole connected Square account.`]),
+        ...(paymentResponse.limited ? ['Square returned more tip payments than the import limit; narrow the date range and import again.'] : [])
+      ]
     };
   },
 

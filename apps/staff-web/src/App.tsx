@@ -10945,6 +10945,42 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function importSquareTips(targetVenue = venue) {
+    setMessageTarget('square-import');
+    if (!targetVenue) {
+      setMessage('Choose a venue before importing Square tips.');
+      return;
+    }
+    setVenue(targetVenue);
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await api<{
+        label: string;
+        paymentsRead: number;
+        tipRows: number;
+        imported: number;
+        updated: number;
+        amountCents: number;
+        warnings: string[];
+      }>('/api/staff/tips/square-import', {
+        method: 'POST',
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue: targetVenue
+        })
+      });
+      const warning = result.warnings.length ? ` ${result.warnings[0]}` : '';
+      setMessage(`${result.label}: imported ${result.imported}, updated ${result.updated}, ${formatCents(result.amountCents)} from ${result.tipRows} Square tip payment${result.tipRows === 1 ? '' : 's'}.${warning}`);
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import Square tips.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function exportTips() {
     setMessageTarget('export');
     if (!venue) {
@@ -11075,8 +11111,33 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           </div>
         </Card>
 
-        <Card title="Import card tips" subtitle="Paste a Control or Square CSV with date and tip amount columns. Venue defaults to the selected venue if the file has no venue column.">
+        <Card title="Import card tips" subtitle="Import directly from Square, or paste a Control/Square CSV with date and tip amount columns.">
           <div className="form-grid two">
+            <Input
+              label="Square venue"
+              value={venue}
+              onChange={(event) => setVenue(event.currentTarget.value)}
+              placeholder="Alma Avalon"
+            />
+          </div>
+          <div className="toolbar-right">
+            <Button type="button" onClick={() => void importSquareTips('Alma Avalon')} disabled={saving}>
+              {saving && messageTarget === 'square-import' && venue === 'Alma Avalon' ? 'Importing...' : 'Import Alma Avalon tips'}
+            </Button>
+            <Button type="button" onClick={() => void importSquareTips('St Alma')} disabled={saving}>
+              {saving && messageTarget === 'square-import' && venue === 'St Alma' ? 'Importing...' : 'Import St Alma tips'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void importSquareTips()} disabled={saving || !venue}>
+              {saving && messageTarget === 'square-import' ? 'Importing...' : 'Import from Square'}
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'square-import' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
+          </div>
+          <details className="staff-profile-collapsible">
+            <summary>Manual CSV import</summary>
+            <div className="form-grid two">
             <Select
               label="Source"
               value={cardImportSource}
@@ -11093,29 +11154,30 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
               onChange={(event) => setVenue(event.currentTarget.value)}
               placeholder="Alma Avalon"
             />
-          </div>
-          <Textarea
-            label="CSV rows"
-            rows={7}
-            value={cardImportText}
-            onChange={(event) => setCardImportText(event.currentTarget.value)}
-            placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
-          />
-          <div className="toolbar-right">
-            <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>
-              Download template
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>
-              Clear
-            </Button>
-            <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
-              {saving ? 'Importing...' : 'Import card tips'}
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'import' ? message : null}
-              tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+            </div>
+            <Textarea
+              label="CSV rows"
+              rows={7}
+              value={cardImportText}
+              onChange={(event) => setCardImportText(event.currentTarget.value)}
+              placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
             />
-          </div>
+            <div className="toolbar-right">
+              <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>
+                Download template
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>
+                Clear
+              </Button>
+              <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
+                {saving && messageTarget === 'import' ? 'Importing...' : 'Import card tips'}
+              </Button>
+              <ActionFeedback
+                message={messageTarget === 'import' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+              />
+            </div>
+          </details>
         </Card>
 
         <Card title="Tips week" subtitle="Cash entries and paid runs for the selected week.">
