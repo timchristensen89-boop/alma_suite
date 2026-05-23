@@ -282,8 +282,8 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
 const NAV_ITEMS = [
   {
     to: '/',
-    label: 'People',
-    description: 'Shared StaffProfile authority',
+    label: 'Home',
+    description: 'Staff command centre',
     icon: <IconUsers />,
     end: true
   },
@@ -300,7 +300,7 @@ const NAV_ITEMS = [
     icon: <IconClock />
   },
   {
-    to: '/access',
+    to: '/profiles',
     label: 'Profiles',
     description: 'Full staff profiles, permissions, documents, and tasks',
     icon: <IconFileText />
@@ -834,13 +834,11 @@ type StaffFormState =
 
 function StaffHome({
   staff,
-  roleTemplates,
   loading,
   onSelect,
   reload
 }: {
   staff: StaffProfile[];
-  roleTemplates: StaffRoleTemplate[];
   loading: boolean;
   onSelect: (id: string) => void;
   reload: () => Promise<void>;
@@ -925,18 +923,12 @@ function StaffHome({
     navigate(`/staff/${id}/${section}`);
   }
 
-  async function handleSaved(member: StaffProfile) {
-    await reload();
-    openProfile(member.id);
-    setForm({ mode: 'closed' });
-  }
-
   async function reonboardLightweightProfile(member: StaffProfile) {
     setReonboardMessage(null);
     setReonboardError(null);
     if (!member.email) {
       setReonboardError(`Add an email to ${member.firstName} ${member.lastName} before sending an onboarding link.`);
-      setForm({ mode: 'edit', member });
+      openProfile(member.id, 'personal');
       return;
     }
 
@@ -978,7 +970,9 @@ function StaffHome({
           </div>
         </div>
         <div className="hero-actions">
-          <Button type="button" onClick={() => setForm({ mode: 'create' })}>New staff profile</Button>
+          <NavLink to="/profiles">
+            <Button type="button">Open profiles</Button>
+          </NavLink>
           <NavLink to="/roster">
             <Button type="button" variant="secondary">Open roster</Button>
           </NavLink>
@@ -1037,8 +1031,8 @@ function StaffHome({
                 <strong>{member.firstName} {member.lastName}</strong>
                 <small>{member.venue || 'No venue'} · pay rate missing.</small>
               </span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setForm({ mode: 'edit', member })}>
-                Edit profile
+              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'payroll')}>
+                Open payroll
               </Button>
             </div>
           ))}
@@ -1048,8 +1042,8 @@ function StaffHome({
                 <strong>{member.firstName} {member.lastName}</strong>
                 <small>{member.venue || 'No venue'} · pay type missing.</small>
               </span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => setForm({ mode: 'edit', member })}>
-                Edit profile
+              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'employment')}>
+                Open employment
               </Button>
             </div>
           ))}
@@ -1120,7 +1114,7 @@ function StaffHome({
               </div>
             ))}
             {lightweightDeputyProfiles.length > 8 ? (
-              <p className="subtle">Showing 8 of {lightweightDeputyProfiles.length}. The rest are in the staff register below.</p>
+              <p className="subtle">Showing 8 of {lightweightDeputyProfiles.length}. The rest are on the Profiles page.</p>
             ) : null}
           </div>
         </Card>
@@ -1140,9 +1134,115 @@ function StaffHome({
         </div>
       </Card>
 
+      <Card title="Compliance watch" subtitle="Staff certificates and records needing attention">
+        {expiringSoon.length === 0 ? (
+          <EmptyState title="No records expiring soon" description="RSA, first aid and training records are clear for the next 30 days." />
+        ) : (
+          <div className="staff-expiry-list">
+            {expiringSoon.map(({ member, record }) => (
+              <div key={record.id} className="staff-expiry-row">
+                <span>
+                  <strong>
+                    {member.firstName} {member.lastName}
+                  </strong>
+                  <span className="subtle">
+                    {record.title} · {record.recordType}
+                  </span>
+                </span>
+                <Badge tone={record.expiryDate && new Date(record.expiryDate) < new Date() ? 'danger' : 'warning'}>
+                  {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}
+                </Badge>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function StaffProfilesPage({
+  staff,
+  roleTemplates,
+  loading,
+  onSelect,
+  reload
+}: {
+  staff: StaffProfile[];
+  roleTemplates: StaffRoleTemplate[];
+  loading: boolean;
+  onSelect: (id: string) => void;
+  reload: () => Promise<void>;
+}) {
+  const navigate = useNavigate();
+  const [form, setForm] = useState<StaffFormState>({ mode: 'closed' });
+  const [reonboardingId, setReonboardingId] = useState<string | null>(null);
+  const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
+  const [reonboardError, setReonboardError] = useState<string | null>(null);
+
+  function openProfile(id: string, section = 'personal') {
+    onSelect(id);
+    navigate(`/staff/${id}/${section}`);
+  }
+
+  async function handleSaved(member: StaffProfile) {
+    await reload();
+    openProfile(member.id);
+    setForm({ mode: 'closed' });
+  }
+
+  async function reonboardLightweightProfile(member: StaffProfile) {
+    setReonboardMessage(null);
+    setReonboardError(null);
+    if (!member.email) {
+      setReonboardError(`Add an email to ${member.firstName} ${member.lastName} before sending an onboarding link.`);
+      setForm({ mode: 'edit', member });
+      return;
+    }
+
+    setReonboardingId(member.id);
+    try {
+      const created = await api<CreatedStaffInvite>(`/api/staff/profiles/${member.id}/reonboard`, {
+        method: 'POST',
+        body: JSON.stringify({
+          onboardingBaseUrl: window.location.origin,
+          expiresInDays: 30,
+          note: 'Please complete your ALMA Staff onboarding details.'
+        })
+      });
+      setReonboardMessage(
+        created.emailDelivery?.status === 'sent'
+          ? `Re-onboarding link sent to ${created.email ?? member.email}.`
+          : `Re-onboarding link is ready to copy. ${created.emailDelivery?.reason ?? 'Email was not sent.'}`
+      );
+      await reload();
+    } catch (err) {
+      setReonboardError(err instanceof Error ? err.message : 'Could not send re-onboarding link.');
+    } finally {
+      setReonboardingId(null);
+    }
+  }
+
+  return (
+    <div className="page-stack staff-settings-page">
+      <PageHeader
+        eyebrow="Profiles"
+        title="Staff profiles"
+        description="Shared StaffProfile records for Staff, Compliance, Stock and Training."
+        actions={
+          <>
+            <Button type="button" variant="ghost" onClick={() => navigate('/')}>Back to staff home</Button>
+            <Button type="button" onClick={() => setForm({ mode: 'create' })}>New staff</Button>
+          </>
+        }
+      />
+
+      {reonboardMessage ? <p className="subtle">{reonboardMessage}</p> : null}
+      {reonboardError ? <p className="error-text">{reonboardError}</p> : null}
+
       <Card
         title="Staff register"
-        subtitle="Shared StaffProfile records for Staff, Compliance, Stock and Training."
+        subtitle="Open a profile for documents, role permissions, employment details, and HR sections."
         padding="none"
         action={
           <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
@@ -1150,7 +1250,7 @@ function StaffHome({
           </Button>
         }
       >
-        {loading ? <Spinner label="Loading staff…" /> : null}
+        {loading ? <Spinner label="Loading staff..." /> : null}
         {!loading && staff.length === 0 ? (
           <EmptyState
             title="No staff profiles yet"
@@ -1193,7 +1293,7 @@ function StaffHome({
                         void reonboardLightweightProfile(member);
                       }}
                     >
-                      {reonboardingId === member.id ? 'Sending…' : 'Re-onboard'}
+                      {reonboardingId === member.id ? 'Sending...' : 'Re-onboard'}
                     </Button>
                   ) : null}
                   <Button
@@ -1241,30 +1341,6 @@ function StaffHome({
           />
         ) : null}
       </StaffModal>
-
-      <Card title="Compliance watch" subtitle="Staff certificates and records needing attention">
-        {expiringSoon.length === 0 ? (
-          <EmptyState title="No records expiring soon" description="RSA, first aid and training records are clear for the next 30 days." />
-        ) : (
-          <div className="staff-expiry-list">
-            {expiringSoon.map(({ member, record }) => (
-              <div key={record.id} className="staff-expiry-row">
-                <span>
-                  <strong>
-                    {member.firstName} {member.lastName}
-                  </strong>
-                  <span className="subtle">
-                    {record.title} · {record.recordType}
-                  </span>
-                </span>
-                <Badge tone={record.expiryDate && new Date(record.expiryDate) < new Date() ? 'danger' : 'warning'}>
-                  {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}
-                </Badge>
-              </div>
-            ))}
-          </div>
-        )}
-      </Card>
     </div>
   );
 }
@@ -2830,7 +2906,7 @@ function StaffProfileWorkspacePage({
     return (
       <div className="page-stack">
         <PageHeader eyebrow="Staff profile" title="Profile not found" description="This staff profile is not available in your current Staff register." />
-        <NavLink to="/"><Button type="button" variant="secondary">Back to staff register</Button></NavLink>
+        <NavLink to="/profiles"><Button type="button" variant="secondary">Back to staff register</Button></NavLink>
       </div>
     );
   }
@@ -3522,7 +3598,7 @@ function StaffProfileWorkspacePage({
   return (
     <div className="page-stack staff-profile-workspace">
       <div className="staff-profile-topline">
-        <NavLink to="/"><Button type="button" variant="ghost" size="sm">Back to staff</Button></NavLink>
+        <NavLink to="/profiles"><Button type="button" variant="ghost" size="sm">Back to profiles</Button></NavLink>
         <span className="subtle">Staff profile workspace</span>
       </div>
       <div className="staff-profile-layout">
@@ -6689,7 +6765,7 @@ function AdminPage({
                 variant="secondary"
                 onClick={() => {
                   if (staff[0]) setSelectedId(selectedId || staff[0].id);
-                  navigate('/access');
+                  navigate('/profiles');
                 }}
               >
                 Manage
@@ -11395,7 +11471,7 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
                 <small>{item.value} · {item.detail}</small>
               </span>
               {item.label.includes('email') || item.label.includes('venue') || item.label.includes('access') ? (
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/access')}>Open profiles</Button>
+                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/profiles')}>Open profiles</Button>
               ) : item.label.includes('shifts') ? (
                 <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Check roster</Button>
               ) : item.label.includes('clock') ? (
@@ -13148,14 +13224,15 @@ function StaffShell() {
       ) : (
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />
-          <Route path="/" element={<StaffHome staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
+          <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
+          <Route path="/profiles" element={<StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/invites" element={<InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} />} />
           <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
-          <Route path="/access" element={<Navigate to={selectedId ? `/staff/${selectedId}/access` : staff[0] ? `/staff/${staff[0].id}/access` : '/'} replace />} />
+          <Route path="/access" element={<Navigate to="/profiles" replace />} />
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
