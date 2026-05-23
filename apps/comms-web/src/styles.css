@@ -1,6 +1,13 @@
 /* Comms content only.
    The imported Suite stylesheet owns AppShell, sidebar, topbar, app switcher, gutters, and global layout. */
 
+:root {
+  --color-accent: #4A345F;
+  --color-accent-hover: #241633;
+  --color-accent-soft: #f0eaf5;
+  --color-accent-text: #241633;
+}
+
 .comms-page {
   display: flex;
   flex-direction: column;

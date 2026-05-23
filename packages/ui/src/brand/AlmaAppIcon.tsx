@@ -243,8 +243,8 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'stock',
     label: 'STOCK',
-    from: '#176B4D',
-    to: '#0D3F31',
+    from: '#124F3B',
+    to: '#092E24',
     iconKey: 'produce',
     icon: <ProduceIcon />
   },

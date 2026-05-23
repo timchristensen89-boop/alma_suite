@@ -5,8 +5,8 @@
  * properties (`--color-accent`, `--color-accent-hover`, `--color-accent-soft`,
  * `--color-accent-text`). To keep the two apps visually consistent but
  * distinct, we import the compliance base stylesheet and then re-declare
- * those accent variables to the Stock deep produce green from the brand spec
- * (#176B4D -> #0D3F31), a cool counterpoint to the Compliance burgundy.
+ * those accent variables to the Stock deep green from the brand spec
+ * (#124F3B -> #092E24), a quieter counterpoint to the Compliance burgundy.
  *
  * Do not add unrelated component styles here unless they are stock-specific;
  * shared polish belongs back in the base stylesheet.
@@ -15,11 +15,11 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  /* Stocktake forest green */
-  --color-accent: #176B4D;
-  --color-accent-hover: #0D3F31;
-  --color-accent-soft: #e6f3eb;
-  --color-accent-text: #0D3F31;
+  /* Stock deep green */
+  --color-accent: #124F3B;
+  --color-accent-hover: #092E24;
+  --color-accent-soft: #e7f1ec;
+  --color-accent-text: #092E24;
 }
 
 /*
