@@ -7,6 +7,7 @@ import type {
   RosterForecastSnapshot,
   RosterShift,
   SalesActualSummary,
+  SalesItemActualSummary,
   StaffProfile,
   StaffTipsSummary,
   StockItemsPayload,
@@ -62,6 +63,7 @@ type ReportsData = {
   roster: RosterShift[];
   rosterForecastSnapshots: RosterForecastSnapshot[];
   actualSales: SalesActualSummary | null;
+  itemSales: SalesItemActualSummary | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
   stockItems: StockItemsPayload | null;
@@ -593,6 +595,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     roster: [],
     rosterForecastSnapshots: [],
     actualSales: null,
+    itemSales: null,
     primeCost: null,
     tips: null,
     stockItems: null,
@@ -616,7 +619,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setMessage(null);
     setStockMessage(null);
     try {
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, primeCost, tips] = await Promise.all([
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips] = await Promise.all([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -624,6 +627,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<RosterShift[]>(`/api/staff/roster?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
@@ -644,7 +648,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
@@ -1669,24 +1673,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   function renderMenuEngineeringSection() {
     const hasVenueSales = Boolean(data.actualSales?.entries.length);
+    const hasItemSales = Boolean(data.itemSales?.entries.length);
+    const itemSalesMatched = data.itemSales?.matchedRecipeRows ?? 0;
+    const itemSalesUnmatched = data.itemSales?.unmatchedRows ?? 0;
+    const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const hasRecipeSummary = Boolean(data.recipes && data.recipes.totalRecipes > 0);
     const readinessRows = [
       {
         item: 'Imported item-level sales',
-        status: 'Missing',
-        note: 'Current Reports sales imports are venue-level. Menu engineering needs units sold and revenue by menu item.'
+        status: hasItemSales ? (itemSalesMatched > 0 ? 'Ready' : 'Partly ready') : 'Missing',
+        note: hasItemSales
+          ? `${itemSalesQuantity.toLocaleString()} units imported across ${data.itemSales?.entries.length ?? 0} menu rows. ${itemSalesMatched} matched to recipes, ${itemSalesUnmatched} need recipe matching.`
+          : 'Square item sales have not been imported for the selected week.'
       },
       {
         item: 'Recipe cost data',
         status: hasRecipeSummary ? 'Partly ready' : 'Missing',
         note: hasRecipeSummary
-          ? `${data.recipes?.totalRecipes ?? 0} recipes are available from Stock. Item matching still needs review.`
+          ? `${data.recipes?.totalRecipes ?? 0} recipes are available from Stock.${hasItemSales ? ` ${itemSalesMatched} Square item rows are matched.` : ' Item matching still needs review.'}`
           : 'Create item recipes in Stock before margin analysis can run.'
       },
       {
         item: 'Selling price by item',
-        status: 'Missing',
-        note: 'No reliable item price source is wired into Reports yet.'
+        status: hasItemSales ? 'Ready' : 'Missing',
+        note: hasItemSales
+          ? `${formatCurrency(data.itemSales?.totalNetSalesCents ?? 0)} net Square item sales imported for the selected week.`
+          : 'No reliable item price source is wired into Reports yet.'
       },
       {
         item: 'Venue sales totals',
@@ -1727,10 +1739,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           <div className="stats-grid report-metric-grid">
-            <StatCard label="Sales source" value={hasVenueSales ? 'Venue totals' : 'Missing'} hint="Item-level sales not wired yet" loading={loading} />
+            <StatCard label="Sales source" value={hasItemSales ? 'Square item sales' : hasVenueSales ? 'Venue totals' : 'Missing'} hint={hasItemSales ? `${itemSalesMatched} recipe matches` : 'Waiting on item-level sales'} loading={loading} />
             <StatCard label="Recipes available" value={data.recipes?.totalRecipes ?? 0} hint="From Stock recipe costing" loading={loading} />
             <StatCard label="Average recipe cost" value={formatMoney(data.recipes?.averageEstimatedCost ?? 0)} hint="Estimated and manually reviewed" loading={loading} />
-            <StatCard label="Recommendations" value="Not ready" hint="Needs item sales, price, and recipe matches" loading={loading} />
+            <StatCard label="Recommendations" value={hasItemSales && itemSalesMatched > 0 ? 'Partly ready' : 'Not ready'} hint={hasItemSales ? `${itemSalesUnmatched} unmatched item rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
           </div>
 
           <div className="report-detail-grid">
@@ -1738,14 +1750,26 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <h4>What can be checked now</h4>
               <Metric label="Venue sales imported" value={hasVenueSales ? 'Yes' : 'No'} tone={hasVenueSales ? 'positive' : 'warning'} />
               <Metric label="Recipe costs available" value={hasRecipeSummary ? 'Partial' : 'No'} tone={hasRecipeSummary ? 'info' : 'warning'} />
-              <Metric label="Menu item sales" value="Not connected" tone="warning" />
-              <Metric label="Item price source" value="Not connected" tone="warning" />
+              <Metric
+                label="Menu item sales"
+                value={hasItemSales ? `${itemSalesQuantity.toLocaleString()} units` : 'Not connected'}
+                tone={hasItemSales ? 'positive' : 'warning'}
+                hint={hasItemSales ? `${data.itemSales?.entries.length ?? 0} Square item rows` : undefined}
+              />
+              <Metric
+                label="Item price source"
+                value={hasItemSales ? formatCurrency(data.itemSales?.totalNetSalesCents ?? 0) : 'Not connected'}
+                tone={hasItemSales ? 'positive' : 'warning'}
+                hint={hasItemSales ? 'Square order line net sales' : undefined}
+              />
             </div>
 
             <div className="report-panel">
               <h4>Next data needed</h4>
               <p className="subtle">
-                To classify Stars, Plowhorses, Puzzles and Dogs, Reports needs item-level sales with units sold, revenue, venue, date range, menu category, and a recipe match from Stock.
+                {hasItemSales
+                  ? 'Square item sales are importing now. Review unmatched rows by aligning Square item names with Stock recipe names before using menu buckets for decisions.'
+                  : 'To classify Stars, Plowhorses, Puzzles and Dogs, Reports needs item-level sales with units sold, revenue, venue, date range, menu category, and a recipe match from Stock.'}
               </p>
               <div className="reports-export-actions spacious">
                 {sectionButton('stock', 'Review stock and recipe data')}
@@ -1777,7 +1801,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               </table>
             </div>
             <p className="subtle">
-              These buckets stay informational until item-level sales, selling price, and recipe cost matches are available.
+              {hasItemSales
+                ? 'These buckets stay informational until recipe cost matches are reviewed for each Square item.'
+                : 'These buckets stay informational until item-level sales, selling price, and recipe cost matches are available.'}
             </p>
           </div>
 
@@ -1798,6 +1824,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   ? appButton(STOCK_WEB_URL, '/recipes', 'Open recipes')
                   : row.item === 'Venue sales totals'
                     ? sectionButton('exports', 'Open imports/exports')
+                    : row.item === 'Imported item-level sales' && hasItemSales
+                      ? sectionButton('stock', 'Review recipe matches')
                     : <Badge tone="muted">Action not available yet</Badge>}
               </div>
             ))}

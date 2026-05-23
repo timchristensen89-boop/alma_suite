@@ -15,6 +15,7 @@ import {
   type ReportsReserveSummary,
   type ReportsStaffSummary,
   type ReportsStockSummary,
+  type SalesItemActualSummary,
   type StocktakeReviewItem
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -941,6 +942,63 @@ export const reportsService = {
         updatedAt: entry.updatedAt.toISOString()
       })),
       totalSalesCents: entries.reduce((sum, entry) => sum + entry.salesCents, 0),
+      byVenue
+    };
+  },
+
+  async listItemActualSales(input: unknown, actor?: AuthUser): Promise<SalesItemActualSummary> {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Item sales start date');
+    const end = parseDate(data.end, 'Item sales end date');
+    if (end <= start) throw new HttpError(400, 'Item sales end date must be after the start date');
+    const venue = salesVenueScope(actor, data.venue);
+
+    const entries = await prisma.salesItemActualEntry.findMany({
+      where: {
+        serviceDate: { gte: start, lt: end },
+        ...(venue ? { venue } : {})
+      },
+      orderBy: [{ serviceDate: 'asc' }, { venue: 'asc' }, { netSalesCents: 'desc' }]
+    });
+
+    const byVenue = Array.from(
+      entries.reduce((map, entry) => {
+        const current = map.get(entry.venue) ?? { venue: entry.venue, netSalesCents: 0, quantity: 0, rows: 0 };
+        current.netSalesCents += entry.netSalesCents;
+        current.quantity += entry.quantity;
+        current.rows += 1;
+        map.set(entry.venue, current);
+        return map;
+      }, new Map<string, { venue: string; netSalesCents: number; quantity: number; rows: number }>())
+        .values()
+    );
+
+    return {
+      entries: entries.map((entry) => ({
+        id: entry.id,
+        venue: entry.venue,
+        serviceDate: entry.serviceDate.toISOString(),
+        source: entry.source,
+        externalId: entry.externalId,
+        itemName: entry.itemName,
+        variationName: entry.variationName,
+        categoryName: entry.categoryName,
+        sku: entry.sku,
+        catalogObjectId: entry.catalogObjectId,
+        locationName: entry.locationName,
+        quantity: entry.quantity,
+        grossSalesCents: entry.grossSalesCents,
+        netSalesCents: entry.netSalesCents,
+        orderCount: entry.orderCount,
+        lineCount: entry.lineCount,
+        recipeId: entry.recipeId,
+        createdAt: entry.createdAt.toISOString(),
+        updatedAt: entry.updatedAt.toISOString()
+      })),
+      totalNetSalesCents: entries.reduce((sum, entry) => sum + entry.netSalesCents, 0),
+      totalQuantity: entries.reduce((sum, entry) => sum + entry.quantity, 0),
+      matchedRecipeRows: entries.filter((entry) => entry.recipeId).length,
+      unmatchedRows: entries.filter((entry) => !entry.recipeId).length,
       byVenue
     };
   },

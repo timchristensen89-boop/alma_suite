@@ -671,12 +671,20 @@ export const stockOperationsService = {
   async getMenuParRecommendations(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockMenuParRecommendationsPayload> {
     const venue = actorVenueScope(actor, requestedVenue);
     const { start, end } = sixMonthLookback();
-    const [venues, salesEntries, recipes] = await Promise.all([
+    const [venues, salesEntries, itemSalesEntries, recipes] = await Promise.all([
       venuesForActor(actor),
       prisma.salesActualEntry.findMany({
         where: {
           ...(venue ? { venue } : {}),
           serviceDate: { gte: start, lte: end }
+        },
+        orderBy: { serviceDate: 'asc' }
+      }),
+      prisma.salesItemActualEntry.findMany({
+        where: {
+          ...(venue ? { venue } : {}),
+          serviceDate: { gte: start, lte: end },
+          recipeId: { not: null }
         },
         orderBy: { serviceDate: 'asc' }
       }),
@@ -721,9 +729,20 @@ export const stockOperationsService = {
     }
 
     const salesDays = new Set(salesEntries.map((entry) => entry.serviceDate.toISOString().slice(0, 10)));
+    const itemSalesDays = new Set(itemSalesEntries.map((entry) => entry.serviceDate.toISOString().slice(0, 10)));
     const totalSalesCents = salesEntries.reduce((sum, entry) => sum + entry.salesCents, 0);
     const hasSales = salesEntries.length > 0;
+    const hasItemSales = itemSalesEntries.length > 0;
     const averageDailySalesCents = salesDays.size > 0 ? Math.round(totalSalesCents / salesDays.size) : null;
+    const itemSalesByRecipeVenue = new Map<string, { quantity: number; netSalesCents: number }>();
+    for (const entry of itemSalesEntries) {
+      if (!entry.recipeId) continue;
+      const key = `${entry.venue}:${entry.recipeId}`;
+      const current = itemSalesByRecipeVenue.get(key) ?? { quantity: 0, netSalesCents: 0 };
+      current.quantity += entry.quantity;
+      current.netSalesCents += entry.netSalesCents;
+      itemSalesByRecipeVenue.set(key, current);
+    }
     const recommendationsByItem = new Map<string, StockMenuParRecommendation>();
 
     for (const recipe of menuRecipes) {
@@ -739,7 +758,23 @@ export const stockOperationsService = {
           const currentReorderPoint = row.reorderPoint ?? item.reorderPoint ?? null;
           const currentOnHand = row.onHand ?? item.onHand ?? null;
           const threshold = currentReorderPoint ?? currentParLevel ?? 0;
-          const suggestedOrderQuantity = Math.max((currentParLevel ?? threshold) - (currentOnHand ?? 0), 0);
+          const matchedRecipeSales = itemSalesByRecipeVenue.get(`${rowVenue}:${recipe.id}`);
+          const recipeQuantitySold = matchedRecipeSales?.quantity ?? 0;
+          const ingredientPerSale = line.quantity
+            ? line.quantity / (recipe.yieldQuantity && recipe.yieldQuantity > 0 ? recipe.yieldQuantity : 1)
+            : 0;
+          const estimatedSixMonthUsage = recipeQuantitySold * ingredientPerSale;
+          const averageDailyUsage = itemSalesDays.size > 0 ? estimatedSixMonthUsage / itemSalesDays.size : 0;
+          const recommendedFromItemSales = hasItemSales && averageDailyUsage > 0
+            ? Math.ceil(averageDailyUsage * 7)
+            : null;
+          const recommendedParLevel = recommendedFromItemSales
+            ? Math.max(currentParLevel ?? 0, recommendedFromItemSales)
+            : currentParLevel;
+          const recommendedReorderPoint = recommendedFromItemSales
+            ? Math.max(currentReorderPoint ?? 0, Math.ceil(recommendedFromItemSales * 0.5))
+            : currentReorderPoint;
+          const suggestedOrderQuantity = Math.max((recommendedParLevel ?? threshold) - (currentOnHand ?? 0), 0);
           const supplierLine = supplierByItem.get(item.id);
           const supplier = supplierLine
             ? {
@@ -758,13 +793,15 @@ export const stockOperationsService = {
             continue;
           }
           const warnings = [
-            'Item-level POS sales are not connected yet, so this keeps current par levels instead of inventing menu-item demand.',
+            ...(!hasItemSales ? ['Item-level Square sales are not connected for this recipe yet, so current par levels are preserved.'] : []),
+            ...(hasItemSales && !matchedRecipeSales ? ['No matched Square item sales found for this recipe in the six-month window.'] : []),
+            ...(matchedRecipeSales && !line.quantity ? ['Recipe ingredient quantity is missing, so item sales cannot estimate stock usage for this line.'] : []),
             ...(!hasSales ? ['No venue sales actuals found in the six-month review window.'] : []),
             ...(!currentParLevel ? ['No current par level is set for this venue/item.'] : []),
             ...(!supplier ? ['No supplier match found from recent invoices.'] : [])
           ];
           const dataQuality = recommendationQuality({
-            hasSales,
+            hasSales: hasItemSales || hasSales,
             hasPar: Boolean(currentParLevel),
             suggestedOrderQuantity,
             supplierId: supplier?.id || null
@@ -779,8 +816,8 @@ export const stockOperationsService = {
             currentOnHand,
             currentParLevel,
             currentReorderPoint,
-            recommendedParLevel: currentParLevel,
-            recommendedReorderPoint: currentReorderPoint,
+            recommendedParLevel,
+            recommendedReorderPoint,
             suggestedOrderQuantity,
             avgCostCents: item.avgCostCents,
             estimatedOrderCostCents: moneyImpactCents(suggestedOrderQuantity, item.avgCostCents),
@@ -814,13 +851,15 @@ export const stockOperationsService = {
         menuItemsReviewed: menuRecipes.length,
         stockItemsReviewed: recommendations.length,
         readyToOrder: recommendations.filter((item) => item.suggestedOrderQuantity > 0).length,
-        missingItemSales: true,
+        missingItemSales: !hasItemSales,
         missingSupplierCount: recommendations.filter((item) => !item.supplier).length
       },
       recommendations,
       warnings: [
         'Recommendations are limited to stock items used by item recipes.',
-        'Current sales actuals are venue-level only. Connect Square/POS item-level sales before automatically increasing par levels from menu demand.'
+        hasItemSales
+          ? 'Square item sales are used only where they match Stock item recipe titles. Unmatched Square items stay out of par increases.'
+          : 'Current sales actuals are venue-level only. Connect Square/POS item-level sales before automatically increasing par levels from menu demand.'
       ]
     };
   },

@@ -2635,6 +2635,40 @@ export type SalesActualSummary = {
   }>;
 };
 
+export type SalesItemActualSummary = {
+  entries: Array<{
+    id: string;
+    venue: string;
+    serviceDate: string;
+    source: string;
+    externalId: string;
+    itemName: string;
+    variationName: string | null;
+    categoryName: string | null;
+    sku: string | null;
+    catalogObjectId: string | null;
+    locationName: string | null;
+    quantity: number;
+    grossSalesCents: number;
+    netSalesCents: number;
+    orderCount: number;
+    lineCount: number;
+    recipeId: string | null;
+    createdAt: string;
+    updatedAt: string;
+  }>;
+  totalNetSalesCents: number;
+  totalQuantity: number;
+  matchedRecipeRows: number;
+  unmatchedRows: number;
+  byVenue: Array<{
+    venue: string;
+    netSalesCents: number;
+    quantity: number;
+    rows: number;
+  }>;
+};
+
 export type ReportsPrimeCostVenueRow = {
   venue: string;
   salesCents: number;

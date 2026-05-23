@@ -56,9 +56,11 @@ Example body:
 
 ## Square Job
 
-The Square scheduled job refreshes token health as needed, syncs locations for the primary and secondary Square accounts, and imports completed payment totals into `SalesActualEntry` for Reports prime-cost sales.
+The Square scheduled job refreshes token health as needed, syncs locations for the primary and secondary Square accounts, imports completed payment totals into `SalesActualEntry` for Reports prime-cost sales, and imports completed order line item sales into `SalesItemActualEntry` for menu reporting and Stock par recommendations.
 
-It groups completed payments by account, Square location and service date. Each account falls back to its configured Square label as the Alma venue, so keep `SQUARE_PRIMARY_LABEL` and `SQUARE_SECONDARY_LABEL` aligned with Alma venue names. It does not import orders, inventory or item-level menu sales yet.
+It groups completed payments by account, Square location and service date. Each account falls back to its configured Square label as the Alma venue, so keep `SQUARE_PRIMARY_LABEL` and `SQUARE_SECONDARY_LABEL` aligned with Alma venue names. It records order line items for reporting, but it does not import Square inventory counts or mutate Stock balances.
+
+Square item sales are grouped by Square account, location, service date, and catalog item or item name. Alma keeps unmatched item rows for review instead of discarding them. Stock par recommendations only use rows that can be matched to Stock recipes by name, so recipe names should be kept aligned with Square menu item names before relying on recommended par increases.
 
 Example body:
 

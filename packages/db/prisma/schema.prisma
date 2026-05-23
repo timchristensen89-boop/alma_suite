@@ -1145,6 +1145,41 @@ model SalesActualEntry {
   @@index([venue, serviceDate])
 }
 
+model SalesItemActualEntry {
+  id                    String   @id @default(cuid())
+  venue                 String
+  serviceDate           DateTime
+  source                String   @default("manual")
+  externalId            String
+  itemName              String
+  variationName         String?
+  categoryName          String?
+  sku                   String?
+  catalogObjectId       String?
+  catalogVersion        String?
+  locationId            String?
+  locationName          String?
+  quantity              Float    @default(0)
+  grossSalesCents       Int      @default(0)
+  netSalesCents         Int      @default(0)
+  orderCount            Int      @default(0)
+  lineCount             Int      @default(0)
+  recipeId              String?
+  notes                 String?
+  sourceMetadata        Json     @default("{}")
+  importedById          String?
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+  recipe                Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+
+  @@unique([venue, serviceDate, source, externalId])
+  @@index([serviceDate])
+  @@index([venue, serviceDate])
+  @@index([source, catalogObjectId])
+  @@index([recipeId])
+  @@index([itemName])
+}
+
 model ReserveGuest {
   id               String                  @id @default(cuid())
   venue            String?
@@ -2329,6 +2364,7 @@ model Recipe {
   updatedAt     DateTime     @updatedAt
   lines         RecipeLine[] @relation("RecipeLines")
   usedByLines   RecipeLine[] @relation("SubRecipeLines")
+  itemSales     SalesItemActualEntry[]
 
   @@index([title])
   @@index([category])

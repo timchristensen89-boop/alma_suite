@@ -429,6 +429,35 @@ type SquarePaymentsResponse = {
   cursor?: string;
 };
 
+type SquareOrderLineItem = {
+  uid?: string;
+  name?: string;
+  quantity?: string;
+  catalog_object_id?: string;
+  catalog_version?: number;
+  variation_name?: string;
+  item_type?: string;
+  base_price_money?: SquareMoney;
+  gross_sales_money?: SquareMoney;
+  total_money?: SquareMoney;
+  total_discount_money?: SquareMoney;
+  total_tax_money?: SquareMoney;
+};
+
+type SquareOrder = {
+  id?: string;
+  location_id?: string;
+  state?: string;
+  created_at?: string;
+  closed_at?: string;
+  line_items?: SquareOrderLineItem[];
+};
+
+type SquareOrdersSearchResponse = {
+  orders?: SquareOrder[];
+  cursor?: string;
+};
+
 type SquareTokenResponse = {
   access_token?: string;
   refresh_token?: string;
@@ -818,6 +847,50 @@ async function squareGetJson<T>(
   }
 }
 
+async function squarePostJson<T>(
+  path: string,
+  body: Prisma.InputJsonObject,
+  input: {
+    connection: IntegrationConnection;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<{ data: T; connection: IntegrationConnection; tokenStatus: 'healthy' | 'refreshed' }> {
+  const { accessToken, connection, tokenStatus } = await validSquareToken(input.connection);
+  const config = providerConfig('SQUARE', squareAccountKeyFromConnection(connection));
+  const response = await fetch(`${config.apiBaseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Square-Version': env.integrations.square.apiVersion,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(body)
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshSquareConnection(connection);
+    return squarePostJson<T>(path, body, {
+      connection: refreshed,
+      retryAfterUnauthorized: false
+    });
+  }
+
+  if (!response.ok) {
+    const text = await response.text().catch(() => '');
+    throw new HttpError(502, 'Square request failed.', {
+      status: response.status,
+      detail: text ? text.slice(0, 300) : response.statusText
+    });
+  }
+
+  return {
+    data: await response.json() as T,
+    connection,
+    tokenStatus
+  };
+}
+
 async function listSquareLocations(connection: IntegrationConnection) {
   const response = await squareGetJson<SquareLocationsResponse>('/locations', { connection });
   return {
@@ -859,6 +932,54 @@ async function listSquarePayments(input: {
   return { connection, payments, tokenStatus, limited: Boolean(cursor) };
 }
 
+async function searchSquareOrders(input: {
+  connection: IntegrationConnection;
+  beginTime: Date;
+  endTime: Date;
+  locationIds: string[];
+  limit: number;
+}) {
+  let connection = input.connection;
+  const orders: SquareOrder[] = [];
+  let cursor: string | undefined;
+  let tokenStatus: 'healthy' | 'refreshed' = 'healthy';
+  const pageLimit = 500;
+
+  while (orders.length < input.limit) {
+    const body: Prisma.InputJsonObject = {
+      location_ids: input.locationIds,
+      limit: Math.min(pageLimit, input.limit - orders.length),
+      return_entries: false,
+      query: {
+        filter: {
+          date_time_filter: {
+            created_at: {
+              start_at: input.beginTime.toISOString(),
+              end_at: input.endTime.toISOString()
+            }
+          },
+          state_filter: {
+            states: ['COMPLETED']
+          }
+        },
+        sort: {
+          sort_field: 'CREATED_AT',
+          sort_order: 'ASC'
+        }
+      },
+      ...(cursor ? { cursor } : {})
+    };
+    const response = await squarePostJson<SquareOrdersSearchResponse>('/orders/search', body, { connection });
+    connection = response.connection;
+    if (response.tokenStatus === 'refreshed') tokenStatus = 'refreshed';
+    orders.push(...(response.data.orders ?? []));
+    cursor = response.data.cursor;
+    if (!cursor || orders.length >= input.limit) break;
+  }
+
+  return { connection, orders, tokenStatus, limited: Boolean(cursor) };
+}
+
 function squarePaymentAmountCents(payment: SquarePayment) {
   const total = typeof payment.total_money?.amount === 'number'
     ? payment.total_money.amount
@@ -867,6 +988,25 @@ function squarePaymentAmountCents(payment: SquarePayment) {
       : 0;
   const refunded = typeof payment.refunded_money?.amount === 'number' ? payment.refunded_money.amount : 0;
   return Math.max(0, Math.round(total - refunded));
+}
+
+function squareOrderLineGrossCents(line: SquareOrderLineItem) {
+  if (typeof line.gross_sales_money?.amount === 'number') return Math.max(0, Math.round(line.gross_sales_money.amount));
+  if (typeof line.total_money?.amount === 'number') return Math.max(0, Math.round(line.total_money.amount));
+  const base = typeof line.base_price_money?.amount === 'number' ? line.base_price_money.amount : 0;
+  const quantity = Number(line.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? Math.round(base * quantity) : Math.max(0, Math.round(base));
+}
+
+function squareOrderLineNetCents(line: SquareOrderLineItem) {
+  return typeof line.total_money?.amount === 'number'
+    ? Math.max(0, Math.round(line.total_money.amount))
+    : squareOrderLineGrossCents(line);
+}
+
+function squareOrderLineQuantity(line: SquareOrderLineItem) {
+  const quantity = Number(line.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
 }
 
 async function configuredVenueNames() {
@@ -2642,6 +2782,11 @@ export const integrationService = {
       }
     });
 
+    const itemSales = await integrationService.importSquareItemSales(input, actor, {
+      syncType: options?.syncType ?? 'MANUAL',
+      eventType: options?.syncType === 'SCHEDULED' ? 'SCHEDULED_SQUARE_ITEM_SALES_IMPORTED' : 'SQUARE_ITEM_SALES_IMPORTED'
+    });
+
     return {
       provider: 'square' as const,
       accountKey,
@@ -2651,6 +2796,9 @@ export const integrationService = {
       endDate: end.toISOString(),
       paymentsRead: response.payments.length,
       salesRowsUpserted: rows.length,
+      itemSalesRowsUpserted: itemSales.itemSalesRowsUpserted,
+      itemOrdersRead: itemSales.ordersRead,
+      itemLinesRead: itemSales.linesRead,
       skippedCount,
       totalSalesCents: rows.reduce((sum, row) => sum + row.salesCents, 0),
       tokenStatus: response.tokenStatus,
@@ -2665,6 +2813,249 @@ export const integrationService = {
         locationId: row.locationId,
         locationName: row.locationName
       })),
+      warnings: [...warnings, ...itemSales.warnings]
+    };
+  },
+
+  async importSquareItemSales(
+    input: Record<string, unknown> = {},
+    actor: AuthUser,
+    options?: { syncType?: ImportRunMode; eventType?: string }
+  ) {
+    const accountKey = normaliseSquareAccountKey(input.account ?? input.accountKey);
+    const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS, 90);
+    const limit = clampLimit(input.orderLimit ?? input.limit, DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT, 1000);
+    const { start, end } = squareImportDateRange(input, lookbackDays);
+    const connection = await connectedSquareConnection(accountKey);
+    const squareStatus = squareMetadataStatus(connection);
+    const locationIds = squareStatus.locations.map((location) => location.id).filter(Boolean);
+    if (!locationIds.length) throw new HttpError(409, `${squareAccountConfig(accountKey).label} Square locations must be synced before item sales can import.`);
+
+    const [ordersResponse, venues, recipes] = await Promise.all([
+      searchSquareOrders({ connection, beginTime: start, endTime: end, locationIds, limit }),
+      configuredVenueNames(),
+      prisma.recipe.findMany({
+        where: { title: { not: '' } },
+        select: { id: true, title: true, venue: true }
+      })
+    ]);
+    const locationsById = new Map(squareStatus.locations.map((location) => [location.id, location]));
+    const recipeByVenueAndName = new Map<string, { id: string; title: string; venue: string | null }>();
+    const recipeByName = new Map<string, { id: string; title: string; venue: string | null }>();
+    for (const recipe of recipes) {
+      const nameKey = normaliseMatchText(recipe.title);
+      if (!nameKey) continue;
+      if (recipe.venue) recipeByVenueAndName.set(`${normaliseMatchText(recipe.venue)}|${nameKey}`, recipe);
+      if (!recipeByName.has(nameKey)) recipeByName.set(nameKey, recipe);
+    }
+
+    const source = `square-item:${accountKey}`;
+    const grouped = new Map<string, {
+      venue: string;
+      serviceDateKey: string;
+      serviceDate: Date;
+      source: string;
+      externalId: string;
+      itemName: string;
+      variationName: string | null;
+      catalogObjectId: string | null;
+      catalogVersion: string | null;
+      locationId: string;
+      locationName: string;
+      quantity: number;
+      grossSalesCents: number;
+      netSalesCents: number;
+      orderIds: Set<string>;
+      lineCount: number;
+      recipeId: string | null;
+    }>();
+    let skippedLines = 0;
+
+    for (const order of ordersResponse.orders) {
+      const orderDate = providerDate(order.closed_at ?? order.created_at);
+      const orderId = optionalText(order.id);
+      const locationId = optionalText(order.location_id) ?? 'account';
+      const location = locationsById.get(locationId) ?? null;
+      if (!orderDate || !orderId) {
+        skippedLines += order.line_items?.length ?? 0;
+        continue;
+      }
+      const timeZone = location?.timezone || 'Australia/Sydney';
+      const serviceDateKey = dateKeyInTimeZone(orderDate, timeZone);
+      const venue = squarePaymentVenue({ accountKey, location, venues });
+      const venueKey = normaliseMatchText(venue);
+      for (const line of order.line_items ?? []) {
+        if (line.item_type && line.item_type !== 'ITEM') {
+          skippedLines += 1;
+          continue;
+        }
+        const itemName = optionalText(line.name);
+        if (!itemName) {
+          skippedLines += 1;
+          continue;
+        }
+        const quantity = squareOrderLineQuantity(line);
+        const grossSalesCents = squareOrderLineGrossCents(line);
+        const netSalesCents = squareOrderLineNetCents(line);
+        if (quantity <= 0 || netSalesCents <= 0) {
+          skippedLines += 1;
+          continue;
+        }
+        const itemNameKey = normaliseMatchText(itemName);
+        const recipe = recipeByVenueAndName.get(`${venueKey}|${itemNameKey}`) ?? recipeByName.get(itemNameKey) ?? null;
+        const catalogObjectId = optionalText(line.catalog_object_id);
+        const variationName = optionalText(line.variation_name);
+        const catalogVersion = line.catalog_version === undefined ? null : String(line.catalog_version);
+        const itemKey = catalogObjectId ?? `${itemNameKey}:${normaliseMatchText(variationName)}`;
+        const externalId = `${source}:${locationId}:${serviceDateKey}:${itemKey}`;
+        const key = `${venue}|${serviceDateKey}|${externalId}`;
+        const existing = grouped.get(key) ?? {
+          venue,
+          serviceDateKey,
+          serviceDate: startOfUtcDate(serviceDateKey),
+          source,
+          externalId,
+          itemName,
+          variationName,
+          catalogObjectId,
+          catalogVersion,
+          locationId,
+          locationName: location?.name ?? location?.businessName ?? squareAccountConfig(accountKey).label,
+          quantity: 0,
+          grossSalesCents: 0,
+          netSalesCents: 0,
+          orderIds: new Set<string>(),
+          lineCount: 0,
+          recipeId: recipe?.id ?? null
+        };
+        existing.quantity += quantity;
+        existing.grossSalesCents += grossSalesCents;
+        existing.netSalesCents += netSalesCents;
+        existing.orderIds.add(orderId);
+        existing.lineCount += 1;
+        if (!existing.recipeId && recipe?.id) existing.recipeId = recipe.id;
+        grouped.set(key, existing);
+      }
+    }
+
+    const rows = Array.from(grouped.values());
+    const warnings: string[] = [];
+    if (ordersResponse.limited) warnings.push(`Square returned the first ${limit} orders only. Run a shorter date range to import the remaining item sales.`);
+    if (skippedLines > 0) warnings.push(`${skippedLines} Square order lines were skipped because they were not item sales, had no item name, or had no positive quantity/sales.`);
+    const unmatchedRows = rows.filter((row) => !row.recipeId).length;
+    if (unmatchedRows > 0) warnings.push(`${unmatchedRows} Square item sales rows did not match a Stock item recipe title yet.`);
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        await tx.salesItemActualEntry.upsert({
+          where: {
+            venue_serviceDate_source_externalId: {
+              venue: row.venue,
+              serviceDate: row.serviceDate,
+              source: row.source,
+              externalId: row.externalId
+            }
+          },
+          create: {
+            venue: row.venue,
+            serviceDate: row.serviceDate,
+            source: row.source,
+            externalId: row.externalId,
+            itemName: row.itemName,
+            variationName: row.variationName,
+            catalogObjectId: row.catalogObjectId,
+            catalogVersion: row.catalogVersion,
+            locationId: row.locationId,
+            locationName: row.locationName,
+            quantity: row.quantity,
+            grossSalesCents: row.grossSalesCents,
+            netSalesCents: row.netSalesCents,
+            orderCount: row.orderIds.size,
+            lineCount: row.lineCount,
+            recipeId: row.recipeId,
+            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+            sourceMetadata: {
+              importedFrom: 'square',
+              accountKey,
+              orderCount: row.orderIds.size,
+              matchedRecipe: Boolean(row.recipeId)
+            },
+            importedById: actor.id
+          },
+          update: {
+            itemName: row.itemName,
+            variationName: row.variationName,
+            catalogObjectId: row.catalogObjectId,
+            catalogVersion: row.catalogVersion,
+            locationId: row.locationId,
+            locationName: row.locationName,
+            quantity: row.quantity,
+            grossSalesCents: row.grossSalesCents,
+            netSalesCents: row.netSalesCents,
+            orderCount: row.orderIds.size,
+            lineCount: row.lineCount,
+            recipeId: row.recipeId,
+            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+            sourceMetadata: {
+              importedFrom: 'square',
+              accountKey,
+              orderCount: row.orderIds.size,
+              matchedRecipe: Boolean(row.recipeId)
+            },
+            importedById: actor.id
+          }
+        });
+      }
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'SQUARE',
+          connectionId: ordersResponse.connection.id,
+          syncType: options?.syncType ?? 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          recordsImported: rows.length,
+          recordsUpdated: ordersResponse.orders.length,
+          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      connectionId: ordersResponse.connection.id,
+      eventType: options?.eventType ?? 'SQUARE_ITEM_SALES_IMPORTED',
+      summary: `${squareAccountConfig(accountKey).label} Square item sales import finished: ${rows.length} item rows from ${ordersResponse.orders.length} orders.`,
+      actor,
+      metadata: {
+        accountKey,
+        syncType: options?.syncType ?? 'MANUAL',
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        ordersRead: ordersResponse.orders.length,
+        itemSalesRowsUpserted: rows.length,
+        skippedLines,
+        unmatchedRows,
+        tokenStatus: ordersResponse.tokenStatus,
+        limited: ordersResponse.limited
+      }
+    });
+
+    return {
+      provider: 'square' as const,
+      accountKey,
+      label: squareAccountConfig(accountKey).label,
+      generatedAt: new Date().toISOString(),
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      ordersRead: ordersResponse.orders.length,
+      linesRead: rows.reduce((sum, row) => sum + row.lineCount, 0),
+      itemSalesRowsUpserted: rows.length,
+      unmatchedRows,
+      skippedLines,
+      totalQuantity: rows.reduce((sum, row) => sum + row.quantity, 0),
+      totalNetSalesCents: rows.reduce((sum, row) => sum + row.netSalesCents, 0),
+      tokenStatus: ordersResponse.tokenStatus,
+      limited: ordersResponse.limited,
       warnings
     };
   },
@@ -2796,7 +3187,9 @@ export const integrationService = {
       status: 'synced' | 'skipped' | 'error';
       locationCount: number;
       salesRowsUpserted: number;
+      itemSalesRowsUpserted: number;
       paymentsRead: number;
+      ordersRead: number;
       message: string;
     }> = [];
 
@@ -2811,7 +3204,9 @@ export const integrationService = {
             status: 'skipped',
             locationCount: 0,
             salesRowsUpserted: 0,
+            itemSalesRowsUpserted: 0,
             paymentsRead: 0,
+            ordersRead: 0,
             message: status.connectBlockedReason ?? `${label} Square is not connected.`
           });
           continue;
@@ -2839,9 +3234,11 @@ export const integrationService = {
           status: 'synced',
           locationCount: sync.locationCount,
           salesRowsUpserted: sales?.salesRowsUpserted ?? 0,
+          itemSalesRowsUpserted: sales?.itemSalesRowsUpserted ?? 0,
           paymentsRead: sales?.paymentsRead ?? 0,
+          ordersRead: sales?.itemOrdersRead ?? 0,
           message: includeSales
-            ? 'Square locations and payment sales totals synced into Reports sales actuals. Orders and inventory were not imported.'
+            ? 'Square locations, payment totals and item sales synced into Reports sales actuals. Inventory was not imported.'
             : 'Square locations synced. Payments, orders and inventory were not imported in this scheduled maintenance run.'
         });
       } catch (error) {
@@ -2872,7 +3269,9 @@ export const integrationService = {
           status: 'error',
           locationCount: 0,
           salesRowsUpserted: 0,
+          itemSalesRowsUpserted: 0,
           paymentsRead: 0,
+          ordersRead: 0,
           message: safeErrorMessage(error)
         });
       }
@@ -2888,7 +3287,9 @@ export const integrationService = {
       skippedAccounts: results.filter((result) => result.status === 'skipped').length,
       failedAccounts: results.filter((result) => result.status === 'error').length,
       paymentsRead: results.reduce((sum, result) => sum + result.paymentsRead, 0),
-      salesRowsUpserted: results.reduce((sum, result) => sum + result.salesRowsUpserted, 0)
+      ordersRead: results.reduce((sum, result) => sum + result.ordersRead, 0),
+      salesRowsUpserted: results.reduce((sum, result) => sum + result.salesRowsUpserted, 0),
+      itemSalesRowsUpserted: results.reduce((sum, result) => sum + result.itemSalesRowsUpserted, 0)
     };
   },
 
