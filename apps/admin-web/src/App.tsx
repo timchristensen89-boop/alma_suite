@@ -66,6 +66,7 @@ import {
   VenuesPage,
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
+import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 import { VenueDevicesPage } from './pages/VenueDevicesPage';
 
@@ -125,6 +126,12 @@ const NAV_ITEMS: AdminNavItem[] = [
     label: 'Staff settings',
     description: 'Staff defaults and configuration',
     icon: <IconBriefcase />
+  },
+  {
+    to: '/staff-costing',
+    label: 'Staff costing',
+    description: 'Wage cost, cost per hour, section mix, variance, and labour charts',
+    icon: <IconReceipt />
   },
   {
     to: '/staff-record-types',
@@ -445,6 +452,7 @@ function AdminWorkspace() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
+        <Route path="/staff-costing" element={<StaffCostingReportPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
         <Route path="/staff-hr-templates" element={<StaffHrTemplatesPage />} />
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />

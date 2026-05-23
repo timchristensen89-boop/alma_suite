@@ -705,6 +705,13 @@ export const adminAccessUserCreateInputSchema = z.object({
   enableStaffApp: z.boolean().default(true)
 });
 
+export const adminStaffCostingQuerySchema = z.object({
+  start: z.string().optional().or(z.literal('')),
+  end: z.string().optional().or(z.literal('')),
+  venue: z.string().trim().optional().or(z.literal('')),
+  source: z.enum(['actual', 'scheduled', 'combined']).default('combined')
+});
+
 const pinSchema = z.string().regex(/^\d{4,6}$/, 'PIN must be 4 to 6 digits');
 
 export const adminVenueDeviceCreateInputSchema = z.object({
@@ -1653,6 +1660,7 @@ export type AdminAccessBulkUpdateResult = {
 };
 
 export type AdminAccessUserCreateInput = z.infer<typeof adminAccessUserCreateInputSchema>;
+export type AdminStaffCostingQuery = z.infer<typeof adminStaffCostingQuerySchema>;
 export type AdminAccessBulkUpdateInput = z.infer<typeof adminAccessBulkUpdateInputSchema>;
 export type AdminVenueDeviceCreateInput = z.infer<typeof adminVenueDeviceCreateInputSchema>;
 export type AdminVenueDeviceUpdateInput = z.infer<typeof adminVenueDeviceUpdateInputSchema>;
@@ -1672,6 +1680,100 @@ export type AdminVenueDeviceSummary = {
   createdAt: string;
   updatedAt: string;
   appAccess: StaffAppAccess[];
+};
+
+export type AdminStaffCostingPayload = {
+  generatedAt: string;
+  period: {
+    start: string;
+    end: string;
+    label: string;
+  };
+  filters: {
+    venue: string | null;
+    source: 'actual' | 'scheduled' | 'combined';
+  };
+  totals: {
+    actualHours: number;
+    actualCostCents: number;
+    approvedHours: number;
+    approvedCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    varianceHours: number;
+    varianceCostCents: number;
+    averageHourlyCostCents: number | null;
+    missingRateHours: number;
+    missingRateCount: number;
+    staffCount: number;
+    shiftCount: number;
+    timesheetCount: number;
+  };
+  sourceQuality: {
+    actualTimesheets: boolean;
+    scheduledRoster: boolean;
+    missingRates: boolean;
+    notes: string[];
+  };
+  byVenue: Array<{
+    venue: string;
+    actualHours: number;
+    actualCostCents: number;
+    approvedHours: number;
+    approvedCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    varianceHours: number;
+    varianceCostCents: number;
+    averageHourlyCostCents: number | null;
+    staffCount: number;
+    missingRateHours: number;
+  }>;
+  byArea: Array<{
+    area: string;
+    venue: string;
+    actualHours: number;
+    actualCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    averageHourlyCostCents: number | null;
+    staffCount: number;
+    shareOfActualCost: number | null;
+  }>;
+  byRole: Array<{
+    roleTitle: string;
+    actualHours: number;
+    actualCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    averageHourlyCostCents: number | null;
+    staffCount: number;
+  }>;
+  byStaff: Array<{
+    staffProfileId: string;
+    staffName: string;
+    venue: string;
+    roleTitle: string;
+    actualHours: number;
+    actualCostCents: number;
+    approvedHours: number;
+    approvedCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    averageHourlyCostCents: number | null;
+    rateCents: number | null;
+    rateSource: string;
+    missingRate: boolean;
+  }>;
+  daily: Array<{
+    date: string;
+    actualHours: number;
+    actualCostCents: number;
+    scheduledHours: number;
+    scheduledCostCents: number;
+    varianceCostCents: number;
+  }>;
+  warnings: string[];
 };
 
 export type AdminVenueDevicesPayload = {

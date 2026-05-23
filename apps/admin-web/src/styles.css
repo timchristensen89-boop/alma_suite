@@ -109,6 +109,186 @@
   gap: 10px;
 }
 
+.staff-costing-page {
+  max-width: 1480px;
+}
+
+.staff-cost-filters {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+.staff-cost-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.staff-cost-metrics {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+}
+
+.staff-cost-metric .card-body {
+  display: grid;
+  gap: 7px;
+}
+
+.staff-cost-metric-label {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.staff-cost-metric strong {
+  color: var(--color-text);
+  font-size: clamp(22px, 2.4vw, 34px);
+  letter-spacing: 0;
+  line-height: 1;
+}
+
+.staff-cost-metric small {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.staff-cost-report-grid {
+  grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+}
+
+.staff-cost-chart {
+  align-items: end;
+  display: grid;
+  gap: 10px;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(44px, 1fr);
+  min-height: 260px;
+  overflow-x: auto;
+  padding: 18px 8px 6px;
+}
+
+.staff-cost-day {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  min-width: 44px;
+}
+
+.staff-cost-bars {
+  align-items: end;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  gap: 5px;
+  height: 210px;
+  justify-content: center;
+  width: 100%;
+}
+
+.staff-cost-bar {
+  border-radius: 999px 999px 0 0;
+  display: block;
+  min-height: 4px;
+  width: 12px;
+}
+
+.staff-cost-bar-actual,
+.staff-cost-dot.actual {
+  background: var(--color-accent);
+}
+
+.staff-cost-bar-scheduled,
+.staff-cost-dot.scheduled {
+  background: #b8c0cc;
+}
+
+.staff-cost-day > span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.staff-cost-legend {
+  display: flex;
+  gap: 14px;
+  margin-top: 12px;
+}
+
+.staff-cost-legend span {
+  align-items: center;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  font-size: 13px;
+  gap: 7px;
+}
+
+.staff-cost-dot {
+  border-radius: 999px;
+  display: inline-block;
+  height: 10px;
+  width: 10px;
+}
+
+.staff-cost-section-bars {
+  display: grid;
+  gap: 14px;
+}
+
+.staff-cost-section-row {
+  align-items: center;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(170px, 0.9fr) minmax(120px, 1fr) auto;
+}
+
+.staff-cost-section-row div:first-child {
+  display: grid;
+  gap: 3px;
+}
+
+.staff-cost-section-row small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.staff-cost-horizontal-bar {
+  background: var(--color-surface-muted);
+  border-radius: 999px;
+  height: 10px;
+  overflow: hidden;
+}
+
+.staff-cost-horizontal-bar span {
+  background: var(--color-accent);
+  border-radius: inherit;
+  display: block;
+  height: 100%;
+}
+
+.staff-cost-two-tables {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.staff-cost-empty {
+  align-items: center;
+  background: var(--color-surface-muted);
+  border: 1px dashed var(--color-border);
+  border-radius: 12px;
+  color: var(--color-text-muted);
+  display: flex;
+  justify-content: center;
+  min-height: 180px;
+  padding: 24px;
+  text-align: center;
+}
+
 @media (max-width: 900px) {
   .split-grid {
     grid-template-columns: 1fr;
@@ -117,5 +297,17 @@
   .admin-form-actions .btn,
   .admin-row-actions .btn {
     width: 100%;
+  }
+
+  .staff-cost-filters,
+  .staff-cost-metrics,
+  .staff-cost-report-grid,
+  .staff-cost-two-tables {
+    grid-template-columns: 1fr;
+  }
+
+  .staff-cost-section-row {
+    align-items: stretch;
+    grid-template-columns: 1fr;
   }
 }

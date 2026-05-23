@@ -23,6 +23,14 @@ adminRouter.get('/access/users', async (_req, res, next) => {
   }
 });
 
+adminRouter.get('/staff/costing-report', async (req, res, next) => {
+  try {
+    res.json(await adminService.staffCostingReport(req.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
 adminRouter.post('/access/users', async (req, res, next) => {
   try {
     res.status(201).json(await adminService.createAccessUser(req.body, req.user));

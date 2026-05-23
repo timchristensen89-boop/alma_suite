@@ -10,11 +10,13 @@ import type {
   AdminIntegrationsStatusPayload,
   AdminOverviewPayload,
   AdminReadinessWarning,
+  AdminStaffCostingPayload,
   AdminSystemHealthPayload
 } from '@alma/shared';
 import {
   adminAccessBulkUpdateInputSchema,
-  adminAccessUserCreateInputSchema
+  adminAccessUserCreateInputSchema,
+  adminStaffCostingQuerySchema
 } from '@alma/shared';
 import { env } from '../env.js';
 import { integrationService } from './integration.service.js';
@@ -91,10 +93,109 @@ function startOfMonday(input = new Date()) {
   return date;
 }
 
+function addDays(input: Date, days: number) {
+  const date = new Date(input);
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
 function endOfDay(input: Date) {
   const date = new Date(input);
   date.setDate(date.getDate() + 1);
   return date;
+}
+
+function parseReportDate(value: string | undefined, fallback: Date, label: string) {
+  if (!value) return fallback;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) throw new HttpError(400, `${label} is invalid.`);
+  return date;
+}
+
+function isoDate(value: Date) {
+  return value.toISOString().slice(0, 10);
+}
+
+function hoursBetween(start: Date, end: Date, breakMinutes: number) {
+  if (end <= start) return 0;
+  return Math.max(0, (end.getTime() - start.getTime()) / 36e5 - breakMinutes / 60);
+}
+
+function staffCostingRate(profile: {
+  payRateCents: number | null;
+  trainingPayRateCents: number | null;
+  payProfile: {
+    employmentType: string;
+    payMode: string;
+    ordinaryHourlyRateCents: number;
+    casualLoadedHourlyRateCents: number | null;
+    manualFullTimePayAmountCents: number | null;
+    manualFullTimePayFrequency: string | null;
+  } | null;
+}) {
+  if (profile.trainingPayRateCents) return { rateCents: profile.trainingPayRateCents, source: 'Training rate' };
+  if (profile.payRateCents) return { rateCents: profile.payRateCents, source: 'Staff hourly rate' };
+  const payProfile = profile.payProfile;
+  if (!payProfile) return { rateCents: null, source: 'Missing rate' };
+  if (payProfile.payMode === 'MANUAL_FULL_TIME') {
+    if (payProfile.manualFullTimePayFrequency === 'HOURLY_FULL_TIME' && payProfile.manualFullTimePayAmountCents) {
+      return { rateCents: payProfile.manualFullTimePayAmountCents, source: 'Manual full-time hourly' };
+    }
+    return { rateCents: null, source: 'Salary not hourly-costed' };
+  }
+  if (payProfile.employmentType === 'CASUAL') {
+    return {
+      rateCents: payProfile.casualLoadedHourlyRateCents ?? payProfile.ordinaryHourlyRateCents,
+      source: payProfile.casualLoadedHourlyRateCents ? 'Award casual loaded rate' : 'Award ordinary rate'
+    };
+  }
+  return { rateCents: payProfile.ordinaryHourlyRateCents, source: 'Award ordinary rate' };
+}
+
+type CostingRow = {
+  actualHours: number;
+  actualCostCents: number;
+  approvedHours: number;
+  approvedCostCents: number;
+  scheduledHours: number;
+  scheduledCostCents: number;
+  staffIds: Set<string>;
+  missingRateHours: number;
+};
+
+function emptyCostingRow(): CostingRow {
+  return {
+    actualHours: 0,
+    actualCostCents: 0,
+    approvedHours: 0,
+    approvedCostCents: 0,
+    scheduledHours: 0,
+    scheduledCostCents: 0,
+    staffIds: new Set<string>(),
+    missingRateHours: 0
+  };
+}
+
+function averageHourlyCost(costCents: number, hours: number) {
+  return hours > 0 ? Math.round(costCents / hours) : null;
+}
+
+function addActual(row: CostingRow, staffProfileId: string, hours: number, costCents: number, approved: boolean, missingRate: boolean) {
+  row.actualHours += hours;
+  row.actualCostCents += costCents;
+  row.staffIds.add(staffProfileId);
+  if (approved) {
+    row.approvedHours += hours;
+    row.approvedCostCents += costCents;
+  }
+  if (missingRate) row.missingRateHours += hours;
+}
+
+function addScheduled(row: CostingRow, staffProfileId: string, hours: number, costCents: number, missingRate: boolean) {
+  row.scheduledHours += hours;
+  row.scheduledCostCents += costCents;
+  row.staffIds.add(staffProfileId);
+  if (missingRate) row.missingRateHours += hours;
 }
 
 function provider() {
@@ -187,6 +288,273 @@ async function recentAuditEvents(limit = 6, eventType?: string | null) {
 }
 
 export const adminService = {
+  async staffCostingReport(input: unknown): Promise<AdminStaffCostingPayload> {
+    const query = adminStaffCostingQuerySchema.parse(input ?? {});
+    const defaultStart = startOfMonday(new Date());
+    const start = parseReportDate(query.start, defaultStart, 'Costing start date');
+    const end = parseReportDate(query.end, addDays(start, 7), 'Costing end date');
+    if (end <= start) throw new HttpError(400, 'Costing end date must be after the start date.');
+    const venueFilter = query.venue?.trim() || null;
+    const staffSelect = {
+      id: true,
+      firstName: true,
+      lastName: true,
+      roleTitle: true,
+      venue: true,
+      payRateCents: true,
+      trainingPayRateCents: true,
+      payProfile: {
+        select: {
+          employmentType: true,
+          payMode: true,
+          ordinaryHourlyRateCents: true,
+          casualLoadedHourlyRateCents: true,
+          manualFullTimePayAmountCents: true,
+          manualFullTimePayFrequency: true
+        }
+      }
+    } satisfies Prisma.StaffProfileSelect;
+
+    const [timesheets, rosterShifts] = await Promise.all([
+      prisma.timesheet.findMany({
+        where: {
+          workDate: { gte: start, lt: end },
+          status: { not: 'REJECTED' },
+          ...(venueFilter ? { OR: [{ venue: venueFilter }, { venue: null, staffProfile: { venue: venueFilter } }] } : {}),
+          staffProfile: {
+            accountType: 'HUMAN',
+            mergedIntoStaffProfileId: null
+          }
+        },
+        include: { staffProfile: { select: staffSelect } },
+        orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }]
+      }),
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
+          ...(venueFilter ? { OR: [{ venue: venueFilter }, { venue: null, staffProfile: { venue: venueFilter } }] } : {}),
+          staffProfile: {
+            accountType: 'HUMAN',
+            mergedIntoStaffProfileId: null
+          }
+        },
+        include: { staffProfile: { select: staffSelect } },
+        orderBy: [{ startsAt: 'asc' }]
+      })
+    ]);
+
+    const byVenue = new Map<string, CostingRow>();
+    const byArea = new Map<string, CostingRow & { venue: string; area: string }>();
+    const byRole = new Map<string, CostingRow & { roleTitle: string }>();
+    const byStaff = new Map<string, CostingRow & {
+      staffProfileId: string;
+      staffName: string;
+      venue: string;
+      roleTitle: string;
+      rateCents: number | null;
+      rateSource: string;
+      missingRate: boolean;
+    }>();
+    const byDay = new Map<string, Omit<CostingRow, 'staffIds' | 'approvedHours' | 'approvedCostCents' | 'missingRateHours'> & { staffIds: Set<string> }>();
+
+    const rowFor = (map: Map<string, CostingRow>, key: string) => {
+      const row = map.get(key) ?? emptyCostingRow();
+      map.set(key, row);
+      return row;
+    };
+    const areaFor = (venue: string, area: string) => {
+      const key = `${venue}|${area}`;
+      const row = byArea.get(key) ?? { ...emptyCostingRow(), venue, area };
+      byArea.set(key, row);
+      return row;
+    };
+    const roleFor = (roleTitle: string) => {
+      const row = byRole.get(roleTitle) ?? { ...emptyCostingRow(), roleTitle };
+      byRole.set(roleTitle, row);
+      return row;
+    };
+    const dayFor = (dateKey: string) => {
+      const row = byDay.get(dateKey) ?? {
+        actualHours: 0,
+        actualCostCents: 0,
+        scheduledHours: 0,
+        scheduledCostCents: 0,
+        staffIds: new Set<string>()
+      };
+      byDay.set(dateKey, row);
+      return row;
+    };
+    const staffFor = (profile: typeof timesheets[number]['staffProfile']) => {
+      const venue = profile.venue?.trim() || 'Unassigned';
+      const roleTitle = profile.roleTitle?.trim() || 'Unassigned role';
+      const rate = staffCostingRate(profile);
+      const row = byStaff.get(profile.id) ?? {
+        ...emptyCostingRow(),
+        staffProfileId: profile.id,
+        staffName: `${profile.firstName} ${profile.lastName}`.trim(),
+        venue,
+        roleTitle,
+        rateCents: rate.rateCents,
+        rateSource: rate.source,
+        missingRate: !rate.rateCents
+      };
+      byStaff.set(profile.id, row);
+      return row;
+    };
+
+    for (const entry of timesheets) {
+      const venue = entry.venue?.trim() || entry.staffProfile.venue?.trim() || 'Unassigned';
+      const area = entry.area?.trim() || 'Unassigned area';
+      const roleTitle = entry.roleTitle?.trim() || entry.staffProfile.roleTitle?.trim() || 'Unassigned role';
+      const rate = staffCostingRate(entry.staffProfile);
+      const hours = hoursBetween(entry.clockInAt, entry.clockOutAt, entry.breakMinutes);
+      const cost = rate.rateCents ? Math.round(hours * rate.rateCents) : 0;
+      const approved = entry.status === 'APPROVED' || entry.status === 'EXPORTED';
+      const missingRate = !rate.rateCents && hours > 0;
+      addActual(rowFor(byVenue, venue), entry.staffProfileId, hours, cost, approved, missingRate);
+      addActual(areaFor(venue, area), entry.staffProfileId, hours, cost, approved, missingRate);
+      addActual(roleFor(roleTitle), entry.staffProfileId, hours, cost, approved, missingRate);
+      addActual(staffFor(entry.staffProfile), entry.staffProfileId, hours, cost, approved, missingRate);
+      const day = dayFor(isoDate(entry.workDate));
+      day.actualHours += hours;
+      day.actualCostCents += cost;
+      day.staffIds.add(entry.staffProfileId);
+    }
+
+    for (const shift of rosterShifts) {
+      const venue = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
+      const area = shift.area?.trim() || 'Unassigned area';
+      const roleTitle = shift.roleTitle?.trim() || shift.staffProfile.roleTitle?.trim() || 'Unassigned role';
+      const rate = staffCostingRate(shift.staffProfile);
+      const hours = hoursBetween(shift.startsAt, shift.endsAt, shift.breakMinutes);
+      const cost = rate.rateCents ? Math.round(hours * rate.rateCents) : 0;
+      const missingRate = !rate.rateCents && hours > 0;
+      addScheduled(rowFor(byVenue, venue), shift.staffProfileId, hours, cost, missingRate);
+      addScheduled(areaFor(venue, area), shift.staffProfileId, hours, cost, missingRate);
+      addScheduled(roleFor(roleTitle), shift.staffProfileId, hours, cost, missingRate);
+      addScheduled(staffFor(shift.staffProfile), shift.staffProfileId, hours, cost, missingRate);
+      const day = dayFor(isoDate(shift.startsAt));
+      day.scheduledHours += hours;
+      day.scheduledCostCents += cost;
+      day.staffIds.add(shift.staffProfileId);
+    }
+
+    const totals = Array.from(byVenue.values()).reduce((sum, row) => {
+      sum.actualHours += row.actualHours;
+      sum.actualCostCents += row.actualCostCents;
+      sum.approvedHours += row.approvedHours;
+      sum.approvedCostCents += row.approvedCostCents;
+      sum.scheduledHours += row.scheduledHours;
+      sum.scheduledCostCents += row.scheduledCostCents;
+      sum.missingRateHours += row.missingRateHours;
+      for (const staffId of row.staffIds) sum.staffIds.add(staffId);
+      return sum;
+    }, { ...emptyCostingRow(), staffIds: new Set<string>() });
+
+    const missingRateStaff = Array.from(byStaff.values()).filter((row) => row.missingRate && (row.actualHours > 0 || row.scheduledHours > 0));
+    const warnings = [
+      ...(timesheets.length ? [] : ['No actual timesheets found for this period. Scheduled roster cost is shown as forecast only.']),
+      ...(rosterShifts.length ? [] : ['No roster shifts found for this period. Variance against schedule is unavailable.']),
+      ...(missingRateStaff.length ? [`${missingRateStaff.length} staff have hours but no hourly rate available, so their cost is understated.`] : [])
+    ];
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: {
+        start: start.toISOString(),
+        end: end.toISOString(),
+        label: `${isoDate(start)} to ${isoDate(addDays(end, -1))}`
+      },
+      filters: {
+        venue: venueFilter,
+        source: query.source
+      },
+      totals: {
+        actualHours: totals.actualHours,
+        actualCostCents: totals.actualCostCents,
+        approvedHours: totals.approvedHours,
+        approvedCostCents: totals.approvedCostCents,
+        scheduledHours: totals.scheduledHours,
+        scheduledCostCents: totals.scheduledCostCents,
+        varianceHours: totals.actualHours - totals.scheduledHours,
+        varianceCostCents: totals.actualCostCents - totals.scheduledCostCents,
+        averageHourlyCostCents: averageHourlyCost(totals.actualCostCents, totals.actualHours),
+        missingRateHours: totals.missingRateHours,
+        missingRateCount: missingRateStaff.length,
+        staffCount: totals.staffIds.size,
+        shiftCount: rosterShifts.length,
+        timesheetCount: timesheets.length
+      },
+      sourceQuality: {
+        actualTimesheets: timesheets.length > 0,
+        scheduledRoster: rosterShifts.length > 0,
+        missingRates: missingRateStaff.length > 0,
+        notes: warnings
+      },
+      byVenue: Array.from(byVenue.entries()).map(([venue, row]) => ({
+        venue,
+        actualHours: row.actualHours,
+        actualCostCents: row.actualCostCents,
+        approvedHours: row.approvedHours,
+        approvedCostCents: row.approvedCostCents,
+        scheduledHours: row.scheduledHours,
+        scheduledCostCents: row.scheduledCostCents,
+        varianceHours: row.actualHours - row.scheduledHours,
+        varianceCostCents: row.actualCostCents - row.scheduledCostCents,
+        averageHourlyCostCents: averageHourlyCost(row.actualCostCents, row.actualHours),
+        staffCount: row.staffIds.size,
+        missingRateHours: row.missingRateHours
+      })).sort((a, b) => b.actualCostCents - a.actualCostCents),
+      byArea: Array.from(byArea.values()).map((row) => ({
+        area: row.area,
+        venue: row.venue,
+        actualHours: row.actualHours,
+        actualCostCents: row.actualCostCents,
+        scheduledHours: row.scheduledHours,
+        scheduledCostCents: row.scheduledCostCents,
+        averageHourlyCostCents: averageHourlyCost(row.actualCostCents, row.actualHours),
+        staffCount: row.staffIds.size,
+        shareOfActualCost: totals.actualCostCents > 0 ? row.actualCostCents / totals.actualCostCents : null
+      })).sort((a, b) => b.actualCostCents - a.actualCostCents),
+      byRole: Array.from(byRole.values()).map((row) => ({
+        roleTitle: row.roleTitle,
+        actualHours: row.actualHours,
+        actualCostCents: row.actualCostCents,
+        scheduledHours: row.scheduledHours,
+        scheduledCostCents: row.scheduledCostCents,
+        averageHourlyCostCents: averageHourlyCost(row.actualCostCents, row.actualHours),
+        staffCount: row.staffIds.size
+      })).sort((a, b) => b.actualCostCents - a.actualCostCents),
+      byStaff: Array.from(byStaff.values()).map((row) => ({
+        staffProfileId: row.staffProfileId,
+        staffName: row.staffName,
+        venue: row.venue,
+        roleTitle: row.roleTitle,
+        actualHours: row.actualHours,
+        actualCostCents: row.actualCostCents,
+        approvedHours: row.approvedHours,
+        approvedCostCents: row.approvedCostCents,
+        scheduledHours: row.scheduledHours,
+        scheduledCostCents: row.scheduledCostCents,
+        averageHourlyCostCents: averageHourlyCost(row.actualCostCents, row.actualHours),
+        rateCents: row.rateCents,
+        rateSource: row.rateSource,
+        missingRate: row.missingRate
+      })).sort((a, b) => b.actualCostCents - a.actualCostCents),
+      daily: Array.from(byDay.entries()).map(([date, row]) => ({
+        date,
+        actualHours: row.actualHours,
+        actualCostCents: row.actualCostCents,
+        scheduledHours: row.scheduledHours,
+        scheduledCostCents: row.scheduledCostCents,
+        varianceCostCents: row.actualCostCents - row.scheduledCostCents
+      })).sort((a, b) => a.date.localeCompare(b.date)),
+      warnings
+    };
+  },
+
   async accessUsers(): Promise<AdminAccessUsersPayload> {
     const users = await prisma.staffProfile.findMany({
       where: {
