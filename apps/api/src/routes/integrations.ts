@@ -84,6 +84,17 @@ integrationsRouter.post('/square/sync-locations', async (req, res, next) => {
   }
 });
 
+integrationsRouter.post('/square/import-sales', async (req, res, next) => {
+  try {
+    res.json(await integrationService.importSquareSales({
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+      account: req.query.account ?? req.body?.account
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/xero/health-check', async (req, res, next) => {
   try {
     res.json(await integrationService.checkXeroHealth(req.user!));

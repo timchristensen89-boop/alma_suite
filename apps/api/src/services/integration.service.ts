@@ -39,6 +39,8 @@ const SQUARE_ACCOUNT_KEYS: SquareAccountKey[] = ['primary', 'secondary'];
 const DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS = 14;
 const DEFAULT_SCHEDULED_XERO_BILLS_LIMIT = 100;
 const DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT = 500;
+const DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS = 7;
+const DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT = 1000;
 
 const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ',
@@ -402,6 +404,29 @@ type SquareLocation = {
 
 type SquareLocationsResponse = {
   locations?: SquareLocation[];
+};
+
+type SquareMoney = {
+  amount?: number;
+  currency?: string;
+};
+
+type SquarePayment = {
+  id?: string;
+  status?: string;
+  location_id?: string;
+  order_id?: string;
+  receipt_number?: string;
+  created_at?: string;
+  updated_at?: string;
+  amount_money?: SquareMoney;
+  total_money?: SquareMoney;
+  refunded_money?: SquareMoney;
+};
+
+type SquarePaymentsResponse = {
+  payments?: SquarePayment[];
+  cursor?: string;
 };
 
 type SquareTokenResponse = {
@@ -802,6 +827,85 @@ async function listSquareLocations(connection: IntegrationConnection) {
   };
 }
 
+async function listSquarePayments(input: {
+  connection: IntegrationConnection;
+  beginTime: Date;
+  endTime: Date;
+  limit: number;
+}) {
+  let connection = input.connection;
+  const payments: SquarePayment[] = [];
+  let cursor: string | undefined;
+  let tokenStatus: 'healthy' | 'refreshed' = 'healthy';
+  const pageLimit = 100;
+
+  while (payments.length < input.limit) {
+    const params = new URLSearchParams({
+      begin_time: input.beginTime.toISOString(),
+      end_time: input.endTime.toISOString(),
+      sort_order: 'ASC',
+      limit: String(Math.min(pageLimit, input.limit - payments.length))
+    });
+    if (cursor) params.set('cursor', cursor);
+
+    const response = await squareGetJson<SquarePaymentsResponse>(`/payments?${params.toString()}`, { connection });
+    connection = response.connection;
+    if (response.tokenStatus === 'refreshed') tokenStatus = 'refreshed';
+    payments.push(...(response.data.payments ?? []));
+    cursor = response.data.cursor;
+    if (!cursor || payments.length >= input.limit) break;
+  }
+
+  return { connection, payments, tokenStatus, limited: Boolean(cursor) };
+}
+
+function squarePaymentAmountCents(payment: SquarePayment) {
+  const total = typeof payment.total_money?.amount === 'number'
+    ? payment.total_money.amount
+    : typeof payment.amount_money?.amount === 'number'
+      ? payment.amount_money.amount
+      : 0;
+  const refunded = typeof payment.refunded_money?.amount === 'number' ? payment.refunded_money.amount : 0;
+  return Math.max(0, Math.round(total - refunded));
+}
+
+async function configuredVenueNames() {
+  const settings = await prisma.appSettings.findUnique({
+    where: { id: 'singleton' },
+    select: { venues: true }
+  });
+  const venues = Array.isArray(settings?.venues) ? settings.venues : [];
+  return venues
+    .map((venue) => metadataRecord(venue).name)
+    .filter((name): name is string => typeof name === 'string' && Boolean(name.trim()))
+    .map((name) => name.trim());
+}
+
+function squarePaymentVenue(input: {
+  accountKey: SquareAccountKey;
+  location: ReturnType<typeof squareMetadataStatus>['locations'][number] | null;
+  venues: string[];
+}) {
+  const candidates = [
+    input.location?.businessName,
+    input.location?.name,
+    squareAccountConfig(input.accountKey).label
+  ].map(optionalText).filter((value): value is string => Boolean(value));
+  for (const candidate of candidates) {
+    const exact = input.venues.find((venue) => normaliseMatchText(venue) === normaliseMatchText(candidate));
+    if (exact) return exact;
+  }
+  return squareAccountConfig(input.accountKey).label;
+}
+
+function squareImportDateRange(input: Record<string, unknown>, defaultLookbackDays: number) {
+  const end = parseXeroDate(input.endDate) ?? new Date();
+  const start = parseXeroDate(input.startDate) ?? new Date(end);
+  if (!input.startDate) start.setDate(start.getDate() - defaultLookbackDays);
+  if (end <= start) throw new HttpError(400, 'Square sales import end date must be after the start date.');
+  return { start, end };
+}
+
 async function exchangeXeroToken(code: string) {
   const credentials = Buffer.from(`${env.integrations.xero.clientId}:${env.integrations.xero.clientSecret}`).toString('base64');
   const response = await fetch('https://identity.xero.com/connect/token', {
@@ -938,6 +1042,23 @@ function parseXeroDate(value: unknown) {
 
 function isoDateOnly(value: Date | null | undefined) {
   return value ? value.toISOString().slice(0, 10) : null;
+}
+
+function dateKeyInTimeZone(value: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).formatToParts(value);
+  const year = parts.find((part) => part.type === 'year')?.value;
+  const month = parts.find((part) => part.type === 'month')?.value;
+  const day = parts.find((part) => part.type === 'day')?.value;
+  return year && month && day ? `${year}-${month}-${day}` : value.toISOString().slice(0, 10);
+}
+
+function startOfUtcDate(dateKey: string) {
+  return new Date(`${dateKey}T00:00:00.000Z`);
 }
 
 function buildImportHash(parts: Array<string | number | null | undefined>) {
@@ -2378,6 +2499,176 @@ export const integrationService = {
     };
   },
 
+  async importSquareSales(
+    input: Record<string, unknown> = {},
+    actor: AuthUser,
+    options?: { syncType?: ImportRunMode; eventType?: string }
+  ) {
+    const accountKey = normaliseSquareAccountKey(input.account ?? input.accountKey);
+    const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS, 90);
+    const limit = clampLimit(input.limit, DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT, 1000);
+    const { start, end } = squareImportDateRange(input, lookbackDays);
+    const connection = await connectedSquareConnection(accountKey);
+    const response = await listSquarePayments({ connection, beginTime: start, endTime: end, limit });
+    const squareStatus = squareMetadataStatus(response.connection);
+    const locationsById = new Map(squareStatus.locations.map((location) => [location.id, location]));
+    const venues = await configuredVenueNames();
+    const source = `square:${accountKey}`;
+    const warnings: string[] = [];
+    const grouped = new Map<string, {
+      venue: string;
+      serviceDateKey: string;
+      serviceDate: Date;
+      source: string;
+      externalId: string;
+      salesCents: number;
+      paymentCount: number;
+      locationId: string;
+      locationName: string;
+      currency: string | null;
+    }>();
+    let skippedCount = 0;
+
+    for (const payment of response.payments) {
+      if (trimText(payment.status).toUpperCase() !== 'COMPLETED') {
+        skippedCount += 1;
+        continue;
+      }
+      const paymentDate = providerDate(payment.created_at);
+      if (!paymentDate) {
+        skippedCount += 1;
+        continue;
+      }
+      const amountCents = squarePaymentAmountCents(payment);
+      if (amountCents <= 0) {
+        skippedCount += 1;
+        continue;
+      }
+
+      const locationId = optionalText(payment.location_id) ?? 'account';
+      const location = locationsById.get(locationId) ?? null;
+      const timeZone = location?.timezone || 'Australia/Sydney';
+      const serviceDateKey = dateKeyInTimeZone(paymentDate, timeZone);
+      const venue = squarePaymentVenue({ accountKey, location, venues });
+      const externalId = `${source}:${locationId}:${serviceDateKey}`;
+      const key = `${venue}|${serviceDateKey}|${externalId}`;
+      const existing = grouped.get(key) ?? {
+        venue,
+        serviceDateKey,
+        serviceDate: startOfUtcDate(serviceDateKey),
+        source,
+        externalId,
+        salesCents: 0,
+        paymentCount: 0,
+        locationId,
+        locationName: location?.name ?? location?.businessName ?? squareAccountConfig(accountKey).label,
+        currency: optionalText(payment.total_money?.currency ?? payment.amount_money?.currency)
+      };
+      existing.salesCents += amountCents;
+      existing.paymentCount += 1;
+      grouped.set(key, existing);
+    }
+
+    const rows = Array.from(grouped.values());
+    if (response.limited) warnings.push(`Square returned the first ${limit} payments only. Run a shorter date range to import the remaining payments.`);
+    if (skippedCount > 0) warnings.push(`${skippedCount} Square payments were skipped because they were not completed, had no date, or had no positive net amount.`);
+
+    await prisma.$transaction(async (tx) => {
+      for (const row of rows) {
+        await tx.salesActualEntry.upsert({
+          where: {
+            venue_serviceDate_source_externalId: {
+              venue: row.venue,
+              serviceDate: row.serviceDate,
+              source: row.source,
+              externalId: row.externalId
+            }
+          },
+          create: {
+            venue: row.venue,
+            serviceDate: row.serviceDate,
+            salesCents: row.salesCents,
+            source: row.source,
+            externalId: row.externalId,
+            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
+            importedById: actor.id
+          },
+          update: {
+            salesCents: row.salesCents,
+            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
+            importedById: actor.id
+          }
+        });
+      }
+
+      await tx.integrationConnection.update({
+        where: { id: response.connection.id },
+        data: {
+          lastSyncAt: new Date(),
+          lastSyncStatus: 'SUCCESS',
+          lastError: null
+        }
+      });
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'SQUARE',
+          connectionId: response.connection.id,
+          syncType: options?.syncType ?? 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: new Date(),
+          recordsImported: rows.length,
+          recordsUpdated: response.payments.length,
+          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      connectionId: response.connection.id,
+      eventType: options?.eventType ?? 'SQUARE_SALES_IMPORTED',
+      summary: `${squareAccountConfig(accountKey).label} Square sales import finished: ${rows.length} sales rows from ${response.payments.length} payments.`,
+      actor,
+      metadata: {
+        accountKey,
+        syncType: options?.syncType ?? 'MANUAL',
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+        paymentsRead: response.payments.length,
+        salesRowsUpserted: rows.length,
+        skippedCount,
+        tokenStatus: response.tokenStatus,
+        limited: response.limited
+      }
+    });
+
+    return {
+      provider: 'square' as const,
+      accountKey,
+      label: squareAccountConfig(accountKey).label,
+      generatedAt: new Date().toISOString(),
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      paymentsRead: response.payments.length,
+      salesRowsUpserted: rows.length,
+      skippedCount,
+      totalSalesCents: rows.reduce((sum, row) => sum + row.salesCents, 0),
+      tokenStatus: response.tokenStatus,
+      limited: response.limited,
+      rows: rows.map((row) => ({
+        venue: row.venue,
+        serviceDate: row.serviceDateKey,
+        source: row.source,
+        externalId: row.externalId,
+        salesCents: row.salesCents,
+        paymentCount: row.paymentCount,
+        locationId: row.locationId,
+        locationName: row.locationName
+      })),
+      warnings
+    };
+  },
+
   async runScheduledXeroImport(input: Record<string, unknown> = {}) {
     const generatedAt = new Date();
     const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS, 180);
@@ -2498,11 +2789,14 @@ export const integrationService = {
     const accounts = accountInput
       ? [normaliseSquareAccountKey(accountInput)]
       : SQUARE_ACCOUNT_KEYS;
+    const includeSales = input.includeSales !== false;
     const results: Array<{
       accountKey: SquareAccountKey;
       label: string;
       status: 'synced' | 'skipped' | 'error';
       locationCount: number;
+      salesRowsUpserted: number;
+      paymentsRead: number;
       message: string;
     }> = [];
 
@@ -2516,6 +2810,8 @@ export const integrationService = {
             label,
             status: 'skipped',
             locationCount: 0,
+            salesRowsUpserted: 0,
+            paymentsRead: 0,
             message: status.connectBlockedReason ?? `${label} Square is not connected.`
           });
           continue;
@@ -2526,12 +2822,27 @@ export const integrationService = {
           accountKey,
           { syncType: 'SCHEDULED' }
         );
+        const sales = includeSales
+          ? await integrationService.importSquareSales(
+            {
+              account: accountKey,
+              lookbackDays: input.salesLookbackDays ?? input.lookbackDays ?? DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS,
+              limit: input.salesLimit ?? input.limit ?? DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT
+            },
+            integrationSchedulerActor,
+            { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SQUARE_SALES_IMPORTED' }
+          )
+          : null;
         results.push({
           accountKey,
           label,
           status: 'synced',
           locationCount: sync.locationCount,
-          message: 'Square locations synced. Payments, orders and inventory were not imported in this scheduled maintenance run.'
+          salesRowsUpserted: sales?.salesRowsUpserted ?? 0,
+          paymentsRead: sales?.paymentsRead ?? 0,
+          message: includeSales
+            ? 'Square locations and payment sales totals synced into Reports sales actuals. Orders and inventory were not imported.'
+            : 'Square locations synced. Payments, orders and inventory were not imported in this scheduled maintenance run.'
         });
       } catch (error) {
         const connection = await connectionSelect('SQUARE', accountKey).catch(() => null);
@@ -2560,6 +2871,8 @@ export const integrationService = {
           label,
           status: 'error',
           locationCount: 0,
+          salesRowsUpserted: 0,
+          paymentsRead: 0,
           message: safeErrorMessage(error)
         });
       }
@@ -2569,10 +2882,13 @@ export const integrationService = {
       provider: 'square' as const,
       mode: 'scheduled',
       generatedAt: new Date().toISOString(),
+      includeSales,
       accounts: results,
       syncedAccounts: results.filter((result) => result.status === 'synced').length,
       skippedAccounts: results.filter((result) => result.status === 'skipped').length,
-      failedAccounts: results.filter((result) => result.status === 'error').length
+      failedAccounts: results.filter((result) => result.status === 'error').length,
+      paymentsRead: results.reduce((sum, result) => sum + result.paymentsRead, 0),
+      salesRowsUpserted: results.reduce((sum, result) => sum + result.salesRowsUpserted, 0)
     };
   },
 

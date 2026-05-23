@@ -56,13 +56,17 @@ Example body:
 
 ## Square Job
 
-The Square scheduled job refreshes token health as needed and syncs locations for the primary and secondary Square accounts. It does not import payments, orders, inventory or sales figures until those read models exist.
+The Square scheduled job refreshes token health as needed, syncs locations for the primary and secondary Square accounts, and imports completed payment totals into `SalesActualEntry` for Reports prime-cost sales.
+
+It groups completed payments by account, Square location and service date. Each account falls back to its configured Square label as the Alma venue, so keep `SQUARE_PRIMARY_LABEL` and `SQUARE_SECONDARY_LABEL` aligned with Alma venue names. It does not import orders, inventory or item-level menu sales yet.
 
 Example body:
 
 ```json
 {
-  "account": "primary"
+  "account": "primary",
+  "salesLookbackDays": 7,
+  "salesLimit": 1000
 }
 ```
 
@@ -93,7 +97,7 @@ gcloud scheduler jobs create http alma-square-location-sync \
   --uri "${API_URL}/api/integration-jobs/square/sync" \
   --http-method POST \
   --headers "Authorization=Bearer ${INTEGRATION_SCHEDULER_SECRET},Content-Type=application/json" \
-  --message-body '{}'
+  --message-body '{"salesLookbackDays":7,"salesLimit":1000}'
 ```
 
 ## Manual Smoke Test
@@ -113,5 +117,5 @@ curl -sS -X POST "${API_URL}/api/integration-jobs/run" \
 Expected proof:
 
 - `IntegrationSyncRun.syncType` is `SCHEDULED`
-- Square only reports location sync results
+- Square reports location sync and sales row import results
 - Xero imports only new matched supplier bills and safe supplier contacts

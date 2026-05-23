@@ -1162,6 +1162,7 @@ function IntegrationCard({
   onHealthCheck,
   onRefresh,
   onSyncLocations,
+  onImportSales,
   callbackBanner,
   xeroHealth
 }: {
@@ -1172,6 +1173,7 @@ function IntegrationCard({
   onHealthCheck?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
+  onImportSales?: () => void;
   callbackBanner?: CallbackBanner;
   xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
@@ -1180,6 +1182,7 @@ function IntegrationCard({
   const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
+  const isImportSalesBusy = busy === `square${accountSuffix}-import-sales`;
   const isXero = integration.provider === 'xero';
   const isSquare = integration.provider === 'square';
   const squareSetup = integration.squareSetup;
@@ -1374,6 +1377,11 @@ function IntegrationCard({
           {isSquare && onSyncLocations ? (
             <Button variant="secondary" disabled={isSyncBusy} onClick={onSyncLocations}>
               {isSyncBusy ? 'Syncing...' : 'Sync locations'}
+            </Button>
+          ) : null}
+          {isSquare && onImportSales ? (
+            <Button variant="secondary" disabled={isImportSalesBusy || integration.status !== 'CONNECTED'} onClick={onImportSales}>
+              {isImportSalesBusy ? 'Importing...' : 'Import sales'}
             </Button>
           ) : null}
           {isSquare && onRefresh ? (
@@ -1864,6 +1872,22 @@ export function AdminPage({
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sync Square locations.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function importSquareSales(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration, '-import-sales'));
+    setError(null);
+    try {
+      await api(`/api/integrations/square/import-sales${integrationAccountQuery(integration)}`, {
+        method: 'POST',
+        body: JSON.stringify({ lookbackDays: 7, limit: 1000 })
+      });
+      await loadDashboard();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import Square sales.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -3151,6 +3175,7 @@ export function AdminPage({
                   }
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
+                  onImportSales={integration.provider === 'square' ? () => void importSquareSales(integration) : undefined}
                   callbackBanner={callbackBanner}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />
