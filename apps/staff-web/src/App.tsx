@@ -7720,6 +7720,7 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState(() => toDateInput(new Date()));
 
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const venueOptions = [
@@ -7745,6 +7746,8 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const calendarEnd = useMemo(() => addDays(calendarStart, 42), [calendarStart]);
   const approvedCount = leave.filter((item) => item.status === 'APPROVED').length;
   const pendingCount = leave.filter((item) => item.status === 'PENDING').length;
+  const selectedDayDate = useMemo(() => new Date(`${selectedDay}T00:00:00`), [selectedDay]);
+  const selectedDayLeave = leave.filter((item) => leaveOverlapsDay(item, selectedDayDate));
 
   const loadLeave = useCallback(async () => {
     setLoading(true);
@@ -7780,6 +7783,30 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  function selectLeaveDay(day: Date) {
+    const dayKey = toDateInput(day);
+    setSelectedDay(dayKey);
+    setDraft((current) => ({
+      ...current,
+      staffProfileId: current.staffProfileId || staffFilter || activeStaff[0]?.id || '',
+      startDate: dayKey,
+      endDate: dayKey
+    }));
+  }
+
+  function changeLeaveMonth(offset: -1 | 1) {
+    const next = new Date(monthStart.getFullYear(), monthStart.getMonth() + offset, 1);
+    setMonthStart(next);
+    selectLeaveDay(next);
+  }
+
+  function jumpToCurrentLeaveMonth() {
+    const today = new Date();
+    const next = new Date(today.getFullYear(), today.getMonth(), 1);
+    setMonthStart(next);
+    selectLeaveDay(today);
+  }
+
   async function saveLeave() {
     setMessageTarget('leave-save');
     if (!draft.staffProfileId) {
@@ -7798,7 +7825,12 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
         method: 'POST',
         body: JSON.stringify(draft)
       });
-      setDraft(leaveDraftFor(activeStaff));
+      setDraft({
+        ...leaveDraftFor(activeStaff),
+        staffProfileId: draft.staffProfileId,
+        startDate: selectedDay,
+        endDate: selectedDay
+      });
       setMessage('Leave recorded.');
       await loadLeave();
     } catch (err) {
@@ -7843,81 +7875,113 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <div className="tips-entry-grid">
-        <Card title="Record leave" subtitle="Managers can record leave for staff in their permitted venue.">
-          <form
-            className="staff-profile-form"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void saveLeave();
-            }}
-          >
-            <Select label="Staff member" value={draft.staffProfileId} onChange={(event) => updateDraft('staffProfileId', event.currentTarget.value)} options={recordStaffOptions} />
-            <div className="form-grid two">
-              <Select label="Leave type" value={draft.type} onChange={(event) => updateDraft('type', event.currentTarget.value as StaffLeaveType)} options={LEAVE_TYPE_OPTIONS} />
-              <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffLeaveStatus)} options={LEAVE_STATUS_OPTIONS} />
-              <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => updateDraft('startDate', event.currentTarget.value)} />
-              <Input label="End date" type="date" value={draft.endDate} onChange={(event) => updateDraft('endDate', event.currentTarget.value)} />
-            </div>
-            <Textarea label="Staff note" rows={2} value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
-            <Textarea label="Manager note" rows={2} value={draft.managerNote} onChange={(event) => updateDraft('managerNote', event.currentTarget.value)} />
-            <div className="toolbar-right">
-              <Button type="submit" disabled={saving || !draft.staffProfileId}>{saving ? 'Saving…' : 'Record leave'}</Button>
-              <ActionFeedback
-                message={messageTarget === 'leave-save' ? message : null}
-                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('valid') ? 'error' : 'success'}
-              />
-            </div>
-          </form>
-        </Card>
-
-        <Card title="Filters" subtitle="Narrow the calendar and mobile list without changing the saved records.">
-          <div className="staff-profile-form">
-            <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={venueOptions} />
-            <Select label="Staff member" value={staffFilter} onChange={(event) => setStaffFilter(event.currentTarget.value)} options={staffOptions} />
-            <Select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)} options={[{ label: 'All statuses', value: '' }, ...LEAVE_STATUS_OPTIONS]} />
-            <Select label="Leave type" value={typeFilter} onChange={(event) => setTypeFilter(event.currentTarget.value)} options={[{ label: 'All leave types', value: '' }, ...LEAVE_TYPE_OPTIONS]} />
-            <Button type="button" variant="secondary" disabled={loading} onClick={() => void loadLeave()}>
-              {loading ? 'Refreshing…' : 'Refresh'}
+      <div className="leave-board-layout">
+        <Card className="leave-calendar-card" title="Month view" subtitle="Click any day to add leave or review who is already away.">
+          <div className="roster-week-controls leave-month-controls">
+            <Button type="button" variant="secondary" size="sm" onClick={() => changeLeaveMonth(-1)}>
+              Previous
+            </Button>
+            <strong>{monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
+            <Button type="button" variant="secondary" size="sm" onClick={() => changeLeaveMonth(1)}>
+              Next
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={jumpToCurrentLeaveMonth}>
+              Today
             </Button>
           </div>
+          <div className="leave-calendar-grid" role="grid" aria-label="Staff leave calendar">
+            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+              <strong key={day} className="leave-calendar-heading">{day}</strong>
+            ))}
+            {calendarDays.map((day) => {
+              const dayKey = toDateInput(day);
+              const dayLeave = leave.filter((item) => leaveOverlapsDay(item, day));
+              const outsideMonth = day.getMonth() !== monthStart.getMonth();
+              const selected = dayKey === selectedDay;
+              return (
+                <button
+                  key={dayKey}
+                  type="button"
+                  className={`leave-calendar-day${outsideMonth ? ' is-muted' : ''}${selected ? ' is-selected' : ''}${dayLeave.length ? ' has-leave' : ''}`}
+                  aria-pressed={selected}
+                  onClick={() => selectLeaveDay(day)}
+                >
+                  <span className="leave-calendar-date">{day.getDate()}</span>
+                  {dayLeave.slice(0, 3).map((item) => (
+                    <span key={item.id} className={`leave-pill is-${item.status.toLowerCase()}`}>
+                      {item.staffProfile?.firstName ?? 'Staff'} · {leaveStatusLabel(item.status)}
+                    </span>
+                  ))}
+                  {dayLeave.length > 3 ? <small className="subtle">+{dayLeave.length - 3} more</small> : null}
+                  {dayLeave.length === 0 ? <small className="leave-day-empty">Click to add</small> : null}
+                </button>
+              );
+            })}
+          </div>
         </Card>
-      </div>
 
-      <Card title="Month view" subtitle="Approved and pending leave are visible at a glance.">
-        <div className="roster-week-controls">
-          <Button type="button" variant="secondary" size="sm" onClick={() => setMonthStart(new Date(monthStart.getFullYear(), monthStart.getMonth() - 1, 1))}>
-            Previous
-          </Button>
-          <strong>{monthStart.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}</strong>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setMonthStart(new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 1))}>
-            Next
-          </Button>
-          <Button type="button" variant="ghost" size="sm" onClick={() => setMonthStart(new Date(new Date().getFullYear(), new Date().getMonth(), 1))}>
-            Today
-          </Button>
-        </div>
-        <div className="leave-calendar-grid" role="grid" aria-label="Staff leave calendar">
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-            <strong key={day} className="leave-calendar-heading">{day}</strong>
-          ))}
-          {calendarDays.map((day) => {
-            const dayLeave = leave.filter((item) => leaveOverlapsDay(item, day));
-            const outsideMonth = day.getMonth() !== monthStart.getMonth();
-            return (
-              <div key={toDateInput(day)} className={`leave-calendar-day${outsideMonth ? ' is-muted' : ''}`}>
-                <span className="leave-calendar-date">{day.getDate()}</span>
-                {dayLeave.slice(0, 3).map((item) => (
-                  <span key={item.id} className={`leave-pill is-${item.status.toLowerCase()}`}>
-                    {item.staffProfile?.firstName ?? 'Staff'} · {leaveStatusLabel(item.status)}
-                  </span>
+        <aside className="leave-day-panel">
+          <Card
+            title={selectedDayDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+            subtitle={`${selectedDayLeave.length} leave record${selectedDayLeave.length === 1 ? '' : 's'} on this day`}
+          >
+            {selectedDayLeave.length ? (
+              <div className="leave-day-list">
+                {selectedDayLeave.map((item) => (
+                  <div key={item.id} className="leave-day-item">
+                    <span>
+                      <strong>{item.staffProfile ? `${item.staffProfile.firstName} ${item.staffProfile.lastName}` : 'Staff member'}</strong>
+                      <small>{leaveTypeLabel(item.type)} · {formatRange(new Date(item.startDate), new Date(item.endDate))}</small>
+                    </span>
+                    <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
+                  </div>
                 ))}
-                {dayLeave.length > 3 ? <small className="subtle">+{dayLeave.length - 3} more</small> : null}
               </div>
-            );
-          })}
-        </div>
-      </Card>
+            ) : (
+              <EmptyState title="No leave on this day" description="Use the form below to record leave for this date." />
+            )}
+          </Card>
+
+          <Card title="Add leave" subtitle="The selected calendar day is prefilled. Extend the end date for longer leave.">
+            <form
+              className="staff-profile-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                void saveLeave();
+              }}
+            >
+              <Select label="Staff member" value={draft.staffProfileId} onChange={(event) => updateDraft('staffProfileId', event.currentTarget.value)} options={recordStaffOptions} />
+              <div className="form-grid two">
+                <Select label="Leave type" value={draft.type} onChange={(event) => updateDraft('type', event.currentTarget.value as StaffLeaveType)} options={LEAVE_TYPE_OPTIONS} />
+                <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffLeaveStatus)} options={LEAVE_STATUS_OPTIONS} />
+                <Input label="Start date" type="date" value={draft.startDate} onChange={(event) => updateDraft('startDate', event.currentTarget.value)} />
+                <Input label="End date" type="date" value={draft.endDate} onChange={(event) => updateDraft('endDate', event.currentTarget.value)} />
+              </div>
+              <Textarea label="Staff note" rows={2} value={draft.notes} onChange={(event) => updateDraft('notes', event.currentTarget.value)} />
+              <Textarea label="Manager note" rows={2} value={draft.managerNote} onChange={(event) => updateDraft('managerNote', event.currentTarget.value)} />
+              <div className="toolbar-right">
+                <Button type="submit" disabled={saving || !draft.staffProfileId}>{saving ? 'Saving…' : 'Record leave'}</Button>
+                <ActionFeedback
+                  message={messageTarget === 'leave-save' ? message : null}
+                  tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('valid') ? 'error' : 'success'}
+                />
+              </div>
+            </form>
+          </Card>
+
+          <Card title="Filters" subtitle="Narrow the board without changing saved records.">
+            <div className="staff-profile-form">
+              <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={venueOptions} />
+              <Select label="Staff member" value={staffFilter} onChange={(event) => setStaffFilter(event.currentTarget.value)} options={staffOptions} />
+              <Select label="Status" value={statusFilter} onChange={(event) => setStatusFilter(event.currentTarget.value)} options={[{ label: 'All statuses', value: '' }, ...LEAVE_STATUS_OPTIONS]} />
+              <Select label="Leave type" value={typeFilter} onChange={(event) => setTypeFilter(event.currentTarget.value)} options={[{ label: 'All leave types', value: '' }, ...LEAVE_TYPE_OPTIONS]} />
+              <Button type="button" variant="secondary" disabled={loading} onClick={() => void loadLeave()}>
+                {loading ? 'Refreshing…' : 'Refresh'}
+              </Button>
+            </div>
+          </Card>
+        </aside>
+      </div>
 
       <Card title="Leave list" subtitle="Mobile-friendly list with review actions.">
         <div className="staff-expiry-list">
