@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   Badge,
@@ -609,6 +609,38 @@ function StatusLine({ label, value, tone = 'neutral' }: { label: string; value: 
   );
 }
 
+function AdminCollapsibleSection({
+  title,
+  summary,
+  status,
+  defaultOpen = false,
+  children
+}: {
+  title: string;
+  summary: string;
+  status?: ReactNode;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  return (
+    <details className="admin-collapsible-section" open={defaultOpen}>
+      <summary>
+        <span className="admin-collapsible-title">
+          <strong>{title}</strong>
+          <small>{summary}</small>
+        </span>
+        <span className="admin-collapsible-meta">
+          {status}
+          <span className="admin-collapsible-chevron" aria-hidden="true" />
+        </span>
+      </summary>
+      <div className="admin-collapsible-body">
+        {children}
+      </div>
+    </details>
+  );
+}
+
 function VenueDevicePlanningCard() {
   return (
     <Card
@@ -1175,7 +1207,22 @@ function IntegrationCard({
     : null;
 
   return (
-    <Card title={squareAccountTitle} subtitle={cardSubtitle}>
+    <AdminCollapsibleSection
+      title={squareAccountTitle}
+      summary={cardSubtitle}
+      defaultOpen={Boolean(squareCallbackBanner) || integration.status === 'ERROR'}
+      status={
+        <>
+          <Badge tone={integrationTone(integration.status)}>{integration.status.replace(/_/g, ' ')}</Badge>
+          {isSquare ? (
+            <Badge tone={squareSetupComplete ? 'positive' : 'warning'}>
+              {squareSetupComplete ? 'Configured' : `${squareMissingLabels.length || 1} missing`}
+            </Badge>
+          ) : null}
+        </>
+      }
+    >
+      <Card>
       <div className="admin-provider-card">
         <Badge tone={integrationTone(integration.status)}>{integration.status.replace(/_/g, ' ')}</Badge>
         {isSquare ? (
@@ -1337,7 +1384,8 @@ function IntegrationCard({
         </div>
         {integration.connectBlockedReason ? <p className="muted">{integration.connectBlockedReason}</p> : null}
       </div>
-    </Card>
+      </Card>
+    </AdminCollapsibleSection>
   );
 }
 
@@ -1373,7 +1421,13 @@ function XeroSyncPanel({
   onAllowCreateSuppliersChange: (enabled: boolean) => void;
 }) {
   return (
-    <Card title="Xero supplier and bill import" subtitle="Preview first, then import selected records">
+    <AdminCollapsibleSection
+      title="Xero supplier and bill import"
+      summary="Preview first, then import selected records"
+      defaultOpen={Boolean(contactPreview || billPreview || feedback)}
+      status={feedback ? <Badge tone="info">Preview active</Badge> : <Badge tone="muted">Collapsed</Badge>}
+    >
+      <Card>
       <div className="admin-status-stack">
         <p className="muted">
           No accounting data sync is running automatically yet. Preview Xero records before importing. Payroll,
@@ -1479,7 +1533,8 @@ function XeroSyncPanel({
           </div>
         </div>
       </div>
-    </Card>
+      </Card>
+    </AdminCollapsibleSection>
   );
 }
 
@@ -1503,7 +1558,13 @@ function MetaIntegrationCard({
         : meta.status;
 
   return (
-    <Card title={meta.label} subtitle="Business Login for Facebook and Instagram">
+    <AdminCollapsibleSection
+      title={meta.label}
+      summary="Business Login for Facebook and Instagram"
+      defaultOpen={Boolean(callbackBanner) || displayStatus === 'TOKEN_STORAGE_PENDING'}
+      status={<Badge tone={metaTone(displayStatus)}>{displayStatus.replace(/_/g, ' ')}</Badge>}
+    >
+      <Card>
       <div className="admin-provider-card">
         <Badge tone={metaTone(displayStatus)}>{displayStatus.replace(/_/g, ' ')}</Badge>
         {callbackBanner ? (
@@ -1556,7 +1617,8 @@ function MetaIntegrationCard({
         </div>
         {meta.connectBlockedReason ? <p className="muted">{meta.connectBlockedReason}</p> : null}
       </div>
-    </Card>
+      </Card>
+    </AdminCollapsibleSection>
   );
 }
 
@@ -3096,14 +3158,20 @@ export function AdminPage({
                 />
               ) : null}
               {showIntegrations ? (
-              <Card title="Email and device services" subtitle="Configured without exposing secrets">
-                <div className="admin-status-stack">
-                  <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
-                  <StatusLine label="Email delivery" value={integrations.email.status.replace(/_/g, ' ')} tone={integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger'} />
-                  <StatusLine label="Email provider" value={integrations.email.provider} tone={integrations.email.provider === 'none' ? 'muted' : 'info'} />
-                  <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
-                </div>
-              </Card>
+                <AdminCollapsibleSection
+                  title="Email and device services"
+                  summary="Configured without exposing secrets"
+                  status={<Badge tone={integrations.email.status === 'CONFIGURED' && integrations.tokenStorage.configured ? 'positive' : 'warning'}>Setup</Badge>}
+                >
+                  <Card>
+                    <div className="admin-status-stack">
+                      <StatusLine label="Token storage" value={integrations.tokenStorage.configured ? 'CONFIGURED' : 'NOT CONFIGURED'} tone={integrations.tokenStorage.configured ? 'positive' : 'warning'} />
+                      <StatusLine label="Email delivery" value={integrations.email.status.replace(/_/g, ' ')} tone={integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger'} />
+                      <StatusLine label="Email provider" value={integrations.email.provider} tone={integrations.email.provider === 'none' ? 'muted' : 'info'} />
+                      <StatusLine label="Govee status" value={integrations.govee.status.replace(/_/g, ' ')} tone={integrations.govee.status === 'CONFIGURED' ? 'positive' : 'muted'} />
+                    </div>
+                  </Card>
+                </AdminCollapsibleSection>
               ) : null}
             </>
           ) : (
@@ -3134,181 +3202,208 @@ export function AdminPage({
               onImportBills={() => void importXeroSupplierBills()}
               onAllowCreateSuppliersChange={setXeroAllowCreateSuppliers}
             />
-            <Card title="Sync health" subtitle="Last connection and webhook activity">
-              {integrations.latestSyncRuns.length ? (
-                <div className="admin-status-stack">
-                  {integrations.latestSyncRuns.map((run) => (
-                    <StatusLine
-                      key={run.id}
-                      label={`${run.provider.toUpperCase()} ${run.syncType.replace(/_/g, ' ').toLowerCase()}`}
-                      value={run.status}
-                      tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}
-                    />
-                  ))}
-                </div>
-              ) : (
-                <EmptyState
-                  icon={<IconRefresh />}
-                  title="No sync activity yet"
-                  description="OAuth callbacks, local tests and verified webhook events will appear here once configured."
-                />
-              )}
-            </Card>
+            <AdminCollapsibleSection
+              title="Sync health"
+              summary="Last connection and webhook activity"
+              status={<Badge tone={integrations.latestSyncRuns.length ? 'info' : 'muted'}>{integrations.latestSyncRuns.length} runs</Badge>}
+            >
+              <Card>
+                {integrations.latestSyncRuns.length ? (
+                  <div className="admin-status-stack">
+                    {integrations.latestSyncRuns.map((run) => (
+                      <StatusLine
+                        key={run.id}
+                        label={`${run.provider.toUpperCase()} ${run.syncType.replace(/_/g, ' ').toLowerCase()}`}
+                        value={run.status}
+                        tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}
+                      />
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState
+                    icon={<IconRefresh />}
+                    title="No sync activity yet"
+                    description="OAuth callbacks, local tests and verified webhook events will appear here once configured."
+                  />
+                )}
+              </Card>
+            </AdminCollapsibleSection>
           </div>
         ) : null}
         {integrations && showIntegrations ? (
-          <Card
+          <AdminCollapsibleSection
             title="Xero supplier and bill controls"
-            subtitle="Health checks, supplier previews, bill previews and selected imports have their own page."
-            action={
-              <Button type="button" rightIcon={<IconArrowRight size={14} />} onClick={() => { window.location.href = adminRouteHref('/admin/integrations/xero', standalone); }}>
-                Open Xero
-              </Button>
-            }
-          />
+            summary="Health checks, previews and selected imports have their own page"
+            status={<Badge tone="info">Linked page</Badge>}
+          >
+            <Card
+              action={
+                <Button type="button" rightIcon={<IconArrowRight size={14} />} onClick={() => { window.location.href = adminRouteHref('/admin/integrations/xero', standalone); }}>
+                  Open Xero
+                </Button>
+              }
+            />
+          </AdminCollapsibleSection>
         ) : null}
         {showIntegrations ? (
         <div className="admin-grid two">
-          <Card
+          <AdminCollapsibleSection
             title={editingSocialAccountId ? 'Edit social account' : 'Social publishing setup'}
-            subtitle={
+            summary={
               editingSocialAccountId
                 ? 'Update platform metadata. Secret references stay hidden and are preserved when left blank.'
                 : 'Facebook, Instagram and TikTok readiness in Admin'
             }
+            defaultOpen={Boolean(editingSocialAccountId || socialFeedback)}
+            status={<Badge tone={editingSocialAccountId ? 'info' : 'muted'}>{editingSocialAccountId ? 'Editing' : 'Collapsed'}</Badge>}
           >
-            <form className="admin-social-form" onSubmit={(event) => void saveSocialAccount(event)}>
-              <div className="admin-form-grid">
-                <Select
-                  label="Venue"
-                  value={socialForm.venue}
-                  options={venueOptions.length ? venueOptions : [{ label: socialForm.venue, value: socialForm.venue }]}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, venue: event.currentTarget.value }))}
-                />
-                <Select
-                  label="Platform"
-                  value={socialForm.platform}
-                  options={SOCIAL_PLATFORMS.map((platform) => ({ label: platform, value: platform }))}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, platform: event.currentTarget.value as SocialPlatform }))}
-                />
-                <Select
-                  label="Status"
-                  value={socialForm.status}
-                  options={SOCIAL_STATUSES.map((status) => ({ label: status.replace(/_/g, ' '), value: status }))}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, status: event.currentTarget.value as MarketingSocialAccountStatus }))}
-                />
-              </div>
-              <div className="admin-form-grid">
+            <Card>
+              <form className="admin-social-form" onSubmit={(event) => void saveSocialAccount(event)}>
+                <div className="admin-form-grid">
+                  <Select
+                    label="Venue"
+                    value={socialForm.venue}
+                    options={venueOptions.length ? venueOptions : [{ label: socialForm.venue, value: socialForm.venue }]}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, venue: event.currentTarget.value }))}
+                  />
+                  <Select
+                    label="Platform"
+                    value={socialForm.platform}
+                    options={SOCIAL_PLATFORMS.map((platform) => ({ label: platform, value: platform }))}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, platform: event.currentTarget.value as SocialPlatform }))}
+                  />
+                  <Select
+                    label="Status"
+                    value={socialForm.status}
+                    options={SOCIAL_STATUSES.map((status) => ({ label: status.replace(/_/g, ' '), value: status }))}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, status: event.currentTarget.value as MarketingSocialAccountStatus }))}
+                  />
+                </div>
+                <div className="admin-form-grid">
+                  <Input
+                    label="Display name"
+                    value={socialForm.displayName}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, displayName: event.currentTarget.value }))}
+                    placeholder="Alma Avalon Facebook"
+                    required
+                  />
+                  <Input
+                    label="Handle"
+                    value={socialForm.handle}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, handle: event.currentTarget.value }))}
+                    placeholder="@almaavalon"
+                  />
+                  <Input
+                    label="External account id"
+                    value={socialForm.externalAccountId}
+                    onChange={(event) => setSocialForm((current) => ({ ...current, externalAccountId: event.currentTarget.value }))}
+                    placeholder="Page or business account id"
+                  />
+                </div>
                 <Input
-                  label="Display name"
-                  value={socialForm.displayName}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, displayName: event.currentTarget.value }))}
-                  placeholder="Alma Avalon Facebook"
-                  required
+                  label="Token secret reference"
+                  value={socialForm.tokenSecretRef}
+                  onChange={(event) => setSocialForm((current) => ({ ...current, tokenSecretRef: event.currentTarget.value }))}
+                  placeholder="Secret Manager name or env:VARIABLE_NAME"
+                  hint="Store only a reference here. Never paste an access token into the browser."
                 />
-                <Input
-                  label="Handle"
-                  value={socialForm.handle}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, handle: event.currentTarget.value }))}
-                  placeholder="@almaavalon"
-                />
-                <Input
-                  label="External account id"
-                  value={socialForm.externalAccountId}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, externalAccountId: event.currentTarget.value }))}
-                  placeholder="Page or business account id"
-                />
-              </div>
-              <Input
-                label="Token secret reference"
-                value={socialForm.tokenSecretRef}
-                onChange={(event) => setSocialForm((current) => ({ ...current, tokenSecretRef: event.currentTarget.value }))}
-                placeholder="Secret Manager name or env:VARIABLE_NAME"
-                hint="Store only a reference here. Never paste an access token into the browser."
-              />
-              <div className="inline-actions">
-                <Button type="submit" disabled={socialBusy === 'save'}>
-                  {socialBusy === 'save' ? 'Saving...' : editingSocialAccountId ? 'Update social account' : 'Save social account'}
-                </Button>
-                {editingSocialAccountId ? (
-                  <Button type="button" variant="ghost" onClick={cancelSocialAccountEdit} disabled={socialBusy === 'save'}>
-                    Cancel edit
+                <div className="inline-actions">
+                  <Button type="submit" disabled={socialBusy === 'save'}>
+                    {socialBusy === 'save' ? 'Saving...' : editingSocialAccountId ? 'Update social account' : 'Save social account'}
                   </Button>
-                ) : null}
-                {socialFeedback ? <p className="muted">{socialFeedback}</p> : null}
-              </div>
-            </form>
-          </Card>
-          <Card title="Configured social accounts" subtitle="No raw tokens are returned to Admin">
-            {state.socialAccounts.length ? (
-              <div className="admin-card-list">
-                {state.socialAccounts.map((account) => (
-                  <article key={account.id} className="admin-mini-card">
-                    <div>
-                      <strong>{account.displayName}</strong>
-                      <small>
-                        {account.platform} · {account.venue} · {account.handle ?? 'No handle'}
-                      </small>
-                      <small>{platformSetupCopy(account.platform)}</small>
-                    </div>
-                    <div className="admin-social-actions">
-                      <Badge tone={socialTone(account.status)}>{account.status.replace(/_/g, ' ')}</Badge>
-                      <Badge tone={account.hasTokenSecretRef ? 'positive' : 'warning'}>
-                        {account.hasTokenSecretRef ? 'Secret ref' : 'No secret ref'}
-                      </Badge>
-                      <Button
-                        variant="secondary"
-                        disabled={socialBusy === account.id}
-                        onClick={() => void validateSocialAccount(account.id)}
-                      >
-                        {socialBusy === account.id ? 'Checking...' : 'Check readiness'}
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={socialBusy === account.id}
-                        onClick={() => editSocialAccount(account)}
-                      >
-                        Edit
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        disabled={socialBusy === account.id}
-                        onClick={() => void deleteSocialAccount(account)}
-                      >
-                        Delete
-                      </Button>
-                    </div>
-                  </article>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<IconSettings />}
-                title="No social accounts configured"
-                description="Add Facebook, Instagram or TikTok account metadata here. Live publish stays disabled until the backend flag and token secret are configured."
-              />
-            )}
-          </Card>
-          <Card title="Readiness result" subtitle="Connector checks for the selected account">
-            {socialReadiness ? (
-              <div className="admin-status-stack">
-                <StatusLine
-                  label={socialReadiness.account.displayName}
-                  value={socialReadiness.integrationStatus.replace(/_/g, ' ')}
-                  tone={socialReadiness.ready ? 'positive' : 'warning'}
+                  {editingSocialAccountId ? (
+                    <Button type="button" variant="ghost" onClick={cancelSocialAccountEdit} disabled={socialBusy === 'save'}>
+                      Cancel edit
+                    </Button>
+                  ) : null}
+                  {socialFeedback ? <p className="muted">{socialFeedback}</p> : null}
+                </div>
+              </form>
+            </Card>
+          </AdminCollapsibleSection>
+          <AdminCollapsibleSection
+            title="Configured social accounts"
+            summary="No raw tokens are returned to Admin"
+            status={<Badge tone={state.socialAccounts.length ? 'info' : 'muted'}>{state.socialAccounts.length} accounts</Badge>}
+          >
+            <Card>
+              {state.socialAccounts.length ? (
+                <div className="admin-card-list">
+                  {state.socialAccounts.map((account) => (
+                    <article key={account.id} className="admin-mini-card">
+                      <div>
+                        <strong>{account.displayName}</strong>
+                        <small>
+                          {account.platform} · {account.venue} · {account.handle ?? 'No handle'}
+                        </small>
+                        <small>{platformSetupCopy(account.platform)}</small>
+                      </div>
+                      <div className="admin-social-actions">
+                        <Badge tone={socialTone(account.status)}>{account.status.replace(/_/g, ' ')}</Badge>
+                        <Badge tone={account.hasTokenSecretRef ? 'positive' : 'warning'}>
+                          {account.hasTokenSecretRef ? 'Secret ref' : 'No secret ref'}
+                        </Badge>
+                        <Button
+                          variant="secondary"
+                          disabled={socialBusy === account.id}
+                          onClick={() => void validateSocialAccount(account.id)}
+                        >
+                          {socialBusy === account.id ? 'Checking...' : 'Check readiness'}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={socialBusy === account.id}
+                          onClick={() => editSocialAccount(account)}
+                        >
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          disabled={socialBusy === account.id}
+                          onClick={() => void deleteSocialAccount(account)}
+                        >
+                          Delete
+                        </Button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<IconSettings />}
+                  title="No social accounts configured"
+                  description="Add Facebook, Instagram or TikTok account metadata here. Live publish stays disabled until the backend flag and token secret are configured."
                 />
-                {socialReadiness.checks.map((check) => (
-                  <StatusLine key={check.label} label={check.label} value={check.ok ? 'OK' : check.message} tone={check.ok ? 'positive' : 'warning'} />
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<IconChecklist />}
-                title="Run a readiness check"
-                description="Admin will confirm connection status, external account id, secret reference and live connector gating without exposing tokens."
-              />
-            )}
-          </Card>
+              )}
+            </Card>
+          </AdminCollapsibleSection>
+          <AdminCollapsibleSection
+            title="Readiness result"
+            summary="Connector checks for the selected account"
+            defaultOpen={Boolean(socialReadiness)}
+            status={<Badge tone={socialReadiness?.ready ? 'positive' : socialReadiness ? 'warning' : 'muted'}>{socialReadiness ? 'Checked' : 'No check'}</Badge>}
+          >
+            <Card>
+              {socialReadiness ? (
+                <div className="admin-status-stack">
+                  <StatusLine
+                    label={socialReadiness.account.displayName}
+                    value={socialReadiness.integrationStatus.replace(/_/g, ' ')}
+                    tone={socialReadiness.ready ? 'positive' : 'warning'}
+                  />
+                  {socialReadiness.checks.map((check) => (
+                    <StatusLine key={check.label} label={check.label} value={check.ok ? 'OK' : check.message} tone={check.ok ? 'positive' : 'warning'} />
+                  ))}
+                </div>
+              ) : (
+                <EmptyState
+                  icon={<IconChecklist />}
+                  title="Run a readiness check"
+                  description="Admin will confirm connection status, external account id, secret reference and live connector gating without exposing tokens."
+                />
+              )}
+            </Card>
+          </AdminCollapsibleSection>
         </div>
         ) : null}
       </section>

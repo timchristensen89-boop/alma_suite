@@ -5289,6 +5289,86 @@ a.suite-app-tile:hover {
   min-width: 0;
 }
 
+.admin-collapsible-section {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+
+.admin-collapsible-section > summary {
+  display: flex;
+  min-height: 62px;
+  cursor: pointer;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 14px 16px;
+  list-style: none;
+}
+
+.admin-collapsible-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.admin-collapsible-section > summary:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 3px;
+}
+
+.admin-collapsible-title {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.admin-collapsible-title strong {
+  overflow: hidden;
+  color: var(--color-text);
+  font-size: 14px;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-collapsible-title small {
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  font-weight: 650;
+  line-height: 1.35;
+}
+
+.admin-collapsible-meta {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.admin-collapsible-chevron {
+  width: 10px;
+  height: 10px;
+  border-right: 2px solid var(--color-text-muted);
+  border-bottom: 2px solid var(--color-text-muted);
+  transform: rotate(45deg);
+  transition: transform 160ms ease;
+}
+
+.admin-collapsible-section[open] .admin-collapsible-chevron {
+  transform: rotate(225deg);
+}
+
+.admin-collapsible-body {
+  padding: 0 14px 14px;
+}
+
+.admin-collapsible-body > .card {
+  border-color: rgba(148, 163, 184, 0.32);
+  box-shadow: none;
+}
+
 .admin-card-list,
 .admin-warning-list,
 .admin-status-stack,
