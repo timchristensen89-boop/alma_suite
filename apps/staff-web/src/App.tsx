@@ -496,14 +496,6 @@ type MobileRosterGroupKey = 'late' | 'onShift' | 'scheduled' | 'unassigned' | 'c
 
 const MOBILE_ROSTER_MEDIA_QUERY = '(max-width: 900px)';
 
-const MOBILE_ROSTER_GROUPS: Array<{ key: MobileRosterGroupKey; label: string }> = [
-  { key: 'late', label: 'Late' },
-  { key: 'onShift', label: 'On Shift' },
-  { key: 'scheduled', label: 'Scheduled' },
-  { key: 'unassigned', label: 'Unassigned' },
-  { key: 'completed', label: 'Completed' }
-];
-
 type RosterScheduleRow = {
   id: string;
   label: string;
@@ -514,6 +506,16 @@ type RosterScheduleRow = {
   venue: string;
   area: string;
   isVenueHeader?: boolean;
+};
+
+type MobileRosterVenueGroup = {
+  venue: string;
+  initials: string;
+  shifts: RosterShift[];
+  areas: Array<{
+    area: string;
+    shifts: RosterShift[];
+  }>;
 };
 
 function RosterCollapsiblePanel({
@@ -8034,10 +8036,7 @@ function RosterPage({
   const mobileSelectedDate = useMemo(() => new Date(`${mobileSelectedDay}T00:00:00`), [mobileSelectedDay]);
   const mobileSelectedSummary = dailySummaries.find((summary) => sameDay(summary.day, mobileSelectedDate));
   const mobileDayShifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate));
-  const mobileShiftGroups = MOBILE_ROSTER_GROUPS.map((group) => ({
-    ...group,
-    shifts: mobileDayShifts.filter((shift) => mobileRosterStatusGroup(shift) === group.key)
-  })).filter((group) => group.shifts.length > 0);
+  const rowSearch = search.trim().toLowerCase();
   const allRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
     [rosterAreaSettings, visibleRoster]
@@ -8067,6 +8066,25 @@ function RosterPage({
       };
     })
   );
+  const mobileVenueGroups: MobileRosterVenueGroup[] = areaVenues
+    .map((venue) => {
+      const areaRows = splitAreaRows
+        .filter((row) => row.venue === venue)
+        .filter((row) => `${row.venue} ${row.label} ${row.sublabel}`.toLowerCase().includes(rowSearch))
+        .map((row) => ({
+          area: row.area || row.label,
+          shifts: row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate))
+        }))
+        .filter((row) => row.shifts.length > 0);
+      const shifts = areaRows.flatMap((row) => row.shifts);
+      return {
+        venue,
+        initials: venue.split(' ').map((part) => part[0]).join('').slice(0, 2).toUpperCase(),
+        shifts,
+        areas: areaRows
+      };
+    })
+    .filter((group) => group.shifts.length > 0);
   const venueForecastRows = forecastVenues.map((venue) => {
     const shifts = visibleRoster.filter((shift) => shift.venue === venue || shift.staffProfile?.venue === venue);
     const plannedHours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
@@ -8172,7 +8190,6 @@ function RosterPage({
     });
   }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
   const canSaveShift = Boolean(staffProfileId && date && startTime && endTime && selectedShiftHours);
-  const rowSearch = search.trim().toLowerCase();
   const scheduleRows: RosterScheduleRow[] =
     viewMode === 'team'
       ? activeStaff
@@ -8923,7 +8940,7 @@ function RosterPage({
             selectedDate={mobileSelectedDate}
             selectedSummary={mobileSelectedSummary}
             shifts={mobileDayShifts}
-            groups={mobileShiftGroups}
+            venueGroups={mobileVenueGroups}
             venueLabel={venueFilter === 'all' ? 'All venues' : venueFilter}
             onSelectDay={setMobileSelectedDay}
             onAddShift={() => newShift(mobileSelectedDay)}
@@ -9029,6 +9046,20 @@ function RosterPage({
       {!isMobileRoster ? (
         <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
+          <div className="roster-board-command">
+            <div>
+              <p className="eyebrow">Roster board</p>
+              <h2>{viewMode === 'team' ? 'Team schedule' : 'Venue and area schedule'}</h2>
+              <span>
+                {boardDays === 7 ? '7 day board' : '14 day board'} · {venueFilter === 'all' ? `${areaVenues.length} venues` : venueFilter}
+              </span>
+            </div>
+            <div className="roster-board-command-meta" aria-label="Roster board summary">
+              <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
+              <span><strong>{visibleRoster.length}</strong> shifts</span>
+              <span><strong>{roundHours(totalHours)}</strong> hours</span>
+            </div>
+          </div>
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
               <span>{viewMode === 'team' ? 'Team member' : 'Area'}</span>
@@ -9591,7 +9622,7 @@ function MobileRosterView({
   selectedDate,
   selectedSummary,
   shifts,
-  groups,
+  venueGroups,
   venueLabel,
   onSelectDay,
   onAddShift,
@@ -9601,7 +9632,7 @@ function MobileRosterView({
   selectedDate: Date;
   selectedSummary?: { day: Date; shifts: number; hours: number; people: number };
   shifts: RosterShift[];
-  groups: Array<{ key: MobileRosterGroupKey; label: string; shifts: RosterShift[] }>;
+  venueGroups: MobileRosterVenueGroup[];
   venueLabel: string;
   onSelectDay: (day: string) => void;
   onAddShift: () => void;
@@ -9661,44 +9692,68 @@ function MobileRosterView({
             description="This day has no rostered shifts for the current filters."
             action={<Button type="button" size="sm" onClick={onAddShift}>Add shift</Button>}
           />
+        ) : venueGroups.length === 0 ? (
+          <EmptyState
+            title="No area rows match"
+            description="This day has shifts, but no venue or area rows match the current search and view filters."
+          />
         ) : (
           <div className="mobile-roster-sections">
-            {groups.map((group) => (
-              <section key={group.key} className={`mobile-roster-section is-${mobileRosterGroupClass(group.key)}`}>
-                <div className="mobile-roster-section-header">
-                  <strong>{group.label}</strong>
-                  <span>{group.shifts.length}</span>
+            {venueGroups.map((venueGroup) => (
+              <section key={venueGroup.venue} className="mobile-roster-venue-section">
+                <div className="mobile-roster-venue-header">
+                  <span className="roster-avatar" aria-hidden="true">{venueGroup.initials}</span>
+                  <div>
+                    <strong>{venueGroup.venue}</strong>
+                    <small>
+                      {venueGroup.areas.length} area{venueGroup.areas.length === 1 ? '' : 's'} · {venueGroup.shifts.length} shift{venueGroup.shifts.length === 1 ? '' : 's'} · {roundHours(venueGroup.shifts.reduce((sum, shift) => sum + shiftHours(shift), 0))}
+                    </small>
+                  </div>
                 </div>
-                <div className="mobile-shift-list">
-                  {group.shifts.map((shift) => {
-                    const staffName = rosterShiftStaffName(shift);
-                    const shiftVenueName = shift.venue || shift.staffProfile?.venue || 'No venue';
-                    const shiftArea = shift.area || shift.roleTitle || 'Shift';
-                    return (
-                      <button
-                        key={shift.id}
-                        type="button"
-                        className="mobile-shift-row"
-                        style={areaStyle(shiftArea)}
-                        onClick={() => onOpenShift(shift)}
-                      >
-                        <span className="mobile-shift-avatar" aria-hidden="true">
-                          {shift.staffProfile && !isUnallocatedProfile(shift.staffProfile) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
-                        </span>
-                        <span className={`mobile-shift-status-dot is-${mobileRosterGroupClass(group.key)}`} aria-hidden="true" />
-                        <span className="mobile-shift-main">
-                          <strong>{staffName}</strong>
-                          <span>{timeOf(shift.startsAt)} - {timeOf(shift.endsAt)}</span>
-                          <small>{shiftArea} · {shiftVenueName}</small>
-                        </span>
-                        <span className="mobile-shift-meta">
-                          <small>{mobileRosterStatusText(shift, group.key)}</small>
-                          <span aria-hidden="true">›</span>
-                        </span>
-                      </button>
-                    );
-                  })}
-                </div>
+
+                {venueGroup.areas.map((areaGroup) => {
+                  const areaHours = areaGroup.shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                  return (
+                    <section key={`${venueGroup.venue}:${areaGroup.area}`} className="mobile-roster-area-section">
+                      <div className="mobile-roster-section-header" style={areaStyle(areaGroup.area)}>
+                        <strong>{areaGroup.area}</strong>
+                        <small>{roundHours(areaHours)}</small>
+                        <span>{areaGroup.shifts.length}</span>
+                      </div>
+                      <div className="mobile-shift-list">
+                        {areaGroup.shifts.map((shift) => {
+                          const staffName = rosterShiftStaffName(shift);
+                          const shiftVenueName = shift.venue || shift.staffProfile?.venue || venueGroup.venue || 'No venue';
+                          const shiftArea = shift.area || areaGroup.area || shift.roleTitle || 'Shift';
+                          const statusGroup = mobileRosterStatusGroup(shift);
+                          return (
+                            <button
+                              key={shift.id}
+                              type="button"
+                              className="mobile-shift-row"
+                              style={areaStyle(shiftArea)}
+                              onClick={() => onOpenShift(shift)}
+                            >
+                              <span className="mobile-shift-avatar" aria-hidden="true">
+                                {shift.staffProfile && !isUnallocatedProfile(shift.staffProfile) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
+                              </span>
+                              <span className={`mobile-shift-status-dot is-${mobileRosterGroupClass(statusGroup)}`} aria-hidden="true" />
+                              <span className="mobile-shift-main">
+                                <strong>{staffName}</strong>
+                                <span>{timeOf(shift.startsAt)} - {timeOf(shift.endsAt)}</span>
+                                <small>{shiftArea} · {shiftVenueName}</small>
+                              </span>
+                              <span className="mobile-shift-meta">
+                                <small>{mobileRosterStatusText(shift, statusGroup)}</small>
+                                <span aria-hidden="true">›</span>
+                              </span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  );
+                })}
               </section>
             ))}
           </div>
