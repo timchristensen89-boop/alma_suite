@@ -260,7 +260,11 @@ p {
   top: 0;
   z-index: 5;
   background:
-    linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+    linear-gradient(
+      135deg,
+      color-mix(in srgb, var(--color-accent) 72%, #334155 28%) 0%,
+      color-mix(in srgb, var(--color-accent-hover) 76%, #475569 24%) 100%
+    );
   color: #fff;
   border-bottom: 1px solid rgba(255, 255, 255, 0.16);
   box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
@@ -4574,7 +4578,11 @@ a.suite-app-tile:hover {
     border: 1px solid rgba(255, 255, 255, 0.42);
     border-radius: var(--radius-lg);
     background:
-      linear-gradient(135deg, var(--color-accent) 0%, var(--color-accent-hover) 100%);
+      linear-gradient(
+        135deg,
+        color-mix(in srgb, var(--color-accent) 72%, #334155 28%) 0%,
+        color-mix(in srgb, var(--color-accent-hover) 76%, #475569 24%) 100%
+      );
     box-shadow: var(--shadow-lg);
   }
 
