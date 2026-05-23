@@ -2597,6 +2597,41 @@ export type SalesActualSummary = {
   }>;
 };
 
+export type ReportsPrimeCostVenueRow = {
+  venue: string;
+  salesCents: number;
+  wageCents: number;
+  approvedWageCents: number;
+  rosterWageEstimateCents: number;
+  cogsCents: number;
+  invoiceCogsCents: number;
+  wastageCents: number;
+  primeCostCents: number;
+  wagePercent: number | null;
+  cogsPercent: number | null;
+  primeCostPercent: number | null;
+  timesheetHours: number;
+  rosterHours: number;
+  salesDays: number;
+  sourceQuality: 'complete_current' | 'missing_sales' | 'missing_wages' | 'missing_cogs' | 'estimated_wages' | 'incomplete';
+  missing: string[];
+};
+
+export type ReportsPrimeCostPayload = {
+  period: { start: string; end: string };
+  totals: Omit<ReportsPrimeCostVenueRow, 'venue' | 'sourceQuality' | 'missing'> & {
+    sourceQuality: ReportsPrimeCostVenueRow['sourceQuality'];
+    missing: string[];
+  };
+  venues: ReportsPrimeCostVenueRow[];
+  sources: {
+    sales: 'actual_sales_import' | 'missing';
+    wages: 'timesheet_actuals' | 'roster_estimate' | 'missing';
+    cogs: 'supplier_invoice_lines' | 'supplier_invoice_lines_plus_wastage' | 'wastage_only' | 'missing';
+  };
+  warnings: string[];
+};
+
 export type StaffManagerDashboardPayload = {
   date: string;
   venue: string;

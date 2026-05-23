@@ -10,6 +10,7 @@ import {
   type ReportsGiftCardSummary,
   type ReportsMarketingSummary,
   type ReportsOverviewPayload,
+  type ReportsPrimeCostPayload,
   type ReportsRangeDays,
   type ReportsReserveSummary,
   type ReportsStaffSummary,
@@ -94,6 +95,37 @@ function metadataRecord(value: Prisma.JsonValue): Record<string, unknown> {
 
 function stocktakeLineValue(lines: Array<{ stockValueCents: number | null }>) {
   return lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
+}
+
+function workedHours(entry: { clockInAt: Date; clockOutAt: Date; breakMinutes: number }) {
+  const gross = (entry.clockOutAt.getTime() - entry.clockInAt.getTime()) / (1000 * 60 * 60);
+  return Math.max(0, gross - (entry.breakMinutes ?? 0) / 60);
+}
+
+function rosterHours(entry: { startsAt: Date; endsAt: Date; breakMinutes: number }) {
+  const gross = (entry.endsAt.getTime() - entry.startsAt.getTime()) / (1000 * 60 * 60);
+  return Math.max(0, gross - (entry.breakMinutes ?? 0) / 60);
+}
+
+function payRateCents(profile: { payRateCents: number | null; trainingPayRateCents: number | null } | null | undefined) {
+  return profile?.trainingPayRateCents ?? profile?.payRateCents ?? 0;
+}
+
+function pct(numerator: number, denominator: number) {
+  return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+}
+
+function primeQuality(input: { sales: number; wages: number; cogs: number; rosterEstimate: number }) {
+  const missing = [
+    ...(input.sales > 0 ? [] : ['sales']),
+    ...(input.wages > 0 || input.rosterEstimate > 0 ? [] : ['wages']),
+    ...(input.cogs > 0 ? [] : ['COGS'])
+  ];
+  if (!missing.length && input.wages > 0) return { sourceQuality: 'complete_current' as const, missing };
+  if (missing.includes('sales')) return { sourceQuality: 'missing_sales' as const, missing };
+  if (missing.includes('COGS')) return { sourceQuality: 'missing_cogs' as const, missing };
+  if (missing.includes('wages')) return { sourceQuality: 'missing_wages' as const, missing };
+  return { sourceQuality: 'estimated_wages' as const, missing };
 }
 
 async function venueOnHandLookup(
@@ -689,6 +721,190 @@ export const reportsService = {
   async stock(input: unknown, actor: AuthUser) {
     const { requestedVenue, start } = rangeFromInput(input);
     return buildStockSummary(actor, requestedVenue, start);
+  },
+
+  async primeCost(input: unknown, actor?: AuthUser): Promise<ReportsPrimeCostPayload> {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Prime cost start date');
+    const end = parseDate(data.end, 'Prime cost end date');
+    if (end <= start) throw new HttpError(400, 'Prime cost end date must be after the start date');
+    const venue = actorVenueScope(actor, data.venue);
+
+    const [salesEntries, timesheets, rosterShifts, invoiceLines, wastageRows] = await Promise.all([
+      prisma.salesActualEntry.findMany({
+        where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) }
+      }),
+      prisma.timesheet.findMany({
+        where: {
+          workDate: { gte: start, lt: end },
+          status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED', 'EXPORTED'] },
+          ...(venue ? { venue } : {}),
+          staffProfile: { accountType: 'HUMAN' }
+        },
+        include: { staffProfile: { select: { venue: true, payRateCents: true, trainingPayRateCents: true } } }
+      }),
+      prisma.rosterShift.findMany({
+        where: {
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
+          ...(venue ? { venue } : {}),
+          staffProfile: { accountType: 'HUMAN' }
+        },
+        include: { staffProfile: { select: { venue: true, payRateCents: true, trainingPayRateCents: true } } }
+      }),
+      prisma.supplierInvoiceLine.findMany({
+        where: {
+          itemId: { not: null },
+          invoice: {
+            invoiceDate: { gte: start, lt: end },
+            ...(venue ? { venue } : {})
+          }
+        },
+        include: { invoice: { select: { venue: true } } }
+      }),
+      prisma.stockWastageRecord.findMany({
+        where: { wastedAt: { gte: start, lt: end }, ...(venue ? { venue } : {}) }
+      })
+    ]);
+
+    const rows = new Map<string, {
+      venue: string;
+      salesCents: number;
+      salesDays: Set<string>;
+      wageCents: number;
+      approvedWageCents: number;
+      rosterWageEstimateCents: number;
+      invoiceCogsCents: number;
+      wastageCents: number;
+      timesheetHours: number;
+      rosterHours: number;
+    }>();
+    const rowFor = (rowVenue: string | null | undefined) => {
+      const key = rowVenue?.trim() || 'Unassigned';
+      const current = rows.get(key) ?? {
+        venue: key,
+        salesCents: 0,
+        salesDays: new Set<string>(),
+        wageCents: 0,
+        approvedWageCents: 0,
+        rosterWageEstimateCents: 0,
+        invoiceCogsCents: 0,
+        wastageCents: 0,
+        timesheetHours: 0,
+        rosterHours: 0
+      };
+      rows.set(key, current);
+      return current;
+    };
+
+    for (const entry of salesEntries) {
+      const row = rowFor(entry.venue);
+      row.salesCents += entry.salesCents;
+      row.salesDays.add(entry.serviceDate.toISOString().slice(0, 10));
+    }
+    for (const entry of timesheets) {
+      const row = rowFor(entry.venue || entry.staffProfile.venue);
+      const hours = workedHours(entry);
+      const cost = Math.round(hours * payRateCents(entry.staffProfile));
+      row.timesheetHours += hours;
+      row.wageCents += cost;
+      if (entry.status === 'APPROVED' || entry.status === 'EXPORTED') row.approvedWageCents += cost;
+    }
+    for (const shift of rosterShifts) {
+      const row = rowFor(shift.venue || shift.staffProfile.venue);
+      const hours = rosterHours(shift);
+      row.rosterHours += hours;
+      row.rosterWageEstimateCents += Math.round(hours * payRateCents(shift.staffProfile));
+    }
+    for (const line of invoiceLines) rowFor(line.invoice.venue).invoiceCogsCents += Math.max(0, line.lineAmountCents);
+    for (const wastage of wastageRows) rowFor(wastage.venue).wastageCents += Math.max(0, wastage.costImpactCents ?? 0);
+
+    const venues = Array.from(rows.values()).map((row) => {
+      const wageCents = row.wageCents || row.rosterWageEstimateCents;
+      const cogsCents = row.invoiceCogsCents + row.wastageCents;
+      const primeCostCents = wageCents + cogsCents;
+      return {
+        venue: row.venue,
+        salesCents: row.salesCents,
+        wageCents,
+        approvedWageCents: row.approvedWageCents,
+        rosterWageEstimateCents: row.rosterWageEstimateCents,
+        cogsCents,
+        invoiceCogsCents: row.invoiceCogsCents,
+        wastageCents: row.wastageCents,
+        primeCostCents,
+        wagePercent: pct(wageCents, row.salesCents),
+        cogsPercent: pct(cogsCents, row.salesCents),
+        primeCostPercent: pct(primeCostCents, row.salesCents),
+        timesheetHours: Math.round(row.timesheetHours * 100) / 100,
+        rosterHours: Math.round(row.rosterHours * 100) / 100,
+        salesDays: row.salesDays.size,
+        ...primeQuality({ sales: row.salesCents, wages: row.wageCents, cogs: cogsCents, rosterEstimate: row.rosterWageEstimateCents })
+      };
+    }).sort((a, b) => a.venue.localeCompare(b.venue));
+
+    const totalBase = venues.reduce((total, row) => ({
+      salesCents: total.salesCents + row.salesCents,
+      wageCents: total.wageCents + row.wageCents,
+      approvedWageCents: total.approvedWageCents + row.approvedWageCents,
+      rosterWageEstimateCents: total.rosterWageEstimateCents + row.rosterWageEstimateCents,
+      cogsCents: total.cogsCents + row.cogsCents,
+      invoiceCogsCents: total.invoiceCogsCents + row.invoiceCogsCents,
+      wastageCents: total.wastageCents + row.wastageCents,
+      primeCostCents: total.primeCostCents + row.primeCostCents,
+      timesheetHours: total.timesheetHours + row.timesheetHours,
+      rosterHours: total.rosterHours + row.rosterHours,
+      salesDays: Math.max(total.salesDays, row.salesDays)
+    }), {
+      salesCents: 0,
+      wageCents: 0,
+      approvedWageCents: 0,
+      rosterWageEstimateCents: 0,
+      cogsCents: 0,
+      invoiceCogsCents: 0,
+      wastageCents: 0,
+      primeCostCents: 0,
+      timesheetHours: 0,
+      rosterHours: 0,
+      salesDays: 0
+    });
+    const totalQuality = primeQuality({
+      sales: totalBase.salesCents,
+      wages: totalBase.wageCents,
+      cogs: totalBase.cogsCents,
+      rosterEstimate: totalBase.rosterWageEstimateCents
+    });
+
+    return {
+      period: { start: start.toISOString(), end: end.toISOString() },
+      totals: {
+        ...totalBase,
+        wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
+        cogsPercent: pct(totalBase.cogsCents, totalBase.salesCents),
+        primeCostPercent: pct(totalBase.primeCostCents, totalBase.salesCents),
+        timesheetHours: Math.round(totalBase.timesheetHours * 100) / 100,
+        rosterHours: Math.round(totalBase.rosterHours * 100) / 100,
+        ...totalQuality
+      },
+      venues,
+      sources: {
+        sales: salesEntries.length ? 'actual_sales_import' : 'missing',
+        wages: timesheets.length ? 'timesheet_actuals' : rosterShifts.length ? 'roster_estimate' : 'missing',
+        cogs: invoiceLines.length && wastageRows.length
+          ? 'supplier_invoice_lines_plus_wastage'
+          : invoiceLines.length
+            ? 'supplier_invoice_lines'
+            : wastageRows.length
+              ? 'wastage_only'
+              : 'missing'
+      },
+      warnings: [
+        ...(invoiceLines.length ? ['COGS is based on supplier invoice lines matched to stock items in the selected period.'] : ['COGS is missing until supplier invoice lines are imported and matched to stock items.']),
+        ...(timesheets.length ? ['Wages use current timesheet hours and staff pay rates. Approved wages are shown separately.'] : ['No timesheets found; roster wage estimate is used only when roster shifts exist.']),
+        ...(salesEntries.length ? [] : ['Sales are missing for the selected period, so wage %, COGS %, and prime cost % are not shown.'])
+      ]
+    };
   },
 
   async listActualSales(input: unknown, actor?: AuthUser) {

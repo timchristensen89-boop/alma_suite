@@ -3,6 +3,7 @@ import type {
   AuthUser,
   RecipesSummary,
   ReportsOverviewPayload,
+  ReportsPrimeCostPayload,
   RosterForecastSnapshot,
   RosterShift,
   SalesActualSummary,
@@ -62,6 +63,7 @@ type ReportsData = {
   roster: RosterShift[];
   rosterForecastSnapshots: RosterForecastSnapshot[];
   actualSales: SalesActualSummary | null;
+  primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
   stockItems: StockItemsPayload | null;
   stockSummary: StockItemsSummary | null;
@@ -258,6 +260,15 @@ function formatCurrency(cents: number) {
     currency: 'AUD',
     maximumFractionDigits: 0
   }).format(cents / 100);
+}
+
+function formatPercent(value: number | null | undefined) {
+  return value === null || value === undefined ? '—' : `${value.toFixed(1)}%`;
+}
+
+function qualityLabel(value: ReportsPrimeCostPayload['totals']['sourceQuality'] | undefined) {
+  if (!value) return 'Missing data';
+  return value.replace(/_/g, ' ');
 }
 
 function formatMoney(value: number) {
@@ -533,6 +544,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     roster: [],
     rosterForecastSnapshots: [],
     actualSales: null,
+    primeCost: null,
     tips: null,
     stockItems: null,
     stockSummary: null,
@@ -555,7 +567,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setMessage(null);
     setStockMessage(null);
     try {
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips] = await Promise.all([
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, primeCost, tips] = await Promise.all([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -563,6 +575,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<RosterShift[]>(`/api/staff/roster?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
 
@@ -582,7 +595,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
@@ -964,6 +977,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const actualWageCostCents = wageTotals.projectedCostCents;
   const actualApprovedWageCostCents = wageTotals.approvedCostCents;
   const actualSalesCents = data.actualSales?.totalSalesCents ?? 0;
+  const primeTotals = data.primeCost?.totals;
   const forecastSalesVarianceCents = actualSalesCents - publishedForecastTotals.salesCents;
   const plannedVsActualWageCents = actualWageCostCents - publishedForecastTotals.rosterCostCents;
   const actualWagePercent = actualSalesCents > 0 ? (actualWageCostCents / actualSalesCents) * 100 : 0;
@@ -1187,6 +1201,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
           </div>
 
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
+            <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
+            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+            <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} · ${qualityLabel(primeTotals?.sourceQuality)}`} loading={loading} />
+          </div>
+
           <div className="report-detail-grid">
             <ActionPanel
               title="Needs attention"
@@ -1345,13 +1366,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             <div className="report-panel">
               <h4>Wages by venue</h4>
-              {wageByVenue.length ? (
-                wageByVenue.map((venue) => (
-                  <Metric key={venue.venue} label={venue.venue} value={formatCurrency(venue.costCents)} tone="info" hint={roundHours(venue.hours)} />
+              {data.primeCost?.venues.length ? (
+                data.primeCost.venues.map((venue) => (
+                  <Metric
+                    key={venue.venue}
+                    label={venue.venue}
+                    value={formatCurrency(venue.wageCents)}
+                    tone={venue.missing.includes('wages') ? 'warning' : 'info'}
+                    hint={`${formatPercent(venue.wagePercent)} of sales · ${roundHours(venue.timesheetHours || venue.rosterHours)}`}
+                  />
                 ))
               ) : (
                 <p className="subtle">No timesheets found for this week.</p>
               )}
+              <Metric label="Approved wages" value={formatCurrency(primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)} tone="positive" hint="Approved/exported timesheets only" />
             </div>
           </div>
 
@@ -1437,6 +1465,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} hint="Submitted stocktakes" loading={loading} />
           </div>
 
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Supplier invoices not matched' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+            <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales`} loading={loading} />
+            <StatCard label="Invoice COGS" value={formatCurrency(primeTotals?.invoiceCogsCents ?? 0)} hint="Matched supplier invoice lines" loading={loading} />
+            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage impact" loading={loading} />
+          </div>
+
           <div className="report-detail-grid">
             <div className="report-panel">
               <h4>Stock health</h4>
@@ -1445,6 +1480,60 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <Metric label="Latest stocktake value" value={formatCurrency(data.stocktakes?.totalValueCents ?? 0)} tone="neutral" />
             </div>
 
+            <div className="report-panel">
+              <h4>Prime cost data quality</h4>
+              <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Wage source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="COGS source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
+              {(data.primeCost?.warnings ?? []).map((warning) => (
+                <p key={warning} className="subtle">{warning}</p>
+              ))}
+            </div>
+          </div>
+
+          <div className="report-panel">
+            <h4>Prime cost by venue</h4>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Venue</th>
+                    <th>Sales</th>
+                    <th>Wages</th>
+                    <th>Wage %</th>
+                    <th>COGS</th>
+                    <th>COGS %</th>
+                    <th>Prime cost</th>
+                    <th>Prime %</th>
+                    <th>Quality</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {data.primeCost?.venues.length ? (
+                    data.primeCost.venues.map((row) => (
+                      <tr key={row.venue}>
+                        <td>{row.venue}</td>
+                        <td>{formatCurrency(row.salesCents)}</td>
+                        <td>{formatCurrency(row.wageCents)}</td>
+                        <td>{formatPercent(row.wagePercent)}</td>
+                        <td>{formatCurrency(row.cogsCents)}</td>
+                        <td>{formatPercent(row.cogsPercent)}</td>
+                        <td>{formatCurrency(row.primeCostCents)}</td>
+                        <td>{formatPercent(row.primeCostPercent)}</td>
+                        <td>{qualityLabel(row.sourceQuality)}</td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={9}>No wage, sales, or COGS data found for this week.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="report-detail-grid">
             <div className="report-panel">
               <h4>Stocktake variance attention</h4>
               <div className="table-scroll">

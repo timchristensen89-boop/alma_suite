@@ -36,6 +36,18 @@ reportsRouter.get('/stock', requireManager, async (req, res, next) => {
   }
 });
 
+reportsRouter.get('/prime-cost', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.primeCost({
+      start: typeof req.query.start === 'string' ? req.query.start : '',
+      end: typeof req.query.end === 'string' ? req.query.end : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.get('/sales', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.listActualSales({
