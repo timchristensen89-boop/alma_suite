@@ -95,78 +95,94 @@ export function DashboardPage() {
       ) : null}
 
       <div className="stats-grid">
-        <StatCard
-          label="Open issues"
-          value={data?.issues.open ?? 0}
-          hint={`${data?.issues.total ?? 0} total tracked`}
-          icon={<IconIssues size={16} />}
-          loading={loading}
-        />
-        <StatCard
-          label="Overdue"
-          value={data?.issues.overdue ?? 0}
-          hint={
-            (data?.issues.overdue ?? 0) > 0
-              ? 'Past their due date'
-              : 'Nothing overdue right now'
-          }
-          icon={<IconClock size={16} />}
-          tone={(data?.issues.overdue ?? 0) > 0 ? 'warning' : 'neutral'}
-          loading={loading}
-        />
-        <StatCard
-          label="Critical"
-          value={data?.issues.critical ?? 0}
-          hint={hasCritical ? 'Requires immediate attention' : 'No critical flags'}
-          icon={<IconIssues size={16} />}
-          tone={hasCritical ? 'danger' : 'neutral'}
-          loading={loading}
-        />
-        <StatCard
-          label="Open incidents"
-          value={openIncidents}
-          hint={`${data?.incidents.followUpRequired ?? 0} awaiting follow-up`}
-          icon={<IconIncident size={16} />}
-          tone={openIncidents > 0 ? 'warning' : 'neutral'}
-          loading={loading}
-        />
+        <Link to="/issues" className="stat-card-link" aria-label="Open issues">
+          <StatCard
+            label="Open issues"
+            value={data?.issues.open ?? 0}
+            hint={`${data?.issues.total ?? 0} total tracked`}
+            icon={<IconIssues size={16} />}
+            loading={loading}
+          />
+        </Link>
+        <Link to="/issues" className="stat-card-link" aria-label="Overdue issues">
+          <StatCard
+            label="Overdue"
+            value={data?.issues.overdue ?? 0}
+            hint={
+              (data?.issues.overdue ?? 0) > 0
+                ? 'Past their due date'
+                : 'Nothing overdue right now'
+            }
+            icon={<IconClock size={16} />}
+            tone={(data?.issues.overdue ?? 0) > 0 ? 'warning' : 'neutral'}
+            loading={loading}
+          />
+        </Link>
+        <Link to="/issues" className="stat-card-link" aria-label="Critical issues">
+          <StatCard
+            label="Critical"
+            value={data?.issues.critical ?? 0}
+            hint={hasCritical ? 'Requires immediate attention' : 'No critical flags'}
+            icon={<IconIssues size={16} />}
+            tone={hasCritical ? 'danger' : 'neutral'}
+            loading={loading}
+          />
+        </Link>
+        <Link to="/incidents" className="stat-card-link" aria-label="Open incidents">
+          <StatCard
+            label="Open incidents"
+            value={openIncidents}
+            hint={`${data?.incidents.followUpRequired ?? 0} awaiting follow-up`}
+            icon={<IconIncident size={16} />}
+            tone={openIncidents > 0 ? 'warning' : 'neutral'}
+            loading={loading}
+          />
+        </Link>
       </div>
 
       {managerAccess ? (
         <div className="stats-grid">
-          <StatCard
-            label="Temp exceptions"
-            value={outOfRange}
-            hint={`${data?.temperatures.activeAssets ?? 0} monitored assets`}
-            icon={<IconTemperature size={16} />}
-            tone={outOfRange > 0 ? 'danger' : 'positive'}
-            loading={loading}
-          />
-          <StatCard
-            label="Staff expiring"
-            value={expiring}
-            hint={`${data?.staff.expired ?? 0} already expired`}
-            icon={<IconStaff size={16} />}
-            tone={expiring > 0 ? 'warning' : 'neutral'}
-            loading={loading}
-          />
+          <Link to="/temperatures" className="stat-card-link" aria-label="Temperature exceptions">
             <StatCard
-              label="Staff pending"
-              value={data?.staff.pendingApproval ?? 0}
-              hint={`${data?.staff.totalProfiles ?? 0} profiles total`}
+              label="Temp exceptions"
+              value={outOfRange}
+              hint={`${data?.temperatures.activeAssets ?? 0} monitored assets`}
+              icon={<IconTemperature size={16} />}
+              tone={outOfRange > 0 ? 'danger' : 'positive'}
+              loading={loading}
+            />
+          </Link>
+          <Link to="/staff" className="stat-card-link" aria-label="Staff expiring">
+            <StatCard
+              label="Staff expiring"
+              value={expiring}
+              hint={`${data?.staff.expired ?? 0} already expired`}
               icon={<IconStaff size={16} />}
+              tone={expiring > 0 ? 'warning' : 'neutral'}
               loading={loading}
             />
-            <StatCard
-              label="Missing logs today"
-              value={data?.temperatures.missingToday ?? 0}
-              hint={`${data?.temperatures.syncedToday ?? 0} synced today`}
-              icon={<IconClock size={16} />}
-              tone={
-                (data?.temperatures.missingToday ?? 0) > 0 ? 'warning' : 'positive'
-              }
-              loading={loading}
-            />
+          </Link>
+          <Link to="/staff" className="stat-card-link" aria-label="Staff pending approval">
+              <StatCard
+                label="Staff pending"
+                value={data?.staff.pendingApproval ?? 0}
+                hint={`${data?.staff.totalProfiles ?? 0} profiles total`}
+                icon={<IconStaff size={16} />}
+                loading={loading}
+              />
+            </Link>
+            <Link to="/temperatures" className="stat-card-link" aria-label="Missing temperature logs today">
+              <StatCard
+                label="Missing logs today"
+                value={data?.temperatures.missingToday ?? 0}
+                hint={`${data?.temperatures.syncedToday ?? 0} synced today`}
+                icon={<IconClock size={16} />}
+                tone={
+                  (data?.temperatures.missingToday ?? 0) > 0 ? 'warning' : 'positive'
+                }
+                loading={loading}
+              />
+            </Link>
         </div>
       ) : null}
 

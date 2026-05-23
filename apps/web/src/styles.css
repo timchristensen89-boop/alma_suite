@@ -696,6 +696,36 @@ p {
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
 }
 
+.stat-card-link {
+  display: block;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+}
+
+.stat-card-link .stat-card {
+  height: 100%;
+}
+
+.stat-card-link:hover .stat-card,
+.stat-card-link:focus-visible .stat-card {
+  border-color: var(--color-accent);
+  box-shadow: var(--shadow-md);
+  transform: translateY(-1px);
+}
+
+.stat-card-link:focus-visible {
+  outline: 3px solid color-mix(in srgb, var(--color-accent) 28%, transparent);
+  outline-offset: 3px;
+}
+
 .form-grid {
   display: grid;
   gap: 16px;

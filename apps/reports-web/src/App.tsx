@@ -1244,17 +1244,33 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           <div className="stats-grid report-metric-grid">
-            <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
-            <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? 0} hint="Current staff profiles" loading={loading} />
-            <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
-            <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('compliance')} aria-label="Open attention reports">
+              <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open staff reports">
+              <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? 0} hint="Current staff profiles" loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('reserve')} aria-label="Open reserve reports">
+              <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open stock reports">
+              <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
+            </button>
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
-            <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
-            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
-            <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} · ${qualityLabel(primeTotals?.sourceQuality)}`} loading={loading} />
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('menu-engineering')} aria-label="Open sales reports">
+              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
+              <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
+              <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+            </button>
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open prime cost reports">
+              <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} · ${qualityLabel(primeTotals?.sourceQuality)}`} loading={loading} />
+            </button>
           </div>
 
           <div className="report-detail-grid">

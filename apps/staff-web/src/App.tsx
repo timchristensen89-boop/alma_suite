@@ -984,10 +984,18 @@ function StaffHome({
       </section>
 
       <div className="stats-grid staff-settings-stats">
-        <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />
-        <StatCard label="Active" value={activeStaff.length} hint="Not archived" loading={loading} />
-        <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
-        <StatCard label="Expiring records" value={expiringSoon.length} hint="Next 30 days" loading={loading} />
+        <NavLink to="/profiles" className="stat-card-link" aria-label="Open staff profiles">
+          <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />
+        </NavLink>
+        <NavLink to="/profiles" className="stat-card-link" aria-label="Open active staff profiles">
+          <StatCard label="Active" value={activeStaff.length} hint="Not archived" loading={loading} />
+        </NavLink>
+        <NavLink to="/approvals" className="stat-card-link" aria-label="Open pending onboarding approvals">
+          <StatCard label="Pending onboarding" value={pending.length} hint="Invite created" loading={loading} />
+        </NavLink>
+        <NavLink to="/hr" className="stat-card-link" aria-label="Open expiring staff records">
+          <StatCard label="Expiring records" value={expiringSoon.length} hint="Next 30 days" loading={loading} />
+        </NavLink>
       </div>
 
       <Card title="Staff readiness" subtitle="Read-only checks for the live Staff register. Nothing here changes payroll, roster or profile data.">

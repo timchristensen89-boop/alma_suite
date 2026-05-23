@@ -1088,10 +1088,18 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {activeGiftCardPage === 'orders' ? (
           <>
             <div className="stats-grid">
-              <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
-              <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
-              <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
-              <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open active gift cards">
+                <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
+              </button>
+              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
+                <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
+              </button>
+              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open gift card balance report">
+                <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
+              </button>
+              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open sold gift cards">
+                <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+              </button>
             </div>
             <ActionPanel
               title="Order actions"

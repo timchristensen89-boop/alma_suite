@@ -126,36 +126,44 @@ export function DashboardPage() {
       {loading ? <Spinner label="Loading stock dashboard" /> : null}
 
       <div className="stat-grid">
-        <StatCard
-          icon={<IconItems size={18} />}
-          label="Catalogue items"
-          value={loading ? '—' : String(dashboard?.summary.activeItems ?? 0)}
-          hint={`${dashboard?.summary.categories ?? 0} categories`}
-        />
-        <StatCard
-          icon={<IconStocktake size={18} />}
-          label="Low stock"
-          value={loading ? '—' : String(dashboard?.summary.lowStockItems ?? 0)}
-          hint={
-            activeVenue
-              ? `${dashboard?.summary.outOfStockItems ?? 0} out of stock at ${activeVenue}`
-              : `${dashboard?.summary.outOfStockItems ?? 0} out of stock across venue stock`
-          }
-          tone={(dashboard?.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
-        />
-        <StatCard
-          icon={<IconSuppliers size={18} />}
-          label="On hand"
-          value={loading ? '—' : formatQuantity(dashboard?.summary.totalOnHand)}
-          hint={activeVenue ? 'Tracked units at the selected venue' : 'Tracked units across venue stock'}
-        />
-        <StatCard
-          icon={<IconInvoices size={18} />}
-          label="Ready for review"
-          value={loading ? '—' : String(dashboard?.summary.readyForReviewStocktakes ?? 0)}
-          hint={`${dashboard?.summary.openStocktakes ?? 0} draft stocktakes`}
-          tone={(dashboard?.summary.readyForReviewStocktakes ?? 0) > 0 ? 'warning' : 'neutral'}
-        />
+        <Link to="/items" className="stat-card-link" aria-label="Open catalogue items">
+          <StatCard
+            icon={<IconItems size={18} />}
+            label="Catalogue items"
+            value={loading ? '—' : String(dashboard?.summary.activeItems ?? 0)}
+            hint={`${dashboard?.summary.categories ?? 0} categories`}
+          />
+        </Link>
+        <Link to="/items" className="stat-card-link" aria-label="Open low stock items">
+          <StatCard
+            icon={<IconStocktake size={18} />}
+            label="Low stock"
+            value={loading ? '—' : String(dashboard?.summary.lowStockItems ?? 0)}
+            hint={
+              activeVenue
+                ? `${dashboard?.summary.outOfStockItems ?? 0} out of stock at ${activeVenue}`
+                : `${dashboard?.summary.outOfStockItems ?? 0} out of stock across venue stock`
+            }
+            tone={(dashboard?.summary.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'}
+          />
+        </Link>
+        <Link to="/items" className="stat-card-link" aria-label="Open on hand stock">
+          <StatCard
+            icon={<IconSuppliers size={18} />}
+            label="On hand"
+            value={loading ? '—' : formatQuantity(dashboard?.summary.totalOnHand)}
+            hint={activeVenue ? 'Tracked units at the selected venue' : 'Tracked units across venue stock'}
+          />
+        </Link>
+        <Link to="/stocktake" className="stat-card-link" aria-label="Open stocktakes ready for review">
+          <StatCard
+            icon={<IconInvoices size={18} />}
+            label="Ready for review"
+            value={loading ? '—' : String(dashboard?.summary.readyForReviewStocktakes ?? 0)}
+            hint={`${dashboard?.summary.openStocktakes ?? 0} draft stocktakes`}
+            tone={(dashboard?.summary.readyForReviewStocktakes ?? 0) > 0 ? 'warning' : 'neutral'}
+          />
+        </Link>
       </div>
 
       <div className="stock-dashboard-grid">
