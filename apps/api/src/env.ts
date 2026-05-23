@@ -89,6 +89,7 @@ export const env = {
   integrations: {
     tokenEncryptionKey: process.env.INTEGRATION_TOKEN_ENCRYPTION_KEY ?? '',
     allowOAuthConnections: process.env.INTEGRATION_OAUTH_CONNECTIONS_ENABLED === 'true',
+    schedulerSecret: process.env.INTEGRATION_SCHEDULER_SECRET ?? '',
     square: {
       accounts: {
         primary: {

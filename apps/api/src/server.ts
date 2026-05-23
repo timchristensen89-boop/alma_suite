@@ -14,6 +14,7 @@ import { deviceRouter } from './routes/device.js';
 import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
+import { integrationJobsRouter } from './routes/integration-jobs.js';
 import { integrationsRouter, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
@@ -45,6 +46,7 @@ app.post('/webhooks/square/:accountKey', express.raw({ type: 'application/json',
 app.post('/webhooks/xero', express.raw({ type: 'application/json', limit: '2mb' }), xeroWebhookReceiver);
 app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
+app.use('/api/integration-jobs', integrationJobsRouter);
 
 // Auth middleware runs on every request — populates req.user from cookie and
 // rejects API calls that aren't on the allowlist of public paths.

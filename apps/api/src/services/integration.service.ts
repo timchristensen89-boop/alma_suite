@@ -33,8 +33,12 @@ import { HttpError } from '../lib/http.js';
 
 type Provider = 'SQUARE' | 'XERO';
 type SquareAccountKey = 'primary' | 'secondary';
+type ImportRunMode = 'MANUAL' | 'SCHEDULED';
 
 const SQUARE_ACCOUNT_KEYS: SquareAccountKey[] = ['primary', 'secondary'];
+const DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS = 14;
+const DEFAULT_SCHEDULED_XERO_BILLS_LIMIT = 100;
+const DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT = 500;
 
 const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ',
@@ -93,6 +97,19 @@ const PROVIDER_COPY: Record<Provider, {
 function actorName(actor?: AuthUser | null) {
   return [actor?.firstName, actor?.lastName].filter(Boolean).join(' ') || actor?.email || 'System';
 }
+
+const integrationSchedulerActor: AuthUser = {
+  id: 'system:integration-scheduler',
+  firstName: 'Integration',
+  lastName: 'Scheduler',
+  email: null,
+  roleTitle: 'System',
+  venue: null,
+  accountType: 'HUMAN',
+  isAdmin: true,
+  role: 'ADMIN',
+  appAccess: []
+};
 
 function hashState(state: string) {
   return crypto.createHash('sha256').update(state).digest('hex');
@@ -1746,7 +1763,7 @@ export const integrationService = {
     };
   },
 
-  async syncSquareLocations(actor: AuthUser, accountInput?: unknown) {
+  async syncSquareLocations(actor: AuthUser, accountInput?: unknown, options?: { syncType?: ImportRunMode }) {
     const accountKey = normaliseSquareAccountKey(accountInput);
     const connection = await connectedSquareConnection(accountKey);
     const response = await listSquareLocations(connection);
@@ -1771,7 +1788,7 @@ export const integrationService = {
       data: {
         provider: 'SQUARE',
         connectionId: updated.id,
-        syncType: 'MANUAL',
+        syncType: options?.syncType ?? 'MANUAL',
         status: 'SUCCESS',
         finishedAt: syncedAt,
         recordsImported: locations.length
@@ -1783,7 +1800,7 @@ export const integrationService = {
       eventType: 'LOCATIONS_SYNCED',
       summary: `${squareAccountConfig(accountKey).label} Square location sync finished: ${locations.length} locations read.`,
       actor,
-      metadata: { accountKey, locationCount: locations.length }
+      metadata: { accountKey, locationCount: locations.length, syncType: options?.syncType ?? 'MANUAL' }
     });
     return {
       provider: 'square' as const,
@@ -1989,7 +2006,11 @@ export const integrationService = {
     };
   },
 
-  async importXeroSupplierContacts(input: unknown, actor: AuthUser): Promise<XeroSupplierContactsImportResult> {
+  async importXeroSupplierContacts(
+    input: unknown,
+    actor: AuthUser,
+    options?: { syncType?: ImportRunMode; eventType?: string }
+  ): Promise<XeroSupplierContactsImportResult> {
     const data = xeroSupplierContactsImportInputSchema.parse(input);
     const limit = data.limit ?? 500;
     const { contacts, connection } = await xeroContacts(limit);
@@ -2081,7 +2102,7 @@ export const integrationService = {
         data: {
           provider: 'XERO',
           connectionId: connection.id,
-          syncType: 'MANUAL',
+          syncType: options?.syncType ?? 'MANUAL',
           status: 'SUCCESS',
           finishedAt: new Date(),
           recordsImported: createdCount,
@@ -2094,10 +2115,10 @@ export const integrationService = {
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
-      eventType: 'SUPPLIER_CONTACTS_IMPORTED',
+      eventType: options?.eventType ?? 'SUPPLIER_CONTACTS_IMPORTED',
       summary: `Xero supplier contact import finished: ${createdCount} created, ${updatedCount} updated, ${skippedCount} skipped.`,
       actor,
-      metadata: { createdCount, updatedCount, skippedCount, conflictCount }
+      metadata: { createdCount, updatedCount, skippedCount, conflictCount, syncType: options?.syncType ?? 'MANUAL' }
     });
 
     return {
@@ -2159,7 +2180,11 @@ export const integrationService = {
     };
   },
 
-  async importXeroSupplierBills(input: unknown, actor: AuthUser): Promise<XeroSupplierBillsImportResult> {
+  async importXeroSupplierBills(
+    input: unknown,
+    actor: AuthUser,
+    options?: { syncType?: ImportRunMode; eventType?: string }
+  ): Promise<XeroSupplierBillsImportResult> {
     const data = xeroSupplierBillsImportInputSchema.parse(input);
     const limit = data.limit ?? 100;
     const { bills, connection } = await xeroBills({
@@ -2323,7 +2348,7 @@ export const integrationService = {
         data: {
           provider: 'XERO',
           connectionId: connection.id,
-          syncType: 'MANUAL',
+          syncType: options?.syncType ?? 'MANUAL',
           status: 'SUCCESS',
           finishedAt: new Date(),
           recordsImported: importedCount,
@@ -2336,10 +2361,10 @@ export const integrationService = {
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
-      eventType: 'SUPPLIER_BILLS_IMPORTED',
+      eventType: options?.eventType ?? 'SUPPLIER_BILLS_IMPORTED',
       summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped, ${duplicateCount} duplicate.`,
       actor,
-      metadata: { importedCount, skippedCount, duplicateCount, supplierCreatedCount, lineCount }
+      metadata: { importedCount, skippedCount, duplicateCount, supplierCreatedCount, lineCount, syncType: options?.syncType ?? 'MANUAL' }
     });
 
     return {
@@ -2350,6 +2375,219 @@ export const integrationService = {
       supplierCreatedCount,
       lineCount,
       warnings
+    };
+  },
+
+  async runScheduledXeroImport(input: Record<string, unknown> = {}) {
+    const generatedAt = new Date();
+    const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS, 180);
+    const billsLimit = clampLimit(input.billsLimit, DEFAULT_SCHEDULED_XERO_BILLS_LIMIT, 100);
+    const contactsLimit = clampLimit(input.contactsLimit, DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT, 500);
+    const includeContacts = input.includeContacts !== false;
+    const includeBills = input.includeBills !== false;
+    const warnings: string[] = [];
+
+    let contacts: XeroSupplierContactsImportResult | null = null;
+    if (includeContacts) {
+      contacts = await integrationService.importXeroSupplierContacts(
+        { importAllCandidates: true, limit: contactsLimit },
+        integrationSchedulerActor,
+        { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_CONTACTS_IMPORTED' }
+      );
+    }
+
+    let bills: XeroSupplierBillsImportResult | null = null;
+    let billCandidates = 0;
+    let billIds: string[] = [];
+    if (includeBills) {
+      const end = generatedAt;
+      const start = new Date(end);
+      start.setDate(start.getDate() - lookbackDays);
+      const startDate = isoDateOnly(start);
+      const endDate = isoDateOnly(end);
+      const preview = await integrationService.previewXeroSupplierBills({
+        startDate,
+        endDate,
+        limit: billsLimit,
+        statuses: 'AUTHORISED,PAID'
+      });
+      const importableBills = preview.bills.filter((bill) =>
+        bill.duplicateStatus === 'new' &&
+        bill.supplierMatchStatus === 'matched' &&
+        bill.lineCount > 0
+      );
+      billCandidates = preview.bills.length;
+      billIds = importableBills.map((bill) => bill.xeroInvoiceId);
+
+      const skippedForReview = preview.bills.length - importableBills.length;
+      if (skippedForReview > 0) {
+        warnings.push(`${skippedForReview} Xero bills were left for manual review because they were duplicates, missing supplier matches, or had no lines.`);
+      }
+
+      if (billIds.length > 0) {
+        bills = await integrationService.importXeroSupplierBills(
+          {
+            billIds,
+            startDate,
+            endDate,
+            limit: billsLimit,
+            allowCreateSuppliers: false,
+            confirmationText: 'IMPORT XERO BILLS'
+          },
+          integrationSchedulerActor,
+          { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_BILLS_IMPORTED' }
+        );
+      } else {
+        const connection = await connectedXeroConnection();
+        await prisma.integrationSyncRun.create({
+          data: {
+            provider: 'XERO',
+            connectionId: connection.id,
+            syncType: 'SCHEDULED',
+            status: 'SUCCESS',
+            finishedAt: new Date(),
+            recordsImported: 0,
+            recordsUpdated: 0,
+            errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : 'No new matched Xero supplier bills to import.'
+          }
+        });
+        await recordEvent({
+          provider: 'XERO',
+          connectionId: connection.id,
+          eventType: 'SCHEDULED_SUPPLIER_BILLS_SKIPPED',
+          summary: 'Scheduled Xero supplier bill import found no new matched bills to import.',
+          actor: integrationSchedulerActor,
+          metadata: {
+            lookbackDays,
+            billsLimit,
+            billsPreviewed: preview.bills.length,
+            skippedForReview
+          }
+        });
+        bills = {
+          generatedAt: new Date().toISOString(),
+          importedCount: 0,
+          skippedCount: skippedForReview,
+          duplicateCount: preview.bills.filter((bill) => bill.duplicateStatus !== 'new').length,
+          supplierCreatedCount: 0,
+          lineCount: 0,
+          warnings
+        };
+      }
+    }
+
+    return {
+      provider: 'xero' as const,
+      mode: 'scheduled',
+      generatedAt: generatedAt.toISOString(),
+      lookbackDays,
+      contactsLimit,
+      billsLimit,
+      includeContacts,
+      includeBills,
+      contacts,
+      bills,
+      billCandidates,
+      billIdsImported: billIds.length,
+      warnings
+    };
+  },
+
+  async runScheduledSquareSync(input: Record<string, unknown> = {}) {
+    const accountInput = optionalText(input.account);
+    const accounts = accountInput
+      ? [normaliseSquareAccountKey(accountInput)]
+      : SQUARE_ACCOUNT_KEYS;
+    const results: Array<{
+      accountKey: SquareAccountKey;
+      label: string;
+      status: 'synced' | 'skipped' | 'error';
+      locationCount: number;
+      message: string;
+    }> = [];
+
+    for (const accountKey of accounts) {
+      const label = squareAccountConfig(accountKey).label;
+      try {
+        const status = await providerStatus('SQUARE', accountKey);
+        if (!status.connected) {
+          results.push({
+            accountKey,
+            label,
+            status: 'skipped',
+            locationCount: 0,
+            message: status.connectBlockedReason ?? `${label} Square is not connected.`
+          });
+          continue;
+        }
+
+        const sync = await integrationService.syncSquareLocations(
+          integrationSchedulerActor,
+          accountKey,
+          { syncType: 'SCHEDULED' }
+        );
+        results.push({
+          accountKey,
+          label,
+          status: 'synced',
+          locationCount: sync.locationCount,
+          message: 'Square locations synced. Payments, orders and inventory were not imported in this scheduled maintenance run.'
+        });
+      } catch (error) {
+        const connection = await connectionSelect('SQUARE', accountKey).catch(() => null);
+        if (connection) {
+          await prisma.integrationSyncRun.create({
+            data: {
+              provider: 'SQUARE',
+              connectionId: connection.id,
+              syncType: 'SCHEDULED',
+              status: 'ERROR',
+              finishedAt: new Date(),
+              errorSummary: safeErrorMessage(error).slice(0, 500)
+            }
+          });
+          await recordEvent({
+            provider: 'SQUARE',
+            connectionId: connection.id,
+            eventType: 'SCHEDULED_LOCATION_SYNC_FAILED',
+            summary: `${label} Square scheduled location sync failed.`,
+            actor: integrationSchedulerActor,
+            metadata: { accountKey, message: safeErrorMessage(error) }
+          });
+        }
+        results.push({
+          accountKey,
+          label,
+          status: 'error',
+          locationCount: 0,
+          message: safeErrorMessage(error)
+        });
+      }
+    }
+
+    return {
+      provider: 'square' as const,
+      mode: 'scheduled',
+      generatedAt: new Date().toISOString(),
+      accounts: results,
+      syncedAccounts: results.filter((result) => result.status === 'synced').length,
+      skippedAccounts: results.filter((result) => result.status === 'skipped').length,
+      failedAccounts: results.filter((result) => result.status === 'error').length
+    };
+  },
+
+  async runScheduledIntegrationImports(input: Record<string, unknown> = {}) {
+    const includeSquare = input.includeSquare !== false;
+    const includeXero = input.includeXero !== false;
+    const results: { square: unknown | null; xero: unknown | null } = { square: null, xero: null };
+    if (includeSquare) results.square = await integrationService.runScheduledSquareSync(input.square && typeof input.square === 'object' && !Array.isArray(input.square) ? input.square as Record<string, unknown> : input);
+    if (includeXero) results.xero = await integrationService.runScheduledXeroImport(input.xero && typeof input.xero === 'object' && !Array.isArray(input.xero) ? input.xero as Record<string, unknown> : input);
+    return {
+      generatedAt: new Date().toISOString(),
+      mode: 'scheduled',
+      includeSquare,
+      includeXero,
+      ...results
     };
   },
 

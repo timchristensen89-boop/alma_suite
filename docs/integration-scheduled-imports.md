@@ -1,0 +1,117 @@
+# Scheduled Square and Xero Imports
+
+Alma can run regular guarded import jobs from Cloud Scheduler. These endpoints are not user-authenticated; they require the `INTEGRATION_SCHEDULER_SECRET` bearer token and should only be called by the scheduler.
+
+## Environment
+
+Required API env:
+
+- `INTEGRATION_SCHEDULER_SECRET`
+- Xero OAuth/env: `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URL`, `INTEGRATION_TOKEN_ENCRYPTION_KEY`
+- Square OAuth/env: `SQUARE_PRIMARY_*`, `SQUARE_SECONDARY_*`, `SQUARE_REDIRECT_URI`, `SQUARE_WEBHOOK_URL`, `SQUARE_ENVIRONMENT`, `SQUARE_API_VERSION`
+
+Do not place the real scheduler secret in source control or shell history.
+
+## Endpoints
+
+Production API base:
+
+```text
+https://alma-compliance-api-433873385316.australia-southeast1.run.app
+```
+
+Scheduled endpoints:
+
+```text
+POST /api/integration-jobs/xero/import
+POST /api/integration-jobs/square/sync
+POST /api/integration-jobs/run
+```
+
+Each request must include:
+
+```text
+Authorization: Bearer <INTEGRATION_SCHEDULER_SECRET>
+Content-Type: application/json
+```
+
+## Xero Job
+
+The Xero scheduled job imports:
+
+- supplier contacts marked as suppliers in Xero
+- new authorised or paid supplier bills from the lookback window
+
+It deliberately skips bills that look like duplicates, have no supplier match, or have no line items. Those remain for manual review/import.
+
+Example body:
+
+```json
+{
+  "lookbackDays": 14,
+  "contactsLimit": 500,
+  "billsLimit": 100
+}
+```
+
+## Square Job
+
+The Square scheduled job refreshes token health as needed and syncs locations for the primary and secondary Square accounts. It does not import payments, orders, inventory or sales figures until those read models exist.
+
+Example body:
+
+```json
+{
+  "account": "primary"
+}
+```
+
+Omit `account` to sync both accounts.
+
+## Cloud Scheduler Commands
+
+Create these from a secure shell where the secret is already available in an environment variable. Do not paste the real value into shared notes.
+
+```bash
+API_URL="https://alma-compliance-api-433873385316.australia-southeast1.run.app"
+
+gcloud scheduler jobs create http alma-xero-supplier-import \
+  --project alma-compliance \
+  --location australia-southeast1 \
+  --schedule "10 5 * * *" \
+  --time-zone "Australia/Sydney" \
+  --uri "${API_URL}/api/integration-jobs/xero/import" \
+  --http-method POST \
+  --headers "Authorization=Bearer ${INTEGRATION_SCHEDULER_SECRET},Content-Type=application/json" \
+  --message-body '{"lookbackDays":14,"contactsLimit":500,"billsLimit":100}'
+
+gcloud scheduler jobs create http alma-square-location-sync \
+  --project alma-compliance \
+  --location australia-southeast1 \
+  --schedule "25 5 * * *" \
+  --time-zone "Australia/Sydney" \
+  --uri "${API_URL}/api/integration-jobs/square/sync" \
+  --http-method POST \
+  --headers "Authorization=Bearer ${INTEGRATION_SCHEDULER_SECRET},Content-Type=application/json" \
+  --message-body '{}'
+```
+
+## Manual Smoke Test
+
+Use a short-lived local variable and do not print it:
+
+```bash
+API_URL="https://alma-compliance-api-433873385316.australia-southeast1.run.app"
+
+curl -sS -X POST "${API_URL}/api/integration-jobs/run" \
+  -H "Authorization: Bearer ${INTEGRATION_SCHEDULER_SECRET}" \
+  -H "Content-Type: application/json" \
+  --data '{"includeSquare":true,"includeXero":true,"lookbackDays":7}' \
+  | jq .
+```
+
+Expected proof:
+
+- `IntegrationSyncRun.syncType` is `SCHEDULED`
+- Square only reports location sync results
+- Xero imports only new matched supplier bills and safe supplier contacts
