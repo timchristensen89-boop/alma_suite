@@ -2326,7 +2326,7 @@ export function AdminPage({
             </div>
           </Card>
         </div>
-        <div className="admin-grid three">
+        <div className="admin-settings-link-list">
           {ADMIN_ROUTE_GROUPS.map((group) => (
             <Card key={group.title} title={group.title} subtitle="Open the page for that workflow">
               <div className="admin-card-list">
@@ -2971,7 +2971,7 @@ export function AdminPage({
           title={showXero && !showIntegrations ? 'Xero integration controls.' : 'Connect the systems that power trading.'}
           description={showXero && !showIntegrations ? 'Preview first, then import selected supplier contacts or bills.' : 'Connection health and setup entry points live here.'}
         />
-        <div className="admin-grid three">
+        <div className="admin-integration-list">
           {integrations ? (
             <>
               {(showXero && !showIntegrations ? [integrations.xero] : [integrations.square, integrations.xero]).map((integration) => (
