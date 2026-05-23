@@ -19,6 +19,8 @@ import type {
   XeroConnectionHealthPayload
 } from '@alma/shared';
 import {
+  squareMenuMappingQuerySchema,
+  squareMenuMappingUpdateSchema,
   xeroSupplierBillsImportInputSchema,
   xeroSupplierContactsImportInputSchema
 } from '@alma/shared';
@@ -455,6 +457,38 @@ type SquareOrder = {
 
 type SquareOrdersSearchResponse = {
   orders?: SquareOrder[];
+  cursor?: string;
+};
+
+type SquareCatalogMoney = {
+  amount?: number;
+  currency?: string;
+};
+
+type SquareCatalogObject = {
+  id?: string;
+  type?: string;
+  is_deleted?: boolean;
+  present_at_location_ids?: string[];
+  absent_at_location_ids?: string[];
+  item_data?: {
+    name?: string;
+    category_id?: string;
+    variations?: SquareCatalogObject[];
+  };
+  item_variation_data?: {
+    name?: string;
+    item_id?: string;
+    sku?: string;
+    price_money?: SquareCatalogMoney;
+  };
+  category_data?: {
+    name?: string;
+  };
+};
+
+type SquareCatalogListResponse = {
+  objects?: SquareCatalogObject[];
   cursor?: string;
 };
 
@@ -898,6 +932,80 @@ async function listSquareLocations(connection: IntegrationConnection) {
     locations: response.data.locations ?? [],
     tokenStatus: response.tokenStatus
   };
+}
+
+async function listSquareCatalog(connection: IntegrationConnection) {
+  let currentConnection = connection;
+  const objects: SquareCatalogObject[] = [];
+  let cursor: string | undefined;
+  let tokenStatus: 'healthy' | 'refreshed' = 'healthy';
+
+  do {
+    const params = new URLSearchParams({ types: 'ITEM,CATEGORY', limit: '1000' });
+    if (cursor) params.set('cursor', cursor);
+    const response = await squareGetJson<SquareCatalogListResponse>(`/catalog/list?${params.toString()}`, {
+      connection: currentConnection
+    });
+    currentConnection = response.connection;
+    if (response.tokenStatus === 'refreshed') tokenStatus = 'refreshed';
+    objects.push(...(response.data.objects ?? []));
+    cursor = response.data.cursor;
+  } while (cursor);
+
+  return { connection: currentConnection, objects, tokenStatus };
+}
+
+function jsonSafe(value: unknown): Prisma.InputJsonValue {
+  return JSON.parse(JSON.stringify(value ?? {})) as Prisma.InputJsonValue;
+}
+
+function squareCatalogCandidates(objects: SquareCatalogObject[]) {
+  const categories = new Map<string, string>();
+  for (const object of objects) {
+    if (object.type === 'CATEGORY' && object.id) {
+      categories.set(object.id, optionalText(object.category_data?.name) ?? 'Uncategorised');
+    }
+  }
+
+  return objects
+    .filter((object) => object.type === 'ITEM' && object.id && object.item_data?.name)
+    .flatMap((item) => {
+      const itemId = item.id!;
+      const itemName = optionalText(item.item_data?.name) ?? 'Unnamed Square item';
+      const categoryName = item.item_data?.category_id ? categories.get(item.item_data.category_id) ?? null : null;
+      const variations = item.item_data?.variations?.length ? item.item_data.variations : [null];
+      return variations.map((variation) => {
+        const variationData = variation?.item_variation_data;
+        const variationId = optionalText(variation?.id) ?? '';
+        const price = variationData?.price_money;
+        return {
+          squareItemId: itemId,
+          squareVariationId: variationId,
+          name: itemName,
+          variationName: optionalText(variationData?.name),
+          categoryName,
+          sku: optionalText(variationData?.sku),
+          priceMoneyAmount: typeof price?.amount === 'number' ? Math.round(price.amount) : null,
+          currency: optionalText(price?.currency),
+          enabledLocationIds: variation?.present_at_location_ids ?? item.present_at_location_ids ?? [],
+          isDeleted: Boolean(item.is_deleted || variation?.is_deleted),
+          raw: jsonSafe({ item, variation })
+        };
+      });
+    });
+}
+
+function recipeMatchConfidence(squareName: string, recipeTitle: string) {
+  const left = normaliseMatchText(squareName);
+  const right = normaliseMatchText(recipeTitle);
+  if (!left || !right) return 0;
+  if (left === right) return 1;
+  if (left.includes(right) || right.includes(left)) return 0.82;
+  const leftWords = new Set(left.split(' ').filter(Boolean));
+  const rightWords = new Set(right.split(' ').filter(Boolean));
+  const intersection = Array.from(leftWords).filter((word) => rightWords.has(word)).length;
+  const union = new Set([...leftWords, ...rightWords]).size || 1;
+  return intersection / union;
 }
 
 async function listSquarePayments(input: {
@@ -2073,6 +2181,344 @@ export const integrationService = {
       locations,
       tokenStatus: response.tokenStatus
     };
+  },
+
+  async syncSquareCatalog(actor: AuthUser, accountInput?: unknown) {
+    const accountKey = normaliseSquareAccountKey(accountInput);
+    const connection = await connectedSquareConnection(accountKey);
+    const response = await listSquareCatalog(connection);
+    const syncedAt = new Date();
+    const candidates = squareCatalogCandidates(response.objects);
+    const recipes = await prisma.recipe.findMany({
+      where: { status: 'ACTIVE', isPrepRecipe: false },
+      select: { id: true, title: true, venue: true }
+    });
+    let candidatesUpserted = 0;
+    let mappingsCreated = 0;
+    let mappingsPreserved = 0;
+
+    await prisma.$transaction(async (tx) => {
+      for (const candidate of candidates) {
+        await tx.squareCatalogItem.upsert({
+          where: {
+            accountKey_squareItemId_squareVariationId: {
+              accountKey,
+              squareItemId: candidate.squareItemId,
+              squareVariationId: candidate.squareVariationId
+            }
+          },
+          create: {
+            accountKey,
+            squareItemId: candidate.squareItemId,
+            squareVariationId: candidate.squareVariationId,
+            name: candidate.name,
+            variationName: candidate.variationName,
+            categoryName: candidate.categoryName,
+            sku: candidate.sku,
+            priceMoneyAmount: candidate.priceMoneyAmount,
+            currency: candidate.currency,
+            enabledLocationIds: candidate.enabledLocationIds,
+            raw: candidate.raw,
+            isDeleted: candidate.isDeleted,
+            syncedAt
+          },
+          update: {
+            name: candidate.name,
+            variationName: candidate.variationName,
+            categoryName: candidate.categoryName,
+            sku: candidate.sku,
+            priceMoneyAmount: candidate.priceMoneyAmount,
+            currency: candidate.currency,
+            enabledLocationIds: candidate.enabledLocationIds,
+            raw: candidate.raw,
+            isDeleted: candidate.isDeleted,
+            syncedAt
+          }
+        });
+        candidatesUpserted += 1;
+
+        const existing = await tx.squareMenuRecipeMapping.findUnique({
+          where: {
+            accountKey_squareItemId_squareVariationId: {
+              accountKey,
+              squareItemId: candidate.squareItemId,
+              squareVariationId: candidate.squareVariationId
+            }
+          }
+        });
+        const bestMatch = recipes
+          .map((recipe) => ({ recipe, confidence: recipeMatchConfidence(candidate.name, recipe.title) }))
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+        const confidence = bestMatch?.confidence && bestMatch.confidence >= 0.45 ? bestMatch.confidence : null;
+        const suggestedStatus = confidence && confidence >= 0.75 ? 'NEEDS_REVIEW' : 'UNMAPPED';
+
+        if (!existing) {
+          await tx.squareMenuRecipeMapping.create({
+            data: {
+              accountKey,
+              venue: bestMatch?.recipe.venue ?? null,
+              squareItemId: candidate.squareItemId,
+              squareVariationId: candidate.squareVariationId,
+              squareItemName: candidate.name,
+              squareVariationName: candidate.variationName,
+              categoryName: candidate.categoryName,
+              priceMoneyAmount: candidate.priceMoneyAmount,
+              currency: candidate.currency,
+              status: candidate.isDeleted ? 'IGNORED' : suggestedStatus,
+              confidence,
+              notes: confidence ? `Suggested match: ${bestMatch?.recipe.title}` : null
+            }
+          });
+          mappingsCreated += 1;
+        } else {
+          mappingsPreserved += 1;
+          await tx.squareMenuRecipeMapping.update({
+            where: { id: existing.id },
+            data: {
+              squareItemName: candidate.name,
+              squareVariationName: candidate.variationName,
+              categoryName: candidate.categoryName,
+              priceMoneyAmount: candidate.priceMoneyAmount,
+              currency: candidate.currency,
+              confidence: existing.status === 'MAPPED' || existing.status === 'IGNORED'
+                ? existing.confidence
+                : confidence,
+              status: existing.status === 'UNMAPPED' && suggestedStatus === 'NEEDS_REVIEW'
+                ? 'NEEDS_REVIEW'
+                : existing.status
+            }
+          });
+        }
+      }
+
+      await tx.integrationSyncRun.create({
+        data: {
+          provider: 'SQUARE',
+          connectionId: response.connection.id,
+          syncType: 'MANUAL',
+          status: 'SUCCESS',
+          finishedAt: syncedAt,
+          recordsImported: candidates.length,
+          recordsUpdated: mappingsPreserved
+        }
+      });
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      connectionId: response.connection.id,
+      eventType: 'SQUARE_CATALOG_SYNCED',
+      summary: `${squareAccountConfig(accountKey).label} Square catalogue sync finished: ${candidates.length} menu candidates.`,
+      actor,
+      metadata: { accountKey, candidates: candidates.length, mappingsCreated, mappingsPreserved }
+    });
+
+    return {
+      provider: 'square' as const,
+      accountKey,
+      label: squareAccountConfig(accountKey).label,
+      syncedAt: syncedAt.toISOString(),
+      catalogItemsRead: candidates.length,
+      candidatesUpserted,
+      mappingsCreated,
+      mappingsPreserved,
+      deletedMarked: candidates.filter((candidate) => candidate.isDeleted).length,
+      warnings: candidates.length ? [] : ['No Square catalogue item variations were returned for this account.']
+    };
+  },
+
+  async listSquareMenuMappings(input: unknown) {
+    const query = squareMenuMappingQuerySchema.parse(input ?? {});
+    const accountKey = normaliseSquareAccountKey(query.accountKey);
+    const where: Prisma.SquareMenuRecipeMappingWhereInput = {
+      accountKey,
+      ...(query.status ? { status: query.status } : {}),
+      ...(query.venue ? { venue: query.venue } : {}),
+      ...(query.category ? { categoryName: query.category } : {}),
+      ...(query.search ? {
+        OR: [
+          { squareItemName: { contains: query.search, mode: 'insensitive' } },
+          { squareVariationName: { contains: query.search, mode: 'insensitive' } },
+          { categoryName: { contains: query.search, mode: 'insensitive' } },
+          { almaRecipe: { title: { contains: query.search, mode: 'insensitive' } } }
+        ]
+      } : {})
+    };
+    const [mappings, summaryRows, catalogRows] = await Promise.all([
+      prisma.squareMenuRecipeMapping.findMany({
+        where,
+        orderBy: [{ status: 'asc' }, { squareItemName: 'asc' }, { squareVariationName: 'asc' }],
+        include: {
+          almaRecipe: {
+            select: {
+              id: true,
+              title: true,
+              venue: true,
+              category: true,
+              estimatedCost: true,
+              salePriceCents: true
+            }
+          },
+          stockItem: { select: { id: true, name: true, unit: true, avgCostCents: true } }
+        },
+        take: 500
+      }),
+      prisma.squareMenuRecipeMapping.groupBy({
+        by: ['status'],
+        where: { accountKey },
+        _count: { _all: true }
+      }),
+      prisma.squareCatalogItem.findMany({
+        where: { accountKey },
+        select: { categoryName: true, syncedAt: true },
+        orderBy: { syncedAt: 'desc' }
+      })
+    ]);
+    const countFor = (status: string) => summaryRows.find((row) => row.status === status)?._count._all ?? 0;
+    const categories = Array.from(new Set(catalogRows
+      .map((row) => row.categoryName)
+      .filter((value): value is string => Boolean(value)))).sort();
+    return {
+      generatedAt: new Date().toISOString(),
+      accountKey,
+      summary: {
+        total: summaryRows.reduce((sum, row) => sum + row._count._all, 0),
+        mapped: countFor('MAPPED'),
+        unmapped: countFor('UNMAPPED'),
+        ignored: countFor('IGNORED'),
+        needsReview: countFor('NEEDS_REVIEW'),
+        lastSyncedAt: catalogRows[0]?.syncedAt.toISOString() ?? null
+      },
+      filters: query,
+      categories,
+      mappings: mappings.map((mapping) => {
+        const recipeCostCents = mapping.almaRecipe ? Math.round(mapping.almaRecipe.estimatedCost * 100) : null;
+        const salePriceCents = mapping.priceMoneyAmount;
+        const grossProfitCents = salePriceCents !== null && recipeCostCents !== null ? salePriceCents - recipeCostCents : null;
+        return {
+          id: mapping.id,
+          accountKey: mapping.accountKey as SquareAccountKey,
+          venue: mapping.venue,
+          squareItemId: mapping.squareItemId,
+          squareVariationId: mapping.squareVariationId,
+          squareItemName: mapping.squareItemName,
+          squareVariationName: mapping.squareVariationName,
+          categoryName: mapping.categoryName,
+          priceMoneyAmount: salePriceCents,
+          currency: mapping.currency,
+          almaRecipeId: mapping.almaRecipeId,
+          stockItemId: mapping.stockItemId,
+          status: mapping.status,
+          confidence: mapping.confidence,
+          notes: mapping.notes,
+          mappedAt: toIso(mapping.mappedAt),
+          mappedById: mapping.mappedById,
+          createdAt: mapping.createdAt.toISOString(),
+          updatedAt: mapping.updatedAt.toISOString(),
+          almaRecipe: mapping.almaRecipe,
+          stockItem: mapping.stockItem,
+          margin: {
+            salePriceCents,
+            recipeCostCents,
+            grossProfitCents,
+            foodCostPercent: salePriceCents && recipeCostCents !== null
+              ? Math.round((recipeCostCents / salePriceCents) * 1000) / 10
+              : null
+          }
+        };
+      })
+    };
+  },
+
+  async squareRecipeOptions() {
+    const [recipes, stockItems] = await Promise.all([
+      prisma.recipe.findMany({
+        where: { status: 'ACTIVE', isPrepRecipe: false },
+        orderBy: [{ title: 'asc' }],
+        include: { _count: { select: { lines: true } } }
+      }),
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        orderBy: { name: 'asc' },
+        select: { id: true, name: true, unit: true, avgCostCents: true }
+      })
+    ]);
+    return {
+      generatedAt: new Date().toISOString(),
+      recipes: recipes.map((recipe) => ({
+        id: recipe.id,
+        title: recipe.title,
+        venue: recipe.venue,
+        category: recipe.category,
+        estimatedCost: recipe.estimatedCost,
+        salePriceCents: recipe.salePriceCents,
+        lineCount: recipe._count.lines
+      })),
+      stockItems
+    };
+  },
+
+  async updateSquareMenuMapping(id: string, input: unknown, actor: AuthUser) {
+    const data = squareMenuMappingUpdateSchema.parse(input ?? {});
+    const existing = await prisma.squareMenuRecipeMapping.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Square menu mapping not found.');
+    const almaRecipeId = data.almaRecipeId === '' ? null : data.almaRecipeId ?? existing.almaRecipeId;
+    const stockItemId = data.stockItemId === '' ? null : data.stockItemId ?? existing.stockItemId;
+    if (almaRecipeId) {
+      const recipe = await prisma.recipe.findUnique({ where: { id: almaRecipeId }, select: { id: true, venue: true } });
+      if (!recipe) throw new HttpError(400, 'Selected Alma recipe was not found.');
+    }
+    if (stockItemId) {
+      const stockItem = await prisma.stockItem.findUnique({ where: { id: stockItemId }, select: { id: true } });
+      if (!stockItem) throw new HttpError(400, 'Selected stock item was not found.');
+    }
+    const status = data.status ?? (almaRecipeId || stockItemId ? 'MAPPED' : existing.status);
+    const updated = await prisma.squareMenuRecipeMapping.update({
+      where: { id },
+      data: {
+        almaRecipeId,
+        stockItemId,
+        status,
+        notes: data.notes === '' ? null : data.notes ?? existing.notes,
+        mappedAt: status === 'MAPPED' ? new Date() : status === 'UNMAPPED' ? null : existing.mappedAt,
+        mappedById: status === 'MAPPED' ? actor.id : status === 'UNMAPPED' ? null : existing.mappedById
+      }
+    });
+    await recordEvent({
+      provider: 'SQUARE',
+      eventType: 'SQUARE_MENU_MAPPING_UPDATED',
+      summary: `Square menu item ${updated.squareItemName} mapping updated.`,
+      actor,
+      metadata: { accountKey: updated.accountKey, mappingId: updated.id, status: updated.status }
+    });
+    return integrationService.listSquareMenuMappings({ accountKey: updated.accountKey, search: updated.squareItemName });
+  },
+
+  async ignoreSquareMenuMapping(id: string, actor: AuthUser) {
+    return integrationService.updateSquareMenuMapping(id, { status: 'IGNORED' }, actor);
+  },
+
+  async clearSquareMenuMapping(id: string, actor: AuthUser) {
+    return integrationService.updateSquareMenuMapping(id, {
+      almaRecipeId: null,
+      stockItemId: null,
+      status: 'UNMAPPED',
+      notes: null
+    }, actor);
+  },
+
+  async getRecipeMappingForSquareItem(accountInput: unknown, squareItemId: string, squareVariationId = '') {
+    const accountKey = normaliseSquareAccountKey(accountInput);
+    return prisma.squareMenuRecipeMapping.findUnique({
+      where: {
+        accountKey_squareItemId_squareVariationId: {
+          accountKey,
+          squareItemId,
+          squareVariationId
+        }
+      },
+      include: { almaRecipe: { include: { lines: true } }, stockItem: true }
+    });
   },
 
   async checkXeroHealth(actor: AuthUser): Promise<XeroConnectionHealthPayload> {

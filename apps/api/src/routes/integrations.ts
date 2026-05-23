@@ -95,6 +95,14 @@ integrationsRouter.post('/square/import-sales', async (req, res, next) => {
   }
 });
 
+integrationsRouter.post('/square/sync-catalog', async (req, res, next) => {
+  try {
+    res.json(await integrationService.syncSquareCatalog(req.user!, req.query.account ?? req.body?.accountKey ?? req.body?.account));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/xero/health-check', async (req, res, next) => {
   try {
     res.json(await integrationService.checkXeroHealth(req.user!));

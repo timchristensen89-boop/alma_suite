@@ -19,6 +19,7 @@ import { integrationsRouter, squareWebhookReceiver, xeroWebhookReceiver } from '
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
+import { menuMappingsRouter } from './routes/menu-mappings.js';
 import { messagesRouter } from './routes/messages.js';
 import { notificationsRouter } from './routes/notifications.js';
 import { reportsRouter } from './routes/reports.js';
@@ -70,6 +71,7 @@ app.get('/', (_req, res) => {
       'settings',
       'admin',
       'integrations',
+      'menu-mappings',
       'communications',
       'notifications',
       'search'
@@ -107,6 +109,7 @@ app.use('/api/licenses', liquorRouter);
 app.use('/api/liquor', liquorRouter);
 app.use('/api/admin', adminRouter);
 app.use('/api/integrations', integrationsRouter);
+app.use('/api/menu-mappings', menuMappingsRouter);
 app.use('/api/settings', settingsRouter);
 app.use('/api/shift-task-rules', shiftTaskRulesRouter);
 app.use('/api/shift-task-assignments', shiftTaskAssignmentsRouter);

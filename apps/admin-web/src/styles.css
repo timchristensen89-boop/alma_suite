@@ -311,3 +311,94 @@
     grid-template-columns: 1fr;
   }
 }
+.square-menu-mapping-page {
+  max-width: 1480px;
+}
+
+.square-menu-toolbar {
+  align-items: end;
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(180px, 0.9fr) minmax(220px, 1.2fr) minmax(150px, 0.7fr) minmax(170px, 0.8fr) auto;
+}
+
+.square-menu-help {
+  margin-top: 14px;
+}
+
+.square-menu-summary .card-body {
+  display: grid;
+  gap: 6px;
+}
+
+.square-menu-summary strong {
+  color: var(--color-text);
+  font-size: 28px;
+  line-height: 1;
+}
+
+.square-menu-summary span {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.square-menu-card-list {
+  display: grid;
+  gap: 14px;
+}
+
+.square-menu-title {
+  display: inline-grid;
+  gap: 2px;
+}
+
+.square-menu-title small,
+.square-menu-current small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.square-menu-row-layout {
+  align-items: end;
+  display: grid;
+  gap: 14px;
+  grid-template-columns: minmax(220px, 1fr) minmax(240px, 1.2fr) minmax(220px, 0.9fr) auto;
+}
+
+.square-menu-current {
+  display: grid;
+  gap: 5px;
+}
+
+.square-menu-current span {
+  color: var(--color-text);
+  font-weight: 800;
+}
+
+.square-menu-actions {
+  justify-content: flex-end;
+}
+
+@media (max-width: 900px) {
+  .split-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .square-menu-toolbar,
+  .square-menu-row-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .square-menu-actions {
+    justify-content: stretch;
+  }
+
+  .admin-form-actions .btn,
+  .admin-row-actions .btn {
+    width: 100%;
+  }
+}
