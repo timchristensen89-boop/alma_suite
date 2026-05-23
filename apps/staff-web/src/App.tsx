@@ -9134,6 +9134,8 @@ function RosterPage({
               <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
               <span><strong>{visibleRoster.length}</strong> shifts</span>
               <span><strong>{roundHours(totalHours)}</strong> hours</span>
+              <span><strong>{publishedCount}</strong> live</span>
+              {draftCount ? <span className="is-warning"><strong>{draftCount}</strong> drafts</span> : null}
             </div>
           </div>
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
@@ -9226,6 +9228,8 @@ function RosterPage({
                             <span
                               key={shift.id}
                               draggable
+                              role="button"
+                              tabIndex={0}
                               className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isUnallocatedProfile(shift.staffProfile) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''}`}
                               style={areaStyle(shift.area || row.label)}
                               onDragStart={(event) => handleDragStart(event, shift)}
@@ -9234,10 +9238,21 @@ function RosterPage({
                                 event.stopPropagation();
                                 startEditShift(shift);
                               }}
+                              onKeyDown={(event) => {
+                                if (event.key !== 'Enter' && event.key !== ' ') return;
+                                event.preventDefault();
+                                event.stopPropagation();
+                                startEditShift(shift);
+                              }}
                               onContextMenu={(event) => openShiftContextMenu(event, shift)}
                             >
-                              <strong>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}</strong>
-                              <span>{viewMode === 'team' ? shift.area || shift.roleTitle || 'Shift' : `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}</span>
+                              <span className="deputy-shift-topline">
+                                <strong>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}</strong>
+                                <em className={`deputy-shift-status-pill is-${shift.status.toLowerCase()}`}>
+                                  {shift.status === 'PUBLISHED' ? 'Live' : shift.status.toLowerCase()}
+                                </em>
+                              </span>
+                              <span className="deputy-shift-person">{viewMode === 'team' ? shift.area || shift.roleTitle || 'Shift' : `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}</span>
                               <small>
                                 {isUnallocatedProfile(shift.staffProfile)
                                   ? 'Unallocated'

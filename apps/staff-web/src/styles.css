@@ -2756,8 +2756,8 @@
 
 .deputy-roster-layout {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(292px, 320px);
-  gap: 18px;
+  grid-template-columns: minmax(0, 1fr) minmax(306px, 336px);
+  gap: 20px;
   align-items: start;
 }
 
@@ -2952,11 +2952,11 @@
 .deputy-schedule-panel {
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.28);
-  border-radius: 14px;
+  border-radius: 18px;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94)),
     var(--color-surface);
-  box-shadow: 0 24px 56px rgba(15, 23, 42, 0.1);
+  box-shadow: 0 28px 70px rgba(15, 23, 42, 0.11);
 }
 
 .roster-board-command {
@@ -2964,11 +2964,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 16px 18px;
+  padding: 18px 20px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.24);
   background:
-    radial-gradient(circle at top left, rgba(36, 76, 159, 0.09), transparent 34%),
-    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.9));
+    radial-gradient(circle at top left, rgba(36, 76, 159, 0.12), transparent 36%),
+    linear-gradient(135deg, rgba(255, 255, 255, 0.99), rgba(248, 250, 252, 0.92));
 }
 
 .roster-board-command > div:first-child {
@@ -3001,13 +3001,23 @@
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  min-height: 34px;
-  padding: 7px 10px;
+  min-height: 36px;
+  padding: 8px 11px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.76);
   color: var(--color-text-muted);
   box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+}
+
+.roster-board-command-meta span.is-warning {
+  border-color: rgba(245, 158, 11, 0.34);
+  background: rgba(255, 251, 235, 0.86);
+  color: #92400e;
+}
+
+.roster-board-command-meta span.is-warning strong {
+  color: #78350f;
 }
 
 .roster-board-command-meta strong {
@@ -3024,7 +3034,11 @@
 .deputy-schedule-grid {
   display: grid;
   grid-template-columns: minmax(136px, 0.78fr) repeat(7, minmax(112px, 1fr));
-  background: rgba(148, 163, 184, 0.2);
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  background:
+    linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
+    rgba(148, 163, 184, 0.18);
+  background-size: 100% 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
@@ -3056,8 +3070,8 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  min-height: 64px;
-  background: rgba(248, 250, 252, 0.96);
+  min-height: 72px;
+  background: rgba(248, 250, 252, 0.97);
   backdrop-filter: blur(12px);
 }
 
@@ -3079,7 +3093,7 @@
   flex-direction: column;
   gap: 2px;
   justify-content: center;
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .deputy-day-head strong {
@@ -3095,7 +3109,8 @@
 }
 
 .deputy-day-head.is-today {
-  background: linear-gradient(180deg, rgba(219, 234, 254, 0.94), var(--color-accent-soft));
+  box-shadow: inset 0 -3px 0 rgba(36, 76, 159, 0.34);
+  background: linear-gradient(180deg, rgba(219, 234, 254, 0.96), rgba(232, 238, 252, 0.94));
   color: var(--color-accent-text);
 }
 
@@ -3136,32 +3151,32 @@
   left: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 8px;
+  grid-template-columns: 34px minmax(0, 1fr);
+  gap: 10px;
   align-items: center;
-  min-height: 88px;
-  padding: 10px;
-  background: rgba(255, 255, 255, 0.96);
+  min-height: 104px;
+  padding: 12px;
+  background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(12px);
 }
 
 .deputy-venue-label,
 .deputy-venue-cell {
-  min-height: 48px;
-  background: #edf2f7;
+  min-height: 54px;
+  background: #eef3f7;
   color: #0f172a;
   font-weight: 800;
 }
 
 .deputy-venue-label {
-  border-top: 2px solid #334155;
+  border-top: 3px solid #334155;
 }
 
 .deputy-venue-cell {
   display: grid;
   place-items: center;
   gap: 0;
-  border-top: 2px solid #334155;
+  border-top: 3px solid #334155;
   cursor: default;
 }
 
@@ -3194,23 +3209,23 @@
 }
 
 .deputy-schedule-cell {
-  min-height: 88px;
+  min-height: 104px;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   align-items: stretch;
-  padding: 7px;
+  padding: 8px;
   border-top: 0;
   border-left: 0;
   background: rgba(255, 255, 255, 0.94);
   text-align: left;
   cursor: pointer;
-  transition: background-color 150ms ease, box-shadow 150ms ease;
+  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
 }
 
 .deputy-schedule-cell:hover {
   background: #f8fafc;
-  box-shadow: inset 0 0 0 1px rgba(36, 76, 159, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(36, 76, 159, 0.16);
 }
 
 .deputy-schedule-cell:focus-visible {
@@ -3265,40 +3280,51 @@
 .deputy-add-shift {
   display: grid;
   place-items: center;
-  min-height: 50px;
+  min-height: 58px;
   border: 1px dashed rgba(100, 116, 139, 0.34);
-  border-radius: 9px;
+  border-radius: 12px;
   color: var(--color-text-subtle);
   font-size: 12px;
   font-weight: 700;
-  background: rgba(248, 250, 252, 0.7);
+  background: rgba(248, 250, 252, 0.62);
+  opacity: 0.82;
 }
 
 .deputy-schedule-cell:hover .deputy-add-shift {
   color: var(--color-accent-text);
   border-color: rgba(36, 76, 159, 0.34);
   background: rgba(36, 76, 159, 0.05);
+  opacity: 1;
 }
 
 .deputy-shift-card {
+  position: relative;
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 4px;
   min-width: 0;
-  padding: 8px 9px;
+  padding: 9px 10px;
+  border: 1px solid color-mix(in srgb, var(--shift-border, var(--color-accent)) 40%, transparent);
   border-left: 4px solid var(--shift-border, var(--color-accent));
-  border-radius: 9px;
-  background: var(--shift-bg, #eef5ff);
+  border-radius: 12px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent),
+    var(--shift-bg, #eef5ff);
   color: var(--shift-text, #102e69);
-  box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.09);
   cursor: grab;
-  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease;
+  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease, border-color 150ms ease;
 }
 
 .deputy-shift-card:hover {
   filter: brightness(0.99);
-  transform: translateY(-1px);
-  box-shadow: 0 14px 28px rgba(15, 23, 42, 0.12);
+  transform: translateY(-2px);
+  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.14);
+}
+
+.deputy-shift-card:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .deputy-shift-card:active {
@@ -3322,8 +3348,9 @@
 }
 
 .deputy-shift-card strong {
-  font-size: 11.5px;
-  font-weight: 800;
+  color: inherit;
+  font-size: 12px;
+  font-weight: 900;
 }
 
 .deputy-shift-card span,
@@ -3336,6 +3363,42 @@
 
 .deputy-shift-card small {
   opacity: 0.78;
+}
+
+.deputy-shift-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-width: 0;
+}
+
+.deputy-shift-person {
+  font-weight: 800;
+}
+
+.deputy-shift-status-pill {
+  flex: 0 0 auto;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: currentColor;
+  font-size: 9.5px;
+  font-style: normal;
+  font-weight: 900;
+  line-height: 1.25;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.deputy-shift-status-pill.is-draft {
+  background: rgba(254, 243, 199, 0.9);
+  color: #92400e;
+}
+
+.deputy-shift-status-pill.is-cancelled {
+  background: rgba(241, 245, 249, 0.96);
+  color: #475569;
 }
 
 .roster-shift-context-menu {
