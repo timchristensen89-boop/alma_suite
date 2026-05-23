@@ -4143,6 +4143,67 @@ export type StockReorderNoticesPayload = {
   scope: { venue: string | null; admin: boolean };
 };
 
+export type StockMenuParRecommendation = {
+  stockItemId: string;
+  sku: string | null;
+  name: string;
+  unit: string;
+  venue: string;
+  category: Pick<StockCategory, 'id' | 'name'> | null;
+  currentOnHand: number | null;
+  currentParLevel: number | null;
+  currentReorderPoint: number | null;
+  recommendedParLevel: number | null;
+  recommendedReorderPoint: number | null;
+  suggestedOrderQuantity: number;
+  avgCostCents: number | null;
+  estimatedOrderCostCents: number | null;
+  menuRecipeCount: number;
+  menuRecipes: Array<Pick<Recipe, 'id' | 'title' | 'venue' | 'category'>>;
+  supplier: Pick<Supplier, 'id' | 'name' | 'email' | 'accountNumber'> | null;
+  supplierSource: 'recent_invoice' | 'none';
+  dataQuality: 'READY' | 'NO_ITEM_SALES' | 'NO_PAR' | 'NO_SUPPLIER' | 'NO_SALES';
+  warnings: string[];
+};
+
+export type StockMenuParRecommendationsPayload = {
+  period: { start: string; end: string; months: number };
+  venues: string[];
+  scope: { venue: string | null; admin: boolean };
+  sales: {
+    totalSalesCents: number;
+    averageDailySalesCents: number | null;
+    daysWithSales: number;
+    source: 'venue_sales_actuals' | 'missing';
+  };
+  summary: {
+    menuItemsReviewed: number;
+    stockItemsReviewed: number;
+    readyToOrder: number;
+    missingItemSales: boolean;
+    missingSupplierCount: number;
+  };
+  recommendations: StockMenuParRecommendation[];
+  warnings: string[];
+};
+
+export type StockSupplierOrderLineInput = {
+  stockItemId: string;
+  name: string;
+  quantity: number;
+  unit: string;
+  note?: string;
+};
+
+export type StockSupplierOrderEmailResult = {
+  status: 'SENT' | 'EMAIL_NOT_CONFIGURED';
+  supplierEmail: string;
+  subject: string;
+  body: string;
+  sentAt: string | null;
+  warning: string | null;
+};
+
 const emptyStringToUndefined = (value: unknown) => (value === '' || value === null ? undefined : value);
 
 export const venueStockItemUpdateInputSchema = z.object({
@@ -4201,6 +4262,23 @@ export const stockReorderNoticeResolveInputSchema = z.object({
   status: stockReorderNoticeStatusSchema.extract(['RESOLVED', 'DISMISSED'])
 });
 
+export const stockSupplierOrderLineInputSchema = z.object({
+  stockItemId: z.string().min(1, 'Stock item is required'),
+  name: z.string().min(1, 'Item name is required'),
+  quantity: z.coerce.number().positive('Order quantity must be greater than zero'),
+  unit: z.string().min(1, 'Unit is required'),
+  note: z.string().optional().or(z.literal(''))
+});
+
+export const stockSupplierOrderEmailInputSchema = z.object({
+  venue: z.string().min(1, 'Venue is required'),
+  supplierId: z.string().optional().or(z.literal('')),
+  supplierName: z.string().min(1, 'Supplier is required'),
+  supplierEmail: z.string().email('Supplier email is required'),
+  note: z.string().optional().or(z.literal('')),
+  lines: z.array(stockSupplierOrderLineInputSchema).min(1, 'Add at least one order line')
+});
+
 export const stockCategoryCreateInputSchema = z.object({
   name: z.string().min(2, 'Category name is required'),
   description: z.string().optional().or(z.literal(''))
@@ -4245,6 +4323,7 @@ export type StockWastageCreateInput = z.infer<typeof stockWastageCreateInputSche
 export type StockDeliveryCheckCreateInput = z.infer<typeof stockDeliveryCheckCreateInputSchema>;
 export type StockDeliveryCheckUpdateInput = z.infer<typeof stockDeliveryCheckUpdateInputSchema>;
 export type StockReorderNoticeResolveInput = z.infer<typeof stockReorderNoticeResolveInputSchema>;
+export type StockSupplierOrderEmailInput = z.infer<typeof stockSupplierOrderEmailInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Suppliers                                                                  */

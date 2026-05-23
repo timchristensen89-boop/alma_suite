@@ -4,12 +4,16 @@ import {
   stockDeliveryCheckCreateInputSchema,
   stockDeliveryCheckUpdateInputSchema,
   stockReorderNoticeResolveInputSchema,
+  stockSupplierOrderEmailInputSchema,
   stockWastageCreateInputSchema,
   type AuthUser,
   type StockDeliveryCheck,
   type StockDeliveryChecksPayload,
+  type StockMenuParRecommendation,
+  type StockMenuParRecommendationsPayload,
   type StockReorderNotice,
   type StockReorderNoticesPayload,
+  type StockSupplierOrderEmailResult,
   type StockWastagePayload,
   type StockWastageRecord
 } from '@alma/shared';
@@ -60,6 +64,87 @@ function textOrNull(value?: string | null) {
 
 function moneyImpactCents(quantity: number, avgCostCents: number | null | undefined) {
   return avgCostCents ? Math.round(quantity * avgCostCents) : null;
+}
+
+function sixMonthLookback() {
+  const end = new Date();
+  const start = new Date(end);
+  start.setMonth(start.getMonth() - 6);
+  return { start, end };
+}
+
+function isProductionRecipe(row: Pick<Prisma.RecipeGetPayload<object>, 'title' | 'category' | 'subcategory' | 'notes'>) {
+  const value = [
+    row.category ?? '',
+    row.subcategory ?? '',
+    row.title ?? '',
+    row.notes ?? ''
+  ].join(' ').toLowerCase();
+  return /\b(prep|batch|sauce|salsa|syrup|marinade|garnish|mise|component|production)\b/.test(value);
+}
+
+function recommendationQuality(input: {
+  hasSales: boolean;
+  hasPar: boolean;
+  suggestedOrderQuantity: number;
+  supplierId: string | null;
+}) {
+  if (!input.hasSales) return 'NO_SALES' as const;
+  if (!input.hasPar) return 'NO_PAR' as const;
+  if (!input.supplierId) return 'NO_SUPPLIER' as const;
+  return input.suggestedOrderQuantity > 0 ? 'READY' as const : 'NO_ITEM_SALES' as const;
+}
+
+function buildOrderEmail(input: {
+  venue: string;
+  supplierName: string;
+  note?: string | null;
+  lines: Array<{ name: string; quantity: number; unit: string; note?: string | null }>;
+}) {
+  const subject = `Alma stock order - ${input.venue}`;
+  const lines = [
+    `Hi ${input.supplierName},`,
+    '',
+    `Can we please order the following for ${input.venue}:`,
+    '',
+    ...input.lines.map((line) => {
+      const quantity = new Intl.NumberFormat('en-AU', { maximumFractionDigits: 2 }).format(line.quantity);
+      return `- ${line.name}: ${quantity} ${line.unit}${line.note ? ` (${line.note})` : ''}`;
+    }),
+    '',
+    input.note ? `Notes: ${input.note}` : '',
+    '',
+    'Thanks,',
+    'Alma Stock'
+  ].filter((line, index, values) => line || values[index - 1] !== '').join('\n');
+  return { subject, body: lines };
+}
+
+async function sendSupplierOrderEmail(input: {
+  to: string;
+  subject: string;
+  body: string;
+}) {
+  const apiKey = process.env.RESEND_API_KEY;
+  const from = process.env.STOCK_ORDER_EMAIL_FROM ?? process.env.RESEND_FROM ?? process.env.MAIL_FROM ?? process.env.EMAIL_FROM;
+  if (!apiKey || !from) return false;
+  const response = await fetch('https://api.resend.com/emails', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({
+      from,
+      to: [input.to],
+      subject: input.subject,
+      text: input.body
+    })
+  });
+  if (!response.ok) {
+    throw new HttpError(502, 'Supplier order email could not be sent.');
+  }
+  return true;
 }
 
 async function venuesForActor(actor?: AuthUser | null) {
@@ -581,5 +666,183 @@ export const stockOperationsService = {
       include: { stockItem: { select: itemSelect } }
     });
     return toReorderPayload(row);
+  },
+
+  async getMenuParRecommendations(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockMenuParRecommendationsPayload> {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const { start, end } = sixMonthLookback();
+    const [venues, salesEntries, recipes] = await Promise.all([
+      venuesForActor(actor),
+      prisma.salesActualEntry.findMany({
+        where: {
+          ...(venue ? { venue } : {}),
+          serviceDate: { gte: start, lte: end }
+        },
+        orderBy: { serviceDate: 'asc' }
+      }),
+      prisma.recipe.findMany({
+        where: venue ? { OR: [{ venue }, { venue: null }] } : {},
+        include: {
+          lines: {
+            where: { itemId: { not: null } },
+            include: {
+              item: {
+                select: {
+                  ...itemSelect,
+                  venueStock: venue
+                    ? { where: { venue }, take: 1, select: { venue: true, onHand: true, parLevel: true, reorderPoint: true, unitOverride: true, active: true } }
+                    : { select: { venue: true, onHand: true, parLevel: true, reorderPoint: true, unitOverride: true, active: true } }
+                }
+              }
+            },
+            orderBy: { position: 'asc' }
+          }
+        },
+        orderBy: { title: 'asc' }
+      })
+    ]);
+
+    const menuRecipes = recipes.filter((recipe) => !isProductionRecipe(recipe));
+    const stockItemIds = Array.from(new Set(menuRecipes.flatMap((recipe) => recipe.lines.map((line) => line.itemId).filter((id): id is string => Boolean(id)))));
+    const latestSupplierLines = stockItemIds.length
+      ? await prisma.supplierInvoiceLine.findMany({
+          where: { itemId: { in: stockItemIds }, invoice: { ...(venue ? { venue } : {}) } },
+          include: {
+            invoice: {
+              include: { supplier: true }
+            }
+          },
+          orderBy: [{ invoice: { invoiceDate: 'desc' } }, { updatedAt: 'desc' }]
+        })
+      : [];
+    const supplierByItem = new Map<string, typeof latestSupplierLines[number]>();
+    for (const line of latestSupplierLines) {
+      if (line.itemId && !supplierByItem.has(line.itemId)) supplierByItem.set(line.itemId, line);
+    }
+
+    const salesDays = new Set(salesEntries.map((entry) => entry.serviceDate.toISOString().slice(0, 10)));
+    const totalSalesCents = salesEntries.reduce((sum, entry) => sum + entry.salesCents, 0);
+    const hasSales = salesEntries.length > 0;
+    const averageDailySalesCents = salesDays.size > 0 ? Math.round(totalSalesCents / salesDays.size) : null;
+    const recommendationsByItem = new Map<string, StockMenuParRecommendation>();
+
+    for (const recipe of menuRecipes) {
+      for (const line of recipe.lines) {
+        if (!line.itemId || !line.item || line.item.status !== 'ACTIVE') continue;
+        const item = line.item;
+        const venueRows = item.venueStock?.length ? item.venueStock : [{ venue: venue ?? item.venueStock?.[0]?.venue ?? '', onHand: null, parLevel: null, reorderPoint: null, unitOverride: null, active: true }];
+        for (const row of venueRows) {
+          const rowVenue = row.venue || venue || item.venueStock?.[0]?.venue || '';
+          if (!rowVenue) continue;
+          if (venue && rowVenue !== venue) continue;
+          const currentParLevel = row.parLevel ?? item.parLevel ?? null;
+          const currentReorderPoint = row.reorderPoint ?? item.reorderPoint ?? null;
+          const currentOnHand = row.onHand ?? item.onHand ?? null;
+          const threshold = currentReorderPoint ?? currentParLevel ?? 0;
+          const suggestedOrderQuantity = Math.max((currentParLevel ?? threshold) - (currentOnHand ?? 0), 0);
+          const supplierLine = supplierByItem.get(item.id);
+          const supplier = supplierLine
+            ? {
+                id: supplierLine.invoice.supplier?.id ?? supplierLine.invoice.supplierId ?? '',
+                name: supplierLine.invoice.supplier?.name ?? supplierLine.invoice.supplierName,
+                email: supplierLine.invoice.supplier?.email ?? supplierLine.invoice.supplierEmail,
+                accountNumber: supplierLine.invoice.supplier?.accountNumber ?? null
+              }
+            : null;
+          const key = `${rowVenue}:${item.id}`;
+          const existing = recommendationsByItem.get(key);
+          const recipeSummary = { id: recipe.id, title: recipe.title, venue: recipe.venue, category: recipe.category };
+          if (existing) {
+            existing.menuRecipeCount += 1;
+            existing.menuRecipes.push(recipeSummary);
+            continue;
+          }
+          const warnings = [
+            'Item-level POS sales are not connected yet, so this keeps current par levels instead of inventing menu-item demand.',
+            ...(!hasSales ? ['No venue sales actuals found in the six-month review window.'] : []),
+            ...(!currentParLevel ? ['No current par level is set for this venue/item.'] : []),
+            ...(!supplier ? ['No supplier match found from recent invoices.'] : [])
+          ];
+          const dataQuality = recommendationQuality({
+            hasSales,
+            hasPar: Boolean(currentParLevel),
+            suggestedOrderQuantity,
+            supplierId: supplier?.id || null
+          });
+          recommendationsByItem.set(key, {
+            stockItemId: item.id,
+            sku: item.sku,
+            name: item.name,
+            unit: row.unitOverride ?? item.unit,
+            venue: rowVenue,
+            category: item.category,
+            currentOnHand,
+            currentParLevel,
+            currentReorderPoint,
+            recommendedParLevel: currentParLevel,
+            recommendedReorderPoint: currentReorderPoint,
+            suggestedOrderQuantity,
+            avgCostCents: item.avgCostCents,
+            estimatedOrderCostCents: moneyImpactCents(suggestedOrderQuantity, item.avgCostCents),
+            menuRecipeCount: 1,
+            menuRecipes: [recipeSummary],
+            supplier,
+            supplierSource: supplier ? 'recent_invoice' : 'none',
+            dataQuality,
+            warnings
+          });
+        }
+      }
+    }
+
+    const recommendations = Array.from(recommendationsByItem.values()).sort((a, b) => {
+      if (a.venue !== b.venue) return a.venue.localeCompare(b.venue);
+      if (b.suggestedOrderQuantity !== a.suggestedOrderQuantity) return b.suggestedOrderQuantity - a.suggestedOrderQuantity;
+      return a.name.localeCompare(b.name);
+    });
+    return {
+      period: { start: start.toISOString(), end: end.toISOString(), months: 6 },
+      venues,
+      scope: { venue, admin: isAdminActor(actor) },
+      sales: {
+        totalSalesCents,
+        averageDailySalesCents,
+        daysWithSales: salesDays.size,
+        source: hasSales ? 'venue_sales_actuals' : 'missing'
+      },
+      summary: {
+        menuItemsReviewed: menuRecipes.length,
+        stockItemsReviewed: recommendations.length,
+        readyToOrder: recommendations.filter((item) => item.suggestedOrderQuantity > 0).length,
+        missingItemSales: true,
+        missingSupplierCount: recommendations.filter((item) => !item.supplier).length
+      },
+      recommendations,
+      warnings: [
+        'Recommendations are limited to stock items used by item recipes.',
+        'Current sales actuals are venue-level only. Connect Square/POS item-level sales before automatically increasing par levels from menu demand.'
+      ]
+    };
+  },
+
+  async sendSupplierOrderEmail(input: unknown, actor?: AuthUser | null): Promise<StockSupplierOrderEmailResult> {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const data = stockSupplierOrderEmailInputSchema.parse(input);
+    actorVenueScope(actor, data.venue);
+    const { subject, body } = buildOrderEmail({
+      venue: data.venue,
+      supplierName: data.supplierName,
+      note: data.note,
+      lines: data.lines
+    });
+    const sent = await sendSupplierOrderEmail({ to: data.supplierEmail, subject, body });
+    return {
+      status: sent ? 'SENT' : 'EMAIL_NOT_CONFIGURED',
+      supplierEmail: data.supplierEmail,
+      subject,
+      body,
+      sentAt: sent ? new Date().toISOString() : null,
+      warning: sent ? null : 'Stock supplier email is not configured. Copy the order text or add RESEND_API_KEY and STOCK_ORDER_EMAIL_FROM.'
+    };
   }
 };

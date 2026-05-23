@@ -60,6 +60,23 @@ operationsRouter.get('/reorder-notices', async (req, res, next) => {
   }
 });
 
+operationsRouter.get('/menu-par-recommendations', async (req, res, next) => {
+  try {
+    res.json(await stockOperationsService.getMenuParRecommendations(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+operationsRouter.post('/supplier-order-email', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await stockOperationsService.sendSupplierOrderEmail(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 operationsRouter.post('/reorder-notices/:id/resolve', async (req, res, next) => {
   try {
     requireStockManager(req.user);

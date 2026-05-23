@@ -458,6 +458,94 @@ tbody tr.row-interactive {
   flex-wrap: wrap;
 }
 
+.stock-order-action-row,
+.stock-recommendation-summary,
+.stock-order-supplier-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.stock-order-action-row,
+.stock-recommendation-summary {
+  justify-content: flex-start;
+  margin-bottom: 14px;
+}
+
+.stock-recommendation-stack,
+.stock-order-sheet {
+  display: grid;
+  gap: 14px;
+}
+
+.stock-recommendation-table {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+
+.stock-recommendation-table table {
+  min-width: 980px;
+}
+
+.stock-recommendation-table td:first-child {
+  min-width: 240px;
+}
+
+.stock-recommendation-table td:first-child span,
+.stock-recommendation-table td:nth-child(5) span {
+  display: block;
+  margin-top: 3px;
+}
+
+.stock-order-supplier-group {
+  display: grid;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.stock-order-supplier-head span {
+  display: grid;
+  gap: 3px;
+}
+
+.stock-order-line-controls {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.4fr) minmax(220px, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  min-width: min(540px, 100%);
+}
+
+.stock-order-email-result {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+
+.stock-order-email-result p {
+  margin: 0;
+}
+
+.stock-order-email-result pre {
+  max-height: 260px;
+  overflow: auto;
+  margin: 0;
+  padding: 12px;
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  white-space: pre-wrap;
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
 .stock-delivery-lines {
   display: grid;
   gap: 12px;
@@ -679,6 +767,11 @@ tbody tr.row-interactive {
 
   .stock-operation-row-actions {
     justify-content: flex-start;
+  }
+
+  .stock-order-line-controls {
+    grid-template-columns: 1fr;
+    min-width: 0;
   }
 
   .stock-delivery-line {
