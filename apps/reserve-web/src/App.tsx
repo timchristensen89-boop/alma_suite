@@ -26,7 +26,6 @@ import {
   EmptyState,
   GearIcon,
   Input,
-  PageHeader,
   ProductLogo,
   SearchIcon,
   Select,
@@ -1239,23 +1238,49 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
     >
       <div className="reserve-page">
-        <PageHeader
-          eyebrow="ALMA Reserve"
-          title="Reservation overview"
-          description="Build the guest book, keep bookings venue-scoped, and preview online booking safely before any live partner integration."
-          actions={
-            <>
-              <Select
-                label="Venue"
-                value={venueFilter}
-                onChange={(event) => setVenueFilter(event.currentTarget.value)}
-                options={venueOptions}
-              />
-              <Input label="Service date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.currentTarget.value)} />
-              <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>Refresh</Button>
-            </>
-          }
-        />
+        <section className="hero reserve-command-hero">
+          <div className="hero-text">
+            <p className="page-header-eyebrow">Reserve command</p>
+            <h1>Alma Group Reserve</h1>
+            <p>Build the guest book, keep bookings venue-scoped, and preview online booking safely before any live partner integration.</p>
+            <div className="hero-meta">
+              <span className="hero-meta-dot" aria-hidden="true" />
+              <span>{dashboard?.totals.todayBookings ?? 0} bookings today</span>
+              <span aria-hidden="true">·</span>
+              <span>{dashboard?.totals.coversToday ?? 0} covers</span>
+              <span aria-hidden="true">·</span>
+              <span>{venueFilter === 'all' ? 'All venues' : venueFilter}</span>
+            </div>
+          </div>
+          <div className="hero-actions reserve-command-actions">
+            <Button
+              type="button"
+              onClick={() => document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              Review bookings
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              onClick={() => document.getElementById('guests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              Guest CRM
+            </Button>
+            <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>Refresh</Button>
+          </div>
+        </section>
+
+        <Card className="reserve-command-filters" title="Reservation controls" subtitle="Venue and date scope for this dashboard.">
+          <div className="reserve-command-filter-grid">
+            <Select
+              label="Venue"
+              value={venueFilter}
+              onChange={(event) => setVenueFilter(event.currentTarget.value)}
+              options={venueOptions}
+            />
+            <Input label="Service date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.currentTarget.value)} />
+          </div>
+        </Card>
 
         {feedback.target === 'page' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
 

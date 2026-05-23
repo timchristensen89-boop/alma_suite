@@ -16,6 +16,25 @@
   align-items: flex-end;
 }
 
+.reserve-command-hero {
+  align-items: center;
+}
+
+.reserve-command-actions {
+  align-items: center;
+}
+
+.reserve-command-filters .card-body {
+  padding-top: 16px;
+}
+
+.reserve-command-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+
 .reserve-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(340px, 420px);
@@ -810,6 +829,14 @@
 }
 
 @media (max-width: 640px) {
+  .reserve-command-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reserve-command-actions .btn {
+    width: 100%;
+  }
+
   .reserve-form .form-grid.two,
   .reserve-form .form-grid.three {
     grid-template-columns: minmax(0, 1fr);

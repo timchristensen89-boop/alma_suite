@@ -2354,28 +2354,34 @@ export function AdminPage({
 
   return (
     <div className="page-stack">
-      <PageHeader
-        eyebrow="ALMA Admin"
-        title={routeCopy.title}
-        description={routeCopy.description}
-        actions={
-          <div className="inline-actions">
-            {standalone && !isOverview ? (
-              <Button type="button" variant="ghost" onClick={() => { window.location.href = '/'; }}>
-                Admin overview
-              </Button>
-            ) : null}
-            <Button
-              variant="secondary"
-              leftIcon={<IconRefresh size={14} />}
-              onClick={() => void loadDashboard()}
-              disabled={loading}
-            >
-              Refresh
-            </Button>
+      <section className="hero admin-command-hero">
+        <div className="hero-text">
+          <p className="page-header-eyebrow">Admin command</p>
+          <h1>{routeCopy.title}</h1>
+          <p>{routeCopy.description}</p>
+          <div className="hero-meta">
+            <span className="hero-meta-dot" aria-hidden="true" />
+            <span>{overview.readiness.status === 'ready' ? 'Suite setup is operational' : 'Setup needs review'}</span>
+            <span aria-hidden="true">·</span>
+            <span>Generated {formatDate(overview.generatedAt)}</span>
           </div>
-        }
-      />
+        </div>
+        <div className="hero-actions">
+          {standalone && !isOverview ? (
+            <Button type="button" variant="ghost" onClick={() => { window.location.href = '/'; }}>
+              Admin overview
+            </Button>
+          ) : null}
+          <Button
+            variant="secondary"
+            leftIcon={<IconRefresh size={16} />}
+            onClick={() => void loadDashboard()}
+            disabled={loading}
+          >
+            Refresh
+          </Button>
+        </div>
+      </section>
 
       {!standalone && SETTINGS_WEB_URL ? (
         <Card
