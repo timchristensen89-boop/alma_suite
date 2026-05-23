@@ -23,7 +23,6 @@ import {
   DocumentIcon,
   EmptyState,
   Input,
-  PageHeader,
   ProductLogo,
   SearchIcon,
   Select,
@@ -1063,12 +1062,28 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       }
     >
       <div className="giftcards-page">
-        <PageHeader
-          eyebrow={pageCopy.eyebrow}
-          title={pageCopy.title}
-          description={pageCopy.description}
-          actions={activeGiftCardPage === 'orders' ? <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" /> : null}
-        />
+        <section className="hero">
+          <div className="hero-text">
+            <p className="page-header-eyebrow">Gift card command</p>
+            <h1>Alma Group Gift Cards</h1>
+            <p>{pageCopy.description}</p>
+            <div className="hero-meta">
+              <span className="hero-meta-dot" aria-hidden="true" />
+              <span>{activeGiftCardPage === 'orders' ? `${orderActionItems.length} order action${orderActionItems.length === 1 ? '' : 's'}` : pageCopy.title}</span>
+              <span aria-hidden="true">·</span>
+              <span>{loading ? 'Loading card data…' : message && !messageTarget ? 'Could not refresh gift cards' : 'Payment and fulfilment records stay read-only unless actioned'}</span>
+            </div>
+          </div>
+          <div className="hero-actions">
+            <Button type="button" onClick={() => window.location.assign('/redeem')}>Redeem card</Button>
+            <Button type="button" variant="secondary" onClick={() => window.location.assign('/orders')}>View orders</Button>
+          </div>
+        </section>
+        {activeGiftCardPage === 'orders' ? (
+          <Card title="Order search" subtitle="Find a gift card by code, purchaser, recipient, or email.">
+            <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />
+          </Card>
+        ) : null}
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         {activeGiftCardPage === 'orders' ? (
           <>

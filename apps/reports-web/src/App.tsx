@@ -23,7 +23,6 @@ import {
   ChartIcon,
   DocumentIcon,
   Input,
-  PageHeader,
   ProductLogo,
   Select,
   Spinner,
@@ -1988,43 +1987,57 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
     >
       <div className="page-stack reports-page">
-        <PageHeader
-          eyebrow="ALMA Reports"
-          title={activeReport.title}
-          description={`${activeReport.description} Signed in as ${user.firstName}. Reports are read-only and scoped to permitted venues.`}
-          actions={
-            <div className="reports-week-controls">
-              <Select
-                label="Overview range"
-                value={overviewRange}
-                onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
-                options={[
-                  { label: 'Last 7 days', value: '7' },
-                  { label: 'Last 30 days', value: '30' },
-                  { label: 'Last 90 days', value: '90' }
-                ]}
-              />
-              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
-                Prev week
-              </Button>
-              <Input
-                label="Week"
-                type="date"
-                value={selectedWeekStart}
-                onChange={(event) => setSelectedWeekStart(isoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
-              />
-              <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(7)}>
-                Next week
-              </Button>
-              <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(isoDate(startOfWeek(new Date())))}>
-                This week
-              </Button>
-              <Button type="button" variant="secondary" size="sm" onClick={() => void load()} disabled={loading}>
-                Refresh
-              </Button>
+        <section className="hero">
+          <div className="hero-text">
+            <p className="page-header-eyebrow">Reports command</p>
+            <h1>Alma Group Reports</h1>
+            <p>{activeReport.description} Reports are read-only and scoped to permitted venues.</p>
+            <div className="hero-meta">
+              <span className="hero-meta-dot" aria-hidden="true" />
+              <span>{activeReport.label}</span>
+              <span aria-hidden="true">·</span>
+              <span>{loading ? 'Loading live report data…' : `Signed in as ${user.firstName}`}</span>
             </div>
-          }
-        />
+          </div>
+          <div className="hero-actions">
+            <Button type="button" onClick={() => void load()} disabled={loading}>
+              Refresh
+            </Button>
+            <Button type="button" variant="secondary" onClick={exportOverviewCsv}>
+              Export overview
+            </Button>
+          </div>
+        </section>
+
+        <Card title="Report controls" subtitle="Choose the reporting range without changing production data.">
+          <div className="reports-week-controls">
+            <Select
+              label="Overview range"
+              value={overviewRange}
+              onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
+              options={[
+                { label: 'Last 7 days', value: '7' },
+                { label: 'Last 30 days', value: '30' },
+                { label: 'Last 90 days', value: '90' }
+              ]}
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
+              Prev week
+            </Button>
+            <Input
+              label="Week"
+              type="date"
+              value={selectedWeekStart}
+              onChange={(event) => setSelectedWeekStart(isoDate(startOfWeek(new Date(`${event.currentTarget.value}T00:00:00`))))}
+            />
+            <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(7)}>
+              Next week
+            </Button>
+            <Button type="button" variant="ghost" size="sm" onClick={() => setSelectedWeekStart(isoDate(startOfWeek(new Date())))}>
+              This week
+            </Button>
+          </div>
+        </Card>
 
         {message ? <p className="error-text">{message}</p> : null}
         {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}

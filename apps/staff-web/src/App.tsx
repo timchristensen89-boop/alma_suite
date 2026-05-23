@@ -963,11 +963,25 @@ function StaffHome({
 
   return (
     <div className="page-stack staff-settings-page">
-      <PageHeader
-        eyebrow="ALMA Staff"
-        title="One staff authority for every ALMA app"
-        description="This app reads and manages the shared StaffProfile register used by Compliance, Stock, Training, Reports, and future modules."
-      />
+      <section className="hero">
+        <div className="hero-text">
+          <p className="page-header-eyebrow">Staff command</p>
+          <h1>Alma Group Staff</h1>
+          <p>Manage team profiles, onboarding, documents, roles, roster access, and staff app permissions from one shared register.</p>
+          <div className="hero-meta">
+            <span className="hero-meta-dot" aria-hidden="true" />
+            <span>{activeStaff.length} active profiles</span>
+            <span aria-hidden="true">·</span>
+            <span>{readinessActionCount ? `${readinessActionCount} readiness items need review` : 'Staff register is ready for daily use'}</span>
+          </div>
+        </div>
+        <div className="hero-actions">
+          <Button type="button" onClick={() => setForm({ mode: 'create' })}>New staff profile</Button>
+          <NavLink to="/roster">
+            <Button type="button" variant="secondary">Open roster</Button>
+          </NavLink>
+        </div>
+      </section>
 
       <div className="stats-grid staff-settings-stats">
         <StatCard label="Staff profiles" value={staff.length} hint="Shared records" loading={loading} />

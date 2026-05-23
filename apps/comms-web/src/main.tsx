@@ -382,7 +382,25 @@ function HomePage() {
   const urgentThreads = threads.filter((thread) => thread.priority === 'HIGH' || thread.priority === 'URGENT' || thread.actionRequired).slice(0, 4);
 
   return (
-    <PageShell title="Alma Comms" eyebrow="Operational messages" subtitle="Messages, handovers, alerts, and follow-ups for the group.">
+    <section className="comms-page">
+      <section className="hero">
+        <div className="hero-text">
+          <p className="page-header-eyebrow">Comms command</p>
+          <h1>Alma Group Comms</h1>
+          <p>Run operational messages, handovers, alerts, announcements, and follow-ups from the group inbox.</p>
+          <div className="hero-meta">
+            <span className="hero-meta-dot" aria-hidden="true" />
+            <span>{urgentThreads.length ? `${urgentThreads.length} priority thread${urgentThreads.length === 1 ? '' : 's'}` : 'No priority threads'}</span>
+            <span aria-hidden="true">·</span>
+            <span>{loading ? 'Loading inbox…' : message ? 'Could not refresh Comms' : 'Live inbox from Comms'}</span>
+          </div>
+        </div>
+        <div className="hero-actions">
+          <NavLink className="btn btn-primary" to="/compose">New message</NavLink>
+          <NavLink className="btn btn-secondary" to="/inbox">Open inbox</NavLink>
+        </div>
+      </section>
+
       <div className="comms-grid">
         <Card>
           <h2>Inbox</h2>
@@ -412,7 +430,7 @@ function HomePage() {
         {message ? <p className="comms-error">{message}</p> : null}
         {!loading && !message ? <ThreadList threads={urgentThreads} /> : null}
       </Card>
-    </PageShell>
+    </section>
   );
 }
 

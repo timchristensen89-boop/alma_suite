@@ -75,25 +75,29 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <Card
-        title="Stock control"
-        subtitle="Operational inventory signals, low-stock items, and stocktakes waiting for review."
-        action={
-          <div className="stock-dashboard-actions">
-            <Link className="btn btn-secondary btn-sm" to="/stocktake">
-              Stocktake
-            </Link>
-            <Link className="btn btn-primary btn-sm" to="/items">
-              Items
-            </Link>
+      <section className="hero">
+        <div className="hero-text">
+          <p className="page-header-eyebrow">Stock command</p>
+          <h1>Alma Group Stock</h1>
+          <p>Track venue stock, review stocktakes, monitor par levels, and keep supplier ordering ready for service.</p>
+          <div className="hero-meta">
+            <span className="hero-meta-dot" aria-hidden="true" />
+            <span>{activeVenue ? `${activeVenue} selected` : 'All permitted venues'}</span>
+            <span aria-hidden="true">·</span>
+            <span>{loading ? 'Loading stock signals…' : error ? 'Could not refresh stock dashboard' : 'Ledger-backed stock movements'}</span>
           </div>
-        }
-      >
-        <p className="subtle">
-          Stock item balances are changed only through ledger-backed approval,
-          correction, or reversal flows. Submitting a stocktake keeps it ready
-          for review.
-        </p>
+        </div>
+        <div className="hero-actions">
+          <Link className="btn btn-primary" to="/stocktake">
+            Stocktake
+          </Link>
+          <Link className="btn btn-secondary" to="/items">
+            Items
+          </Link>
+        </div>
+      </section>
+
+      <Card title="Stock scope" subtitle="Operational inventory signals, low-stock items, and stocktakes waiting for review.">
         {venueOptions.length > 0 ? (
           <div className="stock-filter-toolbar stock-dashboard-toolbar">
             <Select
@@ -111,6 +115,11 @@ export function DashboardPage() {
             </p>
           </div>
         ) : null}
+        <p className="subtle">
+          Stock item balances are changed only through ledger-backed approval,
+          correction, or reversal flows. Submitting a stocktake keeps it ready
+          for review.
+        </p>
       </Card>
 
       {error ? <EmptyState icon={<IconItems size={24} />} title="Stock dashboard unavailable" description={error} /> : null}
