@@ -93,12 +93,51 @@ export const ORG_MEMBERS: OrgMember[] = [
   }
 ];
 
+/** A free-form CMS section authored inside the Handbook editor. */
+export type CmsSection = {
+  id: string;
+  title: string;
+  subtitle?: string;
+  /** Published body — shown to staff. Only set when the section has been published. */
+  body: string;
+  /** Draft body — work in progress. When present, differs from body (unpublished changes). */
+  draftBody?: string;
+  status: 'DRAFT' | 'PUBLISHED' | 'HIDDEN';
+  venue: 'all' | 'st-alma' | 'alma-avalon';
+  audience: 'all' | 'foh' | 'kitchen' | 'managers';
+  sortOrder: number;
+  createdAt: string;
+  updatedAt: string;
+  publishedAt?: string;
+};
+
+/** Admin-editable maintenance contact entry (replaces hardcoded MAINTENANCE_CATEGORIES contacts). */
+export type MaintenanceContactEntry = {
+  id: string;
+  venue: 'all' | 'st-alma' | 'alma-avalon';
+  category: 'electrical' | 'plumbing' | 'gas' | 'refrigeration' | 'hvac' | 'locksmith' | 'pest-control' | 'general';
+  companyName?: string;
+  contactName?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  isEmergency: boolean;
+  isActive: boolean;
+  sortOrder: number;
+};
+
 export type HandbookContent = Partial<{
   orgMembers: OrgMember[];
   handbookSections: HandbookSection[];
   guidelines: Guideline[];
   onboardingSteps: OnboardingStep[];
   maintenanceCategories: MaintenanceCategory[];
+  /** Admin-authored free-form CMS sections. */
+  cmsSections: CmsSection[];
+  /** Admin-editable maintenance contacts with phone and email. */
+  maintenanceContacts: MaintenanceContactEntry[];
+  /** ISO timestamp of the last time any section was published. */
+  lastPublishedAt: string;
 }>;
 
 export type HandbookSection = {
@@ -736,13 +775,55 @@ function asArray<T>(value: unknown): T[] | null {
   return Array.isArray(value) ? (value as T[]) : null;
 }
 
-export function resolveHandbookContent(content: unknown): Required<HandbookContent> {
+export type ResolvedHandbookContent = {
+  orgMembers: OrgMember[];
+  handbookSections: HandbookSection[];
+  guidelines: Guideline[];
+  onboardingSteps: OnboardingStep[];
+  maintenanceCategories: MaintenanceCategory[];
+  cmsSections: CmsSection[];
+  maintenanceContacts: MaintenanceContactEntry[];
+  lastPublishedAt?: string;
+};
+
+export function resolveHandbookContent(content: unknown): ResolvedHandbookContent {
   const source = content && typeof content === 'object' ? (content as Record<string, unknown>) : {};
   return {
     orgMembers: asArray<OrgMember>(source.orgMembers) ?? ORG_MEMBERS,
     handbookSections: asArray<HandbookSection>(source.handbookSections) ?? HANDBOOK_SECTIONS,
     guidelines: asArray<Guideline>(source.guidelines) ?? GUIDELINES,
     onboardingSteps: asArray<OnboardingStep>(source.onboardingSteps) ?? ONBOARDING_STEPS,
-    maintenanceCategories: asArray<MaintenanceCategory>(source.maintenanceCategories) ?? MAINTENANCE_CATEGORIES
+    maintenanceCategories: asArray<MaintenanceCategory>(source.maintenanceCategories) ?? MAINTENANCE_CATEGORIES,
+    cmsSections: asArray<CmsSection>(source.cmsSections) ?? [],
+    maintenanceContacts: asArray<MaintenanceContactEntry>(source.maintenanceContacts) ?? [],
+    lastPublishedAt: typeof source.lastPublishedAt === 'string' ? source.lastPublishedAt : undefined
+  };
+}
+
+export function newCmsSection(overrides?: Partial<CmsSection>): CmsSection {
+  const now = new Date().toISOString();
+  return {
+    id: crypto.randomUUID(),
+    title: 'New section',
+    body: '',
+    status: 'DRAFT',
+    venue: 'all',
+    audience: 'all',
+    sortOrder: 0,
+    createdAt: now,
+    updatedAt: now,
+    ...overrides
+  };
+}
+
+export function newMaintenanceContact(overrides?: Partial<MaintenanceContactEntry>): MaintenanceContactEntry {
+  return {
+    id: crypto.randomUUID(),
+    venue: 'all',
+    category: 'general',
+    isEmergency: false,
+    isActive: true,
+    sortOrder: 0,
+    ...overrides
   };
 }
