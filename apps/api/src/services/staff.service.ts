@@ -2355,6 +2355,14 @@ export const staffService = {
     return records;
   },
 
+  async listStaffDocuments(staffProfileId: string, actor: AuthUser) {
+    await this.getById(staffProfileId, actor);
+    return prisma.staffComplianceRecord.findMany({
+      where: { staffProfileId },
+      orderBy: [{ status: 'asc' }, { dueAt: 'asc' }, { expiryDate: 'asc' }, { createdAt: 'desc' }]
+    });
+  },
+
   async uploadMyDocument(recordId: string, input: unknown, actor: AuthUser) {
     if (actor.accountType === 'VENUE_DEVICE') {
       throw new HttpError(403, 'Shared device accounts cannot access staff documents.');
@@ -2395,6 +2403,18 @@ export const staffService = {
         documentName: data.documentName
       }
     });
+
+    if (record.requestedById && record.requestedById !== actor.id) {
+      await createThread(actor, {
+        subject: `Document uploaded: ${record.title}`,
+        body: `${actorName(actor)} uploaded ${record.title} for manager review.`,
+        category: 'TASK',
+        priority: 'NORMAL',
+        staffProfileIds: [record.requestedById],
+        actionRequired: true,
+        dueAt: ''
+      });
+    }
 
     return updated;
   },

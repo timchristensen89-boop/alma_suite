@@ -905,6 +905,54 @@ staffRouter.post('/:id/documents/request', requireManager, async (req, res, next
   }
 });
 
+staffRouter.get('/:id/documents', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listStaffDocuments(String(req.params.id), req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/documents/:documentId/upload', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.attachRecordDocument(String(req.params.id), String(req.params.documentId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/documents/:documentId/approve', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.approveRecord(String(req.params.id), String(req.params.documentId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/documents/:documentId/reject', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.rejectRecord(String(req.params.id), String(req.params.documentId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.patch('/:id/documents/:documentId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.attachRecordDocument(String(req.params.id), String(req.params.documentId), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/:id/documents/:documentId', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteRecord(String(req.params.id), String(req.params.documentId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/:id/records/:recordId/approve', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.approveRecord(String(req.params.id), String(req.params.recordId), req.user));
