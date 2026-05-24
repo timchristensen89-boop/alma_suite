@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type ReactNode } from 'react';
+import { useCallback, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
 import {
   AlmaAppIcon,
   ALMA_APPS,
@@ -173,6 +173,13 @@ function descriptionFor(id: string) {
   }
 }
 
+function appColorStyle(app: SuiteAppIdentity): CSSProperties {
+  return {
+    '--suite-app-from': app.fromColor,
+    '--suite-app-to': app.toColor
+  } as CSSProperties;
+}
+
 function getSuiteApp(appId: SuiteAppId): SuiteAppIdentity {
   return ALL_APPS.find((app) => app.id === appId) ?? SUITE_APPS[0]!;
 }
@@ -288,18 +295,21 @@ type SuiteAppSwitcherProps = {
   currentApp?: SuiteAppId;
   apps?: SuiteAppIdentity[];
   variant?: 'login' | 'sidebar' | 'topbar';
+  switcherHref?: string;
 };
 
 export function SuiteAppSwitcher({
   currentApp,
   apps = SUITE_APPS,
-  variant = 'login'
+  variant = 'login',
+  switcherHref = '/apps'
 }: SuiteAppSwitcherProps) {
   const layerRef = useRef<HTMLDivElement>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const isSidebar = variant === 'sidebar';
   const isTopbar = variant === 'topbar';
   const current = apps.find((app) => app.id === currentApp);
+  const popoverId = `${currentApp ?? 'suite'}-app-switcher-popover`;
   const className = [
     'suite-switcher',
     isSidebar ? 'suite-switcher--sidebar' : '',
@@ -309,6 +319,23 @@ export function SuiteAppSwitcher({
     .join(' ');
   const closeMobile = useCallback(() => setMobileOpen(false), []);
   useDismissibleLayer(layerRef, mobileOpen, closeMobile, `${currentApp ?? 'suite'}-app-switcher`);
+
+  const openWithHandoff = useCallback((href: string) => {
+    const handoff = (globalThis as typeof globalThis & {
+      almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+
+    if (!handoff) {
+      window.location.assign(href);
+      return;
+    }
+
+    void handoff(href).then((handoffHref) => {
+      window.location.assign(handoffHref);
+    }).catch(() => {
+      window.location.assign(href);
+    });
+  }, []);
 
   const grid = (
     <div className="suite-app-grid">
@@ -335,7 +362,7 @@ export function SuiteAppSwitcher({
                 size={isSidebar || isTopbar ? 32 : 50}
                 featureScale={0.68}
                 variant="compact"
-                showBrandMark={!isSidebar && !isTopbar}
+                showBrandMark={false}
               />
             </span>
             <span className="suite-app-label">{app.label}</span>
@@ -354,17 +381,12 @@ export function SuiteAppSwitcher({
             key={app.id}
             className={tileClassName}
             href={app.href}
+            style={appColorStyle(app)}
             onClick={(event) => {
-              const handoff = (globalThis as typeof globalThis & {
-                almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
-              }).almaCreateSuiteHandoffUrl;
-              if (!handoff || app.id === currentApp) return;
+              if (app.id === currentApp) return;
               event.preventDefault();
-              void handoff(app.href!).then((href) => {
-                window.location.assign(href);
-              }).catch(() => {
-                window.location.assign(app.href!);
-              });
+              closeMobile();
+              openWithHandoff(app.href!);
             }}
             aria-label={
               isAvailable
@@ -378,6 +400,7 @@ export function SuiteAppSwitcher({
           <span
             key={app.id}
             className={tileClassName}
+            style={appColorStyle(app)}
             aria-label={`Alma ${app.label} coming soon`}
           >
             {content}
@@ -392,9 +415,11 @@ export function SuiteAppSwitcher({
       <div ref={layerRef} className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
         <button
           type="button"
-          className="suite-switcher-mobile-trigger"
-          aria-label="Open Alma app switcher"
+          className="suite-switch-apps-button"
+          aria-label="Switch Alma apps"
           aria-expanded={mobileOpen}
+          aria-controls={popoverId}
+          style={current ? appColorStyle(current) : undefined}
           onClick={() => setMobileOpen((open) => !open)}
         >
           <span className="suite-switcher-current-mark" aria-hidden="true">
@@ -411,9 +436,35 @@ export function SuiteAppSwitcher({
               />
             ) : null}
           </span>
-          <span>Apps</span>
+          <span className="suite-switcher-current-copy">
+            <span>Switch apps</span>
+            {current ? <strong>{current.label}</strong> : null}
+          </span>
+          <span className="suite-switcher-chevron" aria-hidden="true">
+            <svg viewBox="0 0 20 20" focusable="false">
+              <path d="M5 7.5 10 12.5 15 7.5" />
+            </svg>
+          </span>
         </button>
-        {grid}
+
+        <div
+          id={popoverId}
+          className="suite-switcher-popover"
+          role="dialog"
+          aria-label="Switch Alma apps"
+          aria-hidden={!mobileOpen}
+        >
+          <div className="suite-switcher-popover-head">
+            <div>
+              <span>Alma Suite</span>
+              <strong>Open another app</strong>
+            </div>
+            <a className="suite-switcher-directory-link" href={switcherHref} onClick={closeMobile}>
+              All apps
+            </a>
+          </div>
+          {grid}
+        </div>
       </div>
     );
   }
@@ -425,6 +476,110 @@ export function SuiteAppSwitcher({
     >
       {grid}
     </nav>
+  );
+}
+
+type SuiteAppDirectoryProps = {
+  currentApp?: SuiteAppId;
+  apps?: SuiteAppIdentity[];
+  title?: string;
+  description?: string;
+  activity?: ReactNode;
+};
+
+export function SuiteAppDirectory({
+  currentApp,
+  apps = SUITE_APPS,
+  title = 'Switch apps',
+  description = 'Open the Alma Suite app you need. We pass a short-lived handoff token when you move between apps, so your login stays current where the destination app supports it.',
+  activity
+}: SuiteAppDirectoryProps) {
+  const staffApp = apps.find((app) => app.id === 'staff');
+  const iPadHref = staffApp?.href ? `${staffApp.href.replace(/\/+$/, '')}/device` : undefined;
+
+  const openWithHandoff = useCallback((event: MouseEvent<HTMLAnchorElement>, href: string, isCurrent: boolean) => {
+    if (isCurrent) return;
+    const handoff = (globalThis as typeof globalThis & {
+      almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+    }).almaCreateSuiteHandoffUrl;
+
+    if (!handoff) return;
+
+    event.preventDefault();
+    void handoff(href).then((handoffHref) => {
+      window.location.assign(handoffHref);
+    }).catch(() => {
+      window.location.assign(href);
+    });
+  }, []);
+
+  return (
+    <div className="suite-directory">
+      <section className="suite-directory-hero">
+        <div>
+          <p className="suite-directory-eyebrow">Alma Suite</p>
+          <h1>{title}</h1>
+          <p>{description}</p>
+        </div>
+        {iPadHref ? (
+          <a
+            className="suite-directory-ipad"
+            href={iPadHref}
+            onClick={(event) => openWithHandoff(event, iPadHref, false)}
+          >
+            <span>Venue iPad login</span>
+            <strong>Open shared device mode</strong>
+          </a>
+        ) : null}
+      </section>
+
+      {activity ? (
+        <section className="suite-directory-activity" aria-label="Suite alerts and messages">
+          {activity}
+        </section>
+      ) : null}
+
+      <section className="suite-directory-grid" aria-label="Alma Suite apps">
+        {apps.map((app) => {
+          const isCurrent = app.id === currentApp;
+          const isAvailable = app.status === 'active' && Boolean(app.href);
+          return (
+            <a
+              key={app.id}
+              className={`suite-directory-card ${isCurrent ? 'is-current' : ''} ${isAvailable ? '' : 'is-disabled'}`}
+              href={app.href ?? '#'}
+              aria-disabled={!isAvailable}
+              style={appColorStyle(app)}
+              onClick={(event) => {
+                if (!isAvailable) {
+                  event.preventDefault();
+                  return;
+                }
+                openWithHandoff(event, app.href!, isCurrent);
+              }}
+            >
+              <span className="suite-directory-card-icon" aria-hidden="true">
+                <AlmaAppIcon
+                  label={app.label.toUpperCase()}
+                  colorFrom={app.fromColor}
+                  colorTo={app.toColor}
+                  icon={app.icon}
+                  size={54}
+                  featureScale={0.68}
+                  variant="compact"
+                  showBrandMark={false}
+                />
+              </span>
+              <span className="suite-directory-card-copy">
+                <strong>{app.label}</strong>
+                <span>{app.description}</span>
+                <em>{isCurrent ? 'Current app' : isAvailable ? 'Open app' : 'Coming soon'}</em>
+              </span>
+            </a>
+          );
+        })}
+      </section>
+    </div>
   );
 }
 

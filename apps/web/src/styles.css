@@ -4413,6 +4413,121 @@ a.suite-app-tile:hover {
   overflow: visible;
 }
 
+.suite-switch-apps-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  min-height: 42px;
+  border: 1px solid rgba(255, 255, 255, 0.36);
+  border-radius: 16px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.2), rgba(255, 255, 255, 0.08)),
+    linear-gradient(155deg, var(--suite-app-from, #343a40) 0%, var(--suite-app-to, #1f2328) 100%);
+  color: #ffffff;
+  padding: 6px 12px 6px 7px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 800;
+  text-decoration: none;
+  box-shadow:
+    0 10px 22px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.suite-switch-apps-button:hover {
+  border-color: rgba(255, 255, 255, 0.42);
+  background:
+    radial-gradient(circle at 18% 12%, rgba(255, 255, 255, 0.3), transparent 28%),
+    linear-gradient(155deg, var(--suite-app-from, #343a40) 0%, var(--suite-app-to, #1f2328) 100%);
+  transform: translateY(-1px);
+}
+
+.suite-switch-apps-button[aria-expanded='true'] {
+  border-color: rgba(255, 255, 255, 0.72);
+  box-shadow:
+    0 0 0 2px rgba(255, 255, 255, 0.22),
+    0 14px 28px rgba(15, 23, 42, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.32);
+}
+
+.suite-switcher-current-copy {
+  display: grid;
+  gap: 1px;
+  text-align: left;
+  line-height: 1;
+}
+
+.suite-switcher-current-copy > span {
+  color: rgba(255, 255, 255, 0.76);
+  font-size: 10px;
+  font-weight: 900;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.suite-switcher-current-copy > strong {
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.suite-switcher-chevron {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.16);
+  color: rgba(255, 255, 255, 0.88);
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1;
+  transition: transform 140ms ease, background 140ms ease;
+}
+
+.suite-switcher-chevron svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2.2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.suite-switcher--topbar.is-open .suite-switcher-chevron {
+  transform: rotate(180deg);
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.suite-switcher-current-mark {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: inset 0 0 0 1px rgba(15, 23, 42, 0.08);
+  overflow: hidden;
+}
+
+.suite-switcher-current-mark > .alma-app-icon {
+  width: 28px !important;
+  height: 28px !important;
+  background: #ffffff !important;
+  color: #111827 !important;
+  box-shadow: none !important;
+}
+
+.suite-switcher-current-mark > .alma-app-icon > span[aria-hidden='true']:last-child {
+  color: #111827 !important;
+  filter: none !important;
+}
+
 .suite-switcher--topbar > .suite-switcher-mobile-trigger {
   display: none;
   list-style: none;
@@ -4503,6 +4618,164 @@ a.suite-app-tile:hover {
   transform: translate(-50%, 0);
 }
 
+.suite-switcher-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 90;
+  display: none;
+  width: min(430px, calc(100vw - 24px));
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 22px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.98)),
+    var(--color-surface);
+  box-shadow:
+    0 26px 70px rgba(15, 23, 42, 0.28),
+    0 0 0 1px rgba(15, 23, 42, 0.04);
+  color: var(--color-text);
+}
+
+.suite-switcher--topbar.is-open .suite-switcher-popover {
+  display: grid;
+  gap: 12px;
+}
+
+.suite-switcher-popover-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 4px 4px 0;
+}
+
+.suite-switcher-popover-head > div {
+  display: grid;
+  gap: 3px;
+}
+
+.suite-switcher-popover-head span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.13em;
+  text-transform: uppercase;
+}
+
+.suite-switcher-popover-head strong {
+  color: var(--color-text);
+  font-size: 18px;
+  line-height: 1.1;
+}
+
+.suite-switcher-directory-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+  box-shadow: var(--shadow-sm);
+}
+
+.suite-switcher-directory-link:hover {
+  border-color: rgba(15, 23, 42, 0.18);
+  transform: translateY(-1px);
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-tile {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  justify-content: start;
+  gap: 10px;
+  width: auto;
+  height: auto;
+  min-height: 74px;
+  padding: 11px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
+  border-radius: 18px;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14), rgba(255, 255, 255, 0.04)),
+    linear-gradient(155deg, var(--suite-app-from, #343a40) 0%, var(--suite-app-to, #1f2328) 100%);
+  box-shadow:
+    0 13px 28px rgba(15, 23, 42, 0.16),
+    inset 0 1px 0 rgba(255, 255, 255, 0.24),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-tile:hover {
+  transform: translateY(-2px);
+  border-color: rgba(255, 255, 255, 0.54);
+  box-shadow:
+    0 18px 34px rgba(15, 23, 42, 0.22),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-tile.is-current {
+  border-color: rgba(255, 255, 255, 0.76);
+  box-shadow:
+    0 0 0 2px rgba(15, 23, 42, 0.08),
+    0 18px 34px rgba(15, 23, 42, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.28);
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-mark,
+.suite-switcher--topbar .suite-switcher-popover .suite-app-mark > .alma-app-icon {
+  width: 42px !important;
+  min-height: 42px;
+  height: 42px !important;
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-mark {
+  border-radius: 13px;
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-mark svg {
+  width: 22px !important;
+  height: 22px !important;
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-label {
+  position: static;
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip: auto;
+  color: #ffffff;
+  font-size: 13px;
+  font-weight: 900;
+  line-height: 1.15;
+  text-overflow: ellipsis;
+  white-space: normal;
+}
+
+.suite-switcher--topbar .suite-switcher-popover .suite-app-tooltip {
+  display: none;
+}
+
 @media (max-width: 1180px) and (min-width: 901px) {
   .topbar-search {
     min-width: 188px;
@@ -4515,44 +4788,14 @@ a.suite-app-tile:hover {
     white-space: nowrap;
   }
 
-  .suite-switcher--topbar .suite-app-grid {
-    gap: 1px;
-  }
-
-  .suite-switcher--topbar .suite-app-tile {
-    width: 34px;
-    height: 34px;
-    min-height: 34px;
-    border-radius: 11px;
-  }
-
-  .suite-switcher--topbar .suite-app-mark,
-  .suite-switcher--topbar .suite-app-mark > .alma-app-icon {
-    width: 27px !important;
-    min-height: 27px;
-    height: 27px !important;
+  .suite-switcher--topbar .suite-switcher-popover .suite-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 900px) {
   .suite-switcher--topbar {
     order: -1;
-  }
-
-  .suite-switcher--topbar > .suite-switcher-mobile-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    min-height: 38px;
-    padding: 5px 10px 5px 6px;
-    border: 1px solid #fff;
-    border-radius: var(--radius-md);
-    background: #fff;
-    color: var(--color-accent-text);
-    font-size: 13px;
-    font-weight: 700;
-    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.16);
-    cursor: pointer;
   }
 
   .suite-switcher-current-mark {
@@ -4564,49 +4807,32 @@ a.suite-app-tile:hover {
     overflow: hidden;
   }
 
-  .suite-switcher--topbar .suite-app-grid {
-    position: absolute;
-    top: calc(100% + 8px);
-    left: 0;
-    z-index: 70;
+  .suite-switch-apps-button {
+    min-height: 40px;
+    padding-right: 9px;
+  }
+
+  .suite-switcher-current-copy > span {
     display: none;
-    grid-template-columns: repeat(4, 42px);
+  }
+
+  .suite-switcher-popover {
+    position: fixed;
+    top: 70px;
+    right: 12px;
+    left: 12px;
     width: auto;
-    min-width: 196px;
-    padding: 10px;
-    gap: 6px;
-    border: 1px solid rgba(255, 255, 255, 0.42);
-    border-radius: var(--radius-lg);
-    background:
-      linear-gradient(
-        135deg,
-        color-mix(in srgb, var(--color-accent) 72%, #334155 28%) 0%,
-        color-mix(in srgb, var(--color-accent-hover) 76%, #475569 24%) 100%
-      );
-    box-shadow: var(--shadow-lg);
+    max-height: calc(100vh - 88px);
+    overflow-y: auto;
+    border-radius: 20px;
   }
 
-  .suite-switcher--topbar.is-open .suite-app-grid {
-    display: grid;
+  .suite-switcher--topbar .suite-switcher-popover .suite-app-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .suite-switcher--topbar .suite-app-tile {
-    width: 42px;
-    min-height: 42px;
-    height: 42px;
-    padding: 4px;
-    border-radius: 13px;
-  }
-
-  .suite-switcher--topbar .suite-app-mark,
-  .suite-switcher--topbar .suite-app-mark > .alma-app-icon {
-    width: 32px !important;
-    min-height: 32px;
-    height: 32px !important;
-  }
-
-  .suite-switcher--topbar .suite-app-tooltip {
-    display: none;
+  .suite-switcher--topbar .suite-switcher-popover .suite-app-tile {
+    min-height: 68px;
   }
 }
 

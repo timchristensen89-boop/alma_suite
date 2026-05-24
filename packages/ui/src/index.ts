@@ -47,6 +47,7 @@ export type { AlmaAppDefinition, AlmaAppIconKey } from './brand/AlmaAppIcon';
 export {
   ProductLogo,
   SUITE_APPS,
+  SuiteAppDirectory,
   SuiteApps,
   SuiteAppSwitcher,
   SuiteLogo,
