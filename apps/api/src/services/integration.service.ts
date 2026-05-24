@@ -1249,9 +1249,19 @@ function squareTipImportKey(input: {
 function squareLocationMatchesVenue(location: SquareLocation, venue: string) {
   const venueText = normaliseMatchText(venue);
   if (!venueText) return false;
+  const venueWordCount = venueText.split(' ').filter(Boolean).length;
   return [location.name, location.business_name]
     .map((value) => normaliseMatchText(value ?? ''))
-    .some((value) => value && (value.includes(venueText) || venueText.includes(value)));
+    .some((locText) => {
+      if (!locText) return false;
+      // Location name contains full venue name — always safe
+      if (locText.includes(venueText)) return true;
+      // Venue name contains location name — only allow if the location name is at least as
+      // specific as the venue (same word count). Prevents a short name like "alma" from
+      // matching the multi-word venue "alma avalon".
+      const locWordCount = locText.split(' ').filter(Boolean).length;
+      return venueText.includes(locText) && locWordCount >= venueWordCount;
+    });
 }
 
 async function exchangeXeroToken(code: string) {
