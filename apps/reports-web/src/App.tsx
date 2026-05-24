@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import type {
   AuthUser,
   RecipesSummary,
+  ReportsMenuProfitabilityPayload,
   ReportsOverviewPayload,
   ReportsPrimeCostPayload,
   RosterForecastSnapshot,
@@ -64,6 +65,7 @@ type ReportsData = {
   rosterForecastSnapshots: RosterForecastSnapshot[];
   actualSales: SalesActualSummary | null;
   itemSales: SalesItemActualSummary | null;
+  menuProfitability: ReportsMenuProfitabilityPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
   stockItems: StockItemsPayload | null;
@@ -115,8 +117,22 @@ type ForecastVenueRow = {
   }>;
 };
 
+type SalesTrendVenueRow = {
+  venue: string;
+  actualSalesCents: number;
+  actualDays: number;
+  manualForecastCents: number;
+  historicalSalesCents: number;
+  previousHistoricalSalesCents: number;
+  predictedSalesCents: number;
+  trendPercent: number | null;
+  forecastVarianceCents: number;
+  paceLabel: string;
+};
+
 type ReportSectionId =
   | 'overview'
+  | 'sales'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -143,6 +159,13 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Overview',
     title: 'Reports Overview',
     description: 'High-level attention signals across the suite.',
+    icon: <ChartIcon />
+  },
+  {
+    id: 'sales',
+    label: 'Sales',
+    title: 'Sales Reports',
+    description: 'Venue sales, trends, and sales forecasting for Alma Avalon and St Alma.',
     icon: <ChartIcon />
   },
   {
@@ -219,7 +242,7 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
   '#report-content': 'content',
   '#report-giftcards': 'gift-cards',
   '#giftcards': 'gift-cards',
-  '#forecast': 'exports',
+  '#forecast': 'sales',
   '#wages': 'staff',
   '#cogs': 'stock',
   '#menu-engineering': 'menu-engineering',
@@ -270,6 +293,17 @@ function formatPercent(value: number | null | undefined) {
 function qualityLabel(value: ReportsPrimeCostPayload['totals']['sourceQuality'] | undefined) {
   if (!value) return 'Missing data';
   return value.replace(/_/g, ' ');
+}
+
+function menuMappingLabel(value: ReportsMenuProfitabilityPayload['rows'][number]['mappingStatus']) {
+  return value.replace(/_/g, ' ');
+}
+
+function menuMappingTone(value: ReportsMenuProfitabilityPayload['rows'][number]['mappingStatus']): 'positive' | 'warning' | 'danger' | 'muted' {
+  if (value === 'mapped') return 'positive';
+  if (value === 'missing_cost') return 'warning';
+  if (value === 'missing_recipe') return 'danger';
+  return 'muted';
 }
 
 function formatMoney(value: number) {
@@ -328,6 +362,11 @@ function parsePercent(value: string, fallback = 32) {
 
 function centsInput(cents: number) {
   return cents > 0 ? String(Math.round(cents / 100)) : '';
+}
+
+function signedCurrency(cents: number) {
+  if (cents === 0) return formatCurrency(0);
+  return `${cents > 0 ? '+' : '-'}${formatCurrency(Math.abs(cents))}`;
 }
 
 function loadJsonDraft<T>(key: string, fallback: T): T {
@@ -587,6 +626,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
+  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>('all');
+  const [menuVenue, setMenuVenue] = useState('');
+  const [menuCategory, setMenuCategory] = useState('');
+  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>('all');
   const [data, setData] = useState<ReportsData>({
     overview: null,
     summary: null,
@@ -596,6 +639,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     rosterForecastSnapshots: [],
     actualSales: null,
     itemSales: null,
+    menuProfitability: null,
     primeCost: null,
     tips: null,
     stockItems: null,
@@ -619,7 +663,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setMessage(null);
     setStockMessage(null);
     try {
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips] = await Promise.all([
+      const menuProfitabilityParams = new URLSearchParams({
+        start: weekStart.toISOString(),
+        end: weekEnd.toISOString(),
+        accountKey: menuAccountKey,
+        mappingStatus: menuMappingStatus
+      });
+      if (menuVenue) menuProfitabilityParams.set('venue', menuVenue);
+      if (menuCategory) menuProfitabilityParams.set('category', menuCategory);
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips] = await Promise.all([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -628,6 +680,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
@@ -648,13 +701,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
       setLoading(false);
     }
-  }, [overviewRange, weekEnd, weekStart]);
+  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, overviewRange, weekEnd, weekStart]);
 
   useEffect(() => {
     void load();
@@ -1082,6 +1135,96 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       actualPercent
     };
   });
+  const salesReportVenues = useMemo(
+    () =>
+      uniqueValues([
+        'Alma Avalon',
+        'St Alma',
+        ...venues,
+        ...(data.actualSales?.byVenue ?? []).map((row) => row.venue)
+      ]).filter((venue) => venue && venue !== 'Both' && venue !== 'All venues'),
+    [data.actualSales?.byVenue, venues]
+  );
+  const actualSalesEntriesByVenue = useMemo(() => {
+    return (data.actualSales?.entries ?? []).reduce((map, entry) => {
+      const rows = map.get(entry.venue) ?? [];
+      rows.push(entry);
+      map.set(entry.venue, rows);
+      return map;
+    }, new Map<string, SalesActualSummary['entries']>());
+  }, [data.actualSales?.entries]);
+  const salesTrendRows = useMemo<SalesTrendVenueRow[]>(() => {
+    return salesReportVenues.map((venue) => {
+      const historical = historicalSalesForWeek(venue, weekStart);
+      const previousHistorical = historicalSalesForWeek(venue, addDays(weekStart, -7));
+      const entries = actualSalesEntriesByVenue.get(venue) ?? [];
+      const actualSalesCents = entries.reduce((sum, entry) => sum + entry.salesCents, 0);
+      const actualDates = new Set(entries.map((entry) => isoDate(new Date(entry.serviceDate))));
+      const actualHistoricalCents = historical.days
+        .filter((day) => actualDates.has(isoDate(day.date)))
+        .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
+      const historicalSalesCents = Math.round(historical.total * 100);
+      const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
+      const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
+      const predictedSalesCents = actualSalesCents > 0 && actualHistoricalCents > 0
+        ? Math.round(actualSalesCents * (historicalSalesCents / actualHistoricalCents))
+        : manualForecastCents || historicalSalesCents;
+      const trendPercent = previousHistoricalSalesCents > 0
+        ? ((predictedSalesCents - previousHistoricalSalesCents) / previousHistoricalSalesCents) * 100
+        : null;
+      const forecastVarianceCents = actualSalesCents > 0
+        ? actualSalesCents - manualForecastCents
+        : predictedSalesCents - manualForecastCents;
+
+      return {
+        venue,
+        actualSalesCents,
+        actualDays: actualDates.size,
+        manualForecastCents,
+        historicalSalesCents,
+        previousHistoricalSalesCents,
+        predictedSalesCents,
+        trendPercent,
+        forecastVarianceCents,
+        paceLabel: actualSalesCents > 0 && actualHistoricalCents > 0
+          ? 'Actual pace vs matching historical days'
+          : manualForecastCents > 0
+            ? 'Manual forecast'
+            : historicalSalesCents > 0
+              ? 'Historical baseline'
+              : 'Missing sales history'
+      };
+    });
+  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, weekStart]);
+  const salesDailyRows = useMemo(() => {
+    return Array.from({ length: 7 }, (_, index) => {
+      const date = addDays(weekStart, index);
+      const dateKey = isoDate(date);
+      return {
+        date,
+        venues: salesReportVenues.map((venue) => {
+          const actualSalesCents = (actualSalesEntriesByVenue.get(venue) ?? [])
+            .filter((entry) => isoDate(new Date(entry.serviceDate)) === dateKey)
+            .reduce((sum, entry) => sum + entry.salesCents, 0);
+          const historicalSalesCents = Math.round((historicalSalesForWeek(venue, weekStart).days[index]?.sales ?? 0) * 100);
+          const historicalWeekCents = salesTrendRows.find((row) => row.venue === venue)?.historicalSalesCents ?? 0;
+          const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
+          const forecastSalesCents = manualForecastCents > 0 && historicalWeekCents > 0
+            ? Math.round(manualForecastCents * (historicalSalesCents / historicalWeekCents))
+            : historicalSalesCents;
+          return { venue, actualSalesCents, historicalSalesCents, forecastSalesCents };
+        })
+      };
+    });
+  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, salesTrendRows, weekStart]);
+  const salesGraphMaxCents = Math.max(
+    1,
+    ...salesTrendRows.flatMap((row) => [row.actualSalesCents, row.manualForecastCents, row.predictedSalesCents, row.historicalSalesCents])
+  );
+  const salesDailyMaxCents = Math.max(
+    1,
+    ...salesDailyRows.flatMap((day) => day.venues.flatMap((row) => [row.actualSalesCents, row.forecastSalesCents, row.historicalSalesCents]))
+  );
 
   const venueStockValueRows = (data.stockItems?.venueStockItems ?? []).filter(
     (row) => row.active && row.stockItem?.status === 'ACTIVE'
@@ -1185,7 +1328,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     children: JSX.Element;
     action?: JSX.Element;
   }) {
-    const label = id === 'exports' ? weekWindowLabel : overviewWindowLabel;
+    const label = id === 'exports' || id === 'menu-engineering' ? weekWindowLabel : overviewWindowLabel;
     const sectionAction = id === 'overview'
       ? action
       : (
@@ -1263,7 +1406,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('menu-engineering')} aria-label="Open sales reports">
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
               <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
@@ -1366,6 +1509,162 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      </SectionShell>
+    );
+  }
+
+  function renderSalesSection() {
+    const totalForecastCents = salesTrendRows.reduce((sum, row) => sum + row.manualForecastCents, 0);
+    const totalHistoricalCents = salesTrendRows.reduce((sum, row) => sum + row.historicalSalesCents, 0);
+    const totalPredictedCents = salesTrendRows.reduce((sum, row) => sum + row.predictedSalesCents, 0);
+    const importedDays = salesTrendRows.reduce((sum, row) => sum + row.actualDays, 0);
+    const missingHistoryCount = salesTrendRows.filter((row) => row.historicalSalesCents <= 0).length;
+
+    return (
+      <SectionShell
+        id="sales"
+        title="Sales Reports"
+        description="Alma Avalon and St Alma sales actuals, daily trends, historical baseline, and weekly prediction"
+        action={<Button type="button" size="sm" variant="secondary" onClick={() => applyHistoricalForecast()}>Reset all forecasts to history</Button>}
+      >
+        <div className="report-section-stack">
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Actual imported" value={formatCurrency(actualSalesCents)} hint={`${importedDays} venue day${importedDays === 1 ? '' : 's'} imported`} loading={loading} />
+            <StatCard label="Manual forecast" value={formatCurrency(totalForecastCents)} hint="Editable venue inputs" loading={loading} />
+            <StatCard label="Predicted sales" value={formatCurrency(totalPredictedCents)} hint="Current pace, forecast, or history" loading={loading} />
+            <StatCard label="Historical baseline" value={formatCurrency(totalHistoricalCents)} hint={missingHistoryCount ? `${missingHistoryCount} missing baseline${missingHistoryCount === 1 ? '' : 's'}` : 'Selected week baseline'} loading={loading} />
+          </div>
+
+          {data.actualSales?.entries.length ? null : (
+            <p className="report-warning-text">No imported sales actuals are available for this week. The predicted sales value falls back to manual forecast first, then historical baseline.</p>
+          )}
+          {missingHistoryCount ? (
+            <p className="report-warning-text">Historical sales history is missing for {missingHistoryCount} venue{missingHistoryCount === 1 ? '' : 's'}, so trend percentage and historical reset may be unavailable there.</p>
+          ) : null}
+
+          <div className="sales-venue-grid">
+            {salesTrendRows.map((row) => {
+              const trendLabel = row.trendPercent === null ? 'No trend' : `${row.trendPercent >= 0 ? '+' : ''}${row.trendPercent.toFixed(1)}%`;
+              const trendTone = row.trendPercent === null ? 'neutral' : row.trendPercent >= 0 ? 'positive' : 'warning';
+              const varianceTone = row.forecastVarianceCents >= 0 ? 'positive' : 'warning';
+              return (
+                <section key={row.venue} className="sales-venue-panel">
+                  <div className="sales-panel-header">
+                    <span>
+                      <h4>{row.venue}</h4>
+                      <small>{normaliseHistoricalVenue(row.venue) ? 'Historical baseline available' : 'No historical baseline'} · {row.actualDays || 'No'} imported day{row.actualDays === 1 ? '' : 's'}</small>
+                    </span>
+                    <Badge tone={trendTone}>{trendLabel}</Badge>
+                  </div>
+
+                  <div className="sales-trend-bars" aria-label={`${row.venue} sales trend bars`}>
+                    {[
+                      ['Actual/imported', row.actualSalesCents, 'actual'],
+                      ['Forecast input', row.manualForecastCents, 'forecast'],
+                      ['predicted sales', row.predictedSalesCents, 'predicted'],
+                      ['Historical baseline', row.historicalSalesCents, 'history']
+                    ].map(([label, cents, tone]) => (
+                      <div key={label} className={`sales-horizontal-row is-${tone}`}>
+                        <span>{label}</span>
+                        <div className="sales-horizontal-track">
+                          <div className={`sales-horizontal-bar is-${tone}`} style={{ width: `${Math.max(4, (Number(cents) / salesGraphMaxCents) * 100)}%` }} />
+                        </div>
+                        <strong>{formatCurrency(Number(cents))}</strong>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="form-grid two">
+                    <Input
+                      label="Forecast input"
+                      value={forecastInputs[row.venue]?.sales ?? ''}
+                      onChange={(event) => updateForecastInput(row.venue, { sales: event.currentTarget.value })}
+                      placeholder={centsInput(row.historicalSalesCents) || 'Weekly forecast'}
+                    />
+                    <Input
+                      label="Target wage %"
+                      value={forecastInputs[row.venue]?.targetWagePercent ?? '32'}
+                      onChange={(event) => updateForecastInput(row.venue, { targetWagePercent: event.currentTarget.value })}
+                    />
+                  </div>
+
+                  <div className="sales-mini-metrics">
+                    <Metric label="Prediction source" value={row.paceLabel} tone={row.actualSalesCents ? 'info' : row.predictedSalesCents ? 'warning' : 'neutral'} />
+                    <Metric label="Forecast variance" value={signedCurrency(row.forecastVarianceCents)} tone={varianceTone} hint={row.actualSalesCents ? 'Actual minus forecast input' : 'Prediction minus forecast input'} />
+                    <Metric label="Previous historical week" value={formatCurrency(row.previousHistoricalSalesCents)} tone="neutral" />
+                  </div>
+
+                  <span className="historical-reset">
+                    <Button type="button" size="sm" variant="secondary" disabled={row.historicalSalesCents <= 0} onClick={() => applyHistoricalForecast(row.venue)}>
+                      Historical reset
+                    </Button>
+                  </span>
+                </section>
+              );
+            })}
+          </div>
+
+          <div className="report-panel">
+            <h4>Daily sales trend</h4>
+            <div className="sales-daily-chart">
+              {salesDailyRows.map((day) => (
+                <div key={isoDate(day.date)} className="sales-daily-row">
+                  <span>{day.date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>
+                  <div>
+                    {day.venues.map((row) => (
+                      <div key={row.venue} className="sales-daily-bar-row">
+                        <small>{row.venue}</small>
+                        <div className="sales-horizontal-track">
+                          <div className="sales-horizontal-bar is-actual" style={{ width: `${Math.max(4, (row.actualSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                        </div>
+                        <div className="sales-horizontal-track">
+                          <div className="sales-horizontal-bar is-forecast" style={{ width: `${Math.max(4, (row.forecastSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                        </div>
+                        <strong>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : formatCurrency(row.forecastSalesCents)}</strong>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="sales-chart-legend">
+              <span><i className="legend-dot is-actual" />Actual/imported sales</span>
+              <span><i className="legend-dot is-forecast" />Forecast or historical baseline</span>
+            </div>
+          </div>
+
+          <div className="report-panel">
+            <h4>Actual/imported sales rows</h4>
+            {data.actualSales?.entries.length ? (
+              <div className="table-scroll">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Venue</th>
+                      <th>Sales</th>
+                      <th>Source</th>
+                      <th>Notes</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {data.actualSales.entries.map((entry) => (
+                      <tr key={entry.id}>
+                        <td>{new Date(entry.serviceDate).toLocaleDateString()}</td>
+                        <td>{entry.venue}</td>
+                        <td>{formatCurrency(entry.salesCents)}</td>
+                        <td>{entry.source}</td>
+                        <td>{entry.notes || entry.externalId || 'Imported actual'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            ) : (
+              <p className="subtle">No actual sales rows are available for the selected week. Import sales actuals before using actual pace projections.</p>
+            )}
           </div>
         </div>
       </SectionShell>
@@ -1674,16 +1973,29 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   function renderMenuEngineeringSection() {
     const hasVenueSales = Boolean(data.actualSales?.entries.length);
     const hasItemSales = Boolean(data.itemSales?.entries.length);
+    const menuProfit = data.menuProfitability;
+    const menuRows = menuProfit?.rows ?? [];
+    const mappedMenuRows = menuProfit?.totals.mappedRows ?? 0;
+    const menuEstimatedCogs = menuProfit?.totals.estimatedCogsCents;
+    const menuGrossProfit = menuProfit?.totals.grossProfitCents;
     const itemSalesMatched = data.itemSales?.matchedRecipeRows ?? 0;
     const itemSalesUnmatched = data.itemSales?.unmatchedRows ?? 0;
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const hasRecipeSummary = Boolean(data.recipes && data.recipes.totalRecipes > 0);
+    const menuCategoryOptions = [
+      { label: 'All categories', value: '' },
+      ...(menuProfit?.categories ?? []).map((category) => ({ label: category, value: category }))
+    ];
+    const menuVenueOptions = [
+      { label: 'All venues', value: '' },
+      ...(menuProfit?.venues ?? venues).map((venue) => ({ label: venue, value: venue }))
+    ];
     const readinessRows = [
       {
         item: 'Imported item-level sales',
-        status: hasItemSales ? (itemSalesMatched > 0 ? 'Ready' : 'Partly ready') : 'Missing',
+        status: hasItemSales ? (mappedMenuRows > 0 ? 'Ready' : 'Partly ready') : 'Missing',
         note: hasItemSales
-          ? `${itemSalesQuantity.toLocaleString()} units imported across ${data.itemSales?.entries.length ?? 0} menu rows. ${itemSalesMatched} matched to recipes, ${itemSalesUnmatched} need recipe matching.`
+          ? `${itemSalesQuantity.toLocaleString()} units imported across ${data.itemSales?.entries.length ?? 0} menu rows. ${mappedMenuRows} Square items have mapped recipe costs, ${menuProfit?.totals.unmappedRows ?? itemSalesUnmatched} need recipe mapping.`
           : 'Square item sales have not been imported for the selected week.'
       },
       {
@@ -1741,9 +2053,95 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="stats-grid report-metric-grid">
             <StatCard label="Sales source" value={hasItemSales ? 'Square item sales' : hasVenueSales ? 'Venue totals' : 'Missing'} hint={hasItemSales ? `${itemSalesMatched} recipe matches` : 'Waiting on item-level sales'} loading={loading} />
             <StatCard label="Recipes available" value={data.recipes?.totalRecipes ?? 0} hint="From Stock recipe costing" loading={loading} />
-            <StatCard label="Average recipe cost" value={formatMoney(data.recipes?.averageEstimatedCost ?? 0)} hint="Estimated and manually reviewed" loading={loading} />
-            <StatCard label="Recommendations" value={hasItemSales && itemSalesMatched > 0 ? 'Partly ready' : 'Not ready'} hint={hasItemSales ? `${itemSalesUnmatched} unmatched item rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
+            <StatCard label="Menu COGS" value={menuEstimatedCogs === null || menuEstimatedCogs === undefined ? 'Incomplete' : formatCurrency(menuEstimatedCogs)} hint={menuEstimatedCogs === null || menuEstimatedCogs === undefined ? 'Missing mapped recipe costs' : `${formatPercent(menuProfit?.totals.foodCostPercent)} food cost`} loading={loading} />
+            <StatCard label="Gross profit" value={menuGrossProfit === null || menuGrossProfit === undefined ? 'Incomplete' : formatCurrency(menuGrossProfit)} hint={hasItemSales ? `${menuProfit?.totals.unmappedRows ?? itemSalesUnmatched} unmapped rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
           </div>
+
+          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete." padding="none">
+            <div className="reports-filter-grid">
+              <Select
+                label="Square account"
+                value={menuAccountKey}
+                onChange={(event) => setMenuAccountKey(event.currentTarget.value as typeof menuAccountKey)}
+                options={[
+                  { label: 'All Square accounts', value: 'all' },
+                  { label: 'Primary / St Alma', value: 'primary' },
+                  { label: 'Secondary / Alma Avalon', value: 'secondary' }
+                ]}
+              />
+              <Select label="Venue" value={menuVenue} onChange={(event) => setMenuVenue(event.currentTarget.value)} options={menuVenueOptions} />
+              <Select label="Category" value={menuCategory} onChange={(event) => setMenuCategory(event.currentTarget.value)} options={menuCategoryOptions} />
+              <Select
+                label="Mapping"
+                value={menuMappingStatus}
+                onChange={(event) => setMenuMappingStatus(event.currentTarget.value as typeof menuMappingStatus)}
+                options={[
+                  { label: 'All rows', value: 'all' },
+                  { label: 'Mapped', value: 'mapped' },
+                  { label: 'Unmapped', value: 'unmapped' },
+                  { label: 'Missing recipe', value: 'missing_recipe' },
+                  { label: 'Missing cost', value: 'missing_cost' }
+                ]}
+              />
+            </div>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Square item</th>
+                    <th>Recipe</th>
+                    <th>Venue</th>
+                    <th>Qty sold</th>
+                    <th>Sales</th>
+                    <th>Recipe cost</th>
+                    <th>COGS</th>
+                    <th>Gross profit</th>
+                    <th>Food cost %</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {menuRows.length ? (
+                    menuRows.map((row) => (
+                      <tr key={row.key}>
+                        <td>
+                          <strong>{row.squareItem}</strong>
+                          <span className="subtle">{[row.variationName, row.categoryName, row.accountKey].filter(Boolean).join(' · ')}</span>
+                        </td>
+                        <td>{row.almaRecipeTitle ?? 'Not mapped'}</td>
+                        <td>{row.venue}</td>
+                        <td>{row.quantitySold.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        <td>{formatCurrency(row.netSalesCents)}</td>
+                        <td>{row.recipeCostCents === null ? '—' : formatCurrency(row.recipeCostCents)}</td>
+                        <td>{row.estimatedCogsCents === null ? '—' : formatCurrency(row.estimatedCogsCents)}</td>
+                        <td>{row.grossProfitCents === null ? '—' : formatCurrency(row.grossProfitCents)}</td>
+                        <td>{formatPercent(row.foodCostPercent)}</td>
+                        <td><Badge tone={menuMappingTone(row.mappingStatus)}>{menuMappingLabel(row.mappingStatus)}</Badge></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={10}>No Square item-level sales found for this filter. Import Square item sales or widen the date/account filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {menuProfit?.warnings.length ? (
+            <ActionPanel title="Menu profitability data quality" description="Expand to see why totals may be incomplete." count={menuProfit.warnings.length} tone="warning">
+              {menuProfit.warnings.map((warning) => (
+                <div key={warning} className="action-panel-row">
+                  <span>
+                    <strong>{warning}</strong>
+                    <small>Reports will not estimate missing sales, recipe cost, or unmapped item COGS.</small>
+                  </span>
+                  <Badge tone="warning">Review</Badge>
+                </div>
+              ))}
+            </ActionPanel>
+          ) : null}
 
           <div className="report-detail-grid">
             <div className="report-panel">
@@ -1981,6 +2379,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   function renderActiveReportSection() {
     switch (activeSection) {
+      case 'sales':
+        return renderSalesSection();
       case 'staff':
         return renderStaffSection();
       case 'compliance':

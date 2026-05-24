@@ -27,6 +27,14 @@
   min-width: 160px;
 }
 
+.reports-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 12px;
+  padding: 14px 16px 0;
+  align-items: end;
+}
+
 .report-active-section > .card {
   overflow: visible;
 }
@@ -79,6 +87,16 @@
   line-height: 1.45;
 }
 
+.report-table td > strong,
+.report-table td > .subtle {
+  display: block;
+}
+
+.report-table td > .subtle {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
 .report-split {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -120,6 +138,181 @@
   margin: 0 0 4px;
   color: var(--color-text);
   font-size: 14px;
+}
+
+.sales-venue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+  gap: 18px;
+}
+
+.sales-venue-panel {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  padding: 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface);
+}
+
+.sales-panel-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.sales-panel-header h4,
+.sales-panel-header small {
+  display: block;
+}
+
+.sales-panel-header small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.sales-trend-bars {
+  display: grid;
+  gap: 10px;
+}
+
+.sales-horizontal-row,
+.sales-daily-bar-row {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.8fr) minmax(120px, 1.5fr) minmax(94px, auto);
+  gap: 10px;
+  align-items: center;
+  min-width: 0;
+  color: var(--color-text);
+  font-size: 12px;
+}
+
+.sales-horizontal-row strong,
+.sales-daily-bar-row strong {
+  text-align: right;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.sales-horizontal-track {
+  min-width: 0;
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-border);
+}
+
+.sales-horizontal-bar {
+  height: 100%;
+  min-width: 4px;
+  border-radius: inherit;
+}
+
+.sales-horizontal-bar.is-actual,
+.legend-dot.is-actual {
+  background: var(--tone-positive-bg);
+}
+
+.sales-horizontal-bar.is-forecast,
+.legend-dot.is-forecast {
+  background: var(--tone-info-bg);
+}
+
+.sales-horizontal-bar.is-predicted {
+  background: var(--tone-warning-bg);
+}
+
+.sales-horizontal-bar.is-history {
+  background: var(--color-accent);
+}
+
+.predicted-sales,
+.forecast-variance,
+.historical-reset {
+  display: inline-flex;
+}
+
+.sales-mini-metrics {
+  display: grid;
+  gap: 8px;
+}
+
+.sales-daily-chart {
+  display: grid;
+  gap: 12px;
+}
+
+.sales-daily-row {
+  display: grid;
+  grid-template-columns: 80px minmax(0, 1fr);
+  gap: 14px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.sales-daily-row > span {
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.sales-daily-row > div {
+  display: grid;
+  gap: 8px;
+}
+
+.sales-daily-bar-row {
+  grid-template-columns: minmax(90px, 0.8fr) minmax(80px, 1fr) minmax(80px, 1fr) minmax(94px, auto);
+}
+
+.sales-daily-bar-row small {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sales-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.sales-chart-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+}
+
+.report-warning-text {
+  margin: 0;
+  color: var(--tone-warning-fg);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.table-note {
+  display: block;
+  margin-top: 4px;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.35;
 }
 
 .action-panel {
@@ -479,7 +672,8 @@
   .report-detail-grid,
   .report-split,
   .report-overview-grid,
-  .report-overview-grid-wide {
+  .report-overview-grid-wide,
+  .reports-filter-grid {
     grid-template-columns: 1fr;
   }
 
@@ -532,6 +726,29 @@
 
   .forecast-history-actions {
     justify-content: space-between;
+  }
+
+  .sales-venue-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-venue-panel {
+    padding: 12px;
+  }
+
+  .sales-panel-header {
+    display: grid;
+  }
+
+  .sales-horizontal-row,
+  .sales-daily-bar-row,
+  .sales-daily-row {
+    grid-template-columns: 1fr;
+  }
+
+  .sales-horizontal-row strong,
+  .sales-daily-bar-row strong {
+    text-align: left;
   }
 
   .published-forecast-panel {

@@ -916,6 +916,12 @@ export const salesActualQuerySchema = z.object({
   venue: z.string().optional().or(z.literal(''))
 });
 
+export const reportsMenuProfitabilityQuerySchema = salesActualQuerySchema.extend({
+  accountKey: z.enum(['all', 'primary', 'secondary']).default('all'),
+  category: z.string().trim().optional().or(z.literal('')),
+  mappingStatus: z.enum(['all', 'mapped', 'unmapped', 'missing_recipe', 'missing_cost']).default('all')
+});
+
 export const salesActualImportSchema = z.object({
   source: z.string().min(1).default('manual'),
   rows: z.array(z.object({
@@ -2884,6 +2890,52 @@ export type SalesItemActualSummary = {
     quantity: number;
     rows: number;
   }>;
+};
+
+export type ReportsMenuProfitabilityRow = {
+  key: string;
+  accountKey: SquareAccountKey | 'unknown';
+  venue: string;
+  squareItem: string;
+  variationName: string | null;
+  categoryName: string | null;
+  catalogObjectId: string | null;
+  quantitySold: number;
+  grossSalesCents: number;
+  netSalesCents: number;
+  orderCount: number;
+  lineCount: number;
+  mappingStatus: 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost';
+  mappingId: string | null;
+  almaRecipeId: string | null;
+  almaRecipeTitle: string | null;
+  recipeCostCents: number | null;
+  estimatedCogsCents: number | null;
+  grossProfitCents: number | null;
+  foodCostPercent: number | null;
+  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item'>;
+};
+
+export type ReportsMenuProfitabilityPayload = {
+  generatedAt: string;
+  period: { start: string; end: string };
+  filters: z.infer<typeof reportsMenuProfitabilityQuerySchema>;
+  totals: {
+    itemRows: number;
+    quantitySold: number;
+    netSalesCents: number;
+    estimatedCogsCents: number | null;
+    grossProfitCents: number | null;
+    foodCostPercent: number | null;
+    mappedRows: number;
+    unmappedRows: number;
+    missingRecipeRows: number;
+    missingCostRows: number;
+  };
+  categories: string[];
+  venues: string[];
+  rows: ReportsMenuProfitabilityRow[];
+  warnings: string[];
 };
 
 export type ReportsPrimeCostVenueRow = {

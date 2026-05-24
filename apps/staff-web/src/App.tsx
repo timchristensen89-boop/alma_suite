@@ -1042,8 +1042,8 @@ function StaffHome({
                 <strong>{member.firstName} {member.lastName}</strong>
                 <small>{member.venue || 'No venue'} · pay type missing.</small>
               </span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'employment')}>
-                Open employment
+              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'payroll')}>
+                Open payroll
               </Button>
             </div>
           ))}
@@ -1313,10 +1313,21 @@ function StaffProfilesPage({
                     variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setForm({ mode: 'edit', member });
+                      openProfile(member.id, 'personal');
                     }}
                   >
-                    Edit
+                    Profile
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openProfile(member.id, 'payroll');
+                    }}
+                  >
+                    Payroll
                   </Button>
                 </span>
               </div>
@@ -3629,7 +3640,18 @@ function StaffProfileWorkspacePage({
           </nav>
         </aside>
         <main className="staff-profile-main">
-          <PageHeader eyebrow={sectionTitle} title={staffFullName(member)} description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections." actions={<Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>} />
+          <PageHeader
+            eyebrow={sectionTitle}
+            title={staffFullName(member)}
+            description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections."
+            actions={
+              activeSection === 'payroll' && canManageProfileAccess ? (
+                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit payroll</Button>
+              ) : (
+                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
+              )
+            }
+          />
           <div className="stats-grid staff-profile-stats">
             <StatCard label="Documents" value={member.records.length + visibleHrRecords.length} hint={`${attentionDocuments} need attention`} />
             <StatCard label="Training" value={member.trainingRecords.length} hint={`Level ${member.trainingLevel ?? 0}`} />
@@ -4077,6 +4099,7 @@ function AccessPage({
   reload: () => Promise<void>;
 }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const selected = staff.find((member) => member.id === selectedId) ?? staff[0] ?? null;
   const [profileDraft, setProfileDraft] = useState<StaffDraft>(() => selected ? draftFromStaff(selected) : emptyStaffDraft());
   const [training, setTraining] = useState<TrainingOverview | null>(null);
@@ -4106,6 +4129,11 @@ function AccessPage({
   const canManageSettings = canAccessSettings(user);
   const visibleStaffApps = canManageSettings ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
   const selectedRoleTemplate = roleTemplates.find((template) => template.id === profileDraft.roleTemplateId) ?? null;
+
+  function openProfile(id: string, section: StaffProfileSectionId = 'personal') {
+    setSelectedId(id);
+    navigate(`/staff/${id}/${section}`);
+  }
 
   function permissionsFor(appId: AlmaAppId) {
     return accessByApp.get(appId)?.permissions ?? {};
@@ -4513,7 +4541,7 @@ function AccessPage({
               key={member.id}
               type="button"
               className={`staff-list-button ${selected?.id === member.id ? 'is-selected' : ''}`}
-              onClick={() => setSelectedId(member.id)}
+              onClick={() => openProfile(member.id, 'access')}
             >
               <span>
                 <strong>
@@ -4571,9 +4599,14 @@ function AccessPage({
               title="Profile details"
               subtitle="Role, personal details, payroll fields, and manager notes."
               action={
-                <Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>
-                  Edit profile
-                </Button>
+                <span className="inline-actions">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(selected.id, 'personal')}>
+                    Open profile
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => openProfile(selected.id, 'payroll')}>
+                    Payroll
+                  </Button>
+                </span>
               }
             >
               <div className="staff-profile-summary-grid">
@@ -10945,6 +10978,42 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function importSquareTips(targetVenue = venue) {
+    setMessageTarget('square-import');
+    if (!targetVenue) {
+      setMessage('Choose a venue before importing Square tips.');
+      return;
+    }
+    setVenue(targetVenue);
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await api<{
+        label: string;
+        paymentsRead: number;
+        tipRows: number;
+        imported: number;
+        updated: number;
+        amountCents: number;
+        warnings: string[];
+      }>('/api/staff/tips/square-import', {
+        method: 'POST',
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue: targetVenue
+        })
+      });
+      const warning = result.warnings.length ? ` ${result.warnings[0]}` : '';
+      setMessage(`${result.label}: imported ${result.imported}, updated ${result.updated}, ${formatCents(result.amountCents)} from ${result.tipRows} Square tip payment${result.tipRows === 1 ? '' : 's'}.${warning}`);
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import Square tips.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function exportTips() {
     setMessageTarget('export');
     if (!venue) {
@@ -11075,8 +11144,33 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           </div>
         </Card>
 
-        <Card title="Import card tips" subtitle="Paste a Control or Square CSV with date and tip amount columns. Venue defaults to the selected venue if the file has no venue column.">
+        <Card title="Import card tips" subtitle="Import directly from Square, or paste a Control/Square CSV with date and tip amount columns.">
           <div className="form-grid two">
+            <Input
+              label="Square venue"
+              value={venue}
+              onChange={(event) => setVenue(event.currentTarget.value)}
+              placeholder="Alma Avalon"
+            />
+          </div>
+          <div className="toolbar-right">
+            <Button type="button" onClick={() => void importSquareTips('Alma Avalon')} disabled={saving}>
+              {saving && messageTarget === 'square-import' && venue === 'Alma Avalon' ? 'Importing...' : 'Import Alma Avalon tips'}
+            </Button>
+            <Button type="button" onClick={() => void importSquareTips('St Alma')} disabled={saving}>
+              {saving && messageTarget === 'square-import' && venue === 'St Alma' ? 'Importing...' : 'Import St Alma tips'}
+            </Button>
+            <Button type="button" variant="secondary" onClick={() => void importSquareTips()} disabled={saving || !venue}>
+              {saving && messageTarget === 'square-import' ? 'Importing...' : 'Import from Square'}
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'square-import' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
+          </div>
+          <details className="staff-profile-collapsible">
+            <summary>Manual CSV import</summary>
+            <div className="form-grid two">
             <Select
               label="Source"
               value={cardImportSource}
@@ -11093,29 +11187,30 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
               onChange={(event) => setVenue(event.currentTarget.value)}
               placeholder="Alma Avalon"
             />
-          </div>
-          <Textarea
-            label="CSV rows"
-            rows={7}
-            value={cardImportText}
-            onChange={(event) => setCardImportText(event.currentTarget.value)}
-            placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
-          />
-          <div className="toolbar-right">
-            <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>
-              Download template
-            </Button>
-            <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>
-              Clear
-            </Button>
-            <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
-              {saving ? 'Importing...' : 'Import card tips'}
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'import' ? message : null}
-              tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+            </div>
+            <Textarea
+              label="CSV rows"
+              rows={7}
+              value={cardImportText}
+              onChange={(event) => setCardImportText(event.currentTarget.value)}
+              placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
             />
-          </div>
+            <div className="toolbar-right">
+              <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>
+                Download template
+              </Button>
+              <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>
+                Clear
+              </Button>
+              <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
+                {saving && messageTarget === 'import' ? 'Importing...' : 'Import card tips'}
+              </Button>
+              <ActionFeedback
+                message={messageTarget === 'import' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+              />
+            </div>
+          </details>
         </Card>
 
         <Card title="Tips week" subtitle="Cash entries and paid runs for the selected week.">

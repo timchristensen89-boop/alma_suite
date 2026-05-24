@@ -1,6 +1,7 @@
 import { Router, type Request } from 'express';
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
+import { integrationService } from '../services/integration.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
 import { staffService } from '../services/staff.service.js';
 
@@ -711,6 +712,14 @@ staffRouter.post('/tips/cash-entry', requireManager, async (req, res, next) => {
 staffRouter.post('/tips/card-import', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.importTipsCardEntries(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/tips/square-import', requireManager, async (req, res, next) => {
+  try {
+    res.json(await integrationService.importSquareTips(req.body, req.user!));
   } catch (error) {
     next(error);
   }
