@@ -27,8 +27,8 @@ RUN pnpm db:generate && \
     pnpm --filter @alma/api build && \
     pnpm --filter @alma/stock-api build
 
-# Prune dev dependencies
-RUN pnpm prune --prod
+# Prune dev dependencies (CI=true suppresses the no-TTY confirmation prompt)
+RUN CI=true pnpm prune --prod
 
 # Re-generate Prisma client after prune so the generated files live in the
 # production-resolved path (typescript peer no longer present).
