@@ -5,7 +5,16 @@ import type {
   StockCategory,
   StockItemsPayload
 } from '@alma/shared';
-import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
+import {
+  ActionFeedback,
+  Button,
+  Card,
+  CollapsibleCard,
+  EmptyState,
+  Input,
+  Select,
+  Spinner
+} from '@alma/ui';
 import { IconItems, IconRecipes, IconSettings } from '../lib/icons';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -316,10 +325,10 @@ export function SettingsPage() {
 
       {error && !feedbackTarget ? <p className="error-text">{error}</p> : null}
 
-      <Card
+      <CollapsibleCard
         title="Stock categories"
-        subtitle="Used by items, stocktake locations, and catalogue grouping."
-        action={<Badge tone="info">{loading ? '—' : `${stockCategoryCount} categories`}</Badge>}
+        description="Used by items, stocktake locations, and catalogue grouping."
+        badge={loading ? 'Loading' : `${stockCategoryCount} categories`}
       >
         {loading ? (
           <Spinner label="Loading stock categories" />
@@ -433,14 +442,12 @@ export function SettingsPage() {
             })}
           </div>
         ) : null}
-      </Card>
+      </CollapsibleCard>
 
-      <Card
+      <CollapsibleCard
         title="Recipe categories"
-        subtitle="Controls the recipe category dropdown and renames existing recipe category values."
-        action={
-          <Badge tone="indigo">{loading ? '—' : `${recipeCategoryCount} categories`}</Badge>
-        }
+        description="Controls the recipe category dropdown and renames existing recipe category values."
+        badge={loading ? 'Loading' : `${recipeCategoryCount} categories`}
       >
         {loading ? (
           <Spinner label="Loading recipe categories" />
@@ -580,15 +587,19 @@ export function SettingsPage() {
             })}
           </div>
         ) : null}
-      </Card>
+      </CollapsibleCard>
 
-      <Card title="Admin-owned settings" subtitle="Venue stock defaults, units of measure and account preferences are kept out of the daily stock workflow until they are fully wired.">
+      <CollapsibleCard
+        title="Admin-owned settings"
+        description="Venue stock defaults, units of measure and account preferences are kept out of the daily stock workflow until they are fully wired."
+        badge="Admin-owned"
+      >
         <EmptyState
           icon={<IconSettings size={24} />}
           title="Managed in Admin when ready"
           description="Category settings above are available now. Venue defaults, preferred units, account preferences and dangerous setup tools stay disabled here so there are no dead setup actions."
         />
-      </Card>
+      </CollapsibleCard>
     </div>
   );
 }

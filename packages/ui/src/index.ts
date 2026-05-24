@@ -5,6 +5,7 @@ export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidget';
 export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';
 export { Card } from './primitives/Card';
+export { CollapsibleCard } from './primitives/CollapsibleCard';
 export { StatCard } from './primitives/StatCard';
 export { Button } from './primitives/Button';
 export { IconButton } from './primitives/IconButton';
