@@ -4,7 +4,10 @@ import { z } from 'zod';
 import {
   salesActualImportSchema,
   salesActualQuerySchema,
+  reportsMenuProfitabilityQuerySchema,
   type AuthUser,
+  type ReportsMenuProfitabilityPayload,
+  type ReportsMenuProfitabilityRow,
   type ReportsComplianceSummary,
   type ReportsContentSummary,
   type ReportsGiftCardSummary,
@@ -114,6 +117,21 @@ function payRateCents(profile: { payRateCents: number | null; trainingPayRateCen
 
 function pct(numerator: number, denominator: number) {
   return denominator > 0 ? Math.round((numerator / denominator) * 1000) / 10 : null;
+}
+
+function accountKeyFromSalesSource(source: string): 'primary' | 'secondary' | 'unknown' {
+  if (source === 'square-item:primary') return 'primary';
+  if (source === 'square-item:secondary') return 'secondary';
+  return 'unknown';
+}
+
+function normaliseMenuText(value: string | null | undefined) {
+  return value?.trim().toLowerCase().replace(/[^a-z0-9]+/g, ' ').replace(/\s+/g, ' ').trim() ?? '';
+}
+
+function recipeCostCents(recipe: { estimatedCost: number } | null | undefined) {
+  if (!recipe || recipe.estimatedCost <= 0) return null;
+  return Math.round(recipe.estimatedCost * 100);
 }
 
 function primeQuality(input: { sales: number; wages: number; cogs: number; rosterEstimate: number }) {
@@ -904,6 +922,165 @@ export const reportsService = {
         ...(invoiceLines.length ? ['COGS is based on supplier invoice lines matched to stock items in the selected period.'] : ['COGS is missing until supplier invoice lines are imported and matched to stock items.']),
         ...(timesheets.length ? ['Wages use current timesheet hours and staff pay rates. Approved wages are shown separately.'] : ['No timesheets found; roster wage estimate is used only when roster shifts exist.']),
         ...(salesEntries.length ? [] : ['Sales are missing for the selected period, so wage %, COGS %, and prime cost % are not shown.'])
+      ]
+    };
+  },
+
+  async menuProfitability(input: unknown, actor?: AuthUser): Promise<ReportsMenuProfitabilityPayload> {
+    const data = reportsMenuProfitabilityQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Menu profitability start date');
+    const end = parseDate(data.end, 'Menu profitability end date');
+    if (end <= start) throw new HttpError(400, 'Menu profitability end date must be after the start date');
+    const venue = salesVenueScope(actor, data.venue);
+    const accountKeys = data.accountKey === 'all' ? ['primary', 'secondary'] as const : [data.accountKey];
+    const sourceWhere = data.accountKey === 'all'
+      ? { startsWith: 'square-item:' }
+      : `square-item:${data.accountKey}`;
+
+    const [entries, mappings] = await Promise.all([
+      prisma.salesItemActualEntry.findMany({
+        where: {
+          serviceDate: { gte: start, lt: end },
+          source: typeof sourceWhere === 'string' ? sourceWhere : sourceWhere,
+          ...(venue ? { venue } : {}),
+          ...(data.category ? { categoryName: data.category } : {})
+        },
+        include: {
+          recipe: { select: { id: true, title: true, estimatedCost: true } }
+        },
+        orderBy: [{ netSalesCents: 'desc' }, { itemName: 'asc' }]
+      }),
+      prisma.squareMenuRecipeMapping.findMany({
+        where: {
+          accountKey: { in: [...accountKeys] },
+          ...(data.category ? { categoryName: data.category } : {})
+        },
+        include: {
+          almaRecipe: { select: { id: true, title: true, estimatedCost: true } }
+        }
+      })
+    ]);
+
+    const mappingByCatalogObject = new Map<string, typeof mappings[number]>();
+    const mappingByName = new Map<string, typeof mappings[number]>();
+    for (const mapping of mappings) {
+      if (mapping.squareVariationId) mappingByCatalogObject.set(`${mapping.accountKey}:${mapping.squareVariationId}`, mapping);
+      if (mapping.squareItemId) mappingByCatalogObject.set(`${mapping.accountKey}:${mapping.squareItemId}`, mapping);
+      mappingByName.set(
+        `${mapping.accountKey}:${normaliseMenuText(mapping.squareItemName)}:${normaliseMenuText(mapping.squareVariationName)}`,
+        mapping
+      );
+    }
+
+    const rowsByKey = new Map<string, ReportsMenuProfitabilityRow>();
+    const categories = new Set<string>();
+    const venues = new Set<string>();
+
+    for (const entry of entries) {
+      const accountKey = accountKeyFromSalesSource(entry.source);
+      const mapping = accountKey === 'unknown'
+        ? null
+        : (entry.catalogObjectId ? mappingByCatalogObject.get(`${accountKey}:${entry.catalogObjectId}`) : null)
+          ?? mappingByName.get(`${accountKey}:${normaliseMenuText(entry.itemName)}:${normaliseMenuText(entry.variationName)}`)
+          ?? null;
+      const mappedRecipe = mapping?.status === 'MAPPED' ? mapping.almaRecipe : null;
+      const unitRecipeCostCents = recipeCostCents(mappedRecipe);
+      const mappingStatus: ReportsMenuProfitabilityRow['mappingStatus'] = !mapping || mapping.status !== 'MAPPED'
+        ? 'unmapped'
+        : !mappedRecipe
+          ? 'missing_recipe'
+          : unitRecipeCostCents === null
+            ? 'missing_cost'
+            : 'mapped';
+      const key = [
+        accountKey,
+        entry.venue,
+        entry.catalogObjectId ?? normaliseMenuText(entry.itemName),
+        normaliseMenuText(entry.variationName)
+      ].join('|');
+      const current = rowsByKey.get(key) ?? {
+        key,
+        accountKey,
+        venue: entry.venue,
+        squareItem: entry.itemName,
+        variationName: entry.variationName,
+        categoryName: entry.categoryName,
+        catalogObjectId: entry.catalogObjectId,
+        quantitySold: 0,
+        grossSalesCents: 0,
+        netSalesCents: 0,
+        orderCount: 0,
+        lineCount: 0,
+        mappingStatus,
+        mappingId: mapping?.id ?? null,
+        almaRecipeId: mappedRecipe?.id ?? null,
+        almaRecipeTitle: mappedRecipe?.title ?? null,
+        recipeCostCents: unitRecipeCostCents,
+        estimatedCogsCents: null,
+        grossProfitCents: null,
+        foodCostPercent: null,
+        dataQuality: []
+      };
+
+      current.quantitySold += entry.quantity;
+      current.grossSalesCents += entry.grossSalesCents;
+      current.netSalesCents += entry.netSalesCents;
+      current.orderCount += entry.orderCount;
+      current.lineCount += entry.lineCount;
+      if (entry.categoryName) categories.add(entry.categoryName);
+      venues.add(entry.venue);
+      rowsByKey.set(key, current);
+    }
+
+    let rows = Array.from(rowsByKey.values()).map((row) => {
+      const estimatedCogsCents = row.recipeCostCents !== null
+        ? Math.round(row.recipeCostCents * row.quantitySold)
+        : null;
+      const grossProfitCents = estimatedCogsCents !== null ? row.netSalesCents - estimatedCogsCents : null;
+      const foodCostPercent = estimatedCogsCents !== null ? pct(estimatedCogsCents, row.netSalesCents) : null;
+      const dataQuality: ReportsMenuProfitabilityRow['dataQuality'] = ['actual_sales'];
+      if (row.mappingStatus === 'mapped') dataQuality.push('mapped_recipe_cost');
+      if (row.mappingStatus === 'unmapped') dataQuality.push('unmapped_square_item');
+      if (row.mappingStatus === 'missing_recipe') dataQuality.push('missing_recipe');
+      if (row.mappingStatus === 'missing_cost') dataQuality.push('missing_cost');
+      return { ...row, estimatedCogsCents, grossProfitCents, foodCostPercent, dataQuality };
+    });
+
+    if (data.mappingStatus !== 'all') {
+      rows = rows.filter((row) => row.mappingStatus === data.mappingStatus);
+    }
+    rows.sort((a, b) => b.netSalesCents - a.netSalesCents);
+
+    const rowsWithCost = rows.filter((row) => row.estimatedCogsCents !== null);
+    const estimatedCogsCents = rowsWithCost.length
+      ? rowsWithCost.reduce((sum, row) => sum + (row.estimatedCogsCents ?? 0), 0)
+      : null;
+    const netSalesCents = rows.reduce((sum, row) => sum + row.netSalesCents, 0);
+    const grossProfitCents = estimatedCogsCents !== null ? netSalesCents - estimatedCogsCents : null;
+
+    return {
+      generatedAt: new Date().toISOString(),
+      period: { start: start.toISOString(), end: end.toISOString() },
+      filters: data,
+      totals: {
+        itemRows: rows.length,
+        quantitySold: Math.round(rows.reduce((sum, row) => sum + row.quantitySold, 0) * 100) / 100,
+        netSalesCents,
+        estimatedCogsCents,
+        grossProfitCents,
+        foodCostPercent: estimatedCogsCents !== null ? pct(estimatedCogsCents, netSalesCents) : null,
+        mappedRows: rows.filter((row) => row.mappingStatus === 'mapped').length,
+        unmappedRows: rows.filter((row) => row.mappingStatus === 'unmapped').length,
+        missingRecipeRows: rows.filter((row) => row.mappingStatus === 'missing_recipe').length,
+        missingCostRows: rows.filter((row) => row.mappingStatus === 'missing_cost').length
+      },
+      categories: Array.from(categories).sort(),
+      venues: Array.from(venues).sort(),
+      rows,
+      warnings: [
+        ...(entries.length ? [] : ['No Square item-level sales were found for the selected period. Import Square item sales before using menu profitability.']),
+        ...(rows.some((row) => row.mappingStatus === 'unmapped') ? ['Some Square items are not mapped to Alma recipes, so COGS and margin are incomplete.'] : []),
+        ...(rows.some((row) => row.mappingStatus === 'missing_cost') ? ['Some mapped recipes have no cost yet. Update recipe ingredients/costs in Stock.'] : [])
       ]
     };
   },

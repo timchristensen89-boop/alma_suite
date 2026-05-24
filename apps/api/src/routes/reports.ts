@@ -48,6 +48,21 @@ reportsRouter.get('/prime-cost', requireManager, async (req, res, next) => {
   }
 });
 
+reportsRouter.get('/menu-profitability', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.menuProfitability({
+      start: typeof req.query.start === 'string' ? req.query.start : '',
+      end: typeof req.query.end === 'string' ? req.query.end : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : '',
+      accountKey: typeof req.query.accountKey === 'string' ? req.query.accountKey : 'all',
+      category: typeof req.query.category === 'string' ? req.query.category : '',
+      mappingStatus: typeof req.query.mappingStatus === 'string' ? req.query.mappingStatus : 'all'
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.get('/sales', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.listActualSales({

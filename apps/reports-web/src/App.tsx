@@ -2,6 +2,7 @@ import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 're
 import type {
   AuthUser,
   RecipesSummary,
+  ReportsMenuProfitabilityPayload,
   ReportsOverviewPayload,
   ReportsPrimeCostPayload,
   RosterForecastSnapshot,
@@ -64,6 +65,7 @@ type ReportsData = {
   rosterForecastSnapshots: RosterForecastSnapshot[];
   actualSales: SalesActualSummary | null;
   itemSales: SalesItemActualSummary | null;
+  menuProfitability: ReportsMenuProfitabilityPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
   stockItems: StockItemsPayload | null;
@@ -270,6 +272,17 @@ function formatPercent(value: number | null | undefined) {
 function qualityLabel(value: ReportsPrimeCostPayload['totals']['sourceQuality'] | undefined) {
   if (!value) return 'Missing data';
   return value.replace(/_/g, ' ');
+}
+
+function menuMappingLabel(value: ReportsMenuProfitabilityPayload['rows'][number]['mappingStatus']) {
+  return value.replace(/_/g, ' ');
+}
+
+function menuMappingTone(value: ReportsMenuProfitabilityPayload['rows'][number]['mappingStatus']): 'positive' | 'warning' | 'danger' | 'muted' {
+  if (value === 'mapped') return 'positive';
+  if (value === 'missing_cost') return 'warning';
+  if (value === 'missing_recipe') return 'danger';
+  return 'muted';
 }
 
 function formatMoney(value: number) {
@@ -587,6 +600,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
+  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>('all');
+  const [menuVenue, setMenuVenue] = useState('');
+  const [menuCategory, setMenuCategory] = useState('');
+  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>('all');
   const [data, setData] = useState<ReportsData>({
     overview: null,
     summary: null,
@@ -596,6 +613,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     rosterForecastSnapshots: [],
     actualSales: null,
     itemSales: null,
+    menuProfitability: null,
     primeCost: null,
     tips: null,
     stockItems: null,
@@ -619,7 +637,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setMessage(null);
     setStockMessage(null);
     try {
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips] = await Promise.all([
+      const menuProfitabilityParams = new URLSearchParams({
+        start: weekStart.toISOString(),
+        end: weekEnd.toISOString(),
+        accountKey: menuAccountKey,
+        mappingStatus: menuMappingStatus
+      });
+      if (menuVenue) menuProfitabilityParams.set('venue', menuVenue);
+      if (menuCategory) menuProfitabilityParams.set('category', menuCategory);
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips] = await Promise.all([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -628,6 +654,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
@@ -648,13 +675,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
       setLoading(false);
     }
-  }, [overviewRange, weekEnd, weekStart]);
+  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, overviewRange, weekEnd, weekStart]);
 
   useEffect(() => {
     void load();
@@ -1185,7 +1212,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     children: JSX.Element;
     action?: JSX.Element;
   }) {
-    const label = id === 'exports' ? weekWindowLabel : overviewWindowLabel;
+    const label = id === 'exports' || id === 'menu-engineering' ? weekWindowLabel : overviewWindowLabel;
     const sectionAction = id === 'overview'
       ? action
       : (
@@ -1674,16 +1701,29 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   function renderMenuEngineeringSection() {
     const hasVenueSales = Boolean(data.actualSales?.entries.length);
     const hasItemSales = Boolean(data.itemSales?.entries.length);
+    const menuProfit = data.menuProfitability;
+    const menuRows = menuProfit?.rows ?? [];
+    const mappedMenuRows = menuProfit?.totals.mappedRows ?? 0;
+    const menuEstimatedCogs = menuProfit?.totals.estimatedCogsCents;
+    const menuGrossProfit = menuProfit?.totals.grossProfitCents;
     const itemSalesMatched = data.itemSales?.matchedRecipeRows ?? 0;
     const itemSalesUnmatched = data.itemSales?.unmatchedRows ?? 0;
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const hasRecipeSummary = Boolean(data.recipes && data.recipes.totalRecipes > 0);
+    const menuCategoryOptions = [
+      { label: 'All categories', value: '' },
+      ...(menuProfit?.categories ?? []).map((category) => ({ label: category, value: category }))
+    ];
+    const menuVenueOptions = [
+      { label: 'All venues', value: '' },
+      ...(menuProfit?.venues ?? venues).map((venue) => ({ label: venue, value: venue }))
+    ];
     const readinessRows = [
       {
         item: 'Imported item-level sales',
-        status: hasItemSales ? (itemSalesMatched > 0 ? 'Ready' : 'Partly ready') : 'Missing',
+        status: hasItemSales ? (mappedMenuRows > 0 ? 'Ready' : 'Partly ready') : 'Missing',
         note: hasItemSales
-          ? `${itemSalesQuantity.toLocaleString()} units imported across ${data.itemSales?.entries.length ?? 0} menu rows. ${itemSalesMatched} matched to recipes, ${itemSalesUnmatched} need recipe matching.`
+          ? `${itemSalesQuantity.toLocaleString()} units imported across ${data.itemSales?.entries.length ?? 0} menu rows. ${mappedMenuRows} Square items have mapped recipe costs, ${menuProfit?.totals.unmappedRows ?? itemSalesUnmatched} need recipe mapping.`
           : 'Square item sales have not been imported for the selected week.'
       },
       {
@@ -1741,9 +1781,95 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="stats-grid report-metric-grid">
             <StatCard label="Sales source" value={hasItemSales ? 'Square item sales' : hasVenueSales ? 'Venue totals' : 'Missing'} hint={hasItemSales ? `${itemSalesMatched} recipe matches` : 'Waiting on item-level sales'} loading={loading} />
             <StatCard label="Recipes available" value={data.recipes?.totalRecipes ?? 0} hint="From Stock recipe costing" loading={loading} />
-            <StatCard label="Average recipe cost" value={formatMoney(data.recipes?.averageEstimatedCost ?? 0)} hint="Estimated and manually reviewed" loading={loading} />
-            <StatCard label="Recommendations" value={hasItemSales && itemSalesMatched > 0 ? 'Partly ready' : 'Not ready'} hint={hasItemSales ? `${itemSalesUnmatched} unmatched item rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
+            <StatCard label="Menu COGS" value={menuEstimatedCogs === null || menuEstimatedCogs === undefined ? 'Incomplete' : formatCurrency(menuEstimatedCogs)} hint={menuEstimatedCogs === null || menuEstimatedCogs === undefined ? 'Missing mapped recipe costs' : `${formatPercent(menuProfit?.totals.foodCostPercent)} food cost`} loading={loading} />
+            <StatCard label="Gross profit" value={menuGrossProfit === null || menuGrossProfit === undefined ? 'Incomplete' : formatCurrency(menuGrossProfit)} hint={hasItemSales ? `${menuProfit?.totals.unmappedRows ?? itemSalesUnmatched} unmapped rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
           </div>
+
+          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete." padding="none">
+            <div className="reports-filter-grid">
+              <Select
+                label="Square account"
+                value={menuAccountKey}
+                onChange={(event) => setMenuAccountKey(event.currentTarget.value as typeof menuAccountKey)}
+                options={[
+                  { label: 'All Square accounts', value: 'all' },
+                  { label: 'Primary / St Alma', value: 'primary' },
+                  { label: 'Secondary / Alma Avalon', value: 'secondary' }
+                ]}
+              />
+              <Select label="Venue" value={menuVenue} onChange={(event) => setMenuVenue(event.currentTarget.value)} options={menuVenueOptions} />
+              <Select label="Category" value={menuCategory} onChange={(event) => setMenuCategory(event.currentTarget.value)} options={menuCategoryOptions} />
+              <Select
+                label="Mapping"
+                value={menuMappingStatus}
+                onChange={(event) => setMenuMappingStatus(event.currentTarget.value as typeof menuMappingStatus)}
+                options={[
+                  { label: 'All rows', value: 'all' },
+                  { label: 'Mapped', value: 'mapped' },
+                  { label: 'Unmapped', value: 'unmapped' },
+                  { label: 'Missing recipe', value: 'missing_recipe' },
+                  { label: 'Missing cost', value: 'missing_cost' }
+                ]}
+              />
+            </div>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Square item</th>
+                    <th>Recipe</th>
+                    <th>Venue</th>
+                    <th>Qty sold</th>
+                    <th>Sales</th>
+                    <th>Recipe cost</th>
+                    <th>COGS</th>
+                    <th>Gross profit</th>
+                    <th>Food cost %</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {menuRows.length ? (
+                    menuRows.map((row) => (
+                      <tr key={row.key}>
+                        <td>
+                          <strong>{row.squareItem}</strong>
+                          <span className="subtle">{[row.variationName, row.categoryName, row.accountKey].filter(Boolean).join(' · ')}</span>
+                        </td>
+                        <td>{row.almaRecipeTitle ?? 'Not mapped'}</td>
+                        <td>{row.venue}</td>
+                        <td>{row.quantitySold.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                        <td>{formatCurrency(row.netSalesCents)}</td>
+                        <td>{row.recipeCostCents === null ? '—' : formatCurrency(row.recipeCostCents)}</td>
+                        <td>{row.estimatedCogsCents === null ? '—' : formatCurrency(row.estimatedCogsCents)}</td>
+                        <td>{row.grossProfitCents === null ? '—' : formatCurrency(row.grossProfitCents)}</td>
+                        <td>{formatPercent(row.foodCostPercent)}</td>
+                        <td><Badge tone={menuMappingTone(row.mappingStatus)}>{menuMappingLabel(row.mappingStatus)}</Badge></td>
+                      </tr>
+                    ))
+                  ) : (
+                    <tr>
+                      <td colSpan={10}>No Square item-level sales found for this filter. Import Square item sales or widen the date/account filters.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+
+          {menuProfit?.warnings.length ? (
+            <ActionPanel title="Menu profitability data quality" description="Expand to see why totals may be incomplete." count={menuProfit.warnings.length} tone="warning">
+              {menuProfit.warnings.map((warning) => (
+                <div key={warning} className="action-panel-row">
+                  <span>
+                    <strong>{warning}</strong>
+                    <small>Reports will not estimate missing sales, recipe cost, or unmapped item COGS.</small>
+                  </span>
+                  <Badge tone="warning">Review</Badge>
+                </div>
+              ))}
+            </ActionPanel>
+          ) : null}
 
           <div className="report-detail-grid">
             <div className="report-panel">
