@@ -2878,6 +2878,7 @@ function StaffProfileWorkspacePage({
   const activeSection = normaliseStaffProfileSection(section);
   const selected = staff.find((item) => item.id === staffId) ?? null;
   const [profileModalOpen, setProfileModalOpen] = useState(false);
+  const [payrollModalOpen, setPayrollModalOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
@@ -2954,6 +2955,32 @@ function StaffProfileWorkspacePage({
     await reload();
     setProfileModalOpen(false);
     if (saved.id !== member.id) navigate(`/staff/${saved.id}/${activeSection}`);
+  }
+
+  function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
+    setProfileDraft((current) => ({ ...current, [key]: value }));
+  }
+
+  async function saveProfileDraft(target: StaffProfileSectionId) {
+    if (!canManageProfileAccess) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(target);
+    try {
+      const saved = await api<StaffProfile>(`/api/staff/${member.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(staffPayloadFromDraft(profileDraft))
+      });
+      setProfileDraft(draftFromStaff(saved));
+      await reload();
+      setMessage(`${STAFF_PROFILE_SECTIONS.find((item) => item.id === target)?.label ?? 'Profile'} saved.`);
+      if (target === 'payroll') setPayrollModalOpen(false);
+      if (saved.id !== member.id) navigate(`/staff/${saved.id}/${target}`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save staff profile.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   function selectProfileRoleTemplate(roleTemplateId: string) {
@@ -3379,6 +3406,97 @@ function StaffProfileWorkspacePage({
     );
   }
 
+  function renderPayrollModal() {
+    return (
+      <StaffModal
+        open={payrollModalOpen}
+        title={`Edit payroll for ${staffFullName(member)}`}
+        subtitle="Payroll, tax, bank, super and Xero fields stay in this staff profile."
+        width="wide"
+        onClose={() => {
+          setProfileDraft(draftFromStaff(member));
+          setPayrollModalOpen(false);
+        }}
+      >
+        <form
+          className="staff-profile-form staff-profile-modal-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void saveProfileDraft('payroll');
+          }}
+        >
+          <section className="staff-modal-section">
+            <h3>Pay settings</h3>
+            <div className="form-grid three">
+              <Input label="Pay type" value={profileDraft.payType} onChange={(event) => updateProfile('payType', event.currentTarget.value)} />
+              <Input label="Base rate" value={profileDraft.payRate} onChange={(event) => updateProfile('payRate', event.currentTarget.value)} />
+              <Input label="Award / classification" value={profileDraft.payAward} onChange={(event) => updateProfile('payAward', event.currentTarget.value)} />
+            </div>
+          </section>
+
+          <section className="staff-modal-section">
+            <h3>Tax</h3>
+            <div className="form-grid three">
+              <Input label="TFN" value={profileDraft.taxFileNumber} onChange={(event) => updateProfile('taxFileNumber', event.currentTarget.value)} />
+              <Input label="Tax residency" value={profileDraft.taxResidencyStatus} onChange={(event) => updateProfile('taxResidencyStatus', event.currentTarget.value)} />
+              <label className="check-row">
+                <input type="checkbox" checked={profileDraft.taxFreeThreshold} onChange={(event) => updateProfile('taxFreeThreshold', event.currentTarget.checked)} />
+                Claims tax-free threshold
+              </label>
+              <label className="check-row">
+                <input type="checkbox" checked={profileDraft.hasStudyTrainingLoan} onChange={(event) => updateProfile('hasStudyTrainingLoan', event.currentTarget.checked)} />
+                Study or training loan
+              </label>
+            </div>
+          </section>
+
+          <section className="staff-modal-section">
+            <h3>Superannuation</h3>
+            <div className="form-grid three">
+              <Input label="Super fund" value={profileDraft.superFundName} onChange={(event) => updateProfile('superFundName', event.currentTarget.value)} />
+              <Input label="Super ABN" value={profileDraft.superFundAbn} onChange={(event) => updateProfile('superFundAbn', event.currentTarget.value)} />
+              <Input label="Super USI" value={profileDraft.superFundUsi} onChange={(event) => updateProfile('superFundUsi', event.currentTarget.value)} />
+              <Input label="Member number" value={profileDraft.superMemberNumber} onChange={(event) => updateProfile('superMemberNumber', event.currentTarget.value)} />
+            </div>
+          </section>
+
+          <section className="staff-modal-section">
+            <h3>Bank</h3>
+            <div className="form-grid three">
+              <Input label="Bank account name" value={profileDraft.bankAccountName} onChange={(event) => updateProfile('bankAccountName', event.currentTarget.value)} />
+              <Input label="BSB" value={profileDraft.bankBsb} onChange={(event) => updateProfile('bankBsb', event.currentTarget.value)} />
+              <Input label="Account number" value={profileDraft.bankAccountNumber} onChange={(event) => updateProfile('bankAccountNumber', event.currentTarget.value)} />
+            </div>
+          </section>
+
+          <details className="staff-modal-section staff-modal-details">
+            <summary>Xero payroll export fields</summary>
+            <div className="form-grid three">
+              <Input label="Xero employee ID" value={profileDraft.xeroEmployeeId} onChange={(event) => updateProfile('xeroEmployeeId', event.currentTarget.value)} />
+              <Input label="Xero payroll calendar" value={profileDraft.xeroPayrollCalendarId} onChange={(event) => updateProfile('xeroPayrollCalendarId', event.currentTarget.value)} />
+              <Input label="Xero earnings rate" value={profileDraft.xeroEarningsRateId} onChange={(event) => updateProfile('xeroEarningsRateId', event.currentTarget.value)} />
+            </div>
+          </details>
+
+          <div className="staff-modal-footer">
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => {
+                setProfileDraft(draftFromStaff(member));
+                setPayrollModalOpen(false);
+              }}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={saving}>{saving ? 'Saving...' : 'Save payroll'}</Button>
+            <ActionFeedback message={messageTarget === 'payroll' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
+          </div>
+        </form>
+      </StaffModal>
+    );
+  }
+
   function renderSection() {
     if (locked) return renderLockedSection(sectionTitle);
     if (activeSection === 'personal') {
@@ -3515,7 +3633,7 @@ function StaffProfileWorkspacePage({
     }
     if (activeSection === 'payroll') {
       return (
-        <Card title="Payroll" subtitle="Sensitive payroll fields are restricted to authorised Staff HR users." action={<Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>Edit</Button>}>
+        <Card title="Payroll" subtitle="Sensitive payroll fields are restricted to authorised Staff HR users." action={canManageProfileAccess ? <Button type="button" size="sm" onClick={() => setPayrollModalOpen(true)}>Edit payroll</Button> : undefined}>
           <ProfileInfoGrid items={[
             { label: 'Pay type', value: member.payType, sensitive: true },
             { label: 'Base rate', value: formatCents(member.payRateCents), sensitive: true },
@@ -3525,6 +3643,8 @@ function StaffProfileWorkspacePage({
             { label: 'Bank account', value: member.bankAccountName ? `${member.bankAccountName} · ${member.bankBsb || 'No BSB'} · ${member.bankAccountNumber || 'No account number'}` : null, sensitive: true },
             { label: 'Xero employee', value: member.xeroEmployeeId, sensitive: true }
           ]} />
+          {renderPayrollModal()}
+          <ActionFeedback message={messageTarget === 'payroll' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
           {payRecords.length ? <div className="staff-profile-document-list">{payRecords.map(renderHrDocument)}</div> : <p className="subtle">No pay-change HR records filed for this profile.</p>}
         </Card>
       );
