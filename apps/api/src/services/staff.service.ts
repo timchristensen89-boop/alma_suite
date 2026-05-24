@@ -2319,27 +2319,34 @@ export const staffService = {
       }
     });
 
-    await recordStaffManagementEvent({
-      staffProfileId,
-      eventType: 'COMPLIANCE_DOCUMENT_REQUESTED',
-      summary: `Document requested: "${record.title}".`,
-      actor,
-      metadata: {
-        recordId: record.id,
-        recordTitle: record.title,
-        dueAt: dueAt?.toISOString() ?? null,
-        expiryRequired: Boolean(data.expiryRequired),
-        priority: data.priority
-      }
-    });
+    // Fire management event and comms message best-effort — if either fails
+    // (e.g. messaging not configured, missing email) the record is already
+    // persisted, so we still return success instead of rolling back.
+    try {
+      await recordStaffManagementEvent({
+        staffProfileId,
+        eventType: 'COMPLIANCE_DOCUMENT_REQUESTED',
+        summary: `Document requested: "${record.title}".`,
+        actor,
+        metadata: {
+          recordId: record.id,
+          recordTitle: record.title,
+          dueAt: dueAt?.toISOString() ?? null,
+          expiryRequired: Boolean(data.expiryRequired),
+          priority: data.priority
+        }
+      });
 
-    await createStaffDocumentRequestMessage({
-      actor,
-      staffProfile: profile,
-      record,
-      note,
-      priority: data.priority
-    });
+      await createStaffDocumentRequestMessage({
+        actor,
+        staffProfile: profile,
+        record,
+        note,
+        priority: data.priority
+      });
+    } catch {
+      // Non-fatal: record was created; notification failure should not surface as an error.
+    }
 
     return record;
   },

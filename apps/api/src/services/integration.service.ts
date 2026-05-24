@@ -2242,111 +2242,114 @@ export const integrationService = {
     let mappingsCreated = 0;
     let mappingsPreserved = 0;
 
-    await prisma.$transaction(async (tx) => {
-      for (const candidate of candidates) {
-        await tx.squareCatalogItem.upsert({
-          where: {
-            accountKey_squareItemId_squareVariationId: {
-              accountKey,
-              squareItemId: candidate.squareItemId,
-              squareVariationId: candidate.squareVariationId
-            }
-          },
-          create: {
+    // Process each catalog candidate individually — no wrapping transaction because:
+    // 1. Each upsert is already atomic on its own unique key.
+    // 2. A single $transaction over 100+ items reliably exceeds the 5 s Prisma
+    //    interactive-transaction timeout and causes the whole sync to fail.
+    // Partial success is acceptable: re-running sync is idempotent.
+    for (const candidate of candidates) {
+      await prisma.squareCatalogItem.upsert({
+        where: {
+          accountKey_squareItemId_squareVariationId: {
             accountKey,
             squareItemId: candidate.squareItemId,
-            squareVariationId: candidate.squareVariationId,
-            name: candidate.name,
-            variationName: candidate.variationName,
-            categoryName: candidate.categoryName,
-            sku: candidate.sku,
-            priceMoneyAmount: candidate.priceMoneyAmount,
-            currency: candidate.currency,
-            enabledLocationIds: candidate.enabledLocationIds,
-            raw: candidate.raw,
-            isDeleted: candidate.isDeleted,
-            syncedAt
-          },
-          update: {
-            name: candidate.name,
-            variationName: candidate.variationName,
-            categoryName: candidate.categoryName,
-            sku: candidate.sku,
-            priceMoneyAmount: candidate.priceMoneyAmount,
-            currency: candidate.currency,
-            enabledLocationIds: candidate.enabledLocationIds,
-            raw: candidate.raw,
-            isDeleted: candidate.isDeleted,
-            syncedAt
+            squareVariationId: candidate.squareVariationId
           }
-        });
-        candidatesUpserted += 1;
-
-        const existing = await tx.squareMenuRecipeMapping.findUnique({
-          where: {
-            accountKey_squareItemId_squareVariationId: {
-              accountKey,
-              squareItemId: candidate.squareItemId,
-              squareVariationId: candidate.squareVariationId
-            }
-          }
-        });
-        const bestMatch = recipes
-          .map((recipe) => ({ recipe, confidence: recipeMatchConfidence(candidate.name, recipe.title) }))
-          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
-        const confidence = bestMatch?.confidence && bestMatch.confidence >= 0.45 ? bestMatch.confidence : null;
-        const suggestedStatus = confidence && confidence >= 0.75 ? 'NEEDS_REVIEW' : 'UNMAPPED';
-
-        if (!existing) {
-          await tx.squareMenuRecipeMapping.create({
-            data: {
-              accountKey,
-              venue: bestMatch?.recipe.venue ?? null,
-              squareItemId: candidate.squareItemId,
-              squareVariationId: candidate.squareVariationId,
-              squareItemName: candidate.name,
-              squareVariationName: candidate.variationName,
-              categoryName: candidate.categoryName,
-              priceMoneyAmount: candidate.priceMoneyAmount,
-              currency: candidate.currency,
-              status: candidate.isDeleted ? 'IGNORED' : suggestedStatus,
-              confidence,
-              notes: confidence ? `Suggested match: ${bestMatch?.recipe.title}` : null
-            }
-          });
-          mappingsCreated += 1;
-        } else {
-          mappingsPreserved += 1;
-          await tx.squareMenuRecipeMapping.update({
-            where: { id: existing.id },
-            data: {
-              squareItemName: candidate.name,
-              squareVariationName: candidate.variationName,
-              categoryName: candidate.categoryName,
-              priceMoneyAmount: candidate.priceMoneyAmount,
-              currency: candidate.currency,
-              confidence: existing.status === 'MAPPED' || existing.status === 'IGNORED'
-                ? existing.confidence
-                : confidence,
-              status: existing.status === 'UNMAPPED' && suggestedStatus === 'NEEDS_REVIEW'
-                ? 'NEEDS_REVIEW'
-                : existing.status
-            }
-          });
-        }
-      }
-
-      await tx.integrationSyncRun.create({
-        data: {
-          provider: 'SQUARE',
-          connectionId: response.connection.id,
-          syncType: 'MANUAL',
-          status: 'SUCCESS',
-          finishedAt: syncedAt,
-          recordsImported: candidates.length,
-          recordsUpdated: mappingsPreserved
+        },
+        create: {
+          accountKey,
+          squareItemId: candidate.squareItemId,
+          squareVariationId: candidate.squareVariationId,
+          name: candidate.name,
+          variationName: candidate.variationName,
+          categoryName: candidate.categoryName,
+          sku: candidate.sku,
+          priceMoneyAmount: candidate.priceMoneyAmount,
+          currency: candidate.currency,
+          enabledLocationIds: candidate.enabledLocationIds,
+          raw: candidate.raw,
+          isDeleted: candidate.isDeleted,
+          syncedAt
+        },
+        update: {
+          name: candidate.name,
+          variationName: candidate.variationName,
+          categoryName: candidate.categoryName,
+          sku: candidate.sku,
+          priceMoneyAmount: candidate.priceMoneyAmount,
+          currency: candidate.currency,
+          enabledLocationIds: candidate.enabledLocationIds,
+          raw: candidate.raw,
+          isDeleted: candidate.isDeleted,
+          syncedAt
         }
       });
+      candidatesUpserted += 1;
+
+      const existing = await prisma.squareMenuRecipeMapping.findUnique({
+        where: {
+          accountKey_squareItemId_squareVariationId: {
+            accountKey,
+            squareItemId: candidate.squareItemId,
+            squareVariationId: candidate.squareVariationId
+          }
+        }
+      });
+      const bestMatch = recipes
+        .map((recipe) => ({ recipe, confidence: recipeMatchConfidence(candidate.name, recipe.title) }))
+        .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+      const confidence = bestMatch?.confidence && bestMatch.confidence >= 0.45 ? bestMatch.confidence : null;
+      const suggestedStatus = confidence && confidence >= 0.75 ? 'NEEDS_REVIEW' : 'UNMAPPED';
+
+      if (!existing) {
+        await prisma.squareMenuRecipeMapping.create({
+          data: {
+            accountKey,
+            venue: bestMatch?.recipe.venue ?? null,
+            squareItemId: candidate.squareItemId,
+            squareVariationId: candidate.squareVariationId,
+            squareItemName: candidate.name,
+            squareVariationName: candidate.variationName,
+            categoryName: candidate.categoryName,
+            priceMoneyAmount: candidate.priceMoneyAmount,
+            currency: candidate.currency,
+            status: candidate.isDeleted ? 'IGNORED' : suggestedStatus,
+            confidence,
+            notes: confidence ? `Suggested match: ${bestMatch?.recipe.title}` : null
+          }
+        });
+        mappingsCreated += 1;
+      } else {
+        mappingsPreserved += 1;
+        await prisma.squareMenuRecipeMapping.update({
+          where: { id: existing.id },
+          data: {
+            squareItemName: candidate.name,
+            squareVariationName: candidate.variationName,
+            categoryName: candidate.categoryName,
+            priceMoneyAmount: candidate.priceMoneyAmount,
+            currency: candidate.currency,
+            confidence: existing.status === 'MAPPED' || existing.status === 'IGNORED'
+              ? existing.confidence
+              : confidence,
+            status: existing.status === 'UNMAPPED' && suggestedStatus === 'NEEDS_REVIEW'
+              ? 'NEEDS_REVIEW'
+              : existing.status
+          }
+        });
+      }
+    }
+
+    await prisma.integrationSyncRun.create({
+      data: {
+        provider: 'SQUARE',
+        connectionId: response.connection.id,
+        syncType: 'MANUAL',
+        status: 'SUCCESS',
+        finishedAt: syncedAt,
+        recordsImported: candidates.length,
+        recordsUpdated: mappingsPreserved
+      }
     });
 
     await recordEvent({
