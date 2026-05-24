@@ -8,6 +8,7 @@ import {
   IconStocktake,
   IconSuppliers
 } from '../lib/icons';
+import { SETTINGS_WEB_URL } from './suiteLinks';
 
 export type NavItem = {
   to: string;
@@ -15,7 +16,10 @@ export type NavItem = {
   description: string;
   icon: ReactNode;
   end?: boolean;
+  externalHref?: string;
 };
+
+const adminBaseUrl = SETTINGS_WEB_URL.replace(/\/+$/, '');
 
 export const NAV_ITEMS: NavItem[] = [
   {
@@ -78,6 +82,13 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Production Recipes',
     description: 'Prep batches, sauces and reusable components',
     icon: <IconRecipes />
+  },
+  {
+    to: '/square-products',
+    label: 'Square products',
+    description: 'Map Square menu items to Alma recipes',
+    icon: <IconItems />,
+    externalHref: adminBaseUrl ? `${adminBaseUrl}/integrations/square/menu-mapping` : undefined
   },
   {
     to: '/settings',

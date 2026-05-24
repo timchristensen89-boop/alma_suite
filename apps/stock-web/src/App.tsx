@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
@@ -22,6 +22,21 @@ import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
+
+function openWithSuiteHandoff(event: MouseEvent<HTMLAnchorElement>, href: string) {
+  const handoff = (globalThis as typeof globalThis & {
+    almaCreateSuiteHandoffUrl?: (href: string) => Promise<string>;
+  }).almaCreateSuiteHandoffUrl;
+
+  if (!handoff) return;
+
+  event.preventDefault();
+  void handoff(href).then((handoffHref) => {
+    window.location.assign(handoffHref);
+  }).catch(() => {
+    window.location.assign(href);
+  });
+}
 
 function SidebarNav() {
   const location = useLocation();
@@ -57,10 +72,17 @@ function SidebarNav() {
         <li className="sidebar-nav-section">Stock</li>
         {NAV_ITEMS.map((item) => (
           <li key={item.to}>
-            <NavLink to={item.to} end={item.end}>
-              <span className="sidebar-nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
+            {item.externalHref ? (
+              <a href={item.externalHref} onClick={(event) => openWithSuiteHandoff(event, item.externalHref!)}>
+                <span className="sidebar-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </a>
+            ) : (
+              <NavLink to={item.to} end={item.end}>
+                <span className="sidebar-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </NavLink>
+            )}
           </li>
         ))}
       </ul>
