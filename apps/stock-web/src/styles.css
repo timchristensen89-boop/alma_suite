@@ -794,6 +794,44 @@ tbody tr.row-detail:hover {
   background: var(--color-surface-muted);
 }
 
+.recipe-lines {
+  display: grid;
+  gap: 12px;
+}
+
+.recipe-cost-summary {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(120px, 1fr));
+  gap: 10px;
+}
+
+.recipe-cost-summary > div {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 12px;
+  background: var(--color-surface);
+  display: grid;
+  gap: 4px;
+}
+
+.recipe-cost-summary span {
+  color: var(--color-text-muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.recipe-cost-summary strong {
+  font-size: 1rem;
+}
+
+.recipe-cost-warnings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .recipe-lines-table {
   width: 100%;
   border-collapse: collapse;
@@ -835,6 +873,7 @@ tbody tr.row-detail:hover {
     minmax(86px, 0.5fr)
     minmax(82px, 0.5fr)
     minmax(96px, 0.55fr)
+    minmax(88px, 0.5fr)
     auto;
   gap: 10px;
   align-items: end;
@@ -859,6 +898,10 @@ tbody tr.row-detail:hover {
   .recipe-edit-line {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+
+  .recipe-cost-summary {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
 }
 
 @media (max-width: 560px) {
@@ -871,7 +914,11 @@ tbody tr.row-detail:hover {
   }
 
   .recipe-lines-table {
-    min-width: 520px;
+    min-width: 760px;
+  }
+
+  .recipe-cost-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 

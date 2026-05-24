@@ -9,7 +9,11 @@ import {
   type Recipe,
   type RecipeCategory,
   type RecipeCategoryKind,
+  type RecipeCostLine,
+  type RecipeCostPayload,
+  type RecipeIngredientOption,
   type RecipeLine,
+  type RecipeStatus,
   type RecipeWithLines,
   type RecipesPayload,
   type RecipesSummary
@@ -24,8 +28,8 @@ type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
   include: {
     lines: {
       include: {
-        item: { select: { id: true; name: true; unit: true } };
-        subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true } };
+        item: { select: { id: true; name: true; unit: true; avgCostCents: true } };
+        subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true; isPrepRecipe: true } };
       };
     };
   };
@@ -46,6 +50,37 @@ function isPresentString(value: string | null | undefined): value is string {
 
 function normaliseRecipeCategoryKind(value: string): RecipeCategoryKind {
   return value === 'BEVERAGE' || value === 'OTHER' ? value : 'FOOD';
+}
+
+function normaliseRecipeStatus(value: string): RecipeStatus {
+  return value === 'ARCHIVED' ? 'ARCHIVED' : 'ACTIVE';
+}
+
+function inferPrepRecipeFlag(input: {
+  isPrepRecipe?: boolean;
+  category?: string | null;
+  subcategory?: string | null;
+  notes?: string | null;
+}) {
+  if (input.isPrepRecipe !== undefined) return input.isPrepRecipe;
+  const value = [input.category ?? '', input.subcategory ?? '', input.notes ?? '']
+    .join(' ')
+    .toLowerCase();
+  return input.category === 'Production Recipes' || /\b(prep|batch|production)\b/.test(value);
+}
+
+function dollarsToCents(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) return null;
+  return Math.round(value * 100);
+}
+
+function centsToDollars(value: number | null | undefined) {
+  if (value === null || value === undefined) return null;
+  return Math.round(value) / 100;
+}
+
+function roundCents(value: number) {
+  return Math.round(value);
 }
 
 function inferRecipeCategoryKind(
@@ -96,8 +131,13 @@ function toRecipePayload(row: RecipeRow): Recipe {
     category: row.category,
     subcategory: row.subcategory,
     venue: row.venue,
+    salePriceCents: row.salePriceCents,
+    portionSize: row.portionSize,
+    portionUnit: row.portionUnit,
     yieldQuantity: row.yieldQuantity,
     yieldUnit: row.yieldUnit,
+    isPrepRecipe: row.isPrepRecipe,
+    status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row._count.lines,
@@ -116,6 +156,7 @@ function toLinePayload(row: RecipeLineRow): RecipeLine {
     quantity: row.quantity,
     unit: row.unit,
     cost: row.cost,
+    wastePercent: row.wastePercent,
     itemId: row.itemId,
     item: row.item ?? null,
     subRecipeId: row.subRecipeId,
@@ -134,8 +175,13 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     category: row.category,
     subcategory: row.subcategory,
     venue: row.venue,
+    salePriceCents: row.salePriceCents,
+    portionSize: row.portionSize,
+    portionUnit: row.portionUnit,
     yieldQuantity: row.yieldQuantity,
     yieldUnit: row.yieldUnit,
+    isPrepRecipe: row.isPrepRecipe,
+    status: normaliseRecipeStatus(row.status),
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row.lines.length,
@@ -146,6 +192,197 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
       .sort((a, b) => a.position - b.position)
       .map(toLinePayload)
   };
+}
+
+function costForLine(row: RecipeLineRow): RecipeCostLine {
+  const warnings: string[] = [];
+  const wasteMultiplier = 1 + Math.max(0, row.wastePercent ?? 0) / 100;
+  const quantity = row.quantity ?? null;
+
+  if (row.itemId) {
+    if (!row.item) {
+      return {
+        lineId: row.id,
+        ingredientName: row.ingredientName,
+        quantity,
+        unit: row.unit,
+        wastePercent: row.wastePercent,
+        source: 'MISSING',
+        unitCostCents: null,
+        lineCostCents: null,
+        warnings: ['Linked stock item could not be found']
+      };
+    }
+    if (row.item.avgCostCents === null) warnings.push('Stock item average cost is missing');
+    if (quantity === null) warnings.push('Ingredient quantity is missing');
+    if (row.unit && row.item.unit && row.unit !== row.item.unit) {
+      warnings.push(`Unit ${row.unit} differs from stock item unit ${row.item.unit}; no conversion is applied`);
+    }
+    const unitCostCents = row.item.avgCostCents;
+    const lineCostCents =
+      unitCostCents !== null && quantity !== null
+        ? roundCents(unitCostCents * quantity * wasteMultiplier)
+        : null;
+    return {
+      lineId: row.id,
+      ingredientName: row.ingredientName,
+      quantity,
+      unit: row.unit ?? row.item.unit,
+      wastePercent: row.wastePercent,
+      source: lineCostCents === null ? 'MISSING' : 'STOCK_ITEM',
+      unitCostCents,
+      lineCostCents,
+      warnings
+    };
+  }
+
+  if (row.subRecipeId) {
+    if (!row.subRecipe) {
+      return {
+        lineId: row.id,
+        ingredientName: row.ingredientName,
+        quantity,
+        unit: row.unit,
+        wastePercent: row.wastePercent,
+        source: 'MISSING',
+        unitCostCents: null,
+        lineCostCents: null,
+        warnings: ['Linked prep recipe could not be found']
+      };
+    }
+    const batchCostCents = dollarsToCents(row.subRecipe.estimatedCost);
+    const yieldQuantity = row.subRecipe.yieldQuantity;
+    if (batchCostCents === null || batchCostCents <= 0) warnings.push('Prep recipe batch cost is missing');
+    if (!yieldQuantity || yieldQuantity <= 0) warnings.push('Prep recipe yield quantity is missing');
+    if (quantity === null) warnings.push('Ingredient quantity is missing');
+    if (row.unit && row.subRecipe.yieldUnit && row.unit !== row.subRecipe.yieldUnit) {
+      warnings.push(`Unit ${row.unit} differs from prep recipe yield unit ${row.subRecipe.yieldUnit}; no conversion is applied`);
+    }
+    const unitCostCents =
+      batchCostCents !== null && yieldQuantity && yieldQuantity > 0
+        ? batchCostCents / yieldQuantity
+        : null;
+    const lineCostCents =
+      unitCostCents !== null && quantity !== null
+        ? roundCents(unitCostCents * quantity * wasteMultiplier)
+        : null;
+    return {
+      lineId: row.id,
+      ingredientName: row.ingredientName,
+      quantity,
+      unit: row.unit ?? row.subRecipe.yieldUnit,
+      wastePercent: row.wastePercent,
+      source: lineCostCents === null ? 'MISSING' : 'PREP_RECIPE',
+      unitCostCents: unitCostCents === null ? null : roundCents(unitCostCents),
+      lineCostCents,
+      warnings
+    };
+  }
+
+  const manualCostCents = dollarsToCents(row.cost);
+  if (manualCostCents === null) warnings.push('No linked stock item, prep recipe, or manual line cost');
+  return {
+    lineId: row.id,
+    ingredientName: row.ingredientName,
+    quantity,
+    unit: row.unit,
+    wastePercent: row.wastePercent,
+    source: manualCostCents === null ? 'MISSING' : 'MANUAL',
+    unitCostCents: null,
+    lineCostCents: manualCostCents,
+    warnings
+  };
+}
+
+function calculateRecipeCost(row: RecipeWithLinesRow): RecipeCostPayload {
+  const lines = row.lines
+    .slice()
+    .sort((a, b) => a.position - b.position)
+    .map(costForLine);
+  const warnings = lines.flatMap((line) =>
+    line.warnings.map((warning) => `${line.ingredientName}: ${warning}`)
+  );
+  const missingCostCount = lines.filter((line) => line.lineCostCents === null).length;
+  const manualBatchCostCents = dollarsToCents(row.estimatedCost);
+  const batchCostCents =
+    lines.length === 0 && manualBatchCostCents !== null && manualBatchCostCents > 0
+      ? manualBatchCostCents
+      : missingCostCount > 0
+      ? null
+      : lines.reduce((total, line) => total + (line.lineCostCents ?? 0), 0);
+  const portions =
+    row.portionSize && row.portionSize > 0 && row.yieldQuantity && row.yieldQuantity > 0
+      ? row.yieldQuantity / row.portionSize
+      : row.yieldQuantity && row.yieldQuantity > 0
+        ? row.yieldQuantity
+        : null;
+  if (!row.yieldQuantity || row.yieldQuantity <= 0) warnings.push('Recipe yield quantity is missing');
+  if (lines.length === 0 && (!manualBatchCostCents || manualBatchCostCents <= 0)) {
+    warnings.push('Add ingredient lines or a manual batch cost before using this recipe for COGS');
+  }
+  if (!row.isPrepRecipe && row.salePriceCents === null) warnings.push('Sale price is missing');
+  const costPerPortionCents =
+    batchCostCents !== null && portions && portions > 0
+      ? roundCents(batchCostCents / portions)
+      : batchCostCents;
+  const grossProfitCents =
+    row.salePriceCents !== null && costPerPortionCents !== null
+      ? row.salePriceCents - costPerPortionCents
+      : null;
+  const foodCostPercent =
+    row.salePriceCents !== null && row.salePriceCents > 0 && costPerPortionCents !== null
+      ? Math.round((costPerPortionCents / row.salePriceCents) * 1000) / 10
+      : null;
+
+  return {
+    recipeId: row.id,
+    batchCostCents,
+    costPerPortionCents,
+    salePriceCents: row.salePriceCents,
+    grossProfitCents,
+    foodCostPercent,
+    yieldQuantity: row.yieldQuantity,
+    yieldUnit: row.yieldUnit,
+    portionSize: row.portionSize,
+    portionUnit: row.portionUnit,
+    missingCostCount,
+    warnings,
+    lines
+  };
+}
+
+async function findRecipeWithLines(id: string) {
+  const row = await prisma.recipe.findUnique({
+    where: { id },
+    include: {
+      lines: {
+        include: {
+          item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
+          subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
+        }
+      }
+    }
+  });
+  if (!row) throw new HttpError(404, 'Recipe not found');
+  return row;
+}
+
+async function refreshRecipeEstimatedCost(id: string) {
+  const row = await findRecipeWithLines(id);
+  const cost = calculateRecipeCost(row);
+  if (cost.batchCostCents === null) return row;
+  return prisma.recipe.update({
+    where: { id },
+    data: { estimatedCost: centsToDollars(cost.batchCostCents) ?? 0 },
+    include: {
+      lines: {
+        include: {
+          item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
+          subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
+        }
+      }
+    }
+  });
 }
 
 async function recipeCountMapByCategory() {
@@ -337,7 +574,7 @@ export const recipesService = {
   },
 
   async summary(): Promise<RecipesSummary> {
-    const [totalRecipes, totalLines, costAgg, byCategory] = await Promise.all([
+    const [totalRecipes, totalLines, costAgg, byCategory, activeRecipes, archivedRecipes, prepRecipes, missingCostRecipes] = await Promise.all([
       prisma.recipe.count(),
       prisma.recipeLine.count(),
       prisma.recipe.aggregate({ _avg: { estimatedCost: true } }),
@@ -345,7 +582,11 @@ export const recipesService = {
         by: ['category'],
         _count: { _all: true },
         orderBy: { _count: { category: 'desc' } }
-      })
+      }),
+      prisma.recipe.count({ where: { status: 'ACTIVE' } }),
+      prisma.recipe.count({ where: { status: 'ARCHIVED' } }),
+      prisma.recipe.count({ where: { isPrepRecipe: true } }),
+      prisma.recipe.count({ where: { estimatedCost: { lte: 0 } } })
     ]);
 
     const categoryCounts = byCategory
@@ -358,24 +599,68 @@ export const recipesService = {
       totalRecipes,
       totalLines,
       averageEstimatedCost: costAgg._avg.estimatedCost ?? 0,
+      activeRecipes,
+      archivedRecipes,
+      prepRecipes,
+      itemRecipes: Math.max(totalRecipes - prepRecipes, 0),
+      missingCostRecipes,
       categoryCounts
     };
   },
 
   async get(id: string): Promise<RecipeWithLines> {
-    const row = await prisma.recipe.findUnique({
-      where: { id },
-      include: {
-        lines: {
-          include: {
-            item: { select: { id: true, name: true, unit: true } },
-            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
-          }
-        }
-      }
-    });
-    if (!row) throw new HttpError(404, 'Recipe not found');
+    const row = await findRecipeWithLines(id);
     return toRecipeWithLinesPayload(row);
+  },
+
+  async cost(id: string): Promise<RecipeCostPayload> {
+    const row = await findRecipeWithLines(id);
+    return calculateRecipeCost(row);
+  },
+
+  async ingredientOptions(): Promise<{ options: RecipeIngredientOption[] }> {
+    const [items, prepRecipes] = await Promise.all([
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true, unit: true, avgCostCents: true, category: { select: { name: true } } },
+        orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }]
+      }),
+      prisma.recipe.findMany({
+        where: { status: 'ACTIVE', isPrepRecipe: true },
+        select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, category: true },
+        orderBy: [{ category: 'asc' }, { title: 'asc' }]
+      })
+    ]);
+
+    return {
+      options: [
+        ...items.map((item) => ({
+          id: item.id,
+          type: 'STOCK_ITEM' as const,
+          label: item.name,
+          description: item.category?.name ?? null,
+          unit: item.unit,
+          unitCostCents: item.avgCostCents,
+          missingCost: item.avgCostCents === null
+        })),
+        ...prepRecipes.map((recipe) => {
+          const batchCostCents = dollarsToCents(recipe.estimatedCost);
+          const unitCostCents =
+            batchCostCents !== null && recipe.yieldQuantity && recipe.yieldQuantity > 0
+              ? roundCents(batchCostCents / recipe.yieldQuantity)
+              : null;
+          return {
+            id: recipe.id,
+            type: 'PREP_RECIPE' as const,
+            label: recipe.title,
+            description: recipe.category,
+            unit: recipe.yieldUnit,
+            unitCostCents,
+            missingCost: unitCostCents === null
+          };
+        })
+      ]
+    };
   },
 
   async createRecipe(input: unknown): Promise<RecipeWithLines> {
@@ -388,8 +673,13 @@ export const recipesService = {
         category: normaliseOptionalText(data.category) ?? null,
         subcategory: normaliseOptionalText(data.subcategory) ?? null,
         venue: normaliseOptionalText(data.venue) ?? null,
+        salePriceCents: data.salePriceCents ?? null,
+        portionSize: data.portionSize ?? null,
+        portionUnit: normaliseOptionalText(data.portionUnit) ?? null,
         yieldQuantity: data.yieldQuantity ?? null,
         yieldUnit: normaliseOptionalText(data.yieldUnit) ?? null,
+        isPrepRecipe: inferPrepRecipeFlag(data),
+        status: data.status ?? 'ACTIVE',
         estimatedCost: data.estimatedCost ?? 0,
         notes: normaliseOptionalText(data.notes) ?? null,
         lines: data.lines
@@ -400,6 +690,7 @@ export const recipesService = {
                 quantity: line.quantity ?? null,
                 unit: normaliseOptionalText(line.unit) ?? null,
                 cost: line.cost ?? null,
+                wastePercent: line.wastePercent ?? null,
                 itemId: normaliseOptionalText(line.itemId) ?? null,
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
@@ -409,13 +700,13 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true } },
-            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
+            item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         }
       }
     });
-    return toRecipeWithLinesPayload(row);
+    return toRecipeWithLinesPayload(await refreshRecipeEstimatedCost(row.id));
   },
 
   async updateRecipe(id: string, input: unknown): Promise<RecipeWithLines> {
@@ -443,11 +734,40 @@ export const recipesService = {
           subcategory: normaliseOptionalText(data.subcategory)
         }),
         ...(data.venue !== undefined && { venue: normaliseOptionalText(data.venue) }),
+        ...(data.salePriceCents !== undefined && {
+          salePriceCents: data.salePriceCents ?? null
+        }),
+        ...(data.portionSize !== undefined && {
+          portionSize: data.portionSize ?? null
+        }),
+        ...(data.portionUnit !== undefined && {
+          portionUnit: normaliseOptionalText(data.portionUnit)
+        }),
         ...(data.yieldQuantity !== undefined && {
           yieldQuantity: data.yieldQuantity
         }),
         ...(data.yieldUnit !== undefined && {
           yieldUnit: normaliseOptionalText(data.yieldUnit)
+        }),
+        ...((data.isPrepRecipe !== undefined ||
+          data.category !== undefined ||
+          data.subcategory !== undefined ||
+          data.notes !== undefined) && {
+          isPrepRecipe: inferPrepRecipeFlag({
+            isPrepRecipe: data.isPrepRecipe,
+            category:
+              data.category !== undefined
+                ? normaliseOptionalText(data.category)
+                : existing.category,
+            subcategory:
+              data.subcategory !== undefined
+                ? normaliseOptionalText(data.subcategory)
+                : existing.subcategory,
+            notes: data.notes !== undefined ? normaliseOptionalText(data.notes) : existing.notes
+          })
+        }),
+        ...(data.status !== undefined && {
+          status: data.status
         }),
         ...(data.estimatedCost !== undefined && {
           estimatedCost: data.estimatedCost
@@ -461,6 +781,7 @@ export const recipesService = {
               quantity: line.quantity ?? null,
               unit: normaliseOptionalText(line.unit) ?? null,
               cost: line.cost ?? null,
+              wastePercent: line.wastePercent ?? null,
               itemId: normaliseOptionalText(line.itemId) ?? null,
               subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))
@@ -470,13 +791,13 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true } },
-            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true } }
+            item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         }
       }
     });
-    return toRecipeWithLinesPayload(row);
+    return toRecipeWithLinesPayload(await refreshRecipeEstimatedCost(row.id));
   },
 
   async deleteRecipes(input: unknown): Promise<{ deleted: number }> {

@@ -351,6 +351,65 @@ test('recipes can use reusable production recipes without circular chains', asyn
   }
 });
 
+test('recipe costing rolls up stock item and prep recipe costs with missing-cost warnings', async () => {
+  const suffix = `recipe-cost-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const itemIds: string[] = [];
+  const recipeIds: string[] = [];
+
+  try {
+    const flour = await prisma.stockItem.create({
+      data: {
+        name: `Flour ${suffix}`,
+        unit: 'kg',
+        onHand: 0,
+        parLevel: 0,
+        avgCostCents: 400,
+        status: 'ACTIVE'
+      }
+    });
+    const missingCost = await createItem(`Missing cost ${suffix}`, 0, 'kg');
+    itemIds.push(flour.id, missingCost.id);
+
+    const dough = await recipesService.createRecipe({
+      title: `Dough ${suffix}`,
+      kind: 'FOOD',
+      category: 'Production Recipes',
+      isPrepRecipe: true,
+      yieldQuantity: 10,
+      yieldUnit: 'portion',
+      lines: [{ ingredientName: flour.name, quantity: 2, unit: 'kg', itemId: flour.id }]
+    });
+    recipeIds.push(dough.id);
+
+    const pizza = await recipesService.createRecipe({
+      title: `Pizza ${suffix}`,
+      kind: 'FOOD',
+      category: 'Menu',
+      salePriceCents: 2400,
+      yieldQuantity: 1,
+      yieldUnit: 'portion',
+      lines: [
+        { ingredientName: dough.title, quantity: 1, unit: 'portion', subRecipeId: dough.id },
+        { ingredientName: missingCost.name, quantity: 1, unit: 'kg', itemId: missingCost.id }
+      ]
+    });
+    recipeIds.push(pizza.id);
+
+    const doughCost = await recipesService.cost(dough.id);
+    assert.equal(doughCost.batchCostCents, 800);
+    assert.equal(doughCost.costPerPortionCents, 80);
+    assert.equal(doughCost.missingCostCount, 0);
+
+    const pizzaCost = await recipesService.cost(pizza.id);
+    assert.equal(pizzaCost.batchCostCents, null);
+    assert.equal(pizzaCost.missingCostCount, 1);
+    assert.match(pizzaCost.warnings.join(' '), /average cost is missing/);
+  } finally {
+    await prisma.recipe.deleteMany({ where: { id: { in: recipeIds.reverse() } } });
+    await cleanup({ itemIds });
+  }
+});
+
 test('catalogue item deletion is blocked when records reference the item', async () => {
   const suffix = `delete-guard-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const item = await createItem(`Referenced item ${suffix}`, 1, 'ea');

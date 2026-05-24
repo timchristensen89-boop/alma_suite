@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type {
   Recipe,
   RecipeCreateInput,
+  RecipeCostPayload,
   RecipeLineInput,
   RecipeUpdateInput,
   RecipeWithLines,
@@ -28,6 +29,7 @@ type RecipeLineDraft = {
   quantity: string;
   unit: string;
   cost: string;
+  wastePercent: string;
   itemId: string;
   subRecipeId: string;
 };
@@ -38,8 +40,12 @@ type RecipeDraft = {
   category: string;
   subcategory: string;
   venue: string;
+  salePrice: string;
+  portionSize: string;
+  portionUnit: string;
   yieldQuantity: string;
   yieldUnit: string;
+  status: 'ACTIVE' | 'ARCHIVED';
   estimatedCost: string;
   notes: string;
   lines: RecipeLineDraft[];
@@ -112,6 +118,16 @@ function formatCurrency(value: number) {
   });
 }
 
+function formatCurrencyCents(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—';
+  return formatCurrency(value / 100);
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—';
+  return `${value.toFixed(1)}%`;
+}
+
 function formatQuantity(quantity: number | null, unit: string | null) {
   if (quantity === null) return '—';
   const value = Number.isInteger(quantity) ? String(quantity) : quantity.toFixed(2);
@@ -122,7 +138,8 @@ function formatYield(recipe: Pick<Recipe, 'yieldQuantity' | 'yieldUnit'>) {
   return formatQuantity(recipe.yieldQuantity, recipe.yieldUnit);
 }
 
-function isProductionRecipe(recipe: Pick<Recipe, 'category' | 'subcategory' | 'title' | 'notes' | 'yieldQuantity'>) {
+function isProductionRecipe(recipe: Pick<Recipe, 'category' | 'subcategory' | 'title' | 'notes' | 'yieldQuantity' | 'isPrepRecipe'>) {
+  if ('isPrepRecipe' in recipe && recipe.isPrepRecipe) return true;
   const value = [
     recipe.category ?? '',
     recipe.subcategory ?? '',
@@ -168,6 +185,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
 
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [detail, setDetail] = useState<RecipeWithLines | null>(null);
+  const [costDetail, setCostDetail] = useState<RecipeCostPayload | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({ mode: 'closed' });
@@ -205,6 +223,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     if (!data) return [] as Recipe[];
     const needle = search.trim().toLowerCase();
     return data.recipes.filter((recipe) => {
+      if (recipe.status === 'ARCHIVED') return false;
       if (isProductionRecipe(recipe) !== isProductionMode) return false;
       if (category && recipe.category !== category) return false;
       if (kindFilter && recipeKindBucket(recipe) !== kindFilter) return false;
@@ -331,16 +350,22 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     if (expandedId === recipe.id) {
       setExpandedId(null);
       setDetail(null);
+      setCostDetail(null);
       setDetailError(null);
       return;
     }
     setExpandedId(recipe.id);
     setDetail(null);
+    setCostDetail(null);
     setDetailError(null);
     setDetailLoading(true);
     try {
-      const full = await api<RecipeWithLines>(`/api/recipes/${recipe.id}`);
+      const [full, cost] = await Promise.all([
+        api<RecipeWithLines>(`/api/recipes/${recipe.id}`),
+        api<RecipeCostPayload>(`/api/recipes/${recipe.id}/cost`)
+      ]);
       setDetail(full);
+      setCostDetail(cost);
     } catch (err) {
       setDetailError(
         err instanceof ApiError ? err.message : 'Could not load recipe lines'
@@ -366,6 +391,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     setForm({ mode: 'closed' });
     setExpandedId(null);
     setDetail(null);
+    setCostDetail(null);
     await load();
   }
 
@@ -446,6 +472,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
       setSelectedIds(new Set());
       setExpandedId((current) => (current && ids.includes(current) ? null : current));
       setDetail((current) => (current && ids.includes(current.id) ? null : current));
+      setCostDetail((current) => (current && ids.includes(current.recipeId) ? null : current));
       if (form.mode === 'edit' && ids.includes(form.recipe.id)) {
         setForm({ mode: 'closed' });
       }
@@ -513,6 +540,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
             </td>
             <td>{recipe.lineCount}</td>
             <td>{formatYield(recipe)}</td>
+            <td>{recipe.salePriceCents === null ? '—' : formatCurrencyCents(recipe.salePriceCents)}</td>
             <td>{formatCurrency(recipe.estimatedCost)}</td>
             <td className="cell-actions">
               <Button
@@ -551,13 +579,13 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
           </tr>
           {expanded ? (
             <tr className="row-detail">
-              <td colSpan={8}>
+              <td colSpan={9}>
                 {detailLoading ? (
                   <Spinner label="Loading lines" />
                 ) : detailError ? (
                   <p className="error-text">{detailError}</p>
                 ) : detail && detail.id === recipe.id ? (
-                  <RecipeLinesTable detail={detail} />
+                  <RecipeLinesTable detail={detail} cost={costDetail?.recipeId === detail.id ? costDetail : null} />
                 ) : null}
               </td>
             </tr>
@@ -589,6 +617,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
             <th>Category</th>
             <th>Lines</th>
             <th>Yield</th>
+            <th>Sale price</th>
             <th>Est. cost</th>
             <th aria-label="Actions" />
           </tr>
@@ -598,7 +627,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
             renderRecipeRows(recipes)
           ) : (
             <tr>
-              <td colSpan={8} className="table-empty-cell">
+              <td colSpan={9} className="table-empty-cell">
                 {emptyMessage}
               </td>
             </tr>
@@ -881,11 +910,15 @@ function emptyRecipeDraft(): RecipeDraft {
     category: '',
     subcategory: '',
     venue: '',
+    salePrice: '',
+    portionSize: '',
+    portionUnit: '',
     yieldQuantity: '',
     yieldUnit: '',
+    status: 'ACTIVE',
     estimatedCost: '0',
     notes: '',
-    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', itemId: '', subRecipeId: '' }]
+    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }]
   };
 }
 
@@ -906,8 +939,12 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
     category: recipe.category ?? '',
     subcategory: recipe.subcategory ?? '',
     venue: recipe.venue ?? '',
+    salePrice: recipe.salePriceCents === null ? '' : String(recipe.salePriceCents / 100),
+    portionSize: recipe.portionSize === null ? '' : String(recipe.portionSize),
+    portionUnit: recipe.portionUnit ?? '',
     yieldQuantity: recipe.yieldQuantity === null ? '' : String(recipe.yieldQuantity),
     yieldUnit: recipe.yieldUnit ?? '',
+    status: recipe.status,
     estimatedCost: String(recipe.estimatedCost),
     notes: recipe.notes ?? '',
     lines: recipe.lines.map((line) => ({
@@ -915,6 +952,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
       quantity: line.quantity === null ? '' : String(line.quantity),
       unit: line.unit ?? '',
       cost: line.cost === null ? '' : String(line.cost),
+      wastePercent: line.wastePercent === null ? '' : String(line.wastePercent),
       itemId: line.itemId ?? '',
       subRecipeId: line.subRecipeId ?? ''
     }))
@@ -1032,6 +1070,7 @@ function RecipeForm({
         quantity: line.quantity === '' ? undefined : Number(line.quantity),
         unit: line.unit.trim(),
         cost: line.cost === '' ? undefined : Number(line.cost),
+        wastePercent: line.wastePercent === '' ? undefined : Number(line.wastePercent),
         itemId: line.itemId,
         subRecipeId: line.subRecipeId
       }));
@@ -1041,8 +1080,13 @@ function RecipeForm({
       category: pageMode === 'production' ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY) : draft.category.trim(),
       subcategory: pageMode === 'production' ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
       venue: draft.venue.trim(),
+      salePriceCents: draft.salePrice === '' ? undefined : Math.round(Number(draft.salePrice) * 100),
+      portionSize: draft.portionSize === '' ? undefined : Number(draft.portionSize),
+      portionUnit: draft.portionUnit.trim(),
       yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
       yieldUnit: draft.yieldUnit.trim(),
+      isPrepRecipe: pageMode === 'production',
+      status: draft.status,
       estimatedCost: Number(draft.estimatedCost || 0),
       notes: draft.notes.trim(),
       lines
@@ -1089,7 +1133,11 @@ function RecipeForm({
           onChange={(event) => update('kind', event.currentTarget.value)}
           options={RECIPE_KIND_OPTIONS}
         />
-        <Input label="Estimated cost" type="number" step="0.01" value={draft.estimatedCost} onChange={(event) => update('estimatedCost', event.currentTarget.value)} />
+        {pageMode === 'production' ? (
+          <Input label="Manual batch cost fallback" type="number" step="0.01" value={draft.estimatedCost} onChange={(event) => update('estimatedCost', event.currentTarget.value)} />
+        ) : (
+          <Input label="Sale price" type="number" step="0.01" value={draft.salePrice} onChange={(event) => update('salePrice', event.currentTarget.value)} />
+        )}
       </div>
       {pageMode === 'production' ? (
         <p className="recipe-costing-note">
@@ -1104,9 +1152,20 @@ function RecipeForm({
       <div className="form-grid three">
         <Input label="Yield quantity" type="number" step="0.01" value={draft.yieldQuantity} onChange={(event) => update('yieldQuantity', event.currentTarget.value)} />
         <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
+        <Input label="Portion size" type="number" step="0.01" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
+        <Input label="Portion unit" placeholder="portion, kg, L" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} />
+        <Select
+          label="Status"
+          value={draft.status}
+          onChange={(event) => update('status', event.currentTarget.value as RecipeDraft['status'])}
+          options={[
+            { label: 'Active', value: 'ACTIVE' },
+            { label: 'Archived', value: 'ARCHIVED' }
+          ]}
+        />
       </div>
       <p className="recipe-costing-note">
-        Estimated cost remains manually reviewed. Production recipe links show their current unit and batch cost, but automatic COGS roll-up is still pending.
+        Costing uses linked stock item average costs first, then prep recipe yield costs, then manual line costs. Missing costs stay visible until the source item has a cost.
       </p>
       <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => update('notes', event.currentTarget.value)} />
 
@@ -1116,7 +1175,7 @@ function RecipeForm({
           type="button"
           variant="secondary"
           size="sm"
-          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', itemId: '', subRecipeId: '' }])}
+          onClick={() => update('lines', [...draft.lines, { ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }])}
         >
           Add line
         </Button>
@@ -1130,7 +1189,8 @@ function RecipeForm({
             <Input label="Ingredient" required value={line.ingredientName} onChange={(event) => updateLine(index, { ingredientName: event.currentTarget.value })} />
             <Input label="Qty" type="number" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
             <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-            <Input label="Cost" type="number" step="0.01" value={line.cost} onChange={(event) => updateLine(index, { cost: event.currentTarget.value })} />
+            <Input label="Manual cost" type="number" step="0.01" value={line.cost} onChange={(event) => updateLine(index, { cost: event.currentTarget.value })} />
+            <Input label="Waste %" type="number" step="0.01" value={line.wastePercent} onChange={(event) => updateLine(index, { wastePercent: event.currentTarget.value })} />
             <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
               Remove
             </Button>
@@ -1147,16 +1207,60 @@ function RecipeForm({
   );
 }
 
-function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
+function RecipeCostSummary({ cost }: { cost: RecipeCostPayload | null }) {
+  if (!cost) return null;
+
+  return (
+    <div className="recipe-cost-summary">
+      <div>
+        <span>Batch cost</span>
+        <strong>{formatCurrencyCents(cost.batchCostCents)}</strong>
+      </div>
+      <div>
+        <span>Cost per portion</span>
+        <strong>{formatCurrencyCents(cost.costPerPortionCents)}</strong>
+      </div>
+      <div>
+        <span>Sale price</span>
+        <strong>{formatCurrencyCents(cost.salePriceCents)}</strong>
+      </div>
+      <div>
+        <span>Gross profit</span>
+        <strong>{formatCurrencyCents(cost.grossProfitCents)}</strong>
+      </div>
+      <div>
+        <span>Food cost</span>
+        <strong>{formatPercent(cost.foodCostPercent)}</strong>
+      </div>
+      <div>
+        <span>Missing costs</span>
+        <strong>{cost.missingCostCount}</strong>
+      </div>
+    </div>
+  );
+}
+
+function RecipeLinesTable({ detail, cost }: { detail: RecipeWithLines; cost: RecipeCostPayload | null }) {
   if (detail.lines.length === 0) {
     return <p className="subtle">This recipe has no ingredient lines yet.</p>;
   }
 
+  const costLines = new Map((cost?.lines ?? []).map((line) => [line.lineId, line]));
+
   return (
     <div className="recipe-lines">
+      <RecipeCostSummary cost={cost} />
+      {cost?.warnings.length ? (
+        <div className="recipe-cost-warnings">
+          {cost.warnings.slice(0, 5).map((warning) => (
+            <Badge key={warning} tone="warning">{warning}</Badge>
+          ))}
+          {cost.warnings.length > 5 ? <Badge tone="muted">+{cost.warnings.length - 5} more</Badge> : null}
+        </div>
+      ) : null}
       {detail.lines.some((line) => line.subRecipe) ? (
         <p className="recipe-costing-note">
-          Production recipes are reusable ingredient lines. Estimated costs are shown for review and are not automatically rolled into final COGS yet.
+          Prep recipes are reusable ingredient lines. Their batch cost is divided by yield to calculate line cost where possible.
         </p>
       ) : null}
       <table className="recipe-lines-table">
@@ -1167,50 +1271,73 @@ function RecipeLinesTable({ detail }: { detail: RecipeWithLines }) {
             <th>Linked item</th>
             <th>Production recipe</th>
             <th>Qty</th>
-            <th>Cost</th>
+            <th>Line cost</th>
+            <th>Source</th>
           </tr>
         </thead>
         <tbody>
-          {detail.lines.map((line) => (
-            <tr key={line.id}>
-              <td>{line.position}</td>
-              <td>{line.ingredientName}</td>
-              <td>
-                {line.item ? (
+          {detail.lines.map((line) => {
+            const costLine = costLines.get(line.id);
+            return (
+              <tr key={line.id}>
+                <td>{line.position}</td>
+                <td>
                   <span className="cell-stack">
-                    <strong>{line.item.name}</strong>
-                    <span className="subtle">{line.item.unit}</span>
+                    <strong>{line.ingredientName}</strong>
+                    {line.wastePercent ? <span className="subtle">{line.wastePercent}% waste allowance</span> : null}
                   </span>
-                ) : (
-                  <span className="subtle">Unlinked</span>
-                )}
-              </td>
-              <td>
-                {line.subRecipe ? (
-                  <span className="cell-stack">
-                    <strong>{line.subRecipe.title}</strong>
-                    <span className="subtle">
-                      {formatQuantity(line.subRecipe.yieldQuantity, line.subRecipe.yieldUnit)}
-                      {' · '}
-                      {formatCurrency(line.subRecipe.estimatedCost)} batch
-                    </span>
-                    {line.subRecipe.yieldQuantity ? (
+                </td>
+                <td>
+                  {line.item ? (
+                    <span className="cell-stack">
+                      <strong>{line.item.name}</strong>
                       <span className="subtle">
-                        Approx. unit cost{' '}
-                        {formatCurrency(line.subRecipe.estimatedCost / line.subRecipe.yieldQuantity)}
+                        {line.item.unit}
+                        {' · '}
+                        {line.item.avgCostCents === null ? 'missing average cost' : `${formatCurrencyCents(line.item.avgCostCents)} avg`}
                       </span>
-                    ) : (
-                      <span className="subtle">Unit cost needs yield quantity</span>
-                    )}
+                    </span>
+                  ) : (
+                    <span className="subtle">Unlinked</span>
+                  )}
+                </td>
+                <td>
+                  {line.subRecipe ? (
+                    <span className="cell-stack">
+                      <strong>{line.subRecipe.title}</strong>
+                      <span className="subtle">
+                        {formatQuantity(line.subRecipe.yieldQuantity, line.subRecipe.yieldUnit)}
+                        {' · '}
+                        {formatCurrency(line.subRecipe.estimatedCost)} batch
+                      </span>
+                      {line.subRecipe.yieldQuantity ? (
+                        <span className="subtle">
+                          Approx. unit cost{' '}
+                          {formatCurrency(line.subRecipe.estimatedCost / line.subRecipe.yieldQuantity)}
+                        </span>
+                      ) : (
+                        <span className="subtle">Unit cost needs yield quantity</span>
+                      )}
+                    </span>
+                  ) : (
+                    <span className="subtle">—</span>
+                  )}
+                </td>
+                <td>{formatQuantity(line.quantity, line.unit)}</td>
+                <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
+                <td>
+                  <span className="cell-stack">
+                    <Badge tone={costLine?.source === 'MISSING' ? 'warning' : 'positive'}>
+                      {costLine?.source ?? 'MISSING'}
+                    </Badge>
+                    {costLine?.warnings.length ? (
+                      <span className="subtle">{costLine.warnings.join(', ')}</span>
+                    ) : null}
                   </span>
-                ) : (
-                  <span className="subtle">—</span>
-                )}
-              </td>
-              <td>{formatQuantity(line.quantity, line.unit)}</td>
-              <td>{line.cost === null ? '—' : formatCurrency(line.cost)}</td>
-            </tr>
-          ))}
+                </td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
