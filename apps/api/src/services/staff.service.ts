@@ -44,8 +44,10 @@ import {
   timesheetCashPaymentInputSchema,
   timesheetCreateInputSchema,
   timesheetExportInputSchema,
+  tipsBulkDeleteSchema,
   tipsCashEntryInputSchema,
   tipsCardImportInputSchema,
+  tipsManualHoursSchema,
   tipsMarkPaidInputSchema,
   tipsPayoutInputSchema,
   tipsQuerySchema,
@@ -4386,7 +4388,7 @@ export const staffService = {
     const venue = data.venue || 'All venues';
     const venueWhere = data.venue ? { venue: data.venue } : {};
 
-    const [cashEntries, cardEntries, timesheets, paidRuns] = await Promise.all([
+    const [cashEntries, cardEntries, timesheets, paidRuns, manualHoursEntries] = await Promise.all([
       prisma.staffTipCashEntry.findMany({
         where: {
           serviceDate: { gte: startDate, lt: endDate },
@@ -4430,6 +4432,18 @@ export const staffService = {
             orderBy: [{ createdAt: 'asc' }]
           }
         }
+      }),
+      prisma.staffTipManualHoursEntry.findMany({
+        where: {
+          weekStart: startDate,
+          ...(data.venue ? { venue: data.venue } : {})
+        },
+        include: {
+          staffProfile: {
+            select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+          }
+        },
+        orderBy: [{ createdAt: 'asc' }]
       })
     ]);
 
@@ -4456,6 +4470,19 @@ export const staffService = {
       };
       existing.approvedHours += hours;
       byStaff.set(timesheet.staffProfileId, existing);
+    }
+
+    // Inject manual hours entries into the allocation pool
+    for (const entry of manualHoursEntries) {
+      const existing = byStaff.get(entry.staffProfileId) ?? {
+        staffProfileId: entry.staffProfileId,
+        name: `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}`,
+        roleTitle: entry.staffProfile.roleTitle,
+        venue: entry.staffProfile.venue,
+        approvedHours: 0
+      };
+      existing.approvedHours += entry.hours;
+      byStaff.set(entry.staffProfileId, existing);
     }
 
     const approvedHours = Array.from(byStaff.values()).reduce((sum, row) => sum + row.approvedHours, 0);
@@ -4517,8 +4544,53 @@ export const staffService = {
         externalId: entry.externalId,
         notes: entry.notes
       })),
+      manualHoursEntries: manualHoursEntries.map((entry) => ({
+        id: entry.id,
+        staffProfileId: entry.staffProfileId,
+        staffName: `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}`,
+        venue: entry.venue,
+        hours: Math.round(entry.hours * 100) / 100,
+        notes: entry.notes
+      })),
       entitlements
     };
+  },
+
+  async deleteTipCashEntry(id: string) {
+    await prisma.staffTipCashEntry.delete({ where: { id } });
+    return { deleted: true };
+  },
+
+  async deleteTipCardEntry(id: string) {
+    await prisma.staffTipCardEntry.delete({ where: { id } });
+    return { deleted: true };
+  },
+
+  async bulkDeleteTipEntries(input: unknown) {
+    const data = tipsBulkDeleteSchema.parse(input);
+    const startDate = parseDate(data.start, 'Tips start date');
+    const endDate = parseDate(data.end, 'Tips end date');
+    const where = { serviceDate: { gte: startDate, lt: endDate }, venue: data.venue };
+    const [cashCount, cardCount] = await Promise.all([
+      data.type === 'card' ? 0 : prisma.staffTipCashEntry.deleteMany({ where }).then((r) => r.count),
+      data.type === 'cash' ? 0 : prisma.staffTipCardEntry.deleteMany({ where }).then((r) => r.count)
+    ]);
+    return { deletedCash: cashCount, deletedCard: cardCount };
+  },
+
+  async addManualHoursEntry(input: unknown) {
+    const data = tipsManualHoursSchema.parse(input);
+    const weekStart = parseDate(data.weekStart, 'Tips week start');
+    return prisma.staffTipManualHoursEntry.upsert({
+      where: { staffProfileId_venue_weekStart: { staffProfileId: data.staffProfileId, venue: data.venue, weekStart } },
+      create: { staffProfileId: data.staffProfileId, venue: data.venue, weekStart, hours: data.hours, notes: data.notes || null },
+      update: { hours: data.hours, notes: data.notes || null }
+    });
+  },
+
+  async deleteManualHoursEntry(id: string) {
+    await prisma.staffTipManualHoursEntry.delete({ where: { id } });
+    return { deleted: true };
   },
 
   async saveTipsCashEntry(input: unknown) {

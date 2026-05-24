@@ -659,6 +659,65 @@
   resize: vertical;
 }
 
+.tips-controls-row {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.tips-controls-row .roster-week-controls {
+  flex: 0 0 auto;
+}
+
+.tips-controls-row .field {
+  flex: 0 0 200px;
+  margin: 0;
+}
+
+.tips-import-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.tips-import-venue-group {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+}
+
+.tips-row-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.tips-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.tips-status-bar {
+  border-bottom: 1px solid var(--color-border);
+  padding: 12px;
+  display: grid;
+  gap: 10px;
+}
+
+@media (max-width: 640px) {
+  .tips-import-row {
+    grid-template-columns: 1fr;
+  }
+
+  .tips-page .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
 .inline-checkbox {
   display: inline-flex;
   align-items: center;

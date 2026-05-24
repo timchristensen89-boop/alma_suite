@@ -1683,14 +1683,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <SectionShell
         id="staff"
         title="Staff Reports"
-        description="Active staff, leave, clocking, payroll readiness, and recent staff management events"
+        description="Active staff, leave, clocking, payroll readiness, and wage costing"
+        action={<Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>Export wages CSV</Button>}
       >
         <div className="report-section-stack">
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? activeStaff.length} hint="Current profiles" loading={loading} />
             <StatCard label="Pending leave" value={data.overview?.staff.pendingLeaveCount ?? 0} hint="Awaiting manager decision" loading={loading} />
             <StatCard label="Approved leave" value={data.overview?.staff.approvedLeaveNext30Days ?? 0} hint="Next 30 days" loading={loading} />
-            <StatCard label="Awaiting timesheet approval" value={data.timesheets.filter((item) => item.status === 'SUBMITTED').length} hint={weekWindowLabel} loading={loading} />
+            <StatCard label="Awaiting approval" value={data.timesheets.filter((item) => item.status === 'SUBMITTED').length} hint={weekWindowLabel} loading={loading} />
+          </div>
+
+          <div className="stats-grid report-metric-grid">
+            <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)}h total`} loading={loading} />
+            <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)}h approved`} loading={loading} />
+            <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} hint="Cash + card tips" loading={loading} />
+            <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
           </div>
 
           <div className="report-detail-grid">
@@ -1751,10 +1759,61 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
+          {wageRows.length ? (
+            <div className="report-panel">
+              <h4>Wage costing — {weekWindowLabel}</h4>
+              <div className="table-scroll">
+                <table className="report-table">
+                  <thead>
+                    <tr>
+                      <th>Staff</th>
+                      <th>Venue</th>
+                      <th>Role</th>
+                      <th>Total hrs</th>
+                      <th>Appr. hrs</th>
+                      <th>Rate</th>
+                      <th>Projected wages</th>
+                      <th>Approved wages</th>
+                      <th>Tips</th>
+                      <th>Payroll total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {wageRows.map((row) => (
+                      <tr key={row.staffProfileId}>
+                        <td><strong>{row.name}</strong></td>
+                        <td>{row.venue}</td>
+                        <td>{row.roleTitle}</td>
+                        <td>{row.hours.toFixed(2)}</td>
+                        <td>{row.approvedHours.toFixed(2)}</td>
+                        <td>{row.rateCents ? formatCurrency(row.rateCents) : <span className="subtle">—</span>}</td>
+                        <td>{formatCurrency(row.projectedCostCents)}</td>
+                        <td>{formatCurrency(row.approvedCostCents)}</td>
+                        <td>{row.tipsCents ? formatCurrency(row.tipsCents) : <span className="subtle">—</span>}</td>
+                        <td><strong>{formatCurrency(row.approvedCostCents + row.tipsCents)}</strong></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan={3}><strong>Total</strong></td>
+                      <td><strong>{wageTotals.hours.toFixed(2)}</strong></td>
+                      <td><strong>{wageTotals.approvedHours.toFixed(2)}</strong></td>
+                      <td></td>
+                      <td><strong>{formatCurrency(wageTotals.projectedCostCents)}</strong></td>
+                      <td><strong>{formatCurrency(wageTotals.approvedCostCents)}</strong></td>
+                      <td><strong>{formatCurrency(wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
+                      <td><strong>{formatCurrency(wageTotals.approvedCostCents + wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ) : null}
+
           <div className="report-panel">
             <h4>Recent staff management events</h4>
             <Metric label="Approved or exported timesheets" value={exportedTimesheets.length} tone="positive" />
-            <Metric label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} tone={(data.tips?.tipPoolCents ?? 0) > 0 ? 'positive' : 'neutral'} />
             <div className="table-scroll">
               <table className="report-table">
                 <thead>

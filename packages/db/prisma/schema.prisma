@@ -635,7 +635,8 @@ model StaffProfile {
   clockEvents      StaffClockEvent[]
   timesheets       Timesheet[]
   trainingRecords  StaffTrainingRecord[]
-  tipPaymentRunLines StaffTipPaymentRunLine[]
+  tipPaymentRunLines    StaffTipPaymentRunLine[]
+  tipManualHoursEntries StaffTipManualHoursEntry[]
 
   @@index([venue])
   @@index([accountType, venue])
@@ -1756,6 +1757,22 @@ model StaffTipCardEntry {
   @@index([serviceDate])
   @@index([venue, serviceDate])
   @@index([source])
+}
+
+model StaffTipManualHoursEntry {
+  id             String       @id @default(cuid())
+  staffProfileId String
+  venue          String
+  weekStart      DateTime
+  hours          Float
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@unique([staffProfileId, venue, weekStart])
+  @@index([staffProfileId])
+  @@index([venue, weekStart])
 }
 
 model StaffTipPaymentRun {

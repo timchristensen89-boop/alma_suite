@@ -742,6 +742,46 @@ staffRouter.post('/tips/mark-paid', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.delete('/tips/cash/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteTipCashEntry(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/tips/card/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteTipCardEntry(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/tips/bulk-delete', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.bulkDeleteTipEntries(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/tips/manual-hours', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.addManualHoursEntry(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/tips/manual-hours/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteManualHoursEntry(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.delete(String(req.params.id), req.user));

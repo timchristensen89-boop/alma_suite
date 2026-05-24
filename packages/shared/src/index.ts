@@ -970,6 +970,21 @@ export const tipsMarkPaidInputSchema = tipsQuerySchema.extend({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const tipsBulkDeleteSchema = z.object({
+  venue: z.string().min(1),
+  start: z.string().min(4),
+  end: z.string().min(4),
+  type: z.enum(['cash', 'card', 'all']).default('all')
+});
+
+export const tipsManualHoursSchema = z.object({
+  staffProfileId: z.string().min(1),
+  venue: z.string().min(1),
+  weekStart: z.string().min(4),
+  hours: z.coerce.number().positive().max(100),
+  notes: z.string().optional().or(z.literal(''))
+});
+
 export const trainingModuleInputSchema = z.object({
   title: z.string().min(2),
   description: z.string().optional().or(z.literal('')),
@@ -3812,6 +3827,14 @@ export type StaffTipsSummary = {
     amountCents: number;
     source: string;
     externalId: string | null;
+    notes: string | null;
+  }>;
+  manualHoursEntries: Array<{
+    id: string;
+    staffProfileId: string;
+    staffName: string;
+    venue: string;
+    hours: number;
     notes: string | null;
   }>;
   entitlements: StaffTipEntitlement[];
