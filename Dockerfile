@@ -8,18 +8,26 @@ WORKDIR /workspace
 # Install pnpm
 RUN npm install -g pnpm@10.32.1
 
-# Copy workspace manifests first (layer cache for the install step)
+# Copy ALL workspace manifests first (layer cache for the install step)
+# We need ALL packages so pnpm creates correct node_modules symlinks for each
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
-COPY packages/db/package.json ./packages/db/package.json
-COPY packages/shared/package.json packages/shared/tsconfig.json ./packages/shared/
-COPY packages/ui/package.json ./packages/ui/
-COPY apps/api/package.json apps/api/tsconfig.json ./apps/api/
+COPY packages/ ./packages/
+COPY apps/api/package.json ./apps/api/
 COPY apps/stock-api/package.json ./apps/stock-api/
+
+# Stub package.json for the other frontend apps so pnpm resolves the full workspace
+# (avoids partial installs that leave apps/api/node_modules incomplete)
+RUN for d in admin-web comms-web giftcards-web marketing-web reports-web \
+      reserve-web staff-web stock-web web venue-ipad-dashboard; do \
+      mkdir -p apps/$d && \
+      echo "{\"name\":\"@alma/$d\",\"version\":\"0.0.0\",\"private\":true}" \
+        > apps/$d/package.json; \
+    done
 
 # Install dependencies (including dev — needed for TypeScript build)
 RUN pnpm install --frozen-lockfile
 
-# Copy full source (node_modules is gitignored and not included)
+# Copy full source (overwrites the stubs above; node_modules already set up)
 COPY . .
 
 # Generate Prisma client, then compile all packages
