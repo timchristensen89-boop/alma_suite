@@ -259,13 +259,24 @@ p {
   position: sticky;
   top: 0;
   z-index: 5;
-  /* Neutral dark base with a barely-there accent tint — premium and
-     consistent across all apps, with the accent color only as identity. */
-  background: color-mix(in srgb, #0d1117 88%, var(--color-accent) 12%);
+  /* Full accent colour as the topbar background — each app gets its own
+     distinctive colour. A subtle gradient adds dimension: brighter on the
+     leading edge, deeper towards the bottom. The warm gold inset highlight
+     at the top is the "string" — a thin band of light that reads as premium
+     craftsmanship across every accent hue. */
+  background: linear-gradient(
+    170deg,
+    color-mix(in srgb, var(--color-accent) 70%, #fff 30%) 0%,
+    var(--color-accent) 55%,
+    color-mix(in srgb, var(--color-accent) 88%, #000 12%) 100%
+  );
   color: #fff;
-  /* 2 px accent line is the sole per-app colour differentiator */
-  border-bottom: 2px solid color-mix(in srgb, var(--color-accent) 65%, transparent);
-  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.30), 0 1px 0 rgba(255, 255, 255, 0.04);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.20);
+  box-shadow:
+    inset 0 1.5px 0 rgba(255, 210, 65, 0.32),
+    inset 0 0 48px rgba(255, 255, 255, 0.05),
+    0 3px 28px rgba(0, 0, 0, 0.26),
+    0 1px 4px rgba(0, 0, 0, 0.14);
 }
 
 .app-shell-main {
@@ -534,7 +545,7 @@ p {
 
 .app-shell-topbar .topbar-user-label,
 .app-shell-topbar .subtle {
-  color: rgba(255, 255, 255, 0.52);
+  color: rgba(255, 255, 255, 0.68);
 }
 
 .topbar-search {
@@ -542,19 +553,19 @@ p {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.22);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.06);
-  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.12);
+  color: rgba(255, 255, 255, 0.72);
   min-width: 240px;
   font-size: 13px;
   transition: background 130ms ease, border-color 130ms ease;
 }
 
 .topbar-search:hover {
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.80);
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.18);
+  color: rgba(255, 255, 255, 0.90);
 }
 
 .topbar-search kbd {
@@ -573,8 +584,8 @@ p {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.10);
-  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.14);
+  border: 1.5px solid rgba(255, 255, 255, 0.32);
   color: #ffffff;
   font-size: 12px;
   font-weight: 700;
@@ -583,8 +594,8 @@ p {
 }
 
 .topbar-avatar:hover {
-  background: rgba(255, 255, 255, 0.16);
-  border-color: rgba(255, 255, 255, 0.36);
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.50);
 }
 
 .app-shell-topbar .btn-primary,
@@ -594,24 +605,25 @@ p {
   min-height: 36px;
   padding-inline: 12px;
   border-radius: 8px;
-  border-color: rgba(255, 255, 255, 0.14);
-  background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.88);
-  box-shadow: none;
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.11);
+  color: rgba(255, 255, 255, 0.92);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
   font-weight: 600;
   transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
 }
 
 .app-shell-topbar .btn-primary {
-  border-color: rgba(255, 255, 255, 0.26);
-  background: rgba(255, 255, 255, 0.15);
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.20);
   color: #ffffff;
   font-weight: 700;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 1px 3px rgba(0,0,0,0.12);
 }
 
 .app-shell-topbar .btn-primary:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.38);
-  background: rgba(255, 255, 255, 0.24);
+  border-color: rgba(255, 255, 255, 0.46);
+  background: rgba(255, 255, 255, 0.28);
   color: #ffffff;
 }
 
@@ -625,14 +637,14 @@ p {
 .app-shell-topbar .btn-secondary:hover:not(:disabled),
 .app-shell-topbar .btn-ghost:hover:not(:disabled),
 .app-shell-topbar .icon-btn:hover {
-  border-color: rgba(255, 255, 255, 0.24);
-  background: rgba(255, 255, 255, 0.12);
+  border-color: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
 }
 
-/* Notifications dot — border matches the dark topbar background */
+/* Notifications dot — border matches the coloured topbar background */
 .app-shell-topbar .notifications-dot {
-  border-color: color-mix(in srgb, #0d1117 88%, var(--color-accent) 12%);
+  border-color: var(--color-accent);
 }
 
 /* ==========================================================================
