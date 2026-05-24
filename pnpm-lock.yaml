@@ -525,6 +525,9 @@ importers:
       bcryptjs:
         specifier: ^2.4.3
         version: 2.4.3
+      prisma:
+        specifier: ^6.5.0
+        version: 6.19.3(typescript@5.9.3)
     devDependencies:
       '@types/bcryptjs':
         specifier: ^2.4.6
@@ -532,9 +535,6 @@ importers:
       '@types/node':
         specifier: ^22.13.14
         version: 22.19.17
-      prisma:
-        specifier: ^6.5.0
-        version: 6.19.3(typescript@5.9.3)
       tsx:
         specifier: ^4.19.3
         version: 4.21.0
