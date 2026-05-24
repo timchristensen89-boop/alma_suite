@@ -1042,8 +1042,8 @@ function StaffHome({
                 <strong>{member.firstName} {member.lastName}</strong>
                 <small>{member.venue || 'No venue'} · pay type missing.</small>
               </span>
-              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'employment')}>
-                Open employment
+              <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(member.id, 'payroll')}>
+                Open payroll
               </Button>
             </div>
           ))}
@@ -1313,10 +1313,21 @@ function StaffProfilesPage({
                     variant="ghost"
                     onClick={(event) => {
                       event.stopPropagation();
-                      setForm({ mode: 'edit', member });
+                      openProfile(member.id, 'personal');
                     }}
                   >
-                    Edit
+                    Profile
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="ghost"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      openProfile(member.id, 'payroll');
+                    }}
+                  >
+                    Payroll
                   </Button>
                 </span>
               </div>
@@ -3629,7 +3640,18 @@ function StaffProfileWorkspacePage({
           </nav>
         </aside>
         <main className="staff-profile-main">
-          <PageHeader eyebrow={sectionTitle} title={staffFullName(member)} description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections." actions={<Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>} />
+          <PageHeader
+            eyebrow={sectionTitle}
+            title={staffFullName(member)}
+            description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections."
+            actions={
+              activeSection === 'payroll' && canManageProfileAccess ? (
+                <Button type="button" onClick={() => setPayrollModalOpen(true)}>Edit payroll</Button>
+              ) : (
+                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
+              )
+            }
+          />
           <div className="stats-grid staff-profile-stats">
             <StatCard label="Documents" value={member.records.length + visibleHrRecords.length} hint={`${attentionDocuments} need attention`} />
             <StatCard label="Training" value={member.trainingRecords.length} hint={`Level ${member.trainingLevel ?? 0}`} />
@@ -4077,6 +4099,7 @@ function AccessPage({
   reload: () => Promise<void>;
 }) {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const selected = staff.find((member) => member.id === selectedId) ?? staff[0] ?? null;
   const [profileDraft, setProfileDraft] = useState<StaffDraft>(() => selected ? draftFromStaff(selected) : emptyStaffDraft());
   const [training, setTraining] = useState<TrainingOverview | null>(null);
@@ -4106,6 +4129,11 @@ function AccessPage({
   const canManageSettings = canAccessSettings(user);
   const visibleStaffApps = canManageSettings ? STAFF_APPS : STAFF_APPS.filter((app) => app.id !== 'SETTINGS');
   const selectedRoleTemplate = roleTemplates.find((template) => template.id === profileDraft.roleTemplateId) ?? null;
+
+  function openProfile(id: string, section: StaffProfileSectionId = 'personal') {
+    setSelectedId(id);
+    navigate(`/staff/${id}/${section}`);
+  }
 
   function permissionsFor(appId: AlmaAppId) {
     return accessByApp.get(appId)?.permissions ?? {};
@@ -4513,7 +4541,7 @@ function AccessPage({
               key={member.id}
               type="button"
               className={`staff-list-button ${selected?.id === member.id ? 'is-selected' : ''}`}
-              onClick={() => setSelectedId(member.id)}
+              onClick={() => openProfile(member.id, 'access')}
             >
               <span>
                 <strong>
@@ -4571,9 +4599,14 @@ function AccessPage({
               title="Profile details"
               subtitle="Role, personal details, payroll fields, and manager notes."
               action={
-                <Button type="button" size="sm" onClick={() => setProfileModalOpen(true)}>
-                  Edit profile
-                </Button>
+                <span className="inline-actions">
+                  <Button type="button" size="sm" variant="secondary" onClick={() => openProfile(selected.id, 'personal')}>
+                    Open profile
+                  </Button>
+                  <Button type="button" size="sm" onClick={() => openProfile(selected.id, 'payroll')}>
+                    Payroll
+                  </Button>
+                </span>
               }
             >
               <div className="staff-profile-summary-grid">
