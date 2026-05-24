@@ -28,6 +28,14 @@ recipesRouter.get('/categories', async (_req, res, next) => {
   }
 });
 
+recipesRouter.get('/ingredient-options', async (_req, res, next) => {
+  try {
+    res.json(await recipesService.ingredientOptions());
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.post('/categories', async (req, res, next) => {
   try {
     requireStockManager(req.user);
@@ -46,6 +54,14 @@ recipesRouter.patch('/categories/:id', async (req, res, next) => {
   }
 });
 
+recipesRouter.get('/:id/cost', async (req, res, next) => {
+  try {
+    res.json(await recipesService.cost(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await recipesService.get(String(req.params.id)));
@@ -56,6 +72,7 @@ recipesRouter.get('/:id', async (req, res, next) => {
 
 recipesRouter.post('/', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.status(201).json(await recipesService.createRecipe(req.body));
   } catch (error) {
     next(error);
@@ -73,6 +90,7 @@ recipesRouter.delete('/', async (req, res, next) => {
 
 recipesRouter.patch('/:id', async (req, res, next) => {
   try {
+    requireStockManager(req.user);
     res.json(await recipesService.updateRecipe(String(req.params.id), req.body));
   } catch (error) {
     next(error);

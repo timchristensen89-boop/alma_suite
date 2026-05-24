@@ -4809,7 +4809,9 @@ export type StockInvoiceLineRematchInput = z.infer<
 /* ------------------------------------------------------------------------- */
 
 export const recipeCategoryKindSchema = z.enum(['FOOD', 'BEVERAGE', 'OTHER']);
+export const recipeStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export type RecipeCategoryKind = z.infer<typeof recipeCategoryKindSchema>;
+export type RecipeStatus = z.infer<typeof recipeStatusSchema>;
 
 export type RecipeCategory = {
   id: string;
@@ -4830,10 +4832,11 @@ export type RecipeLine = {
   quantity: number | null;
   unit: string | null;
   cost: number | null;
+  wastePercent: number | null;
   itemId: string | null;
-  item: { id: string; name: string; unit: string } | null;
+  item: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
   subRecipeId: string | null;
-  subRecipe: { id: string; title: string; yieldQuantity: number | null; yieldUnit: string | null; estimatedCost: number } | null;
+  subRecipe: { id: string; title: string; yieldQuantity: number | null; yieldUnit: string | null; estimatedCost: number; isPrepRecipe: boolean } | null;
   createdAt: string;
   updatedAt: string;
 };
@@ -4846,8 +4849,13 @@ export type Recipe = {
   category: string | null;
   subcategory: string | null;
   venue: string | null;
+  salePriceCents: number | null;
+  portionSize: number | null;
+  portionUnit: string | null;
   yieldQuantity: number | null;
   yieldUnit: string | null;
+  isPrepRecipe: boolean;
+  status: RecipeStatus;
   estimatedCost: number;
   notes: string | null;
   lineCount: number;
@@ -4856,6 +4864,44 @@ export type Recipe = {
 };
 
 export type RecipeWithLines = Recipe & { lines: RecipeLine[] };
+
+export type RecipeCostLine = {
+  lineId: string;
+  ingredientName: string;
+  quantity: number | null;
+  unit: string | null;
+  wastePercent: number | null;
+  source: 'STOCK_ITEM' | 'PREP_RECIPE' | 'MANUAL' | 'MISSING';
+  unitCostCents: number | null;
+  lineCostCents: number | null;
+  warnings: string[];
+};
+
+export type RecipeCostPayload = {
+  recipeId: string;
+  batchCostCents: number | null;
+  costPerPortionCents: number | null;
+  salePriceCents: number | null;
+  grossProfitCents: number | null;
+  foodCostPercent: number | null;
+  yieldQuantity: number | null;
+  yieldUnit: string | null;
+  portionSize: number | null;
+  portionUnit: string | null;
+  missingCostCount: number;
+  warnings: string[];
+  lines: RecipeCostLine[];
+};
+
+export type RecipeIngredientOption = {
+  id: string;
+  type: 'STOCK_ITEM' | 'PREP_RECIPE';
+  label: string;
+  description: string | null;
+  unit: string | null;
+  unitCostCents: number | null;
+  missingCost: boolean;
+};
 
 export type RecipesPayload = {
   recipes: Recipe[];
@@ -4867,6 +4913,11 @@ export type RecipesSummary = {
   totalRecipes: number;
   totalLines: number;
   averageEstimatedCost: number;
+  activeRecipes: number;
+  archivedRecipes: number;
+  prepRecipes: number;
+  itemRecipes: number;
+  missingCostRecipes: number;
   categoryCounts: Array<{ category: string; count: number }>;
 };
 
@@ -4875,6 +4926,7 @@ export const recipeLineInputSchema = z.object({
   quantity: z.coerce.number().optional(),
   unit: z.string().optional().or(z.literal('')),
   cost: z.coerce.number().optional(),
+  wastePercent: z.coerce.number().min(0).max(100).optional(),
   itemId: z.string().optional().or(z.literal('')),
   subRecipeId: z.string().optional().or(z.literal(''))
 }).refine((line) => !(line.itemId && line.subRecipeId), {
@@ -4897,8 +4949,13 @@ export const recipeCreateInputSchema = z.object({
   category: z.string().optional().or(z.literal('')),
   subcategory: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
+  salePriceCents: z.coerce.number().int().nonnegative().optional(),
+  portionSize: z.coerce.number().positive().optional(),
+  portionUnit: z.string().optional().or(z.literal('')),
   yieldQuantity: z.coerce.number().optional(),
   yieldUnit: z.string().optional().or(z.literal('')),
+  isPrepRecipe: z.boolean().optional(),
+  status: recipeStatusSchema.optional(),
   estimatedCost: z.coerce.number().optional(),
   notes: z.string().optional().or(z.literal('')),
   lines: z.array(recipeLineInputSchema).optional()

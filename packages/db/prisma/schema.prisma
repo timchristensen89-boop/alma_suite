@@ -2357,8 +2357,13 @@ model Recipe {
   category      String?
   subcategory   String?
   venue         String?
+  salePriceCents Int?
+  portionSize  Float?
+  portionUnit  String?
   yieldQuantity Float?
   yieldUnit     String?
+  isPrepRecipe Boolean      @default(false)
+  status        String       @default("ACTIVE")
   estimatedCost Float        @default(0)
   notes         String?
   createdAt     DateTime     @default(now())
@@ -2370,6 +2375,8 @@ model Recipe {
 
   @@index([title])
   @@index([category])
+  @@index([isPrepRecipe])
+  @@index([status])
 }
 
 model SquareCatalogItem {
@@ -2448,6 +2455,7 @@ model RecipeLine {
   quantity       Float?
   unit           String?
   cost           Float?
+  wastePercent   Float?
   itemId         String?
   subRecipeId    String?
   createdAt      DateTime   @default(now())
