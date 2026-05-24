@@ -3646,7 +3646,7 @@ function StaffProfileWorkspacePage({
             description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections."
             actions={
               activeSection === 'payroll' && canManageProfileAccess ? (
-                <Button type="button" onClick={() => setPayrollModalOpen(true)}>Edit payroll</Button>
+                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit payroll</Button>
               ) : (
                 <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
               )
