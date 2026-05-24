@@ -1,0 +1,159 @@
+{
+  "servers": [
+    {
+      "id": "api",
+      "label": "Main API",
+      "description": "Compliance + Staff + Reserve + Marketing API (Express, port 3018)",
+      "command": "pnpm --filter @alma/api dev",
+      "cwd": ".",
+      "port": 3018,
+      "url": "http://localhost:3018",
+      "type": "api",
+      "group": "backend"
+    },
+    {
+      "id": "stock-api",
+      "label": "Stock API",
+      "description": "Stock + Inventory API (Express, port 3019)",
+      "command": "pnpm --filter @alma/stock-api dev",
+      "cwd": ".",
+      "port": 3019,
+      "url": "http://localhost:3019",
+      "type": "api",
+      "group": "backend"
+    },
+    {
+      "id": "web",
+      "label": "Compliance Web",
+      "description": "Compliance + Temperature + Incidents frontend (Vite, port 5173)",
+      "command": "pnpm --filter @alma/web dev",
+      "cwd": ".",
+      "port": 5173,
+      "url": "http://localhost:5173",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "staff-web",
+      "label": "Staff Web",
+      "description": "Staff, timesheets, roster, tips, and leave (Vite, port 5175)",
+      "command": "pnpm --filter @alma/staff-web dev",
+      "cwd": ".",
+      "port": 5175,
+      "url": "http://localhost:5175",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "reports-web",
+      "label": "Reports Web",
+      "description": "Management reports, sales, wages, prime cost (Vite, port 5176)",
+      "command": "pnpm --filter @alma/reports-web dev",
+      "cwd": ".",
+      "port": 5176,
+      "url": "http://localhost:5176",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api", "stock-api"]
+    },
+    {
+      "id": "reserve-web",
+      "label": "Reserve Web",
+      "description": "Reservations and bookings (Vite, port 5177)",
+      "command": "pnpm --filter @alma/reserve-web dev",
+      "cwd": ".",
+      "port": 5177,
+      "url": "http://localhost:5177",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "marketing-web",
+      "label": "Marketing Web",
+      "description": "Guest CRM, campaigns, and marketing (Vite, port 5178)",
+      "command": "pnpm --filter @alma/marketing-web dev",
+      "cwd": ".",
+      "port": 5178,
+      "url": "http://localhost:5178",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "giftcards-web",
+      "label": "Gift Cards Web",
+      "description": "Gift card orders and fulfilment (Vite, port 5179)",
+      "command": "pnpm --filter @alma/giftcards-web dev",
+      "cwd": ".",
+      "port": 5179,
+      "url": "http://localhost:5179",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "admin-web",
+      "label": "Admin Web",
+      "description": "Suite admin panel (Vite, port 5180)",
+      "command": "pnpm --filter @alma/admin-web dev",
+      "cwd": ".",
+      "port": 5180,
+      "url": "http://localhost:5180",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "comms-web",
+      "label": "Comms Web",
+      "description": "Internal communications and announcements (Vite, port 5182)",
+      "command": "pnpm --filter @alma/comms-web dev",
+      "cwd": ".",
+      "port": 5182,
+      "url": "http://localhost:5182",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["api"]
+    },
+    {
+      "id": "stock-web",
+      "label": "Stock Web",
+      "description": "Stock catalogue, stocktakes, recipes (Vite, port 5174)",
+      "command": "pnpm --filter @alma/stock-web dev",
+      "cwd": ".",
+      "port": 5174,
+      "url": "http://localhost:5174",
+      "type": "vite",
+      "group": "frontend",
+      "needs": ["stock-api"]
+    },
+    {
+      "id": "venue-ipad-dashboard",
+      "label": "Venue iPad Dashboard",
+      "description": "Standalone venue iPad app — checklists, tasks, bookings (Vite, port 5198)",
+      "command": "pnpm --filter @alma/venue-ipad-dashboard dev",
+      "cwd": ".",
+      "port": 5198,
+      "url": "http://localhost:5198",
+      "type": "vite",
+      "group": "frontend",
+      "needs": []
+    }
+  ],
+  "groups": {
+    "all": ["api", "stock-api", "web", "staff-web", "reports-web", "reserve-web", "marketing-web", "giftcards-web", "admin-web", "comms-web", "stock-web", "venue-ipad-dashboard"],
+    "core": ["api", "web", "staff-web"],
+    "backend": ["api", "stock-api"],
+    "stock": ["stock-api", "stock-web"],
+    "reports": ["api", "stock-api", "reports-web"],
+    "reserve": ["api", "reserve-web"],
+    "marketing": ["api", "marketing-web"],
+    "comms": ["api", "comms-web"],
+    "giftcards": ["api", "giftcards-web"]
+  },
+  "rootCmd": "pnpm",
+  "workspaceRoot": "."
+}
