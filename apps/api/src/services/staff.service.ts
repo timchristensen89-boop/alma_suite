@@ -4450,6 +4450,14 @@ export const staffService = {
     const cashTipsCents = cashEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const squareTipsCents = cardEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const tipPoolCents = cashTipsCents + squareTipsCents;
+    const breakageCentsPerDay = data.breakageCentsPerDay ?? 3000;
+    const tradingDaySet = new Set([
+      ...cashEntries.map((e) => e.serviceDate.toISOString().slice(0, 10)),
+      ...cardEntries.map((e) => e.serviceDate.toISOString().slice(0, 10))
+    ]);
+    const tradingDays = tradingDaySet.size;
+    const breakageCents = tradingDays * breakageCentsPerDay;
+    const allocatablePoolCents = Math.max(0, tipPoolCents - breakageCents);
     const byStaff = new Map<string, {
       staffProfileId: string;
       name: string;
@@ -4493,8 +4501,8 @@ export const staffService = {
         const isLast = index === rows.length - 1;
         const amountCents = approvedHours > 0
           ? isLast
-            ? tipPoolCents - allocatedCents
-            : Math.round((row.approvedHours / approvedHours) * tipPoolCents)
+            ? allocatablePoolCents - allocatedCents
+            : Math.round((row.approvedHours / approvedHours) * allocatablePoolCents)
           : 0;
         allocatedCents += amountCents;
         return {
@@ -4512,6 +4520,10 @@ export const staffService = {
       cashTipsCents,
       squareTipsCents,
       tipPoolCents,
+      breakageCentsPerDay,
+      breakageCents,
+      allocatablePoolCents,
+      tradingDays,
       approvedHours: Math.round(approvedHours * 100) / 100,
       paidRuns: paidRuns.map((run) => ({
         id: run.id,
@@ -4708,7 +4720,7 @@ export const staffService = {
         venue: data.venue,
         weekStart: startDate,
         weekEnd: endDate,
-        tipPoolCents: summary.tipPoolCents,
+        tipPoolCents: summary.allocatablePoolCents,
         notes: data.notes || null,
         paidById: paidById ?? null,
         lines: {

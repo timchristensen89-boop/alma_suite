@@ -907,7 +907,8 @@ export const timesheetExportInputSchema = z.object({
 export const tipsQuerySchema = z.object({
   start: z.string().min(4),
   end: z.string().min(4),
-  venue: z.string().optional().or(z.literal(''))
+  venue: z.string().optional().or(z.literal('')),
+  breakageCentsPerDay: z.coerce.number().int().nonnegative().default(3000)
 });
 
 export const salesActualQuerySchema = z.object({
@@ -3837,6 +3838,10 @@ export type StaffTipsSummary = {
   cashTipsCents: number;
   squareTipsCents: number;
   tipPoolCents: number;
+  breakageCentsPerDay: number;
+  breakageCents: number;
+  allocatablePoolCents: number;
+  tradingDays: number;
   approvedHours: number;
   paidRuns: Array<{
     id: string;

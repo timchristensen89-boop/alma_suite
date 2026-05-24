@@ -10968,6 +10968,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [manualStaffId, setManualStaffId] = useState('');
   const [manualHours, setManualHours] = useState('');
   const [manualNotes, setManualNotes] = useState('');
+  const [breakagePerDay, setBreakagePerDay] = useState('30');
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [adjustments, setAdjustments] = useState<Record<string, { adjustment: string; excluded: boolean; notes: string }>>({});
   const [summary, setSummary] = useState<StaffTipsSummary | null>(null);
@@ -10976,6 +10977,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
+  const breakageCentsPerDay = useMemo(() => Math.round((Number(breakagePerDay) || 0) * 100), [breakagePerDay]);
   const venueOptions = useMemo(
     () => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((value) => ({ label: value, value })),
     [staff]
@@ -10988,7 +10990,8 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       const query = new URLSearchParams({
         start: weekStart.toISOString(),
         end: weekEnd.toISOString(),
-        venue
+        venue,
+        breakageCentsPerDay: String(breakageCentsPerDay)
       });
       setSummary(await api<StaffTipsSummary>(`/api/staff/tips?${query.toString()}`));
     } catch (err) {
@@ -10996,7 +10999,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     } finally {
       setLoading(false);
     }
-  }, [venue, weekEnd, weekStart]);
+  }, [breakageCentsPerDay, venue, weekEnd, weekStart]);
 
   useEffect(() => {
     if (!venue && venueOptions[0]) setVenue(venueOptions[0].value);
@@ -11033,7 +11036,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
   }), [adjustments, summary?.entitlements]);
 
   const totalPayoutCents = reviewedRows.reduce((sum, row) => sum + row.finalAmountCents, 0);
-  const payoutVarianceCents = totalPayoutCents - (summary?.tipPoolCents ?? 0);
+  const payoutVarianceCents = totalPayoutCents - (summary?.allocatablePoolCents ?? 0);
   const lockedRows = summary?.paidEntitlements ?? [];
   const hasPaidRun = lockedRows.length > 0;
 
@@ -11233,7 +11236,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const result = await api<{ csv: string }>('/api/staff/tips/export/csv', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, adjustments: adjustmentPayload })
       });
       downloadTextFile(`alma-tips-${venue}-${toDateInput(weekStart)}.csv`, result.csv);
       setMessage('Tips CSV exported.');
@@ -11251,7 +11254,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       return;
     }
     if (payoutVarianceCents !== 0) {
-      setMessage(`Final payout must balance to the tip pool before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
+      setMessage(`Final payout must balance to the allocatable pool (after breakage) before marking paid. Current variance is ${formatCents(payoutVarianceCents)}.`);
       return;
     }
     if (!window.confirm(`Mark ${formatCents(totalPayoutCents)} tips paid for ${venue}? This creates the approved tip run used by Reports payroll export.`)) {
@@ -11262,7 +11265,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     try {
       await api('/api/staff/tips/mark-paid', {
         method: 'POST',
-        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, notes: payoutNotes, adjustments: adjustmentPayload })
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, notes: payoutNotes, adjustments: adjustmentPayload })
       });
       setMessage('Tips marked paid. Reports payroll export will now use this approved tip run.');
       setPayoutNotes('');
@@ -11312,7 +11315,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         }
       />
 
-      {/* Week + venue controls */}
+      {/* Week + venue + breakage controls */}
       <Card padding="tight">
         <div className="tips-controls-row">
           <div className="roster-week-controls" aria-label="Tips week controls">
@@ -11321,14 +11324,15 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>›</Button>
           </div>
           <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+          <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
         </div>
       </Card>
 
       {/* Summary stats */}
       <div className="stats-grid">
-        <StatCard label="Cash tips" value={formatCents(summary?.cashTipsCents ?? 0)} hint={`${summary?.cashEntries.length ?? 0} entries`} loading={loading} />
-        <StatCard label="Card tips" value={formatCents(summary?.squareTipsCents ?? 0)} hint={`${summary?.cardEntries.length ?? 0} rows`} loading={loading} />
-        <StatCard label="Tip pool" value={formatCents(summary?.tipPoolCents ?? 0)} hint="Cash plus card" loading={loading} />
+        <StatCard label="Gross tips" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card · ${summary?.tradingDays ?? 0} trading day${summary?.tradingDays === 1 ? '' : 's'}`} loading={loading} />
+        <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
+        <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
         <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
         <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
         <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Open'} hint={hasPaidRun ? 'Reports payroll ready' : 'Mark paid to lock'} loading={loading} />
@@ -11336,6 +11340,68 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {loading ? <Spinner label="Loading tips..." /> : null}
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      {/* Per-day breakdown */}
+      {(summary?.cardEntries.length || summary?.cashEntries.length) ? (
+        <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
+          <div className="table-scroll">
+            <table className="report-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Day</th>
+                  <th>Square tips</th>
+                  <th>Cash tips</th>
+                  <th>− Breakage</th>
+                  <th>= Allocatable</th>
+                </tr>
+              </thead>
+              <tbody>
+                {(() => {
+                  const byDate = new Map<string, { square: number; cash: number }>();
+                  for (const e of (summary?.cardEntries ?? [])) {
+                    const d = e.serviceDate.slice(0, 10);
+                    const cur = byDate.get(d) ?? { square: 0, cash: 0 };
+                    cur.square += e.amountCents;
+                    byDate.set(d, cur);
+                  }
+                  for (const e of (summary?.cashEntries ?? [])) {
+                    const d = e.serviceDate.slice(0, 10);
+                    const cur = byDate.get(d) ?? { square: 0, cash: 0 };
+                    cur.cash += e.amountCents;
+                    byDate.set(d, cur);
+                  }
+                  return Array.from(byDate.entries())
+                    .sort(([a], [b]) => a.localeCompare(b))
+                    .map(([date, row]) => {
+                      const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+                      const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
+                      return (
+                        <tr key={date}>
+                          <td>{date}</td>
+                          <td>{dayName}</td>
+                          <td>{formatCents(row.square)}</td>
+                          <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
+                          <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
+                          <td><strong>{formatCents(allocatable)}</strong></td>
+                        </tr>
+                      );
+                    });
+                })()}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan={2}><strong>Total</strong></td>
+                  <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
+                  <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
+                  <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
+                  <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Import card tips — one-click per venue */}
       <Card title="Import card tips" subtitle="One-click Square import for each venue, or paste a CSV manually.">
@@ -11543,7 +11609,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       </Card>
 
       {/* Payroll status + entitlements */}
-      <Card title="Staff entitlements" subtitle="Review the calculated split, exclude or adjust before locking a paid run." padding="none" className="tips-entitlements-card">
+      <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
         <div className="tips-status-bar">
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>

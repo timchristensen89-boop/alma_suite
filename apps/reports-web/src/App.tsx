@@ -979,7 +979,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       `Sales variance: ${actualSalesCents ? formatCurrency(forecastSalesVarianceCents) : 'not available'}`,
       `Planned roster wages: ${formatCurrency(publishedForecastTotals.rosterCostCents || forecastTotals.plannedCostCents)}`,
       `Actual timesheet wages: ${formatCurrency(actualWageCostCents)}`,
-      `Tips pool: ${data.tips ? formatCurrency(data.tips.tipPoolCents) : 'not loaded'}`,
+      `Tips pool: ${data.tips ? formatCurrency(data.tips.allocatablePoolCents ?? data.tips.tipPoolCents) : 'not loaded'}`,
       `Actual wage percentage: ${actualWagePercent ? `${actualWagePercent.toFixed(1)}%` : 'not available'}`,
       '',
       ...venuePerformanceRows.map((row) =>
@@ -1697,8 +1697,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="stats-grid report-metric-grid">
             <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)}h total`} loading={loading} />
             <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)}h approved`} loading={loading} />
-            <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.tipPoolCents ?? 0)} hint="Cash + card tips" loading={loading} />
-            <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
+            <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
+            <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
           </div>
 
           <div className="report-detail-grid">
