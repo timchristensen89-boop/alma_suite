@@ -84,135 +84,187 @@ type AdminNavItem = {
   end?: boolean;
 };
 
-const NAV_ITEMS: AdminNavItem[] = [
+type AdminNavGroup = {
+  id: string;
+  label: string;
+  items: AdminNavItem[];
+  defaultOpen?: boolean;
+};
+
+const NAV_GROUPS: AdminNavGroup[] = [
   {
-    to: '/',
+    id: 'overview',
     label: 'Overview',
-    description: 'Launchpad for setup, integrations, imports, and system controls',
-    icon: <IconDashboard />,
-    end: true
+    defaultOpen: true,
+    items: [
+      {
+        to: '/',
+        label: 'Overview',
+        description: 'Launchpad for setup, integrations, imports, and system controls',
+        icon: <IconDashboard />,
+        end: true
+      }
+    ]
   },
   {
-    to: '/settings',
-    label: 'Settings',
-    description: 'General settings, system health, and app URLs',
-    icon: <IconSettings />
+    id: 'business-setup',
+    label: 'Business setup',
+    items: [
+      {
+        to: '/settings',
+        label: 'General settings',
+        description: 'General settings, system health, and app URLs',
+        icon: <IconSettings />
+      },
+      {
+        to: '/venues',
+        label: 'Venues',
+        description: 'Venue setup and operating configuration',
+        icon: <IconStore />
+      }
+    ]
   },
   {
-    to: '/venues',
-    label: 'Venues',
-    description: 'Venue setup and operating configuration',
-    icon: <IconStore />
+    id: 'people-access',
+    label: 'People and access',
+    items: [
+      {
+        to: '/users',
+        label: 'Users',
+        description: 'Access, roles, and admin permissions',
+        icon: <IconUsers />
+      },
+      {
+        to: '/roles',
+        label: 'Roles',
+        description: 'Roles, permissions, and bulk access updates',
+        icon: <IconKeyRound />
+      },
+      {
+        to: '/staff-settings',
+        label: 'Staff settings',
+        description: 'Staff defaults and configuration',
+        icon: <IconBriefcase />
+      },
+      {
+        to: '/staff-costing',
+        label: 'Staff costing',
+        description: 'Wage cost, cost per hour, section mix, variance, and labour charts',
+        icon: <IconReceipt />
+      },
+      {
+        to: '/staff-record-types',
+        label: 'Staff record types',
+        description: 'Staff document and record type setup',
+        icon: <IconFileText />
+      },
+      {
+        to: '/staff-hr-templates',
+        label: 'HR templates',
+        description: 'Restricted HR document template setup',
+        icon: <IconFileSignature />
+      },
+      {
+        to: '/staff-onboarding',
+        label: 'Onboarding',
+        description: 'Staff onboarding setup',
+        icon: <IconBadgeCheck />
+      },
+      {
+        to: '/venue-devices',
+        label: 'Venue iPads',
+        description: 'Shared iPad accounts, PIN switching, and venue device access',
+        icon: <IconStore />
+      }
+    ]
   },
   {
-    to: '/venue-devices',
-    label: 'Venue iPads',
-    description: 'Shared iPad accounts, PIN switching, and venue device access',
-    icon: <IconStore />
-  },
-  {
-    to: '/users',
-    label: 'Users',
-    description: 'Access, roles, and admin permissions',
-    icon: <IconUsers />
-  },
-  {
-    to: '/roles',
-    label: 'Roles',
-    description: 'Roles, permissions, and bulk access updates',
-    icon: <IconKeyRound />
-  },
-  {
-    to: '/staff-settings',
-    label: 'Staff settings',
-    description: 'Staff defaults and configuration',
-    icon: <IconBriefcase />
-  },
-  {
-    to: '/staff-costing',
-    label: 'Staff costing',
-    description: 'Wage cost, cost per hour, section mix, variance, and labour charts',
-    icon: <IconReceipt />
-  },
-  {
-    to: '/staff-record-types',
-    label: 'Record types',
-    description: 'Staff document and record type setup',
-    icon: <IconFileText />
-  },
-  {
-    to: '/staff-hr-templates',
-    label: 'HR templates',
-    description: 'Restricted HR document template setup',
-    icon: <IconFileSignature />
-  },
-  {
-    to: '/staff-onboarding',
-    label: 'Onboarding',
-    description: 'Staff onboarding setup',
-    icon: <IconBadgeCheck />
-  },
-  {
-    to: '/compliance-settings',
+    id: 'compliance-setup',
     label: 'Compliance setup',
-    description: 'Handbook, templates, checklists, audits, and daily controls',
-    icon: <IconChecklist />
+    items: [
+      {
+        to: '/compliance-settings',
+        label: 'Compliance settings',
+        description: 'Handbook, templates, checklists, audits, and daily controls',
+        icon: <IconChecklist />
+      },
+      {
+        to: '/handbook',
+        label: 'Handbook',
+        description: 'Edit and publish staff handbook content',
+        icon: <IconHandbook />
+      },
+      {
+        to: '/checklist-templates',
+        label: 'Checklist templates',
+        description: 'Checklist template management',
+        icon: <IconChecklist />
+      },
+      {
+        to: '/shift-task-rules',
+        label: 'Shift task rules',
+        description: 'Assign checklists from roster shifts',
+        icon: <IconChecklist />
+      },
+      {
+        to: '/audit-templates',
+        label: 'Audit templates',
+        description: 'Audit template management',
+        icon: <IconChecklist />
+      }
+    ]
   },
   {
-    to: '/handbook',
-    label: 'Handbook',
-    description: 'Edit and publish staff handbook content',
-    icon: <IconHandbook />
-  },
-  {
-    to: '/checklist-templates',
-    label: 'Checklist templates',
-    description: 'Checklist template management',
-    icon: <IconChecklist />
-  },
-  {
-    to: '/shift-task-rules',
-    label: 'Shift task rules',
-    description: 'Assign checklists from roster shifts',
-    icon: <IconChecklist />
-  },
-  {
-    to: '/audit-templates',
-    label: 'Audit templates',
-    description: 'Audit template management',
-    icon: <IconChecklist />
-  },
-  {
-    to: '/integrations',
+    id: 'integrations',
     label: 'Integrations',
-    description: 'Connection health and external service setup',
-    icon: <IconPlug />
+    items: [
+      {
+        to: '/integrations',
+        label: 'Integrations',
+        description: 'Connection health and external service setup',
+        icon: <IconPlug />
+      },
+      {
+        to: '/integrations/xero',
+        label: 'Xero',
+        description: 'Health checks, previews, and selected imports',
+        icon: <IconReceipt />
+      },
+      {
+        to: '/integrations/square/menu-mapping',
+        label: 'Menu mapping',
+        description: 'Match Square menu items to Alma recipes',
+        icon: <IconReceipt />
+      }
+    ]
   },
   {
-    to: '/integrations/xero',
-    label: 'Xero',
-    description: 'Health checks, previews, and selected imports',
-    icon: <IconReceipt />
+    id: 'imports-data',
+    label: 'Imports and data',
+    items: [
+      {
+        to: '/imports',
+        label: 'Imports',
+        description: 'Review and run explicit import actions',
+        icon: <IconUpload />
+      }
+    ]
   },
   {
-    to: '/integrations/square/menu-mapping',
-    label: 'Menu mapping',
-    description: 'Match Square menu items to Alma recipes',
-    icon: <IconReceipt />
-  },
-  {
-    to: '/imports',
-    label: 'Imports',
-    description: 'Review and run explicit import actions',
-    icon: <IconUpload />
-  },
-  {
-    to: '/danger-zone',
-    label: 'Danger zone',
-    description: 'Restricted setup controls and irreversible actions',
-    icon: <IconIssues />
+    id: 'system',
+    label: 'System',
+    items: [
+      {
+        to: '/danger-zone',
+        label: 'Danger zone',
+        description: 'Restricted setup controls and irreversible actions',
+        icon: <IconIssues />
+      }
+    ]
   }
 ];
+
+const NAV_ITEMS: AdminNavItem[] = NAV_GROUPS.flatMap((group) => group.items);
 
 function pageFor(pathname: string) {
   return [...NAV_ITEMS]
@@ -229,14 +281,50 @@ function pageFor(pathname: string) {
     };
 }
 
+function groupFor(pathname: string) {
+  return NAV_GROUPS.find((group) =>
+    group.items.some((item) =>
+      item.to === '/'
+        ? pathname === '/'
+        : pathname === item.to || pathname.startsWith(`${item.to}/`)
+    )
+  ) ?? NAV_GROUPS[0]!;
+}
+
 function AdminSidebar() {
   const location = useLocation();
   const active = pageFor(location.pathname);
+  const activeGroup = groupFor(location.pathname);
   const navRef = useRef<HTMLDivElement>(null);
   const [open, setOpen] = useState(false);
+  const [openGroups, setOpenGroups] = useState<Set<string>>(() => new Set(
+    NAV_GROUPS
+      .filter((group) => group.defaultOpen || group.id === activeGroup.id)
+      .map((group) => group.id)
+  ));
   useDismissibleLayer(navRef, open, () => setOpen(false), 'admin-mobile-nav');
 
-  useEffect(() => setOpen(false), [location.pathname]);
+  useEffect(() => {
+    setOpen(false);
+    setOpenGroups((current) => {
+      if (current.has(activeGroup.id)) return current;
+      const next = new Set(current);
+      next.add(activeGroup.id);
+      return next;
+    });
+  }, [activeGroup.id, location.pathname]);
+
+  function toggleGroup(groupId: string) {
+    setOpenGroups((current) => {
+      const next = new Set(current);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  }
 
   return (
     <div ref={navRef} className="mobile-nav-layer">
@@ -255,14 +343,36 @@ function AdminSidebar() {
       </button>
       <ul id="admin-mobile-nav" className={`sidebar-nav ${open ? 'mobile-open' : ''}`}>
         <li className="sidebar-nav-section">Alma Admin</li>
-        {NAV_ITEMS.map((item) => (
-          <li key={item.to}>
-            <NavLink to={item.to} end={item.end}>
-              <span className="sidebar-nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          </li>
-        ))}
+        {NAV_GROUPS.map((group) => {
+          const groupOpen = openGroups.has(group.id);
+          const groupActive = group.id === activeGroup.id;
+          const controlsId = `admin-nav-group-${group.id}`;
+          return (
+            <li key={group.id} className={`admin-nav-group nav-group ${groupOpen ? 'is-open' : 'is-closed'} ${groupActive ? 'is-active-group' : ''} ${group.id === 'system' ? 'is-system' : ''}`}>
+              <button
+                type="button"
+                className="admin-nav-group-toggle nav-group-toggle"
+                aria-expanded={groupOpen}
+                aria-controls={controlsId}
+                onClick={() => toggleGroup(group.id)}
+              >
+                <span>{group.label}</span>
+                <span className="admin-nav-group-count">{group.items.length}</span>
+                <IconChevronDown className="admin-nav-group-chevron" size={14} />
+              </button>
+              <ul id={controlsId} className="admin-nav-group-items nav-group-items">
+                {group.items.map((item) => (
+                  <li key={item.to}>
+                    <NavLink to={item.to} end={item.end}>
+                      <span className="sidebar-nav-icon">{item.icon}</span>
+                      <span>{item.label}</span>
+                    </NavLink>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
