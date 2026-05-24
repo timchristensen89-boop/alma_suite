@@ -5,7 +5,8 @@ import type {
   SquareMenuMappingStatus,
   SquareMenuRecipeMapping,
   SquareMenuRecipeOptionsPayload,
-  SquareMenuMappingSyncResult
+  SquareMenuMappingSyncResult,
+  SquareMenuAutoMatchResult
 } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { api } from '../../../web/src/lib/api';
@@ -76,6 +77,7 @@ export function SquareMenuMappingPage() {
   const [loading, setLoading] = useState(true);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [autoMatching, setAutoMatching] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -135,6 +137,27 @@ export function SquareMenuMappingPage() {
     }
   }
 
+  async function autoMatchCatalog() {
+    setAutoMatching(true);
+    setMessage(null);
+    setError(null);
+    try {
+      const result = await api<SquareMenuAutoMatchResult>('/api/menu-mappings/square/auto-match', {
+        method: 'POST',
+        body: JSON.stringify({ accountKey })
+      });
+      setMessage(
+        `${ACCOUNT_LABELS[result.accountKey]} auto-match reviewed ${result.reviewed} rows: ${result.mapped} mapped, ${result.needsReview} needs review, ${result.unchanged} unchanged.`
+      );
+      if (result.needsReview > 0) setStatus('NEEDS_REVIEW');
+      await loadMappings({ status: result.needsReview > 0 ? 'NEEDS_REVIEW' : status });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not auto-match Square menu items.');
+    } finally {
+      setAutoMatching(false);
+    }
+  }
+
   async function updateMapping(mapping: SquareMenuRecipeMapping, patch?: Partial<{ status: SquareMenuMappingStatus; clear: boolean }>) {
     setSavingId(mapping.id);
     setMessage(null);
@@ -176,7 +199,14 @@ export function SquareMenuMappingPage() {
       <Card
         title="Square Menu Mapping"
         subtitle="Match Square catalogue items to Alma recipes so future Reports and Stock workflows can calculate recipe-level COGS and menu profitability."
-        action={<Button type="button" onClick={syncCatalog} disabled={syncing}>{syncing ? 'Syncing...' : 'Sync Square menu'}</Button>}
+        action={
+          <div className="admin-row-actions">
+            <Button type="button" variant="secondary" onClick={autoMatchCatalog} disabled={autoMatching || syncing || loading}>
+              {autoMatching ? 'Matching...' : 'Auto-match best guesses'}
+            </Button>
+            <Button type="button" onClick={syncCatalog} disabled={syncing || autoMatching}>{syncing ? 'Syncing...' : 'Sync Square menu'}</Button>
+          </div>
+        }
       >
         <form className="square-menu-toolbar" onSubmit={submitFilters}>
           <Select
@@ -207,7 +237,7 @@ export function SquareMenuMappingPage() {
         <details className="admin-collapsible square-menu-help">
           <summary>Mapping rules and data quality</summary>
           <div className="settings-panel">
-            <p>Syncing creates unmapped candidates from Square. Manual mappings are preserved on resync. Suggested matches are marked as needs review and are not applied until you save them.</p>
+            <p>Syncing creates unmapped candidates from Square. Manual mappings are preserved on resync. Auto-match applies high-confidence recipe or stock item matches and sends lower-confidence matches to review.</p>
             <p>Recipe cost uses the current Alma recipe estimated cost. If a recipe has no costing, the margin fields stay unavailable.</p>
           </div>
         </details>

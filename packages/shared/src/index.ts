@@ -1971,6 +1971,16 @@ export const squareMenuMappingUpdateSchema = z.object({
   notes: z.string().trim().max(1000).optional().nullable().or(z.literal(''))
 });
 
+export const squareMenuAutoMatchInputSchema = z.object({
+  accountKey: z.enum(['primary', 'secondary']).default('primary'),
+  applyThreshold: z.number().min(0).max(1).default(0.86),
+  reviewThreshold: z.number().min(0).max(1).default(0.58),
+  includeNeedsReview: z.boolean().default(true)
+}).refine((value) => value.applyThreshold >= value.reviewThreshold, {
+  message: 'Apply threshold must be greater than or equal to review threshold.',
+  path: ['applyThreshold']
+});
+
 export type SquareMenuRecipeMapping = {
   id: string;
   accountKey: SquareAccountKey;
@@ -2030,6 +2040,27 @@ export type SquareMenuMappingSyncResult = {
   warnings: string[];
 };
 
+export type SquareMenuAutoMatchResult = {
+  provider: 'square';
+  accountKey: SquareAccountKey;
+  reviewed: number;
+  mapped: number;
+  needsReview: number;
+  unchanged: number;
+  skipped: number;
+  applyThreshold: number;
+  reviewThreshold: number;
+  matches: Array<{
+    id: string;
+    squareItemName: string;
+    squareVariationName: string | null;
+    targetType: 'recipe' | 'stockItem';
+    targetName: string;
+    confidence: number;
+    status: SquareMenuMappingStatus;
+  }>;
+};
+
 export type SquareRecipeOption = {
   id: string;
   title: string;
@@ -2048,6 +2079,7 @@ export type SquareMenuRecipeOptionsPayload = {
 
 export type SquareMenuMappingQuery = z.infer<typeof squareMenuMappingQuerySchema>;
 export type SquareMenuMappingUpdate = z.infer<typeof squareMenuMappingUpdateSchema>;
+export type SquareMenuAutoMatchInput = z.infer<typeof squareMenuAutoMatchInputSchema>;
 
 export type IntegrationConnectResponse = {
   provider: IntegrationProviderKey;

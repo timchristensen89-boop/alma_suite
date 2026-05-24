@@ -20,6 +20,14 @@ menuMappingsRouter.post('/square/sync', requireAdmin, async (req, res, next) => 
   }
 });
 
+menuMappingsRouter.post('/square/auto-match', requireAdmin, async (req, res, next) => {
+  try {
+    res.json(await integrationService.autoMatchSquareMenuMappings(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 menuMappingsRouter.patch('/square/:id', requireAdmin, async (req, res, next) => {
   try {
     res.json(await integrationService.updateSquareMenuMapping(String(req.params.id), req.body, req.user!));

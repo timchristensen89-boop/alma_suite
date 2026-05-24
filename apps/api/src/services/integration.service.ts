@@ -21,6 +21,7 @@ import type {
   XeroConnectionHealthPayload
 } from '@alma/shared';
 import {
+  squareMenuAutoMatchInputSchema,
   squareMenuMappingQuerySchema,
   squareMenuMappingUpdateSchema,
   xeroSupplierBillsImportInputSchema,
@@ -1041,8 +1042,8 @@ function squareCatalogCandidates(objects: SquareCatalogObject[]) {
 }
 
 function recipeMatchConfidence(squareName: string, recipeTitle: string) {
-  const left = normaliseMatchText(squareName);
-  const right = normaliseMatchText(recipeTitle);
+  const left = normaliseMenuMatchText(squareName);
+  const right = normaliseMenuMatchText(recipeTitle);
   if (!left || !right) return 0;
   if (left === right) return 1;
   if (left.includes(right) || right.includes(left)) return 0.82;
@@ -1050,7 +1051,96 @@ function recipeMatchConfidence(squareName: string, recipeTitle: string) {
   const rightWords = new Set(right.split(' ').filter(Boolean));
   const intersection = Array.from(leftWords).filter((word) => rightWords.has(word)).length;
   const union = new Set([...leftWords, ...rightWords]).size || 1;
-  return intersection / union;
+  const base = intersection / union;
+  const orderedOverlap = Array.from(leftWords).some((word) => word.length > 3 && right.includes(word))
+    && Array.from(rightWords).some((word) => word.length > 3 && left.includes(word));
+  return orderedOverlap ? Math.max(base, 0.52) : base;
+}
+
+const MENU_MATCH_STOP_WORDS = new Set([
+  'and',
+  'with',
+  'the',
+  'for',
+  'side',
+  'extra',
+  'add',
+  'new',
+  'special',
+  'single',
+  'double',
+  'glass',
+  'bottle',
+  'jug',
+  'pitcher',
+  'small',
+  'large',
+  'regular',
+  'main',
+  'kids',
+  'gf',
+  'df',
+  'vg',
+  'vgo',
+  'vegan',
+  'vegetarian'
+]);
+
+const MENU_MATCH_SYNONYMS: Record<string, string> = {
+  marg: 'margarita',
+  margaritas: 'margarita',
+  taco: 'taco',
+  tacos: 'taco',
+  tostadas: 'tostada',
+  quesadillas: 'quesadilla',
+  nacho: 'nachos',
+  chips: 'chip',
+  fries: 'chip',
+  guac: 'guacamole',
+  avo: 'avocado',
+  chook: 'chicken',
+  chkn: 'chicken',
+  prawn: 'prawn',
+  prawns: 'prawn',
+  fish: 'fish',
+  beef: 'beef',
+  pork: 'pork',
+  lamb: 'lamb',
+  mushie: 'mushroom',
+  mushies: 'mushroom',
+  mushroom: 'mushroom',
+  mushrooms: 'mushroom',
+  cauli: 'cauliflower',
+  cauliflower: 'cauliflower',
+  potato: 'potato',
+  potatoes: 'potato'
+};
+
+function normaliseMenuMatchText(value: unknown) {
+  return normaliseMatchText(value)
+    .split(' ')
+    .map((word) => MENU_MATCH_SYNONYMS[word] ?? word.replace(/s$/, ''))
+    .filter((word) => word.length > 1 && !MENU_MATCH_STOP_WORDS.has(word))
+    .join(' ')
+    .trim();
+}
+
+function squareMenuComparableName(input: { squareItemName?: string | null; squareVariationName?: string | null; categoryName?: string | null }) {
+  return [input.squareItemName, input.squareVariationName, input.categoryName].filter(Boolean).join(' ');
+}
+
+function accountVenueName(accountKey: SquareAccountKey) {
+  return squareAccountConfig(accountKey).label;
+}
+
+function venueScoreBoost(recipeVenue: string | null | undefined, accountKey: SquareAccountKey) {
+  if (!recipeVenue) return 0.03;
+  return normaliseMatchText(recipeVenue) === normaliseMatchText(accountVenueName(accountKey)) ? 0.08 : -0.06;
+}
+
+function scoreCandidateName(squareName: string, targetName: string, venue: string | null | undefined, accountKey: SquareAccountKey) {
+  const confidence = recipeMatchConfidence(squareName, targetName) + venueScoreBoost(venue, accountKey);
+  return Math.max(0, Math.min(1, Math.round(confidence * 1000) / 1000));
 }
 
 async function listSquarePayments(input: {
@@ -2694,6 +2784,139 @@ export const integrationService = {
         lineCount: recipe._count.lines
       })),
       stockItems
+    };
+  },
+
+  async autoMatchSquareMenuMappings(input: unknown, actor: AuthUser) {
+    const data = squareMenuAutoMatchInputSchema.parse(input ?? {});
+    const accountKey = normaliseSquareAccountKey(data.accountKey);
+    const [mappings, recipes, stockItems] = await Promise.all([
+      prisma.squareMenuRecipeMapping.findMany({
+        where: {
+          accountKey,
+          status: { in: ['UNMAPPED', 'NEEDS_REVIEW'] }
+        },
+        orderBy: [{ squareItemName: 'asc' }, { squareVariationName: 'asc' }],
+        take: 1000
+      }),
+      prisma.recipe.findMany({
+        where: { status: 'ACTIVE', isPrepRecipe: false },
+        select: { id: true, title: true, venue: true }
+      }),
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: { id: true, name: true }
+      })
+    ]);
+
+    let mapped = 0;
+    let needsReview = 0;
+    let unchanged = 0;
+    let skipped = 0;
+    const matches: Array<{
+      id: string;
+      squareItemName: string;
+      squareVariationName: string | null;
+      targetType: 'recipe' | 'stockItem';
+      targetName: string;
+      confidence: number;
+      status: 'MAPPED' | 'NEEDS_REVIEW';
+    }> = [];
+
+    await prisma.$transaction(async (tx) => {
+      for (const mapping of mappings) {
+        if (mapping.almaRecipeId || mapping.stockItemId) {
+          skipped += 1;
+          continue;
+        }
+
+        const squareName = squareMenuComparableName(mapping);
+        const bestRecipe = recipes
+          .map((recipe) => ({
+            type: 'recipe' as const,
+            id: recipe.id,
+            name: recipe.title,
+            confidence: scoreCandidateName(squareName, recipe.title, recipe.venue, accountKey)
+          }))
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+        const bestStockItem = stockItems
+          .map((item) => ({
+            type: 'stockItem' as const,
+            id: item.id,
+            name: item.name,
+            confidence: recipeMatchConfidence(squareName, item.name)
+          }))
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+        const best = [bestRecipe, bestStockItem]
+          .filter((candidate): candidate is NonNullable<typeof bestRecipe> | NonNullable<typeof bestStockItem> => Boolean(candidate))
+          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+
+        if (!best || best.confidence < data.reviewThreshold) {
+          unchanged += 1;
+          continue;
+        }
+
+        const status = best.confidence >= data.applyThreshold ? 'MAPPED' : 'NEEDS_REVIEW';
+        if (status === 'NEEDS_REVIEW' && !data.includeNeedsReview) {
+          unchanged += 1;
+          continue;
+        }
+
+        await tx.squareMenuRecipeMapping.update({
+          where: { id: mapping.id },
+          data: {
+            almaRecipeId: best.type === 'recipe' ? best.id : null,
+            stockItemId: best.type === 'stockItem' ? best.id : null,
+            venue: mapping.venue ?? (best.type === 'recipe' ? recipes.find((recipe) => recipe.id === best.id)?.venue ?? accountVenueName(accountKey) : accountVenueName(accountKey)),
+            status,
+            confidence: best.confidence,
+            notes: `${status === 'MAPPED' ? 'Auto-matched' : 'Suggested for review'}: ${best.name}`,
+            mappedAt: status === 'MAPPED' ? new Date() : null,
+            mappedById: status === 'MAPPED' ? actor.id : null
+          }
+        });
+        if (status === 'MAPPED') mapped += 1;
+        else needsReview += 1;
+        matches.push({
+          id: mapping.id,
+          squareItemName: mapping.squareItemName,
+          squareVariationName: mapping.squareVariationName,
+          targetType: best.type,
+          targetName: best.name,
+          confidence: best.confidence,
+          status
+        });
+      }
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      eventType: 'SQUARE_MENU_AUTO_MATCHED',
+      summary: `${squareAccountConfig(accountKey).label} Square menu auto-match: ${mapped} mapped, ${needsReview} needs review.`,
+      actor,
+      metadata: {
+        accountKey,
+        reviewed: mappings.length,
+        mapped,
+        needsReview,
+        unchanged,
+        skipped,
+        applyThreshold: data.applyThreshold,
+        reviewThreshold: data.reviewThreshold
+      }
+    });
+
+    return {
+      provider: 'square' as const,
+      accountKey,
+      reviewed: mappings.length,
+      mapped,
+      needsReview,
+      unchanged,
+      skipped,
+      applyThreshold: data.applyThreshold,
+      reviewThreshold: data.reviewThreshold,
+      matches
     };
   },
 
