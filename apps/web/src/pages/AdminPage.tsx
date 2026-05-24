@@ -1129,6 +1129,13 @@ function xeroHealthTone(status: XeroConnectionHealthPayload['tokenStatus']) {
   return 'warning';
 }
 
+function xeroScheduledTone(status: AdminIntegrationsStatusPayload['xeroScheduledImport']) {
+  if (!status?.schedulerSecretConfigured) return 'warning';
+  if (status.lastStatus === 'ERROR') return 'danger';
+  if (status.lastStatus === 'SUCCESS') return 'positive';
+  return 'info';
+}
+
 function metaTone(status: AdminMetaIntegrationStatus['status']) {
   if (status === 'READY_TO_CONNECT') return 'positive';
   if (status === 'CALLBACK_RECEIVED' || status === 'TOKEN_STORAGE_PENDING') return 'info';
@@ -1324,7 +1331,7 @@ function IntegrationCard({
         {isXero ? (
           <div>
             <strong>Accounting sync</strong>
-            <p>No contacts, bills, invoices, payroll or reports are syncing yet. This connection is being prepared for read-only supplier and bill checks.</p>
+            <p>Supplier contacts and safe matched supplier bills can be imported from Xero. Payroll, payments and bank feeds stay excluded.</p>
           </div>
         ) : null}
         <div>
@@ -1398,6 +1405,7 @@ function IntegrationCard({
 }
 
 function XeroSyncPanel({
+  scheduledImport,
   contactPreview,
   billPreview,
   selectedContacts,
@@ -1413,6 +1421,7 @@ function XeroSyncPanel({
   onImportBills,
   onAllowCreateSuppliersChange
 }: {
+  scheduledImport?: AdminIntegrationsStatusPayload['xeroScheduledImport'];
   contactPreview: XeroSupplierContactsPreviewPayload | null;
   billPreview: XeroSupplierBillsPreviewPayload | null;
   selectedContacts: string[];
@@ -1433,14 +1442,61 @@ function XeroSyncPanel({
       title="Xero supplier and bill import"
       summary="Preview first, then import selected records"
       defaultOpen={Boolean(contactPreview || billPreview || feedback)}
-      status={feedback ? <Badge tone="info">Preview active</Badge> : <Badge tone="muted">Collapsed</Badge>}
+      status={
+        <>
+          <Badge tone={xeroScheduledTone(scheduledImport)}>
+            {scheduledImport?.schedulerSecretConfigured ? 'Scheduler ready' : 'Scheduler setup needed'}
+          </Badge>
+          {feedback ? <Badge tone="info">Preview active</Badge> : null}
+        </>
+      }
     >
       <Card>
       <div className="admin-status-stack">
         <p className="muted">
-          No accounting data sync is running automatically yet. Preview Xero records before importing. Payroll,
-          payments and bank feeds are not connected.
+          Automatic Xero import is limited to supplier contacts and safe matched ACCPAY supplier bills. Preview remains available below for manual review. Payroll, payments and bank feeds are not connected.
         </p>
+        {scheduledImport ? (
+          <div className="admin-status-stack">
+            <StatusLine
+              label="Scheduler endpoint"
+              value={scheduledImport.schedulerSecretConfigured ? 'Ready' : 'Secret missing'}
+              tone={scheduledImport.schedulerSecretConfigured ? 'positive' : 'warning'}
+            />
+            <StatusLine
+              label="Endpoint"
+              value={scheduledImport.endpoint}
+              tone="muted"
+            />
+            <StatusLine
+              label="Last scheduled run"
+              value={scheduledImport.lastScheduledRunAt ? formatDate(scheduledImport.lastScheduledRunAt) : 'No scheduled run recorded'}
+              tone={scheduledImport.lastStatus === 'ERROR' ? 'danger' : scheduledImport.lastStatus === 'SUCCESS' ? 'positive' : 'muted'}
+            />
+            <StatusLine
+              label="Recent scheduled runs"
+              value={String(scheduledImport.recentRunCount)}
+              tone={scheduledImport.recentRunCount ? 'info' : 'muted'}
+            />
+            {scheduledImport.lastError ? (
+              <p className="muted">Last scheduler note: {scheduledImport.lastError}</p>
+            ) : null}
+            <div className="admin-grid two">
+              <div className="admin-provider-card">
+                <strong>Automatic import includes</strong>
+                <ul className="admin-device-policy-list">
+                  {scheduledImport.importScope.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+              <div className="admin-provider-card">
+                <strong>Still excluded</strong>
+                <ul className="admin-device-policy-list">
+                  {scheduledImport.excludedScope.map((item) => <li key={item}>{item}</li>)}
+                </ul>
+              </div>
+            </div>
+          </div>
+        ) : null}
         {feedback ? <Badge tone="info">{feedback}</Badge> : null}
         <div className="admin-grid two">
           <div className="admin-provider-card">
@@ -3218,6 +3274,7 @@ export function AdminPage({
         {integrations && showXero ? (
           <div className="admin-grid two">
             <XeroSyncPanel
+              scheduledImport={integrations.xeroScheduledImport}
               contactPreview={xeroContactPreview}
               billPreview={xeroBillPreview}
               selectedContacts={xeroSelectedContacts}

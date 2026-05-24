@@ -41,8 +41,15 @@ The Xero scheduled job imports:
 
 - supplier contacts marked as suppliers in Xero
 - new authorised or paid supplier bills from the lookback window
+- supplier invoice lines into Stock invoice records for later COGS/reporting review
 
-It deliberately skips bills that look like duplicates, have no supplier match, or have no line items. Those remain for manual review/import.
+It deliberately skips bills that look like duplicates, have no supplier match, or have no line items. Those remain for manual review/import. Payroll, payments and bank feeds are not imported by this job.
+
+Admin shows the scheduler endpoint readiness and the latest `SCHEDULED` Xero run in:
+
+```text
+Admin → Integrations → Xero
+```
 
 Example body:
 

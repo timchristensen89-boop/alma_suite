@@ -10,6 +10,7 @@ import type {
   IntegrationProviderStatus,
   IntegrationStatusPayload,
   SquareConfigMissingMap,
+  XeroScheduledImportStatus,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
   XeroSupplierBillPreview,
@@ -711,6 +712,48 @@ async function latestSyncRuns() {
     recordsUpdated: run.recordsUpdated,
     errorSummary: run.errorSummary
   }));
+}
+
+async function xeroScheduledImportStatus(): Promise<XeroScheduledImportStatus> {
+  const endpoint = `${env.publicApiUrl.replace(/\/+$/, '')}/api/integration-jobs/xero/import`;
+  let runs: Awaited<ReturnType<typeof prisma.integrationSyncRun.findMany>> = [];
+  try {
+    runs = await prisma.integrationSyncRun.findMany({
+      where: { provider: 'XERO', syncType: 'SCHEDULED' },
+      orderBy: { startedAt: 'desc' },
+      take: 20
+    });
+  } catch (error) {
+    if (!isMissingIntegrationStorage(error)) throw error;
+  }
+  const last = runs[0] ?? null;
+  const lastSuccess = runs.find((run) => run.status === 'SUCCESS') ?? null;
+  const lastError = runs.find((run) => run.status === 'ERROR') ?? null;
+  return {
+    endpoint,
+    schedulerSecretConfigured: Boolean(env.integrations.schedulerSecret),
+    safeAutomaticImportEnabled: Boolean(env.integrations.schedulerSecret),
+    lookbackDays: DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS,
+    contactsLimit: DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT,
+    billsLimit: DEFAULT_SCHEDULED_XERO_BILLS_LIMIT,
+    lastScheduledRunAt: toIso(last?.startedAt),
+    lastSuccessfulRunAt: toIso(lastSuccess?.startedAt),
+    lastFailedRunAt: toIso(lastError?.startedAt),
+    lastStatus: last?.status ?? null,
+    lastError: last?.errorSummary ?? null,
+    recentRunCount: runs.length,
+    importScope: [
+      'Supplier contacts marked as suppliers in Xero',
+      'New authorised or paid ACCPAY supplier bills with matched Alma suppliers',
+      'Supplier invoice lines for Stock invoice review and COGS reporting'
+    ],
+    excludedScope: [
+      'Payroll',
+      'Payments',
+      'Bank feeds',
+      'Unmatched or duplicate bills'
+    ]
+  };
 }
 
 async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
@@ -1950,10 +1993,11 @@ export const integrationService = {
   },
 
   async status(): Promise<IntegrationStatusPayload> {
-    const [primarySquare, secondarySquare, xero, syncRuns] = await Promise.all([
+    const [primarySquare, secondarySquare, xero, xeroScheduledImport, syncRuns] = await Promise.all([
       providerStatus('SQUARE', 'primary'),
       providerStatus('SQUARE', 'secondary'),
       providerStatus('XERO'),
+      xeroScheduledImportStatus(),
       latestSyncRuns()
     ]);
 
@@ -1965,6 +2009,7 @@ export const integrationService = {
         secondary: secondarySquare
       },
       xero,
+      xeroScheduledImport,
       meta: metaStatus(),
       latestSyncRuns: syncRuns,
       tokenStorage: integrationTokenEncryptionStatus()
@@ -2817,6 +2862,14 @@ export const integrationService = {
           errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
         }
       });
+      await tx.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          lastSyncAt: new Date(),
+          lastSyncStatus: 'SUCCESS',
+          lastError: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
     });
 
     await recordEvent({
@@ -3061,6 +3114,14 @@ export const integrationService = {
           recordsImported: importedCount,
           recordsUpdated: 0,
           errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+        }
+      });
+      await tx.integrationConnection.update({
+        where: { id: connection.id },
+        data: {
+          lastSyncAt: new Date(),
+          lastSyncStatus: 'SUCCESS',
+          lastError: warnings.length ? warnings.slice(0, 5).join(' | ') : null
         }
       });
     });
@@ -3516,92 +3577,152 @@ export const integrationService = {
     const warnings: string[] = [];
 
     let contacts: XeroSupplierContactsImportResult | null = null;
-    if (includeContacts) {
-      contacts = await integrationService.importXeroSupplierContacts(
-        { importAllCandidates: true, limit: contactsLimit },
-        integrationSchedulerActor,
-        { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_CONTACTS_IMPORTED' }
-      );
-    }
-
-    let bills: XeroSupplierBillsImportResult | null = null;
-    let billCandidates = 0;
-    let billIds: string[] = [];
-    if (includeBills) {
-      const end = generatedAt;
-      const start = new Date(end);
-      start.setDate(start.getDate() - lookbackDays);
-      const startDate = isoDateOnly(start);
-      const endDate = isoDateOnly(end);
-      const preview = await integrationService.previewXeroSupplierBills({
-        startDate,
-        endDate,
-        limit: billsLimit,
-        statuses: 'AUTHORISED,PAID'
-      });
-      const importableBills = preview.bills.filter((bill) =>
-        bill.duplicateStatus === 'new' &&
-        bill.supplierMatchStatus === 'matched' &&
-        bill.lineCount > 0
-      );
-      billCandidates = preview.bills.length;
-      billIds = importableBills.map((bill) => bill.xeroInvoiceId);
-
-      const skippedForReview = preview.bills.length - importableBills.length;
-      if (skippedForReview > 0) {
-        warnings.push(`${skippedForReview} Xero bills were left for manual review because they were duplicates, missing supplier matches, or had no lines.`);
-      }
-
-      if (billIds.length > 0) {
-        bills = await integrationService.importXeroSupplierBills(
-          {
-            billIds,
-            startDate,
-            endDate,
-            limit: billsLimit,
-            allowCreateSuppliers: false,
-            confirmationText: 'IMPORT XERO BILLS'
-          },
+    try {
+      if (includeContacts) {
+        contacts = await integrationService.importXeroSupplierContacts(
+          { importAllCandidates: true, limit: contactsLimit },
           integrationSchedulerActor,
-          { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_BILLS_IMPORTED' }
+          { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_CONTACTS_IMPORTED' }
         );
-      } else {
-        const connection = await connectedXeroConnection();
+      }
+    } catch (error) {
+      const connection = await connectionSelect('XERO').catch(() => null);
+      if (connection) {
         await prisma.integrationSyncRun.create({
           data: {
             provider: 'XERO',
             connectionId: connection.id,
             syncType: 'SCHEDULED',
-            status: 'SUCCESS',
+            status: 'ERROR',
             finishedAt: new Date(),
-            recordsImported: 0,
-            recordsUpdated: 0,
-            errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : 'No new matched Xero supplier bills to import.'
+            errorSummary: safeErrorMessage(error).slice(0, 500)
           }
         });
-        await recordEvent({
-          provider: 'XERO',
-          connectionId: connection.id,
-          eventType: 'SCHEDULED_SUPPLIER_BILLS_SKIPPED',
-          summary: 'Scheduled Xero supplier bill import found no new matched bills to import.',
-          actor: integrationSchedulerActor,
-          metadata: {
-            lookbackDays,
-            billsLimit,
-            billsPreviewed: preview.bills.length,
-            skippedForReview
+        await prisma.integrationConnection.update({
+          where: { id: connection.id },
+          data: {
+            lastSyncAt: new Date(),
+            lastSyncStatus: 'ERROR',
+            lastError: safeErrorMessage(error).slice(0, 500)
           }
         });
-        bills = {
-          generatedAt: new Date().toISOString(),
-          importedCount: 0,
-          skippedCount: skippedForReview,
-          duplicateCount: preview.bills.filter((bill) => bill.duplicateStatus !== 'new').length,
-          supplierCreatedCount: 0,
-          lineCount: 0,
-          warnings
-        };
       }
+      throw error;
+    }
+
+    let bills: XeroSupplierBillsImportResult | null = null;
+    let billCandidates = 0;
+    let billIds: string[] = [];
+    try {
+      if (includeBills) {
+        const end = generatedAt;
+        const start = new Date(end);
+        start.setDate(start.getDate() - lookbackDays);
+        const startDate = isoDateOnly(start);
+        const endDate = isoDateOnly(end);
+        const preview = await integrationService.previewXeroSupplierBills({
+          startDate,
+          endDate,
+          limit: billsLimit,
+          statuses: 'AUTHORISED,PAID'
+        });
+        const importableBills = preview.bills.filter((bill) =>
+          bill.duplicateStatus === 'new' &&
+          bill.supplierMatchStatus === 'matched' &&
+          bill.lineCount > 0
+        );
+        billCandidates = preview.bills.length;
+        billIds = importableBills.map((bill) => bill.xeroInvoiceId);
+
+        const skippedForReview = preview.bills.length - importableBills.length;
+        if (skippedForReview > 0) {
+          warnings.push(`${skippedForReview} Xero bills were left for manual review because they were duplicates, missing supplier matches, or had no lines.`);
+        }
+
+        if (billIds.length > 0) {
+          bills = await integrationService.importXeroSupplierBills(
+            {
+              billIds,
+              startDate,
+              endDate,
+              limit: billsLimit,
+              allowCreateSuppliers: false,
+              confirmationText: 'IMPORT XERO BILLS'
+            },
+            integrationSchedulerActor,
+            { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_BILLS_IMPORTED' }
+          );
+        } else {
+          const connection = await connectedXeroConnection();
+          const now = new Date();
+          const errorSummary = warnings.length ? warnings.slice(0, 5).join(' | ') : 'No new matched Xero supplier bills to import.';
+          await prisma.integrationSyncRun.create({
+            data: {
+              provider: 'XERO',
+              connectionId: connection.id,
+              syncType: 'SCHEDULED',
+              status: 'SUCCESS',
+              finishedAt: now,
+              recordsImported: 0,
+              recordsUpdated: 0,
+              errorSummary
+            }
+          });
+          await prisma.integrationConnection.update({
+            where: { id: connection.id },
+            data: {
+              lastSyncAt: now,
+              lastSyncStatus: 'SUCCESS',
+              lastError: errorSummary
+            }
+          });
+          await recordEvent({
+            provider: 'XERO',
+            connectionId: connection.id,
+            eventType: 'SCHEDULED_SUPPLIER_BILLS_SKIPPED',
+            summary: 'Scheduled Xero supplier bill import found no new matched bills to import.',
+            actor: integrationSchedulerActor,
+            metadata: {
+              lookbackDays,
+              billsLimit,
+              billsPreviewed: preview.bills.length,
+              skippedForReview
+            }
+          });
+          bills = {
+            generatedAt: new Date().toISOString(),
+            importedCount: 0,
+            skippedCount: skippedForReview,
+            duplicateCount: preview.bills.filter((bill) => bill.duplicateStatus !== 'new').length,
+            supplierCreatedCount: 0,
+            lineCount: 0,
+            warnings
+          };
+        }
+      }
+    } catch (error) {
+      const connection = await connectionSelect('XERO').catch(() => null);
+      if (connection) {
+        await prisma.integrationSyncRun.create({
+          data: {
+            provider: 'XERO',
+            connectionId: connection.id,
+            syncType: 'SCHEDULED',
+            status: 'ERROR',
+            finishedAt: new Date(),
+            errorSummary: safeErrorMessage(error).slice(0, 500)
+          }
+        });
+        await prisma.integrationConnection.update({
+          where: { id: connection.id },
+          data: {
+            lastSyncAt: new Date(),
+            lastSyncStatus: 'ERROR',
+            lastError: safeErrorMessage(error).slice(0, 500)
+          }
+        });
+      }
+      throw error;
     }
 
     return {

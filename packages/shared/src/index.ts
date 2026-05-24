@@ -1902,11 +1902,29 @@ export type IntegrationSyncRunSummary = {
   errorSummary: string | null;
 };
 
+export type XeroScheduledImportStatus = {
+  endpoint: string;
+  schedulerSecretConfigured: boolean;
+  safeAutomaticImportEnabled: boolean;
+  lookbackDays: number;
+  contactsLimit: number;
+  billsLimit: number;
+  lastScheduledRunAt: string | null;
+  lastSuccessfulRunAt: string | null;
+  lastFailedRunAt: string | null;
+  lastStatus: IntegrationSyncStatus | null;
+  lastError: string | null;
+  recentRunCount: number;
+  importScope: string[];
+  excludedScope: string[];
+};
+
 export type IntegrationStatusPayload = {
   generatedAt: string;
   square: IntegrationProviderStatus;
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: IntegrationProviderStatus;
+  xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
   tokenStorage: {
@@ -2157,6 +2175,7 @@ export type AdminIntegrationsStatusPayload = {
   square: AdminIntegrationProviderStatus;
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: AdminIntegrationProviderStatus;
+  xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
   tokenStorage: {
