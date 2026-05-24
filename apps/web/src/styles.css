@@ -259,15 +259,13 @@ p {
   position: sticky;
   top: 0;
   z-index: 5;
-  background:
-    linear-gradient(
-      135deg,
-      color-mix(in srgb, var(--color-accent) 72%, #334155 28%) 0%,
-      color-mix(in srgb, var(--color-accent-hover) 76%, #475569 24%) 100%
-    );
+  /* Neutral dark base with a barely-there accent tint — premium and
+     consistent across all apps, with the accent color only as identity. */
+  background: color-mix(in srgb, #0d1117 88%, var(--color-accent) 12%);
   color: #fff;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.14);
+  /* 2 px accent line is the sole per-app colour differentiator */
+  border-bottom: 2px solid color-mix(in srgb, var(--color-accent) 65%, transparent);
+  box-shadow: 0 2px 20px rgba(0, 0, 0, 0.30), 0 1px 0 rgba(255, 255, 255, 0.04);
 }
 
 .app-shell-main {
@@ -515,13 +513,15 @@ p {
 
 .topbar-title {
   font-size: 14px;
-  font-weight: 600;
-  color: #fff;
+  font-weight: 700;
+  color: #ffffff;
+  letter-spacing: -0.01em;
 }
 
 .topbar-subtitle {
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.78);
+  color: rgba(255, 255, 255, 0.46);
+  letter-spacing: 0;
 }
 
 .topbar-right {
@@ -534,7 +534,7 @@ p {
 
 .app-shell-topbar .topbar-user-label,
 .app-shell-topbar .subtle {
-  color: rgba(255, 255, 255, 0.82);
+  color: rgba(255, 255, 255, 0.52);
 }
 
 .topbar-search {
@@ -542,26 +542,27 @@ p {
   align-items: center;
   gap: 8px;
   padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  border: 1px solid rgba(255, 255, 255, 0.13);
   border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.78);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.62);
   min-width: 240px;
   font-size: 13px;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 130ms ease, border-color 130ms ease;
 }
 
 .topbar-search:hover {
-  border-color: rgba(255, 255, 255, 0.42);
-  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.22);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.80);
 }
 
 .topbar-search kbd {
   margin-left: auto;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.86);
+  background: rgba(255, 255, 255, 0.10);
+  color: rgba(255, 255, 255, 0.54);
   font-size: 11px;
   font-family: var(--font-mono);
 }
@@ -572,51 +573,66 @@ p {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: #fff;
-  color: var(--color-accent-text);
+  background: rgba(255, 255, 255, 0.10);
+  border: 1.5px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.topbar-avatar:hover {
+  background: rgba(255, 255, 255, 0.16);
+  border-color: rgba(255, 255, 255, 0.36);
 }
 
 .app-shell-topbar .btn-primary,
 .app-shell-topbar .btn-secondary,
 .app-shell-topbar .btn-ghost,
 .app-shell-topbar .icon-btn {
-  min-height: 38px;
-  padding-inline: 13px;
-  border-radius: 10px;
-  border-color: rgba(255, 255, 255, 0.32);
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  min-height: 36px;
+  padding-inline: 12px;
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.07);
+  color: rgba(255, 255, 255, 0.88);
   box-shadow: none;
-  font-weight: 700;
+  font-weight: 600;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
 }
 
 .app-shell-topbar .btn-primary {
-  border-color: #fff;
-  background: #fff;
-  color: var(--color-accent-text);
+  border-color: rgba(255, 255, 255, 0.26);
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-weight: 700;
 }
 
 .app-shell-topbar .btn-primary:hover:not(:disabled) {
-  border-color: #fff;
-  background: rgba(255, 255, 255, 0.9);
-  color: var(--color-accent-text);
+  border-color: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.24);
+  color: #ffffff;
 }
 
 .app-shell-topbar .btn-primary:focus-visible,
 .app-shell-topbar .btn-secondary:focus-visible,
 .app-shell-topbar .btn-ghost:focus-visible,
 .app-shell-topbar .icon-btn:focus-visible {
-  outline-color: rgba(255, 255, 255, 0.86);
+  outline-color: rgba(255, 255, 255, 0.72);
 }
 
 .app-shell-topbar .btn-secondary:hover:not(:disabled),
 .app-shell-topbar .btn-ghost:hover:not(:disabled),
 .app-shell-topbar .icon-btn:hover {
-  border-color: rgba(255, 255, 255, 0.5);
-  background: rgba(255, 255, 255, 0.2);
-  color: #fff;
+  border-color: rgba(255, 255, 255, 0.24);
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffffff;
+}
+
+/* Notifications dot — border matches the dark topbar background */
+.app-shell-topbar .notifications-dot {
+  border-color: color-mix(in srgb, #0d1117 88%, var(--color-accent) 12%);
 }
 
 /* ==========================================================================
