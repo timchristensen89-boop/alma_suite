@@ -53,8 +53,13 @@ function statusTone(status: SquareMenuMappingStatus): 'positive' | 'warning' | '
   return 'info';
 }
 
+function mappingStatusLabel(status: SquareMenuMappingStatus | null | undefined) {
+  return (status ?? 'UNMAPPED').replace(/_/g, ' ');
+}
+
 function marginLabel(mapping: SquareMenuRecipeMapping) {
   const margin = mapping.margin;
+  if (!margin) return 'Not available';
   if (margin.grossProfitCents === null || margin.foodCostPercent === null) return 'Not available';
   return `${money(margin.grossProfitCents)} GP · ${(margin.foodCostPercent * 100).toFixed(1)}% food cost`;
 }
@@ -237,12 +242,12 @@ export function SquareMenuMappingPage() {
               className="square-menu-row-card"
               title={
                 <span className="square-menu-title">
-                  {mapping.squareItemName}
+                  {mapping.squareItemName || 'Unnamed Square item'}
                   {mapping.squareVariationName ? <small>{mapping.squareVariationName}</small> : null}
                 </span>
               }
               subtitle={`${mapping.categoryName ?? 'Uncategorised'} · ${money(mapping.priceMoneyAmount)}`}
-              action={<Badge tone={statusTone(mapping.status)}>{mapping.status.replace(/_/g, ' ')}</Badge>}
+              action={<Badge tone={statusTone(mapping.status ?? 'UNMAPPED')}>{mappingStatusLabel(mapping.status)}</Badge>}
             >
               <div className="square-menu-row-layout">
                 <div className="square-menu-current">

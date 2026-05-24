@@ -17,6 +17,7 @@ import {
   Spinner,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteCommsWidget,
   SuiteNotificationsWidget,
   TopBar,
   useDismissibleLayer
@@ -435,6 +436,7 @@ function UserMenu() {
 
 function AdminTopBar() {
   const location = useLocation();
+  const { user } = useAuth();
   const active = pageFor(location.pathname);
   useDocumentTitle(active.label);
 
@@ -444,6 +446,13 @@ function AdminTopBar() {
       subtitle={active.description}
       right={
         <>
+          <SuiteCommsWidget
+            appId="settings"
+            api={api}
+            venue={user?.venue}
+            userName={user ? `${user.firstName} ${user.lastName}` : undefined}
+            canAnnounce={canAdmin(user)}
+          />
           <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="settings" />
           <UserMenu />
