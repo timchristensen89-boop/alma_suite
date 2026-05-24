@@ -39,11 +39,12 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -1815,6 +1816,20 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           right={
             <>
               <SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="topbar" />
+              <SuiteSearchWidget
+                api={api}
+                currentApp="giftcards"
+                items={GIFTCARD_NAV_ITEMS.map((item) => ({
+                  id: item.href,
+                  label: item.label,
+                  description: item.description,
+                  href: item.href,
+                  type: 'Gift Cards'
+                }))}
+                placeholder="Search gift card orders and setup..."
+                remoteSearch
+                remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+              />
               <SuiteCommsWidget
                 appId="GIFTCARDS"
                 api={api}
