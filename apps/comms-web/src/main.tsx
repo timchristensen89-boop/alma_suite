@@ -250,6 +250,17 @@ function priorityLabel(priority: string) {
   return priority.toLowerCase().replace(/^\w/, (letter) => letter.toUpperCase());
 }
 
+/**
+ * /apps inside any individual app means "back to the suite launcher".
+ * Some older iPad/handoff links point here — bounce them to the home app.
+ */
+function AppsBounce() {
+  useEffect(() => {
+    window.location.replace('https://alma-home.web.app');
+  }, []);
+  return null;
+}
+
 function PageShell({
   title,
   eyebrow,
@@ -1026,7 +1037,8 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
         <Route path="/threads/:id" element={<ThreadDetailPage />} />
         <Route path="/compose" element={<ComposePage />} />
         <Route path="/settings" element={<SettingsPage />} />
-        <Route path="*" element={<PageShell title="Page not found" eyebrow="Comms"><Card><p>Choose a Comms page from the navigation.</p></Card></PageShell>} />
+        <Route path="/apps" element={<AppsBounce />} />
+        <Route path="*" element={<PageShell title="Page not found" eyebrow="Comms"><Card><p>Choose a Comms page from the navigation, or <a href="https://alma-home.web.app">return to the Alma Suite home</a>.</p></Card></PageShell>} />
       </Routes>
     </AppShell>
   );

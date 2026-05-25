@@ -116,17 +116,30 @@ const LEGACY_APPS: SuiteAppIdentity[] = LEGACY_APP_SEEDS.map((seed) => ({
   icon: ICON_FACTORY[seed.iconKey]()
 }));
 
-const forceCommsSuiteUrl = (app: SuiteAppIdentity): SuiteAppIdentity =>
-  app.id === 'comms'
-    ? { ...app, href: 'https://alma-comms.web.app' }
-    : app;
+// Each app's hosted URL — used by the home page tiles and any cross-app links.
+const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
+  compliance: 'https://alma-compliance.web.app',
+  stock: 'https://alma-stock-v18.web.app',
+  staff: 'https://alma-staff.web.app',
+  reserve: 'https://alma-reserve.web.app',
+  reports: 'https://alma-reports.web.app',
+  marketing: 'https://alma-marketing.web.app',
+  giftcards: 'https://alma-giftcards.web.app',
+  comms: 'https://alma-comms.web.app',
+  settings: 'https://alma-suite-admin.web.app'
+};
+
+const assignHref = (app: SuiteAppIdentity): SuiteAppIdentity => {
+  const host = SUITE_APP_HOSTS[app.id];
+  return host ? { ...app, href: host } : app;
+};
 
 const ALL_APPS: SuiteAppIdentity[] = [
-  ...SUITE_APP_SEEDS.map((seed) => forceCommsSuiteUrl({
+  ...SUITE_APP_SEEDS.map((seed) => assignHref({
     ...seed,
     icon: ICON_FACTORY[seed.iconKey]()
   })),
-  ...LEGACY_APPS.map(forceCommsSuiteUrl)
+  ...LEGACY_APPS.map(assignHref)
 ];
 
 export const SUITE_APPS: SuiteAppIdentity[] = ALL_APPS.filter((app) =>
@@ -219,8 +232,10 @@ export function ProductLogo({
   const moduleColor = app.id === 'stock' ? '#145f51' : app.fromColor;
 
   return (
-    <span
+    <a
+      href="https://alma-home.web.app"
       className={className ? `product-logo-lockup ${className}` : 'product-logo-lockup'}
+      title="Back to Alma Suite home"
       style={{
         display: 'inline-flex',
         alignItems: 'center',
@@ -228,7 +243,8 @@ export function ProductLogo({
         fontFamily:
           '-apple-system, BlinkMacSystemFont, "Helvetica Neue", "Segoe UI", Roboto, Arial, sans-serif',
         lineHeight: 1,
-        color: titleColor
+        color: titleColor,
+        textDecoration: 'none'
       }}
     >
       <AlmaAppIcon
@@ -270,7 +286,7 @@ export function ProductLogo({
           </span>
         </span>
       )}
-    </span>
+    </a>
   );
 }
 
