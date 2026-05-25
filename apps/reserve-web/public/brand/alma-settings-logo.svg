@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="1024" height="1024">
   <defs>
     <linearGradient id="g_settings" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#E2DCCC"/>
-      <stop offset="100%" stop-color="#D0CABA"/>
+      <stop offset="0%" stop-color="#EFE8DC"/>
+      <stop offset="100%" stop-color="#EFE8DC"/>
     </linearGradient>
     <radialGradient id="rg_settings" cx="50%" cy="36%" r="48%">
       <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
@@ -14,10 +14,10 @@
       <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </linearGradient>
     <filter id="f_settings">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#253326" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.18"/>
     </filter>
   </defs>
-  <rect x="4" y="4" width="212" height="212" rx="50" fill="#BEB9A8" opacity="0.5"/>
+  <rect x="4" y="4" width="212" height="212" rx="50" fill="#DDD3C0" opacity="0.65"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#g_settings)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#rg_settings)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#sh_settings)"/>

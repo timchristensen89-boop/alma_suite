@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #7A1535;
-  --color-accent-hover: #4A0820;
-  --color-accent-soft: #F4EBDC;
-  --color-accent-text: #4A0820;
+  --color-accent: #3D5A3A;
+  --color-accent-hover: #253326;
+  --color-accent-soft: #E5ECE5;
+  --color-accent-text: #1A2818;
 }
 
 .reserve-page {

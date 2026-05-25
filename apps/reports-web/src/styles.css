@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #44545F;
-  --color-accent-hover: #1E2E3A;
-  --color-accent-soft: #ECF0F4;
-  --color-accent-text: #1E2E3A;
+  --color-accent: #8A7860;
+  --color-accent-hover: #5E4F3D;
+  --color-accent-soft: #EFE8DC;
+  --color-accent-text: #3D3220;
 }
 
 .reports-section {

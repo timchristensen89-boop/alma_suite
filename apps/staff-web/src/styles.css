@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #244C9F;
-  --color-accent-hover: #102E69;
-  --color-accent-soft: #e8eefc;
-  --color-accent-text: #102E69;
+  --color-accent: #9A6B5A;
+  --color-accent-hover: #6B473A;
+  --color-accent-soft: #F5DCCE;
+  --color-accent-text: #3D2418;
 }
 
 .staff-board {
@@ -3279,7 +3279,7 @@
   background: none;
   border-radius: 0;
   color: var(--color-text);
-  font-size: 13.5px;
+  font-size: 12.5px;
   font-weight: 600;
   letter-spacing: 0;
   overflow: hidden;
@@ -3680,7 +3680,7 @@
   align-items: center;
   justify-content: center;
   min-height: 44px;
-  padding: 6px 8px;
+  padding: 6px 3px;
   background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(12px);
   text-align: center;

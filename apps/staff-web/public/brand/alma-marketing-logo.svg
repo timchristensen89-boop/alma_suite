@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="1024" height="1024">
   <defs>
     <linearGradient id="g_marketing" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#D2D6DE"/>
-      <stop offset="100%" stop-color="#C0C4CC"/>
+      <stop offset="0%" stop-color="#4D5E7A"/>
+      <stop offset="100%" stop-color="#4D5E7A"/>
     </linearGradient>
     <radialGradient id="rg_marketing" cx="50%" cy="36%" r="48%">
       <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
@@ -14,19 +14,19 @@
       <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </linearGradient>
     <filter id="f_marketing">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#253326" flood-opacity="0.12"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000000" flood-opacity="0.18"/>
     </filter>
   </defs>
-  <rect x="4" y="4" width="212" height="212" rx="50" fill="#AEB2BA" opacity="0.5"/>
+  <rect x="4" y="4" width="212" height="212" rx="50" fill="#34425A" opacity="0.65"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#g_marketing)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#rg_marketing)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#sh_marketing)"/>
   <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(37, 51, 38, 0.12)" stroke-width="1"/>
-  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="#253326" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_marketing)">
+  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="#F5DCCE" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_marketing)">
     <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/>
     <path d="M15.54 8.46a5 5 0 0 1 0 7.07"/>
     <path d="M19.07 4.93a10 10 0 0 1 0 14.14"/>
   </g>
-  <text x="110" y="172" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
-  <text x="110" y="194" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing="3">MARKETING</text>
+  <text x="110" y="172" text-anchor="middle" fill="#F5DCCE" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
+  <text x="110" y="194" text-anchor="middle" fill="#F5DCCE" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="10.5" font-weight="700" letter-spacing="3">MARKETING</text>
 </svg>

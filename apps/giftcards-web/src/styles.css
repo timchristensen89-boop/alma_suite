@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #A87B2C;
-  --color-accent-hover: #73520E;
-  --color-accent-soft: #FAF2DD;
-  --color-accent-text: #73520E;
+  --color-accent: #B5772F;
+  --color-accent-hover: #8A5A20;
+  --color-accent-soft: #FAF0DC;
+  --color-accent-text: #3D2810;
   --giftcards-primary: #1f3524;
   --giftcards-accent: #b98216;
 }
