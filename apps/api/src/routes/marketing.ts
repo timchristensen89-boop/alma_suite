@@ -465,6 +465,21 @@ marketingRouter.post('/campaigns/:id/simulate-send', requireManager, async (req,
   }
 });
 
+marketingRouter.post('/campaigns/:id/issue-gift-cards', requireManager, async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const valueCents = typeof body.valueCents === 'number'
+      ? body.valueCents
+      : Number(body.valueCents);
+    const expiryDays = typeof body.expiryDays === 'number' ? body.expiryDays : undefined;
+    res.status(201).json(
+      await marketingService.issueCampaignGiftCards(req.user!, String(req.params.id), { valueCents, expiryDays })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.get('/automations', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.listAutomations(req.user!, {

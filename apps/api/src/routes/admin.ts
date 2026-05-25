@@ -87,6 +87,17 @@ adminRouter.get('/system-health', async (_req, res, next) => {
   }
 });
 
+// Compose and send the Monday weekly summary email. Runnable manually from
+// the admin UI; Cloud Scheduler can hit this endpoint every Monday 7am.
+adminRouter.post('/weekly-summary/send', async (req, res, next) => {
+  try {
+    const previewOnly = req.query.preview === '1' || req.query.preview === 'true';
+    res.json(await adminService.sendWeeklySummary({ previewOnly }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 adminRouter.get('/audit-events', async (req, res, next) => {
   try {
     const eventType = typeof req.query.eventType === 'string' && req.query.eventType.trim()

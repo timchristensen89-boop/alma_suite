@@ -71,6 +71,7 @@ import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 import { WageForecastsPage } from './pages/WageForecastsPage';
+import { WeeklySummaryPage } from './pages/WeeklySummaryPage';
 import { VenueDevicesPage } from './pages/VenueDevicesPage';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -105,6 +106,12 @@ const NAV_GROUPS: AdminNavGroup[] = [
         description: 'Launchpad for setup, integrations, imports, and system controls',
         icon: <IconDashboard />,
         end: true
+      },
+      {
+        to: '/weekly-summary',
+        label: 'Weekly summary',
+        description: 'Compose and send the Monday morning ops email',
+        icon: <IconDashboard />
       }
     ]
   },
@@ -587,6 +594,7 @@ function AdminWorkspace() {
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
         <Route path="/wage-forecasts" element={<WageForecastsPage />} />
         <Route path="/integrations/health" element={<IntegrationHealthPage />} />
+        <Route path="/weekly-summary" element={<WeeklySummaryPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
         <Route path="/staff-hr-templates" element={<StaffHrTemplatesPage />} />
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />

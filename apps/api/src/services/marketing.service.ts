@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { prisma } from '@alma/db';
 import { Prisma } from '@prisma/client';
 import {
@@ -2759,6 +2760,79 @@ export const marketingService = {
       orderBy: { updatedAt: 'desc' }
     });
     return automations.map(automationToPayload);
+  },
+
+  // Generate one unique single-use gift card per recipient in a campaign's
+  // segment. Returns the (guest, code) mapping so the operator can do a
+  // mail-merge in their email tool, or paste codes into the email template.
+  // The cards land in the gift-card system tagged with the campaign id so
+  // reporting can attribute redemptions back to the source.
+  async issueCampaignGiftCards(
+    actor: AuthUser,
+    campaignId: string,
+    input: { valueCents: number; expiryDays?: number }
+  ) {
+    const campaign = await prisma.marketingCampaign.findFirst({
+      where: { id: campaignId, ...(isAdminActor(actor) ? {} : actor.venue ? { venue: actor.venue } : {}) }
+    });
+    if (!campaign) throw new HttpError(404, 'Campaign not found');
+    const valueCents = Math.round(input.valueCents);
+    if (!Number.isFinite(valueCents) || valueCents < 500) {
+      throw new HttpError(400, 'Gift card value must be at least $5.');
+    }
+
+    const segment = (campaign.segmentDefinition as MarketingSegmentDefinition) ?? marketingSegmentDefinitionSchema.parse({});
+    const guests = await loadGuestsForSegment(actor, segment, campaign.venue);
+    if (guests.length === 0) {
+      return { issued: 0, codes: [] as Array<{ guestId: string; recipientName: string; recipientEmail: string | null; code: string }> };
+    }
+
+    const expiresAt = input.expiryDays
+      ? new Date(Date.now() + input.expiryDays * 24 * 60 * 60 * 1000)
+      : null;
+
+    const codes: Array<{ guestId: string; recipientName: string; recipientEmail: string | null; code: string }> = [];
+
+    for (const guest of guests) {
+      // Generate a unique code; retry a handful of times on rare collisions
+      let code = '';
+      for (let i = 0; i < 8; i += 1) {
+        const candidate = `GIFT-${randomBytes(4).toString('hex').toUpperCase()}`;
+        const existing = await prisma.giftCard.findUnique({ where: { code: candidate } });
+        if (!existing) { code = candidate; break; }
+      }
+      if (!code) continue;
+
+      const recipientName = `${guest.firstName} ${guest.lastName}`.trim() || 'Valued guest';
+      const recipientEmail = guest.email?.toLowerCase() ?? null;
+
+      await prisma.giftCard.create({
+        data: {
+          code,
+          status: 'ACTIVE',
+          initialValueCents: valueCents,
+          balanceCents: valueCents,
+          discountCents: 0,
+          amountPaidCents: 0,
+          currency: 'aud',
+          purchaserName: `Campaign: ${campaign.name}`,
+          purchaserEmail: `marketing@alma`,
+          recipientName,
+          recipientEmail,
+          message: campaign.previewText ?? null,
+          promoCodeId: null,
+          promoCodeSnapshot: `CAMPAIGN_REWARD:${campaign.id}`,
+          testMode: false,
+          stripeCheckoutSessionId: `campaign:${campaign.id}:${code}`,
+          paidAt: new Date(),
+          expiresAt
+        }
+      });
+
+      codes.push({ guestId: guest.id, recipientName, recipientEmail, code });
+    }
+
+    return { issued: codes.length, codes };
   },
 
   // Return per-automation run metrics: count by status, latest run timestamp.

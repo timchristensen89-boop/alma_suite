@@ -966,6 +966,76 @@ export const adminService = {
     };
   },
 
+  // Monday weekly summary email — prime cost, top sellers, overdues,
+  // upcoming expiries. Runnable manually for testing; Cloud Scheduler can
+  // hit this endpoint every Monday morning.
+  async sendWeeklySummary({ previewOnly = false }: { previewOnly?: boolean } = {}) {
+    const now = new Date();
+    const start = new Date(now);
+    start.setDate(start.getDate() - 7);
+    start.setHours(0, 0, 0, 0);
+    const end = new Date(now);
+    end.setHours(0, 0, 0, 0);
+
+    const [overdueIssues, expiringRecords, openLicences] = await Promise.all([
+      prisma.issue.count({
+        where: {
+          status: { notIn: ['RESOLVED', 'CLOSED'] },
+          dueDate: { lt: now }
+        }
+      }),
+      prisma.staffComplianceRecord.count({
+        where: {
+          expiryDate: { gte: now, lte: new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000) },
+          staffProfile: { accountType: 'HUMAN' }
+        }
+      }),
+      prisma.liquorLicence.findMany({
+        where: { expiryDate: { gte: now, lte: new Date(now.getTime() + 90 * 24 * 60 * 60 * 1000) } },
+        orderBy: { expiryDate: 'asc' },
+        take: 5
+      })
+    ]);
+
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
+    const recipient = settings?.notifyEmail?.trim();
+
+    const weekLabel = `${start.toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })} – ${new Date(end.getTime() - 1).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}`;
+
+    const lines = [
+      `Week ending ${weekLabel}`,
+      '',
+      `• Overdue compliance issues: ${overdueIssues}`,
+      `• Staff records expiring within 30 days: ${expiringRecords}`,
+      `• Liquor licences expiring within 90 days: ${openLicences.length}`,
+      openLicences.length > 0
+        ? `\n  Next licence expiries:\n${openLicences.map((l) => `    - ${l.venue}: ${l.licenceType} ${l.licenceNumber} on ${l.expiryDate ? new Date(l.expiryDate).toLocaleDateString('en-AU') : '—'}`).join('\n')}`
+        : '',
+      '',
+      'Open https://alma-compliance.web.app/ to review the full reports.'
+    ].filter(Boolean).join('\n');
+
+    if (previewOnly) {
+      return { previewOnly: true, recipient, weekLabel, body: lines, overdueIssues, expiringRecords, openLicences: openLicences.length };
+    }
+
+    if (!recipient || !mailService.isConfigured()) {
+      return { sent: false, reason: !recipient ? 'no recipient configured' : 'mail provider not configured', weekLabel };
+    }
+
+    await mailService.sendAlert({
+      to: recipient,
+      subject: `[Alma weekly summary] Week of ${weekLabel}`,
+      title: 'Alma weekly summary',
+      body: lines,
+      severity: 'info',
+      ctaUrl: 'https://alma-reports.web.app/',
+      ctaLabel: 'Open reports'
+    });
+
+    return { sent: true, recipient, weekLabel, overdueIssues, expiringRecords, openLicences: openLicences.length };
+  },
+
   async systemHealth(): Promise<AdminSystemHealthPayload> {
     const mailProvider = provider();
     let database: AdminSystemHealthPayload['database'] = {

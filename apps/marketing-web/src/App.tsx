@@ -965,6 +965,40 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     }
   }
 
+  async function issueGiftCardsForCampaign(campaignId: string) {
+    const valueInput = window.prompt(
+      'How much should each gift card be worth? (AUD, minimum 5)',
+      '20'
+    );
+    if (!valueInput) return;
+    const valueCents = Math.round(Number(valueInput) * 100);
+    if (!Number.isFinite(valueCents) || valueCents < 500) {
+      setError(`campaign-gift:${campaignId}`, null, 'Enter a value of at least $5.');
+      return;
+    }
+    const expiryInput = window.prompt('Expiry in days? Leave blank for no expiry.', '90');
+    const expiryDays = expiryInput && expiryInput.trim() ? Number(expiryInput) : undefined;
+    try {
+      const result = await api<{ issued: number; codes: Array<{ recipientName: string; recipientEmail: string | null; code: string }> }>(
+        `/api/marketing/campaigns/${campaignId}/issue-gift-cards`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ valueCents, expiryDays })
+        }
+      );
+      // Copy to clipboard as CSV so the operator can paste into an email merge
+      const csv = ['Recipient,Email,Code', ...result.codes.map((c) => `${c.recipientName},${c.recipientEmail ?? ''},${c.code}`)].join('\n');
+      try {
+        await navigator.clipboard.writeText(csv);
+        setSuccess(`campaign-gift:${campaignId}`, `Issued ${result.issued} gift cards. CSV copied to clipboard for email merge.`);
+      } catch {
+        setSuccess(`campaign-gift:${campaignId}`, `Issued ${result.issued} gift cards. (Clipboard unavailable — codes are saved in the Gift Cards app.)`);
+      }
+    } catch (error) {
+      setError(`campaign-gift:${campaignId}`, error, 'Could not issue gift cards.');
+    }
+  }
+
   async function saveAutomation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
@@ -1908,6 +1942,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     <div className="marketing-badges">
                       <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)}>Preview</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void issueGiftCardsForCampaign(campaign.id)}>🎁 Issue gift cards</Button>
                       <Button type="button" size="sm" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
                     </div>
                     <ActionFeedback
