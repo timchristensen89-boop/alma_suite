@@ -3102,6 +3102,7 @@
 .roster-side-card .card-body {
   display: grid;
   gap: 12px;
+  padding: 12px 8px;
 }
 
 /* ── Historical panel 2-column grid ─────────────────────────── */
