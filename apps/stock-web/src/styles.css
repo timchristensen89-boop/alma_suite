@@ -16,10 +16,10 @@
 
 :root {
   /* Stock deep green */
-  --color-accent: #124F3B;
-  --color-accent-hover: #092E24;
-  --color-accent-soft: #e7f1ec;
-  --color-accent-text: #092E24;
+  --color-accent: #1E843D;
+  --color-accent-hover: #0C4020;
+  --color-accent-soft: #E1F4E6;
+  --color-accent-text: #0C4020;
 }
 
 /*

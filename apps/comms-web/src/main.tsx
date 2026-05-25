@@ -141,19 +141,20 @@ function setStoredToken(token: string | null) {
 type CommsNavItem = {
   to: string;
   label: string;
+  description: string;
   icon: React.ReactNode;
   end?: boolean;
 };
 
 const navItems: CommsNavItem[] = [
-  { to: '/', label: 'Overview', icon: <IconDashboard />, end: true },
-  { to: '/inbox', label: 'Inbox', icon: <IconFileText /> },
-  { to: '/venue', label: 'Venue', icon: <IconStore /> },
-  { to: '/announcements', label: 'Announcements', icon: <IconIssues /> },
-  { to: '/handover', label: 'Handover', icon: <IconBriefcase /> },
-  { to: '/tasks', label: 'Tasks', icon: <IconChecklist /> },
-  { to: '/compose', label: 'Compose', icon: <IconUpload /> },
-  { to: '/settings', label: 'Settings', icon: <IconSettings /> }
+  { to: '/', label: 'Overview', description: 'Recent threads, handover, and alerts', icon: <IconDashboard />, end: true },
+  { to: '/inbox', label: 'Inbox', description: 'Direct messages and replies', icon: <IconFileText /> },
+  { to: '/venue', label: 'Venue', description: 'Venue-wide team conversations', icon: <IconStore /> },
+  { to: '/announcements', label: 'Announcements', description: 'Broadcasts to all staff', icon: <IconIssues /> },
+  { to: '/handover', label: 'Handover', description: 'Shift handover notes', icon: <IconBriefcase /> },
+  { to: '/tasks', label: 'Tasks', description: 'Follow-ups and action items', icon: <IconChecklist /> },
+  { to: '/compose', label: 'Compose', description: 'Start a new thread or announcement', icon: <IconUpload /> },
+  { to: '/settings', label: 'Settings', description: 'Comms preferences and integrations', icon: <IconSettings /> }
 ];
 
 function apiUrl(path: string) {
@@ -968,6 +969,10 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   const active = currentCommsPage(location.pathname);
   const adminUrl = 'https://alma-suite-admin.web.app';
 
+  useEffect(() => {
+    document.title = `${active.label} · Alma Comms`;
+  }, [active.label]);
+
   async function signOut() {
     try {
       await api('/api/auth/logout', { method: 'POST' });
@@ -989,7 +994,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   const topBar = (
     <TopBar
       title={active.label}
-      subtitle="Messages, handovers, alerts, and follow-ups"
+      subtitle={active.description}
       right={
         <div className="topbar-action-group">
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />

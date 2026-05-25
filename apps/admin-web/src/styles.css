@@ -1,8 +1,8 @@
 :root {
-  --color-accent: #343a40;
-  --color-accent-hover: #1f2328;
-  --color-accent-soft: #eef0f2;
-  --color-accent-text: #1f2328;
+  --color-accent: #2A3360;
+  --color-accent-hover: #0E1230;
+  --color-accent-soft: #E8E9F5;
+  --color-accent-text: #0E1230;
 }
 
 .admin-app-sidebar-label {
