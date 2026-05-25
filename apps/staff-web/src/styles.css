@@ -5648,3 +5648,23 @@
 .roster-cost-forecast-pill.is-danger small {
   color: #991b1b;
 }
+
+.clock-drift-note {
+  display: block;
+  margin-top: 4px;
+  padding: 5px 9px;
+  border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.clock-drift-note.is-warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #92400e;
+}
+
+.clock-drift-note.is-danger {
+  background: rgba(220, 38, 38, 0.10);
+  color: #991b1b;
+}

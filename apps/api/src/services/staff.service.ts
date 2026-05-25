@@ -3569,6 +3569,33 @@ export const staffService = {
     };
   },
 
+  // List closed clock sessions across staff for a given window.
+  // Used by managers to reconcile timesheets against actual clock-in/out.
+  async listClockSessionsForReview(actor: AuthUser, query: unknown) {
+    const params = query && typeof query === 'object' ? (query as Record<string, unknown>) : {};
+    const startRaw = typeof params.start === 'string' ? params.start : undefined;
+    const endRaw = typeof params.end === 'string' ? params.end : undefined;
+    const venueParam = typeof params.venue === 'string' && params.venue !== 'all' ? params.venue : undefined;
+    const start = startRaw ? new Date(startRaw) : new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const end = endRaw ? new Date(endRaw) : new Date();
+
+    const venueScope = !actor.isAdmin && actor.venue ? actor.venue : venueParam;
+
+    const sessions = await prisma.staffClockSession.findMany({
+      where: {
+        clockInAt: { gte: start, lt: new Date(end.getTime() + 24 * 60 * 60 * 1000) },
+        ...(venueScope ? { venue: venueScope } : {})
+      },
+      include: {
+        events: { orderBy: [{ occurredAt: 'asc' }] }
+      },
+      orderBy: [{ clockInAt: 'desc' }],
+      take: 500
+    });
+
+    return sessions.map(toClockSessionPayload);
+  },
+
   async clockIn(actor: AuthUser, input: unknown) {
     const data = staffClockInInputSchema.parse(input ?? {});
     const existingOpen = await prisma.staffClockSession.findFirst({

@@ -264,6 +264,15 @@ staffRouter.get('/leave', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/clock-sessions', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listClockSessionsForReview(req.user, req.query));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/leave', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

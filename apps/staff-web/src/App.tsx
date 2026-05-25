@@ -12434,6 +12434,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [clockSessions, setClockSessions] = useState<StaffClockSession[]>([]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const selectedMember = staff.find((member) => member.id === staffProfileId);
   const venueOptions = useMemo(
@@ -12470,6 +12471,20 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         venue: venueFilter
       });
       setTimesheets(await api<Timesheet[]>(`/api/staff/timesheets?${query.toString()}`));
+
+      // Fetch clock sessions for the same window to power timesheet
+      // reconciliation. Gracefully no-op if the endpoint isn't deployed.
+      try {
+        const clockQuery = new URLSearchParams({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue: venueFilter
+        });
+        const sessions = await api<StaffClockSession[]>(`/api/staff/clock-sessions?${clockQuery.toString()}`);
+        setClockSessions(sessions);
+      } catch {
+        setClockSessions([]);
+      }
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not load timesheets.');
     } finally {
@@ -12750,6 +12765,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             {timesheets.map((entry) => {
               const member = staff.find((s) => s.id === entry.staffProfileId);
               const awardCheck = checkAwardCompliance(member);
+              const clockDrift = computeClockDrift(entry, clockSessions);
               return (
               <article key={entry.id} className="staff-list-button" style={{ display: 'grid', gap: 8 }}>
                 <span>
@@ -12761,6 +12777,13 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                     <span className="award-compliance-warning" role="alert">
                       ⚠ Pay rate ${(member?.payRateCents ?? 0) / 100}/hr below {awardCheck.employmentType === 'CASUAL' ? 'casual loaded' : 'ordinary'} minimum
                       ${awardCheck.minimumCents / 100}/hr ({awardCheck.classificationLabel})
+                    </span>
+                  ) : null}
+                  {clockDrift ? (
+                    <span className={`clock-drift-note is-${clockDrift.severity}`}>
+                      ⏱ Clock: {clockDrift.clockHours.toFixed(2)}h ({timeOf(clockDrift.clockInAt)}-{clockDrift.clockOutAt ? timeOf(clockDrift.clockOutAt) : 'open'}) ·
+                      Timesheet: {timesheetHours(entry).toFixed(2)}h ·
+                      Drift {clockDrift.driftHours >= 0 ? '+' : ''}{clockDrift.driftHours.toFixed(2)}h
                     </span>
                   ) : null}
                 </span>
@@ -12808,6 +12831,47 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       </div>
     </div>
   );
+}
+
+type ClockDriftResult = {
+  driftHours: number;
+  clockHours: number;
+  clockInAt: string;
+  clockOutAt: string | null;
+  severity: 'ok' | 'warning' | 'danger';
+};
+
+function computeClockDrift(timesheet: Timesheet, clockSessions: StaffClockSession[]): ClockDriftResult | null {
+  // Match clock sessions where the staff member is the same and the clock-in
+  // falls on the same calendar date as the timesheet's workDate.
+  const tsDate = new Date(timesheet.workDate);
+  const dayKey = tsDate.toISOString().slice(0, 10);
+  const candidates = clockSessions.filter((s) =>
+    s.staffProfileId === timesheet.staffProfileId &&
+    s.clockOutAt !== null &&
+    s.clockInAt.slice(0, 10) === dayKey
+  );
+  if (candidates.length === 0) return null;
+
+  // If there are multiple, pick the one closest to the timesheet's clock-in
+  const tsClockIn = new Date(timesheet.clockInAt).getTime();
+  candidates.sort((a, b) =>
+    Math.abs(new Date(a.clockInAt).getTime() - tsClockIn) -
+    Math.abs(new Date(b.clockInAt).getTime() - tsClockIn)
+  );
+  const match = candidates[0]!;
+
+  const clockOutMs = new Date(match.clockOutAt!).getTime();
+  const clockInMs = new Date(match.clockInAt).getTime();
+  const clockHours = (clockOutMs - clockInMs) / 1000 / 60 / 60 - (match.accumulatedBreakMinutes / 60);
+  const tsHours = timesheetHours(timesheet);
+  const driftHours = tsHours - clockHours;
+  const absDrift = Math.abs(driftHours);
+  const severity: 'ok' | 'warning' | 'danger' =
+    absDrift < 0.1 ? 'ok' : absDrift < 0.5 ? 'warning' : 'danger';
+  // Don't surface drift if it's negligible
+  if (severity === 'ok') return null;
+  return { driftHours, clockHours, clockInAt: match.clockInAt, clockOutAt: match.clockOutAt, severity };
 }
 
 type AwardComplianceResult =

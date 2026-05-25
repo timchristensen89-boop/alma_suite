@@ -23,6 +23,7 @@ import {
   type MarketingSegmentDefinition
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 import { buildGuestTimeline, recalculateAutoTagsForGuest } from './marketing.service.js';
 
 const ACTIVE_BOOKING_STATUSES = new Set<ReserveReservationStatus>(['PENDING', 'CONFIRMED', 'SEATED']);
@@ -857,6 +858,42 @@ export const reserveService = {
     });
 
     await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
+
+    // Fire a booking confirmation email if we have an email address.
+    // Skip when status is CANCELLED (no point confirming a cancellation).
+    if (reservation.guestEmail && reservation.status !== 'CANCELLED' && mailService.isConfigured()) {
+      try {
+        const reserveUrl = (process.env.RESERVE_WEB_URL ?? 'https://alma-reserve.web.app').replace(/\/+$/, '');
+        const when = new Date(reservation.startsAt).toLocaleString('en-AU', {
+          weekday: 'long',
+          day: 'numeric',
+          month: 'long',
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true
+        });
+        await mailService.sendAlert({
+          to: reservation.guestEmail,
+          subject: `Booking confirmed at ${reservation.venue} — ${when}`,
+          title: `Your booking at ${reservation.venue} is confirmed`,
+          body: [
+            `Hi ${reservation.guestName?.split(' ')[0] ?? 'there'},`,
+            '',
+            `We've got you down for ${reservation.covers} guest${reservation.covers === 1 ? '' : 's'} on ${when}.`,
+            reservation.occasion ? `Occasion: ${reservation.occasion}` : '',
+            reservation.specialRequests ? `Special requests: ${reservation.specialRequests}` : '',
+            '',
+            `If anything changes, just reply to this email or give the venue a call.`
+          ].filter(Boolean).join('\n'),
+          venue: reservation.venue,
+          severity: 'info',
+          ctaUrl: reserveUrl,
+          ctaLabel: 'Visit the restaurant'
+        });
+      } catch (err) {
+        console.error('[reserve] Failed to send booking confirmation email', err);
+      }
+    }
 
     return toReservationPayload(reservation);
   },
