@@ -585,7 +585,22 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                 ) : detailError ? (
                   <p className="error-text">{detailError}</p>
                 ) : detail && detail.id === recipe.id ? (
-                  <RecipeLinesTable detail={detail} cost={costDetail?.recipeId === detail.id ? costDetail : null} />
+                  <RecipeLinesTable
+                    detail={detail}
+                    cost={costDetail?.recipeId === detail.id ? costDetail : null}
+                    items={items}
+                    allRecipes={data?.recipes ?? []}
+                    onChanged={async (updated) => {
+                      setDetail(updated);
+                      try {
+                        const refreshedCost = await api<RecipeCostPayload>(`/api/recipes/${updated.id}/cost`);
+                        setCostDetail(refreshedCost);
+                      } catch {
+                        /* cost refresh failure is non-fatal */
+                      }
+                      void load();
+                    }}
+                  />
                 ) : null}
               </td>
             </tr>
@@ -1240,12 +1255,174 @@ function RecipeCostSummary({ cost }: { cost: RecipeCostPayload | null }) {
   );
 }
 
-function RecipeLinesTable({ detail, cost }: { detail: RecipeWithLines; cost: RecipeCostPayload | null }) {
-  if (detail.lines.length === 0) {
-    return <p className="subtle">This recipe has no ingredient lines yet.</p>;
-  }
+type EditableLineDraft = {
+  ingredientName: string;
+  itemId: string;
+  subRecipeId: string;
+  quantity: string;
+  unit: string;
+  wastePercent: string;
+};
+
+function lineToDraft(line: RecipeWithLines['lines'][number]): EditableLineDraft {
+  return {
+    ingredientName: line.ingredientName,
+    itemId: line.itemId ?? '',
+    subRecipeId: line.subRecipeId ?? '',
+    quantity: line.quantity != null ? String(line.quantity) : '',
+    unit: line.unit ?? '',
+    wastePercent: line.wastePercent != null ? String(line.wastePercent) : ''
+  };
+}
+
+function RecipeLinesTable({
+  detail,
+  cost,
+  items,
+  allRecipes,
+  onChanged
+}: {
+  detail: RecipeWithLines;
+  cost: RecipeCostPayload | null;
+  items: StockItem[];
+  allRecipes: Recipe[];
+  onChanged: (updated: RecipeWithLines) => void;
+}) {
+  const [drafts, setDrafts] = useState<EditableLineDraft[]>(() => detail.lines.map(lineToDraft));
+  const [dirty, setDirty] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  // Re-sync drafts when the underlying recipe changes (e.g. after save+reload
+  // or when switching expanded rows)
+  useEffect(() => {
+    setDrafts(detail.lines.map(lineToDraft));
+    setDirty(false);
+    setMessage(null);
+  }, [detail.id, detail.lines]);
 
   const costLines = new Map((cost?.lines ?? []).map((line) => [line.lineId, line]));
+
+  const itemOptions = useMemo(
+    () => [
+      { label: 'Unlinked', value: '' },
+      ...items
+        .filter((item) => item.status !== 'ARCHIVED')
+        .map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
+    ],
+    [items]
+  );
+
+  const subRecipeOptions = useMemo(
+    () => [
+      { label: 'None', value: '' },
+      ...allRecipes
+        .filter((recipe) => recipe.isPrepRecipe && recipe.id !== detail.id)
+        .map((recipe) => ({ label: recipe.title, value: recipe.id }))
+    ],
+    [allRecipes, detail.id]
+  );
+
+  function updateDraft(index: number, patch: Partial<EditableLineDraft>) {
+    setDrafts((current) =>
+      current.map((draft, i) => (i === index ? { ...draft, ...patch } : draft))
+    );
+    setDirty(true);
+  }
+
+  function pickItem(index: number, itemId: string) {
+    const item = items.find((candidate) => candidate.id === itemId);
+    updateDraft(index, {
+      itemId,
+      // Adopt the item's unit + name if the line was unset; don't clobber if
+      // operator already typed something custom.
+      unit: drafts[index]?.unit?.trim() ? drafts[index]!.unit : item?.unit ?? '',
+      ingredientName: drafts[index]?.ingredientName?.trim() ? drafts[index]!.ingredientName : item?.name ?? ''
+    });
+  }
+
+  function pickSubRecipe(index: number, subRecipeId: string) {
+    const recipe = allRecipes.find((candidate) => candidate.id === subRecipeId);
+    updateDraft(index, {
+      subRecipeId,
+      ingredientName: drafts[index]?.ingredientName?.trim() ? drafts[index]!.ingredientName : recipe?.title ?? ''
+    });
+  }
+
+  function removeLine(index: number) {
+    setDrafts((current) => current.filter((_, i) => i !== index));
+    setDirty(true);
+  }
+
+  function addLine() {
+    setDrafts((current) => [
+      ...current,
+      {
+        ingredientName: '',
+        itemId: '',
+        subRecipeId: '',
+        quantity: '',
+        unit: '',
+        wastePercent: ''
+      }
+    ]);
+    setDirty(true);
+  }
+
+  async function saveChanges() {
+    setSaving(true);
+    setMessage(null);
+    try {
+      const linesPayload: RecipeLineInput[] = drafts
+        .filter((line) => line.ingredientName.trim() || line.itemId || line.subRecipeId)
+        .map((line) => {
+          const out: RecipeLineInput = {
+            ingredientName:
+              line.ingredientName.trim() || (items.find((i) => i.id === line.itemId)?.name ?? 'Ingredient')
+          };
+          if (line.quantity.trim()) out.quantity = Number(line.quantity);
+          if (line.unit.trim()) out.unit = line.unit.trim();
+          if (line.itemId) out.itemId = line.itemId;
+          if (line.subRecipeId) out.subRecipeId = line.subRecipeId;
+          if (line.wastePercent.trim()) out.wastePercent = Number(line.wastePercent);
+          return out;
+        });
+      const updated = await api<RecipeWithLines>(`/api/recipes/${detail.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          title: detail.title,
+          category: detail.category ?? '',
+          venue: detail.venue ?? '',
+          salePriceCents: detail.salePriceCents ?? null,
+          portionSize: detail.portionSize ?? null,
+          portionUnit: detail.portionUnit ?? '',
+          yieldQuantity: detail.yieldQuantity ?? null,
+          yieldUnit: detail.yieldUnit ?? '',
+          isPrepRecipe: detail.isPrepRecipe,
+          status: detail.status,
+          estimatedCost: detail.estimatedCost,
+          notes: detail.notes ?? '',
+          lines: linesPayload
+        })
+      });
+      setMessage('Lines saved.');
+      setDirty(false);
+      onChanged(updated);
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Could not save recipe lines');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (detail.lines.length === 0 && drafts.length === 0) {
+    return (
+      <div className="recipe-lines">
+        <p className="subtle">This recipe has no ingredient lines yet.</p>
+        <Button type="button" size="sm" variant="secondary" onClick={addLine}>+ Add ingredient line</Button>
+      </div>
+    );
+  }
 
   return (
     <div className="recipe-lines">
@@ -1258,12 +1435,12 @@ function RecipeLinesTable({ detail, cost }: { detail: RecipeWithLines; cost: Rec
           {cost.warnings.length > 5 ? <Badge tone="muted">+{cost.warnings.length - 5} more</Badge> : null}
         </div>
       ) : null}
-      {detail.lines.some((line) => line.subRecipe) ? (
+      {drafts.some((draft) => draft.subRecipeId) ? (
         <p className="recipe-costing-note">
           Prep recipes are reusable ingredient lines. Their batch cost is divided by yield to calculate line cost where possible.
         </p>
       ) : null}
-      <table className="recipe-lines-table">
+      <table className="recipe-lines-table recipe-lines-editable">
         <thead>
           <tr>
             <th>#</th>
@@ -1271,75 +1448,109 @@ function RecipeLinesTable({ detail, cost }: { detail: RecipeWithLines; cost: Rec
             <th>Linked item</th>
             <th>Production recipe</th>
             <th>Qty</th>
+            <th>Unit</th>
             <th>Line cost</th>
             <th>Source</th>
+            <th aria-label="Delete" />
           </tr>
         </thead>
         <tbody>
-          {detail.lines.map((line) => {
-            const costLine = costLines.get(line.id);
+          {drafts.map((draft, index) => {
+            const persistedLine = detail.lines[index];
+            const costLine = persistedLine ? costLines.get(persistedLine.id) : null;
             return (
-              <tr key={line.id}>
-                <td>{line.position}</td>
+              <tr key={persistedLine?.id ?? `draft-${index}`}>
+                <td>{index + 1}</td>
                 <td>
-                  <span className="cell-stack">
-                    <strong>{line.ingredientName}</strong>
-                    {line.wastePercent ? <span className="subtle">{line.wastePercent}% waste allowance</span> : null}
-                  </span>
+                  <input
+                    type="text"
+                    className="recipe-line-input"
+                    value={draft.ingredientName}
+                    onChange={(event) => updateDraft(index, { ingredientName: event.currentTarget.value })}
+                    placeholder="Ingredient name"
+                  />
                 </td>
                 <td>
-                  {line.item ? (
-                    <span className="cell-stack">
-                      <strong>{line.item.name}</strong>
-                      <span className="subtle">
-                        {line.item.unit}
-                        {' · '}
-                        {line.item.avgCostCents === null ? 'missing average cost' : `${formatCurrencyCents(line.item.avgCostCents)} avg`}
-                      </span>
-                    </span>
-                  ) : (
-                    <span className="subtle">Unlinked</span>
-                  )}
+                  <select
+                    className="recipe-line-input"
+                    value={draft.itemId}
+                    onChange={(event) => pickItem(index, event.currentTarget.value)}
+                  >
+                    {itemOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </td>
                 <td>
-                  {line.subRecipe ? (
-                    <span className="cell-stack">
-                      <strong>{line.subRecipe.title}</strong>
-                      <span className="subtle">
-                        {formatQuantity(line.subRecipe.yieldQuantity, line.subRecipe.yieldUnit)}
-                        {' · '}
-                        {formatCurrency(line.subRecipe.estimatedCost)} batch
-                      </span>
-                      {line.subRecipe.yieldQuantity ? (
-                        <span className="subtle">
-                          Approx. unit cost{' '}
-                          {formatCurrency(line.subRecipe.estimatedCost / line.subRecipe.yieldQuantity)}
-                        </span>
-                      ) : (
-                        <span className="subtle">Unit cost needs yield quantity</span>
-                      )}
-                    </span>
-                  ) : (
-                    <span className="subtle">—</span>
-                  )}
+                  <select
+                    className="recipe-line-input"
+                    value={draft.subRecipeId}
+                    onChange={(event) => pickSubRecipe(index, event.currentTarget.value)}
+                  >
+                    {subRecipeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
                 </td>
-                <td>{formatQuantity(line.quantity, line.unit)}</td>
+                <td>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    className="recipe-line-input recipe-line-input-narrow"
+                    value={draft.quantity}
+                    onChange={(event) => updateDraft(index, { quantity: event.currentTarget.value })}
+                    placeholder="0"
+                  />
+                </td>
+                <td>
+                  <input
+                    type="text"
+                    className="recipe-line-input recipe-line-input-narrow"
+                    value={draft.unit}
+                    onChange={(event) => updateDraft(index, { unit: event.currentTarget.value })}
+                    placeholder="ml"
+                  />
+                </td>
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
                 <td>
-                  <span className="cell-stack">
-                    <Badge tone={costLine?.source === 'MISSING' ? 'warning' : 'positive'}>
-                      {costLine?.source ?? 'MISSING'}
-                    </Badge>
-                    {costLine?.warnings.length ? (
-                      <span className="subtle">{costLine.warnings.join(', ')}</span>
-                    ) : null}
-                  </span>
+                  <Badge tone={costLine?.source === 'MISSING' || !costLine ? 'warning' : 'positive'}>
+                    {costLine?.source ?? (persistedLine ? 'MISSING' : 'UNSAVED')}
+                  </Badge>
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className="recipe-line-delete"
+                    onClick={() => removeLine(index)}
+                    aria-label="Delete line"
+                    title="Delete this ingredient"
+                  >
+                    ×
+                  </button>
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      <div className="recipe-lines-toolbar">
+        <Button type="button" size="sm" variant="secondary" onClick={addLine} disabled={saving}>
+          + Add ingredient line
+        </Button>
+        <span style={{ flex: 1 }} />
+        {message ? (
+          <span className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</span>
+        ) : null}
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => void saveChanges()}
+          disabled={!dirty || saving}
+        >
+          {saving ? 'Saving…' : dirty ? 'Save changes' : 'Saved'}
+        </Button>
+      </div>
     </div>
   );
 }
