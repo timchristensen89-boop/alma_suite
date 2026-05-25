@@ -291,16 +291,16 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'giftcards',
     label: 'GIFTCARDS',
-    from: '#B98216',
-    to: '#73520E',
+    from: '#2A2A2A',
+    to: '#000000',
     iconKey: 'document',
     icon: <DocumentIcon />
   },
   {
     id: 'settings',
     label: 'ADMIN',
-    from: '#343A40',
-    to: '#1F2328',
+    from: '#4A5158',
+    to: '#1F2329',
     iconKey: 'gear',
     icon: <GearIcon />
   }

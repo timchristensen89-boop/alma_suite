@@ -1,9 +1,9 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #A8224E;
-  --color-accent-hover: #7A1535;
-  --color-accent-soft: #FAE8EF;
+  --color-accent: #7A1535;
+  --color-accent-hover: #4A0820;
+  --color-accent-soft: #F4EBDC;
   --color-accent-text: #4A0820;
 }
 
