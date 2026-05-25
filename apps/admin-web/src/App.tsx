@@ -67,6 +67,7 @@ import {
   VenuesPage,
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
+import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 import { WageForecastsPage } from './pages/WageForecastsPage';
@@ -220,8 +221,14 @@ const NAV_GROUPS: AdminNavGroup[] = [
     label: 'Integrations',
     items: [
       {
+        to: '/integrations/health',
+        label: 'Integration health',
+        description: 'At-a-glance status, last sync, errors, re-sync actions',
+        icon: <IconPlug />
+      },
+      {
         to: '/integrations',
-        label: 'Integrations',
+        label: 'Setup & sync',
         description: 'Connection health and external service setup',
         icon: <IconPlug />
       },
@@ -579,6 +586,7 @@ function AdminWorkspace() {
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
         <Route path="/wage-forecasts" element={<WageForecastsPage />} />
+        <Route path="/integrations/health" element={<IntegrationHealthPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
         <Route path="/staff-hr-templates" element={<StaffHrTemplatesPage />} />
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />

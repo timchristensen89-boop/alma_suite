@@ -540,3 +540,124 @@
 .wage-forecast-row-head strong {
   font-size: 16px;
 }
+
+/* Integration health dashboard */
+.integration-health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 14px;
+}
+
+.integration-health-tile {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.integration-health-tile.is-positive {
+  border-left: 4px solid #16a34a;
+}
+
+.integration-health-tile.is-warning {
+  border-left: 4px solid #d97706;
+  background: #fffaf0;
+}
+
+.integration-health-tile.is-danger {
+  border-left: 4px solid #dc2626;
+  background: #fef2f2;
+}
+
+.integration-health-tile.is-muted {
+  border-left: 4px solid #94a3b8;
+}
+
+.integration-health-tile.is-info {
+  border-left: 4px solid #2563eb;
+}
+
+.integration-health-tile-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.integration-health-tile-head > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.integration-health-tile-head strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.integration-health-tile-head .subtle {
+  font-size: 12px;
+}
+
+.integration-health-tile-body {
+  display: grid;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+}
+
+.integration-health-line {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+
+.integration-health-line > span {
+  color: var(--color-text-muted);
+}
+
+.integration-health-line > strong {
+  font-weight: 700;
+  text-align: right;
+  word-break: break-word;
+  min-width: 0;
+}
+
+.integration-health-error {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #9F1239;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.integration-health-runs {
+  display: grid;
+  gap: 8px;
+}
+
+.integration-health-run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.integration-health-run strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.integration-health-run .subtle {
+  font-size: 12px;
+}
