@@ -111,6 +111,14 @@ integrationsRouter.post('/xero/health-check', async (req, res, next) => {
   }
 });
 
+integrationsRouter.post('/xero/sync-pay-rates', async (req, res, next) => {
+  try {
+    res.json(await integrationService.syncXeroPayRates(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/xero/supplier-contacts/preview', async (req, res, next) => {
   try {
     res.json(await integrationService.previewXeroSupplierContacts(req.query));

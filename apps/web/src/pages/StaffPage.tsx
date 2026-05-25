@@ -46,6 +46,7 @@ import {
   recordTypeOptions
 } from '../features/staff/StaffProfileForm';
 import { useAuth } from '../lib/auth';
+import { STAFF_WEB_URL } from '../config/suiteLinks';
 
 export function StaffPage() {
   const auth = useAuth();
@@ -107,8 +108,8 @@ export function StaffPage() {
       const result = await api<{ message: string }>(`/api/staff/${member.id}/password-reset`, {
         method: 'POST',
         body: JSON.stringify({
-          resetBaseUrl: `${window.location.origin}/reset-password`,
-          appName: 'ALMA Compliance'
+          resetBaseUrl: `${STAFF_WEB_URL}/reset-password`,
+          appName: 'ALMA Staff'
         })
       });
       setMessage(result.message);

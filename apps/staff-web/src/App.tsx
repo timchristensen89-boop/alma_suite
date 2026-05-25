@@ -8231,33 +8231,38 @@ function RosterPage({
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
-  const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
-  const venueRoster = roster
+  const activeStaff = useMemo(() => staff.filter((member) => member.employmentStatus !== 'ARCHIVED'), [staff]);
+  // O(1) pay-rate lookups — avoids O(N) staff.find() inside every reduce/map
+  const staffById = useMemo(() => new Map(staff.map((m) => [m.id, m])), [staff]);
+  const venueRoster = useMemo(() => roster
     .filter((shift) => venueFilter === 'all' || shift.venue === venueFilter || shift.staffProfile?.venue === venueFilter)
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-  const visibleRoster = venueRoster
-    .filter((shift) => statusFilter === 'all' || shift.status === statusFilter)
-    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
-  const publishableDrafts = venueRoster.filter((shift) => shift.status === 'DRAFT');
+    .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
+    [roster, venueFilter]
+  );
+  const visibleRoster = useMemo(() => venueRoster
+    .filter((shift) => statusFilter === 'all' || shift.status === statusFilter),
+    [venueRoster, statusFilter]
+  );
+  const publishableDrafts = useMemo(() => venueRoster.filter((shift) => shift.status === 'DRAFT'), [venueRoster]);
   const draftCount = publishableDrafts.length;
-  const rosteredStaffIds = new Set(visibleRoster.map((shift) => shift.staffProfileId));
-  const totalHours = visibleRoster.reduce((sum, shift) => sum + shiftHours(shift), 0);
+  const rosteredStaffIds = useMemo(() => new Set(visibleRoster.map((shift) => shift.staffProfileId)), [visibleRoster]);
+  const totalHours = useMemo(() => visibleRoster.reduce((sum, shift) => sum + shiftHours(shift), 0), [visibleRoster]);
   const averageRateCents = useMemo(() => {
     const rates = activeStaff
       .map((member) => member.trainingPayRateCents ?? member.payRateCents ?? 0)
       .filter((rate) => rate > 0);
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
-  const rosterCostCents = visibleRoster.reduce((sum, shift) => {
-    const member = staff.find((item) => item.id === shift.staffProfileId);
+  const rosterCostCents = useMemo(() => visibleRoster.reduce((sum, shift) => {
+    const member = staffById.get(shift.staffProfileId);
     const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
     return sum + Math.round(shiftHours(shift) * rateCents);
-  }, 0);
-  const operationalVenues = venues.some((venue) => venue === 'Alma Avalon' || venue === 'St Alma')
+  }, 0), [averageRateCents, staffById, visibleRoster]);
+  const operationalVenues = useMemo(() => venues.some((venue) => venue === 'Alma Avalon' || venue === 'St Alma')
     ? venues.filter((venue) => venue === 'Alma Avalon' || venue === 'St Alma')
-    : venues;
-  const forecastVenues = venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both');
-  const rosterClosedVenueScope = venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both');
+    : venues, [venues]);
+  const forecastVenues = useMemo(() => venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both'), [operationalVenues, venueFilter]);
+  const rosterClosedVenueScope = useMemo(() => venueFilter === 'all' ? operationalVenues : [venueFilter].filter((venue) => venue && venue !== 'all' && venue !== 'Both'), [operationalVenues, venueFilter]);
   const isVenueClosedOnDate = useCallback((venue: string | null | undefined, day: Date) => {
     const selectedVenue = normaliseRosterAreaName(venue ?? '');
     const scopedVenue =
@@ -8278,43 +8283,44 @@ function RosterPage({
     (day: Date) => rosterClosedVenueScope.length > 0 && rosterClosedVenueScope.every((venue) => isVenueClosedOnDate(venue, day)),
     [isVenueClosedOnDate, rosterClosedVenueScope]
   );
-  const closedDayCount = days.reduce((sum, day) => sum + closedVenuesForDay(day).length, 0);
-  const historicalDailyForecast = days.reduce((map, day) => {
+  const closedDayCount = useMemo(() => days.reduce((sum, day) => sum + closedVenuesForDay(day).length, 0), [closedVenuesForDay, days]);
+  const historicalDailyForecast = useMemo(() => days.reduce((map, day) => {
     const cents = Math.round(
       forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
     );
     map[toDateInput(day)] = cents;
     return map;
-  }, {} as Record<string, number>);
-  const historicalForecastSalesCents = Object.values(historicalDailyForecast).reduce((sum, cents) => sum + cents, 0);
-  const forecastHasManualDailyInputs = days.some((day) => parseMoneyCents(dailyForecastSales[toDateInput(day)] ?? '') > 0);
-  const dailyForecastTotalCents = days.reduce((sum, day) => {
+  }, {} as Record<string, number>), [days, forecastVenues]);
+  const historicalForecastSalesCents = useMemo(() => Object.values(historicalDailyForecast).reduce((sum, cents) => sum + cents, 0), [historicalDailyForecast]);
+  const forecastHasManualDailyInputs = useMemo(() => days.some((day) => parseMoneyCents(dailyForecastSales[toDateInput(day)] ?? '') > 0), [dailyForecastSales, days]);
+  const dailyForecastTotalCents = useMemo(() => days.reduce((sum, day) => {
     const key = toDateInput(day);
     const manualCents = parseMoneyCents(dailyForecastSales[key] ?? '');
     return sum + (manualCents || (!forecastHasManualDailyInputs ? historicalDailyForecast[key] ?? 0 : 0));
-  }, 0);
-  const forecastSalesCents = dailyForecastTotalCents || parseMoneyCents(forecastSales) || historicalForecastSalesCents;
-  const wageBudgetCents = Math.round(forecastSalesCents * (parsePercent(targetWagePercent) / 100));
+  }, 0), [dailyForecastSales, days, forecastHasManualDailyInputs, historicalDailyForecast]);
+  const forecastSalesCents = useMemo(() => dailyForecastTotalCents || parseMoneyCents(forecastSales) || historicalForecastSalesCents, [dailyForecastTotalCents, forecastSales, historicalForecastSalesCents]);
+  const wageBudgetCents = useMemo(() => Math.round(forecastSalesCents * (parsePercent(targetWagePercent) / 100)), [forecastSalesCents, targetWagePercent]);
   const recommendedHours = averageRateCents > 0 ? wageBudgetCents / averageRateCents : 0;
   const forecastCostGapCents = wageBudgetCents - rosterCostCents;
   const forecastHoursGap = recommendedHours - totalHours;
-  const missingRateStaff = activeStaff.filter((member) =>
-    visibleRoster.some((shift) => shift.staffProfileId === member.id) &&
+  const missingRateStaff = useMemo(() => activeStaff.filter((member) =>
+    rosteredStaffIds.has(member.id) &&
     !member.payRateCents &&
     !member.trainingPayRateCents
-  );
-  const publishedCount = visibleRoster.filter((shift) => shift.status === 'PUBLISHED').length;
-  const dailySummaries = days.map((day) => {
+  ), [activeStaff, rosteredStaffIds]);
+  const publishedCount = useMemo(() => visibleRoster.filter((shift) => shift.status === 'PUBLISHED').length, [visibleRoster]);
+  const targetWagePercentParsed = useMemo(() => parsePercent(targetWagePercent) / 100, [targetWagePercent]);
+  const dailySummaries = useMemo(() => days.map((day) => {
     const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staff.find((item) => item.id === shift.staffProfileId);
+      const member = staffById.get(shift.staffProfileId);
       const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
     const dayKey = toDateInput(day);
     const manualCents = parseMoneyCents(dailyForecastSales[dayKey] ?? '');
     const forecastCents = manualCents || (!forecastHasManualDailyInputs ? historicalDailyForecast[dayKey] ?? 0 : 0);
-    const budgetCents = Math.round(forecastCents * (parsePercent(targetWagePercent) / 100));
+    const budgetCents = Math.round(forecastCents * targetWagePercentParsed);
     return {
       day,
       shifts: shifts.length,
@@ -8325,23 +8331,32 @@ function RosterPage({
       budgetCents,
       wagePercent: forecastCents > 0 ? (plannedCostCents / forecastCents) * 100 : 0
     };
-  });
+  }), [averageRateCents, dailyForecastSales, days, forecastHasManualDailyInputs, historicalDailyForecast, staffById, targetWagePercentParsed, visibleRoster]);
   const mobileSelectedDate = useMemo(() => new Date(`${mobileSelectedDay}T00:00:00`), [mobileSelectedDay]);
-  const mobileSelectedSummary = dailySummaries.find((summary) => sameDay(summary.day, mobileSelectedDate));
-  const mobileDayShifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate));
-  const rowSearch = search.trim().toLowerCase();
+  const mobileSelectedSummary = useMemo(() => dailySummaries.find((summary) => sameDay(summary.day, mobileSelectedDate)), [dailySummaries, mobileSelectedDate]);
+  const mobileDayShifts = useMemo(() => visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate)), [mobileSelectedDate, visibleRoster]);
+  const rowSearch = useMemo(() => search.trim().toLowerCase(), [search]);
   const allRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
     [rosterAreaSettings, visibleRoster]
   );
   const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
-  const activeAreas = allRosterAreas.filter((areaName) => !hiddenAreaNames.has(normaliseRosterAreaKey(areaName)));
-  const areaSelectOptions = uniqueValues([...allRosterAreas, area || 'Floor']).map((item) => ({ label: item, value: item }));
-  const areaVenues = uniqueValues([
-    ...(venueFilter === 'all' ? operationalVenues : [venueFilter]),
-    ...visibleRoster.map((shift) => shift.venue || shift.staffProfile?.venue || '').filter(Boolean)
-  ]).filter((venue) => venue && venue !== 'all' && venue !== 'Both');
-  const splitAreaRows = areaVenues.flatMap((venue) =>
+  const activeAreas = useMemo(
+    () => allRosterAreas.filter((areaName) => !hiddenAreaNames.has(normaliseRosterAreaKey(areaName))),
+    [allRosterAreas, hiddenAreaNames]
+  );
+  const areaSelectOptions = useMemo(
+    () => uniqueValues([...allRosterAreas, area || 'Floor']).map((item) => ({ label: item, value: item })),
+    [allRosterAreas, area]
+  );
+  const areaVenues = useMemo(
+    () => uniqueValues([
+      ...(venueFilter === 'all' ? operationalVenues : [venueFilter]),
+      ...visibleRoster.map((shift) => shift.venue || shift.staffProfile?.venue || '').filter(Boolean)
+    ]).filter((venue) => venue && venue !== 'all' && venue !== 'Both'),
+    [operationalVenues, venueFilter, visibleRoster]
+  );
+  const splitAreaRows = useMemo(() => areaVenues.flatMap((venue) =>
     activeAreas.map((areaName) => {
       const shifts = visibleRoster.filter((shift) =>
         (shift.area || 'Shift') === areaName &&
@@ -8358,8 +8373,8 @@ function RosterPage({
         area: areaName
       };
     })
-  );
-  const mobileVenueGroups: MobileRosterVenueGroup[] = areaVenues
+  ), [activeAreas, areaVenues, visibleRoster]);
+  const mobileVenueGroups: MobileRosterVenueGroup[] = useMemo(() => areaVenues
     .map((venue) => {
       const areaRows = splitAreaRows
         .filter((row) => row.venue === venue)
@@ -8377,12 +8392,12 @@ function RosterPage({
         areas: areaRows
       };
     })
-    .filter((group) => group.shifts.length > 0);
-  const venueForecastRows = forecastVenues.map((venue) => {
+    .filter((group) => group.shifts.length > 0), [areaVenues, mobileSelectedDate, rowSearch, splitAreaRows]);
+  const venueForecastRows = useMemo(() => forecastVenues.map((venue) => {
     const shifts = visibleRoster.filter((shift) => shift.venue === venue || shift.staffProfile?.venue === venue);
     const plannedHours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staff.find((item) => item.id === shift.staffProfileId);
+      const member = staffById.get(shift.staffProfileId);
       const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
@@ -8407,25 +8422,30 @@ function RosterPage({
       costGapCents: budgetCents - plannedCostCents,
       hoursGap: recommended - plannedHours
     };
-  });
-  const publishWarnings = [
-    ...(forecastSalesCents > 0 && forecastCostGapCents < 0
-      ? [`Roster is ${formatCents(Math.abs(forecastCostGapCents))} over the forecast wage budget.`]
-      : []),
-    ...(missingRateStaff.length
-      ? [`${missingRateStaff.length} rostered staff member${missingRateStaff.length === 1 ? '' : 's'} missing pay rates.`]
-      : []),
-    ...(visibleRoster.some((shift) => isUnallocatedProfile(shift.staffProfile))
-      ? [`${visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length} unallocated shift${visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length === 1 ? '' : 's'} still need a real staff member.`]
-      : []),
-    ...(visibleRoster.some((shift) => !shift.venue && !shift.staffProfile?.venue)
-      ? [`${visibleRoster.filter((shift) => !shift.venue && !shift.staffProfile?.venue).length} shift${visibleRoster.filter((shift) => !shift.venue && !shift.staffProfile?.venue).length === 1 ? '' : 's'} missing a venue.`]
-      : []),
-    ...(countRosterOverlaps(visibleRoster) > 0
-      ? [`${countRosterOverlaps(visibleRoster)} overlapping shift conflict${countRosterOverlaps(visibleRoster) === 1 ? '' : 's'} found.`]
-      : [])
-  ];
-  const areaGuidanceRows = areaVenues.flatMap((venue) => activeAreas.map((areaName) => {
+  }), [averageRateCents, dailyForecastSales, days, forecastSales, forecastVenues, staffById, targetWagePercent, venueFilter, visibleRoster]);
+  const publishWarnings = useMemo(() => {
+    const unallocatedCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+    const noVenueCount = visibleRoster.filter((shift) => !shift.venue && !shift.staffProfile?.venue).length;
+    const overlapCount = countRosterOverlaps(visibleRoster);
+    return [
+      ...(forecastSalesCents > 0 && forecastCostGapCents < 0
+        ? [`Roster is ${formatCents(Math.abs(forecastCostGapCents))} over the forecast wage budget.`]
+        : []),
+      ...(missingRateStaff.length
+        ? [`${missingRateStaff.length} rostered staff member${missingRateStaff.length === 1 ? '' : 's'} missing pay rates.`]
+        : []),
+      ...(unallocatedCount > 0
+        ? [`${unallocatedCount} unallocated shift${unallocatedCount === 1 ? '' : 's'} still need a real staff member.`]
+        : []),
+      ...(noVenueCount > 0
+        ? [`${noVenueCount} shift${noVenueCount === 1 ? '' : 's'} missing a venue.`]
+        : []),
+      ...(overlapCount > 0
+        ? [`${overlapCount} overlapping shift conflict${overlapCount === 1 ? '' : 's'} found.`]
+        : [])
+    ];
+  }, [forecastCostGapCents, forecastSalesCents, missingRateStaff, visibleRoster]);
+  const areaGuidanceRows = useMemo(() => areaVenues.flatMap((venue) => activeAreas.map((areaName) => {
     const shifts = visibleRoster.filter((shift) =>
       (shift.area || 'Shift') === areaName &&
       (shift.venue === venue || shift.staffProfile?.venue === venue)
@@ -8465,8 +8485,9 @@ function RosterPage({
       day: bestDay?.day ?? days[0] ?? weekStart,
       dayGap: bestDay?.gap ?? 0
     };
-  })).filter((row) => row.plannedHours > 0 || row.recommendedHours > 0);
-  const selectedMember = staff.find((item) => item.id === staffProfileId);
+  })).filter((row) => row.plannedHours > 0 || row.recommendedHours > 0),
+  [activeAreas, areaVenues, averageRateCents, dailySummaries, days, venueForecastRows, visibleRoster, weekStart]);
+  const selectedMember = useMemo(() => staffById.get(staffProfileId ?? ''), [staffById, staffProfileId]);
   const selectedShiftHours = shiftTimeRange(date, startTime, endTime);
   const shiftConflicts = useMemo(() => {
     if (!selectedShiftHours || !staffProfileId) return [];
@@ -8483,7 +8504,7 @@ function RosterPage({
     });
   }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
   const canSaveShift = Boolean(staffProfileId && date && startTime && endTime && selectedShiftHours);
-  const scheduleRows: RosterScheduleRow[] =
+  const scheduleRows: RosterScheduleRow[] = useMemo(() =>
     viewMode === 'team'
       ? activeStaff
           .filter((member) =>
@@ -8521,24 +8542,26 @@ function RosterPage({
             }
             rows.push(row);
             return rows;
-          }, []);
+          }, []),
+  [activeStaff, rowSearch, splitAreaRows, viewMode, visibleRoster]);
   const activeSidePanelMode: RosterSidePanelMode =
     sidePanelMode === 'shift' && !editorOpen ? 'staff' : sidePanelMode;
-  const sidePanelStaff = activeStaff
+  const sidePanelStaff = useMemo(() => activeStaff
     .filter((member) => venueFilter === 'all' || member.venue === venueFilter)
-    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`));
+    .sort((a, b) => `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`)),
+  [activeStaff, venueFilter]);
   const scheduleGridStyle = useMemo<CSSProperties>(() => {
     const sideRailOpen = !sidePanelCollapsed;
-    const labelColumn = sideRailOpen ? 'minmax(136px, 0.78fr)' : 'minmax(150px, 0.72fr)';
+    const labelColumn = sideRailOpen ? 'minmax(88px, 0.46fr)' : 'minmax(96px, 0.42fr)';
     const openColumn =
       boardDays === 14
         ? sideRailOpen
-          ? 'minmax(82px, 1fr)'
-          : 'minmax(96px, 1fr)'
+          ? 'minmax(72px, 1fr)'
+          : 'minmax(84px, 1fr)'
         : sideRailOpen
-          ? 'minmax(112px, 1fr)'
-          : 'minmax(132px, 1fr)';
-    const closedColumn = boardDays === 14 ? 'minmax(38px, 0.18fr)' : 'minmax(46px, 0.22fr)';
+          ? 'minmax(98px, 1fr)'
+          : 'minmax(116px, 1fr)';
+    const closedColumn = boardDays === 14 ? 'minmax(34px, 0.16fr)' : 'minmax(40px, 0.2fr)';
     return {
       gridTemplateColumns: [
         labelColumn,
@@ -9213,19 +9236,6 @@ function RosterPage({
         {message && !messageTarget ? <span className="deputy-roster-message">{message}</span> : null}
       </div>
 
-      {!isMobileRoster ? (
-        <div className="deputy-day-summary-strip desktop-roster-surface">
-          {dailySummaries.map((summary) => (
-            <div key={summary.day.toISOString()} className={sameDay(summary.day, new Date()) ? 'is-today' : ''}>
-              <strong>{summary.day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
-              <span>{summary.shifts} shifts</span>
-              <span>{summary.people} people</span>
-              <small>{roundHours(summary.hours)}</small>
-            </div>
-          ))}
-        </div>
-      ) : null}
-
       {isMobileRoster ? (
         <div data-roster-view="mobile" className="mobile-roster-runtime">
           <MobileRosterView
@@ -9353,17 +9363,35 @@ function RosterPage({
               <span><strong>{roundHours(totalHours)}</strong> hours</span>
               <span><strong>{publishedCount}</strong> live</span>
               {draftCount ? <span className="is-warning"><strong>{draftCount}</strong> drafts</span> : null}
+              <span className="roster-forecast-inline" title="Forecast sales · target wage %">
+                <input
+                  value={forecastSales}
+                  onChange={(event) => setForecastSales(event.currentTarget.value)}
+                  placeholder="Sales $"
+                  aria-label="Weekly forecast sales"
+                />
+                <span className="forecast-sep">·</span>
+                <input
+                  value={targetWagePercent}
+                  onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
+                  placeholder="28%"
+                  aria-label="Target wage %"
+                />
+              </span>
             </div>
           </div>
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
               <span>{viewMode === 'team' ? 'Team member' : 'Area'}</span>
             </div>
-            {days.map((day) => {
-              const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
-              const hours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+            {days.map((day, dayIndex) => {
+              const summary = dailySummaries[dayIndex];
               const closedVenues = closedVenuesForDay(day);
               const isClosed = isDayClosedForCurrentView(day);
+              const hasCost = !isClosed && summary && summary.plannedCostCents > 0;
+              const costClass = hasCost && summary.forecastCents > 0
+                ? summary.plannedCostCents > summary.budgetCents ? 'is-over' : 'is-under'
+                : '';
               return (
                 <div key={day.toISOString()} className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}>
                   <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
@@ -9373,8 +9401,13 @@ function RosterPage({
                       ? 'Closed'
                       : closedVenues.length
                         ? `${closedVenues.length} venue closed`
-                        : roundHours(hours)}
+                        : roundHours(summary?.hours ?? 0)}
                   </small>
+                  {hasCost ? (
+                    <span className={`day-head-cost ${costClass}`}>
+                      {formatCents(summary.plannedCostCents)}{summary.wagePercent ? ` · ${summary.wagePercent.toFixed(0)}%` : ''}
+                    </span>
+                  ) : null}
                 </div>
               );
             })}
@@ -9383,16 +9416,12 @@ function RosterPage({
               <div className="deputy-schedule-empty">No rows match the current filters.</div>
             ) : (
               scheduleRows.map((row) => {
-                const rowHours = row.shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
                 if ('isVenueHeader' in row && row.isVenueHeader) {
                   return (
                     <div className="deputy-schedule-row deputy-venue-row" key={row.id}>
                       <div className="deputy-row-label deputy-venue-label">
-                        <span className="roster-avatar">{row.initials}</span>
-                        <span>
-                          <strong>{row.label}</strong>
-                          <small>{roundHours(rowHours)} · {row.shifts.length} shifts</small>
-                        </span>
+                        <span className="roster-avatar small">{row.initials}</span>
+                        <strong>{row.label}</strong>
                       </div>
                       {days.map((day) => {
                         const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
@@ -9411,12 +9440,8 @@ function RosterPage({
                 return (
                   <div className="deputy-schedule-row" key={row.id}>
                     <div className="deputy-row-label">
-                      <span className="roster-avatar">{row.initials}</span>
-                      <span>
-                        <strong>{row.label}</strong>
-                        <small>{row.sublabel}</small>
-                      </span>
-                      <Badge tone={row.shifts.length ? 'info' : 'muted'}>{roundHours(rowHours)}</Badge>
+                      <span className="roster-avatar small">{row.initials}</span>
+                      <strong>{row.label}</strong>
                     </div>
                     {days.map((day) => {
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));

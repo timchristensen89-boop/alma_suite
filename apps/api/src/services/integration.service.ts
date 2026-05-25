@@ -11,6 +11,7 @@ import type {
   IntegrationProviderStatus,
   IntegrationStatusPayload,
   SquareConfigMissingMap,
+  XeroPayRateSyncResult,
   XeroScheduledImportStatus,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
@@ -62,7 +63,8 @@ const XERO_SCOPES = [
   'offline_access',
   'accounting.invoices.read',
   'accounting.contacts.read',
-  'accounting.settings.read'
+  'accounting.settings.read',
+  'payroll.employees.read'
 ];
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -4580,6 +4582,125 @@ export const integrationService = {
       throw new HttpError(401, 'Invalid Square webhook signature.');
     }
     return recordWebhook('SQUARE', rawBody, accountKey);
+  },
+
+  async syncXeroPayRates(actor: AuthUser): Promise<XeroPayRateSyncResult> {
+    const connection = await connectedXeroConnection();
+
+    type XeroPayrollEmployee = {
+      EmployeeID: string;
+      FirstName: string;
+      LastName: string;
+      Email?: string;
+      Status: string;
+      PayTemplate?: {
+        EarningsLines?: Array<{
+          EarningsRateID?: string;
+          EarningsType?: string;
+          RatePerUnit?: number;
+          NormalNumberOfUnits?: number;
+        }>;
+      };
+    };
+
+    const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+      '/payroll.xro/1.0/Employees',
+      { connection }
+    );
+
+    const xeroEmployees = (response.data.Employees ?? []).filter(
+      (e) => e.Status === 'ACTIVE'
+    );
+
+    const staffProfiles = await prisma.staffProfile.findMany({
+      where: { mergedIntoStaffProfileId: null },
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        xeroEmployeeId: true,
+        payRateCents: true
+      }
+    });
+
+    const byXeroId = new Map(
+      staffProfiles
+        .filter((p) => p.xeroEmployeeId)
+        .map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
+    );
+    const byEmail = new Map(
+      staffProfiles
+        .filter((p) => p.email)
+        .map((p) => [p.email!.toLowerCase(), p])
+    );
+
+    const updated: XeroPayRateSyncResult['updated'] = [];
+    const unmatched: XeroPayRateSyncResult['unmatched'] = [];
+    let skipped = 0;
+
+    for (const emp of xeroEmployees) {
+      const earningsLine = emp.PayTemplate?.EarningsLines?.find(
+        (l) => l.EarningsType === 'ORDINARYTIMEEARNINGS'
+      ) ?? emp.PayTemplate?.EarningsLines?.[0];
+
+      const ratePerUnit = earningsLine?.RatePerUnit;
+      if (!ratePerUnit || ratePerUnit <= 0) {
+        skipped++;
+        continue;
+      }
+
+      const profile =
+        byXeroId.get(emp.EmployeeID.toLowerCase()) ??
+        (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined);
+
+      if (!profile) {
+        unmatched.push({
+          xeroEmployeeId: emp.EmployeeID,
+          firstName: emp.FirstName,
+          lastName: emp.LastName,
+          email: emp.Email ?? null
+        });
+        continue;
+      }
+
+      const newPayRateCents = Math.round(ratePerUnit * 100);
+      await prisma.staffProfile.update({
+        where: { id: profile.id },
+        data: { payRateCents: newPayRateCents }
+      });
+
+      updated.push({
+        staffId: profile.id,
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        previousPayRateCents: profile.payRateCents,
+        newPayRateCents,
+        xeroEmployeeId: emp.EmployeeID
+      });
+    }
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: response.connection.id,
+      eventType: 'DATA_IMPORTED',
+      summary: `Xero pay rates synced: ${updated.length} updated, ${unmatched.length} unmatched, ${skipped} skipped.`,
+      actor,
+      metadata: {
+        tokenStatus: response.tokenStatus,
+        synced: updated.length,
+        unmatched: unmatched.length,
+        skipped
+      }
+    });
+
+    return {
+      synced: updated.length,
+      skipped,
+      notMatched: unmatched.length,
+      updated,
+      unmatched
+    };
   },
 
   async handleXeroWebhook(req: Request) {

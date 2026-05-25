@@ -322,7 +322,13 @@ export const authService = {
     const resetUrl = resetBaseUrl(options.resetBaseUrl, options.requestOrigin);
 
     const profile = await prisma.staffProfile.findUnique({ where: { email } });
-    if (!profile?.passwordHash) {
+    if (!profile || profile.mergedIntoStaffProfileId) {
+      return { accountExists: false, deliveryStatus: 'no_account' };
+    }
+    if (profile.accountType === 'VENUE_DEVICE') {
+      return { accountExists: false, deliveryStatus: 'no_account' };
+    }
+    if (!profile.email) {
       return { accountExists: false, deliveryStatus: 'no_account' };
     }
 

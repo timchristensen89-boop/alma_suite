@@ -3125,8 +3125,8 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
-  padding: 18px 20px;
+  gap: 12px;
+  padding: 12px 16px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.24);
   background:
     radial-gradient(circle at top left, rgba(36, 76, 159, 0.12), transparent 36%),
@@ -3142,7 +3142,7 @@
 .roster-board-command h2 {
   margin: 0;
   color: var(--color-text);
-  font-size: 20px;
+  font-size: 17px;
   letter-spacing: 0;
 }
 
@@ -3162,14 +3162,14 @@
 .roster-board-command-meta span {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
-  min-height: 36px;
-  padding: 8px 11px;
+  gap: 4px;
+  min-height: 28px;
+  padding: 4px 9px;
   border: 1px solid rgba(148, 163, 184, 0.26);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.76);
   color: var(--color-text-muted);
-  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+  box-shadow: 0 4px 10px rgba(15, 23, 42, 0.05);
 }
 
 .roster-board-command-meta span.is-warning {
@@ -3184,7 +3184,44 @@
 
 .roster-board-command-meta strong {
   color: var(--color-text);
-  font-size: 14px;
+  font-size: 13px;
+}
+
+.roster-forecast-inline {
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 3px !important;
+  padding: 3px 8px !important;
+  cursor: default !important;
+}
+
+.roster-forecast-inline input {
+  width: 58px;
+  border: none;
+  border-bottom: 1px dashed rgba(148, 163, 184, 0.5);
+  background: transparent;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+  text-align: center;
+  outline: none;
+  padding: 1px 0;
+  cursor: text;
+}
+
+.roster-forecast-inline input:focus {
+  border-bottom-color: var(--color-accent);
+}
+
+.roster-forecast-inline input::placeholder {
+  color: var(--color-text-muted);
+  font-weight: 500;
+}
+
+.roster-forecast-inline .forecast-sep {
+  color: rgba(148, 163, 184, 0.6);
+  font-size: 11px;
+  user-select: none;
 }
 
 .deputy-schedule-panel,
@@ -3195,11 +3232,11 @@
 
 .deputy-schedule-grid {
   display: grid;
-  grid-template-columns: minmax(136px, 0.78fr) repeat(7, minmax(112px, 1fr));
+  grid-template-columns: minmax(88px, 0.46fr) repeat(7, minmax(98px, 1fr));
   border-top: 1px solid rgba(148, 163, 184, 0.16);
   background:
-    linear-gradient(90deg, rgba(148, 163, 184, 0.16) 1px, transparent 1px),
-    rgba(148, 163, 184, 0.18);
+    linear-gradient(90deg, rgba(148, 163, 184, 0.14) 1px, transparent 1px),
+    rgba(148, 163, 184, 0.16);
   background-size: 100% 100%;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
@@ -3207,16 +3244,16 @@
 
 .deputy-roster-layout.is-side-collapsed .deputy-schedule-grid,
 .deputy-roster-layout.is-editor-closed .deputy-schedule-grid {
-  grid-template-columns: minmax(150px, 0.72fr) repeat(7, minmax(132px, 1fr));
+  grid-template-columns: minmax(130px, 0.66fr) repeat(7, minmax(116px, 1fr));
 }
 
 .deputy-schedule-grid.roster-days-14 {
-  grid-template-columns: minmax(136px, 0.78fr) repeat(14, minmax(82px, 1fr));
+  grid-template-columns: minmax(120px, 0.7fr) repeat(14, minmax(72px, 1fr));
 }
 
 .deputy-roster-layout.is-side-collapsed .deputy-schedule-grid.roster-days-14,
 .deputy-roster-layout.is-editor-closed .deputy-schedule-grid.roster-days-14 {
-  grid-template-columns: minmax(150px, 0.72fr) repeat(14, minmax(96px, 1fr));
+  grid-template-columns: minmax(130px, 0.66fr) repeat(14, minmax(84px, 1fr));
 }
 
 .deputy-schedule-corner,
@@ -3232,7 +3269,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  min-height: 72px;
+  min-height: 68px;
   background: rgba(248, 250, 252, 0.97);
   backdrop-filter: blur(12px);
 }
@@ -3241,8 +3278,8 @@
   left: 0;
   z-index: 3;
   display: flex;
-  align-items: end;
-  padding: 12px;
+  align-items: center;
+  padding: 8px 12px;
   color: var(--color-text-muted);
   font-size: 11px;
   font-weight: 800;
@@ -3253,9 +3290,9 @@
 .deputy-day-head {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   justify-content: center;
-  padding: 10px 12px;
+  padding: 7px 10px;
 }
 
 .deputy-day-head strong {
@@ -3268,6 +3305,26 @@
 .deputy-day-head small {
   color: var(--color-text-muted);
   font-size: 12px;
+}
+
+.deputy-day-head .day-head-cost {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text);
+  margin-top: 1px;
+}
+
+.deputy-day-head .day-head-cost.is-over {
+  color: #b91c1c;
+}
+
+.deputy-day-head .day-head-cost.is-under {
+  color: #15803d;
+}
+
+.deputy-day-head.is-today .day-head-cost {
+  color: inherit;
+  opacity: 0.88;
 }
 
 .deputy-day-head.is-today {
@@ -3313,18 +3370,18 @@
   left: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: 34px minmax(0, 1fr);
-  gap: 10px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  gap: 6px;
   align-items: center;
-  min-height: 104px;
-  padding: 12px;
+  min-height: 44px;
+  padding: 6px 10px;
   background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(12px);
 }
 
 .deputy-venue-label,
 .deputy-venue-cell {
-  min-height: 54px;
+  min-height: 32px;
   background: #eef3f7;
   color: #0f172a;
   font-weight: 800;
@@ -3353,8 +3410,7 @@
 }
 
 .deputy-row-label .badge {
-  grid-column: 1 / -1;
-  justify-self: start;
+  display: none;
 }
 
 .deputy-row-label strong,
@@ -3365,24 +3421,27 @@
   white-space: nowrap;
 }
 
-.deputy-row-label small {
-  color: var(--color-text-muted);
+.deputy-row-label strong {
   font-size: 12px;
 }
 
+.deputy-row-label small {
+  display: none;
+}
+
 .deputy-schedule-cell {
-  min-height: 104px;
+  min-height: 44px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   align-items: stretch;
-  padding: 8px;
+  padding: 4px 6px;
   border-top: 0;
   border-left: 0;
   background: rgba(255, 255, 255, 0.94);
   text-align: left;
   cursor: pointer;
-  transition: background-color 150ms ease, box-shadow 150ms ease, transform 150ms ease;
+  transition: background-color 100ms ease, box-shadow 100ms ease;
 }
 
 .deputy-schedule-cell:hover {
@@ -3442,14 +3501,14 @@
 .deputy-add-shift {
   display: grid;
   place-items: center;
-  min-height: 58px;
-  border: 1px dashed rgba(100, 116, 139, 0.34);
-  border-radius: 12px;
+  min-height: 32px;
+  border: 1px dashed rgba(100, 116, 139, 0.28);
+  border-radius: 8px;
   color: var(--color-text-subtle);
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 700;
-  background: rgba(248, 250, 252, 0.62);
-  opacity: 0.82;
+  background: rgba(248, 250, 252, 0.5);
+  opacity: 0.7;
 }
 
 .deputy-schedule-cell:hover .deputy-add-shift {
@@ -3463,25 +3522,24 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 2px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--shift-border, var(--color-accent)) 40%, transparent);
-  border-left: 4px solid var(--shift-border, var(--color-accent));
-  border-radius: 12px;
+  border-left: 3px solid var(--shift-border, var(--color-accent));
+  border-radius: 8px;
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.72), transparent),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.6), transparent),
     var(--shift-bg, #eef5ff);
   color: var(--shift-text, #102e69);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.09);
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
   cursor: grab;
-  transition: transform 150ms ease, box-shadow 150ms ease, filter 150ms ease, border-color 150ms ease;
+  transition: transform 100ms ease, box-shadow 100ms ease;
 }
 
 .deputy-shift-card:hover {
-  filter: brightness(0.99);
-  transform: translateY(-2px);
-  box-shadow: 0 18px 34px rgba(15, 23, 42, 0.14);
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
 }
 
 .deputy-shift-card:focus-visible {

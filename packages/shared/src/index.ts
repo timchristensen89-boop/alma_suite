@@ -2212,6 +2212,26 @@ export const xeroSupplierBillsImportInputSchema = z.object({
 
 export type XeroSupplierBillsImportInput = z.infer<typeof xeroSupplierBillsImportInputSchema>;
 
+export type XeroPayRateSyncResult = {
+  synced: number;
+  skipped: number;
+  notMatched: number;
+  updated: Array<{
+    staffId: string;
+    firstName: string;
+    lastName: string;
+    previousPayRateCents: number | null;
+    newPayRateCents: number;
+    xeroEmployeeId: string;
+  }>;
+  unmatched: Array<{
+    xeroEmployeeId: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+  }>;
+};
+
 export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
 
 export type LegacyAdminIntegrationProviderStatus = {

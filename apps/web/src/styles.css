@@ -4349,6 +4349,17 @@ tbody tr:hover {
   line-height: 1.35;
 }
 
+.login-help a {
+  color: var(--color-accent);
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.login-help a:hover {
+  opacity: 0.8;
+}
+
 .login-brand-mark {
   width: 40px;
   height: 40px;

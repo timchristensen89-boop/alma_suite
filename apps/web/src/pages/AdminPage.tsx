@@ -40,6 +40,7 @@ import type {
   StaffAppAccessStatus,
   StaffRoleTemplate,
   XeroConnectionHealthPayload,
+  XeroPayRateSyncResult,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
   XeroSupplierContactsImportResult,
@@ -1167,6 +1168,7 @@ function IntegrationCard({
   onConnect,
   onDisconnect,
   onHealthCheck,
+  onSyncPayRates,
   onRefresh,
   onSyncLocations,
   onImportSales,
@@ -1178,6 +1180,7 @@ function IntegrationCard({
   onConnect: (integration: IntegrationProviderStatus) => void;
   onDisconnect: (integration: IntegrationProviderStatus) => void;
   onHealthCheck?: () => void;
+  onSyncPayRates?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
   onImportSales?: () => void;
@@ -1187,6 +1190,7 @@ function IntegrationCard({
   const accountSuffix = integration.accountKey ? `:${integration.accountKey}` : '';
   const isBusy = busy === `${integration.provider}${accountSuffix}`;
   const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
+  const isSyncPayRatesBusy = busy === 'xero-sync-pay-rates';
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isImportSalesBusy = busy === `square${accountSuffix}-import-sales`;
@@ -1330,8 +1334,8 @@ function IntegrationCard({
         ) : null}
         {isXero ? (
           <div>
-            <strong>Accounting sync</strong>
-            <p>Supplier contacts and safe matched supplier bills can be imported from Xero. Payroll, payments and bank feeds stay excluded.</p>
+            <strong>Accounting &amp; payroll sync</strong>
+            <p>Supplier contacts and bills can be imported. Pay rates can be synced from Xero Payroll using the button below — this requires the <code>payroll.employees.read</code> scope (re-authorise Xero if recently added). Payments and bank feeds stay excluded.</p>
           </div>
         ) : null}
         <div>
@@ -1374,6 +1378,11 @@ function IntegrationCard({
           {isXero && onHealthCheck ? (
             <Button variant="secondary" disabled={isHealthBusy} onClick={onHealthCheck}>
               {isHealthBusy ? 'Checking...' : 'Check Xero health'}
+            </Button>
+          ) : null}
+          {isXero && onSyncPayRates ? (
+            <Button variant="secondary" disabled={isSyncPayRatesBusy || integration.status !== 'CONNECTED'} onClick={onSyncPayRates}>
+              {isSyncPayRatesBusy ? 'Syncing pay rates...' : 'Sync pay rates from Xero'}
             </Button>
           ) : null}
           {isSquare && onHealthCheck ? (
@@ -1762,6 +1771,7 @@ export function AdminPage({
   const [xeroSyncBusy, setXeroSyncBusy] = useState<string | null>(null);
   const [xeroSyncFeedback, setXeroSyncFeedback] = useState<string | null>(null);
   const [xeroAllowCreateSuppliers, setXeroAllowCreateSuppliers] = useState(false);
+  const [xeroPayRateSyncResult, setXeroPayRateSyncResult] = useState<XeroPayRateSyncResult | null>(null);
   const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
@@ -1889,6 +1899,22 @@ export function AdminPage({
       await loadDashboard();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not check Xero health.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function syncXeroPayRates() {
+    setIntegrationBusy('xero-sync-pay-rates');
+    setError(null);
+    setXeroPayRateSyncResult(null);
+    try {
+      const result = await api<XeroPayRateSyncResult>('/api/integrations/xero/sync-pay-rates', {
+        method: 'POST'
+      });
+      setXeroPayRateSyncResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync pay rates from Xero.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -3229,6 +3255,7 @@ export function AdminPage({
                         ? () => void checkSquareHealth(integration)
                         : undefined
                   }
+                  onSyncPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates() : undefined}
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
                   onImportSales={integration.provider === 'square' ? () => void importSquareSales(integration) : undefined}
@@ -3290,6 +3317,53 @@ export function AdminPage({
               onImportBills={() => void importXeroSupplierBills()}
               onAllowCreateSuppliersChange={setXeroAllowCreateSuppliers}
             />
+            {xeroPayRateSyncResult ? (
+              <AdminCollapsibleSection
+                title="Pay rates synced"
+                summary={`${xeroPayRateSyncResult.synced} updated · ${xeroPayRateSyncResult.notMatched} unmatched · ${xeroPayRateSyncResult.skipped} skipped`}
+                defaultOpen
+                status={<Badge tone={xeroPayRateSyncResult.synced > 0 ? 'positive' : 'info'}>{xeroPayRateSyncResult.synced} updated</Badge>}
+              >
+                <Card>
+                  <div className="admin-status-stack">
+                    <StatusLine label="Updated" value={String(xeroPayRateSyncResult.synced)} tone="positive" />
+                    <StatusLine label="Not matched" value={String(xeroPayRateSyncResult.notMatched)} tone={xeroPayRateSyncResult.notMatched > 0 ? 'warning' : 'muted'} />
+                    <StatusLine label="Skipped (no rate)" value={String(xeroPayRateSyncResult.skipped)} tone="muted" />
+                  </div>
+                  {xeroPayRateSyncResult.updated.length > 0 ? (
+                    <div>
+                      <strong>Updated staff</strong>
+                      <div className="admin-status-stack">
+                        {xeroPayRateSyncResult.updated.map((row) => (
+                          <StatusLine
+                            key={row.staffId}
+                            label={`${row.firstName} ${row.lastName}`}
+                            value={`$${(row.newPayRateCents / 100).toFixed(2)}/hr${row.previousPayRateCents !== null ? ` (was $${(row.previousPayRateCents / 100).toFixed(2)})` : ' (new)'}`}
+                            tone="positive"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {xeroPayRateSyncResult.unmatched.length > 0 ? (
+                    <div>
+                      <strong>Unmatched Xero employees</strong>
+                      <p className="muted">These employees were found in Xero but could not be matched to a staff profile. Link them by adding the Xero Employee ID to each staff profile.</p>
+                      <div className="admin-status-stack">
+                        {xeroPayRateSyncResult.unmatched.map((row) => (
+                          <StatusLine
+                            key={row.xeroEmployeeId}
+                            label={`${row.firstName} ${row.lastName}`}
+                            value={row.email ?? row.xeroEmployeeId}
+                            tone="warning"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </Card>
+              </AdminCollapsibleSection>
+            ) : null}
             <AdminCollapsibleSection
               title="Sync health"
               summary="Last connection and webhook activity"
