@@ -904,6 +904,43 @@ function PublicBookingWidget() {
   );
 }
 
+function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
+  const [activeHash, setActiveHash] = useState(() => window.location.hash || '#dashboard');
+
+  useEffect(() => {
+    const sync = () => setActiveHash(window.location.hash || '#dashboard');
+    window.addEventListener('hashchange', sync);
+    return () => window.removeEventListener('hashchange', sync);
+  }, []);
+
+  const active = MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ?? MANAGER_NAV_ITEMS[0]!;
+
+  useEffect(() => {
+    document.title = `${active.label} · Alma Reserve`;
+  }, [active.label]);
+
+  return (
+    <TopBar
+      title={active.label}
+      subtitle={active.description}
+      right={
+        <>
+          <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
+          <SuiteCommsWidget
+            appId="RESERVE"
+            api={api}
+            venue={user.venue}
+            userName={`${user.firstName} ${user.lastName}`}
+            canAnnounce={user.role !== 'STAFF'}
+          />
+          <SuiteNotificationsWidget api={api} currentApp="reserve" />
+          <Button size="sm" type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+        </>
+      }
+    />
+  );
+}
+
 function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const venueOptions = useMemo(() => effectiveVenueOptions(user), [user]);
   const initialVenue = firstManagerVenue(user, isAdmin(user) ? ALL_VENUES : user.venue);
@@ -1216,26 +1253,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     <AppShell
       brand={<ProductLogo appId="reserve" size="md" showBrandMark={false} />}
       sidebar={<SidebarNav />}
-      topBar={
-        <TopBar
-          title="ALMA Reserve"
-          subtitle="Reservations, guest CRM, availability, and public booking"
-          right={
-            <>
-              <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
-              <SuiteCommsWidget
-                appId="RESERVE"
-                api={api}
-                venue={user.venue}
-                userName={`${user.firstName} ${user.lastName}`}
-                canAnnounce={user.role !== 'STAFF'}
-              />
-              <SuiteNotificationsWidget api={api} currentApp="reserve" />
-              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
-            </>
-          }
-        />
-      }
+      topBar={<TopBarWithContext user={user} onLogout={onLogout} />}
     >
       <div className="reserve-page">
         <section className="hero reserve-command-hero">
