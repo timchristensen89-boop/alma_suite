@@ -989,8 +989,19 @@ function StocktakeLinesTable({
                 const countedQty = normalQuantity(line.countedQty);
                 const currentQty = line.item ? normalQuantity(line.item.onHand) : null;
                 const variance = line.item && countedQty !== null && currentQty !== null ? countedQty - currentQty : null;
+                // Variance %: cap at the larger of counted/current to avoid div-by-zero
+                // and absurd %s when one side is 0.
+                const variancePct = variance !== null && currentQty !== null && currentQty !== 0
+                  ? Math.abs(variance / currentQty) * 100
+                  : null;
+                // Liquid categories (default 10% threshold), everything else 5%.
+                // Use the line's location (set from category name) + label as a proxy.
+                const categoryHint = `${line.location ?? ''} ${line.label}`;
+                const isLiquid = /liquor|beer|wine|spirit|liquid|cocktail|bottle|keg|draught|draft/i.test(categoryHint);
+                const threshold = isLiquid ? 10 : 5;
+                const isAlert = variancePct !== null && variancePct > threshold;
                 return (
-                  <tr key={line.id}>
+                  <tr key={line.id} className={isAlert ? 'stocktake-variance-row-alert' : ''}>
                     <td>
                       <span className="cell-stack">
                         <strong>{line.label}</strong>
@@ -1005,6 +1016,11 @@ function StocktakeLinesTable({
                       ) : (
                         <span className={variance === 0 ? 'subtle' : variance > 0 ? 'stocktake-variance-positive' : 'stocktake-variance-negative'}>
                           {formatSignedQuantity(variance, line.unit ?? line.item?.unit ?? null)}
+                          {variancePct !== null ? (
+                            <small className={isAlert ? 'stocktake-variance-alert' : 'stocktake-variance-pct'}>
+                              {' '}({variancePct.toFixed(1)}%{isAlert ? ` · >${threshold}%` : ''})
+                            </small>
+                          ) : null}
                         </span>
                       )}
                     </td>

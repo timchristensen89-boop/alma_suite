@@ -1183,3 +1183,29 @@ tbody tr.row-detail:hover {
     align-items: stretch;
   }
 }
+
+/* Stocktake variance alerts */
+.stocktake-variance-row-alert {
+  background: rgba(220, 38, 38, 0.06) !important;
+}
+
+.stocktake-variance-row-alert td {
+  border-left: 3px solid #dc2626;
+}
+
+.stocktake-variance-row-alert td:not(:first-child) {
+  border-left: 0;
+}
+
+.stocktake-variance-pct {
+  color: var(--color-text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.stocktake-variance-alert {
+  color: #991b1b;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}

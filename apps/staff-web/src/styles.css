@@ -5578,3 +5578,73 @@
 .deputy-schedule-cell {
   position: relative;
 }
+
+.award-compliance-warning {
+  display: block;
+  margin-top: 4px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: rgba(220, 38, 38, 0.08);
+  color: #991b1b;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+/* Labour cost forecast pill in roster command bar */
+.roster-cost-forecast-pill {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.05);
+  font-size: 12.5px;
+}
+
+.roster-cost-forecast-pill > span:first-child {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.roster-cost-forecast-pill strong {
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.roster-cost-forecast-pill .roster-cost-forecast-pct {
+  font-weight: 700;
+  font-size: 12px;
+}
+
+.roster-cost-forecast-pill small {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.roster-cost-forecast-pill.is-positive {
+  background: rgba(34, 197, 94, 0.10);
+}
+.roster-cost-forecast-pill.is-positive .roster-cost-forecast-pct,
+.roster-cost-forecast-pill.is-positive small {
+  color: #166534;
+}
+
+.roster-cost-forecast-pill.is-warning {
+  background: rgba(245, 158, 11, 0.13);
+}
+.roster-cost-forecast-pill.is-warning .roster-cost-forecast-pct,
+.roster-cost-forecast-pill.is-warning small {
+  color: #92400e;
+}
+
+.roster-cost-forecast-pill.is-danger {
+  background: rgba(220, 38, 38, 0.12);
+}
+.roster-cost-forecast-pill.is-danger .roster-cost-forecast-pct,
+.roster-cost-forecast-pill.is-danger small {
+  color: #991b1b;
+}

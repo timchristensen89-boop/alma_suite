@@ -9468,6 +9468,26 @@ function RosterPage({
               <span><strong>{roundHours(totalHours)}</strong> hours</span>
               <span><strong>{publishedCount}</strong> live</span>
               {draftCount ? <span className="is-warning"><strong>{draftCount}</strong> drafts</span> : null}
+              {(() => {
+                const wagePct = forecastSalesCents > 0 ? (rosterCostCents / forecastSalesCents) * 100 : null;
+                const targetPct = parsePercent(targetWagePercent);
+                const overBudget = wageBudgetCents > 0 && rosterCostCents > wageBudgetCents;
+                const tone = wagePct == null ? 'neutral' : overBudget ? 'danger' : wagePct > targetPct * 0.92 ? 'warning' : 'positive';
+                return (
+                  <span className={`roster-cost-forecast-pill is-${tone}`} title="Projected labour cost vs target wage budget">
+                    <span>Labour</span>
+                    <strong>{formatCents(rosterCostCents)}</strong>
+                    {wagePct !== null ? (
+                      <span className="roster-cost-forecast-pct">{wagePct.toFixed(1)}%</span>
+                    ) : null}
+                    {wageBudgetCents > 0 ? (
+                      <small>
+                        {overBudget ? '▲' : '▼'} {formatCents(Math.abs(forecastCostGapCents))} {overBudget ? 'over' : 'under'} budget
+                      </small>
+                    ) : null}
+                  </span>
+                );
+              })()}
               <span className="roster-forecast-inline" title="Forecast sales · target wage %">
                 <input
                   value={forecastSales}
@@ -12727,16 +12747,30 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             <EmptyState title="No timesheets yet" description="Submitted timesheets for this week will appear here." />
           ) : null}
           <div className="staff-list">
-            {timesheets.map((entry) => (
+            {timesheets.map((entry) => {
+              const member = staff.find((s) => s.id === entry.staffProfileId);
+              const awardCheck = checkAwardCompliance(member);
+              return (
               <article key={entry.id} className="staff-list-button" style={{ display: 'grid', gap: 8 }}>
                 <span>
                   <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
                   <span className="subtle" style={{ display: 'block' }}>
                     {new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}-{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}
                   </span>
+                  {awardCheck.status === 'below' ? (
+                    <span className="award-compliance-warning" role="alert">
+                      ⚠ Pay rate ${(member?.payRateCents ?? 0) / 100}/hr below {awardCheck.employmentType === 'CASUAL' ? 'casual loaded' : 'ordinary'} minimum
+                      ${awardCheck.minimumCents / 100}/hr ({awardCheck.classificationLabel})
+                    </span>
+                  ) : null}
                 </span>
                 <span className="toolbar-right">
                   <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
+                  {awardCheck.status === 'below' ? (
+                    <Badge tone="danger" dot>AWARD ⚠</Badge>
+                  ) : awardCheck.status === 'unknown' ? (
+                    <Badge tone="warning">No award set</Badge>
+                  ) : null}
                   <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>{entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash pay') : 'Xero'}</Badge>
                   {entry.status === 'SUBMITTED' || entry.status === 'REJECTED' ? (
                     <>
@@ -12767,12 +12801,34 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   ) : null}
                 </span>
               </article>
-            ))}
+              );
+            })}
           </div>
         </Card>
       </div>
     </div>
   );
+}
+
+type AwardComplianceResult =
+  | { status: 'compliant'; minimumCents: number; employmentType: string; classificationLabel: string }
+  | { status: 'below'; minimumCents: number; employmentType: string; classificationLabel: string }
+  | { status: 'unknown' };
+
+function checkAwardCompliance(member: StaffProfile | undefined): AwardComplianceResult {
+  if (!member?.payRateCents) return { status: 'unknown' };
+  if (!member.payProfile) return { status: 'unknown' };
+  const pp = member.payProfile;
+  const isCasual = pp.employmentType === 'CASUAL';
+  const minimumCents = isCasual && pp.casualLoadedHourlyRateCents
+    ? pp.casualLoadedHourlyRateCents
+    : pp.ordinaryHourlyRateCents;
+  const actualCents = member.payRateCents;
+  const classificationLabel = pp.awardClassification.replace(/-/g, ' ');
+  if (actualCents < minimumCents) {
+    return { status: 'below', minimumCents, employmentType: pp.employmentType, classificationLabel };
+  }
+  return { status: 'compliant', minimumCents, employmentType: pp.employmentType, classificationLabel };
 }
 
 function timesheetTone(status: Timesheet['status']) {

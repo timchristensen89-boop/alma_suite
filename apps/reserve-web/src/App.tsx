@@ -80,10 +80,44 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
+  { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
   { href: '#availability', label: 'Availability', description: 'Rules and blackouts', icon: <GearIcon /> },
   { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
   { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
 ];
+
+type WaitlistEntry = {
+  id: string;
+  venue: string;
+  guestName: string;
+  partySize: number;
+  phone: string;
+  notes: string;
+  addedAt: string;
+  estimatedWaitMinutes: number | null;
+  status: 'WAITING' | 'SEATED' | 'CANCELLED' | 'LEFT';
+};
+
+const WAITLIST_STORAGE_KEY = 'alma.reserve.waitlist.v1';
+
+function loadWaitlist(): WaitlistEntry[] {
+  try {
+    const raw = window.localStorage.getItem(WAITLIST_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistWaitlist(entries: WaitlistEntry[]) {
+  try {
+    window.localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify(entries));
+  } catch {
+    /* storage unavailable */
+  }
+}
 
 type FeedbackTone = 'success' | 'error';
 
@@ -959,6 +993,179 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
   );
 }
 
+function WaitlistSection({
+  defaultVenue,
+  venueOptions
+}: {
+  defaultVenue: string;
+  venueOptions: Array<{ label: string; value: string }>;
+}) {
+  const [entries, setEntries] = useState<WaitlistEntry[]>(() => loadWaitlist());
+  const [draft, setDraft] = useState({
+    venue: defaultVenue,
+    guestName: '',
+    partySize: '2',
+    phone: '',
+    notes: '',
+    estimatedWaitMinutes: ''
+  });
+
+  useEffect(() => {
+    persistWaitlist(entries);
+  }, [entries]);
+
+  function addEntry(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!draft.guestName.trim()) return;
+    const entry: WaitlistEntry = {
+      id: `wl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+      venue: draft.venue,
+      guestName: draft.guestName.trim(),
+      partySize: Math.max(1, Number(draft.partySize) || 1),
+      phone: draft.phone.trim(),
+      notes: draft.notes.trim(),
+      addedAt: new Date().toISOString(),
+      estimatedWaitMinutes: draft.estimatedWaitMinutes ? Number(draft.estimatedWaitMinutes) : null,
+      status: 'WAITING'
+    };
+    setEntries((current) => [entry, ...current]);
+    setDraft({
+      venue: draft.venue,
+      guestName: '',
+      partySize: '2',
+      phone: '',
+      notes: '',
+      estimatedWaitMinutes: ''
+    });
+  }
+
+  function updateStatus(id: string, status: WaitlistEntry['status']) {
+    setEntries((current) => current.map((e) => (e.id === id ? { ...e, status } : e)));
+  }
+
+  function removeEntry(id: string) {
+    setEntries((current) => current.filter((e) => e.id !== id));
+  }
+
+  const waiting = entries.filter((e) => e.status === 'WAITING');
+  const resolved = entries.filter((e) => e.status !== 'WAITING').slice(0, 8);
+
+  function timeSinceAdded(iso: string) {
+    const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+    if (minutes < 1) return 'just now';
+    if (minutes < 60) return `${minutes}m ago`;
+    return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
+  }
+
+  return (
+    <Card
+      title="Waitlist"
+      subtitle="Walk-in queue for peak service periods. Stored locally per browser — sync to the API in a future release."
+    >
+      <form className="reserve-form" onSubmit={addEntry}>
+        <div className="form-grid two">
+          <Select
+            label="Venue"
+            value={draft.venue}
+            onChange={(event) => setDraft({ ...draft, venue: event.currentTarget.value })}
+            options={venueOptions.filter((o) => o.value !== 'all')}
+          />
+          <Input
+            label="Guest name"
+            required
+            value={draft.guestName}
+            onChange={(event) => setDraft({ ...draft, guestName: event.currentTarget.value })}
+            placeholder="e.g. Jordan Lee"
+          />
+          <Input
+            label="Party size"
+            type="number"
+            min="1"
+            max="20"
+            value={draft.partySize}
+            onChange={(event) => setDraft({ ...draft, partySize: event.currentTarget.value })}
+          />
+          <Input
+            label="Phone"
+            value={draft.phone}
+            onChange={(event) => setDraft({ ...draft, phone: event.currentTarget.value })}
+            placeholder="04xx xxx xxx"
+          />
+          <Input
+            label="Est. wait (min)"
+            type="number"
+            min="0"
+            value={draft.estimatedWaitMinutes}
+            onChange={(event) => setDraft({ ...draft, estimatedWaitMinutes: event.currentTarget.value })}
+            placeholder="e.g. 30"
+          />
+          <Input
+            label="Notes"
+            value={draft.notes}
+            onChange={(event) => setDraft({ ...draft, notes: event.currentTarget.value })}
+            placeholder="Window seat, bar OK..."
+          />
+        </div>
+        <div className="toolbar-right">
+          <Button type="submit">Add to waitlist</Button>
+        </div>
+      </form>
+
+      <div className="waitlist-stack">
+        <div className="waitlist-section-head">
+          <strong>Currently waiting · {waiting.length}</strong>
+        </div>
+        {waiting.length === 0 ? (
+          <EmptyState
+            title="No one waiting"
+            description="Add walk-ins as they arrive to track the queue and wait times."
+          />
+        ) : (
+          waiting.map((entry) => (
+            <div key={entry.id} className="waitlist-row is-waiting">
+              <div className="waitlist-row-main">
+                <strong>{entry.guestName}</strong>
+                <span>{entry.partySize} {entry.partySize === 1 ? 'guest' : 'guests'} · {entry.venue}</span>
+                <small>
+                  Added {timeSinceAdded(entry.addedAt)}
+                  {entry.estimatedWaitMinutes !== null ? ` · Est. wait ${entry.estimatedWaitMinutes}m` : ''}
+                  {entry.phone ? ` · ${entry.phone}` : ''}
+                </small>
+                {entry.notes ? <em>{entry.notes}</em> : null}
+              </div>
+              <div className="waitlist-row-actions">
+                <Button type="button" size="sm" onClick={() => updateStatus(entry.id, 'SEATED')}>Seated</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => updateStatus(entry.id, 'LEFT')}>Left</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => updateStatus(entry.id, 'CANCELLED')}>Cancel</Button>
+              </div>
+            </div>
+          ))
+        )}
+
+        {resolved.length > 0 ? (
+          <>
+            <div className="waitlist-section-head">
+              <strong>Recent · {resolved.length}</strong>
+            </div>
+            {resolved.map((entry) => (
+              <div key={entry.id} className={`waitlist-row is-${entry.status.toLowerCase()}`}>
+                <div className="waitlist-row-main">
+                  <strong>{entry.guestName}</strong>
+                  <span>{entry.partySize} guests · {entry.venue}</span>
+                  <small>{entry.status === 'SEATED' ? 'Seated' : entry.status === 'LEFT' ? 'Left without staying' : 'Cancelled'} · added {timeSinceAdded(entry.addedAt)}</small>
+                </div>
+                <div className="waitlist-row-actions">
+                  <Button type="button" size="sm" variant="ghost" onClick={() => removeEntry(entry.id)}>Clear</Button>
+                </div>
+              </div>
+            ))}
+          </>
+        ) : null}
+      </div>
+    </Card>
+  );
+}
+
 function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const venueOptions = useMemo(() => effectiveVenueOptions(user), [user]);
   const initialVenue = firstManagerVenue(user, isAdmin(user) ? ALL_VENUES : user.venue);
@@ -1530,6 +1737,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
               </Card>
+            </section>
+
+            <section id="waitlist">
+              <WaitlistSection defaultVenue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
             </section>
 
             <section id="availability">

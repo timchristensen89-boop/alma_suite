@@ -231,33 +231,71 @@ async function createLogForAsset(assetId: string, input: {
     }
   });
 
-  // Fire alert email on state transition into OUT_OF_RANGE.
-  // Skip if previous log was already OUT_OF_RANGE (still bad, but the
-  // operator already knows) or if there's no recipient configured.
-  if (
-    status === 'OUT_OF_RANGE' &&
-    (!previousLog || previousLog.status === 'IN_RANGE') &&
-    mailService.isConfigured()
-  ) {
+  // Fire alert email when a sensor has been out of range for more than 30
+  // minutes — catches sustained problems while suppressing transient blips
+  // (e.g. someone holding a fridge door open during stocking, brief defrost
+  // cycles). To do this we look at the recent log window and confirm the
+  // sensor has been continuously out of range across at least 30 minutes.
+  if (status === 'OUT_OF_RANGE' && mailService.isConfigured()) {
     try {
-      const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
-      const recipient = settings?.notifyEmail?.trim();
-      if (recipient && settings?.notifyOutOfRangeTemp !== false) {
-        const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
-        await mailService.sendAlert({
-          to: recipient,
-          subject: `[Temp alert] ${asset.name} out of range`,
-          title: `${asset.name} just went out of range`,
-          body: [
-            `${asset.name}${asset.venue ? ` at ${asset.venue}` : ''} read ${input.temperatureC.toFixed(1)}°C.`,
-            `Allowed range: ${asset.minTempC.toFixed(1)}°C to ${asset.maxTempC.toFixed(1)}°C.`,
-            issueId ? `An issue has been auto-created for follow-up.` : ''
-          ].filter(Boolean).join('\n'),
-          venue: asset.venue,
-          severity: 'critical',
-          ctaUrl: `${complianceUrl}/temperatures`,
-          ctaLabel: 'Open compliance'
-        });
+      const thirtyMinutesAgo = new Date(Date.now() - 30 * 60 * 1000);
+      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+      // Get all logs from the last hour for this asset (plus the one just
+      // created). If every log within the 30-minute window was OUT_OF_RANGE
+      // and the first OUT_OF_RANGE was at least 30 minutes ago, fire.
+      const recentLogs = await prisma.temperatureLog.findMany({
+        where: { assetId, recordedAt: { gte: oneHourAgo } },
+        orderBy: { recordedAt: 'asc' }
+      });
+
+      // Find the start of the current OUT_OF_RANGE streak by walking backwards
+      let streakStart: Date | null = recordedAt;
+      for (let i = recentLogs.length - 1; i >= 0; i -= 1) {
+        const entry = recentLogs[i]!;
+        if (entry.status === 'OUT_OF_RANGE') {
+          streakStart = entry.recordedAt;
+        } else {
+          break;
+        }
+      }
+
+      const sustainedFor30Min = streakStart !== null && streakStart <= thirtyMinutesAgo;
+
+      // Also check we haven't already alerted in this streak. Use the
+      // existence of an OUT_OF_RANGE log between (streakStart - 1h) and
+      // (recordedAt - 30min) as a proxy — if there was a previous alert
+      // window, no need to re-alert.
+      const previouslyAlerted = recentLogs.some(
+        (entry) =>
+          entry.status === 'OUT_OF_RANGE' &&
+          streakStart !== null &&
+          entry.recordedAt >= streakStart &&
+          entry.recordedAt < new Date(thirtyMinutesAgo.getTime() - 5 * 60 * 1000)
+      );
+
+      if (sustainedFor30Min && !previouslyAlerted) {
+        const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
+        const recipient = settings?.notifyEmail?.trim();
+        if (recipient && settings?.notifyOutOfRangeTemp !== false) {
+          const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
+          const minutesOut = streakStart ? Math.round((recordedAt.getTime() - streakStart.getTime()) / 60000) : 30;
+          await mailService.sendAlert({
+            to: recipient,
+            subject: `[Temp alert] ${asset.name} out of range for ${minutesOut}+ minutes`,
+            title: `${asset.name} has been out of range for ${minutesOut} minutes`,
+            body: [
+              `${asset.name}${asset.venue ? ` at ${asset.venue}` : ''} now reads ${input.temperatureC.toFixed(1)}°C.`,
+              `Allowed range: ${asset.minTempC.toFixed(1)}°C to ${asset.maxTempC.toFixed(1)}°C.`,
+              `Sustained out-of-range readings since ${streakStart?.toLocaleString() ?? 'recently'}.`,
+              issueId ? `An issue has been auto-created for follow-up.` : ''
+            ].filter(Boolean).join('\n'),
+            venue: asset.venue,
+            severity: 'critical',
+            ctaUrl: `${complianceUrl}/temperatures`,
+            ctaLabel: 'Open compliance'
+          });
+        }
       }
     } catch (err) {
       console.error('[temperature] Failed to send out-of-range alert email', err);
