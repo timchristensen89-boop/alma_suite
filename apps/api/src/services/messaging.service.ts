@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { prisma } from '@alma/db';
+import type { CommsThreadCategory } from '@prisma/client';
 import type { AuthUser } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 
@@ -285,8 +286,8 @@ function threadSummary(thread: {
   };
 }
 
-export async function listInboxForUser(actor: AuthUser) {
-  const where = canManageMessaging(actor)
+export async function listInboxForUser(actor: AuthUser, category?: CommsThreadCategory) {
+  const baseWhere = canManageMessaging(actor)
     ? { archivedAt: null }
     : {
         archivedAt: null,
@@ -295,6 +296,8 @@ export async function listInboxForUser(actor: AuthUser) {
           { createdById: actor.id }
         ]
       };
+
+  const where = category ? { ...baseWhere, category } : baseWhere;
 
   const threads = await prisma.commsThread.findMany({
     where,

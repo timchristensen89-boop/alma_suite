@@ -1,4 +1,3 @@
-import type { NextFunction, Request, Response } from 'express';
 import { Router } from 'express';
 import {
   acknowledgeCommsThread,
@@ -11,51 +10,41 @@ import {
   markCommsThreadRead
 } from '../services/comms.service.js';
 import { requireManager } from '../lib/auth-middleware.js';
+import { HttpError } from '../lib/http.js';
 
 export const commsRouter = Router();
 
-function requireCommsAuth(req: Request, res: Response, next: NextFunction) {
-  if (!req.user) {
-    res.status(401).json({ error: 'Not authenticated' });
-    return;
-  }
-
+// Require any authenticated user (staff, manager, admin — not device accounts for messaging)
+commsRouter.use((req, _res, next) => {
+  if (!req.user) return next(new HttpError(401, 'Not authenticated'));
   next();
-}
+});
 
-commsRouter.use(requireCommsAuth);
-
-function handleError(res: Response, error: unknown) {
-  const statusCode = typeof error === 'object' && error && 'statusCode' in error ? Number((error as any).statusCode) : 400;
-  const message = error instanceof Error ? error.message : 'Request failed';
-  res.status(statusCode || 400).json({ error: message });
-}
-
-commsRouter.get('/inbox', async (req, res) => {
+commsRouter.get('/inbox', async (req, res, next) => {
   try {
     res.json({ threads: await listCommsInbox(req.user!) });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.get('/recipient-options', async (req, res) => {
+commsRouter.get('/recipient-options', async (req, res, next) => {
   try {
     res.json(await listCommsRecipientOptions(req.user!));
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.post('/threads', async (req, res) => {
+commsRouter.post('/threads', async (req, res, next) => {
   try {
     res.status(201).json({ thread: await createCommsThread(req.body, req.user!) });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.get('/threads/:id', async (req, res) => {
+commsRouter.get('/threads/:id', async (req, res, next) => {
   try {
     const thread = await getCommsThread(req.params.id, req.user!);
     if (!thread) {
@@ -64,80 +53,82 @@ commsRouter.get('/threads/:id', async (req, res) => {
     }
     res.json({ thread });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.post('/threads/:id/messages', async (req, res) => {
+commsRouter.post('/threads/:id/messages', async (req, res, next) => {
   try {
     res.status(201).json({ message: await addCommsMessage(req.params.id, req.body, req.user!) });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.post('/threads/:id/read', async (req, res) => {
+commsRouter.post('/threads/:id/read', async (req, res, next) => {
   try {
     res.json(await markCommsThreadRead(req.params.id, req.user!));
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.post('/threads/:id/acknowledge', async (req, res) => {
+commsRouter.post('/threads/:id/acknowledge', async (req, res, next) => {
   try {
     res.json(await acknowledgeCommsThread(req.params.id, req.user!));
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.get('/announcements', async (_req, res) => {
-  res.json({ threads: [] });
+// Announcements — was returning [] stub; now reads from DB filtered by category
+commsRouter.get('/announcements', async (req, res, next) => {
+  try {
+    res.json({ threads: await listCommsInbox(req.user!, 'ANNOUNCEMENT' as const) });
+  } catch (error) {
+    next(error);
+  }
 });
 
-commsRouter.post('/announcements', requireManager, async (req, res) => {
+commsRouter.post('/announcements', requireManager, async (req, res, next) => {
   try {
     res.status(201).json({
       thread: await createCommsThread(
-        {
-          ...req.body,
-          category: 'ANNOUNCEMENT',
-          priority: req.body.priority ?? 'NORMAL'
-        },
+        { ...req.body, category: 'ANNOUNCEMENT', priority: req.body.priority ?? 'NORMAL' },
         req.user!
       )
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.get('/handover', async (_req, res) => {
-  res.json({ threads: [] });
+// Handover notes — was returning [] stub; now reads from DB filtered by category
+commsRouter.get('/handover', async (req, res, next) => {
+  try {
+    res.json({ threads: await listCommsInbox(req.user!, 'HANDOVER' as const) });
+  } catch (error) {
+    next(error);
+  }
 });
 
-commsRouter.post('/handover', requireManager, async (req, res) => {
+commsRouter.post('/handover', requireManager, async (req, res, next) => {
   try {
     res.status(201).json({
       thread: await createCommsThread(
-        {
-          ...req.body,
-          category: 'HANDOVER',
-          priority: req.body.priority ?? 'NORMAL'
-        },
+        { ...req.body, category: 'HANDOVER', priority: req.body.priority ?? 'NORMAL' },
         req.user!
       )
     });
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });
 
-commsRouter.post('/alerts/evaluate', requireManager, async (_req, res) => {
+commsRouter.post('/alerts/evaluate', requireManager, async (_req, res, next) => {
   try {
     res.json(await evaluateCommsAlertsDryRun());
   } catch (error) {
-    handleError(res, error);
+    next(error);
   }
 });

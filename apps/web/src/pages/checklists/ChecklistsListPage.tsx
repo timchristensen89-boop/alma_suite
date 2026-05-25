@@ -200,7 +200,7 @@ export function ChecklistsListPage() {
                 </div>
                 <div className="checklist-run-card-footer">
                   <span className="subtle">
-                    {task.checklistTemplate?.name || (task.taskType === 'STOCKTAKE' ? 'Stocktake task linking coming next' : task.taskType.replace('_', ' '))}
+                    {task.checklistTemplate?.name || task.taskType.replace(/_/g, ' ')}
                   </span>
                   {task.taskType === 'CHECKLIST' ? (
                     <Button

@@ -450,15 +450,40 @@ function InboxPage() {
   );
 }
 
+// Endpoint map for category-filtered pages — use dedicated API endpoints where available
+const CATEGORY_ENDPOINTS: Record<string, string> = {
+  ANNOUNCEMENT: '/comms/announcements',
+  HANDOVER: '/comms/handover'
+};
+
 function FilteredThreadsPage({ title, eyebrow, category }: { title: string; eyebrow: string; category: string }) {
-  const { threads, loading, message } = useInbox();
-  const filtered = useMemo(() => threads.filter((thread) => thread.category === category), [threads, category]);
+  const endpoint = CATEGORY_ENDPOINTS[category] ?? null;
+  const [threads, setThreads] = useState<ThreadSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState('');
+
+  // If there's a dedicated endpoint, fetch from it directly; otherwise fall back to inbox + filter
+  const inboxResult = useInbox();
+
+  useEffect(() => {
+    if (!endpoint) return; // handled by useInbox fallback
+    setLoading(true);
+    setMessage('');
+    api<{ threads: ThreadSummary[] }>(endpoint)
+      .then((data) => setThreads(data.threads ?? []))
+      .catch((err) => setMessage(err instanceof Error ? err.message : 'Could not load.'))
+      .finally(() => setLoading(false));
+  }, [endpoint]);
+
+  const displayThreads = endpoint ? threads : inboxResult.threads.filter((t) => t.category === category);
+  const isLoading = endpoint ? loading : inboxResult.loading;
+  const errorMessage = endpoint ? message : inboxResult.message;
 
   return (
     <PageShell title={title} eyebrow={eyebrow}>
-      {loading ? <Card><p>Loading…</p></Card> : null}
-      {message ? <Card><p className="comms-error">{message}</p></Card> : null}
-      {!loading && !message ? <ThreadList threads={filtered} /> : null}
+      {isLoading ? <Card><p>Loading…</p></Card> : null}
+      {errorMessage ? <Card><p className="comms-error">{errorMessage}</p></Card> : null}
+      {!isLoading && !errorMessage ? <ThreadList threads={displayThreads} /> : null}
     </PageShell>
   );
 }

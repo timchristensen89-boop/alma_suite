@@ -602,6 +602,7 @@ model StaffProfile {
   xeroEmployeeId   String?
   xeroPayrollCalendarId String?
   xeroEarningsRateId String?
+  defaultArea      String?
   trainingLevel    Int                     @default(0)
   trainingPayRateCents Int?
   notes            String?

@@ -297,7 +297,7 @@ function AuthenticatedApp() {
           <Route path="/handbook/onboarding" element={<HandbookOnboardingPage />} />
           <Route path="/handbook/maintenance" element={<MaintenancePage />} />
           <Route path="/admin/handbook" element={<RequireRole minimum="ADMIN"><HandbookAdminPage /></RequireRole>} />
-          <Route path="/icon-export" element={<IconExportPage />} />
+          <Route path="/icon-export" element={<RequireRole minimum="ADMIN"><IconExportPage /></RequireRole>} />
           <Route path="/admin" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
           <Route path="/admin/*" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
           <Route path="/settings" element={<RequireRole minimum="ADMIN"><SettingsPage /></RequireRole>} />

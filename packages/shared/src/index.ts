@@ -534,6 +534,7 @@ export const staffProfileCreateInputSchema = z.object({
   xeroEmployeeId: z.string().optional().or(z.literal('')),
   xeroPayrollCalendarId: z.string().optional().or(z.literal('')),
   xeroEarningsRateId: z.string().optional().or(z.literal('')),
+  defaultArea: z.string().optional().or(z.literal('')),
   notes: z.string().optional().or(z.literal('')),
   records: z.array(staffComplianceRecordInputSchema).optional()
 });
@@ -3996,6 +3997,7 @@ export type StaffProfile = {
   xeroEmployeeId: string | null;
   xeroPayrollCalendarId: string | null;
   xeroEarningsRateId: string | null;
+  defaultArea: string | null;
   trainingLevel: number;
   trainingPayRateCents: number | null;
   isAdmin: boolean;

@@ -3100,6 +3100,19 @@
   font-weight: 700;
 }
 
+/* Area-coloured bubble: use the shift area colour vars */
+.roster-staff-bubble.has-area-colour .roster-avatar {
+  background: var(--shift-bg, #f1f5f9);
+  color: var(--shift-text, #334155);
+  border: 1.5px solid var(--shift-border, #94a3b8);
+  border-radius: 50%;
+}
+
+.roster-staff-bubble.has-area-colour:hover,
+.roster-staff-bubble.has-area-colour.is-selected {
+  border-color: var(--shift-border, var(--color-accent));
+}
+
 .roster-staff-bubble-shifts {
   position: absolute;
   top: -3px;
@@ -3615,6 +3628,12 @@
   opacity: 0.52;
   outline: 2px dashed rgba(36, 76, 159, 0.38);
   outline-offset: 2px;
+}
+
+.deputy-shift-card.is-staff-drop-target {
+  outline: 2px solid var(--color-accent, #3b82f6);
+  outline-offset: 2px;
+  background: rgba(59, 130, 246, 0.08);
 }
 
 .deputy-shift-card.is-deputy-import {

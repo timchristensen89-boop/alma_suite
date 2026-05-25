@@ -5513,5 +5513,39 @@ export const staffService = {
     ]);
 
     return { totalProfiles, expired, expiringSoon, pendingApproval };
+  },
+
+  async listDeviceAccounts(actor: AuthUser) {
+    if (!actor.isAdmin && actor.role !== 'ADMIN' && actor.role !== 'MANAGER') {
+      throw new HttpError(403, 'Forbidden');
+    }
+    const where: Prisma.StaffProfileWhereInput = {
+      accountType: 'VENUE_DEVICE',
+      employmentStatus: { not: 'ARCHIVED' }
+    };
+    // Venue-scoped managers only see devices for their venue
+    if (!actor.isAdmin && actor.role !== 'ADMIN') {
+      if (actor.venue) {
+        where.venue = actor.venue;
+      } else {
+        return [];
+      }
+    }
+    const devices = await prisma.staffProfile.findMany({
+      where,
+      orderBy: [{ venue: 'asc' }, { firstName: 'asc' }],
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        venue: true,
+        roleTitle: true,
+        accountType: true,
+        employmentStatus: true,
+        createdAt: true
+      }
+    });
+    return devices;
   }
 };

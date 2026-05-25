@@ -1,3 +1,4 @@
+import type { CommsThreadCategory } from '@prisma/client';
 import type { AuthUser } from '@alma/shared';
 import {
   acknowledgeThread,
@@ -19,8 +20,8 @@ export const canManageComms = canManageMessaging;
 export const listCommsRecipientOptions = listRecipientOptions;
 export { evaluateCommsAlertsDryRun };
 
-export function listCommsInbox(actor: AuthUser) {
-  return listInboxForUser(actor);
+export function listCommsInbox(actor: AuthUser, category?: CommsThreadCategory) {
+  return listInboxForUser(actor, category);
 }
 
 export function getCommsThread(threadId: string, actor: AuthUser) {

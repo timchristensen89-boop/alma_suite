@@ -174,6 +174,15 @@ staffRouter.post('/merge', requireManager, async (req, res, next) => {
   }
 });
 
+staffRouter.get('/devices', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listDeviceAccounts(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/management-events', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

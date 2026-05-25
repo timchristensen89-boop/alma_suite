@@ -1,6 +1,7 @@
 import { Link } from 'react-router-dom';
 import type { AuditRun, AuditSummary, AuditTemplate } from '@alma/shared';
 import {
+  ActionFeedback,
   Badge,
   Button,
   Card,
@@ -190,6 +191,7 @@ export function AuditsListPage() {
         >
           <div className="page-stack compact">
             {templates.loading ? <Spinner label="Loading templates…" /> : null}
+            {templates.error ? <ActionFeedback tone="error" message={templates.error} /> : null}
             {(templates.data ?? []).map((template) => (
               <article key={template.id} className="soft-panel" style={{ flexDirection: 'column' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', width: '100%' }}>

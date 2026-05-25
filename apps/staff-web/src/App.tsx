@@ -400,6 +400,24 @@ const STAFF_MEMBER_NAV_ITEMS = [
     icon: <IconCalendarCheck />
   },
   {
+    to: '/academy',
+    label: 'Academy',
+    description: 'Training, modules and certifications',
+    icon: <CapIcon />
+  },
+  {
+    to: '/timesheets',
+    label: 'Timesheets',
+    description: 'View and submit your timesheets',
+    icon: <IconFileText />
+  },
+  {
+    to: '/tips',
+    label: 'Tips',
+    description: 'View your tip history and entitlements',
+    icon: <IconWallet />
+  },
+  {
     to: '/compliance',
     label: 'Compliance',
     description: 'Documents, training and reminders',
@@ -410,6 +428,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     label: 'Documents',
     description: 'Requests and uploads',
     icon: <DocumentIcon />
+  },
+  {
+    to: '/communications',
+    label: 'Comms',
+    description: 'Announcements, messages and channels',
+    icon: <IconMail />
   }
 ];
 
@@ -778,10 +802,17 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
         <li className="sidebar-nav-section">Staff</li>
         {items.map((item) => (
           <li key={item.to}>
-            <NavLink to={item.to} end={item.end}>
-              <span className="sidebar-nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
+            {item.to.startsWith('http') ? (
+              <a href={item.to} target="_blank" rel="noopener noreferrer">
+                <span className="sidebar-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </a>
+            ) : (
+              <NavLink to={item.to} end={item.end}>
+                <span className="sidebar-nav-icon">{item.icon}</span>
+                <span>{item.label}</span>
+              </NavLink>
+            )}
           </li>
         ))}
       </ul>
@@ -2412,6 +2443,7 @@ type StaffDraft = {
   xeroEmployeeId: string;
   xeroPayrollCalendarId: string;
   xeroEarningsRateId: string;
+  defaultArea: string;
   notes: string;
 };
 
@@ -2477,6 +2509,7 @@ function emptyStaffDraft(): StaffDraft {
     xeroEmployeeId: '',
     xeroPayrollCalendarId: '',
     xeroEarningsRateId: '',
+    defaultArea: '',
     notes: ''
   };
 }
@@ -2523,6 +2556,7 @@ function draftFromStaff(member: StaffProfile): StaffDraft {
     xeroEmployeeId: member.xeroEmployeeId ?? '',
     xeroPayrollCalendarId: member.xeroPayrollCalendarId ?? '',
     xeroEarningsRateId: member.xeroEarningsRateId ?? '',
+    defaultArea: member.defaultArea ?? '',
     notes: member.notes ?? ''
   };
 }
@@ -2570,6 +2604,7 @@ function staffPayloadFromDraft(draft: StaffDraft) {
     xeroEmployeeId: draft.xeroEmployeeId.trim(),
     xeroPayrollCalendarId: draft.xeroPayrollCalendarId.trim(),
     xeroEarningsRateId: draft.xeroEarningsRateId.trim(),
+    defaultArea: draft.defaultArea.trim(),
     notes: draft.notes.trim()
   };
 }
@@ -4775,6 +4810,12 @@ function AccessPage({
                     <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
+                    <Select
+                      label="Default roster area"
+                      value={profileDraft.defaultArea}
+                      onChange={(event) => updateProfile('defaultArea', event.currentTarget.value)}
+                      options={[{ label: 'Not set', value: '' }, ...Object.keys(AREA_THEMES).map((area) => ({ label: area.charAt(0).toUpperCase() + area.slice(1), value: area }))]}
+                    />
                     <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
@@ -8210,6 +8251,7 @@ function RosterPage({
   const [editingShift, setEditingShift] = useState<RosterShift | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
+  const [staffDropTargetShiftId, setStaffDropTargetShiftId] = useState<string | null>(null);
   const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
   const [publishPreviewOpen, setPublishPreviewOpen] = useState(false);
   const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
@@ -9064,10 +9106,64 @@ function RosterPage({
     setDraggingShiftId(shift.id);
   }
 
+  function handleStaffBubbleDragStart(event: DragEvent<HTMLButtonElement>, member: StaffProfile) {
+    event.dataTransfer.setData('text/plain', `staff:${member.id}`);
+    event.dataTransfer.effectAllowed = 'copyMove';
+  }
+
+  async function handleDropOnShift(event: DragEvent<HTMLElement>, shift: RosterShift) {
+    event.preventDefault();
+    event.stopPropagation();
+    const data = event.dataTransfer.getData('text/plain');
+    if (!data.startsWith('staff:')) return;
+    const memberId = data.slice('staff:'.length);
+    const member = staffById.get(memberId);
+    if (!member) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api(`/api/staff/roster/${shift.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          staffProfileId: member.id,
+          venue: member.venue ?? shift.venue,
+          area: shift.area,
+          roleTitle: member.roleTitle ?? shift.roleTitle ?? '',
+          startsAt: shift.startsAt,
+          endsAt: shift.endsAt,
+          breakMinutes: shift.breakMinutes,
+          status: shift.status,
+          notes: shift.notes ?? ''
+        })
+      });
+      await reload(weekStart, weekEnd);
+      setMessage(`Assigned ${member.firstName} ${member.lastName} to shift.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not reassign shift.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleDrop(event: DragEvent<HTMLButtonElement>, row: (typeof scheduleRows)[number], day: Date) {
     event.preventDefault();
-    const shiftId = event.dataTransfer.getData('text/plain');
-    const shift = roster.find((item) => item.id === shiftId);
+    const data = event.dataTransfer.getData('text/plain');
+    // Staff bubble dropped onto an empty cell → open shift editor for that person
+    if (data.startsWith('staff:')) {
+      const memberId = data.slice('staff:'.length);
+      const member = staffById.get(memberId);
+      if (!member) return;
+      openShiftPanel();
+      setEditingShift(null);
+      setDate(toDateInput(day));
+      setStaffProfileId(member.id);
+      setShiftVenue(member.venue ?? row.venue ?? '');
+      setRoleTitle(member.roleTitle ?? '');
+      setArea(row.area ?? area);
+      setShiftStatus('DRAFT');
+      return;
+    }
+    const shift = roster.find((item) => item.id === data);
     if (!shift) return;
     await moveShiftToCell(shift, row, day);
   }
@@ -9533,10 +9629,18 @@ function RosterPage({
                               draggable
                               role="button"
                               tabIndex={0}
-                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isUnallocatedProfile(shift.staffProfile) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''}`}
+                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isUnallocatedProfile(shift.staffProfile) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''}`}
                               style={areaStyle(shift.area || row.label)}
                               onDragStart={(event) => handleDragStart(event, shift)}
                               onDragEnd={() => setDraggingShiftId(null)}
+                              onDragOver={(event) => {
+                                if (event.dataTransfer.types.includes('text/plain')) {
+                                  event.preventDefault();
+                                  setStaffDropTargetShiftId(shift.id);
+                                }
+                              }}
+                              onDragLeave={() => setStaffDropTargetShiftId(null)}
+                              onDrop={(event) => { setStaffDropTargetShiftId(null); void handleDropOnShift(event, shift); }}
                               onClick={(event) => {
                                 event.stopPropagation();
                                 startEditShift(shift);
@@ -9844,12 +9948,20 @@ function RosterPage({
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
                       const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
                       const memberHours = memberShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                      const memberRateCents = member.trainingPayRateCents ?? member.payRateCents ?? averageRateCents;
+                      const memberWeekCost = Math.round(memberHours * memberRateCents);
+                      const rateLabel = memberRateCents ? `$${(memberRateCents / 100).toFixed(2)}/hr` : 'No rate set';
+                      const costLabel = memberWeekCost > 0 ? ` · $${(memberWeekCost / 100).toFixed(2)} this week` : '';
+                      const bubbleAreaStyle = member.defaultArea ? areaStyle(member.defaultArea) : undefined;
                       return (
                         <button
                           type="button"
                           key={member.id}
-                          className={`roster-staff-bubble ${staffProfileId === member.id ? 'is-selected' : ''}`}
-                          title={`${member.firstName} ${member.lastName} · ${member.roleTitle || 'Team member'}${memberShifts.length ? ` · ${roundHours(memberHours)}` : ''}`}
+                          draggable
+                          className={`roster-staff-bubble ${staffProfileId === member.id ? 'is-selected' : ''} ${member.defaultArea ? 'has-area-colour' : ''}`}
+                          style={bubbleAreaStyle}
+                          title={`${member.firstName} ${member.lastName} · ${member.roleTitle || 'Team member'} · ${rateLabel}${memberShifts.length ? ` · ${roundHours(memberHours)}h${costLabel}` : ''}${member.defaultArea ? ` · ${member.defaultArea}` : ''}`}
+                          onDragStart={(event) => handleStaffBubbleDragStart(event, member)}
                           onClick={() => {
                             setStaffProfileId(member.id);
                             setShiftVenue(member.venue ?? '');

@@ -446,8 +446,9 @@ function IntegrationsTab({
   return (
     <div className="page-stack compact">
       <Card title="Square and Xero" subtitle="Server-managed connections for live sales, invoices and future syncs">
-        {statusError ? <ActionFeedback tone="error" message={statusError} /> : null}
-        {status ? (
+        {statusError ? (
+          <ActionFeedback tone="error" message={statusError} />
+        ) : status ? (
           <div className="admin-grid two">
             <ProviderSetupCard provider={status.square} busy={busyProvider} onConnect={(provider) => void connectProvider(provider)} />
             <ProviderSetupCard provider={status.xero} busy={busyProvider} onConnect={(provider) => void connectProvider(provider)} />

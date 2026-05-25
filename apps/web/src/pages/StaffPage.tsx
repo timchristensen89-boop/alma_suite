@@ -48,10 +48,23 @@ import {
 import { useAuth } from '../lib/auth';
 import { STAFF_WEB_URL } from '../config/suiteLinks';
 
+type DeviceAccount = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  venue: string | null;
+  roleTitle: string | null;
+  accountType: string;
+  employmentStatus: string;
+  createdAt: string;
+};
+
 export function StaffPage() {
   const auth = useAuth();
   const staff = useAsync<StaffProfile[]>(() => api('/api/staff'), []);
   const summary = useAsync<StaffSummary>(() => api('/api/staff/meta'), []);
+  const devices = useAsync<DeviceAccount[]>(() => api('/api/staff/devices'), []);
 
   const [message, setMessage] = useState('');
   const [addingRecordFor, setAddingRecordFor] = useState<string | null>(null);
@@ -86,7 +99,29 @@ export function StaffPage() {
   ).map((role) => ({ label: role, value: role }));
 
   async function reloadStaff() {
-    await Promise.all([staff.reload(), summary.reload()]);
+    await Promise.all([staff.reload(), summary.reload(), devices.reload()]);
+  }
+
+  async function requestDevicePasswordReset(device: DeviceAccount) {
+    if (!device.email) {
+      setMessage('No login email is linked to this device account.');
+      return;
+    }
+    try {
+      setResettingPasswordFor(device.id);
+      const result = await api<{ message: string }>(`/api/staff/${device.id}/password-reset`, {
+        method: 'POST',
+        body: JSON.stringify({
+          resetBaseUrl: `${STAFF_WEB_URL}/reset-password`,
+          appName: 'ALMA Staff'
+        })
+      });
+      setMessage(result.message);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request password reset.');
+    } finally {
+      setResettingPasswordFor(null);
+    }
   }
 
   function toggleSelected(staffId: string) {
@@ -414,6 +449,66 @@ export function StaffPage() {
             ))}
           </div>
       </Card>
+
+      {canManageStaff ? (
+        <Card padding="none">
+          <div className="table-toolbar">
+            <span>
+              <strong style={{ color: 'var(--color-text)' }}>Venue devices</strong>
+              {devices.data && devices.data.length > 0 ? (
+                <span className="subtle" style={{ marginLeft: 6 }}>
+                  {devices.data.length} {devices.data.length === 1 ? 'device account' : 'device accounts'}
+                </span>
+              ) : null}
+            </span>
+          </div>
+          {devices.loading ? (
+            <div style={{ padding: 16 }}><Spinner label="Loading devices…" /></div>
+          ) : devices.data && devices.data.length === 0 ? (
+            <div style={{ padding: 16 }}>
+              <span className="subtle">No venue device accounts found.</span>
+            </div>
+          ) : (
+            <div style={{ padding: 4 }}>
+              {(devices.data ?? []).map((device) => (
+                <article
+                  key={device.id}
+                  style={{
+                    padding: 14,
+                    borderBottom: '1px solid var(--color-border)',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    gap: 14,
+                    alignItems: 'center'
+                  }}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+                    <strong style={{ fontSize: 14 }}>
+                      {device.firstName} {device.lastName}
+                    </strong>
+                    <span className="subtle">
+                      {device.venue || 'Unassigned venue'}
+                      {device.email ? ` · ${device.email}` : ' · no email'}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <Badge tone="muted">Device</Badge>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      disabled={resettingPasswordFor === device.id}
+                      onClick={() => void requestDevicePasswordReset(device)}
+                    >
+                      {resettingPasswordFor === device.id ? 'Sending…' : 'Send password reset'}
+                    </Button>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </Card>
+      ) : null}
     </div>
   );
 }
