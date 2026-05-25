@@ -2443,7 +2443,6 @@ type StaffDraft = {
   xeroEmployeeId: string;
   xeroPayrollCalendarId: string;
   xeroEarningsRateId: string;
-  defaultArea: string;
   notes: string;
 };
 
@@ -2509,7 +2508,6 @@ function emptyStaffDraft(): StaffDraft {
     xeroEmployeeId: '',
     xeroPayrollCalendarId: '',
     xeroEarningsRateId: '',
-    defaultArea: '',
     notes: ''
   };
 }
@@ -2556,7 +2554,6 @@ function draftFromStaff(member: StaffProfile): StaffDraft {
     xeroEmployeeId: member.xeroEmployeeId ?? '',
     xeroPayrollCalendarId: member.xeroPayrollCalendarId ?? '',
     xeroEarningsRateId: member.xeroEarningsRateId ?? '',
-    defaultArea: member.defaultArea ?? '',
     notes: member.notes ?? ''
   };
 }
@@ -2604,7 +2601,6 @@ function staffPayloadFromDraft(draft: StaffDraft) {
     xeroEmployeeId: draft.xeroEmployeeId.trim(),
     xeroPayrollCalendarId: draft.xeroPayrollCalendarId.trim(),
     xeroEarningsRateId: draft.xeroEarningsRateId.trim(),
-    defaultArea: draft.defaultArea.trim(),
     notes: draft.notes.trim()
   };
 }
@@ -3735,7 +3731,7 @@ function StaffProfileWorkspacePage({
             {recentShifts.length ? recentShifts.map((shift) => (
               <div key={shift.id} className="staff-profile-document-row">
                 <span className="staff-profile-document-icon"><IconCalendarClock /></span>
-                <span className="staff-profile-document-main"><strong>{shift.roleTitle || member.roleTitle || 'Rostered shift'}</strong><span className="subtle">{shift.venue || member.venue || 'No venue'} · {new Date(shift.startsAt).toLocaleString()} - {new Date(shift.endsAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>{shift.notes ? <span className="subtle">{shift.notes}</span> : null}</span>
+                <span className="staff-profile-document-main"><strong>{shift.roleTitle || member.roleTitle || 'Rostered shift'}</strong><span className="subtle">{shift.venue || member.venue || 'No venue'} · {timeOf(shift.startsAt)} – {timeOf(shift.endsAt)}</span>{shift.notes ? <span className="subtle">{shift.notes}</span> : null}</span>
                 <Badge tone={shift.status === 'PUBLISHED' ? 'positive' : 'warning'}>{shift.status}</Badge>
               </div>
             )) : <EmptyState title="No shifts" description="Published and draft roster shifts for this person will appear here." />}
@@ -4810,12 +4806,6 @@ function AccessPage({
                     <Input label="Email" type="email" value={profileDraft.email} onChange={(event) => updateProfile('email', event.currentTarget.value)} />
                     <Input label="Phone" value={profileDraft.phone} onChange={(event) => updateProfile('phone', event.currentTarget.value)} />
                     <Select label="Venue" value={profileDraft.venue} onChange={(event) => updateProfile('venue', event.currentTarget.value)} options={VENUE_OPTIONS} />
-                    <Select
-                      label="Default roster area"
-                      value={profileDraft.defaultArea}
-                      onChange={(event) => updateProfile('defaultArea', event.currentTarget.value)}
-                      options={[{ label: 'Not set', value: '' }, ...Object.keys(AREA_THEMES).map((area) => ({ label: area.charAt(0).toUpperCase() + area.slice(1), value: area }))]}
-                    />
                     <Select label="Status" value={profileDraft.employmentStatus} onChange={(event) => updateProfile('employmentStatus', event.currentTarget.value)} options={['ACTIVE', 'PENDING', 'ARCHIVED'].map((status) => ({ label: status, value: status }))} />
                     <Input label="Start date" type="date" value={profileDraft.startDate} onChange={(event) => updateProfile('startDate', event.currentTarget.value)} />
                     <Input label="Date of birth" type="date" value={profileDraft.dateOfBirth} onChange={(event) => updateProfile('dateOfBirth', event.currentTarget.value)} />
@@ -8267,9 +8257,16 @@ function RosterPage({
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
-  const [filtersOpen, setFiltersOpen] = useState(false);
-  const [viewOptionsOpen, setViewOptionsOpen] = useState(false);
-  const [toolsOpen, setToolsOpen] = useState(false);
+  const [historicalOpen, setHistoricalOpen] = useState(false);
+  const [staffCardHover, setStaffCardHover] = useState<{
+    member: StaffProfile;
+    memberShifts: RosterShift[];
+    memberHours: number;
+    rateLabel: string;
+    costLabel: string;
+    x: number;
+    y: number;
+  } | null>(null);
   const [mobileSelectedDay, setMobileSelectedDay] = useState(() => toDateInput(new Date()));
   const isMobileRoster = useRosterMobileMode();
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
@@ -8675,14 +8672,11 @@ function RosterPage({
 
   function openShiftPanel() {
     setEditorOpen(true);
-    setSidePanelCollapsed(false);
-    setSidePanelMode('shift');
   }
 
   function closeShiftPanel() {
     setEditingShift(null);
     setEditorOpen(false);
-    setSidePanelMode('staff');
   }
 
   function newShift(preferredDate?: string) {
@@ -9109,6 +9103,12 @@ function RosterPage({
   function handleStaffBubbleDragStart(event: DragEvent<HTMLButtonElement>, member: StaffProfile) {
     event.dataTransfer.setData('text/plain', `staff:${member.id}`);
     event.dataTransfer.effectAllowed = 'copyMove';
+    const ghost = document.createElement('div');
+    ghost.textContent = `${member.firstName} ${member.lastName}`;
+    ghost.style.cssText = 'position:fixed;top:-999px;left:-999px;padding:6px 14px;background:#fff;border:1.5px solid #d0d5dd;border-radius:20px;font-size:13px;font-weight:600;font-family:inherit;box-shadow:0 4px 12px rgba(0,0,0,0.15);white-space:nowrap;pointer-events:none;';
+    document.body.appendChild(ghost);
+    event.dataTransfer.setDragImage(ghost, ghost.offsetWidth / 2, ghost.offsetHeight / 2);
+    setTimeout(() => document.body.removeChild(ghost), 0);
   }
 
   async function handleDropOnShift(event: DragEvent<HTMLElement>, shift: RosterShift) {
@@ -9256,88 +9256,149 @@ function RosterPage({
         </div>
       ) : null}
 
-      <div className="roster-control-drawer">
-        <RosterCollapsiblePanel
-          title="Filters"
-          summary={activeFilterChips.length > 0 ? `${activeFilterChips.length} active` : 'Search and status'}
-          open={filtersOpen}
-          onToggle={() => setFiltersOpen((current) => !current)}
-        >
-          <div className="roster-toolbar-inline">
-            <Input label="Search" value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search team or area" />
-            <Select
-              label="Status"
-              value={statusFilter}
-              onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
-              options={[
-                { label: 'All statuses', value: 'all' },
-                { label: 'Draft', value: 'DRAFT' },
-                { label: 'Published', value: 'PUBLISHED' },
-                { label: 'Completed', value: 'COMPLETED' },
-                { label: 'Cancelled', value: 'CANCELLED' }
-              ]}
-            />
+      <div className="roster-combined-toolbar">
+        <div className="roster-combined-toolbar-left">
+          <Input value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search team or area" aria-label="Search" />
+          <Select
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
+            aria-label="Status"
+            options={[
+              { label: 'All statuses', value: 'all' },
+              { label: 'Draft', value: 'DRAFT' },
+              { label: 'Published', value: 'PUBLISHED' },
+              { label: 'Completed', value: 'COMPLETED' },
+              { label: 'Cancelled', value: 'CANCELLED' }
+            ]}
+          />
+          <div className="deputy-view-toggle" aria-label="Schedule view">
+            <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>Team</button>
+            <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>Area</button>
           </div>
-        </RosterCollapsiblePanel>
-
-        <RosterCollapsiblePanel
-          title="View options"
-          summary={viewOptionsSummary}
-          open={viewOptionsOpen}
-          onToggle={() => setViewOptionsOpen((current) => !current)}
-        >
-          <div className="roster-toolbar-inline">
-            <div className="deputy-view-toggle" aria-label="Schedule view">
-              <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>
-                Team member
-              </button>
-              <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>
-                Area
-              </button>
-            </div>
-
-            <div className="deputy-view-toggle" aria-label="Roster range">
-              <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>
-                Week
-              </button>
-              <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>
-                2 weeks
-              </button>
-            </div>
+          <div className="deputy-view-toggle" aria-label="Roster range">
+            <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>Week</button>
+            <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>2w</button>
           </div>
-          <div className="deputy-area-legend roster-collapsed-legend" aria-label="Roster section colours">
-            {activeAreas.map((item) => (
-              <span key={item} style={areaStyle(item)}>
-                <i aria-hidden="true" />
-                {item}
+        </div>
+        <div className="roster-combined-toolbar-right">
+          <ActionFeedback
+            message={messageTarget === 'copy-week' ? message : null}
+            tone={message?.includes('Could') ? 'error' : 'success'}
+          />
+          <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
+            Copy last week
+          </Button>
+          <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
+            Review drafts
+          </Button>
+          <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
+            Publish {draftCount > 0 ? `(${draftCount})` : ''}
+          </Button>
+        </div>
+      </div>
+
+      {activeAreas.length > 0 ? (
+        <div className="deputy-area-legend roster-collapsed-legend" aria-label="Roster section colours">
+          {activeAreas.map((item) => (
+            <span key={item} style={areaStyle(item)}>
+              <i aria-hidden="true" />
+              {item}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <RosterCollapsiblePanel
+        title="Historical data"
+        summary={`${formatCents(forecastSalesCents)} forecast · ${forecastCostGapCents >= 0 ? 'Inside guide' : 'Over guide'}`}
+        open={historicalOpen}
+        onToggle={() => setHistoricalOpen((current) => !current)}
+      >
+        <div className="roster-historical-grid">
+          {/* Left col: inputs + callout */}
+          <div className="roster-historical-left">
+            <div className="roster-historical-inputs">
+              <Input
+                label="Sales forecast"
+                value={forecastSales}
+                onChange={(event) => setForecastSales(event.currentTarget.value)}
+                placeholder="$85,000"
+              />
+              <Input
+                label="Wage target %"
+                value={targetWagePercent}
+                onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
+                placeholder="28"
+              />
+              <Button type="button" size="sm" variant="secondary" onClick={applyHistoricalForecast}>
+                Use historical
+              </Button>
+              <ActionFeedback
+                message={messageTarget === 'forecast' ? message : null}
+                tone={message?.includes('Could') ? 'error' : 'success'}
+              />
+            </div>
+            <div className={`roster-forecast-callout ${forecastCostGapCents >= 0 ? 'is-under' : ''}`}>
+              <strong>{forecastCostGapCents >= 0 ? 'Inside wage guide' : 'Over wage guide'}</strong>
+              <span>
+                {forecastCostGapCents >= 0
+                  ? `${formatCents(forecastCostGapCents)} remaining.`
+                  : `${formatCents(Math.abs(forecastCostGapCents))} over guide.`}
               </span>
+            </div>
+            {missingRateStaff.length ? (
+              <div className="roster-publish-guardrails">
+                <strong>Pay rates missing</strong>
+                <span>{missingRateStaff.map((m) => m.firstName).join(', ')}</span>
+              </div>
+            ) : null}
+          </div>
+
+          {/* Right col: metrics + day list */}
+          <div className="roster-historical-right">
+            <div className="roster-forecast-metrics roster-forecast-metrics-inline">
+              <div><span>Forecast</span><strong>{formatCents(forecastSalesCents)}</strong></div>
+              <div><span>Wage budget</span><strong>{formatCents(wageBudgetCents)}</strong></div>
+              <div><span>Roster cost</span><strong>{formatCents(rosterCostCents)}</strong></div>
+              <div><span>Gap</span><strong>{forecastHoursGap >= 0 ? `+${roundHours(forecastHoursGap)}h` : `${roundHours(forecastHoursGap)}h`}</strong></div>
+            </div>
+            <div className="roster-history-day-list roster-history-day-list-2col">
+              {dailySummaries.map((summary) => (
+                <label
+                  key={summary.day.toISOString()}
+                  className={summary.forecastCents > 0 && summary.plannedCostCents > summary.budgetCents ? 'is-over' : summary.forecastCents > 0 ? 'is-under' : ''}
+                >
+                  <span>{summary.day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>
+                  <input
+                    value={dailyForecastSales[toDateInput(summary.day)] ?? ''}
+                    onChange={(event) => updateDailyForecast(summary.day, event.currentTarget.value)}
+                    placeholder={String(Math.round((historicalDailyForecast[toDateInput(summary.day)] ?? 0) / 100))}
+                  />
+                  <small>{roundHours(summary.hours)} · {summary.wagePercent ? `${summary.wagePercent.toFixed(1)}%` : '—'}</small>
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {areaGuidanceRows.length ? (
+          <div className="roster-area-guidance roster-area-guidance-compact">
+            <strong>Area guidance</strong>
+            {areaGuidanceRows.map((row) => (
+              <div key={`${row.venue}:${row.area}`}>
+                <span>
+                  <strong>{row.area}</strong>
+                  <small>{row.venue} · {row.gap >= 0 ? `+${roundHours(row.gap)}h` : `${roundHours(Math.abs(row.gap))}h`}</small>
+                </span>
+                <small>{row.day.toLocaleDateString(undefined, { weekday: 'short' })}</small>
+                <Button type="button" size="sm" variant="secondary" onClick={() => applyRosterRecommendation(row)}>
+                  Apply
+                </Button>
+              </div>
             ))}
           </div>
-        </RosterCollapsiblePanel>
-
-        <RosterCollapsiblePanel
-          title="Roster tools"
-          summary={toolSummary}
-          open={toolsOpen}
-          onToggle={() => setToolsOpen((current) => !current)}
-        >
-          <div className="roster-toolbar-inline">
-            <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
-              Copy last week
-            </Button>
-            <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-              Review drafts
-            </Button>
-            <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-              Publish shifts
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'copy-week' ? message : null}
-              tone={message?.includes('Could') ? 'error' : 'success'}
-            />
-          </div>
-        </RosterCollapsiblePanel>
-      </div>
+        ) : null}
+      </RosterCollapsiblePanel>
 
       <div className="deputy-roster-summary">
         <span><strong>{rosteredStaffIds.size}</strong> rostered</span>
@@ -9364,104 +9425,11 @@ function RosterPage({
             onOpenShift={startEditShift}
           />
 
-          {editorOpen ? (
-            <Card
-              className="mobile-roster-shift-editor roster-side-card"
-              title={editingShift ? 'Edit shift' : 'Add shift'}
-              subtitle={editingShift ? 'Selected shift details' : 'Create a shift for the selected day'}
-              action={
-                <Button type="button" size="sm" variant="ghost" onClick={closeShiftPanel}>
-                  Close
-                </Button>
-              }
-            >
-              <div className="staff-profile-form">
-                <Select
-                  label="Team member"
-                  value={staffProfileId}
-                  onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-                  options={activeStaff.map((member) => ({
-                    label: `${member.firstName} ${member.lastName}`,
-                    value: member.id
-                  }))}
-                />
-                <Select
-                  label="Venue"
-                  value={shiftVenue}
-                  onChange={(event) => setShiftVenue(event.currentTarget.value)}
-                  options={venues.map((venue) => ({ label: venue, value: venue }))}
-                />
-                <div className="form-grid two">
-                  <Select
-                    label="Area"
-                    value={area}
-                    onChange={(event) => setArea(event.currentTarget.value)}
-                    options={areaSelectOptions}
-                  />
-                  <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
-                </div>
-                <Select
-                  label="Status"
-                  value={shiftStatus}
-                  onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
-                  options={[
-                    { label: 'Draft', value: 'DRAFT' },
-                    { label: 'Published', value: 'PUBLISHED' },
-                    { label: 'Completed', value: 'COMPLETED' },
-                    { label: 'Cancelled', value: 'CANCELLED' }
-                  ]}
-                />
-                <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
-                <div className="form-grid two">
-                  <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
-                  <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
-                </div>
-                {selectedShiftHours ? (
-                  <p className="subtle roster-duration-hint">
-                    {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
-                    {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
-                  </p>
-                ) : null}
-                {shiftConflicts.length > 0 ? (
-                  <div className="roster-conflict-warning">
-                    <strong>{shiftConflicts.length} overlap warning</strong>
-                    <span>
-                      {shiftConflicts
-                        .slice(0, 2)
-                        .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
-                        .join(', ')}
-                    </span>
-                  </div>
-                ) : null}
-                <Input label="Meal break" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
-                <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
-                <div className="deputy-editor-actions">
-                  {editingShift ? (
-                    <>
-                      <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
-                        Duplicate
-                      </Button>
-                      <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
-                        Delete
-                      </Button>
-                    </>
-                  ) : null}
-                  <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
-                    {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
-                  </Button>
-                  <ActionFeedback
-                    message={messageTarget === 'shift-save' || messageTarget === 'shift-copy' || messageTarget === 'shift-delete' ? message : null}
-                    tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Check') ? 'error' : 'success'}
-                  />
-                </div>
-              </div>
-            </Card>
-          ) : null}
         </div>
       ) : null}
 
       {!isMobileRoster ? (
-        <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'} ${editorOpen ? 'is-shift-editor-open' : ''}`}>
+        <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
           <div className="roster-board-command">
             <div>
@@ -9565,15 +9533,18 @@ function RosterPage({
                 const isRowCollapsed = collapsedRowIds.has(row.id);
                 return (
                   <div className="deputy-schedule-row" key={row.id}>
-                    <div className={`deputy-row-label${isRowCollapsed ? ' is-row-collapsed' : ''}`}>
-                      <button
-                        type="button"
-                        className="row-collapse-toggle"
-                        onClick={() => toggleRowCollapsed(row.id)}
-                        title={isRowCollapsed ? 'Expand row' : 'Collapse row'}
-                      >
+                    <div
+                      className={`deputy-row-label${isRowCollapsed ? ' is-row-collapsed' : ''}`}
+                      role="button"
+                      tabIndex={0}
+                      title={isRowCollapsed ? 'Expand row' : 'Collapse row'}
+                      onClick={() => toggleRowCollapsed(row.id)}
+                      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleRowCollapsed(row.id); } }}
+                      style={{ cursor: 'pointer' }}
+                    >
+                      <span className="row-collapse-toggle" aria-hidden>
                         {isRowCollapsed ? '▸' : '▾'}
-                      </button>
+                      </span>
                       <span className="roster-avatar small">{row.initials}</span>
                       <strong>{row.label}</strong>
                     </div>
@@ -9704,125 +9675,13 @@ function RosterPage({
           ) : (
             <>
               <div className="roster-right-rail-head">
-                <div className={`deputy-view-toggle roster-side-toggle ${editorOpen ? 'has-three' : ''}`} aria-label="Roster side panel">
-                  <button type="button" className={activeSidePanelMode === 'staff' ? 'is-active' : ''} onClick={() => setSidePanelMode('staff')}>
-                    Staff
-                  </button>
-                  <button type="button" className={activeSidePanelMode === 'history' ? 'is-active' : ''} onClick={() => setSidePanelMode('history')}>
-                    History
-                  </button>
-                  {editorOpen ? (
-                    <button type="button" className={activeSidePanelMode === 'shift' ? 'is-active' : ''} onClick={() => setSidePanelMode('shift')}>
-                      Shift
-                    </button>
-                  ) : null}
-                </div>
+                <span className="roster-right-rail-title">Staff</span>
                 <Button type="button" size="sm" variant="ghost" onClick={() => setSidePanelCollapsed(true)}>
                   Collapse
                 </Button>
               </div>
 
-              {activeSidePanelMode === 'shift' && editorOpen ? (
-                <Card
-                  className="roster-side-card"
-                  title={editingShift ? 'Edit shift' : 'Add shift'}
-                  subtitle={editingShift ? 'Selected shift details' : 'Click a grid cell to prefill the day and row'}
-                  action={
-                    <Button type="button" size="sm" variant="ghost" onClick={closeShiftPanel}>
-                      Close
-                    </Button>
-                  }
-                >
-                  <div className="staff-profile-form">
-                    <Select
-                      label="Team member"
-                      value={staffProfileId}
-                      onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-                      options={activeStaff.map((member) => ({
-                        label: `${member.firstName} ${member.lastName}`,
-                        value: member.id
-                      }))}
-                    />
-                    <Select
-                      label="Venue"
-                      value={shiftVenue}
-                      onChange={(event) => setShiftVenue(event.currentTarget.value)}
-                      options={venues.map((venue) => ({ label: venue, value: venue }))}
-                    />
-                    <div className="form-grid two">
-                      <Select
-                        label="Area"
-                        value={area}
-                        onChange={(event) => setArea(event.currentTarget.value)}
-                        options={areaSelectOptions}
-                      />
-                      <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
-                    </div>
-                    <Select
-                      label="Status"
-                      value={shiftStatus}
-                      onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
-                      options={[
-                        { label: 'Draft', value: 'DRAFT' },
-                        { label: 'Published', value: 'PUBLISHED' },
-                        { label: 'Completed', value: 'COMPLETED' },
-                        { label: 'Cancelled', value: 'CANCELLED' }
-                      ]}
-                    />
-                    <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
-                    <div className="form-grid two">
-                      <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
-                      <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
-                    </div>
-                    {selectedShiftHours ? (
-                      <p className="subtle roster-duration-hint">
-                        {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
-                        {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
-                      </p>
-                    ) : null}
-                    {shiftConflicts.length > 0 ? (
-                      <div className="roster-conflict-warning">
-                        <strong>{shiftConflicts.length} overlap warning</strong>
-                        <span>
-                          {shiftConflicts
-                            .slice(0, 2)
-                            .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
-                            .join(', ')}
-                        </span>
-                      </div>
-                    ) : null}
-                    <Input label="Meal break" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
-                    <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
-                    <div className="deputy-editor-actions">
-                      {editingShift ? (
-                        <>
-                          <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
-                            Duplicate
-                          </Button>
-                          <ActionFeedback
-                            message={messageTarget === 'shift-copy' ? message : null}
-                            tone={message?.includes('Could') ? 'error' : 'success'}
-                          />
-                          <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
-                            Delete
-                          </Button>
-                          <ActionFeedback
-                            message={messageTarget === 'shift-delete' ? message : null}
-                            tone={message?.includes('Could') ? 'error' : 'success'}
-                          />
-                        </>
-                      ) : null}
-                      <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
-                        {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
-                      </Button>
-                      <ActionFeedback
-                        message={messageTarget === 'shift-save' ? message : null}
-                        tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Check') ? 'error' : 'success'}
-                      />
-                    </div>
-                  </div>
-                </Card>
-              ) : activeSidePanelMode === 'history' ? (
+              {false ? (
                 <Card
                   className="roster-side-card roster-history-panel"
                   title="Historical data"
@@ -9941,8 +9800,6 @@ function RosterPage({
               ) : (
                 <Card
                   className="roster-side-card"
-                  title="Staff list"
-                  subtitle={`${sidePanelStaff.length} active ${venueFilter === 'all' ? 'across all venues' : `for ${venueFilter}`}`}
                 >
                   <div className="roster-side-staff-list">
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
@@ -9952,23 +9809,35 @@ function RosterPage({
                       const memberWeekCost = Math.round(memberHours * memberRateCents);
                       const rateLabel = memberRateCents ? `$${(memberRateCents / 100).toFixed(2)}/hr` : 'No rate set';
                       const costLabel = memberWeekCost > 0 ? ` · $${(memberWeekCost / 100).toFixed(2)} this week` : '';
-                      const bubbleAreaStyle = member.defaultArea ? areaStyle(member.defaultArea) : undefined;
+                      const fullName = `${member.firstName} ${member.lastName}`;
+                      const isLongName = fullName.length > 18;
                       return (
                         <button
                           type="button"
                           key={member.id}
                           draggable
-                          className={`roster-staff-bubble ${staffProfileId === member.id ? 'is-selected' : ''} ${member.defaultArea ? 'has-area-colour' : ''}`}
-                          style={bubbleAreaStyle}
-                          title={`${member.firstName} ${member.lastName} · ${member.roleTitle || 'Team member'} · ${rateLabel}${memberShifts.length ? ` · ${roundHours(memberHours)}h${costLabel}` : ''}${member.defaultArea ? ` · ${member.defaultArea}` : ''}`}
+                          className={`roster-staff-bubble ${staffProfileId === member.id ? 'is-selected' : ''}${isLongName ? ' is-long-name' : ''}`}
                           onDragStart={(event) => handleStaffBubbleDragStart(event, member)}
+                          onMouseEnter={(event) => {
+                            const rect = event.currentTarget.getBoundingClientRect();
+                            setStaffCardHover({
+                              member,
+                              memberShifts,
+                              memberHours,
+                              rateLabel,
+                              costLabel,
+                              x: rect.left,
+                              y: rect.top + rect.height / 2,
+                            });
+                          }}
+                          onMouseLeave={() => setStaffCardHover(null)}
                           onClick={() => {
                             setStaffProfileId(member.id);
                             setShiftVenue(member.venue ?? '');
                             setRoleTitle(member.roleTitle ?? '');
                           }}
                         >
-                          <span className="roster-avatar">{initials(member)}</span>
+                          <span className="roster-avatar">{fullName}</span>
                           {memberShifts.length > 0 ? (
                             <span className="roster-staff-bubble-shifts">{memberShifts.length}</span>
                           ) : null}
@@ -9983,6 +9852,118 @@ function RosterPage({
             </>
           )}
         </aside>
+        </div>
+      ) : null}
+      {editorOpen ? (
+        <div
+          className="roster-modal-backdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) closeShiftPanel();
+          }}
+        >
+          <section
+            className="roster-shift-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="roster-shift-modal-title"
+            onMouseDown={(event) => event.stopPropagation()}
+          >
+            <header className="roster-shift-modal-header">
+              <div>
+                <p className="eyebrow">{editingShift ? 'Edit shift' : 'New shift'}</p>
+                <h2 id="roster-shift-modal-title">{editingShift ? `${editingShift.area || 'Shift'} · ${timeOf(editingShift.startsAt)}–${timeOf(editingShift.endsAt)}` : 'Add a shift'}</h2>
+              </div>
+              <Button type="button" size="sm" variant="ghost" onClick={closeShiftPanel}>Close</Button>
+            </header>
+            <div className="staff-profile-form roster-shift-modal-form">
+              <div className="form-grid two">
+                <Select
+                  label="Team member"
+                  value={staffProfileId}
+                  onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+                  options={activeStaff.map((member) => ({
+                    label: `${member.firstName} ${member.lastName}`,
+                    value: member.id
+                  }))}
+                />
+                <Select
+                  label="Venue"
+                  value={shiftVenue}
+                  onChange={(event) => setShiftVenue(event.currentTarget.value)}
+                  options={venues.map((venue) => ({ label: venue, value: venue }))}
+                />
+              </div>
+              <div className="form-grid two">
+                <Select
+                  label="Area"
+                  value={area}
+                  onChange={(event) => setArea(event.currentTarget.value)}
+                  options={areaSelectOptions}
+                />
+                <Input label="Role" value={roleTitle} onChange={(event) => setRoleTitle(event.currentTarget.value)} placeholder="Use profile role" />
+              </div>
+              <div className="form-grid two">
+                <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+                <Select
+                  label="Status"
+                  value={shiftStatus}
+                  onChange={(event) => setShiftStatus(event.currentTarget.value as RosterShift['status'])}
+                  options={[
+                    { label: 'Draft', value: 'DRAFT' },
+                    { label: 'Published', value: 'PUBLISHED' },
+                    { label: 'Completed', value: 'COMPLETED' },
+                    { label: 'Cancelled', value: 'CANCELLED' }
+                  ]}
+                />
+              </div>
+              <div className="form-grid two">
+                <Input label="Start" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
+                <Input label="End" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
+              </div>
+              {selectedShiftHours ? (
+                <p className="subtle roster-duration-hint">
+                  {roundHours((selectedShiftHours.endsAt.getTime() - selectedShiftHours.startsAt.getTime()) / 36e5)} shift
+                  {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
+                </p>
+              ) : null}
+              {shiftConflicts.length > 0 ? (
+                <div className="roster-conflict-warning">
+                  <strong>{shiftConflicts.length} overlap warning</strong>
+                  <span>
+                    {shiftConflicts
+                      .slice(0, 2)
+                      .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
+                      .join(', ')}
+                  </span>
+                </div>
+              ) : null}
+              <div className="form-grid two">
+                <Input label="Meal break (min)" type="number" min="0" step="5" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
+              </div>
+              <Textarea label="Notes" rows={2} value={shiftNotes} onChange={(event) => setShiftNotes(event.currentTarget.value)} />
+            </div>
+            <footer className="roster-shift-modal-footer">
+              {editingShift ? (
+                <>
+                  <Button type="button" variant="secondary" disabled={saving} onClick={() => void duplicateShift()}>
+                    Duplicate
+                  </Button>
+                  <Button type="button" variant="ghost" disabled={saving} onClick={() => void deleteShift(editingShift)}>
+                    Delete
+                  </Button>
+                </>
+              ) : null}
+              <span style={{ flex: 1 }} />
+              <ActionFeedback
+                message={messageTarget === 'shift-save' || messageTarget === 'shift-copy' || messageTarget === 'shift-delete' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Check') ? 'error' : 'success'}
+              />
+              <Button type="button" disabled={saving || !canSaveShift} onClick={() => void saveShift()}>
+                {saving ? 'Saving…' : editingShift ? 'Save shift' : 'Add shift'}
+              </Button>
+            </footer>
+          </section>
         </div>
       ) : null}
       {publishPreviewOpen ? (
@@ -10114,6 +10095,33 @@ function RosterPage({
           </button>
         </div>
       ) : null}
+      {staffCardHover ? (() => {
+        const { member, memberShifts, memberHours, rateLabel, costLabel, x, y } = staffCardHover;
+        const cardWidth = 240;
+        const left = Math.max(8, x - cardWidth - 12);
+        const top = Math.max(8, y);
+        return (
+          <div
+            className="roster-staff-card-popup"
+            style={{ left, top }}
+            role="tooltip"
+          >
+            <strong>{member.firstName} {member.lastName}</strong>
+            <span className="roster-staff-card-role">{member.roleTitle || 'Team member'}</span>
+            <div className="roster-staff-card-divider" />
+            <div className="roster-staff-card-row"><span>Pay rate</span><span>{rateLabel}</span></div>
+            {memberShifts.length > 0 ? (
+              <>
+                <div className="roster-staff-card-row"><span>Shifts this week</span><span>{memberShifts.length}</span></div>
+                <div className="roster-staff-card-row"><span>Hours</span><span>{roundHours(memberHours)}h</span></div>
+                {costLabel ? <div className="roster-staff-card-row"><span>Est. cost</span><span>{costLabel.replace(' · ', '')}</span></div> : null}
+              </>
+            ) : (
+              <div className="roster-staff-card-row subtle"><span>No shifts this week</span></div>
+            )}
+          </div>
+        );
+      })() : null}
     </div>
   );
 }
@@ -10314,7 +10322,12 @@ function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
 }
 
 function timeOf(value: string) {
-  return new Date(value).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
+  const d = new Date(value);
+  const h = d.getHours();
+  const m = d.getMinutes();
+  const suffix = h < 12 ? 'am' : 'pm';
+  const hour = h % 12 || 12;
+  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
 }
 
 function toDateInput(value: Date) {
@@ -12026,6 +12039,12 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
     void loadDashboard();
   }, [loadDashboard]);
 
+  // Auto-refresh every 60 seconds
+  useEffect(() => {
+    const id = setInterval(() => { void loadDashboard(); }, 60_000);
+    return () => clearInterval(id);
+  }, [loadDashboard]);
+
   async function approveTimesheet(id: string) {
     setSaving(true);
     setMessage(null);
@@ -12063,7 +12082,7 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const wagePercent = dashboard?.totals.wagePercent;
   const updatedAtSource = operations?.generatedAt ?? dashboard?.generatedAt ?? '';
   const updatedAt = updatedAtSource
-    ? new Date(updatedAtSource).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
+    ? timeOf(updatedAtSource)
     : '';
   const activeLaunchStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED' && !isUnallocatedProfile(member));
   const missingLoginEmail = activeLaunchStaff.filter((member) => !member.email?.trim()).length;
@@ -12133,377 +12152,209 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   ];
   const launchActionItems = launchReadinessItems.filter((item) => item.tone === 'warning');
 
+  const wageTone = wagePercent == null ? '' : wagePercent > 38 ? 'is-danger' : wagePercent > 32 ? 'is-warning' : wagePercent > 25 ? '' : 'is-positive';
+  const maxVenueSales = Math.max(...(dashboard?.salesByVenue.map((v) => v.salesCents) ?? [0]), 1);
+
   return (
-    <div className="page-stack manager-mobile-page">
-      <PageHeader
-        eyebrow="Manager"
-        title="Today at a glance"
-        description="Approve hours, check live sales and wages, and catch stock or compliance issues before service gets away."
-        actions={<Button type="button" variant="secondary" disabled={loading} onClick={() => void loadDashboard()}>Refresh</Button>}
-      />
+    <div className="live-dashboard">
 
-      <Card className="manager-mobile-filter-card">
-        <div className="manager-mobile-filters">
-          <Input label="Day" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
-          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+      {/* ── Header ── */}
+      <div className="live-header">
+        <div className="live-header-left">
+          <div className="live-badge"><span className="live-dot" />LIVE</div>
+          <h1 className="live-title">Today at a glance</h1>
+          {updatedAt ? <p className="live-updated">Updated {updatedAt}</p> : null}
         </div>
-        <p className="subtle">{updatedAt ? `Last refreshed ${updatedAt}` : 'Pulls from live Alma Suite data.'}</p>
-      </Card>
-
-      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
-
-      <Card
-        title="Monday staff launch checklist"
-        subtitle="Read-only checks for the Staff app launch. Use Profiles, Roster, Clock, and Compliance to clear anything highlighted before inviting the team."
-      >
-        <div className="staff-readiness-grid">
-          {launchReadinessItems.map((item) => (
-            <div key={item.label} className={`staff-readiness-item is-${item.tone}`}>
-              <strong>{item.value}</strong>
-              <span>{item.label}</span>
-              <small>{item.detail}</small>
-            </div>
-          ))}
+        <div className="live-header-right">
+          <Input label="" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+          <Select label="" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+          <Button type="button" variant="secondary" size="sm" disabled={loading} onClick={() => void loadDashboard()}>Refresh</Button>
         </div>
-        <ActionPanel
-          title="Launch checklist actions"
-          description="Expand to open the workflow for each warning."
-          count={launchActionItems.length}
-          tone={launchActionItems.length ? 'warning' : 'positive'}
-          empty={<p className="subtle">No launch checklist warnings need action.</p>}
-          className="staff-readiness-actions"
-        >
-          {launchActionItems.map((item) => (
-            <div key={item.label} className="action-panel-row">
-              <span>
-                <strong>{item.label}</strong>
-                <small>{item.value} · {item.detail}</small>
-              </span>
-              {item.label.includes('email') || item.label.includes('venue') || item.label.includes('access') ? (
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/profiles')}>Open profiles</Button>
-              ) : item.label.includes('shifts') ? (
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Check roster</Button>
-              ) : item.label.includes('clock') ? (
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/clock')}>Test clock</Button>
-              ) : (
-                <Button type="button" size="sm" variant="secondary" onClick={() => navigate('/approvals')}>Open approvals</Button>
-              )}
-            </div>
-          ))}
-        </ActionPanel>
-      </Card>
-
-      <div className="manager-mobile-stats">
-        <StatCard label="Sales today" value={formatCents(dashboard?.totals.salesCents ?? 0)} hint={dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue signal${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales imported yet'} loading={loading} />
-        <StatCard label="Live wages" value={formatCents(dashboard?.totals.actualWageCents ?? 0)} hint={`${roundHours(dashboard?.totals.actualHours ?? 0)} actual hours`} loading={loading} />
-        <StatCard label="Wage %" value={wagePercent === null || wagePercent === undefined ? 'No sales' : `${wagePercent.toFixed(1)}%`} hint={`Roster ${formatCents(dashboard?.totals.rosterWageCents ?? 0)}`} loading={loading} />
-        <StatCard label="Approvals" value={dashboard?.totals.pendingTimesheets ?? 0} hint="Submitted timesheets" loading={loading} />
-        <StatCard label="Bookings" value={operations?.metrics.bookingsToday ?? 0} hint={`${operations?.bookingsSummary?.upcomingBookings ?? 0} still ahead`} loading={loading} />
-        <StatCard label="Covers" value={operations?.metrics.coversToday ?? 0} hint={`${operations?.bookingsSummary?.cancellationsToday ?? 0} cancelled today`} loading={loading} />
-        <StatCard label="Clocked in" value={operations?.metrics.clockedIn ?? 0} hint={`${operations?.metrics.onBreak ?? 0} on break`} loading={loading} />
-        <StatCard label="Late / missed" value={`${operations?.metrics.lateClockIns ?? 0}/${operations?.metrics.missedClockIns ?? 0}`} hint="Clock-in exceptions" loading={loading} />
-        <StatCard label="Shift confirms" value={operations?.metrics.pendingConfirmations ?? 0} hint="Still awaiting acknowledgement" loading={loading} />
-        <StatCard label="Ops exceptions" value={operations?.metrics.clockExceptions ?? 0} hint="Open sessions, overdue breaks, missed clock-ins" loading={loading} />
       </div>
 
-      <div className="manager-mobile-alert-strip">
-        <button type="button" onClick={() => navigate('/timesheets')}>
-          <strong>{dashboard?.totals.pendingTimesheets ?? 0}</strong>
-          <span>Timesheets</span>
-        </button>
-        <button type="button" onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>
-          <strong>{dashboard?.totals.lowStockItems ?? 0}</strong>
-          <span>Low stock</span>
-        </button>
-        <button type="button" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
-          <strong>{dashboard?.totals.openIssues ?? 0}</strong>
-          <span>Compliance</span>
-        </button>
-        <button type="button" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
-          <strong>{dashboard?.totals.criticalIssues ?? 0}</strong>
-          <span>Critical</span>
-        </button>
+      {/* ── Hero metrics ── */}
+      <div className="live-hero">
+        <div className="live-hero-metric">
+          <span className="live-hero-label">Sales today</span>
+          <span className="live-hero-value">{loading && !dashboard ? '—' : formatCents(dashboard?.totals.salesCents ?? 0)}</span>
+          <span className="live-hero-hint">{dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales yet'}</span>
+        </div>
+        <div className={`live-hero-metric ${wageTone}`}>
+          <span className="live-hero-label">Wage cost</span>
+          <span className="live-hero-value">{wagePercent == null ? '—' : `${wagePercent.toFixed(1)}%`}</span>
+          <span className="live-hero-hint">{formatCents(dashboard?.totals.actualWageCents ?? 0)} · {roundHours(dashboard?.totals.actualHours ?? 0)}h actual</span>
+        </div>
+        <div className="live-hero-metric">
+          <span className="live-hero-label">Covers today</span>
+          <span className="live-hero-value">{operations ? (operations.metrics.coversToday ?? 0) : '—'}</span>
+          <span className="live-hero-hint">{operations?.bookingsSummary?.upcomingBookings ?? 0} still ahead</span>
+        </div>
+        <div className="live-hero-metric">
+          <span className="live-hero-label">Clocked in</span>
+          <span className="live-hero-value">
+            {operations?.metrics.clockedIn ?? '—'}
+            <span className="live-hero-of"> / {operations?.metrics.scheduledStaff ?? 0}</span>
+          </span>
+          <span className="live-hero-hint">{operations?.metrics.onBreak ?? 0} on break · {operations?.metrics.lateClockIns ?? 0} late</span>
+        </div>
       </div>
 
-      <div className="manager-mobile-alert-strip">
-        <button type="button" onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.scheduledStaff ?? 0}</strong>
-          <span>Today's staff</span>
+      {/* ── Pulse strip ── */}
+      <div className="live-pulse-strip">
+        <button type="button" className={dashboard?.totals.pendingTimesheets ? 'is-active' : ''} onClick={() => navigate('/timesheets')}>
+          <strong>{dashboard?.totals.pendingTimesheets ?? 0}</strong><span>Timesheets</span>
         </button>
-        <button type="button" onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.clockedIn ?? 0}</strong>
-          <span>Clocked in</span>
+        <button type="button" className={operations?.metrics.clockExceptions ? 'is-warning' : ''} onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.clockExceptions ?? 0}</strong><span>Exceptions</span>
         </button>
-        <button type="button" onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.pendingConfirmations ?? 0}</strong>
-          <span>Pending confirms</span>
+        <button type="button" className={operations?.metrics.pendingConfirmations ? 'is-muted' : ''} onClick={() => navigate('/roster')}>
+          <strong>{operations?.metrics.pendingConfirmations ?? 0}</strong><span>Unconfirmed</span>
         </button>
-        <button type="button" onClick={() => navigate('/roster')}>
-          <strong>{operations?.metrics.clockExceptions ?? 0}</strong>
-          <span>Clock exceptions</span>
+        <button type="button" className={dashboard?.totals.lowStockItems ? 'is-warning' : ''} onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>
+          <strong>{dashboard?.totals.lowStockItems ?? 0}</strong><span>Low stock</span>
+        </button>
+        <button type="button" className={dashboard?.totals.criticalIssues ? 'is-danger' : dashboard?.totals.openIssues ? 'is-warning' : ''} onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>
+          <strong>{(dashboard?.totals.criticalIssues ?? 0) + (dashboard?.totals.openIssues ?? 0)}</strong><span>Compliance</span>
         </button>
         <button type="button" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>
-          <strong>{operations?.metrics.bookingsToday ?? 0}</strong>
-          <span>Bookings</span>
+          <strong>{operations?.metrics.bookingsToday ?? 0}</strong><span>Bookings</span>
         </button>
       </div>
 
-      {loading && !dashboard ? <Spinner label="Loading manager dashboard..." /> : null}
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'} style={{ padding: '0 24px' }}>{message}</p> : null}
 
-      <div className="manager-mobile-grid">
-        <Card
-          title="Approve timesheets"
-          subtitle="Submitted hours waiting for manager approval"
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>All</Button>}
-        >
+      {/* ── Main grid ── */}
+      <div className="live-main-grid">
+
+        {/* Sales by venue */}
+        <Card title="Sales by venue" subtitle="Today's imported sales">
+          {!dashboard?.salesByVenue.length ? (
+            <EmptyState title="No sales data yet" description="Sales will appear here once imported." />
+          ) : (
+            <div className="live-venue-bars">
+              {dashboard.salesByVenue.map((row) => {
+                const wages = dashboard.wagesByVenue.find((w) => w.venue === row.venue);
+                const pct = row.salesCents > 0 && wages ? ((wages.actualWageCents / row.salesCents) * 100).toFixed(1) : null;
+                return (
+                  <div key={row.venue} className="live-venue-bar-row">
+                    <span className="live-venue-bar-name">{row.venue}</span>
+                    <div className="live-venue-bar-track">
+                      <div className="live-venue-bar-fill" style={{ width: `${(row.salesCents / maxVenueSales) * 100}%` }} />
+                    </div>
+                    <span className="live-venue-bar-value">{formatCents(row.salesCents)}</span>
+                    {pct ? <span className="live-venue-bar-pct">{pct}%</span> : null}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+
+        {/* Staff on shift now */}
+        <Card title="Staff on shift" subtitle="Live clock state for today's roster" action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}>
+          {operations && operations.todaysStaff.length === 0 ? (
+            <EmptyState title="Nothing scheduled today" description="Published shifts will appear here." />
+          ) : null}
+          <div className="live-staff-now">
+            {operations?.todaysStaff.map((row) => (
+              <div key={row.shift.id} className={`live-staff-row is-${row.state.toLowerCase().replace(/_/g, '-')}`}>
+                <div className="live-staff-dot" />
+                <span className="live-staff-name">{row.staffProfile ? `${row.staffProfile.firstName} ${row.staffProfile.lastName}` : 'Staff'}</span>
+                <span className="live-staff-detail">{row.shift.area || row.shift.roleTitle || row.staffProfile?.roleTitle || 'Shift'}</span>
+                <span className="live-staff-time">{timeOf(row.shift.startsAt)}–{timeOf(row.shift.endsAt)}</span>
+                <Badge tone={staffClockStateTone(row.state)}>{row.state.replace(/_/g, ' ')}</Badge>
+              </div>
+            ))}
+          </div>
+        </Card>
+
+        {/* Upcoming reservations */}
+        <Card title="Upcoming reservations" subtitle="Next bookings for service planning" action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>Reserve</Button>}>
+          {operations && (!operations.bookingsSummary || operations.bookingsSummary.nextReservations.length === 0) ? (
+            <EmptyState title="No upcoming bookings" description="Confirmed reservations will appear here." />
+          ) : null}
+          {operations?.bookingsSummary ? (
+            <div className="live-booking-summary">
+              <div><strong>{operations.bookingsSummary.bookingsToday}</strong><span>bookings</span></div>
+              <div><strong>{operations.bookingsSummary.coversToday}</strong><span>covers</span></div>
+              <div><strong>{operations.bookingsSummary.noShowsToday}</strong><span>no-shows</span></div>
+              <div><strong>{operations.bookingsSummary.cancellationsToday}</strong><span>cancelled</span></div>
+            </div>
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.bookingsSummary?.nextReservations.map((r) => (
+              <article key={r.id} className="manager-mobile-row">
+                <span>
+                  <strong>{r.guestName || 'Guest'}</strong>
+                  <span className="subtle">{timeOf(r.startsAt)} · {r.covers} cover{r.covers === 1 ? '' : 's'} · {r.venue}</span>
+                </span>
+                <Badge tone={r.status === 'CONFIRMED' || r.status === 'SEATED' ? 'positive' : r.status === 'PENDING' ? 'warning' : 'info'}>{r.status.replaceAll('_', ' ')}</Badge>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        {/* Clock exceptions */}
+        <Card title="Clock exceptions" subtitle="Late, missed, overdue breaks, open sessions" action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>Timesheets</Button>}>
+          {operations && operations.clockExceptions.length === 0 ? (
+            <EmptyState title="No exceptions" description="Clock issues will appear here." />
+          ) : null}
+          <div className="manager-mobile-list">
+            {operations?.clockExceptions.map((exc) => (
+              <article key={exc.id} className="manager-mobile-row">
+                <span>
+                  <strong>{exc.summary}</strong>
+                  <span className="subtle">{exc.detail}</span>
+                  <span className="subtle">{exc.staffProfile ? `${exc.staffProfile.firstName} ${exc.staffProfile.lastName}` : 'Staff'}{exc.venue ? ` · ${exc.venue}` : ''}</span>
+                </span>
+                <Badge tone={clockExceptionTone(exc.severity)}>{exc.kind.replaceAll('_', ' ')}</Badge>
+              </article>
+            ))}
+          </div>
+        </Card>
+
+        {/* Pending timesheets */}
+        <Card title="Pending timesheets" subtitle="Approve submitted hours" action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>All</Button>}>
           {dashboard && dashboard.pendingTimesheets.length === 0 ? (
-            <EmptyState title="No timesheets waiting" description="Submitted hours will appear here for quick approval." />
+            <EmptyState title="No timesheets waiting" description="Submitted hours will appear here." />
           ) : null}
           <div className="manager-mobile-list">
             {dashboard?.pendingTimesheets.map((entry) => (
               <article key={entry.id} className="manager-mobile-row">
                 <span>
-                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
-                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}-{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}</span>
-                  <span className="subtle">{entry.venue ?? 'No venue'} · {entry.area ?? entry.roleTitle ?? 'Shift'} · {entry.paymentMethod}</span>
+                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff'}</strong>
+                  <span className="subtle">{new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}h</span>
+                  <span className="subtle">{entry.venue ?? ''}{entry.area ?? entry.roleTitle ? ` · ${entry.area ?? entry.roleTitle}` : ''}</span>
                 </span>
                 <span className="manager-mobile-row-actions">
                   <Button type="button" size="sm" disabled={saving} onClick={() => void approveTimesheet(entry.id)}>Approve</Button>
-                  <ActionFeedback
-                    message={messageTarget === `approve:${entry.id}` ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
-                  />
+                  <ActionFeedback message={messageTarget === `approve:${entry.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
                   <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void rejectTimesheet(entry.id)}>Reject</Button>
-                  <ActionFeedback
-                    message={messageTarget === `reject:${entry.id}` ? message : null}
-                    tone={message?.includes('Could') ? 'error' : 'success'}
-                  />
+                  <ActionFeedback message={messageTarget === `reject:${entry.id}` ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
                 </span>
               </article>
             ))}
           </div>
         </Card>
 
-        <Card
-          title="Today's bookings"
-          subtitle="Reserve demand signals for staffing decisions."
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>Reserve</Button>}
-        >
-          {operations && (!operations.bookingsSummary || operations.bookingsSummary.nextReservations.length === 0) ? (
-            <EmptyState title="No upcoming bookings today" description="Confirmed, pending, and seated reservations will appear here as service approaches." />
-          ) : null}
-          <div className="manager-mobile-report-list">
-            <div className="manager-mobile-report-row">
-              <span>
-                <strong>{operations?.bookingsSummary?.bookingsToday ?? 0} bookings</strong>
-                <small>{operations?.bookingsSummary?.coversToday ?? 0} covers expected today</small>
-              </span>
-              <span>
-                <strong>{operations?.bookingsSummary?.upcomingBookings ?? 0} ahead</strong>
-                <small>{operations?.bookingsSummary?.noShowsToday ?? 0} no-shows · {operations?.bookingsSummary?.cancellationsToday ?? 0} cancelled</small>
-              </span>
-            </div>
-          </div>
-          <div className="manager-mobile-list">
-            {operations?.bookingsSummary?.nextReservations.map((reservation) => (
-              <article key={reservation.id} className="manager-mobile-row">
-                <span>
-                  <strong>{reservation.guestName || 'Guest booking'}</strong>
-                  <span className="subtle">{timeOf(reservation.startsAt)} · {reservation.covers} cover{reservation.covers === 1 ? '' : 's'}</span>
-                  <span className="subtle">{reservation.venue || 'No venue'} · {reservation.status.replaceAll('_', ' ')}</span>
-                </span>
-                <Badge tone={reservation.status === 'CONFIRMED' || reservation.status === 'SEATED' ? 'positive' : reservation.status === 'PENDING' ? 'warning' : 'info'}>
-                  {reservation.status.replaceAll('_', ' ')}
-                </Badge>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Today's staff"
-          subtitle="Rostered staff, confirmations, and live clock state."
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
-        >
-          {operations && operations.todaysStaff.length === 0 ? (
-            <EmptyState title="Nothing scheduled today" description="Published shifts for this date will show up here." />
-          ) : null}
-          <div className="manager-mobile-list">
-            {operations?.todaysStaff.map((row) => (
-              <article key={row.shift.id} className="manager-mobile-row">
-                <span>
-                  <strong>{row.staffProfile ? `${row.staffProfile.firstName} ${row.staffProfile.lastName}` : 'Staff member'}</strong>
-                  <span className="subtle">
-                    {new Date(row.shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · {timeOf(row.shift.startsAt)}-{timeOf(row.shift.endsAt)}
-                  </span>
-                  <span className="subtle">
-                    {row.shift.venue || row.staffProfile?.venue || 'No venue'} · {row.shift.area || row.shift.roleTitle || row.staffProfile?.roleTitle || 'Shift'}
-                  </span>
-                  <span className="subtle">
-                    {row.confirmation ? `Confirmed ${formatDateTime(row.confirmation.confirmedAt)}` : 'Awaiting shift confirmation'}
-                    {row.activeSession ? ` · Clocked ${timeOf(row.activeSession.clockInAt)}` : ''}
-                  </span>
-                </span>
-                <span className="manager-mobile-row-actions">
-                  <Badge tone={staffClockStateTone(row.state)}>{row.state.replaceAll('_', ' ')}</Badge>
-                  <Badge tone={row.confirmation ? 'positive' : 'warning'}>
-                    {row.confirmation ? 'Confirmed' : 'Pending'}
-                  </Badge>
-                </span>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Clock exceptions"
-          subtitle="Late clock-ins, missed shifts, overdue breaks, and open sessions."
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/timesheets')}>Timesheets</Button>}
-        >
-          {operations && operations.clockExceptions.length === 0 ? (
-            <EmptyState title="No clock exceptions" description="Late, missed, overdue break, and open-session exceptions will appear here." />
-          ) : null}
-          <div className="manager-mobile-list">
-            {operations?.clockExceptions.map((exception) => (
-              <article key={exception.id} className="manager-mobile-row">
-                <span>
-                  <strong>{exception.summary}</strong>
-                  <span className="subtle">{exception.detail}</span>
-                  <span className="subtle">
-                    {exception.venue || exception.staffProfile?.venue || 'No venue'} · {exception.staffProfile ? `${exception.staffProfile.firstName} ${exception.staffProfile.lastName}` : 'Unassigned staff'}
-                  </span>
-                </span>
-                <span className="manager-mobile-row-actions">
-                  <Badge tone={clockExceptionTone(exception.severity)}>{exception.kind.replaceAll('_', ' ')}</Badge>
-                </span>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Clocked in now"
-          subtitle="Active sessions and current break state."
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
-        >
-          {operations && operations.clockedIn.length === 0 ? (
-            <EmptyState title="Nobody clocked in" description="Open clock sessions will appear here during service." />
-          ) : null}
-          <div className="manager-mobile-list">
-            {operations?.clockedIn.map((session) => (
-              <article key={session.id} className="manager-mobile-row">
-                <span>
-                  <strong>{session.rosterShift?.staffProfile ? `${session.rosterShift.staffProfile.firstName} ${session.rosterShift.staffProfile.lastName}` : 'Staff member'}</strong>
-                  <span className="subtle">{timeOf(session.clockInAt)} · {session.venue || session.rosterShift?.venue || session.rosterShift?.staffProfile?.venue || 'No venue'}</span>
-                  <span className="subtle">
-                    {session.currentBreakStartedAt ? `On break since ${timeOf(session.currentBreakStartedAt)}` : 'Working'}
-                    {` · ${session.area || session.roleTitle || session.rosterShift?.area || session.rosterShift?.roleTitle || 'Shift'}`}
-                  </span>
-                </span>
-                <span className="manager-mobile-row-actions">
-                  <Badge tone={session.currentBreakStartedAt ? 'warning' : 'positive'}>
-                    {session.currentBreakStartedAt ? 'On break' : 'Clocked in'}
-                  </Badge>
-                </span>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card
-          title="Pending shift confirmations"
-          subtitle="Upcoming published shifts still waiting for acknowledgement."
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => navigate('/roster')}>Roster</Button>}
-        >
-          {operations && operations.pendingConfirmations.length === 0 ? (
-            <EmptyState title="No pending confirmations" description="Managers will see outstanding shift acknowledgements here." />
-          ) : null}
-          <div className="manager-mobile-list">
-            {operations?.pendingConfirmations.map((entry) => (
-              <article key={entry.shift.id} className="manager-mobile-row">
-                <span>
-                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
-                  <span className="subtle">
-                    {new Date(entry.shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })} · {timeOf(entry.shift.startsAt)}-{timeOf(entry.shift.endsAt)}
-                  </span>
-                  <span className="subtle">
-                    {entry.shift.venue || entry.staffProfile?.venue || 'No venue'} · {entry.shift.area || entry.shift.roleTitle || entry.staffProfile?.roleTitle || 'Shift'}
-                  </span>
-                </span>
-                <span className="manager-mobile-row-actions">
-                  <Badge tone="warning">Pending</Badge>
-                </span>
-              </article>
-            ))}
-          </div>
-        </Card>
-
-        <Card title="Quick reporting" subtitle="Today only, from imported sales and current wage records">
-          <div className="manager-mobile-report-list">
-            {(dashboard?.salesByVenue.length ? dashboard.salesByVenue : [{ venue: venue || 'No sales imported', salesCents: 0 }]).map((row) => {
-              const wages = dashboard?.wagesByVenue.find((item) => item.venue === row.venue);
-              const percent = row.salesCents > 0 && wages ? (wages.actualWageCents / row.salesCents) * 100 : null;
-              return (
-                <div key={row.venue} className="manager-mobile-report-row">
-                  <span>
-                    <strong>{row.venue}</strong>
-                    <small>{wages ? `${roundHours(wages.actualHours)} actual hours · ${roundHours(wages.rosterHours)} roster hours` : 'No wage records yet'}</small>
-                  </span>
-                  <span>
-                    <strong>{formatCents(row.salesCents)}</strong>
-                    <small>{percent === null ? 'No wage %' : `${percent.toFixed(1)}% wages`}</small>
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        </Card>
-
-        <Card
-          title="Low stock warnings"
-          subtitle="Active stock items at or below reorder/par level"
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>Stock</Button>}
-        >
+        {/* Low stock */}
+        <Card title="Low stock warnings" subtitle="Items at or below reorder level" action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(STOCK_WEB_URL || '/')}>Stock</Button>}>
           {dashboard && dashboard.lowStock.length === 0 ? (
-            <EmptyState title="No low stock warnings" description="Items with reorder levels will appear here when they need attention." />
+            <EmptyState title="No low stock warnings" description="Items needing attention will appear here." />
           ) : null}
           <div className="manager-mobile-list">
-            {dashboard?.lowStock.map((item) => {
-              const threshold = item.reorderPoint ?? item.parLevel;
-              return (
-                <article key={item.id} className="manager-mobile-row">
-                  <span>
-                    <strong>{item.name}</strong>
-                    <span className="subtle">{item.categoryName ?? 'Uncategorised'} · {item.unit}</span>
-                  </span>
-                  <Badge tone="warning">{item.onHand} / {threshold}</Badge>
-                </article>
-              );
-            })}
-          </div>
-        </Card>
-
-        <Card
-          title="Compliance issues"
-          subtitle="Open, blocked, and in-progress issues"
-          action={<Button type="button" size="sm" variant="secondary" onClick={() => window.location.assign(COMPLIANCE_WEB_URL || '/')}>Compliance</Button>}
-        >
-          {dashboard && dashboard.complianceIssues.length === 0 ? (
-            <EmptyState title="No open compliance issues" description="Critical or open compliance items will appear here." />
-          ) : null}
-          <div className="manager-mobile-list">
-            {dashboard?.complianceIssues.map((issue) => (
-              <article key={issue.id} className="manager-mobile-row">
+            {dashboard?.lowStock.map((item) => (
+              <article key={item.id} className="manager-mobile-row">
                 <span>
-                  <strong>{issue.title}</strong>
-                  <span className="subtle">{issue.category} · {issue.assignee ?? 'Unassigned'}</span>
-                  <span className="subtle">{issue.dueDate ? `Due ${new Date(issue.dueDate).toLocaleDateString()}` : 'No due date'}</span>
+                  <strong>{item.name}</strong>
+                  <span className="subtle">{item.categoryName ?? 'Uncategorised'} · {item.unit}</span>
                 </span>
-                <Badge tone={issue.severity === 'CRITICAL' ? 'danger' : issue.severity === 'HIGH' ? 'warning' : 'info'}>{issue.severity}</Badge>
+                <Badge tone="warning">{item.onHand} / {item.reorderPoint ?? item.parLevel}</Badge>
               </article>
             ))}
           </div>
         </Card>
+
       </div>
     </div>
   );
