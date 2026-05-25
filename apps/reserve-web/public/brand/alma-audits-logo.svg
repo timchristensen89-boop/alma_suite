@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="1024" height="1024">
   <defs>
     <linearGradient id="g_audits" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#E8A010"/>
-      <stop offset="100%" stop-color="#8A5800"/>
+      <stop offset="0%" stop-color="#E2DCCC"/>
+      <stop offset="100%" stop-color="#D0CABA"/>
     </linearGradient>
     <radialGradient id="rg_audits" cx="50%" cy="36%" r="48%">
       <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
@@ -14,18 +14,18 @@
       <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </linearGradient>
     <filter id="f_audits">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.26"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#253326" flood-opacity="0.12"/>
     </filter>
   </defs>
-  <rect x="4" y="4" width="212" height="212" rx="50" fill="#4A3000" opacity="0.8"/>
+  <rect x="4" y="4" width="212" height="212" rx="50" fill="#BEB9A8" opacity="0.5"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#g_audits)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#rg_audits)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#sh_audits)"/>
-  <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(255,255,255,0.13)" stroke-width="1"/>
-  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_audits)">
+  <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(37, 51, 38, 0.12)" stroke-width="1"/>
+  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="#253326" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_audits)">
     <circle cx="11" cy="11" r="8"/>
     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
   </g>
-  <text x="110" y="172" text-anchor="middle" fill="rgba(255,255,255,0.95)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
-  <text x="110" y="194" text-anchor="middle" fill="rgba(255,255,255,0.62)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="5">AUDITS</text>
+  <text x="110" y="172" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
+  <text x="110" y="194" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="5">AUDITS</text>
 </svg>

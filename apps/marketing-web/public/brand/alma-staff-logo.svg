@@ -1,8 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="1024" height="1024">
   <defs>
     <linearGradient id="g_staff" x1="15%" y1="0%" x2="85%" y2="100%">
-      <stop offset="0%" stop-color="#3260D6"/>
-      <stop offset="100%" stop-color="#0D2260"/>
+      <stop offset="0%" stop-color="#F1DACE"/>
+      <stop offset="100%" stop-color="#DFC8BC"/>
     </linearGradient>
     <radialGradient id="rg_staff" cx="50%" cy="36%" r="48%">
       <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
@@ -14,20 +14,20 @@
       <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
     </linearGradient>
     <filter id="f_staff">
-      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.26"/>
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#253326" flood-opacity="0.12"/>
     </filter>
   </defs>
-  <rect x="4" y="4" width="212" height="212" rx="50" fill="#071440" opacity="0.8"/>
+  <rect x="4" y="4" width="212" height="212" rx="50" fill="#CDB7AB" opacity="0.5"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#g_staff)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#rg_staff)"/>
   <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#sh_staff)"/>
-  <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(255,255,255,0.13)" stroke-width="1"/>
-  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_staff)">
+  <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(37, 51, 38, 0.12)" stroke-width="1"/>
+  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="#253326" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_staff)">
     <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
     <circle cx="9" cy="7" r="4"/>
     <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
     <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
   </g>
-  <text x="110" y="172" text-anchor="middle" fill="rgba(255,255,255,0.95)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
-  <text x="110" y="194" text-anchor="middle" fill="rgba(255,255,255,0.62)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="5">STAFF</text>
+  <text x="110" y="172" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
+  <text x="110" y="194" text-anchor="middle" fill="#253326" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="5">STAFF</text>
 </svg>
