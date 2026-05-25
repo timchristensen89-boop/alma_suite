@@ -3054,11 +3054,14 @@
   overflow: visible;
 }
 
-.roster-right-rail-head {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
+/* Staff label + Collapse now live in roster-board-command */
+.roster-board-command-staff-controls {
+  display: flex;
   align-items: center;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 1px solid rgba(148, 163, 184, 0.28);
+  margin-left: 2px;
 }
 
 .roster-right-rail-collapsed {
@@ -3090,6 +3093,10 @@
 .roster-right-rail-collapsed button:hover {
   border-color: rgba(36, 76, 159, 0.32);
   color: var(--color-accent-text);
+}
+
+.roster-side-card {
+  border-radius: 18px;
 }
 
 .roster-side-card .card-body {

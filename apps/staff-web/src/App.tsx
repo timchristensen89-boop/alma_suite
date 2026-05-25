@@ -9461,6 +9461,14 @@ function RosterPage({
                 />
               </span>
             </div>
+            {!sidePanelCollapsed ? (
+              <div className="roster-board-command-staff-controls">
+                <span className="roster-right-rail-title">Staff</span>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setSidePanelCollapsed(true)}>
+                  Collapse
+                </Button>
+              </div>
+            ) : null}
           </div>
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
@@ -9674,13 +9682,6 @@ function RosterPage({
             </div>
           ) : (
             <>
-              <div className="roster-right-rail-head">
-                <span className="roster-right-rail-title">Staff</span>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setSidePanelCollapsed(true)}>
-                  Collapse
-                </Button>
-              </div>
-
               {false ? (
                 <Card
                   className="roster-side-card roster-history-panel"
