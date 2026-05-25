@@ -657,6 +657,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const [contentUploadConfig, setContentUploadConfig] = useState<MarketingContentUploadConfigResponse | null>(null);
   const [contentHelpers, setContentHelpers] = useState<MarketingContentHelper[]>([]);
   const [contentPublishPreview, setContentPublishPreview] = useState<ContentPublishPreviewResult | null>(null);
+  // Per-automation run metrics — simulation counts and last run timestamp.
+  // Real open/click rates require email-provider send integration (Phase 4+).
+  const [automationMetrics, setAutomationMetrics] = useState<
+    Array<{ automationId: string; totalRuns: number; simulatedCount: number; sentCount: number; skippedCount: number; lastRunAt: string | null }>
+  >([]);
 
   const venueParam = venueFilter === ALL_VENUES ? '' : venueFilter;
   const defaultVenue = venueParam || user.venue || KNOWN_VENUES[0]!;
@@ -730,6 +735,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setContentCalendar(nextCalendar);
       setContentUploadConfig(nextUploadConfig);
       setContentHelpers(nextContentHelpers);
+      // Metrics endpoint is optional — gracefully no-op if not deployed yet
+      try {
+        const metrics = await api<Array<{ automationId: string; totalRuns: number; simulatedCount: number; sentCount: number; skippedCount: number; lastRunAt: string | null }>>('/api/marketing/automations/metrics');
+        setAutomationMetrics(metrics);
+      } catch {
+        setAutomationMetrics([]);
+      }
     } catch (error) {
       setFeedback({
         target: 'page',
@@ -1950,16 +1962,65 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 />
               ) : null}
               <div className="marketing-stack">
-                {automations.slice(0, 5).map((automation) => (
-                  <div key={automation.id} className="marketing-summary-card">
-                    <strong>{automation.name}</strong>
-                    <span>{automation.triggerType.replace(/_/g, ' ').toLowerCase()} · {automation.active ? 'active' : 'inactive'} · delay {automation.delayHours}h</span>
-                    <div className="marketing-badges">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateAutomation(automation.id)}>Simulate</Button>
+                {automations.slice(0, 5).map((automation) => {
+                  const metric = automationMetrics.find((m) => m.automationId === automation.id);
+                  const lastRunRelative = metric?.lastRunAt
+                    ? (() => {
+                        const diff = Date.now() - new Date(metric.lastRunAt).getTime();
+                        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                        if (days === 0) return 'today';
+                        if (days === 1) return 'yesterday';
+                        if (days < 30) return `${days}d ago`;
+                        return `${Math.floor(days / 30)}mo ago`;
+                      })()
+                    : null;
+                  return (
+                    <div key={automation.id} className="marketing-summary-card">
+                      <strong>{automation.name}</strong>
+                      <span>{automation.triggerType.replace(/_/g, ' ').toLowerCase()} · {automation.active ? 'active' : 'inactive'} · delay {automation.delayHours}h</span>
+                      {metric && metric.totalRuns > 0 ? (
+                        <div className="automation-metrics">
+                          <div className="automation-metric">
+                            <strong>{metric.totalRuns}</strong>
+                            <span>guests reached</span>
+                          </div>
+                          {metric.simulatedCount > 0 ? (
+                            <div className="automation-metric">
+                              <strong>{metric.simulatedCount}</strong>
+                              <span>simulated</span>
+                            </div>
+                          ) : null}
+                          {metric.sentCount > 0 ? (
+                            <div className="automation-metric is-positive">
+                              <strong>{metric.sentCount}</strong>
+                              <span>sent</span>
+                            </div>
+                          ) : null}
+                          {metric.skippedCount > 0 ? (
+                            <div className="automation-metric is-warning">
+                              <strong>{metric.skippedCount}</strong>
+                              <span>skipped</span>
+                            </div>
+                          ) : null}
+                          {lastRunRelative ? (
+                            <div className="automation-metric">
+                              <strong>{lastRunRelative}</strong>
+                              <span>last run</span>
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : (
+                        <p className="subtle" style={{ margin: 0, fontSize: 12 }}>
+                          No runs yet. Click Simulate to see how many guests qualify.
+                        </p>
+                      )}
+                      <div className="marketing-badges">
+                        <Button type="button" size="sm" variant="secondary" onClick={() => void simulateAutomation(automation.id)}>Simulate</Button>
+                      </div>
+                      <ActionFeedback message={feedback.target === `automation:${automation.id}` ? feedback.message : null} tone={feedback.tone} />
                     </div>
-                    <ActionFeedback message={feedback.target === `automation:${automation.id}` ? feedback.message : null} tone={feedback.tone} />
-                  </div>
-                ))}
+                  );
+                })}
               </div>
               </Card>
             </section>

@@ -1232,3 +1232,90 @@
   flex-wrap: wrap;
   justify-content: flex-end;
 }
+
+/* Function / event enquiry — collapsible panel on the public widget */
+.function-enquiry-panel {
+  margin-top: 14px;
+  border: 1px solid rgba(168, 34, 78, 0.24);
+  border-radius: 16px;
+  background: rgba(255, 248, 250, 0.94);
+  overflow: hidden;
+}
+
+.function-enquiry-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 14px 18px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  text-align: left;
+  transition: background 120ms ease;
+}
+
+.function-enquiry-toggle:hover {
+  background: rgba(168, 34, 78, 0.04);
+}
+
+.function-enquiry-toggle strong {
+  display: block;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  font-weight: 400;
+  color: #4A0820;
+}
+
+.function-enquiry-toggle small {
+  display: block;
+  color: rgba(74, 8, 32, 0.66);
+  font-size: 12.5px;
+  margin-top: 2px;
+}
+
+.function-enquiry-chevron {
+  font-size: 14px;
+  color: #A8224E;
+  font-weight: 800;
+}
+
+.function-enquiry-form {
+  padding: 0 18px 18px;
+}
+
+.function-enquiry-success {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 18px 22px;
+  border: 1px solid rgba(168, 34, 78, 0.24);
+  border-radius: 16px;
+  background: linear-gradient(135deg, rgba(168, 34, 78, 0.06), rgba(255, 248, 250, 0.98));
+}
+
+.function-enquiry-success-icon {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #A8224E;
+  color: #fff8fa;
+  display: grid;
+  place-items: center;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.function-enquiry-success strong {
+  display: block;
+  font-size: 15px;
+  color: #4A0820;
+}
+
+.function-enquiry-success p {
+  margin: 4px 0 0;
+  color: rgba(74, 8, 32, 0.72);
+  font-size: 13.5px;
+}

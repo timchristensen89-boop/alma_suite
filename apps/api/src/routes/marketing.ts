@@ -491,6 +491,14 @@ marketingRouter.patch('/automations/:id', requireManager, async (req, res, next)
   }
 });
 
+marketingRouter.get('/automations/metrics', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.listAutomationMetrics(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.post('/automations/:id/simulate', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.simulateAutomation(req.user!, String(req.params.id)));

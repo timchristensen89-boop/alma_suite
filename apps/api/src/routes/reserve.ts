@@ -240,3 +240,11 @@ reserveRouter.post('/public/book', async (req, res, next) => {
     next(error);
   }
 });
+
+reserveRouter.post('/public/function-enquiry', async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.recordFunctionEnquiry(req.body));
+  } catch (error) {
+    next(error);
+  }
+});

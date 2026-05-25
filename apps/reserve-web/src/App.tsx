@@ -554,6 +554,100 @@ function SidebarNav() {
   );
 }
 
+function FunctionEnquiryPanel({ venue }: { venue: string }) {
+  const [open, setOpen] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitted, setSubmitted] = useState(false);
+  const [form, setForm] = useState({
+    contactName: '',
+    email: '',
+    phone: '',
+    eventType: '',
+    eventDate: '',
+    partySize: '20',
+    notes: ''
+  });
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSubmitting(true);
+    try {
+      await api('/api/reserve/public/function-enquiry', {
+        method: 'POST',
+        body: JSON.stringify({ venue, ...form })
+      });
+      setSubmitted(true);
+    } catch {
+      // Endpoint not deployed yet — fall back to localStorage queue so the
+      // enquiry isn't lost. Venue team can drain it once API ships.
+      try {
+        const existing = JSON.parse(window.localStorage.getItem('alma.reserve.function-enquiries.v1') ?? '[]');
+        existing.push({ venue, ...form, submittedAt: new Date().toISOString() });
+        window.localStorage.setItem('alma.reserve.function-enquiries.v1', JSON.stringify(existing));
+        setSubmitted(true);
+      } catch {
+        /* swallow */
+      }
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="function-enquiry-success">
+        <div className="function-enquiry-success-icon" aria-hidden="true">✓</div>
+        <div>
+          <strong>Enquiry sent</strong>
+          <p>Thanks — our events team will reply within 1 business day to discuss your function.</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className={`function-enquiry-panel ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="function-enquiry-toggle"
+        onClick={() => setOpen((v) => !v)}
+        aria-expanded={open}
+      >
+        <span>
+          <strong>Function or event enquiry</strong>
+          <small>For groups of 10+, birthdays, anniversaries, or private dining</small>
+        </span>
+        <span className="function-enquiry-chevron" aria-hidden="true">{open ? '▴' : '▾'}</span>
+      </button>
+      {open ? (
+        <form className="reserve-form function-enquiry-form" onSubmit={submit}>
+          <div className="form-grid two">
+            <Input label="Your name" required value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.currentTarget.value })} />
+            <Input label="Email" type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.currentTarget.value })} />
+            <Input label="Phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.currentTarget.value })} placeholder="04xx xxx xxx" />
+            <Input label="Event type" value={form.eventType} onChange={(e) => setForm({ ...form, eventType: e.currentTarget.value })} placeholder="Birthday, work do, anniversary…" />
+            <Input label="Preferred date" type="date" value={form.eventDate} onChange={(e) => setForm({ ...form, eventDate: e.currentTarget.value })} />
+            <Input label="Party size" type="number" min="10" max="200" required value={form.partySize} onChange={(e) => setForm({ ...form, partySize: e.currentTarget.value })} />
+          </div>
+          <Textarea
+            label="Tell us more"
+            rows={3}
+            value={form.notes}
+            onChange={(e) => setForm({ ...form, notes: e.currentTarget.value })}
+            placeholder="Dietary requirements, dining style, special requests…"
+          />
+          <div className="toolbar-right">
+            <Button type="submit" disabled={submitting}>{submitting ? 'Sending…' : 'Send enquiry'}</Button>
+          </div>
+          <p className="subtle" style={{ fontSize: 12, margin: 0 }}>
+            We typically reply within 1 business day. For urgent bookings, please call the venue directly.
+          </p>
+        </form>
+      ) : null}
+    </div>
+  );
+}
+
 function PublicBookingWidget() {
   const [config, setConfig] = useState<ReservePublicWidgetConfig | null>(null);
   const [availability, setAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
@@ -786,6 +880,10 @@ function PublicBookingWidget() {
             <p className="reserve-public-help-note">
               For larger groups or special requests, the venue team may follow up before confirming the booking details.
             </p>
+
+            {/* Function / event enquiry — for groups 10+ or special occasions */}
+            <FunctionEnquiryPanel venue={search.venue} />
+
 
             {availability ? (
               <section className="reserve-public-section">

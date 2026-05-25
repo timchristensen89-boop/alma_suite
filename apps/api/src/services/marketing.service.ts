@@ -2761,6 +2761,49 @@ export const marketingService = {
     return automations.map(automationToPayload);
   },
 
+  // Return per-automation run metrics: count by status, latest run timestamp.
+  // Real open/click tracking (Phase 4+) requires send integration with the
+  // email provider — for now we surface simulation data so managers can see
+  // 'is this automation actually hitting anyone?'
+  async listAutomationMetrics(actor: AuthUser) {
+    const venue = actorVenueScope(actor, undefined, 'Marketing');
+    const automations = await prisma.marketingAutomation.findMany({
+      where: venue ? { venue } : {},
+      select: { id: true }
+    });
+    const automationIds = automations.map((a) => a.id);
+    if (automationIds.length === 0) return [];
+
+    // Group runs by automation + status. One query, in-memory aggregation.
+    const runs = await prisma.marketingAutomationRun.findMany({
+      where: { automationId: { in: automationIds } },
+      orderBy: { createdAt: 'desc' },
+      select: { automationId: true, status: true, createdAt: true }
+    });
+
+    const map = new Map<string, {
+      automationId: string;
+      totalRuns: number;
+      simulatedCount: number;
+      sentCount: number;
+      skippedCount: number;
+      lastRunAt: string | null;
+    }>();
+    for (const id of automationIds) {
+      map.set(id, { automationId: id, totalRuns: 0, simulatedCount: 0, sentCount: 0, skippedCount: 0, lastRunAt: null });
+    }
+    for (const run of runs) {
+      const entry = map.get(run.automationId);
+      if (!entry) continue;
+      entry.totalRuns += 1;
+      if (run.status === 'SIMULATED') entry.simulatedCount += 1;
+      else if (run.status === 'SENT') entry.sentCount += 1;
+      else entry.skippedCount += 1;
+      if (!entry.lastRunAt) entry.lastRunAt = run.createdAt.toISOString();
+    }
+    return Array.from(map.values());
+  },
+
   async createAutomation(actor: AuthUser, input: unknown) {
     const data = marketingAutomationInputSchema.parse(input);
     const venue = actorVenueScope(actor, data.venue, 'Marketing');
