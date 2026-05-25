@@ -1043,3 +1043,115 @@
     justify-content: center;
   }
 }
+
+/* Guest match panel — shows when reservation form email matches existing guest */
+.reserve-guest-match-panel {
+  margin-top: 18px;
+  padding: 14px 16px;
+  border: 1px solid rgba(168, 34, 78, 0.18);
+  border-radius: 14px;
+  background: linear-gradient(135deg, rgba(168, 34, 78, 0.04), rgba(255, 248, 250, 0.96));
+}
+
+.reserve-guest-match-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.reserve-guest-match-head strong {
+  display: block;
+  font-size: 13px;
+  font-weight: 700;
+  color: #4A0820;
+}
+
+.reserve-guest-match-head small {
+  color: rgba(74, 8, 32, 0.7);
+  font-size: 12.5px;
+}
+
+.reserve-guest-match-stats {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(168, 34, 78, 0.14);
+  border-bottom: 1px solid rgba(168, 34, 78, 0.14);
+}
+
+.reserve-guest-match-stats > div {
+  display: grid;
+  gap: 2px;
+}
+
+.reserve-guest-match-stats span {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(74, 8, 32, 0.6);
+}
+
+.reserve-guest-match-stats strong {
+  font-size: 16px;
+  font-weight: 700;
+  color: #4A0820;
+}
+
+.reserve-guest-match-stats strong.is-warning {
+  color: #92400e;
+}
+
+.reserve-guest-match-list {
+  display: grid;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.reserve-guest-match-list small {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(74, 8, 32, 0.6);
+  margin-bottom: 4px;
+}
+
+.reserve-guest-match-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 10px;
+  align-items: center;
+  padding: 7px 10px;
+  background: rgba(255, 255, 255, 0.7);
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+
+.reserve-guest-match-row > span:first-child {
+  font-weight: 700;
+  color: #4A0820;
+}
+
+.reserve-guest-match-row > span:nth-child(2) {
+  color: rgba(74, 8, 32, 0.7);
+}
+
+.reserve-guest-match-notes {
+  display: grid;
+  gap: 4px;
+  margin-top: 10px;
+  font-size: 12.5px;
+  color: #4A0820;
+}
+
+.reserve-guest-match-notes p {
+  margin: 0;
+}
+
+.reserve-guest-match-notes strong {
+  color: #4A0820;
+}

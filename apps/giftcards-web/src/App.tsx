@@ -1087,6 +1087,60 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         {activeGiftCardPage === 'orders' ? (
           <>
+            {/* Revenue dashboard — month-over-month view of issued/redeemed/outstanding */}
+            {(() => {
+              const now = new Date();
+              const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+              const prevMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+              const prevMonthEnd = monthStart;
+              const issuedThisMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= monthStart);
+              const issuedLastMonth = giftCards.filter((c) => !c.testMode && c.paidAt && new Date(c.paidAt) >= prevMonthStart && new Date(c.paidAt) < prevMonthEnd);
+              const issuedThisCents = issuedThisMonth.reduce((s, c) => s + c.initialValueCents, 0);
+              const issuedLastCents = issuedLastMonth.reduce((s, c) => s + c.initialValueCents, 0);
+              const redeemedThisCents = giftCards.reduce((sum, c) => {
+                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= monthStart).reduce((s, r) => s + r.amountCents, 0);
+              }, 0);
+              const redeemedLastCents = giftCards.reduce((sum, c) => {
+                return sum + c.redemptions.filter((r) => new Date(r.createdAt) >= prevMonthStart && new Date(r.createdAt) < prevMonthEnd).reduce((s, r) => s + r.amountCents, 0);
+              }, 0);
+              const outstandingCents = data?.totals.activeBalanceCents ?? 0;
+              const issuedDelta = issuedLastCents > 0 ? ((issuedThisCents - issuedLastCents) / issuedLastCents) * 100 : null;
+              const redeemedDelta = redeemedLastCents > 0 ? ((redeemedThisCents - redeemedLastCents) / redeemedLastCents) * 100 : null;
+              const monthName = now.toLocaleDateString(undefined, { month: 'long' });
+              return (
+                <Card title="Revenue dashboard" subtitle={`${monthName} — issued, redeemed, and outstanding`}>
+                  <div className="giftcards-revenue-grid">
+                    <div className="giftcards-revenue-tile">
+                      <span className="giftcards-revenue-eyebrow">Issued this month</span>
+                      <strong className="giftcards-revenue-value">{formatCents(issuedThisCents)}</strong>
+                      <span className="giftcards-revenue-meta">{issuedThisMonth.length} card{issuedThisMonth.length === 1 ? '' : 's'}</span>
+                      {issuedDelta !== null ? (
+                        <span className={`giftcards-revenue-delta is-${issuedDelta >= 0 ? 'positive' : 'danger'}`}>
+                          {issuedDelta >= 0 ? '▲' : '▼'} {Math.abs(issuedDelta).toFixed(0)}% vs last month
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="giftcards-revenue-tile">
+                      <span className="giftcards-revenue-eyebrow">Redeemed this month</span>
+                      <strong className="giftcards-revenue-value">{formatCents(redeemedThisCents)}</strong>
+                      <span className="giftcards-revenue-meta">Across {giftCards.filter((c) => c.redemptions.some((r) => new Date(r.createdAt) >= monthStart)).length} cards</span>
+                      {redeemedDelta !== null ? (
+                        <span className={`giftcards-revenue-delta is-${redeemedDelta >= 0 ? 'positive' : 'warning'}`}>
+                          {redeemedDelta >= 0 ? '▲' : '▼'} {Math.abs(redeemedDelta).toFixed(0)}% vs last month
+                        </span>
+                      ) : null}
+                    </div>
+                    <div className="giftcards-revenue-tile is-liability">
+                      <span className="giftcards-revenue-eyebrow">Outstanding liability</span>
+                      <strong className="giftcards-revenue-value">{formatCents(outstandingCents)}</strong>
+                      <span className="giftcards-revenue-meta">{data?.totals.active ?? 0} active card{(data?.totals.active ?? 0) === 1 ? '' : 's'}</span>
+                      <span className="giftcards-revenue-note">A leading indicator of repeat visits</span>
+                    </div>
+                  </div>
+                </Card>
+              );
+            })()}
+
             <div className="stats-grid">
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open active gift cards">
                 <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
@@ -1154,15 +1208,25 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
 
         {activeGiftCardPage === 'redeem' ? (
-          <Card title="Redeem gift card" subtitle="Enter the customer code and redeem only the amount used.">
-            <form className="giftcards-form" onSubmit={(event) => void lookup(event)}>
-              <Input label="Gift card code" required value={code} onChange={(event) => setCode(event.currentTarget.value.toUpperCase())} placeholder="ALMA-XXXXXXXX" />
+          <Card
+            title="Quick balance check & redemption"
+            subtitle="Enter a code to see remaining balance instantly. Redemption form only appears after a card is loaded."
+          >
+            <form className="giftcards-form giftcards-balance-check" onSubmit={(event) => void lookup(event)}>
+              <Input
+                label="Gift card code"
+                required
+                value={code}
+                onChange={(event) => setCode(event.currentTarget.value.toUpperCase())}
+                placeholder="ALMA-XXXXXXXX"
+                autoFocus
+              />
               <div className="toolbar-right">
                 <ActionFeedback
                   message={messageTarget === 'lookup' ? message : null}
                   tone={message?.includes('not') || message?.includes('Could') ? 'error' : 'success'}
                 />
-                <Button type="submit" variant="secondary">Check balance</Button>
+                <Button type="submit">Check balance</Button>
               </div>
             </form>
             {card ? (

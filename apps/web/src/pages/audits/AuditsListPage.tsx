@@ -29,6 +29,53 @@ export function AuditsListPage() {
   const rows = runs.data ?? [];
   const openFindings = summary.data?.openFindings ?? 0;
 
+  // Build per-template 8-week score trend (most recent 8 weeks, oldest left)
+  const trendByTemplate = (() => {
+    const now = new Date();
+    const eightWeeksAgo = new Date(now);
+    eightWeeksAgo.setDate(eightWeeksAgo.getDate() - 8 * 7);
+    const buckets = new Map<string, Array<{ templateName: string; week: string; score: number | null; runCount: number }>>();
+    // Build empty 8-week skeleton per known template
+    const templateNames = new Map<string, string>();
+    for (const run of rows) {
+      if (typeof run.score !== 'number') continue;
+      templateNames.set(run.template.id, run.template.name);
+    }
+    for (const [templateId, name] of templateNames) {
+      const weeks: Array<{ templateName: string; week: string; score: number | null; runCount: number }> = [];
+      for (let i = 7; i >= 0; i -= 1) {
+        const weekStart = new Date(now);
+        weekStart.setDate(weekStart.getDate() - 7 * i);
+        weekStart.setHours(0, 0, 0, 0);
+        weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (weekStart.getDay() === 0 ? -6 : 1));
+        weeks.push({ templateName: name, week: weekStart.toISOString().slice(0, 10), score: null, runCount: 0 });
+      }
+      buckets.set(templateId, weeks);
+    }
+    // Fold runs into the buckets
+    for (const run of rows) {
+      if (typeof run.score !== 'number') continue;
+      const runDate = new Date(run.runDate);
+      if (runDate < eightWeeksAgo) continue;
+      const weekStart = new Date(runDate);
+      weekStart.setHours(0, 0, 0, 0);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + (weekStart.getDay() === 0 ? -6 : 1));
+      const key = weekStart.toISOString().slice(0, 10);
+      const bucket = buckets.get(run.template.id);
+      if (!bucket) continue;
+      const week = bucket.find((w) => w.week === key);
+      if (!week) continue;
+      const totalScore = (week.score ?? 0) * week.runCount + run.score;
+      week.runCount += 1;
+      week.score = totalScore / week.runCount;
+    }
+    return Array.from(buckets.entries()).map(([id, weeks]) => ({
+      id,
+      name: templateNames.get(id)!,
+      weeks
+    }));
+  })();
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -87,6 +134,48 @@ export function AuditsListPage() {
           loading={summary.loading}
         />
       </div>
+
+      {trendByTemplate.length > 0 ? (
+        <Card title="Score trend" subtitle="8-week rolling average per template — higher is better">
+          <div className="audit-trend-grid">
+            {trendByTemplate.map((template) => {
+              const scores = template.weeks.map((w) => w.score).filter((s): s is number => typeof s === 'number');
+              const avg = scores.length ? scores.reduce((a, b) => a + b, 0) / scores.length : null;
+              const max = Math.max(100, ...scores);
+              const last = template.weeks[template.weeks.length - 1]?.score;
+              const prev = template.weeks.slice(0, -1).reverse().find((w) => w.score !== null)?.score;
+              const delta = last !== null && last !== undefined && prev !== null && prev !== undefined ? last - prev : null;
+              const trendTone = delta == null ? 'neutral' : delta >= 2 ? 'positive' : delta <= -2 ? 'danger' : 'warning';
+              return (
+                <div key={template.id} className="audit-trend-card">
+                  <div className="audit-trend-head">
+                    <strong>{template.name}</strong>
+                    <span className="audit-trend-avg">
+                      {avg !== null ? `${avg.toFixed(0)} avg` : 'No data'}
+                      {delta !== null ? (
+                        <span className={`audit-trend-delta is-${trendTone}`}>
+                          {delta >= 0 ? '▲' : '▼'} {Math.abs(delta).toFixed(0)}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                  <div className="audit-trend-bars" aria-label={`${template.name} 8 week trend`}>
+                    {template.weeks.map((w) => {
+                      const height = w.score !== null ? Math.max(6, (w.score / max) * 100) : 4;
+                      const barTone = w.score === null ? 'muted' : w.score >= 85 ? 'positive' : w.score >= 70 ? 'warning' : 'danger';
+                      return (
+                        <div key={w.week} className={`audit-trend-bar is-${barTone}`} title={`${new Date(w.week).toLocaleDateString()}: ${w.score !== null ? w.score.toFixed(0) : 'no audit'}`}>
+                          <div className="audit-trend-bar-fill" style={{ height: `${height}%` }} />
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid two-one">
         <Card padding="none">

@@ -313,6 +313,52 @@ export function LiquorPage() {
         />
       </div>
 
+      {/* Expiry callouts — 90/60/30/7 day threshold */}
+      {(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const all = licences.data ?? [];
+        const buckets = {
+          d7: [] as LiquorLicence[],
+          d30: [] as LiquorLicence[],
+          d60: [] as LiquorLicence[],
+          d90: [] as LiquorLicence[]
+        };
+        for (const lic of all) {
+          if (!lic.expiryDate) continue;
+          const expiry = new Date(lic.expiryDate);
+          expiry.setHours(0, 0, 0, 0);
+          const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          if (days < 0) continue;
+          if (days <= 7) buckets.d7.push(lic);
+          else if (days <= 30) buckets.d30.push(lic);
+          else if (days <= 60) buckets.d60.push(lic);
+          else if (days <= 90) buckets.d90.push(lic);
+        }
+        const totalCallouts = buckets.d7.length + buckets.d30.length + buckets.d60.length + buckets.d90.length;
+        if (totalCallouts === 0) return null;
+        const renderRow = (lic: LiquorLicence, tone: string, daysLabel: string) => (
+          <div key={lic.id} className={`licence-callout-row is-${tone}`}>
+            <span className="licence-callout-venue">{lic.venue}</span>
+            <span className="licence-callout-name">{lic.licenceType} · {lic.licenceNumber}</span>
+            <span className="licence-callout-when">{daysLabel}</span>
+          </div>
+        );
+        return (
+          <Card
+            title="Expiry watch"
+            subtitle={`${totalCallouts} licence${totalCallouts === 1 ? '' : 's'} expiring soon`}
+          >
+            <div className="licence-callout-stack">
+              {buckets.d7.map((l) => renderRow(l, 'danger', `Expires ${new Date(l.expiryDate!).toLocaleDateString()} — within 7 days`))}
+              {buckets.d30.map((l) => renderRow(l, 'warning', `Expires ${new Date(l.expiryDate!).toLocaleDateString()} — within 30 days`))}
+              {buckets.d60.map((l) => renderRow(l, 'info', `Expires ${new Date(l.expiryDate!).toLocaleDateString()} — within 60 days`))}
+              {buckets.d90.map((l) => renderRow(l, 'muted', `Expires ${new Date(l.expiryDate!).toLocaleDateString()} — within 90 days`))}
+            </div>
+          </Card>
+        );
+      })()}
+
       {error ? <p className="error-text">{error}</p> : null}
 
       {mode === 'form' ? (

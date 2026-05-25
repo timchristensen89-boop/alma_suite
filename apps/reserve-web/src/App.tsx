@@ -978,6 +978,12 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [widgetAvailability, setWidgetAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [guestDetail, setGuestDetail] = useState<MarketingGuestDetail | null>(null);
+  // Recent visit history for the guest being booked — shown when the email
+  // entered in the quick-create form matches an existing guest in this venue.
+  const [formGuestHistory, setFormGuestHistory] = useState<{
+    matchedGuest: ReserveGuest;
+    recentReservations: ReserveReservation[];
+  } | null>(null);
 
   const defaultVenue = firstManagerVenue(user, venueFilter);
   const [reservationForm, setReservationForm] = useState<ReservationForm>(() => defaultReservationForm(defaultVenue));
@@ -1085,6 +1091,37 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       cancelled = true;
     };
   }, [selectedGuestId]);
+
+  // When the email in the quick-create reservation form matches an existing
+  // guest, look up their recent reservations so we can show the last 3 visits
+  // alongside the form. Debounced 350ms to avoid hammering the API on each
+  // keystroke.
+  useEffect(() => {
+    const email = reservationForm.email.trim().toLowerCase();
+    if (!email || !email.includes('@')) {
+      setFormGuestHistory(null);
+      return;
+    }
+    const handle = window.setTimeout(async () => {
+      try {
+        const matches = await api<ReserveGuest[]>(
+          `/api/reserve/guests?search=${encodeURIComponent(email)}`
+        );
+        const match = matches.find((g) => g.email?.trim().toLowerCase() === email);
+        if (!match) {
+          setFormGuestHistory(null);
+          return;
+        }
+        const recent = await api<ReserveReservation[]>(
+          `/api/reserve/guests/${match.id}/reservations`
+        );
+        setFormGuestHistory({ matchedGuest: match, recentReservations: recent.slice(0, 3) });
+      } catch {
+        setFormGuestHistory(null);
+      }
+    }, 350);
+    return () => window.clearTimeout(handle);
+  }, [reservationForm.email]);
 
   const tableOptions = [{ label: 'Unassigned', value: '' }, ...tables.map((table) => ({ label: `${table.label} · ${table.area}`, value: table.id }))];
   const ruleOptions = [{ label: 'None', value: '' }, ...rules.map((rule) => ({ label: `${rule.name} · ${rule.venue}`, value: rule.id }))];
@@ -1659,6 +1696,62 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <Button type="submit">Save booking</Button>
                 </div>
               </form>
+
+              {formGuestHistory ? (
+                <div className="reserve-guest-match-panel">
+                  <div className="reserve-guest-match-head">
+                    <div>
+                      <strong>Returning guest</strong>
+                      <small>{formGuestHistory.matchedGuest.firstName} {formGuestHistory.matchedGuest.lastName} · {formGuestHistory.matchedGuest.email}</small>
+                    </div>
+                    <Badge tone="positive">{formGuestHistory.matchedGuest.totalVisits} visit{formGuestHistory.matchedGuest.totalVisits === 1 ? '' : 's'}</Badge>
+                  </div>
+                  <div className="reserve-guest-match-stats">
+                    <div>
+                      <span>Total spend</span>
+                      <strong>{formGuestHistory.matchedGuest.totalSpendCents > 0
+                        ? `$${(formGuestHistory.matchedGuest.totalSpendCents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 })}`
+                        : '—'}</strong>
+                    </div>
+                    <div>
+                      <span>Last visit</span>
+                      <strong>{formGuestHistory.matchedGuest.lastVisitAt
+                        ? new Date(formGuestHistory.matchedGuest.lastVisitAt).toLocaleDateString()
+                        : '—'}</strong>
+                    </div>
+                    <div>
+                      <span>No-shows</span>
+                      <strong className={formGuestHistory.matchedGuest.noShowCount > 0 ? 'is-warning' : ''}>
+                        {formGuestHistory.matchedGuest.noShowCount}
+                      </strong>
+                    </div>
+                  </div>
+                  {formGuestHistory.recentReservations.length > 0 ? (
+                    <div className="reserve-guest-match-list">
+                      <small>Last 3 visits</small>
+                      {formGuestHistory.recentReservations.map((r) => (
+                        <div key={r.id} className="reserve-guest-match-row">
+                          <span>{new Date(r.startsAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                          <span>{r.covers} guest{r.covers === 1 ? '' : 's'} · {r.servicePeriod.toLowerCase()}</span>
+                          <Badge tone={r.status === 'COMPLETED' ? 'positive' : r.status === 'NO_SHOW' ? 'danger' : r.status === 'CANCELLED' ? 'muted' : 'info'}>
+                            {r.status.replace('_', ' ').toLowerCase()}
+                          </Badge>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                  {formGuestHistory.matchedGuest.allergyNotes || formGuestHistory.matchedGuest.visitNotes ? (
+                    <div className="reserve-guest-match-notes">
+                      {formGuestHistory.matchedGuest.allergyNotes ? (
+                        <p><strong>Allergies:</strong> {formGuestHistory.matchedGuest.allergyNotes}</p>
+                      ) : null}
+                      {formGuestHistory.matchedGuest.visitNotes ? (
+                        <p><strong>Notes:</strong> {formGuestHistory.matchedGuest.visitNotes}</p>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </Card>
 
             <Card title="Tables" subtitle="Lightweight table map foundation">

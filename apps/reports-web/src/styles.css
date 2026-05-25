@@ -797,3 +797,223 @@
     width: 100%;
   }
 }
+
+/* ── Prime cost hero ─────────────────────────────────────────── */
+.prime-cost-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);
+  gap: 28px;
+  align-items: center;
+  padding: 24px 28px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
+  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.08);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+  color: inherit;
+  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  width: 100%;
+}
+
+.prime-cost-hero:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.14);
+  border-color: rgba(36, 76, 159, 0.32);
+}
+
+.prime-cost-hero.is-positive {
+  border-left: 6px solid #16a34a;
+}
+
+.prime-cost-hero.is-warning {
+  border-left: 6px solid #d97706;
+  background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(248, 250, 252, 0.94));
+}
+
+.prime-cost-hero.is-danger {
+  border-left: 6px solid #dc2626;
+  background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(248, 250, 252, 0.94));
+}
+
+.prime-cost-hero-main {
+  display: grid;
+  gap: 6px;
+}
+
+.prime-cost-hero-eyebrow {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.prime-cost-hero-value {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(48px, 7vw, 84px);
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  color: var(--color-text);
+}
+
+.prime-cost-hero.is-positive .prime-cost-hero-value { color: #166534; }
+.prime-cost-hero.is-warning .prime-cost-hero-value { color: #92400e; }
+.prime-cost-hero.is-danger .prime-cost-hero-value { color: #991b1b; }
+
+.prime-cost-hero-split {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  font-weight: 600;
+}
+
+.prime-cost-hero-split span[aria-hidden] {
+  opacity: 0.4;
+}
+
+.prime-cost-hero-trend {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10px;
+  height: 144px;
+  align-items: end;
+}
+
+.prime-cost-hero-bar {
+  position: relative;
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 4px;
+  height: 100%;
+  align-items: end;
+  text-align: center;
+}
+
+.prime-cost-hero-bar-fill {
+  width: 100%;
+  border-radius: 8px 8px 4px 4px;
+  background: linear-gradient(180deg, #94a3b8, #64748b);
+  min-height: 4px;
+  transition: opacity 160ms ease;
+}
+
+.prime-cost-hero-bar.is-positive .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #22c55e, #15803d); }
+.prime-cost-hero-bar.is-warning .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #f59e0b, #b45309); }
+.prime-cost-hero-bar.is-danger .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #ef4444, #b91c1c); }
+.prime-cost-hero-bar.is-muted .prime-cost-hero-bar-fill {
+  background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 4px, #cbd5e1 4px, #cbd5e1 8px);
+  opacity: 0.6;
+}
+
+.prime-cost-hero-bar.is-current .prime-cost-hero-bar-fill {
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor;
+}
+
+.prime-cost-hero-bar-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.prime-cost-hero-bar small {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+
+/* ── Venue comparison ────────────────────────────────────────── */
+.venue-comparison-card {
+  padding: 20px 22px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #fff;
+  box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
+}
+
+.venue-comparison-head {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.venue-comparison-head strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.venue-comparison-head small {
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+}
+
+.venue-comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.venue-comparison-col {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+
+.venue-comparison-name {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 20px;
+  font-weight: 400;
+  padding-bottom: 8px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.venue-comparison-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13.5px;
+}
+
+.venue-comparison-row > span {
+  color: var(--color-text-muted);
+}
+
+.venue-comparison-row > strong {
+  font-weight: 700;
+}
+
+.venue-comparison-row.is-prime {
+  margin-top: 6px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--color-border);
+  font-size: 15px;
+}
+
+.venue-comparison-row.is-prime.is-positive > strong { color: #166534; }
+.venue-comparison-row.is-prime.is-warning > strong { color: #92400e; }
+.venue-comparison-row.is-prime.is-danger > strong { color: #991b1b; }
+
+@media (max-width: 720px) {
+  .prime-cost-hero {
+    grid-template-columns: 1fr;
+    gap: 18px;
+    padding: 18px;
+  }
+
+  .prime-cost-hero-trend {
+    height: 110px;
+  }
+
+  .prime-cost-hero-bar small {
+    font-size: 10px;
+  }
+}

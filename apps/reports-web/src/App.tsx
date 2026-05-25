@@ -655,6 +655,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     loadJsonDraft<Record<string, ForecastInput>>(REPORTS_FORECAST_STORAGE_KEY, {})
   );
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
+  const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; primeCostPercent: number | null; wagePercent: number | null; cogsPercent: number | null; salesCents: number }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
   const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
@@ -713,6 +715,41 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Fetch 4 weeks of historical prime cost for the hero trend
+  useEffect(() => {
+    void (async () => {
+      try {
+        const weeks: Array<{ start: Date; end: Date }> = [];
+        for (let i = 4; i >= 1; i -= 1) {
+          const start = addDays(weekStart, -7 * i);
+          const end = addDays(start, 7);
+          weeks.push({ start, end });
+        }
+        const results = await Promise.all(
+          weeks.map((w) =>
+            staffApi<ReportsPrimeCostPayload>(
+              `/api/reports/prime-cost?start=${w.start.toISOString()}&end=${w.end.toISOString()}`
+            ).catch(() => null)
+          )
+        );
+        setPrimeCostHistory(
+          weeks.map((w, i) => {
+            const totals = results[i]?.totals;
+            return {
+              weekStart: isoDate(w.start),
+              primeCostPercent: totals?.primeCostPercent ?? null,
+              wagePercent: totals?.wagePercent ?? null,
+              cogsPercent: totals?.cogsPercent ?? null,
+              salesCents: totals?.salesCents ?? 0
+            };
+          })
+        );
+      } catch {
+        /* silent — hero will fall back to current week only */
+      }
+    })();
+  }, [weekStart]);
 
   useEffect(() => {
     const handleHashChange = () => setActiveSection(reportSectionFromHash(window.location.hash));
@@ -1407,6 +1444,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       (data.overview?.content.postsNeedingApproval ?? 0) +
       (data.overview?.giftCards.pendingOrders ?? 0);
 
+    // Build 5-week trend (4 historical + current week as the last point)
+    const currentWeekPrimeCost = {
+      weekStart: isoDate(weekStart),
+      primeCostPercent: primeTotals?.primeCostPercent ?? null,
+      wagePercent: primeTotals?.wagePercent ?? null,
+      cogsPercent: primeTotals?.cogsPercent ?? null,
+      salesCents: primeTotals?.salesCents ?? 0
+    };
+    const trendPoints = [...primeCostHistory, currentWeekPrimeCost];
+    const trendMaxPct = Math.max(75, ...trendPoints.map((p) => p.primeCostPercent ?? 0));
+    const currentPct = primeTotals?.primeCostPercent ?? null;
+    const heroTone: 'positive' | 'warning' | 'danger' | 'neutral' =
+      currentPct == null ? 'neutral' : currentPct >= 65 ? 'danger' : currentPct >= 55 ? 'warning' : 'positive';
+
     return (
       <SectionShell
         id="overview"
@@ -1415,6 +1466,89 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         action={<Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>Export overview CSV</Button>}
       >
         <div className="report-section-stack">
+          {/* Prime cost hero — the single most important metric */}
+          <button
+            type="button"
+            className={`prime-cost-hero is-${heroTone}`}
+            onClick={() => selectReportSection('stock')}
+            aria-label="Open prime cost detail"
+          >
+            <div className="prime-cost-hero-main">
+              <span className="prime-cost-hero-eyebrow">Prime cost · {weekWindowLabel}</span>
+              <span className="prime-cost-hero-value">
+                {currentPct != null ? `${currentPct.toFixed(1)}%` : '—'}
+              </span>
+              <span className="prime-cost-hero-split">
+                Wages {formatPercent(primeTotals?.wagePercent)}
+                <span aria-hidden="true">·</span>
+                COGS {formatPercent(primeTotals?.cogsPercent)}
+                <span aria-hidden="true">·</span>
+                Sales {formatCurrency(primeTotals?.salesCents ?? 0)}
+              </span>
+            </div>
+            <div className="prime-cost-hero-trend" aria-label="5 week prime cost trend">
+              {trendPoints.map((point, i) => {
+                const pct = point.primeCostPercent;
+                const height = pct != null ? Math.max(8, (pct / trendMaxPct) * 100) : 6;
+                const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
+                const isCurrent = i === trendPoints.length - 1;
+                return (
+                  <div key={point.weekStart} className={`prime-cost-hero-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
+                    <div className="prime-cost-hero-bar-fill" style={{ height: `${height}%` }} />
+                    <span className="prime-cost-hero-bar-label">
+                      {pct != null ? `${pct.toFixed(0)}%` : '—'}
+                    </span>
+                    <small>
+                      {new Date(point.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
+                    </small>
+                  </div>
+                );
+              })}
+            </div>
+          </button>
+
+          {/* Venue comparison — Avalon vs St Alma side-by-side for the same period */}
+          {(data.primeCost?.venues?.length ?? 0) >= 2 ? (
+            <div className="venue-comparison-card">
+              <div className="venue-comparison-head">
+                <strong>Venue comparison · {weekWindowLabel}</strong>
+                <small>Same period, side-by-side</small>
+              </div>
+              <div className="venue-comparison-grid">
+                {(data.primeCost?.venues ?? []).map((venue) => {
+                  const primeColor = venue.primeCostPercent == null
+                    ? 'muted'
+                    : venue.primeCostPercent >= 65 ? 'danger' : venue.primeCostPercent >= 55 ? 'warning' : 'positive';
+                  return (
+                    <div key={venue.venue} className="venue-comparison-col">
+                      <div className="venue-comparison-name">{venue.venue}</div>
+                      <div className="venue-comparison-row">
+                        <span>Sales</span>
+                        <strong>{formatCurrency(venue.salesCents)}</strong>
+                      </div>
+                      <div className="venue-comparison-row">
+                        <span>Trading days</span>
+                        <strong>{venue.salesDays || '—'}</strong>
+                      </div>
+                      <div className="venue-comparison-row">
+                        <span>Wages</span>
+                        <strong>{formatPercent(venue.wagePercent)}</strong>
+                      </div>
+                      <div className="venue-comparison-row">
+                        <span>COGS</span>
+                        <strong>{formatPercent(venue.cogsPercent)}</strong>
+                      </div>
+                      <div className={`venue-comparison-row is-prime is-${primeColor}`}>
+                        <span>Prime cost</span>
+                        <strong>{formatPercent(venue.primeCostPercent)}</strong>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          ) : null}
+
           <div className="stats-grid report-metric-grid">
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('compliance')} aria-label="Open attention reports">
               <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
@@ -1440,8 +1574,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
               <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
             </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open prime cost reports">
-              <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} · ${qualityLabel(primeTotals?.sourceQuality)}`} loading={loading} />
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
+              <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
             </button>
           </div>
 

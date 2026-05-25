@@ -8240,6 +8240,10 @@ function RosterPage({
   const [shiftNotes, setShiftNotes] = useState('');
   const [editingShift, setEditingShift] = useState<RosterShift | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  // Leave requests overlapping the displayed week — drives the on-leave
+  // overlay on roster cells so managers don't have to cross-check leave
+  // before scheduling a shift.
+  const [leaveOverlays, setLeaveOverlays] = useState<StaffLeaveRequest[]>([]);
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [staffDropTargetShiftId, setStaffDropTargetShiftId] = useState<string | null>(null);
   const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
@@ -8618,6 +8622,25 @@ function RosterPage({
   useEffect(() => {
     void reload(weekStart, weekEnd);
   }, [reload, weekEnd, weekStart]);
+
+  // Pull leave overlapping the displayed roster window — PENDING and
+  // APPROVED only, so cancelled/rejected leave doesn't ghost the cells.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const params = new URLSearchParams({
+          start: toDateInput(weekStart),
+          end: toDateInput(addDays(weekEnd, -1))
+        });
+        const leave = await api<StaffLeaveRequest[]>(`/api/staff/leave?${params.toString()}`);
+        setLeaveOverlays(
+          leave.filter((item) => item.status === 'PENDING' || item.status === 'APPROVED')
+        );
+      } catch {
+        setLeaveOverlays([]);
+      }
+    })();
+  }, [weekStart, weekEnd]);
 
   useEffect(() => {
     const selectedDate = new Date(`${mobileSelectedDay}T00:00:00`);
@@ -9558,12 +9581,16 @@ function RosterPage({
                     </div>
                     {days.map((day) => {
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
+                      // Match leave on this staff member for this day
+                      const memberLeave = row.member
+                        ? leaveOverlays.find((l) => l.staffProfileId === row.member!.id && leaveOverlapsDay(l, day))
+                        : null;
                       if (isRowCollapsed) {
                         return (
                           <button
                             key={`${row.id}-${day.toISOString()}`}
                             type="button"
-                            className="deputy-schedule-cell is-row-collapsed"
+                            className={`deputy-schedule-cell is-row-collapsed${memberLeave ? ' has-leave' : ''}`}
                             onClick={() => {
                               toggleRowCollapsed(row.id);
                               prefillCell(row, day);
@@ -9586,7 +9613,7 @@ function RosterPage({
                         <button
                           key={`${row.id}-${day.toISOString()}`}
                           type="button"
-                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}`}
+                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}${memberLeave ? ` has-leave is-leave-${memberLeave.status.toLowerCase()}` : ''}`}
                           aria-disabled={isClosed}
                           onClick={() => prefillCell(row, day)}
                           onDragOver={(event) => {
@@ -9599,6 +9626,12 @@ function RosterPage({
                             <span className="deputy-closed-cell">
                               Closed
                               {cellShifts.length ? <small>{cellShifts.length}</small> : null}
+                            </span>
+                          ) : null}
+                          {memberLeave && !isClosed ? (
+                            <span className={`deputy-leave-overlay is-${memberLeave.status.toLowerCase()}`} title={`${leaveTypeLabel(memberLeave.type)} · ${memberLeave.status.toLowerCase()}`}>
+                              {memberLeave.status === 'APPROVED' ? '✓' : '⏳'}
+                              <small>{leaveTypeLabel(memberLeave.type).split(' ')[0]}</small>
                             </span>
                           ) : null}
                           {!isClosed && cellShifts.length === 0 ? <span className="deputy-add-shift">+ Shift</span> : null}

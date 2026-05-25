@@ -5522,3 +5522,59 @@
   .live-staff-row { grid-template-columns: 10px 1fr auto; }
   .live-staff-detail, .live-staff-time { display: none; }
 }
+
+/* Leave overlay on roster cells */
+.deputy-schedule-cell.has-leave {
+  background:
+    repeating-linear-gradient(45deg, rgba(217, 119, 6, 0.06) 0 8px, rgba(217, 119, 6, 0.12) 8px 16px),
+    var(--color-surface);
+}
+
+.deputy-schedule-cell.has-leave.is-leave-approved {
+  background:
+    repeating-linear-gradient(45deg, rgba(220, 38, 38, 0.06) 0 8px, rgba(220, 38, 38, 0.14) 8px 16px),
+    var(--color-surface);
+}
+
+.deputy-schedule-cell.has-leave.is-row-collapsed::before {
+  content: 'L';
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  color: rgba(220, 38, 38, 0.7);
+}
+
+.deputy-leave-overlay {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(220, 38, 38, 0.92);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.deputy-leave-overlay.is-pending {
+  background: rgba(217, 119, 6, 0.92);
+}
+
+.deputy-leave-overlay small {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.deputy-schedule-cell {
+  position: relative;
+}

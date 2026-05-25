@@ -570,6 +570,12 @@ function useMarketingActivePath() {
   const [activePath, setActivePath] = useState(currentMarketingPath);
 
   useEffect(() => {
+    // Default landing is the content calendar — operators check upcoming
+    // posts more often than the overview metrics.
+    if (window.location.pathname === '/' && !window.location.hash) {
+      window.history.replaceState(null, '', '/content/calendar');
+      setActivePath('/content/calendar');
+    }
     const syncPath = () => setActivePath(currentMarketingPath());
     syncPath();
     window.addEventListener('popstate', syncPath);
@@ -1753,6 +1759,27 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <div className="marketing-summary-card">
                           <strong>{segmentPreview.includedCount} included</strong>
                           <span>{segmentPreview.skippedCount} skipped · {segmentPreview.guestCount} total · {segmentPreview.estimatedReachableEmailCount} reachable email</span>
+                        </div>
+                        <div className="toolbar-right">
+                          <Button
+                            type="button"
+                            onClick={() => {
+                              setCampaignForm((current) => ({
+                                ...current,
+                                venue: segmentForm.venue,
+                                channel: segmentForm.channel,
+                                audienceName: current.audienceName ||
+                                  `${segmentPreview.includedCount} guests · ${segmentForm.venue}`
+                              }));
+                              navigateMarketingPath('/campaigns');
+                            }}
+                            disabled={segmentPreview.includedCount === 0}
+                          >
+                            Send campaign to this segment →
+                          </Button>
+                          <span className="subtle" style={{ fontSize: 12 }}>
+                            Pre-fills the campaign builder with this segment attached
+                          </span>
                         </div>
                         <div className="marketing-badges">
                           {Object.entries(segmentPreview.skippedReasons).map(([reason, count]) => (
