@@ -78,6 +78,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconRecipes />
   },
   {
+    to: '/dish-margins',
+    label: 'Dish margins',
+    description: 'Recipe cost vs sell price with RAG status',
+    icon: <IconRecipes />
+  },
+  {
     to: '/production-recipes',
     label: 'Production Recipes',
     description: 'Prep batches, sauces and reusable components',

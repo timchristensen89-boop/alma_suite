@@ -657,6 +657,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [exportMessage, setExportMessage] = useState<string | null>(null);
   // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
   const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; primeCostPercent: number | null; wagePercent: number | null; cogsPercent: number | null; salesCents: number }>>([]);
+  // 8-week forecast vs actual history for the sales section chart.
+  const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
   const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
@@ -750,6 +752,59 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
     })();
   }, [weekStart]);
+
+  // 8-week forecast vs actual history (oldest left, current week rightmost)
+  useEffect(() => {
+    void (async () => {
+      try {
+        const earliest = addDays(weekStart, -7 * 7);
+        const [snapshots, actuals] = await Promise.all([
+          staffApi<RosterForecastSnapshot[]>(
+            `/api/staff/roster/forecast-snapshots?start=${earliest.toISOString()}&end=${weekEnd.toISOString()}`
+          ),
+          staffApi<SalesActualSummary>(
+            `/api/reports/sales?start=${earliest.toISOString()}&end=${weekEnd.toISOString()}`
+          )
+        ]);
+
+        // Bucket actuals by ISO week-start date
+        const actualByWeek = new Map<string, number>();
+        for (const entry of actuals.entries ?? []) {
+          const d = new Date(entry.serviceDate);
+          d.setHours(0, 0, 0, 0);
+          // Move to Monday of that week
+          const day = d.getDay();
+          const diff = day === 0 ? -6 : 1 - day;
+          d.setDate(d.getDate() + diff);
+          const key = isoDate(d);
+          actualByWeek.set(key, (actualByWeek.get(key) ?? 0) + entry.salesCents);
+        }
+
+        // Bucket forecast snapshots by week
+        const forecastByWeek = new Map<string, number>();
+        for (const snap of snapshots) {
+          const key = isoDate(new Date(snap.weekStart));
+          forecastByWeek.set(key, (forecastByWeek.get(key) ?? 0) + snap.forecastSalesCents);
+        }
+
+        // Build 8-week skeleton (current week last)
+        const buckets: typeof forecastHistory = [];
+        for (let i = 7; i >= 0; i -= 1) {
+          const ws = addDays(weekStart, -7 * i);
+          const key = isoDate(ws);
+          const forecastCents = forecastByWeek.get(key) ?? 0;
+          const actualCents = actualByWeek.get(key) ?? 0;
+          const variance = forecastCents > 0 && actualCents > 0
+            ? ((actualCents - forecastCents) / forecastCents) * 100
+            : null;
+          buckets.push({ weekStart: key, forecastCents, actualCents, variance });
+        }
+        setForecastHistory(buckets);
+      } catch {
+        /* silent */
+      }
+    })();
+  }, [weekStart, weekEnd]);
 
   useEffect(() => {
     const handleHashChange = () => setActiveSection(reportSectionFromHash(window.location.hash));
@@ -1792,6 +1847,64 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <span><i className="legend-dot is-forecast" />Forecast or historical baseline</span>
             </div>
           </div>
+
+          {/* 8-week forecast vs actual */}
+          {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
+            <div className="report-panel">
+              <h4>Forecast vs actual · last 8 weeks</h4>
+              <p className="subtle" style={{ marginTop: -4 }}>
+                Side-by-side bars per week. Variance shows how the forecast compared to imported actuals.
+              </p>
+              {(() => {
+                const maxCents = Math.max(
+                  ...forecastHistory.map((w) => Math.max(w.forecastCents, w.actualCents)),
+                  1
+                );
+                const avgVariance = (() => {
+                  const valid = forecastHistory.filter((w) => w.variance !== null) as Array<{ variance: number }>;
+                  if (valid.length === 0) return null;
+                  return valid.reduce((sum, w) => sum + Math.abs(w.variance), 0) / valid.length;
+                })();
+                return (
+                  <>
+                    <div className="forecast-vs-actual-chart">
+                      {forecastHistory.map((week) => {
+                        const fHeight = (week.forecastCents / maxCents) * 100;
+                        const aHeight = (week.actualCents / maxCents) * 100;
+                        const tone = week.variance === null ? 'muted'
+                          : Math.abs(week.variance) <= 5 ? 'positive'
+                          : Math.abs(week.variance) <= 15 ? 'warning'
+                          : 'danger';
+                        return (
+                          <div key={week.weekStart} className={`forecast-vs-actual-week is-${tone}`}>
+                            <div className="forecast-vs-actual-bars">
+                              <div className="forecast-vs-actual-bar is-forecast" style={{ height: `${Math.max(2, fHeight)}%` }} title={`Forecast: ${formatCurrency(week.forecastCents)}`} />
+                              <div className="forecast-vs-actual-bar is-actual" style={{ height: `${Math.max(2, aHeight)}%` }} title={`Actual: ${formatCurrency(week.actualCents)}`} />
+                            </div>
+                            <small>{new Date(week.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</small>
+                            <span>
+                              {week.variance !== null
+                                ? `${week.variance > 0 ? '+' : ''}${week.variance.toFixed(0)}%`
+                                : '—'}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="sales-chart-legend">
+                      <span><i className="legend-dot is-forecast" />Forecast</span>
+                      <span><i className="legend-dot is-actual" />Actual</span>
+                      {avgVariance !== null ? (
+                        <span className="subtle">
+                          · Average absolute variance across 8 weeks: <strong>{avgVariance.toFixed(1)}%</strong>
+                        </span>
+                      ) : null}
+                    </div>
+                  </>
+                );
+              })()}
+            </div>
+          ) : null}
 
           <div className="report-panel">
             <h4>Actual/imported sales rows</h4>

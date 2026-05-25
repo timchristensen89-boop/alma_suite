@@ -1409,19 +1409,28 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
                   <div className="marketing-stack" hidden={!showContentComposer}>
                     <Card title="Post composer" subtitle="Facebook, Instagram, and TikTok previews. Live publish stays setup required.">
-                      <div className="marketing-summary-card">
-                        <strong>Hospitality helpers</strong>
-                        <span>Prefill post and campaign copy for bookings, gift cards, functions, specials, events, cocktails, and staff stories.</span>
-                        <div className="marketing-badges">
+                      <div className="ai-helper-panel" role="region" aria-label="AI content helpers">
+                        <div className="ai-helper-panel-head">
+                          <div>
+                            <span className="ai-helper-eyebrow">✨ AI assist</span>
+                            <strong>Generate post or campaign copy in seconds</strong>
+                            <small>Tap a brief to prefill the composer below, or generate a draft directly.</small>
+                          </div>
+                        </div>
+                        <div className="ai-helper-grid">
                           {contentHelpers.map((helper) => (
-                            <span key={helper.id} className="marketing-tag-chip">
-                              <Button type="button" size="sm" variant="secondary" onClick={() => applyContentHelper(helper)}>
-                                {helper.label}
-                              </Button>
-                              <Button type="button" size="sm" variant="ghost" onClick={() => void createPostFromHelper(helper)}>
-                                Create draft
-                              </Button>
-                            </span>
+                            <div key={helper.id} className="ai-helper-card">
+                              <strong>{helper.label}</strong>
+                              {helper.campaignSubject ? <small>{helper.campaignSubject}</small> : null}
+                              <div className="ai-helper-actions">
+                                <Button type="button" size="sm" variant="secondary" onClick={() => applyContentHelper(helper)}>
+                                  Prefill
+                                </Button>
+                                <Button type="button" size="sm" onClick={() => void createPostFromHelper(helper)}>
+                                  Create draft →
+                                </Button>
+                              </div>
+                            </div>
                           ))}
                         </div>
                         <ActionFeedback message={feedback.target === 'content-helper' ? feedback.message : null} tone={feedback.tone} />
@@ -1524,9 +1533,24 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
                 <div className="content-bottom-grid" hidden={!showContentCalendar && !showContentApprovals}>
                   {showContentCalendar ? (
-                    <Card title="Content calendar" subtitle="Scheduled and approved social posts">
+                    <Card
+                      title="Content calendar"
+                      subtitle="Scheduled and approved social posts"
+                      action={
+                        <Button
+                          type="button"
+                          size="sm"
+                          onClick={() => navigateMarketingPath('/content/composer')}
+                        >
+                          ✨ AI assist
+                        </Button>
+                      }
+                    >
                       {upcomingContentPosts.length === 0 ? (
-                        <EmptyState title="No scheduled content" description="Save a post with a schedule time, then approve and simulate it." />
+                        <EmptyState
+                          title="No scheduled content"
+                          description="Save a post with a schedule time, then approve and simulate it. Or tap ✨ AI assist to generate a draft from a hospitality brief."
+                        />
                       ) : (
                         <div className="content-calendar-list">
                           {upcomingContentPosts.map((post) => (

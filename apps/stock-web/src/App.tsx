@@ -8,6 +8,7 @@ import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
 import { RecipesPage } from './pages/RecipesPage';
+import { DishMarginPage } from './pages/DishMarginPage';
 import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WastagePage } from './pages/WastagePage';
@@ -162,6 +163,7 @@ function StockAppShell() {
         <Route path="/wastage" element={<WastagePage />} />
         <Route path="/reorder" element={<ReorderNoticesPage />} />
         <Route path="/recipes" element={<RecipesPage mode="item" />} />
+        <Route path="/dish-margins" element={<DishMarginPage />} />
         <Route path="/production-recipes" element={<RecipesPage mode="production" />} />
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />

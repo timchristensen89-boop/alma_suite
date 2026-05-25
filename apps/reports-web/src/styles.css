@@ -1017,3 +1017,85 @@
     font-size: 10px;
   }
 }
+
+/* Forecast vs actual 8-week chart */
+.forecast-vs-actual-chart {
+  display: grid;
+  grid-template-columns: repeat(8, minmax(0, 1fr));
+  gap: 10px;
+  align-items: end;
+  height: 200px;
+  padding: 8px 0 0;
+}
+
+.forecast-vs-actual-week {
+  display: grid;
+  grid-template-rows: 1fr auto auto;
+  gap: 6px;
+  height: 100%;
+  text-align: center;
+}
+
+.forecast-vs-actual-bars {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 3px;
+  align-items: end;
+  height: 100%;
+}
+
+.forecast-vs-actual-bar {
+  width: 100%;
+  border-radius: 4px 4px 0 0;
+  min-height: 2px;
+  transition: opacity 120ms ease;
+}
+
+.forecast-vs-actual-bar.is-forecast {
+  background: linear-gradient(180deg, #94a3b8, #64748b);
+}
+
+.forecast-vs-actual-bar.is-actual {
+  background: linear-gradient(180deg, #2563eb, #1d4ed8);
+}
+
+.forecast-vs-actual-week small {
+  font-size: 10.5px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.04em;
+}
+
+.forecast-vs-actual-week span {
+  font-size: 11px;
+  font-weight: 800;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.16);
+  color: var(--color-text-muted);
+}
+
+.forecast-vs-actual-week.is-positive span {
+  background: rgba(34, 197, 94, 0.14);
+  color: #166534;
+}
+
+.forecast-vs-actual-week.is-warning span {
+  background: rgba(245, 158, 11, 0.16);
+  color: #92400e;
+}
+
+.forecast-vs-actual-week.is-danger span {
+  background: rgba(239, 68, 68, 0.14);
+  color: #991b1b;
+}
+
+.forecast-vs-actual-week.is-muted .forecast-vs-actual-bar {
+  background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 4px, #cbd5e1 4px, #cbd5e1 8px);
+}
+
+@media (max-width: 720px) {
+  .forecast-vs-actual-chart {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: 240px;
+  }
+}
