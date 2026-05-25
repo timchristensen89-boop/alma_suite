@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { DragEvent, FormEvent, MouseEvent as ReactMouseEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   AuthUser,
   GuestTimelinePayload,
@@ -79,6 +79,7 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
 };
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
+  { href: '#floor-plan', label: 'Floor plan', description: 'Drag-drop table layout', icon: <GearIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
   { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
   { href: '#availability', label: 'Availability', description: 'Rules and blackouts', icon: <GearIcon /> },
@@ -1264,6 +1265,258 @@ function WaitlistSection({
   );
 }
 
+// Per-venue table position storage. Backend doesn't track x/y coordinates,
+// so we persist them in localStorage keyed by venue. Each venue's layout is
+// the host's local layout — fine for single-venue use; for cross-device sync
+// the positions would need to move to the backend (StockItem-like venue
+// table positions table).
+type TablePosition = { x: number; y: number };
+function loadFloorLayout(venue: string): Record<string, TablePosition> {
+  try {
+    const raw = window.localStorage.getItem(`alma.reserve.floor.${venue}`);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw);
+    return typeof parsed === 'object' && parsed ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+function persistFloorLayout(venue: string, layout: Record<string, TablePosition>) {
+  try {
+    window.localStorage.setItem(`alma.reserve.floor.${venue}`, JSON.stringify(layout));
+  } catch {
+    /* swallow */
+  }
+}
+
+function FloorPlanSection({
+  venue,
+  tables,
+  reservations,
+  onAssignTable
+}: {
+  venue: string;
+  tables: ReserveTable[];
+  reservations: ReserveReservation[];
+  onAssignTable: (reservationId: string, tableId: string | null) => void | Promise<void>;
+}) {
+  const [layouts, setLayouts] = useState<Record<string, Record<string, TablePosition>>>(() => {
+    const initial: Record<string, Record<string, TablePosition>> = {};
+    for (const tableVenue of Array.from(new Set(tables.map((t) => t.venue)))) {
+      initial[tableVenue] = loadFloorLayout(tableVenue);
+    }
+    if (!initial[venue]) initial[venue] = loadFloorLayout(venue);
+    return initial;
+  });
+  const [editMode, setEditMode] = useState(false);
+  const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
+  const [draggingReservationId, setDraggingReservationId] = useState<string | null>(null);
+  const [dropTargetTableId, setDropTargetTableId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement | null>(null);
+
+  // Refresh layout when venue changes
+  useEffect(() => {
+    setLayouts((current) => ({
+      ...current,
+      [venue]: current[venue] ?? loadFloorLayout(venue)
+    }));
+  }, [venue]);
+
+  // Persist when layout changes
+  useEffect(() => {
+    const layout = layouts[venue];
+    if (layout) persistFloorLayout(venue, layout);
+  }, [venue, layouts]);
+
+  const layout = layouts[venue] ?? {};
+
+  // Auto-place new tables in a grid if they don't have a saved position
+  const positionedTables = tables.map((table, index) => {
+    const saved = layout[table.id];
+    if (saved) return { table, x: saved.x, y: saved.y };
+    // Auto-grid: 4 columns
+    const col = index % 4;
+    const row = Math.floor(index / 4);
+    return { table, x: 8 + col * 22, y: 12 + row * 20 };
+  });
+
+  function updateTablePosition(tableId: string, x: number, y: number) {
+    setLayouts((current) => ({
+      ...current,
+      [venue]: {
+        ...(current[venue] ?? {}),
+        [tableId]: { x, y }
+      }
+    }));
+  }
+
+  function handleTableMouseDown(event: ReactMouseEvent<HTMLDivElement>, tableId: string) {
+    if (!editMode) return;
+    event.preventDefault();
+    setDraggingTableId(tableId);
+  }
+
+  function handleCanvasMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!draggingTableId || !canvasRef.current) return;
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = Math.max(2, Math.min(96, ((event.clientX - rect.left) / rect.width) * 100));
+    const y = Math.max(2, Math.min(94, ((event.clientY - rect.top) / rect.height) * 100));
+    updateTablePosition(draggingTableId, x, y);
+  }
+
+  function handleCanvasMouseUp() {
+    setDraggingTableId(null);
+  }
+
+  function handleReservationDragStart(event: DragEvent<HTMLElement>, reservationId: string) {
+    event.dataTransfer.setData('text/plain', `reservation:${reservationId}`);
+    event.dataTransfer.effectAllowed = 'move';
+    setDraggingReservationId(reservationId);
+  }
+
+  function handleTableDragOver(event: DragEvent<HTMLElement>, tableId: string) {
+    if (!draggingReservationId) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'move';
+    setDropTargetTableId(tableId);
+  }
+
+  function handleTableDrop(event: DragEvent<HTMLElement>, tableId: string) {
+    event.preventDefault();
+    const data = event.dataTransfer.getData('text/plain');
+    if (data.startsWith('reservation:')) {
+      const reservationId = data.slice('reservation:'.length);
+      void onAssignTable(reservationId, tableId);
+    }
+    setDraggingReservationId(null);
+    setDropTargetTableId(null);
+  }
+
+  // Reservations: split into assigned (have tableId) and unassigned
+  const reservationsByTable = new Map<string, ReserveReservation[]>();
+  const unassignedReservations: ReserveReservation[] = [];
+  for (const reservation of reservations) {
+    if (reservation.tableId) {
+      const list = reservationsByTable.get(reservation.tableId) ?? [];
+      list.push(reservation);
+      reservationsByTable.set(reservation.tableId, list);
+    } else {
+      unassignedReservations.push(reservation);
+    }
+  }
+
+  if (tables.length === 0) {
+    return (
+      <Card title="Floor plan" subtitle={`No tables configured for ${venue} yet — add tables in the Tables card first.`}>
+        <EmptyState
+          title="No tables to lay out"
+          description="Once you add tables for this venue, drag them around to build your floor plan, then drop today's bookings onto specific tables."
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <Card
+      title="Floor plan"
+      subtitle={`${tables.length} table${tables.length === 1 ? '' : 's'} at ${venue}. ${editMode ? 'Drag tables to position them. Tap Done when finished.' : "Drag a booking from the side list onto a table to assign it. Tap Edit to rearrange tables."}`}
+      action={
+        <Button
+          type="button"
+          size="sm"
+          variant={editMode ? 'primary' : 'secondary'}
+          onClick={() => setEditMode((current) => !current)}
+        >
+          {editMode ? '✓ Done arranging' : '✎ Edit layout'}
+        </Button>
+      }
+    >
+      <div className="floor-plan-layout">
+        {/* Canvas */}
+        <div
+          ref={canvasRef}
+          className={`floor-plan-canvas ${editMode ? 'is-editing' : ''}`}
+          onMouseMove={handleCanvasMouseMove}
+          onMouseUp={handleCanvasMouseUp}
+          onMouseLeave={handleCanvasMouseUp}
+        >
+          {positionedTables.map(({ table, x, y }) => {
+            const tableBookings = reservationsByTable.get(table.id) ?? [];
+            const occupancy = tableBookings.length;
+            const tone = occupancy === 0 ? 'free' : tableBookings.some((r) => r.status === 'SEATED') ? 'seated' : 'booked';
+            const isDropTarget = dropTargetTableId === table.id;
+            return (
+              <div
+                key={table.id}
+                className={`floor-plan-table is-${tone}${isDropTarget ? ' is-drop-target' : ''}${draggingTableId === table.id ? ' is-dragging' : ''}`}
+                style={{ left: `${x}%`, top: `${y}%`, cursor: editMode ? 'move' : 'default' }}
+                onMouseDown={(event) => handleTableMouseDown(event, table.id)}
+                onDragOver={(event) => handleTableDragOver(event, table.id)}
+                onDragLeave={() => setDropTargetTableId((current) => (current === table.id ? null : current))}
+                onDrop={(event) => handleTableDrop(event, table.id)}
+              >
+                <span className="floor-plan-table-label">{table.label}</span>
+                <span className="floor-plan-table-area">{table.area}</span>
+                <span className="floor-plan-table-capacity">{table.minCovers}–{table.maxCovers} guests</span>
+                {tableBookings.length > 0 ? (
+                  <div className="floor-plan-table-bookings">
+                    {tableBookings.slice(0, 2).map((r) => (
+                      <span key={r.id} title={`${r.guestName} · ${r.covers} guests`}>
+                        {r.guestName?.split(' ')[0] ?? 'Guest'} · {r.covers}p
+                      </span>
+                    ))}
+                    {tableBookings.length > 2 ? <span>+{tableBookings.length - 2}</span> : null}
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+          {positionedTables.length === 0 ? (
+            <div className="floor-plan-empty">No tables placed</div>
+          ) : null}
+        </div>
+
+        {/* Side panel: unassigned reservations to drag onto tables */}
+        <aside className="floor-plan-side">
+          <strong className="floor-plan-side-head">
+            Today's bookings · {unassignedReservations.length} unassigned
+          </strong>
+          {unassignedReservations.length === 0 ? (
+            <p className="subtle">All of today's bookings have a table. Drag any one off a table to unassign — or open the booking to change.</p>
+          ) : null}
+          {unassignedReservations.map((reservation) => (
+            <div
+              key={reservation.id}
+              draggable
+              className="floor-plan-reservation-chip"
+              onDragStart={(event) => handleReservationDragStart(event, reservation.id)}
+              onDragEnd={() => { setDraggingReservationId(null); setDropTargetTableId(null); }}
+              title="Drag onto a table to assign"
+            >
+              <strong>{reservation.guestName || 'Guest'}</strong>
+              <span>
+                {reservation.covers} guest{reservation.covers === 1 ? '' : 's'} · {new Date(reservation.startsAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}
+              </span>
+              <small>{reservation.servicePeriod.toLowerCase()} · {reservation.status.toLowerCase()}</small>
+            </div>
+          ))}
+
+          {reservations.some((r) => r.tableId) ? (
+            <>
+              <strong className="floor-plan-side-head" style={{ marginTop: 14 }}>
+                Assigned · {reservations.filter((r) => r.tableId).length}
+              </strong>
+              <p className="subtle" style={{ fontSize: 12 }}>
+                Tap a booking on a table to unassign it.
+              </p>
+            </>
+          ) : null}
+        </aside>
+      </div>
+    </Card>
+  );
+}
+
 function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const venueOptions = useMemo(() => effectiveVenueOptions(user), [user]);
   const initialVenue = firstManagerVenue(user, isAdmin(user) ? ALL_VENUES : user.venue);
@@ -1839,6 +2092,26 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             <section id="waitlist">
               <WaitlistSection defaultVenue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
+            </section>
+
+            <section id="floor-plan">
+              <FloorPlanSection
+                venue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter}
+                tables={tables.filter((t) => t.isActive && (venueFilter === 'all' || t.venue === venueFilter))}
+                reservations={dashboard?.todayReservations ?? []}
+                onAssignTable={async (reservationId, tableId) => {
+                  try {
+                    await api(`/api/reserve/reservations/${reservationId}`, {
+                      method: 'PATCH',
+                      body: JSON.stringify({ tableId: tableId || null })
+                    });
+                    setSuccess('reservation', tableId ? 'Reservation assigned to table.' : 'Reservation unassigned.');
+                    void load();
+                  } catch (error) {
+                    setError('reservation', error, 'Could not assign reservation.');
+                  }
+                }}
+              />
             </section>
 
             <section id="availability">
