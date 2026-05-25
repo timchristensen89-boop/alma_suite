@@ -43,7 +43,8 @@ const PUBLIC_PREFIXES = [
   '/api/gift-cards/wallet/google/',
   '/api/staff/invites/by-token/',
   '/api/reserve/public-widget/',
-  '/api/reserve/public/'
+  '/api/reserve/public/',
+  '/api/public/venue-snapshot'
 ];
 
 function isPublic(path: string) {

@@ -83,6 +83,12 @@ function VenueStockSettingsForm({
   const [active, setActive] = useState(() => item.venueStock?.active ?? (item.status === 'ACTIVE'));
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  const [parSuggestion, setParSuggestion] = useState<{
+    avgWeeklyUsage: number | null;
+    suggestedPar: number | null;
+    currentPar: number | null;
+    sampleSize: number;
+  } | null>(null);
 
   useEffect(() => {
     setParLevel(item.venueStock?.parLevel?.toString() ?? item.parLevel.toString());
@@ -91,6 +97,24 @@ function VenueStockSettingsForm({
     setActive(item.venueStock?.active ?? (item.status === 'ACTIVE'));
     setMessage(null);
   }, [item]);
+
+  // Pull 12-week usage history to suggest a par level
+  useEffect(() => {
+    if (!venue) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const result = await api<typeof parSuggestion>(
+          `/api/items/${item.id}/usage-history?venue=${encodeURIComponent(venue)}&weeks=12`
+        );
+        if (!cancelled) setParSuggestion(result);
+      } catch {
+        /* silent — par suggestion is informational only */
+      }
+    })();
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [item.id, venue]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -147,6 +171,27 @@ function VenueStockSettingsForm({
       <p className="subtle">
         Current on-hand is {formatOptionalQuantity(item.venueStock?.onHand, effectiveUnit(item))}. On-hand is set through approved stocktake movements, not this form.
       </p>
+      {parSuggestion && parSuggestion.suggestedPar != null && parSuggestion.sampleSize >= 3 ? (
+        <div className={`par-suggestion ${parSuggestion.suggestedPar > (Number(parLevel) || 0) ? 'is-up' : 'is-down'}`}>
+          <span className="par-suggestion-eyebrow">12-week usage suggests</span>
+          <strong>par of {parSuggestion.suggestedPar}</strong>
+          <span className="par-suggestion-meta">
+            avg {parSuggestion.avgWeeklyUsage?.toFixed(1) ?? '—'}/wk × 1.4 buffer · {parSuggestion.sampleSize} usable week{parSuggestion.sampleSize === 1 ? '' : 's'} of data
+          </span>
+          {String(parSuggestion.suggestedPar) !== parLevel ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              onClick={() => setParLevel(String(parSuggestion.suggestedPar))}
+            >
+              Apply suggestion →
+            </Button>
+          ) : (
+            <span className="par-suggestion-meta">Current par matches suggestion</span>
+          )}
+        </div>
+      ) : null}
       {message ? <p className="form-message">{message}</p> : null}
       <Button type="submit" size="sm" disabled={!canManage || saving}>
         {saving ? 'Saving...' : 'Save venue settings'}

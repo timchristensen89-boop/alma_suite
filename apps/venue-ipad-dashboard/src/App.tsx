@@ -1,4 +1,56 @@
+import { useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
+
+// Read-only live snapshot endpoint on the compliance API. Public path —
+// no auth required (shared trusted iPad device).
+const COMPLIANCE_API = (
+  (import.meta as unknown as { env: Record<string, string | undefined> }).env?.VITE_COMPLIANCE_API_URL
+  ?? 'https://alma-compliance.web.app'
+).replace(/\/+$/, '');
+
+type LiveSnapshot = {
+  venue: string | null;
+  generatedAt: string;
+  bookings: { today: number; coversToday: number };
+  checklists: { active: number };
+  temperatures: { outOfRangeSensors: number };
+  compliance: { openIssues: number; criticalIssues: number };
+};
+
+const VENUE_NAMES: Record<string, string> = {
+  'st-alma': 'St Alma',
+  'alma-avalon': 'Alma Avalon'
+};
+
+function useVenueSnapshot(venueId: string | undefined) {
+  const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!venueId) return;
+    const venueName = VENUE_NAMES[venueId] ?? '';
+    const fetchSnapshot = async () => {
+      setLoading(true);
+      try {
+        const url = `${COMPLIANCE_API}/api/public/venue-snapshot${venueName ? `?venue=${encodeURIComponent(venueName)}` : ''}`;
+        const response = await fetch(url, { credentials: 'omit' });
+        if (response.ok) {
+          setSnapshot(await response.json());
+        }
+      } catch {
+        /* silent — iPad shows last-known values */
+      } finally {
+        setLoading(false);
+      }
+    };
+    void fetchSnapshot();
+    // Refresh every 60 seconds for an always-on display
+    const id = window.setInterval(fetchSnapshot, 60_000);
+    return () => window.clearInterval(id);
+  }, [venueId]);
+
+  return { snapshot, loading };
+}
 
 type VenueId = 'st-alma' | 'alma-avalon';
 
@@ -210,17 +262,52 @@ function VenueSelectPage() {
 function VenueHomePage() {
   const { venueId } = useParams();
   const venue = venueById(venueId);
+  const { snapshot } = useVenueSnapshot(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
 
   const tools = toolsForVenue(venue);
+  const liveBookings = snapshot?.bookings.today ?? venue.bookingsToday;
+  const liveCovers = snapshot?.bookings.coversToday;
+  const liveChecklists = snapshot?.checklists.active;
+  const tempAlerts = snapshot?.temperatures.outOfRangeSensors ?? 0;
+  const openIssues = snapshot?.compliance.openIssues ?? venue.openTasks;
+  const criticalIssues = snapshot?.compliance.criticalIssues ?? 0;
+  const lastUpdated = snapshot ? new Date(snapshot.generatedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) : null;
 
   return (
     <AppShell venue={venue}>
       <section className="page-stack">
+        {/* Live operational snapshot — refreshed every 60 seconds */}
+        <div className="ipad-live-panels">
+          <div className={`ipad-live-panel is-${liveBookings > 0 ? 'positive' : 'neutral'}`}>
+            <span className="ipad-live-eyebrow">Today's bookings</span>
+            <strong className="ipad-live-value">{liveBookings}</strong>
+            <span className="ipad-live-detail">{liveCovers !== undefined ? `${liveCovers} covers` : 'No covers data'}</span>
+          </div>
+          <div className={`ipad-live-panel is-${liveChecklists !== undefined && liveChecklists > 0 ? 'warning' : 'positive'}`}>
+            <span className="ipad-live-eyebrow">Active checklists</span>
+            <strong className="ipad-live-value">{liveChecklists ?? '—'}</strong>
+            <span className="ipad-live-detail">{venue.checklistProgress}% progress overall</span>
+          </div>
+          <div className={`ipad-live-panel is-${tempAlerts > 0 ? 'danger' : 'positive'}`}>
+            <span className="ipad-live-eyebrow">Temp alerts</span>
+            <strong className="ipad-live-value">{tempAlerts}</strong>
+            <span className="ipad-live-detail">{tempAlerts === 0 ? 'All sensors in range' : `${tempAlerts} sensor${tempAlerts === 1 ? '' : 's'} out of range`}</span>
+          </div>
+          <div className={`ipad-live-panel is-${criticalIssues > 0 ? 'danger' : openIssues > 0 ? 'warning' : 'positive'}`}>
+            <span className="ipad-live-eyebrow">Open issues</span>
+            <strong className="ipad-live-value">{openIssues}</strong>
+            <span className="ipad-live-detail">{criticalIssues > 0 ? `${criticalIssues} critical / overdue` : 'No critical issues'}</span>
+          </div>
+        </div>
+        {lastUpdated ? (
+          <p className="ipad-live-updated">Live data · last refreshed {lastUpdated}</p>
+        ) : null}
+
         <div className="stats-grid">
           <Metric label="Service" value={venue.serviceStatus} />
-          <Metric label="Bookings" value={String(venue.bookingsToday)} />
-          <Metric label="Open tasks" value={String(venue.openTasks)} tone={venue.openTasks > 5 ? 'warning' : 'neutral'} />
+          <Metric label="Bookings" value={String(liveBookings)} />
+          <Metric label="Open tasks" value={String(openIssues)} tone={openIssues > 5 ? 'warning' : 'neutral'} />
           <Metric label="Checklist progress" value={`${venue.checklistProgress}%`} tone={venue.checklistProgress >= 75 ? 'positive' : 'warning'} />
         </div>
 

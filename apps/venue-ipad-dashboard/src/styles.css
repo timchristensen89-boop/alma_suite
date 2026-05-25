@@ -390,3 +390,58 @@ a {
     width: 100%;
   }
 }
+
+/* Live snapshot panels — always-on FOH display */
+.ipad-live-panels {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+
+.ipad-live-panel {
+  display: grid;
+  gap: 6px;
+  padding: 24px 26px;
+  border-radius: 18px;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+}
+
+.ipad-live-panel.is-positive { border-left: 6px solid #16a34a; }
+.ipad-live-panel.is-warning { border-left: 6px solid #d97706; }
+.ipad-live-panel.is-danger { border-left: 6px solid #dc2626; }
+.ipad-live-panel.is-neutral { border-left: 6px solid #94a3b8; }
+
+.ipad-live-eyebrow {
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.ipad-live-value {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(40px, 5.5vw, 56px);
+  font-weight: 400;
+  line-height: 1;
+  color: #0f172a;
+}
+
+.ipad-live-panel.is-danger .ipad-live-value { color: #991b1b; }
+.ipad-live-panel.is-warning .ipad-live-value { color: #92400e; }
+.ipad-live-panel.is-positive .ipad-live-value { color: #166534; }
+
+.ipad-live-detail {
+  font-size: 14px;
+  color: #475569;
+}
+
+.ipad-live-updated {
+  margin: 0;
+  font-size: 11.5px;
+  color: #94a3b8;
+  text-align: right;
+}

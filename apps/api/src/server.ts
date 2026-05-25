@@ -5,6 +5,7 @@ import { env } from './env.js';
 import { authMiddleware } from './lib/auth-middleware.js';
 import { errorHandler, notFoundHandler } from './lib/http.js';
 import { adminRouter } from './routes/admin.js';
+import { publicSnapshotRouter } from './routes/public-snapshot.js';
 import { auditsRouter } from './routes/audits.js';
 import { authRouter } from './routes/auth.js';
 import { checklistsRouter } from './routes/checklists.js';
@@ -95,6 +96,7 @@ app.get('/api/summary', async (_req, res, next) => {
 
 app.use('/health', healthRouter);
 app.use('/api/health', healthRouter);
+app.use('/api/public', publicSnapshotRouter);
 app.use('/api/auth', authRouter);
 app.use('/api/issues', issuesRouter);
 app.use('/api/checklists', checklistsRouter);

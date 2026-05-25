@@ -36,6 +36,17 @@ itemsRouter.get('/low-stock', async (req, res, next) => {
   }
 });
 
+itemsRouter.get('/:id/usage-history', async (req, res, next) => {
+  try {
+    res.json(await itemsService.usageHistory(String(req.params.id), {
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      weeks: typeof req.query.weeks === 'string' ? Number(req.query.weeks) : 12
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.post('/categories', async (req, res, next) => {
   try {
     requireStockManager(req.user);

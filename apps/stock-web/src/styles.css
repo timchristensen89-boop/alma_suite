@@ -1580,3 +1580,51 @@ tbody tr.row-detail:hover {
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
 }
+
+/* Par level suggestion */
+.par-suggestion {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 12px;
+  align-items: center;
+  padding: 12px 14px;
+  margin-top: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface-muted);
+}
+
+.par-suggestion.is-up {
+  border-left: 4px solid #d97706;
+}
+
+.par-suggestion.is-down {
+  border-left: 4px solid #16a34a;
+}
+
+.par-suggestion-eyebrow {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  grid-column: 1 / 2;
+}
+
+.par-suggestion > strong {
+  font-size: 16px;
+  font-weight: 700;
+  grid-column: 1 / 2;
+}
+
+.par-suggestion-meta {
+  grid-column: 1 / 2;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.par-suggestion > button {
+  grid-column: 2 / 3;
+  grid-row: 1 / span 3;
+  align-self: center;
+}

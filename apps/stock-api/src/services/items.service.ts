@@ -422,6 +422,98 @@ export const itemsService = {
     return { items: rows.filter(isLowVenueStockRow).map(toLowStockPayload) };
   },
 
+  // Per-item usage history over the last N weeks. Used to compute a
+  // suggested par level. Stocktake-line diffs are the proxy for usage:
+  // a negative variance between consecutive stocktakes = stock consumed.
+  async usageHistory(itemId: string, opts: { venue?: string; weeks?: number } = {}) {
+    const weeks = Math.min(Math.max(opts.weeks ?? 12, 1), 52);
+    const earliest = new Date();
+    earliest.setDate(earliest.getDate() - weeks * 7);
+
+    const item = await prisma.stockItem.findUnique({
+      where: { id: itemId },
+      include: { venueStock: opts.venue ? { where: { venue: opts.venue } } : false }
+    });
+    if (!item) throw new Error('Stock item not found');
+
+    const lines = await prisma.stocktakeLine.findMany({
+      where: {
+        itemId,
+        stocktake: {
+          countedAt: { gte: earliest },
+          ...(opts.venue ? { venue: opts.venue } : {})
+        }
+      },
+      include: { stocktake: { select: { countedAt: true, venue: true } } },
+      orderBy: { stocktake: { countedAt: 'asc' } }
+    });
+
+    // Group lines by ISO week-start (Monday)
+    const weekBuckets = new Map<string, { weekStart: string; counted: number | null; count: number }>();
+    for (let i = 0; i <= weeks; i += 1) {
+      const start = new Date();
+      start.setDate(start.getDate() - i * 7);
+      start.setHours(0, 0, 0, 0);
+      const day = start.getDay();
+      start.setDate(start.getDate() - day + (day === 0 ? -6 : 1));
+      const key = start.toISOString().slice(0, 10);
+      weekBuckets.set(key, { weekStart: key, counted: null, count: 0 });
+    }
+    for (const line of lines) {
+      if (line.countedQty == null || !line.stocktake) continue;
+      const ws = new Date(line.stocktake.countedAt);
+      ws.setHours(0, 0, 0, 0);
+      const day = ws.getDay();
+      ws.setDate(ws.getDate() - day + (day === 0 ? -6 : 1));
+      const key = ws.toISOString().slice(0, 10);
+      const bucket = weekBuckets.get(key);
+      if (!bucket) continue;
+      // Average the counted quantity across multiple stocktakes in the same week
+      bucket.counted = bucket.counted == null
+        ? Number(line.countedQty)
+        : (bucket.counted * bucket.count + Number(line.countedQty)) / (bucket.count + 1);
+      bucket.count += 1;
+    }
+
+    const sortedWeeks = Array.from(weekBuckets.values()).sort((a, b) => a.weekStart.localeCompare(b.weekStart));
+
+    // Calculate weekly usage as the absolute drop between consecutive counts
+    const usage: Array<{ weekStart: string; usage: number | null }> = [];
+    for (let i = 1; i < sortedWeeks.length; i += 1) {
+      const prev = sortedWeeks[i - 1]!;
+      const curr = sortedWeeks[i]!;
+      if (prev.counted == null || curr.counted == null) {
+        usage.push({ weekStart: curr.weekStart, usage: null });
+      } else {
+        const diff = prev.counted - curr.counted;
+        // Only count positive drops (negative would mean stock was added —
+        // probably an invoice/restock, not relevant for par usage)
+        usage.push({ weekStart: curr.weekStart, usage: Math.max(0, diff) });
+      }
+    }
+
+    const validUsages = usage.map((u) => u.usage).filter((u): u is number => u != null && u > 0);
+    const avgWeeklyUsage = validUsages.length
+      ? validUsages.reduce((sum, u) => sum + u, 0) / validUsages.length
+      : null;
+    // Suggested par = avg weekly usage × 1.4 buffer, rounded up
+    const suggestedPar = avgWeeklyUsage != null ? Math.ceil(avgWeeklyUsage * 1.4) : null;
+    const currentPar = item.venueStock?.[0]?.parLevel ?? item.parLevel ?? null;
+
+    return {
+      itemId,
+      itemName: item.name,
+      unit: item.unit,
+      venue: opts.venue ?? null,
+      weeks: sortedWeeks,
+      weeklyUsage: usage,
+      avgWeeklyUsage,
+      currentPar,
+      suggestedPar,
+      sampleSize: validUsages.length
+    };
+  },
+
   async dashboard(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockDashboardPayload> {
     const venue = actorVenueScope(actor, requestedVenue);
     const stocktakeWhere = stocktakeScope(actor, requestedVenue);
