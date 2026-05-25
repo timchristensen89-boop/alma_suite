@@ -3062,53 +3062,77 @@
 }
 
 .roster-side-staff-list {
-  display: grid;
-  gap: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   max-height: calc(100vh - 220px);
-  overflow: auto;
+  overflow-y: auto;
+  padding: 2px;
 }
 
-.roster-side-staff-row {
+.roster-staff-bubble {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 6px;
-  width: 100%;
-  padding: 5px 7px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
-  background: var(--color-surface);
-  color: var(--color-text);
-  text-align: left;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 50%;
+  background: none;
   cursor: pointer;
-  min-width: 0;
-  overflow: hidden;
+  transition: border-color 0.12s, transform 0.1s;
 }
 
-.roster-side-staff-row:hover,
-.roster-side-staff-row.is-selected {
-  border-color: rgba(36, 76, 159, 0.32);
-  background: var(--color-accent-soft);
+.roster-staff-bubble:hover {
+  border-color: rgba(36, 76, 159, 0.35);
+  transform: scale(1.08);
 }
 
-.roster-side-staff-row strong,
-.roster-side-staff-row small {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.roster-staff-bubble.is-selected {
+  border-color: var(--color-accent);
+  transform: scale(1.08);
 }
 
-.roster-side-staff-row strong {
-  font-size: 11px;
+.roster-staff-bubble .roster-avatar {
+  width: 38px;
+  height: 38px;
+  font-size: 12px;
+  font-weight: 700;
 }
 
-.roster-side-staff-row small {
-  color: var(--color-text-muted);
+.roster-staff-bubble-shifts {
+  position: absolute;
+  top: -3px;
+  right: -3px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 3px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: #fff;
+  font-size: 9px;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* collapsed row cells — still a drop target, shows shift count */
+.deputy-schedule-cell.is-row-collapsed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.collapsed-shift-count {
   font-size: 10px;
-}
-
-.roster-side-staff-meta {
-  display: none;
+  font-weight: 700;
+  color: var(--color-text-muted);
+  background: var(--color-surface-muted);
+  border-radius: 8px;
+  padding: 1px 5px;
+  pointer-events: none;
 }
 
 .deputy-schedule-panel {

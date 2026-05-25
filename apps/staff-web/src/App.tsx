@@ -9482,10 +9482,30 @@ function RosterPage({
                       <strong>{row.label}</strong>
                     </div>
                     {days.map((day) => {
-                      if (isRowCollapsed) {
-                        return <div key={`${row.id}-${day.toISOString()}`} className="deputy-schedule-cell is-row-collapsed" aria-hidden="true" />;
-                      }
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
+                      if (isRowCollapsed) {
+                        return (
+                          <button
+                            key={`${row.id}-${day.toISOString()}`}
+                            type="button"
+                            className="deputy-schedule-cell is-row-collapsed"
+                            onClick={() => {
+                              toggleRowCollapsed(row.id);
+                              prefillCell(row, day);
+                            }}
+                            onDragOver={(event) => {
+                              event.preventDefault();
+                              event.dataTransfer.dropEffect = 'move';
+                            }}
+                            onDrop={(event) => {
+                              toggleRowCollapsed(row.id);
+                              void handleDrop(event, row, day);
+                            }}
+                          >
+                            {cellShifts.length > 0 ? <span className="collapsed-shift-count">{cellShifts.length}</span> : null}
+                          </button>
+                        );
+                      }
                       const isClosed = isVenueClosedOnDate(scheduleRowVenue(row), day);
                       return (
                         <button
@@ -9824,27 +9844,22 @@ function RosterPage({
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
                       const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
                       const memberHours = memberShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
-                      const memberRate = member.trainingPayRateCents ?? member.payRateCents;
                       return (
                         <button
                           type="button"
                           key={member.id}
-                          className={`roster-side-staff-row ${staffProfileId === member.id ? 'is-selected' : ''}`}
+                          className={`roster-staff-bubble ${staffProfileId === member.id ? 'is-selected' : ''}`}
+                          title={`${member.firstName} ${member.lastName} · ${member.roleTitle || 'Team member'}${memberShifts.length ? ` · ${roundHours(memberHours)}` : ''}`}
                           onClick={() => {
                             setStaffProfileId(member.id);
                             setShiftVenue(member.venue ?? '');
                             setRoleTitle(member.roleTitle ?? '');
                           }}
                         >
-                          <span className="roster-avatar small">{initials(member)}</span>
-                          <span>
-                            <strong>{member.firstName} {member.lastName}</strong>
-                            <small>{member.roleTitle || 'Team member'} · {member.venue || 'No venue'}</small>
-                          </span>
-                          <span className="roster-side-staff-meta">
-                            <Badge tone={memberShifts.length ? 'info' : 'muted'}>{roundHours(memberHours)}</Badge>
-                            <small>{memberRate ? `${formatCents(memberRate)}/h` : 'Rate missing'}</small>
-                          </span>
+                          <span className="roster-avatar">{initials(member)}</span>
+                          {memberShifts.length > 0 ? (
+                            <span className="roster-staff-bubble-shifts">{memberShifts.length}</span>
+                          ) : null}
                         </button>
                       );
                     }) : (
