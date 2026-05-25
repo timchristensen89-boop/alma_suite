@@ -3253,9 +3253,9 @@
   align-items: center;
   justify-content: flex-start;
   width: 100%;
-  padding: 6px 1px 9px 3px;
+  padding: 6px 0px 9px 2px;
   border: 1.5px solid var(--color-border);
-  border-radius: 20px;
+  border-radius: 20px 20px 30px 30px;
   background: var(--color-surface);
   cursor: pointer;
   transition: border-color 0.12s, background 0.12s;
