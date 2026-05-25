@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 220 220" width="1024" height="1024">
+  <defs>
+    <linearGradient id="g_stock" x1="15%" y1="0%" x2="85%" y2="100%">
+      <stop offset="0%" stop-color="#229A46"/>
+      <stop offset="100%" stop-color="#0C4020"/>
+    </linearGradient>
+    <radialGradient id="rg_stock" cx="50%" cy="36%" r="48%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.15)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+    <linearGradient id="sh_stock" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.18)"/>
+      <stop offset="55%" stop-color="rgba(255,255,255,0.02)"/>
+      <stop offset="100%" stop-color="rgba(0,0,0,0)"/>
+    </linearGradient>
+    <filter id="f_stock">
+      <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity="0.26"/>
+    </filter>
+  </defs>
+  <rect x="4" y="4" width="212" height="212" rx="50" fill="#052010" opacity="0.8"/>
+  <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#g_stock)"/>
+  <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#rg_stock)"/>
+  <rect x="6" y="6" width="208" height="208" rx="48" fill="url(#sh_stock)"/>
+  <rect x="7" y="7" width="206" height="206" rx="47" fill="none" stroke="rgba(255,255,255,0.13)" stroke-width="1"/>
+  <g transform="translate(50 22) scale(5.0)" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" opacity="0.95" filter="url(#f_stock)">
+    <path d="M11 20A7 7 0 0 1 9.8 6.1C15.5 5 17 4.48 19 2c1 2 2 4.18 2 8 0 5.5-4.78 10-10 10z"/>
+    <path d="M2 21c0-3 1.85-5.36 5.08-6C9.5 14.52 12 13 13 12"/>
+  </g>
+  <text x="110" y="172" text-anchor="middle" fill="rgba(255,255,255,0.95)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="29" font-weight="700" letter-spacing="7">ALMA</text>
+  <text x="110" y="194" text-anchor="middle" fill="rgba(255,255,255,0.62)" font-family="Inter,-apple-system,Helvetica Neue,Arial,sans-serif" font-size="12" font-weight="700" letter-spacing="5">STOCK</text>
+</svg>
