@@ -10,7 +10,8 @@ const URLS = {
   giftcards: 'https://alma-giftcards.web.app',
   reserve: 'https://alma-reserve.web.app',
   marketing: 'https://alma-marketing.web.app',
-  comms: 'https://alma-comms.web.app'
+  comms: 'https://alma-comms.web.app',
+  home: 'https://alma-home.web.app'
 };
 
 const APP_CONFIG = {
@@ -23,7 +24,8 @@ const APP_CONFIG = {
   'reserve-web': { apiBase: URLS.reserve },
   'marketing-web': { apiBase: URLS.marketing },
   comms: { apiBase: URLS.comms },
-  'comms-web': { apiBase: URLS.comms }
+  'comms-web': { apiBase: URLS.comms },
+  'home-web': { apiBase: URLS.compliance }
 };
 
 const CROSS_APP_URLS = {
