@@ -8214,6 +8214,8 @@ function RosterPage({
   const [publishPreviewOpen, setPublishPreviewOpen] = useState(false);
   const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
+  const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
+  const [collapsedVenues, setCollapsedVenues] = useState<Set<string>>(new Set());
   const [forecastDraft] = useState(loadRosterForecastDraft);
   const [forecastSales, setForecastSales] = useState(forecastDraft.forecastSales);
   const [dailyForecastSales, setDailyForecastSales] = useState<Record<string, string>>(forecastDraft.dailyForecastSales);
@@ -8929,6 +8931,22 @@ function RosterPage({
     return row.venue || row.member?.venue || (venueFilter !== 'all' ? venueFilter : '');
   }
 
+  function toggleRowCollapsed(rowId: string) {
+    setCollapsedRowIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(rowId)) next.delete(rowId); else next.add(rowId);
+      return next;
+    });
+  }
+
+  function toggleVenueCollapsed(venue: string) {
+    setCollapsedVenues((prev) => {
+      const next = new Set(prev);
+      if (next.has(venue)) next.delete(venue); else next.add(venue);
+      return next;
+    });
+  }
+
   function prefillCell(row: (typeof scheduleRows)[number], day: Date) {
     if ('isVenueHeader' in row && row.isVenueHeader) {
       setMessage('Choose an area row under this venue before adding a shift.');
@@ -9417,9 +9435,18 @@ function RosterPage({
             ) : (
               scheduleRows.map((row) => {
                 if ('isVenueHeader' in row && row.isVenueHeader) {
+                  const venueCollapsed = collapsedVenues.has(row.venue);
                   return (
                     <div className="deputy-schedule-row deputy-venue-row" key={row.id}>
                       <div className="deputy-row-label deputy-venue-label">
+                        <button
+                          type="button"
+                          className="row-collapse-toggle"
+                          onClick={() => toggleVenueCollapsed(row.venue)}
+                          title={venueCollapsed ? 'Expand venue' : 'Collapse venue'}
+                        >
+                          {venueCollapsed ? '▸' : '▾'}
+                        </button>
                         <span className="roster-avatar small">{row.initials}</span>
                         <strong>{row.label}</strong>
                       </div>
@@ -9437,13 +9464,27 @@ function RosterPage({
                     </div>
                   );
                 }
+                // Skip rows whose venue section is collapsed
+                if (collapsedVenues.has(row.venue)) return null;
+                const isRowCollapsed = collapsedRowIds.has(row.id);
                 return (
                   <div className="deputy-schedule-row" key={row.id}>
-                    <div className="deputy-row-label">
+                    <div className={`deputy-row-label${isRowCollapsed ? ' is-row-collapsed' : ''}`}>
+                      <button
+                        type="button"
+                        className="row-collapse-toggle"
+                        onClick={() => toggleRowCollapsed(row.id)}
+                        title={isRowCollapsed ? 'Expand row' : 'Collapse row'}
+                      >
+                        {isRowCollapsed ? '▸' : '▾'}
+                      </button>
                       <span className="roster-avatar small">{row.initials}</span>
                       <strong>{row.label}</strong>
                     </div>
                     {days.map((day) => {
+                      if (isRowCollapsed) {
+                        return <div key={`${row.id}-${day.toISOString()}`} className="deputy-schedule-cell is-row-collapsed" aria-hidden="true" />;
+                      }
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
                       const isClosed = isVenueClosedOnDate(scheduleRowVenue(row), day);
                       return (
