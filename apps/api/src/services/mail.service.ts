@@ -124,17 +124,28 @@ async function deliverEmail(input: {
           typeof errorBody?.message === 'string'
             ? errorBody.message
             : `Resend returned HTTP ${response.status}`;
+        console.error('[mail] Resend delivery failed', {
+          status: response.status,
+          to: input.to,
+          subject: input.subject,
+          from: resendFrom,
+          reason: message,
+          body: errorBody
+        });
         return { status: 'failed', reason: message };
       }
 
+      console.info('[mail] Resend email sent', { to: input.to, subject: input.subject });
       return { status: 'sent', to: input.to, provider: 'resend' };
     } catch (err) {
       const reason = err instanceof Error ? err.message : 'Unknown Resend error';
+      console.error('[mail] Resend request threw', { to: input.to, subject: input.subject, reason });
       return { status: 'failed', reason };
     }
   }
 
   if (!transporter || !mailFrom) {
+    console.warn('[mail] No email provider configured — RESEND_API_KEY/RESEND_FROM or SMTP_* env vars required');
     return { status: 'skipped', reason: 'Resend or SMTP is not configured' };
   }
 

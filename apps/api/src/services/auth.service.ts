@@ -189,6 +189,7 @@ type PasswordResetContext = {
 type PasswordResetResult = {
   accountExists: boolean;
   deliveryStatus: 'sent' | 'skipped' | 'failed' | 'cooldown' | 'no_account';
+  deliveryReason?: string;
 };
 
 export const authService = {
@@ -372,9 +373,19 @@ export const authService = {
       appName: options.appName
     });
 
+    if (delivery.status !== 'sent') {
+      console.error('[auth] Password reset email not delivered', {
+        profileId: profile.id,
+        email: profile.email,
+        deliveryStatus: delivery.status,
+        reason: 'reason' in delivery ? delivery.reason : undefined
+      });
+    }
+
     return {
       accountExists: true,
-      deliveryStatus: delivery.status
+      deliveryStatus: delivery.status,
+      deliveryReason: 'reason' in delivery ? delivery.reason : undefined
     };
   },
 

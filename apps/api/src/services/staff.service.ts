@@ -2045,12 +2045,22 @@ export const staffService = {
       }
     });
 
-    return {
-      ok: true,
-      message: hasLoginEmail
-        ? 'If this staff member has a login account, a reset link has been sent.'
-        : 'No login email is linked to this profile.'
-    };
+    let message: string;
+    if (!hasLoginEmail) {
+      message = 'No login email is linked to this profile.';
+    } else if (result.deliveryStatus === 'sent') {
+      message = `Password reset email sent to ${profile.email}.`;
+    } else if (result.deliveryStatus === 'cooldown') {
+      message = 'A reset link was already sent recently — please wait 2 minutes before trying again.';
+    } else if (result.deliveryStatus === 'failed') {
+      message = `Email delivery failed: ${result.deliveryReason ?? 'unknown error'}. Check server logs for details.`;
+    } else if (result.deliveryStatus === 'skipped') {
+      message = 'Email provider is not configured on this server.';
+    } else {
+      message = 'If this staff member has a login account, a reset link has been sent.';
+    }
+
+    return { ok: result.deliveryStatus === 'sent', message };
   },
 
   async listHrDocumentTemplates(actor: AuthUser): Promise<StaffHrDocumentTemplate[]> {
