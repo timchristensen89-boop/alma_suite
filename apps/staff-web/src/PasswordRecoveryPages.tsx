@@ -22,7 +22,7 @@ export function ForgotPasswordPage() {
     setMessage(null);
     setError(null);
     try {
-      await api('/api/auth/password-reset/request', {
+      const result = await api<{ message?: string }>('/api/auth/password-reset/request', {
         method: 'POST',
         body: JSON.stringify({
           email: email.trim(),
@@ -30,7 +30,7 @@ export function ForgotPasswordPage() {
           appName: 'ALMA Staff'
         })
       });
-      setMessage(GENERIC_RESET_MESSAGE);
+      setMessage(result?.message ?? GENERIC_RESET_MESSAGE);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not request a password reset.');
     } finally {

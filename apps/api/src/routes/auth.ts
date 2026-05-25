@@ -59,12 +59,15 @@ authRouter.post('/handoff/consume', async (req, res, next) => {
 
 authRouter.post('/password-reset/request', async (req, res, next) => {
   try {
-    await authService.requestPasswordReset(req.body, {
+    const result = await authService.requestPasswordReset(req.body, {
       requestOrigin: req.header('origin'),
       requestIp: req.ip,
       userAgent: req.header('user-agent')
     });
-    res.json({ ok: true, message: PASSWORD_RESET_GENERIC_MESSAGE });
+    const message = result.deliveryStatus === 'venue_device'
+      ? 'That email belongs to a venue device account. Use your personal staff email address to reset your password.'
+      : PASSWORD_RESET_GENERIC_MESSAGE;
+    res.json({ ok: true, message });
   } catch (error) {
     next(error);
   }

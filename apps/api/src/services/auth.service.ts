@@ -188,7 +188,7 @@ type PasswordResetContext = {
 
 type PasswordResetResult = {
   accountExists: boolean;
-  deliveryStatus: 'sent' | 'skipped' | 'failed' | 'cooldown' | 'no_account';
+  deliveryStatus: 'sent' | 'skipped' | 'failed' | 'cooldown' | 'no_account' | 'venue_device';
   deliveryReason?: string;
 };
 
@@ -336,7 +336,7 @@ export const authService = {
     }
     if (profile.accountType === 'VENUE_DEVICE') {
       console.info('[auth] password-reset: VENUE_DEVICE account', { email, profileId: profile.id });
-      return { accountExists: false, deliveryStatus: 'no_account' };
+      return { accountExists: false, deliveryStatus: 'venue_device' };
     }
     if (!profile.email) {
       console.info('[auth] password-reset: profile has no email', { profileId: profile.id });
