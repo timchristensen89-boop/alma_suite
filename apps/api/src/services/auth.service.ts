@@ -319,17 +319,27 @@ export const authService = {
     } = {}
   ): Promise<PasswordResetResult> {
     const email = normaliseEmail(emailInput);
-    if (!email) return { accountExists: false, deliveryStatus: 'no_account' };
+    if (!email) {
+      console.info('[auth] password-reset: blank email input');
+      return { accountExists: false, deliveryStatus: 'no_account' };
+    }
     const resetUrl = resetBaseUrl(options.resetBaseUrl, options.requestOrigin);
 
     const profile = await prisma.staffProfile.findUnique({ where: { email } });
-    if (!profile || profile.mergedIntoStaffProfileId) {
+    if (!profile) {
+      console.info('[auth] password-reset: no profile found', { email });
+      return { accountExists: false, deliveryStatus: 'no_account' };
+    }
+    if (profile.mergedIntoStaffProfileId) {
+      console.info('[auth] password-reset: profile is merged', { email, profileId: profile.id });
       return { accountExists: false, deliveryStatus: 'no_account' };
     }
     if (profile.accountType === 'VENUE_DEVICE') {
+      console.info('[auth] password-reset: VENUE_DEVICE account', { email, profileId: profile.id });
       return { accountExists: false, deliveryStatus: 'no_account' };
     }
     if (!profile.email) {
+      console.info('[auth] password-reset: profile has no email', { profileId: profile.id });
       return { accountExists: false, deliveryStatus: 'no_account' };
     }
 
@@ -343,8 +353,11 @@ export const authService = {
     });
 
     if (recentToken) {
+      console.info('[auth] password-reset: cooldown active', { email, profileId: profile.id });
       return { accountExists: true, deliveryStatus: 'cooldown' };
     }
+
+    console.info('[auth] password-reset: creating token and sending email', { email, profileId: profile.id });
 
     const token = randomBytes(32).toString('base64url');
     const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
