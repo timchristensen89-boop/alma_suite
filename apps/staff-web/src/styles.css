@@ -5714,3 +5714,76 @@
   background: rgba(220, 38, 38, 0.10);
   color: #991b1b;
 }
+
+/* HR/compliance expiry callouts */
+.hr-expiry-stack,
+.training-chase-stack {
+  display: grid;
+  gap: 8px;
+}
+
+.hr-expiry-row,
+.training-chase-row {
+  display: grid;
+  grid-template-columns: minmax(160px, 1fr) minmax(0, 2fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.hr-expiry-row.is-danger,
+.training-chase-row.is-danger {
+  border-left: 4px solid #dc2626;
+  background: rgba(254, 242, 242, 0.6);
+}
+
+.hr-expiry-row.is-warning,
+.training-chase-row.is-warning {
+  border-left: 4px solid #d97706;
+  background: rgba(255, 251, 235, 0.55);
+}
+
+.hr-expiry-row.is-info,
+.training-chase-row.is-info {
+  border-left: 4px solid #2563eb;
+}
+
+.hr-expiry-row.is-muted {
+  border-left: 4px solid #94a3b8;
+  opacity: 0.85;
+}
+
+.hr-expiry-name,
+.training-chase-name {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.hr-expiry-meta,
+.training-chase-meta {
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.hr-expiry-when {
+  font-size: 12.5px;
+  font-weight: 600;
+  text-align: right;
+}
+
+.hr-expiry-row.is-danger .hr-expiry-when { color: #991b1b; }
+.hr-expiry-row.is-warning .hr-expiry-when { color: #92400e; }
+
+@media (max-width: 700px) {
+  .hr-expiry-row,
+  .training-chase-row {
+    grid-template-columns: 1fr;
+    gap: 4px;
+  }
+  .hr-expiry-when {
+    text-align: left;
+  }
+}

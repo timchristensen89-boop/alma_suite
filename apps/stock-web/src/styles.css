@@ -1460,3 +1460,65 @@ tbody tr.row-detail:hover {
   .price-movement-name { grid-column: 1 / -1; }
   .price-movement-filters { grid-template-columns: 1fr; }
 }
+
+/* Wastage by shift */
+.wastage-shift-list {
+  display: grid;
+  gap: 10px;
+}
+
+.wastage-shift-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(0, 2fr) auto;
+  gap: 14px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface);
+}
+
+.wastage-shift-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.wastage-shift-label strong {
+  font-size: 13.5px;
+  font-weight: 700;
+}
+
+.wastage-shift-label small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.wastage-shift-track {
+  position: relative;
+  height: 14px;
+  border-radius: 999px;
+  background: var(--color-surface-muted);
+  overflow: hidden;
+}
+
+.wastage-shift-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #d97706, #92400e);
+  border-radius: 999px;
+  transition: width 200ms ease;
+}
+
+.wastage-shift-cost {
+  font-weight: 700;
+  font-size: 14px;
+  text-align: right;
+  min-width: 70px;
+}
+
+@media (max-width: 720px) {
+  .wastage-shift-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}

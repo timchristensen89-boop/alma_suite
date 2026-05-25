@@ -1165,29 +1165,108 @@ function StaffHome({
         </div>
       </Card>
 
-      <Card title="Compliance watch" subtitle="Staff certificates and records needing attention">
-        {expiringSoon.length === 0 ? (
-          <EmptyState title="No records expiring soon" description="RSA, first aid and training records are clear for the next 30 days." />
-        ) : (
-          <div className="staff-expiry-list">
-            {expiringSoon.map(({ member, record }) => (
-              <div key={record.id} className="staff-expiry-row">
-                <span>
-                  <strong>
-                    {member.firstName} {member.lastName}
-                  </strong>
-                  <span className="subtle">
-                    {record.title} · {record.recordType}
-                  </span>
-                </span>
-                <Badge tone={record.expiryDate && new Date(record.expiryDate) < new Date() ? 'danger' : 'warning'}>
-                  {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : 'No expiry'}
-                </Badge>
+      {/* HR + compliance record expiry — bucketed callouts at 7/30/60/90 days */}
+      {(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const all = staff.flatMap((member) =>
+          member.records
+            .filter((record) => record.expiryDate)
+            .map((record) => ({ member, record }))
+        );
+        type Bucket = typeof all;
+        const buckets = { d7: [] as Bucket, d30: [] as Bucket, d60: [] as Bucket, d90: [] as Bucket, expired: [] as Bucket };
+        for (const item of all) {
+          const expiry = new Date(item.record.expiryDate!);
+          expiry.setHours(0, 0, 0, 0);
+          const days = Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+          if (days < 0) buckets.expired.push(item);
+          else if (days <= 7) buckets.d7.push(item);
+          else if (days <= 30) buckets.d30.push(item);
+          else if (days <= 60) buckets.d60.push(item);
+          else if (days <= 90) buckets.d90.push(item);
+        }
+        const total = buckets.expired.length + buckets.d7.length + buckets.d30.length + buckets.d60.length + buckets.d90.length;
+        return (
+          <Card
+            title="Compliance & HR record expiry"
+            subtitle={total === 0 ? 'All staff records are clear for the next 90 days.' : `${total} record${total === 1 ? '' : 's'} expiring within 90 days — RSA, RCG, first aid, right-to-work, visa.`}
+          >
+            {total === 0 ? (
+              <EmptyState title="Nothing expiring soon" description="Records are clear for the next 90 days." />
+            ) : (
+              <div className="hr-expiry-stack">
+                {([
+                  ['expired', buckets.expired, 'danger', 'Expired now'],
+                  ['d7', buckets.d7, 'danger', 'Within 7 days'],
+                  ['d30', buckets.d30, 'warning', 'Within 30 days'],
+                  ['d60', buckets.d60, 'info', 'Within 60 days'],
+                  ['d90', buckets.d90, 'muted', 'Within 90 days']
+                ] as const).map(([key, items, tone, label]) =>
+                  items.length > 0 ? items.map(({ member, record }) => (
+                    <div key={`${key}-${record.id}`} className={`hr-expiry-row is-${tone}`}>
+                      <span className="hr-expiry-name">{member.firstName} {member.lastName}</span>
+                      <span className="hr-expiry-meta">{record.title} · {record.recordType}</span>
+                      <span className="hr-expiry-when">
+                        {record.expiryDate ? new Date(record.expiryDate).toLocaleDateString() : '—'} · {label}
+                      </span>
+                    </div>
+                  )) : null
+                )}
               </div>
-            ))}
-          </div>
-        )}
-      </Card>
+            )}
+          </Card>
+        );
+      })()}
+
+      {/* Training completion chase — surface staff with incomplete training */}
+      {(() => {
+        const incomplete = staff
+          .flatMap((member) =>
+            (member.trainingRecords ?? [])
+              .filter((r) => r.status !== 'COMPLETED')
+              .map((record) => ({ member, record }))
+          )
+          .sort((a, b) => {
+            const aDate = a.record.assignedAt ? new Date(a.record.assignedAt).getTime() : 0;
+            const bDate = b.record.assignedAt ? new Date(b.record.assignedAt).getTime() : 0;
+            return aDate - bDate;
+          });
+        if (incomplete.length === 0) return null;
+        const oldest = incomplete.slice(0, 10);
+        return (
+          <Card
+            title="Training chase"
+            subtitle={`${incomplete.length} training assignment${incomplete.length === 1 ? '' : 's'} not yet completed — most onboarding drop-off is a follow-up failure, not a willingness failure.`}
+          >
+            <div className="training-chase-stack">
+              {oldest.map(({ member, record }) => {
+                const daysSinceAssigned = record.assignedAt
+                  ? Math.floor((Date.now() - new Date(record.assignedAt).getTime()) / (1000 * 60 * 60 * 24))
+                  : null;
+                const tone = daysSinceAssigned !== null && daysSinceAssigned > 14 ? 'danger' : daysSinceAssigned !== null && daysSinceAssigned > 7 ? 'warning' : 'info';
+                return (
+                  <div key={record.id} className={`training-chase-row is-${tone}`}>
+                    <span className="training-chase-name">{member.firstName} {member.lastName}</span>
+                    <span className="training-chase-meta">
+                      {record.module?.title ?? 'Training module'}
+                      {daysSinceAssigned !== null ? ` · assigned ${daysSinceAssigned}d ago` : ''}
+                    </span>
+                    <Badge tone={record.status === 'IN_PROGRESS' ? 'info' : record.status === 'EXPIRED' ? 'danger' : 'warning'}>
+                      {record.status.replace('_', ' ').toLowerCase()}
+                    </Badge>
+                  </div>
+                );
+              })}
+              {incomplete.length > oldest.length ? (
+                <p className="subtle" style={{ margin: 0 }}>
+                  {incomplete.length - oldest.length} more incomplete training assignments. Open Academy to chase the full list.
+                </p>
+              ) : null}
+            </div>
+          </Card>
+        );
+      })()}
     </div>
   );
 }

@@ -508,3 +508,53 @@
 
 .automation-metric.is-positive strong { color: #166534; }
 .automation-metric.is-warning strong { color: #92400e; }
+
+/* Birthday list */
+.birthday-list {
+  display: grid;
+  gap: 8px;
+}
+
+.birthday-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid #A87E3F;
+  border-radius: 10px;
+  background: rgba(245, 235, 217, 0.45);
+}
+
+.birthday-row-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.birthday-row-main strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.birthday-row-main small {
+  color: var(--color-text-muted);
+  font-size: 12px;
+}
+
+.birthday-row-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+@media (max-width: 640px) {
+  .birthday-row {
+    grid-template-columns: 1fr;
+  }
+  .birthday-row-actions {
+    justify-content: flex-start;
+  }
+}

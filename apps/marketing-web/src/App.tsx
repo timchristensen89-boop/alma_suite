@@ -1293,6 +1293,82 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
         <div className="marketing-layout">
           <section className="marketing-main">
             <section id="dashboard" className="marketing-page-section" hidden={!isActiveSection('/')}>
+              {/* Upcoming birthdays — surfaces guests with a birthday in the
+                  next 30 days so front-of-house can send a quick gesture. */}
+              {(() => {
+                const now = new Date();
+                const todayMonthDay = (d: Date) => `${(d.getMonth() + 1).toString().padStart(2, '0')}-${d.getDate().toString().padStart(2, '0')}`;
+                const compareUpcoming = (a: { birthday: string | null }, b: { birthday: string | null }) => {
+                  if (!a.birthday) return 1;
+                  if (!b.birthday) return -1;
+                  return new Date(a.birthday).getMonth() * 100 + new Date(a.birthday).getDate()
+                    - (new Date(b.birthday).getMonth() * 100 + new Date(b.birthday).getDate());
+                };
+                const thirtyDays = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+                const monthDayInWindow = (md: string) => {
+                  const parts = md.split('-').map(Number);
+                  const monthNum = parts[0] ?? 1;
+                  const dayNum = parts[1] ?? 1;
+                  const candidate = new Date(now.getFullYear(), monthNum - 1, dayNum);
+                  if (candidate < now) candidate.setFullYear(candidate.getFullYear() + 1);
+                  return candidate <= thirtyDays;
+                };
+                const upcoming = guests
+                  .filter((g) => !!g.birthday)
+                  .filter((g) => monthDayInWindow(todayMonthDay(new Date(g.birthday!))))
+                  .sort(compareUpcoming)
+                  .slice(0, 8);
+                if (upcoming.length === 0) return null;
+                return (
+                  <Card
+                    title="Upcoming birthdays"
+                    subtitle={`${upcoming.length} guest${upcoming.length === 1 ? '' : 's'} with a birthday in the next 30 days — drop them a line.`}
+                  >
+                    <div className="birthday-list">
+                      {upcoming.map((guest) => {
+                        const bday = new Date(guest.birthday!);
+                        const dayLabel = bday.toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
+                        return (
+                          <div key={guest.id} className="birthday-row">
+                            <div className="birthday-row-main">
+                              <strong>{fullName(guest)}</strong>
+                              <small>
+                                🎂 {dayLabel}
+                                {guest.email ? ` · ${guest.email}` : ''}
+                                {guest.totalVisits > 0 ? ` · ${guest.totalVisits} visit${guest.totalVisits === 1 ? '' : 's'}` : ''}
+                              </small>
+                            </div>
+                            <div className="birthday-row-actions">
+                              {guest.email ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  variant="secondary"
+                                  onClick={() => {
+                                    const subject = `Happy birthday from ${guest.venue || 'Alma'}`;
+                                    const body = `Hi ${guest.firstName || 'there'},\n\nWishing you a wonderful birthday from all of us at ${guest.venue || 'Alma'}. We'd love to see you for a celebration — let us know when and we'll take care of you.\n\n— The team`;
+                                    window.location.href = `mailto:${guest.email}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+                                  }}
+                                >
+                                  ✉ Email
+                                </Button>
+                              ) : null}
+                              <Button
+                                type="button"
+                                size="sm"
+                                onClick={() => setSelectedGuestIds([guest.id])}
+                              >
+                                Add to campaign
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </Card>
+                );
+              })()}
+
               <Card title="Recent activity" subtitle={venueParam || 'All venues'}>
               {loading ? <Spinner label="Loading marketing dashboard..." /> : null}
               {!loading && overview ? (

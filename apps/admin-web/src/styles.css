@@ -706,3 +706,60 @@
   word-break: break-word;
   margin: 0;
 }
+
+/* HR template library cards */
+.hr-library-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 12px;
+}
+
+.hr-library-card {
+  display: grid;
+  gap: 6px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.hr-library-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
+}
+
+.hr-library-card strong {
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.hr-library-type {
+  display: inline-block;
+  width: fit-content;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(63, 71, 80, 0.10);
+  color: var(--color-text-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.hr-library-card span {
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hr-library-card em {
+  font-style: normal;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--color-accent);
+  letter-spacing: 0.04em;
+  margin-top: 4px;
+}

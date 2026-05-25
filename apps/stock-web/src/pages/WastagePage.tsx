@@ -108,6 +108,59 @@ export function WastagePage() {
         <StatCard label="Estimated cost" value={cents(totals.cost)} hint="Uses item average cost where available" tone={totals.cost > 0 ? 'warning' : 'neutral'} />
       </div>
 
+      {/* Wastage by shift breakdown — buckets records by service period
+          using the wastedAt timestamp. Not finger-pointing — surfaces
+          whether wastage clusters at certain service periods. */}
+      {data?.records.length ? (() => {
+        const shifts = {
+          breakfast: { label: 'Breakfast (6am–11am)', cost: 0, count: 0 },
+          lunch: { label: 'Lunch (11am–3pm)', cost: 0, count: 0 },
+          afternoon: { label: 'Afternoon (3pm–5pm)', cost: 0, count: 0 },
+          dinner: { label: 'Dinner (5pm–10pm)', cost: 0, count: 0 },
+          late: { label: 'Late / overnight (10pm–6am)', cost: 0, count: 0 }
+        };
+        for (const record of data.records) {
+          if (!record.wastedAt) continue;
+          const hour = new Date(record.wastedAt).getHours();
+          const cost = record.costImpactCents ?? 0;
+          let bucket: keyof typeof shifts;
+          if (hour >= 6 && hour < 11) bucket = 'breakfast';
+          else if (hour >= 11 && hour < 15) bucket = 'lunch';
+          else if (hour >= 15 && hour < 17) bucket = 'afternoon';
+          else if (hour >= 17 && hour < 22) bucket = 'dinner';
+          else bucket = 'late';
+          shifts[bucket].cost += cost;
+          shifts[bucket].count += 1;
+        }
+        const maxCost = Math.max(...Object.values(shifts).map((s) => s.cost), 1);
+        const totalCost = Object.values(shifts).reduce((sum, s) => sum + s.cost, 0);
+        return (
+          <Card
+            title="Wastage by shift"
+            subtitle={`${cents(totalCost)} across all service periods — surface where wastage clusters, not who caused it.`}
+          >
+            <div className="wastage-shift-list">
+              {Object.entries(shifts).map(([key, shift]) => {
+                const pct = totalCost > 0 ? (shift.cost / totalCost) * 100 : 0;
+                const width = (shift.cost / maxCost) * 100;
+                return (
+                  <div key={key} className="wastage-shift-row">
+                    <div className="wastage-shift-label">
+                      <strong>{shift.label}</strong>
+                      <small>{shift.count} record{shift.count === 1 ? '' : 's'} · {pct.toFixed(0)}% of total</small>
+                    </div>
+                    <div className="wastage-shift-track">
+                      <div className="wastage-shift-bar" style={{ width: `${Math.max(2, width)}%` }} />
+                    </div>
+                    <strong className="wastage-shift-cost">{cents(shift.cost)}</strong>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+        );
+      })() : null}
+
       <div className="stock-operations-grid">
         <Card title="Record wastage" subtitle="Use clear reasons so managers can spot repeat issues.">
           <form className="stock-operation-form" onSubmit={submit}>

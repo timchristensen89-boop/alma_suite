@@ -2395,6 +2395,47 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Gross profit" value={menuGrossProfit === null || menuGrossProfit === undefined ? 'Incomplete' : formatCurrency(menuGrossProfit)} hint={hasItemSales ? `${menuProfit?.totals.unmappedRows ?? itemSalesUnmatched} unmapped rows` : 'Needs item sales, price, and recipe matches'} loading={loading} />
           </div>
 
+          {/* Margin alerts — items below threshold flagged as action items */}
+          {(() => {
+            const threshold = 60; // food cost % threshold; >60% means margin <40%
+            const flagged = menuRows.filter((row) =>
+              row.foodCostPercent !== null && row.foodCostPercent !== undefined && row.foodCostPercent > threshold
+            );
+            if (flagged.length === 0) return null;
+            const top = flagged.slice().sort((a, b) => (b.foodCostPercent ?? 0) - (a.foodCostPercent ?? 0)).slice(0, 8);
+            const totalSales = flagged.reduce((sum, r) => sum + r.netSalesCents, 0);
+            return (
+              <Card
+                title="Margin alerts"
+                subtitle={`${flagged.length} item${flagged.length === 1 ? '' : 's'} above ${threshold}% food cost (i.e. under 40% margin) — ${formatCurrency(totalSales)} of net sales is currently at low margin. Re-price, re-cost, or swap a cheaper ingredient.`}
+              >
+                <div className="margin-alerts-list">
+                  {top.map((row) => (
+                    <div key={row.key} className="margin-alert-row">
+                      <div className="margin-alert-main">
+                        <strong>{row.squareItem}</strong>
+                        <small>
+                          {row.venue}{row.categoryName ? ` · ${row.categoryName}` : ''}
+                          {' · '}
+                          {row.quantitySold.toLocaleString()} sold · {formatCurrency(row.netSalesCents)} net
+                        </small>
+                      </div>
+                      <div className="margin-alert-meta">
+                        <Badge tone="danger">{row.foodCostPercent != null ? `${row.foodCostPercent.toFixed(0)}% food cost` : 'No cost'}</Badge>
+                        {row.recipeCostCents != null ? <small>cost {formatCurrency(row.recipeCostCents)}</small> : null}
+                      </div>
+                    </div>
+                  ))}
+                  {flagged.length > top.length ? (
+                    <p className="subtle" style={{ margin: 0 }}>
+                      {flagged.length - top.length} more flagged items — see full menu profitability table below.
+                    </p>
+                  ) : null}
+                </div>
+              </Card>
+            );
+          })()}
+
           <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete." padding="none">
             <div className="reports-filter-grid">
               <Select
