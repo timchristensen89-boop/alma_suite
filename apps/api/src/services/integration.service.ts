@@ -185,6 +185,15 @@ function normaliseSquareAccountKey(value: unknown): SquareAccountKey {
   throw new HttpError(400, 'Unknown Square account.');
 }
 
+function inferSquareAccountKeyFromVenue(venue: string): SquareAccountKey {
+  const v = venue.toLowerCase().trim();
+  const secondaryLabel = env.integrations.square.accounts.secondary.label.toLowerCase().trim();
+  if (secondaryLabel && (v === secondaryLabel || v.includes(secondaryLabel) || secondaryLabel.includes(v))) {
+    return 'secondary';
+  }
+  return 'primary';
+}
+
 function squareAccountConfig(accountKey: SquareAccountKey) {
   return env.integrations.square.accounts[accountKey];
 }
@@ -2389,7 +2398,9 @@ export const integrationService = {
 
   async importSquareTips(input: unknown, actor: AuthUser) {
     const data = squareTipsImportInputSchema.parse(input ?? {});
-    const accountKey = normaliseSquareAccountKey(data.accountKey ?? data.account);
+    const accountKey = normaliseSquareAccountKey(
+      data.accountKey ?? data.account ?? inferSquareAccountKeyFromVenue(data.venue)
+    );
     const startDate = parseIntegrationDate(data.start, 'Tips start date');
     const endDate = parseIntegrationDate(data.end, 'Tips end date');
     if (endDate <= startDate) throw new HttpError(400, 'Tips end date must be after start date.');

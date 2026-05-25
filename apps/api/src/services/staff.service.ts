@@ -2027,7 +2027,8 @@ export const staffService = {
           requestOrigin: context.requestOrigin,
           requestIp: context.requestIp,
           userAgent: context.userAgent,
-          requestedBy: actor
+          requestedBy: actor,
+          allowVenueDevice: true // admin-initiated — OK to set password on device accounts
         })
       : { accountExists: false, deliveryStatus: 'no_email' as const };
 

@@ -316,6 +316,7 @@ export const authService = {
     options: PasswordResetContext & {
       resetBaseUrl?: string;
       appName?: string;
+      allowVenueDevice?: boolean;
     } = {}
   ): Promise<PasswordResetResult> {
     const email = normaliseEmail(emailInput);
@@ -334,8 +335,8 @@ export const authService = {
       console.info('[auth] password-reset: profile is merged', { email, profileId: profile.id });
       return { accountExists: false, deliveryStatus: 'no_account' };
     }
-    if (profile.accountType === 'VENUE_DEVICE') {
-      console.info('[auth] password-reset: VENUE_DEVICE account', { email, profileId: profile.id });
+    if (profile.accountType === 'VENUE_DEVICE' && !options.allowVenueDevice) {
+      console.info('[auth] password-reset: VENUE_DEVICE account (self-service blocked)', { email, profileId: profile.id });
       return { accountExists: false, deliveryStatus: 'venue_device' };
     }
     if (!profile.email) {
