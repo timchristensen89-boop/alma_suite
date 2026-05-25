@@ -67,9 +67,9 @@ import {
   VenuesPage,
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
-import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
+import { WageForecastsPage } from './pages/WageForecastsPage';
 import { VenueDevicesPage } from './pages/VenueDevicesPage';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -148,9 +148,9 @@ const NAV_GROUPS: AdminNavGroup[] = [
         icon: <IconBriefcase />
       },
       {
-        to: '/staff-costing',
-        label: 'Staff costing',
-        description: 'Wage cost, cost per hour, section mix, variance, and labour charts',
+        to: '/wage-forecasts',
+        label: 'Wage forecasts',
+        description: 'Weekly sales forecast and target wage % per venue',
         icon: <IconReceipt />
       },
       {
@@ -578,7 +578,7 @@ function AdminWorkspace() {
         <Route path="/users" element={<UsersPage />} />
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
-        <Route path="/staff-costing" element={<StaffCostingReportPage />} />
+        <Route path="/wage-forecasts" element={<WageForecastsPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
         <Route path="/staff-hr-templates" element={<StaffHrTemplatesPage />} />
         <Route path="/staff-onboarding" element={<StaffOnboardingPage />} />

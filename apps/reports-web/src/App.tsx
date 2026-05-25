@@ -1,4 +1,5 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import type {
   AuthUser,
   RecipesSummary,
@@ -717,6 +718,30 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const handleHashChange = () => setActiveSection(reportSectionFromHash(window.location.hash));
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
+  }, []);
+
+  // Wage forecasts now live in Admin → Wage forecasts. Pull them from
+  // app settings so reports stay in sync with whatever admin configured.
+  useEffect(() => {
+    void (async () => {
+      try {
+        const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number }> }>('/api/settings');
+        const next: Record<string, ForecastInput> = {};
+        for (const venue of settings.venues ?? []) {
+          if (typeof venue.weeklyForecastSalesCents === 'number' || typeof venue.targetWagePercent === 'number') {
+            next[venue.name] = {
+              sales: typeof venue.weeklyForecastSalesCents === 'number' ? String(Math.round(venue.weeklyForecastSalesCents / 100)) : '',
+              targetWagePercent: typeof venue.targetWagePercent === 'number' ? String(venue.targetWagePercent) : '32'
+            };
+          }
+        }
+        if (Object.keys(next).length > 0) {
+          setForecastInputs((current) => ({ ...current, ...next }));
+        }
+      } catch {
+        /* fallback to localStorage values already loaded */
+      }
+    })();
   }, []);
 
   useEffect(() => {
@@ -1527,7 +1552,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         id="sales"
         title="Sales Reports"
         description="Alma Avalon and St Alma sales actuals, daily trends, historical baseline, and weekly prediction"
-        action={<Button type="button" size="sm" variant="secondary" onClick={() => applyHistoricalForecast()}>Reset all forecasts to history</Button>}
       >
         <div className="report-section-stack">
           <div className="stats-grid report-metric-grid">
@@ -1580,15 +1604,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     <Input
                       label="Forecast input"
                       value={forecastInputs[row.venue]?.sales ?? ''}
-                      onChange={(event) => updateForecastInput(row.venue, { sales: event.currentTarget.value })}
-                      placeholder={centsInput(row.historicalSalesCents) || 'Weekly forecast'}
+                      placeholder={centsInput(row.historicalSalesCents) || 'Set in Admin'}
+                      readOnly
+                      onChange={() => {}}
                     />
                     <Input
                       label="Target wage %"
                       value={forecastInputs[row.venue]?.targetWagePercent ?? '32'}
-                      onChange={(event) => updateForecastInput(row.venue, { targetWagePercent: event.currentTarget.value })}
+                      readOnly
+                      onChange={() => {}}
                     />
                   </div>
+                  <p className="subtle" style={{ marginTop: 0 }}>
+                    Edit these values in <a href="https://alma-suite-admin.web.app/wage-forecasts" target="_blank" rel="noreferrer">Admin → Wage forecasts</a>.
+                  </p>
 
                   <div className="sales-mini-metrics">
                     <Metric label="Prediction source" value={row.paceLabel} tone={row.actualSalesCents ? 'info' : row.predictedSalesCents ? 'warning' : 'neutral'} />
@@ -1596,11 +1625,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     <Metric label="Previous historical week" value={formatCurrency(row.previousHistoricalSalesCents)} tone="neutral" />
                   </div>
 
-                  <span className="historical-reset">
-                    <Button type="button" size="sm" variant="secondary" disabled={row.historicalSalesCents <= 0} onClick={() => applyHistoricalForecast(row.venue)}>
-                      Historical reset
-                    </Button>
-                  </span>
                 </section>
               );
             })}
@@ -1841,6 +1865,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   )}
                 </tbody>
               </table>
+            </div>
+          </div>
+
+          <div className="report-detail-grid">
+            <div className="report-panel" style={{ gridColumn: '1 / -1' }}>
+              <h4>Staff costing detail</h4>
+              <p className="subtle">Wage cost, cost per hour, section mix, variance, and labour charts. Moved here from Admin so wage reporting lives in one place.</p>
+              <StaffCostingReportPage />
             </div>
           </div>
         </div>

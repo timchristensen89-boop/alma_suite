@@ -37,10 +37,24 @@ function toPayload(row: {
   let venues: AppSettingsPayload['venues'] = [];
   if (Array.isArray(row.venues)) {
     venues = row.venues
-      .filter((v): v is { name: string; address?: string; phone?: string } =>
-        typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
-      )
-      .map((v) => ({ name: v.name, address: v.address ?? '', phone: v.phone ?? '' }));
+      .filter((v): v is {
+        name: string;
+        address?: string;
+        phone?: string;
+        weeklyForecastSalesCents?: number;
+        targetWagePercent?: number;
+      } => typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string')
+      .map((v) => ({
+        name: v.name,
+        address: v.address ?? '',
+        phone: v.phone ?? '',
+        ...(typeof v.weeklyForecastSalesCents === 'number' && Number.isFinite(v.weeklyForecastSalesCents)
+          ? { weeklyForecastSalesCents: Math.max(0, Math.round(v.weeklyForecastSalesCents)) }
+          : {}),
+        ...(typeof v.targetWagePercent === 'number' && Number.isFinite(v.targetWagePercent)
+          ? { targetWagePercent: Math.min(100, Math.max(0, v.targetWagePercent)) }
+          : {})
+      }));
   }
 
   return {

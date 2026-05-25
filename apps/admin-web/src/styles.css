@@ -508,3 +508,35 @@
     border-top: 0;
   }
 }
+
+/* Wage forecasts page */
+.admin-page-stack {
+  display: grid;
+  gap: 18px;
+}
+
+.wage-forecasts-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.wage-forecast-row {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted);
+}
+
+.wage-forecast-row-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.wage-forecast-row-head strong {
+  font-size: 16px;
+}
