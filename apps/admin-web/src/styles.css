@@ -763,3 +763,58 @@
   letter-spacing: 0.04em;
   margin-top: 4px;
 }
+
+/* Bulk staff onboarding */
+.bulk-onboarding-summary {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.bulk-onboarding-table {
+  display: grid;
+  gap: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.bulk-onboarding-row {
+  display: grid;
+  grid-template-columns: 32px minmax(140px, 1.4fr) minmax(140px, 1.4fr) minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 13px;
+}
+
+.bulk-onboarding-row:last-child {
+  border-bottom: 0;
+}
+
+.bulk-onboarding-row.bulk-onboarding-head {
+  background: var(--color-surface-muted);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.bulk-onboarding-row.is-sent {
+  background: rgba(34, 197, 94, 0.06);
+}
+
+.bulk-onboarding-row.is-error {
+  background: rgba(220, 38, 38, 0.06);
+}
+
+@media (max-width: 900px) {
+  .bulk-onboarding-row,
+  .bulk-onboarding-row.bulk-onboarding-head {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px 12px;
+  }
+  .bulk-onboarding-row.bulk-onboarding-head { display: none; }
+}

@@ -67,6 +67,7 @@ import {
   VenuesPage,
   XeroIntegrationPage
 } from './pages/AdminFeaturePages';
+import { BulkStaffOnboardingPage } from './pages/BulkStaffOnboardingPage';
 import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
@@ -177,6 +178,12 @@ const NAV_GROUPS: AdminNavGroup[] = [
         to: '/staff-onboarding',
         label: 'Onboarding',
         description: 'Staff onboarding setup',
+        icon: <IconBadgeCheck />
+      },
+      {
+        to: '/bulk-staff-onboarding',
+        label: 'Bulk onboarding',
+        description: 'Paste a CSV to invite multiple staff in one pass',
         icon: <IconBadgeCheck />
       },
       {
@@ -593,6 +600,7 @@ function AdminWorkspace() {
         <Route path="/roles" element={<RolesPage />} />
         <Route path="/staff-settings" element={<StaffSettingsPage />} />
         <Route path="/wage-forecasts" element={<WageForecastsPage />} />
+        <Route path="/bulk-staff-onboarding" element={<BulkStaffOnboardingPage />} />
         <Route path="/integrations/health" element={<IntegrationHealthPage />} />
         <Route path="/weekly-summary" element={<WeeklySummaryPage />} />
         <Route path="/staff-record-types" element={<StaffRecordTypesPage />} />
