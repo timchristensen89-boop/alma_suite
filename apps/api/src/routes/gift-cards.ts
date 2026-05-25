@@ -181,6 +181,14 @@ giftCardsRouter.get('/cards/:code', requireManager, async (req, res, next) => {
   }
 });
 
+giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await giftCardService.activatePhysicalCard(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/redeem', requireManager, async (req, res, next) => {
   try {
     res.json(await giftCardService.redeem(req.body, req.user?.id));

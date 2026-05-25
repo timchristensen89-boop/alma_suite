@@ -67,6 +67,12 @@ const GIFTCARD_NAV_ITEMS = [
     icon: <SearchIcon />
   },
   {
+    href: '/activate#activate',
+    label: 'Activate physical',
+    description: 'Sell a pre-printed card at the counter',
+    icon: <SearchIcon />
+  },
+  {
     href: '/admin#settings',
     label: 'Admin setup',
     description: 'Checkout, promos, artwork',
@@ -592,6 +598,7 @@ function SidebarNav() {
   const sectionFromLocation = useCallback(() => {
     if (window.location.pathname.startsWith('/orders')) return '/orders#recent';
     if (window.location.pathname.startsWith('/admin')) return '/admin#settings';
+    if (window.location.pathname.startsWith('/activate')) return '/activate#activate';
     return '/redeem#redeem';
   }, []);
   const [activeHref, setActiveHref] = useState(sectionFromLocation);
@@ -1017,7 +1024,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     ? 'admin'
     : currentPath.startsWith('/orders')
       ? 'orders'
-      : 'redeem';
+      : currentPath.startsWith('/activate')
+        ? 'activate'
+        : 'redeem';
   const pageCopy = {
     redeem: {
       eyebrow: 'Daily workflow',
@@ -1033,6 +1042,11 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       eyebrow: 'Setup',
       title: 'Gift card setup',
       description: 'Manage public checkout copy, artwork, test checkout, and promo codes.'
+    },
+    activate: {
+      eyebrow: 'At the counter',
+      title: 'Activate physical gift card',
+      description: 'Sell a pre-printed card at the venue. Scan or type the printed code, enter the amount paid, and the card goes live immediately.'
     }
   }[activeGiftCardPage];
 
@@ -1292,8 +1306,118 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         ) : null}
 
         {activeGiftCardPage === 'admin' ? <GiftCardAdminSettings user={user} /> : null}
+        {activeGiftCardPage === 'activate' ? <PhysicalActivationPanel user={user} /> : null}
       </div>
     </AppShell>
+  );
+}
+
+function PhysicalActivationPanel({ user }: { user: AuthUser }) {
+  const [code, setCode] = useState('');
+  const [amount, setAmount] = useState('100');
+  const [recipientName, setRecipientName] = useState('');
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
+  const [activated, setActivated] = useState<GiftCard | null>(null);
+
+  async function activate(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage(null);
+    setActivated(null);
+    const trimmed = code.trim().toUpperCase();
+    const initialValueCents = Math.round(Number(amount) * 100);
+    if (!trimmed) {
+      setMessage('Enter the printed code.');
+      setMessageTone('error');
+      return;
+    }
+    if (!Number.isFinite(initialValueCents) || initialValueCents < 500) {
+      setMessage('Enter an amount of at least $5.');
+      setMessageTone('error');
+      return;
+    }
+    setSubmitting(true);
+    try {
+      const result = await api<GiftCard>('/api/gift-cards/physical/activate', {
+        method: 'POST',
+        body: JSON.stringify({
+          code: trimmed,
+          initialValueCents,
+          recipientName: recipientName.trim() || null,
+          recipientEmail: recipientEmail.trim() || null,
+          purchaserName: `${user.firstName} ${user.lastName}`.trim() || 'Counter sale',
+          purchaserEmail: user.email ?? null
+        })
+      });
+      setActivated(result);
+      setMessage(`Activated ${trimmed} · ${formatCents(initialValueCents)} ready to redeem.`);
+      setMessageTone('success');
+      setCode('');
+      setAmount('100');
+      setRecipientName('');
+      setRecipientEmail('');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not activate card');
+      setMessageTone('error');
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Activate a physical card"
+      subtitle="Scan or type the printed code from the back of the card, enter what the guest paid, and tap Activate. The card is live the moment you submit."
+    >
+      <form className="giftcards-form giftcards-balance-check" onSubmit={activate}>
+        <Input
+          label="Printed card code"
+          required
+          value={code}
+          onChange={(event) => setCode(event.currentTarget.value.toUpperCase())}
+          placeholder="ALMA-XXXXXXXX"
+          autoFocus
+        />
+        <div className="form-grid two">
+          <Input
+            label="Initial value (AUD)"
+            type="number"
+            min="5"
+            step="5"
+            required
+            value={amount}
+            onChange={(event) => setAmount(event.currentTarget.value)}
+          />
+          <Input
+            label="Recipient name (optional)"
+            value={recipientName}
+            onChange={(event) => setRecipientName(event.currentTarget.value)}
+            placeholder="For a personalised email receipt"
+          />
+        </div>
+        <Input
+          label="Recipient email (optional)"
+          type="email"
+          value={recipientEmail}
+          onChange={(event) => setRecipientEmail(event.currentTarget.value)}
+          placeholder="They'll get a digital receipt"
+        />
+        <div className="toolbar-right">
+          <ActionFeedback message={message} tone={messageTone} />
+          <Button type="submit" disabled={submitting}>{submitting ? 'Activating…' : 'Activate'}</Button>
+        </div>
+      </form>
+
+      {activated ? (
+        <div className="giftcards-balance-card" style={{ marginTop: 16 }}>
+          <strong>{activated.code}</strong>
+          <span>{formatCents(activated.balanceCents)} remaining of {formatCents(activated.initialValueCents)}</span>
+          <Badge tone={statusTone(activated.status)}>{activated.status.replace('_', ' ')}</Badge>
+        </div>
+      ) : null}
+    </Card>
   );
 }
 

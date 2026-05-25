@@ -666,6 +666,82 @@ export const giftCardService = {
     return toGiftCardPayload(card);
   },
 
+  // Activate a physical gift card at point of sale. The user types the
+  // pre-printed code, enters what the guest paid in cash/EFTPOS, and the
+  // card becomes redeemable immediately. No Stripe involvement.
+  async activatePhysicalCard(input: unknown, actor?: AuthUser | null) {
+    if (!input || typeof input !== 'object') {
+      throw new HttpError(400, 'Activation payload required');
+    }
+    const data = input as Record<string, unknown>;
+    const codeRaw = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
+    const initialValueCents = typeof data.initialValueCents === 'number' ? Math.round(data.initialValueCents) : NaN;
+    const purchaserName = typeof data.purchaserName === 'string' && data.purchaserName.trim()
+      ? data.purchaserName.trim()
+      : 'Counter sale';
+    const purchaserEmail = typeof data.purchaserEmail === 'string' && data.purchaserEmail.trim()
+      ? data.purchaserEmail.trim().toLowerCase()
+      : (actor?.email?.toLowerCase() ?? 'counter@alma');
+    const recipientName = typeof data.recipientName === 'string' && data.recipientName.trim()
+      ? data.recipientName.trim()
+      : null;
+    const recipientEmail = typeof data.recipientEmail === 'string' && data.recipientEmail.trim()
+      ? data.recipientEmail.trim().toLowerCase()
+      : null;
+
+    if (!codeRaw || !/^[A-Z0-9-]+$/.test(codeRaw)) {
+      throw new HttpError(400, 'Card code is required and must contain only letters, numbers, and dashes.');
+    }
+    if (!Number.isFinite(initialValueCents) || initialValueCents < 500) {
+      throw new HttpError(400, 'Initial value must be at least $5.');
+    }
+
+    const existing = await prisma.giftCard.findUnique({ where: { code: codeRaw } });
+    if (existing) {
+      throw new HttpError(409, `Code ${codeRaw} is already in use.`);
+    }
+
+    const settings = await getGiftCardSettings();
+    // Physical cards don't expire by default — operators can apply a custom
+    // expiry later via the card detail page if their state requires it.
+    const expiresAt: Date | null = null;
+
+    const card = await prisma.giftCard.create({
+      data: {
+        code: codeRaw,
+        status: 'ACTIVE',
+        initialValueCents,
+        balanceCents: initialValueCents,
+        discountCents: 0,
+        amountPaidCents: initialValueCents,
+        currency: 'aud',
+        purchaserName,
+        purchaserEmail,
+        recipientName,
+        recipientEmail,
+        message: null,
+        promoCodeId: null,
+        promoCodeSnapshot: 'PHYSICAL_COUNTER',
+        testMode: false,
+        stripeCheckoutSessionId: `physical:${Date.now()}`,
+        paidAt: new Date(),
+        expiresAt
+      },
+      include: { redemptions: true }
+    });
+
+    if (recipientEmail) {
+      // Send the digital copy so the guest has a record on their phone
+      try {
+        await this.sendGiftCardEmail(card, settings);
+      } catch (err) {
+        console.error('[gift-card] activatePhysicalCard email failed', err);
+      }
+    }
+
+    return toGiftCardPayload(card);
+  },
+
   async redeem(input: unknown, redeemedById?: string) {
     const data = giftCardRedemptionInputSchema.parse(input);
     const card = await findCardByCode(data.code);

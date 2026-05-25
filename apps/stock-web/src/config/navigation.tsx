@@ -84,6 +84,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconRecipes />
   },
   {
+    to: '/price-movement',
+    label: 'Price movement',
+    description: 'Supplier unit-cost changes over the last 30 days',
+    icon: <IconRecipes />
+  },
+  {
     to: '/production-recipes',
     label: 'Production Recipes',
     description: 'Prep batches, sauces and reusable components',
