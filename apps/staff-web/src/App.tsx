@@ -9526,17 +9526,21 @@ function RosterPage({
                 ? summary.plannedCostCents > summary.budgetCents ? 'is-over' : 'is-under'
                 : '';
               return (
-                <div key={day.toISOString()} className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}>
+                <div
+                  key={day.toISOString()}
+                  className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}
+                  title={isClosed ? `Closed${closedVenues.length ? ` · ${closedVenues.length} venue${closedVenues.length === 1 ? '' : 's'}` : ''}` : undefined}
+                >
                   <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                   <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-                  <small>
-                    {isClosed
-                      ? 'Closed'
-                      : closedVenues.length
+                  {!isClosed ? (
+                    <small>
+                      {closedVenues.length
                         ? `${closedVenues.length} venue closed`
                         : roundHours(summary?.hours ?? 0)}
-                  </small>
-                  {hasCost ? (
+                    </small>
+                  ) : null}
+                  {!isClosed && hasCost ? (
                     <span className={`day-head-cost ${costClass}`}>
                       {formatCents(summary.plannedCostCents)}{summary.wagePercent ? ` · ${summary.wagePercent.toFixed(0)}%` : ''}
                     </span>

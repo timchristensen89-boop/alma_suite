@@ -3243,7 +3243,7 @@
   display: flex;
   flex-direction: column;
   gap: 5px;
-  max-height: calc(100vh - 220px);
+  max-height: calc(100vh - 140px);
   overflow-y: auto;
   padding: 0;
 }
@@ -3618,17 +3618,35 @@
 .deputy-day-head.is-closed {
   align-items: center;
   padding: 8px 5px;
-  background: #fff1f2;
-  color: #991b1b;
+  background: #fafbfc;
+  color: rgba(148, 163, 184, 0.85);
   text-align: center;
+  opacity: 0.55;
 }
 
 .deputy-day-head.is-closed strong,
-.deputy-day-head.is-closed span,
-.deputy-day-head.is-closed small {
+.deputy-day-head.is-closed span {
   overflow: hidden;
   max-width: 100%;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+/* Hide text on the closed-day header until you hover — keeps the layout
+   clean. The title attribute exposes details to screen readers. */
+.deputy-day-head.is-closed strong,
+.deputy-day-head.is-closed span {
+  visibility: hidden;
+}
+
+.deputy-day-head.is-closed:hover {
+  opacity: 1;
+}
+
+.deputy-day-head.is-closed:hover strong,
+.deputy-day-head.is-closed:hover span {
+  visibility: visible;
 }
 
 .deputy-close-day-button {
@@ -3652,13 +3670,37 @@
   left: 0;
   z-index: 1;
   display: grid;
-  grid-template-columns: 13px 22px minmax(0, 1fr);
-  gap: 4px;
+  /* Stacked: arrow + circle on row 1 (centered together), label on row 2 spanning both columns */
+  grid-template-columns: 13px 22px;
+  grid-template-areas:
+    "arrow circle"
+    "label label";
+  column-gap: 4px;
+  row-gap: 2px;
   align-items: center;
+  justify-content: center;
   min-height: 44px;
   padding: 6px 8px;
   background: rgba(255, 255, 255, 0.97);
   backdrop-filter: blur(12px);
+  text-align: center;
+}
+
+.deputy-row-label > .row-collapse-toggle {
+  grid-area: arrow;
+}
+
+.deputy-row-label > .roster-avatar {
+  grid-area: circle;
+}
+
+.deputy-row-label > strong {
+  grid-area: label;
+  text-align: center;
+  font-size: 11.5px;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .row-collapse-toggle {
@@ -3728,16 +3770,11 @@
   display: none;
 }
 
-.deputy-row-label strong,
 .deputy-row-label small {
   display: block;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.deputy-row-label strong {
-  font-size: 12px;
 }
 
 .deputy-row-label small {
@@ -3791,13 +3828,22 @@
   display: grid;
   justify-items: center;
   gap: 3px;
-  color: #991b1b;
+  color: rgba(148, 163, 184, 0.7);
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   writing-mode: vertical-rl;
   transform: rotate(180deg);
+  visibility: hidden;
+}
+
+.deputy-schedule-cell.is-closed:hover .deputy-closed-cell {
+  visibility: visible;
+}
+
+.deputy-schedule-cell.is-row-collapsed .deputy-closed-cell {
+  display: none;
 }
 
 .deputy-closed-cell small {
