@@ -221,9 +221,24 @@ export function IssuesListPage() {
                   </td>
                   <td>{issue.assignee || <span className="subtle">Unassigned</span>}</td>
                   <td>
-                    {issue.dueDate ? (
-                      new Date(issue.dueDate).toLocaleDateString()
-                    ) : (
+                    {issue.dueDate ? (() => {
+                      const due = new Date(issue.dueDate);
+                      const isOverdue = due.getTime() < Date.now() &&
+                        issue.status !== 'RESOLVED' && issue.status !== 'CLOSED';
+                      const daysOverdue = isOverdue
+                        ? Math.floor((Date.now() - due.getTime()) / (1000 * 60 * 60 * 24))
+                        : 0;
+                      return (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                          {due.toLocaleDateString()}
+                          {isOverdue ? (
+                            <Badge tone="danger">
+                              {daysOverdue === 0 ? 'Overdue today' : `${daysOverdue}d overdue`}
+                            </Badge>
+                          ) : null}
+                        </span>
+                      );
+                    })() : (
                       <span className="subtle">—</span>
                     )}
                   </td>

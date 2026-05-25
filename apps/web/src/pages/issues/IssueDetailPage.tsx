@@ -21,6 +21,7 @@ export function IssueDetailPage() {
   const [resolutionNotes, setResolutionNotes] = useState('');
   const [completing, setCompleting] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
+  const [escalating, setEscalating] = useState(false);
   const { data, loading, error, reload } = useAsync<Issue>(
     () => api(`/api/issues/${id}`),
     [id]
@@ -43,6 +44,19 @@ export function IssueDetailPage() {
       setCompletionError(error instanceof Error ? error.message : 'Failed to complete issue');
     } finally {
       setCompleting(false);
+    }
+  }
+
+  async function escalate() {
+    if (!id) return;
+    try {
+      setEscalating(true);
+      await api<Issue>(`/api/issues/${id}/escalate`, { method: 'POST' });
+      await reload();
+    } catch (error) {
+      console.error('Failed to escalate issue', error);
+    } finally {
+      setEscalating(false);
     }
   }
 
@@ -92,6 +106,22 @@ export function IssueDetailPage() {
                 Edit
               </Button>
             </Link>
+            {(() => {
+              const isOverdue = data.dueDate && new Date(data.dueDate).getTime() < Date.now() &&
+                data.status !== 'RESOLVED' && data.status !== 'CLOSED';
+              const escalationCount = data.activities.filter((a) => a.action === 'escalated').length;
+              if (!isOverdue) return null;
+              return (
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  disabled={escalating}
+                  onClick={() => void escalate()}
+                >
+                  {escalating ? 'Escalating…' : `Escalate${escalationCount > 0 ? ` (L${escalationCount + 1})` : ''}`}
+                </Button>
+              );
+            })()}
             {canComplete ? (
               <Button
                 size="sm"

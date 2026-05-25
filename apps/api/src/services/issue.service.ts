@@ -9,6 +9,7 @@ import {
   issueUpdateInputSchema
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 
 function formatDateOnly(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : '';
@@ -407,6 +408,65 @@ export const issueService = {
         actor: data.actor
       }
     });
+  },
+
+  // Escalate an overdue issue — sends an email to the configured escalation
+  // recipient and logs an "escalated" activity with the level. Subsequent
+  // calls increment the level (level 1, 2, 3...) so the trail is preserved.
+  async escalate(issueId: string, actor: AuthUser | undefined) {
+    const issue = await this.getById(issueId);
+    if (issue.status === 'RESOLVED' || issue.status === 'CLOSED') {
+      throw new HttpError(400, 'Cannot escalate a resolved or closed issue');
+    }
+
+    // Count prior escalations to derive the new level
+    const priorEscalations = await prisma.issueActivity.count({
+      where: { issueId, action: 'escalated' }
+    });
+    const nextLevel = priorEscalations + 1;
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'manager' : 'system';
+
+    // Load app settings to find the escalation recipient.
+    const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
+    const recipient = settings?.notifyEmail?.trim();
+
+    // Send email (best effort — don't block on failure)
+    let emailStatus: 'sent' | 'skipped' | 'failed' = 'skipped';
+    if (recipient && mailService.isConfigured()) {
+      try {
+        const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
+        await mailService.sendAlert({
+          to: recipient,
+          subject: `[Escalation L${nextLevel}] ${issue.title}`,
+          title: `Issue escalated to level ${nextLevel}: ${issue.title}`,
+          body: [
+            `${actorName} escalated this issue${issue.dueDate ? `, originally due ${new Date(issue.dueDate).toLocaleDateString()}` : ''}.`,
+            '',
+            issue.description,
+            issue.assignee ? `Currently assigned to: ${issue.assignee}` : 'No assignee set.',
+            issue.notes ? `Notes: ${issue.notes}` : ''
+          ].filter(Boolean).join('\n'),
+          severity: nextLevel >= 2 ? 'critical' : 'warning',
+          ctaUrl: `${complianceUrl}/issues/${issue.id}`,
+          ctaLabel: 'Open issue'
+        });
+        emailStatus = 'sent';
+      } catch (err) {
+        console.error('[issue.escalate] email failed', err);
+        emailStatus = 'failed';
+      }
+    }
+
+    await prisma.issueActivity.create({
+      data: {
+        issueId,
+        action: 'escalated',
+        message: `Escalated to level ${nextLevel}${recipient ? ` (notified ${recipient}, ${emailStatus})` : ' (no recipient configured)'}`,
+        actor: actorName
+      }
+    });
+
+    return this.getById(issueId);
   },
 
   async meta() {

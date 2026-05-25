@@ -69,3 +69,12 @@ issuesRouter.post('/:id/activity', async (req, res, next) => {
     next(error);
   }
 });
+
+issuesRouter.post('/:id/escalate', async (req, res, next) => {
+  try {
+    const issue = await issueService.escalate(req.params.id, req.user);
+    res.json(issue);
+  } catch (error) {
+    next(error);
+  }
+});
