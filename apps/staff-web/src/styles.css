@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #9A6B5A;
-  --color-accent-hover: #6B473A;
-  --color-accent-soft: #F5DCCE;
-  --color-accent-text: #3D2418;
+  --color-accent: #4D5E7A;
+  --color-accent-hover: #34425A;
+  --color-accent-soft: #EAEDF3;
+  --color-accent-text: #1A2238;
 }
 
 .staff-board {

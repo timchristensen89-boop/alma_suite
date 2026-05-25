@@ -243,24 +243,24 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'stock',
     label: 'STOCK',
-    from: '#684A4A',
-    to: '#4A3434',
+    from: '#4F6B47',
+    to: '#33482D',
     iconKey: 'produce',
     icon: <ProduceIcon />
   },
   {
     id: 'reports',
     label: 'REPORTS',
-    from: '#EFE8DC',
-    to: '#DDD3C0',
+    from: '#B5772F',
+    to: '#8A5A20',
     iconKey: 'chart',
     icon: <ChartIcon />
   },
   {
     id: 'staff',
     label: 'STAFF',
-    from: '#F5DCCE',
-    to: '#E5C6B0',
+    from: '#4D5E7A',
+    to: '#34425A',
     iconKey: 'people',
     icon: <PeopleIcon />
   },
@@ -275,32 +275,32 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'marketing',
     label: 'MARKETING',
-    from: '#4D5E7A',
-    to: '#34425A',
+    from: '#684A4A',
+    to: '#4A3434',
     iconKey: 'search',
     icon: <SearchIcon />
   },
   {
     id: 'comms',
     label: 'COMMS',
-    from: '#4F6B47',
-    to: '#33482D',
+    from: '#EFE8DC',
+    to: '#DDD3C0',
     iconKey: 'comms',
     icon: <CommsGlyph />
   },
   {
     id: 'giftcards',
     label: 'GIFTCARDS',
-    from: '#B5772F',
-    to: '#8A5A20',
+    from: '#F5DCCE',
+    to: '#E5C6B0',
     iconKey: 'document',
     icon: <DocumentIcon />
   },
   {
     id: 'settings',
     label: 'ADMIN',
-    from: '#EFE8DC',
-    to: '#DDD3C0',
+    from: '#3F4044',
+    to: '#26272A',
     iconKey: 'gear',
     icon: <GearIcon />
   }

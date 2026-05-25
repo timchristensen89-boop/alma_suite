@@ -1,10 +1,10 @@
 @import url('../../web/src/styles.css');
 
 :root {
-  --color-accent: #4D5E7A;
-  --color-accent-hover: #34425A;
-  --color-accent-soft: #EAEDF3;
-  --color-accent-text: #1A2238;
+  --color-accent: #684A4A;
+  --color-accent-hover: #4A3434;
+  --color-accent-soft: #F5E8E8;
+  --color-accent-text: #2A1818;
 }
 
 @media (min-width: 901px) {
