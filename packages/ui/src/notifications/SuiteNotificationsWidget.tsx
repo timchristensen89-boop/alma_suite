@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react';
 import { useDismissibleLayer } from '../hooks/useDismissibleLayer';
 
 type ApiClient = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -20,6 +20,37 @@ type Props = {
   currentApp?: string;
 };
 
+const READ_STORAGE_KEY = 'alma.notifications.read.v1';
+const READ_RETENTION_DAYS = 30;
+
+type ReadState = Record<string, number>; // notificationId -> timestamp marked read
+
+function loadReadState(): ReadState {
+  try {
+    const raw = window.localStorage.getItem(READ_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as ReadState;
+    if (!parsed || typeof parsed !== 'object') return {};
+    // Prune entries older than retention
+    const cutoff = Date.now() - READ_RETENTION_DAYS * 24 * 60 * 60 * 1000;
+    const next: ReadState = {};
+    for (const [id, ts] of Object.entries(parsed)) {
+      if (typeof ts === 'number' && ts > cutoff) next[id] = ts;
+    }
+    return next;
+  } catch {
+    return {};
+  }
+}
+
+function persistReadState(state: ReadState) {
+  try {
+    window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    /* storage unavailable */
+  }
+}
+
 const panelStyle = {
   position: 'fixed',
   right: 12,
@@ -35,14 +66,13 @@ const panelStyle = {
   boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)'
 } as const;
 
-const itemStyle = {
+const itemBaseStyle = {
   display: 'grid',
   gap: 4,
   width: '100%',
   padding: 12,
   borderRadius: 12,
   border: '1px solid rgba(148, 163, 184, 0.24)',
-  background: '#f8fafc',
   color: '#0f172a',
   textDecoration: 'none',
   textAlign: 'left'
@@ -93,6 +123,8 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
   const [items, setItems] = useState<SuiteNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+  const [readState, setReadState] = useState<ReadState>(() => (typeof window !== 'undefined' ? loadReadState() : {}));
+  const [showRead, setShowRead] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
   useDismissibleLayer(layerRef, open, close, `${currentApp}-notifications`);
@@ -120,7 +152,40 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     if (open) void load();
   }, [open]);
 
-  const hasItems = items.length > 0;
+  const markRead = useCallback((id: string) => {
+    setReadState((current) => {
+      const next = { ...current, [id]: Date.now() };
+      persistReadState(next);
+      return next;
+    });
+  }, []);
+
+  const markAllRead = useCallback(() => {
+    setReadState((current) => {
+      const next = { ...current };
+      for (const item of items) next[item.id] = Date.now();
+      persistReadState(next);
+      return next;
+    });
+  }, [items]);
+
+  const clearAllRead = useCallback(() => {
+    setReadState({});
+    persistReadState({});
+  }, []);
+
+  const { unreadItems, readItems } = useMemo(() => {
+    const unread: SuiteNotification[] = [];
+    const read: SuiteNotification[] = [];
+    for (const item of items) {
+      if (readState[item.id]) read.push(item);
+      else unread.push(item);
+    }
+    return { unreadItems: unread, readItems: read };
+  }, [items, readState]);
+
+  const displayItems = showRead ? items : unreadItems;
+  const unreadCount = unreadItems.length;
 
   return (
     <div ref={layerRef} style={{ position: 'relative' }}>
@@ -130,7 +195,7 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
         onClick={() => setOpen((value) => !value)}
         aria-expanded={open}
       >
-        Alerts{hasItems ? ` ${items.length}` : ''}
+        Alerts{unreadCount > 0 ? ` ${unreadCount > 9 ? '9+' : unreadCount}` : ''}
       </button>
       {open ? (
         <div style={panelStyle}>
@@ -138,41 +203,101 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
             <div>
               <strong style={{ display: 'block', color: '#0f172a' }}>Suite alerts</strong>
               <span style={{ color: '#64748b', fontSize: 13 }}>
-                {loading ? 'Refreshing...' : `${items.length} active item${items.length === 1 ? '' : 's'}`}
+                {loading
+                  ? 'Refreshing...'
+                  : `${unreadCount} unread${readItems.length > 0 ? ` · ${readItems.length} read` : ''}`}
               </span>
             </div>
             <button type="button" className="icon-btn" onClick={() => setOpen(false)} aria-label="Close alerts">
-              x
+              ×
             </button>
           </div>
 
           {message ? <p className="error-text">{message}</p> : null}
 
-          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-            {!items.length && !loading ? (
-              <p className="subtle" style={{ margin: 0 }}>Nothing needs attention right now.</p>
+          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+            {unreadCount > 0 ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={markAllRead}>
+                Mark all read
+              </button>
             ) : null}
-            {items.map((item) => {
+            {readItems.length > 0 ? (
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={() => setShowRead((value) => !value)}
+              >
+                {showRead ? 'Hide read' : `Show ${readItems.length} read`}
+              </button>
+            ) : null}
+            {showRead && readItems.length > 0 ? (
+              <button type="button" className="btn btn-ghost btn-sm" onClick={clearAllRead}>
+                Restore all
+              </button>
+            ) : null}
+          </div>
+
+          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
+            {!displayItems.length && !loading ? (
+              <p className="subtle" style={{ margin: 0 }}>
+                {unreadCount === 0 && items.length > 0 ? 'All caught up.' : 'Nothing needs attention right now.'}
+              </p>
+            ) : null}
+            {displayItems.map((item) => {
               const href = targetFor(item);
+              const isRead = !!readState[item.id];
               return (
-                <a
+                <div
                   key={item.id}
-                  href={href}
-                  style={itemStyle}
-                  onClick={(event) => {
-                    setOpen(false);
-                    openWithSuiteHandoff(event, href);
+                  style={{
+                    ...itemBaseStyle,
+                    background: isRead ? '#f1f5f9' : '#f8fafc',
+                    opacity: isRead ? 0.65 : 1,
+                    position: 'relative'
                   }}
                 >
-                  <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                    <strong>{item.title}</strong>
-                    <span style={{ color: toneColour[item.tone], fontSize: 12, textTransform: 'uppercase' }}>{item.tone}</span>
-                  </span>
-                  <span style={{ color: '#475569', fontSize: 13 }}>{item.description}</span>
-                  <span style={{ color: '#94a3b8', fontSize: 12 }}>
-                    {item.appLabel ?? item.appId ?? 'Alma'} · {timeAgo(item.createdAt)}
-                  </span>
-                </a>
+                  <a
+                    href={href}
+                    style={{ color: 'inherit', textDecoration: 'none', display: 'grid', gap: 4 }}
+                    onClick={(event) => {
+                      markRead(item.id);
+                      setOpen(false);
+                      openWithSuiteHandoff(event, href);
+                    }}
+                  >
+                    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
+                      <strong>{item.title}</strong>
+                      <span style={{ color: toneColour[item.tone], fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+                        {item.tone}
+                      </span>
+                    </span>
+                    <span style={{ color: '#475569', fontSize: 13 }}>{item.description}</span>
+                    <span style={{ color: '#94a3b8', fontSize: 12 }}>
+                      {item.appLabel ?? item.appId ?? 'Alma'} · {timeAgo(item.createdAt)}
+                    </span>
+                  </a>
+                  {!isRead ? (
+                    <button
+                      type="button"
+                      onClick={() => markRead(item.id)}
+                      aria-label="Mark as read"
+                      style={{
+                        position: 'absolute',
+                        top: 8,
+                        right: 8,
+                        border: 0,
+                        background: 'transparent',
+                        color: '#94a3b8',
+                        cursor: 'pointer',
+                        fontSize: 13,
+                        padding: '2px 6px',
+                        borderRadius: 6
+                      }}
+                    >
+                      ✓
+                    </button>
+                  ) : null}
+                </div>
               );
             })}
           </div>

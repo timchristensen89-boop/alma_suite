@@ -7,6 +7,7 @@ import {
   temperatureSensorMapInputSchema
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 
 const GOVEE_PROVIDER = 'govee';
 const DEFAULT_GOVEE_BASE_URL = 'https://openapi.api.govee.com';
@@ -200,6 +201,14 @@ async function createLogForAsset(assetId: string, input: {
   const status = determineStatus(input.temperatureC, asset.minTempC, asset.maxTempC);
   const issueId = status === 'OUT_OF_RANGE' ? await maybeCreateIssue(asset, input.temperatureC) : null;
 
+  // Check the previous log so we can fire an email only on the
+  // IN_RANGE → OUT_OF_RANGE state transition (avoids spamming when a sensor
+  // sits out of range for hours).
+  const previousLog = await prisma.temperatureLog.findFirst({
+    where: { assetId },
+    orderBy: { recordedAt: 'desc' }
+  });
+
   const log = await prisma.temperatureLog.create({
     data: {
       assetId,
@@ -221,6 +230,39 @@ async function createLogForAsset(assetId: string, input: {
       ...(input.source === 'GOVEE' ? { lastSyncAt: new Date() } : {})
     }
   });
+
+  // Fire alert email on state transition into OUT_OF_RANGE.
+  // Skip if previous log was already OUT_OF_RANGE (still bad, but the
+  // operator already knows) or if there's no recipient configured.
+  if (
+    status === 'OUT_OF_RANGE' &&
+    (!previousLog || previousLog.status === 'IN_RANGE') &&
+    mailService.isConfigured()
+  ) {
+    try {
+      const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
+      const recipient = settings?.notifyEmail?.trim();
+      if (recipient && settings?.notifyOutOfRangeTemp !== false) {
+        const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
+        await mailService.sendAlert({
+          to: recipient,
+          subject: `[Temp alert] ${asset.name} out of range`,
+          title: `${asset.name} just went out of range`,
+          body: [
+            `${asset.name}${asset.venue ? ` at ${asset.venue}` : ''} read ${input.temperatureC.toFixed(1)}°C.`,
+            `Allowed range: ${asset.minTempC.toFixed(1)}°C to ${asset.maxTempC.toFixed(1)}°C.`,
+            issueId ? `An issue has been auto-created for follow-up.` : ''
+          ].filter(Boolean).join('\n'),
+          venue: asset.venue,
+          severity: 'critical',
+          ctaUrl: `${complianceUrl}/temperatures`,
+          ctaLabel: 'Open compliance'
+        });
+      }
+    } catch (err) {
+      console.error('[temperature] Failed to send out-of-range alert email', err);
+    }
+  }
 
   return log;
 }

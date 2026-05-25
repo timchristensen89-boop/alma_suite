@@ -356,5 +356,62 @@ export const mailService = {
     `;
 
     return deliverEmail({ to: input.to, subject, text, html });
+  },
+
+  /**
+   * Generic alert email — used by notification triggers for critical events
+   * (temperature out of range, overdue compliance, etc).
+   */
+  async sendAlert(input: {
+    to: string;
+    subject: string;
+    title: string;
+    body: string;
+    venue?: string | null;
+    severity?: 'critical' | 'warning' | 'info';
+    ctaUrl?: string;
+    ctaLabel?: string;
+  }): Promise<EmailDeliveryResult> {
+    const severity = input.severity ?? 'warning';
+    const accent = severity === 'critical' ? '#dc2626' : severity === 'warning' ? '#d97706' : '#2563eb';
+    const eyebrow = severity === 'critical' ? 'Critical alert' : severity === 'warning' ? 'Action needed' : 'Alma Suite';
+    const safeTitle = escapeHtml(input.title);
+    const safeBody = escapeHtml(input.body);
+    const safeVenue = input.venue ? escapeHtml(input.venue) : '';
+    const safeCta = input.ctaUrl ? escapeHtml(input.ctaUrl) : '';
+    const safeCtaLabel = escapeHtml(input.ctaLabel ?? 'Open in Alma Suite');
+
+    const text = [
+      `[${eyebrow}] ${input.title}`,
+      input.venue ? `Venue: ${input.venue}` : '',
+      '',
+      input.body,
+      '',
+      input.ctaUrl ? `Open: ${input.ctaUrl}` : ''
+    ]
+      .filter(Boolean)
+      .join('\n');
+
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:${accent};font-weight:700;margin-bottom:14px">
+          ${escapeHtml(eyebrow)}${safeVenue ? ` · ${safeVenue}` : ''}
+        </div>
+        <h2 style="font-size:22px;font-weight:600;margin:0 0 12px;color:#0f172a">${safeTitle}</h2>
+        <p style="font-size:14px;margin:0 0 18px;color:#334155;white-space:pre-line">${safeBody}</p>
+        ${input.ctaUrl ? `
+          <p style="margin:18px 0 0">
+            <a href="${safeCta}" style="display:inline-block;padding:11px 24px;border-radius:999px;background:${accent};color:#fff;font-weight:700;font-size:13px;text-decoration:none;letter-spacing:0.04em">
+              ${safeCtaLabel}
+            </a>
+          </p>
+        ` : ''}
+        <p style="font-size:12px;color:#94a3b8;margin:28px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
+          This alert was generated automatically by Alma Suite. Manage notification settings in Admin → General settings.
+        </p>
+      </div>
+    `;
+
+    return deliverEmail({ to: input.to, subject: input.subject, text, html });
   }
 };

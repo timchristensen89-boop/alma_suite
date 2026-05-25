@@ -3784,7 +3784,7 @@ function StaffProfileWorkspacePage({
                 <span className="staff-profile-nav-group">{group}</span>
                 {items.map((item) => {
                   const itemLocked = profileSectionIsLocked(item.id, { canOpenHr, canOpenRightToWork, canOpenPayroll });
-                  return <NavLink key={item.id} to={`/staff/${member.id}/${item.id}`} className={({ isActive }) => `${isActive ? 'is-active' : ''} ${itemLocked ? 'is-locked' : ''}`}><span>{item.label}</span>{item.sensitive ? <IconFileLock /> : null}</NavLink>;
+                  return <NavLink key={item.id} to={`/staff/${member.id}/${item.id}`} className={({ isActive }: { isActive: boolean }) => `${isActive ? 'is-active' : ''} ${itemLocked ? 'is-locked' : ''}`}><span>{item.label}</span>{item.sensitive ? <IconFileLock /> : null}</NavLink>;
                 })}
               </div>
             ))}
