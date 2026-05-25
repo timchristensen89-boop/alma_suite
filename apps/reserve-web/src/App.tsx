@@ -670,17 +670,35 @@ function PublicBookingWidget() {
             <img src="/brand/alma-fish.png" alt="" />
             <span>Alma Group</span>
           </div>
-          <a href="https://almagroup.com.au/">Visit website</a>
+          <a href="https://almagroup.com.au/" className="reserve-public-header-link">Visit website</a>
         </header>
-        <section className="reserve-public-hero" style={{ backgroundImage: `linear-gradient(180deg, rgba(20, 35, 27, 0.1), rgba(20, 35, 27, 0.62)), url(${selectedVenueDetail.image})` }}>
+        <section className="reserve-public-hero" style={{ backgroundImage: `linear-gradient(180deg, rgba(40, 4, 16, 0.1), rgba(40, 4, 16, 0.62)), url(${selectedVenueDetail.image})` }}>
           <div className="reserve-public-hero-copy">
             <p className="reserve-public-eyebrow">Alma Group reservations</p>
             <h1>{search.venue}</h1>
             <p>{selectedVenueDetail.summary}</p>
+            <button
+              type="button"
+              className="reserve-public-hero-cta"
+              onClick={() => document.querySelector('.reserve-public-booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+            >
+              Book a table
+            </button>
           </div>
         </section>
         <section className="reserve-public-layout" aria-label="Book a table">
           <div className="reserve-public-primary">
+            {reservation ? (
+              <section className="reserve-public-confirmation" aria-live="polite">
+                <div className="reserve-public-confirmation-icon" aria-hidden="true">✓</div>
+                <div className="reserve-public-confirmation-text">
+                  <p className="reserve-public-eyebrow">Booking sent</p>
+                  <h2>Thanks {reservation.guestName.split(' ')[0]}, your table request is in</h2>
+                  <p>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests at {search.venue}</p>
+                  <small>The venue team will confirm by email shortly. For urgent changes, please call the restaurant directly.</small>
+                </div>
+              </section>
+            ) : null}
             <section className="reserve-public-booking-panel reserve-public-floating-panel">
               {loading ? <Spinner label="Loading booking form..." /> : null}
               {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}

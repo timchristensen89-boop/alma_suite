@@ -295,6 +295,115 @@
   line-height: 1.65;
 }
 
+/* Hero CTA — wine pill that pops on the dark gradient */
+.reserve-public-hero-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin: 24px 0 0;
+  padding: 14px 36px;
+  border: 0;
+  border-radius: 999px;
+  background: #A8224E;
+  color: #fff8fa;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+  text-transform: uppercase;
+  box-shadow: 0 12px 32px rgba(74, 8, 32, 0.35), 0 2px 6px rgba(74, 8, 32, 0.18);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+
+.reserve-public-hero-cta:hover {
+  background: #7A1535;
+  transform: translateY(-1px);
+  box-shadow: 0 16px 42px rgba(74, 8, 32, 0.45), 0 3px 8px rgba(74, 8, 32, 0.22);
+}
+
+.reserve-public-hero-cta:active {
+  transform: translateY(0);
+}
+
+/* Polished "Visit website" link in header */
+.reserve-public-header-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 18px;
+  border: 1px solid rgba(168, 34, 78, 0.28);
+  border-radius: 999px;
+  background: rgba(255, 248, 250, 0.78);
+  color: #4A0820;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.reserve-public-header-link:hover {
+  background: #A8224E;
+  border-color: #A8224E;
+  color: #fff8fa;
+}
+
+/* Booking confirmation panel — celebratory state after request is sent */
+.reserve-public-confirmation {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 22px;
+  align-items: center;
+  padding: clamp(20px, 3vw, 30px);
+  border: 1px solid rgba(168, 34, 78, 0.18);
+  border-radius: 24px;
+  background:
+    linear-gradient(135deg, rgba(168, 34, 78, 0.06), rgba(255, 248, 250, 0.96)),
+    rgba(255, 248, 250, 0.98);
+  box-shadow: 0 24px 90px rgba(74, 8, 32, 0.12);
+}
+
+.reserve-public-confirmation-icon {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: #A8224E;
+  color: #fff8fa;
+  font-size: 32px;
+  font-weight: 800;
+  box-shadow: 0 12px 28px rgba(74, 8, 32, 0.28);
+}
+
+.reserve-public-confirmation-text {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.reserve-public-confirmation-text h2 {
+  margin: 0;
+  color: #4A0820;
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(24px, 3vw, 32px);
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+.reserve-public-confirmation-text p {
+  margin: 4px 0 2px;
+  color: rgba(74, 8, 32, 0.78);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.reserve-public-confirmation-text small {
+  color: rgba(74, 8, 32, 0.56);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
 .reserve-public-steps {
   display: flex;
   flex-wrap: wrap;
