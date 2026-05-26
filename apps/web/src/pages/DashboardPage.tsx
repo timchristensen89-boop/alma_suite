@@ -5,7 +5,7 @@ import type {
   StaffSummary,
   TemperatureSummary
 } from '@alma/shared';
-import { Badge, Button, Card, StatCard } from '@alma/ui';
+import { Badge, Button, Card, EditorialAppHeader, StatCard } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -41,40 +41,43 @@ export function DashboardPage() {
   const expiring = data?.staff.expiringSoon ?? 0;
   const openIncidents = data?.incidents.open ?? 0;
 
+  // Data-driven editorial header copy per design — leads with whatever the
+  // operator needs to see first.
+  const openIssues = data?.issues.open ?? 0;
+  const overdueChecks = (data?.temperatures.outOfRangeNow ?? 0) + (data?.temperatures.missingToday ?? 0);
+  const headerTitle = openIssues > 0 || overdueChecks > 0 ? 'One thing' : 'All quiet';
+  const headerItalic = openIssues > 0 || overdueChecks > 0 ? 'needs your eye.' : 'on the floor.';
+  const headerSub = (() => {
+    if (loading) return 'Loading latest snapshot…';
+    if (error) return 'Could not refresh the summary.';
+    if (openIssues > 0 && overdueChecks > 0) {
+      return `${openIssues} open issue${openIssues === 1 ? '' : 's'} and ${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
+    }
+    if (openIssues > 0) return `${openIssues} open issue${openIssues === 1 ? '' : 's'} sitting on the board.`;
+    if (overdueChecks > 0) return `${overdueChecks} temperature${overdueChecks === 1 ? '' : 's'} out of range today.`;
+    return 'Issues, checklists and logs are all current.';
+  })();
+
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div className="hero-text">
-          <p className="page-header-eyebrow">Compliance command</p>
-          <h1>Alma Group Compliance</h1>
-          <p>
-            Track issues, run checklists, handbooks, and staff records
-        
-          </p>
-          <div className="hero-meta">
-            <span className="hero-meta-dot" aria-hidden="true" />
-            <span>All systems operational</span>
-            <span aria-hidden="true">·</span>
-            <span>
-              {loading
-                ? 'Loading latest snapshot…'
-                : error
-                  ? 'Could not refresh summary'
-                  : 'Live summary from the API'}
-            </span>
-          </div>
-        </div>
-        <div className="hero-actions">
-          <Link to="/issues/new">
-            <Button leftIcon={<IconPlus size={14} />}>New issue</Button>
-          </Link>
-          <Link to="/checklists/new">
-            <Button variant="secondary" leftIcon={<IconChecklist size={14} />}>
-              Start checklist
-            </Button>
-          </Link>
-        </div>
-      </section>
+      <EditorialAppHeader
+        eyebrow="Compliance · Alma group"
+        title={headerTitle}
+        italic={headerItalic}
+        sub={headerSub}
+        actions={
+          <>
+            <Link to="/issues/new">
+              <Button leftIcon={<IconPlus size={14} />}>New issue</Button>
+            </Link>
+            <Link to="/checklists/new">
+              <Button variant="secondary" leftIcon={<IconChecklist size={14} />}>
+                Start checklist
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       {error ? (
         <Card

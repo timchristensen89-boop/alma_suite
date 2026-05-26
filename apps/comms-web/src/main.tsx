@@ -12,6 +12,7 @@ import {
 import {
   AppShell,
   Card,
+  EditorialAppHeader,
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
@@ -395,23 +396,23 @@ function HomePage() {
 
   return (
     <section className="comms-page">
-      <section className="hero">
-        <div className="hero-text">
-          <p className="page-header-eyebrow">Comms command</p>
-          <h1>Alma Group Comms</h1>
-          <p>Run operational messages, handovers, alerts, announcements, and follow-ups from the group inbox.</p>
-          <div className="hero-meta">
-            <span className="hero-meta-dot" aria-hidden="true" />
-            <span>{urgentThreads.length ? `${urgentThreads.length} priority thread${urgentThreads.length === 1 ? '' : 's'}` : 'No priority threads'}</span>
-            <span aria-hidden="true">·</span>
-            <span>{loading ? 'Loading inbox…' : message ? 'Could not refresh Comms' : 'Live inbox from Comms'}</span>
-          </div>
-        </div>
-        <div className="hero-actions">
-          <NavLink className="btn btn-primary" to="/compose">New message</NavLink>
-          <NavLink className="btn btn-secondary" to="/inbox">Open inbox</NavLink>
-        </div>
-      </section>
+      <EditorialAppHeader
+        eyebrow="Comms · Alma group"
+        title={urgentThreads.length > 0 ? `${urgentThreads.length} unread` : 'All clear'}
+        italic={urgentThreads.length > 0 ? (urgentThreads.length === 1 ? 'thread.' : 'threads.') : 'on the wire.'}
+        sub={(() => {
+          if (loading) return 'Loading the inbox…';
+          if (message) return 'Could not refresh Comms.';
+          if (urgentThreads.length === 0) return 'Inbox is current, no handovers pending.';
+          return `${urgentThreads.length} priority thread${urgentThreads.length === 1 ? '' : 's'} waiting on a reply.`;
+        })()}
+        actions={
+          <>
+            <NavLink className="btn btn-secondary" to="/inbox">Open inbox</NavLink>
+            <NavLink className="btn btn-primary" to="/compose">New message</NavLink>
+          </>
+        }
+      />
 
       <div className="comms-grid">
         <Card>

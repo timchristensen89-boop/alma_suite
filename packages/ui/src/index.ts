@@ -22,6 +22,7 @@ export {
   AlmaPill,
   BigStat,
   DailyBars,
+  EditorialAppHeader,
   EditorialPanel,
   Sparkline
 } from './primitives/Editorial';

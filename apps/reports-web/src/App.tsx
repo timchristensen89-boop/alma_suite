@@ -27,6 +27,7 @@ import {
   Card,
   ChartIcon,
   DocumentIcon,
+  EditorialAppHeader,
   EditorialPanel,
   Input,
   ProductLogo,
@@ -1601,6 +1602,36 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         action={<Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>Export overview CSV</Button>}
       >
         <div className="report-section-stack">
+          {(() => {
+            const variancePct = primeTotals?.primeCostPercent != null
+              ? primeTotals.primeCostPercent - 60
+              : null;
+            const sub = (() => {
+              if (loading) return 'Loading the week in numbers.';
+              if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
+              if (variancePct != null && variancePct > 5) {
+                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the 60% target.`;
+              }
+              if (variancePct != null && variancePct < -5) {
+                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
+              }
+              return `Sales ${formatCurrency(salesCentsForRange)} across the period · prime cost ${formatPercent(primeTotals?.primeCostPercent)}.`;
+            })();
+            return (
+              <EditorialAppHeader
+                eyebrow="Reports · Alma group"
+                title="The numbers"
+                italic="this week."
+                sub={sub}
+                actions={
+                  <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
+                    Export overview CSV
+                  </Button>
+                }
+              />
+            );
+          })()}
+
           {/* Weekly Snapshot — editorial dashboard from the design */}
           <div className="alma-page-grid-kpis">
             <BigStat

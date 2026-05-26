@@ -62,6 +62,7 @@ import {
   Button,
   Card,
   CapIcon,
+  EditorialAppHeader,
   ChartIcon,
   DocumentIcon,
   EmptyState,
@@ -990,27 +991,34 @@ function StaffHome({
 
   return (
     <div className="page-stack staff-settings-page">
-      <section className="hero">
-        <div className="hero-text">
-          <p className="page-header-eyebrow">Staff command</p>
-          <h1>Alma Group Staff</h1>
-          <p>Manage team profiles, onboarding, documents, roles, roster access, and staff app permissions from one shared register.</p>
-          <div className="hero-meta">
-            <span className="hero-meta-dot" aria-hidden="true" />
-            <span>{activeStaff.length} active profiles</span>
-            <span aria-hidden="true">·</span>
-            <span>{readinessActionCount ? `${readinessActionCount} readiness items need review` : 'Staff register is ready for daily use'}</span>
-          </div>
-        </div>
-        <div className="hero-actions">
-          <NavLink to="/profiles">
-            <Button type="button">Open profiles</Button>
-          </NavLink>
-          <NavLink to="/roster">
-            <Button type="button" variant="secondary">Open roster</Button>
-          </NavLink>
-        </div>
-      </section>
+      <EditorialAppHeader
+        eyebrow="Staff · Alma group"
+        title="The team"
+        italic="this week."
+        sub={(() => {
+          if (loading) return 'Loading the staff register…';
+          if (readinessActionCount === 0) {
+            return `${activeStaff.length} active profile${activeStaff.length === 1 ? '' : 's'}. Register is ready for daily use.`;
+          }
+          const bits: string[] = [];
+          if (pending.length > 0) bits.push(`${pending.length} pending onboarding`);
+          if (expiringSoon.length > 0) bits.push(`${expiringSoon.length} expiring record${expiringSoon.length === 1 ? '' : 's'}`);
+          if (missingPayRate.length > 0) bits.push(`${missingPayRate.length} missing pay rate`);
+          return bits.length > 0
+            ? `${bits.join(' · ')}.`
+            : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review.`;
+        })()}
+        actions={
+          <>
+            <NavLink to="/roster">
+              <Button type="button" variant="secondary">Open roster</Button>
+            </NavLink>
+            <NavLink to="/profiles">
+              <Button type="button">Open profiles</Button>
+            </NavLink>
+          </>
+        }
+      />
 
       <div className="stats-grid staff-settings-stats">
         <NavLink to="/profiles" className="stat-card-link" aria-label="Open staff profiles">

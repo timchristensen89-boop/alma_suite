@@ -8368,6 +8368,84 @@ a.suite-app-tile:hover {
   align-items: center;
 }
 
+/* --- Editorial app-home header --------------------------------------- */
+
+.alma-app-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+  flex-wrap: wrap;
+}
+
+.alma-app-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.alma-app-header-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+  line-height: 1;
+}
+
+.alma-app-header-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin: 0;
+}
+
+.alma-app-header-title {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 32px;
+  font-weight: 500;
+  color: #1F3524;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+
+.alma-app-header-title--italic {
+  font-style: italic;
+  font-size: 28px;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.alma-app-header-sub {
+  margin: 4px 0 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 14.5px;
+  color: rgba(31, 53, 36, 0.6);
+  line-height: 1.35;
+  max-width: 64ch;
+}
+
+.alma-app-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 760px) {
+  .alma-app-header-title {
+    font-size: 26px;
+  }
+  .alma-app-header-title--italic {
+    font-size: 22px;
+  }
+}
+
 /* Tinted BigStat variants — surface for KPI cards that represent an
    issue (over budget, coverage gap, etc.). Subtle warm tint so the
    eye is drawn without screaming. */

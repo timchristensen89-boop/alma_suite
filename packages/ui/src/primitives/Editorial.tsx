@@ -129,6 +129,40 @@ export function DailyBars({ days, max }: DailyBarsProps) {
   );
 }
 
+// --- Editorial App Header (per-app home page hero) ---------------------
+
+type EditorialAppHeaderProps = {
+  eyebrow: ReactNode;
+  title: ReactNode;
+  italic?: ReactNode;
+  sub?: ReactNode;
+  actions?: ReactNode;
+  className?: string;
+};
+
+export function EditorialAppHeader({
+  eyebrow,
+  title,
+  italic,
+  sub,
+  actions,
+  className
+}: EditorialAppHeaderProps) {
+  return (
+    <header className={`alma-app-header ${className ?? ''}`}>
+      <div className="alma-app-header-titles">
+        <span className="alma-app-header-eyebrow">{eyebrow}</span>
+        <h1 className="alma-app-header-title-row">
+          <span className="alma-app-header-title">{title}</span>
+          {italic ? <span className="alma-app-header-title alma-app-header-title--italic">{italic}</span> : null}
+        </h1>
+        {sub ? <p className="alma-app-header-sub">{sub}</p> : null}
+      </div>
+      {actions ? <div className="alma-app-header-actions">{actions}</div> : null}
+    </header>
+  );
+}
+
 // --- Pill ---------------------------------------------------------------
 
 type AlmaPillKind = 'success' | 'warn' | 'danger' | 'info' | 'neutral';

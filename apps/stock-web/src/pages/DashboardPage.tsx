@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { StockDashboardPayload } from '@alma/shared';
-import { Badge, Card, EmptyState, Select, Spinner, StatCard } from '@alma/ui';
+import { Badge, Card, EditorialAppHeader, EmptyState, Select, Spinner, StatCard } from '@alma/ui';
 import { IconInvoices, IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -75,27 +75,34 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <section className="hero">
-        <div className="hero-text">
-          <p className="page-header-eyebrow">Stock command</p>
-          <h1>Alma Group Stock</h1>
-          <p>Track venue stock, review stocktakes, monitor par levels, and keep supplier ordering ready for service.</p>
-          <div className="hero-meta">
-            <span className="hero-meta-dot" aria-hidden="true" />
-            <span>{activeVenue ? `${activeVenue} selected` : 'All permitted venues'}</span>
-            <span aria-hidden="true">·</span>
-            <span>{loading ? 'Loading stock signals…' : error ? 'Could not refresh stock dashboard' : 'Ledger-backed stock movements'}</span>
-          </div>
-        </div>
-        <div className="hero-actions">
-          <Link className="btn btn-primary" to="/stocktake">
-            Stocktake
-          </Link>
-          <Link className="btn btn-secondary" to="/items">
-            Items
-          </Link>
-        </div>
-      </section>
+      <EditorialAppHeader
+        eyebrow={`Stock · ${activeVenue || 'Alma group'}`}
+        title="Pantry"
+        italic="& the orders board."
+        sub={(() => {
+          if (loading) return 'Loading stock signals…';
+          if (error) return 'Could not refresh the stock dashboard.';
+          const low = dashboard?.summary.lowStockItems ?? 0;
+          const out = dashboard?.summary.outOfStockItems ?? 0;
+          const draft = dashboard?.summary.readyForReviewStocktakes ?? 0;
+          const parts: string[] = [];
+          if (out > 0) parts.push(`${out} out of stock`);
+          if (low > 0) parts.push(`${low} running low`);
+          if (draft > 0) parts.push(`${draft} stocktake${draft === 1 ? '' : 's'} awaiting review`);
+          if (parts.length === 0) return 'Everything is on the shelf and stocktakes are clear.';
+          return `${parts.join(' · ')}.`;
+        })()}
+        actions={
+          <>
+            <Link className="btn btn-secondary" to="/items">
+              Items
+            </Link>
+            <Link className="btn btn-primary" to="/stocktake">
+              Stocktake
+            </Link>
+          </>
+        }
+      />
 
       <Card title="Stock scope" subtitle="Operational inventory signals, low-stock items, and stocktakes waiting for review.">
         {venueOptions.length > 0 ? (

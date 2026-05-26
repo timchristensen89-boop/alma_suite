@@ -21,6 +21,7 @@ import {
   Card,
   ChartIcon,
   DocumentIcon,
+  EditorialAppHeader,
   EmptyState,
   Input,
   ProductLogo,
@@ -1076,23 +1077,32 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
       }
     >
       <div className="giftcards-page">
-        <section className="hero">
-          <div className="hero-text">
-            <p className="page-header-eyebrow">Gift card command</p>
-            <h1>Alma Group Gift Cards</h1>
-            <p>{pageCopy.description}</p>
-            <div className="hero-meta">
-              <span className="hero-meta-dot" aria-hidden="true" />
-              <span>{activeGiftCardPage === 'orders' ? `${orderActionItems.length} order action${orderActionItems.length === 1 ? '' : 's'}` : pageCopy.title}</span>
-              <span aria-hidden="true">·</span>
-              <span>{loading ? 'Loading card data…' : message && !messageTarget ? 'Could not refresh gift cards' : 'Payment and fulfilment records stay read-only unless actioned'}</span>
-            </div>
-          </div>
-          <div className="hero-actions">
-            <Button type="button" onClick={() => window.location.assign('/redeem')}>Redeem card</Button>
-            <Button type="button" variant="secondary" onClick={() => window.location.assign('/orders')}>View orders</Button>
-          </div>
-        </section>
+        {(() => {
+          const outstandingCents = giftCards
+            .filter((c) => !c.testMode && c.status === 'ACTIVE')
+            .reduce((sum, c) => sum + c.balanceCents, 0);
+          const activeCount = giftCards.filter((c) => !c.testMode && c.status === 'ACTIVE').length;
+          const outstandingLabel = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(outstandingCents / 100);
+          return (
+            <EditorialAppHeader
+              eyebrow="Gift cards · Alma group"
+              title={outstandingCents > 0 ? outstandingLabel : 'No outstanding'}
+              italic="in outstanding cards."
+              sub={(() => {
+                if (loading) return 'Loading card data…';
+                if (message && !messageTarget) return 'Could not refresh gift cards.';
+                if (activeCount === 0) return 'No active cards in circulation.';
+                return `${activeCount} active card${activeCount === 1 ? '' : 's'}. ${orderActionItems.length > 0 ? `${orderActionItems.length} order action${orderActionItems.length === 1 ? '' : 's'} waiting.` : 'No fulfilment items pending.'}`;
+              })()}
+              actions={
+                <>
+                  <Button type="button" variant="secondary" onClick={() => window.location.assign('/orders')}>View orders</Button>
+                  <Button type="button" onClick={() => window.location.assign('/redeem')}>Redeem card</Button>
+                </>
+              }
+            />
+          );
+        })()}
         {activeGiftCardPage === 'orders' ? (
           <Card title="Order search" subtitle="Find a gift card by code, purchaser, recipient, or email.">
             <Input label="Search" value={query} onChange={(event) => setQuery(event.currentTarget.value)} placeholder="Code, name, email" />
