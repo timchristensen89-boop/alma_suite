@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
 import { marketingService } from '../services/marketing.service.js';
+import { marketingEngagementService } from '../services/marketing-engagement.service.js';
 
 export const marketingRouter = Router();
 
@@ -517,6 +518,22 @@ marketingRouter.get('/automations/metrics', requireManager, async (req, res, nex
 marketingRouter.post('/automations/:id/simulate', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.simulateAutomation(req.user!, String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 4.7 — Social engagement read-back. Live data flows once Meta page
+// tokens are persisted; until then this returns simulated metrics tagged
+// `simulated: true` so the surface is real but the values are obviously not.
+marketingRouter.get('/social/engagement', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await marketingEngagementService.getOverview({
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      days: typeof req.query.days === 'string' ? Number(req.query.days) : undefined,
+      actor: req.user
+    }));
   } catch (error) {
     next(error);
   }

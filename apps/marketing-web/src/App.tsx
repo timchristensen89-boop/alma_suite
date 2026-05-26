@@ -31,6 +31,7 @@ import {
   Badge,
   Button,
   Card,
+  ChartIcon,
   DocumentIcon,
   EmptyState,
   GearIcon,
@@ -92,6 +93,7 @@ const MARKETING_NAV_ITEMS = [
   { href: '/content/composer', label: 'Composer', description: 'Draft and preview posts', icon: <DocumentIcon /> },
   { href: '/content/calendar', label: 'Calendar', description: 'Scheduled social posts', icon: <DocumentIcon /> },
   { href: '/content/approvals', label: 'Approvals', description: 'Review social posts', icon: <DocumentIcon /> },
+  { href: '/content/performance', label: 'Performance', description: 'Reach, likes, comments — Meta read-back', icon: <ChartIcon /> },
   { href: '/automations', label: 'Automations', description: 'Trigger-based drafts', icon: <GearIcon /> },
   { href: '/templates', label: 'Templates', description: 'Reusable email content', icon: <DocumentIcon /> }
 ];
@@ -690,6 +692,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const showContentComposer = activePath === '/content/composer';
   const showContentCalendar = showContentOverview || activePath === '/content/calendar';
   const showContentApprovals = showContentOverview || activePath === '/content/approvals';
+  const showContentPerformance = activePath === '/content/performance';
   const previewGuest = guestDetail?.guest ?? guests[0] ?? null;
   const selectedTemplate = useMemo(
     () => templates.find((template) => template.id === automationForm.emailTemplateId) ?? templates[0] ?? null,
@@ -1745,6 +1748,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   ) : null}
                 </div>
 
+                {showContentPerformance ? <MarketingEngagementSection venue={venueFilter} /> : null}
+
                 {showContentComposer && contentPublishPreview ? (
                   <Card title="Platform publish preview" subtitle={contentPublishPreview.message ?? contentPublishPreview.post.title}>
                     <div className="content-preview-tabs">
@@ -2187,6 +2192,129 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
         </div>
       </div>
     </AppShell>
+  );
+}
+
+// Phase 4.7 — Marketing engagement read-back. Fetches the social engagement
+// payload from /api/marketing/social/engagement which returns either real
+// numbers (once Meta tokens are wired) or simulated metrics marked clearly.
+type EngagementPostRow = {
+  postId: string;
+  title: string;
+  caption: string;
+  venue: string;
+  publishedAt: string | null;
+  platform: 'INSTAGRAM' | 'FACEBOOK' | 'TIKTOK' | 'OTHER';
+  externalPostId: string | null;
+  metrics: {
+    reach: number | null;
+    impressions: number | null;
+    likes: number | null;
+    comments: number | null;
+    shares: number | null;
+    saves: number | null;
+  };
+  engagementRate: number | null;
+  simulated: boolean;
+};
+type EngagementPayload = {
+  generatedAt: string;
+  mode: 'LIVE' | 'SIMULATED' | 'SETUP_REQUIRED';
+  setup: { missingEnvVars: string[]; connectedAccounts: number; publishedPosts: number; note: string };
+  totals: { publishedPosts: number; reach: number; likes: number; comments: number };
+  topPosts: EngagementPostRow[];
+};
+
+function MarketingEngagementSection({ venue }: { venue: string }) {
+  const [payload, setPayload] = useState<EngagementPayload | null>(null);
+  const [days, setDays] = useState(30);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    const params = new URLSearchParams({ days: String(days) });
+    if (venue) params.set('venue', venue);
+    api<EngagementPayload>(`/api/marketing/social/engagement?${params.toString()}`)
+      .then((data) => { if (!cancelled) setPayload(data); })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load engagement'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [venue, days]);
+
+  const isSimulated = payload?.mode === 'SIMULATED';
+  const isSetup = payload?.mode === 'SETUP_REQUIRED';
+
+  return (
+    <section id="content-performance" className="marketing-page-section">
+      <Card title="Social post performance" subtitle="Reach, likes, comments and saves for posts you've published.">
+        {loading ? <Spinner label="Loading engagement" /> : null}
+        {error ? <p className="comms-error">{error}</p> : null}
+
+        {payload && (isSimulated || isSetup) ? (
+          <div className="alma-preview-banner" role="status" style={{ marginBottom: 12 }}>
+            <strong>{isSetup ? 'Setup required' : 'Simulated data'}</strong>
+            <span>{payload.setup.note}</span>
+            {payload.setup.missingEnvVars.length ? (
+              <small>Pending: {payload.setup.missingEnvVars.join(', ')}</small>
+            ) : null}
+          </div>
+        ) : null}
+
+        {payload ? (
+          <>
+            <div className="form-grid" style={{ marginBottom: 14 }}>
+              <Select
+                label="Window"
+                value={String(days)}
+                onChange={(event) => setDays(Number(event.currentTarget.value))}
+                options={[
+                  { label: 'Last 7 days', value: '7' },
+                  { label: 'Last 30 days', value: '30' },
+                  { label: 'Last 60 days', value: '60' },
+                  { label: 'Last 90 days', value: '90' }
+                ]}
+              />
+            </div>
+
+            <div className="stats-grid">
+              <StatCard label="Posts published" value={payload.totals.publishedPosts} hint={`${days}-day window`} />
+              <StatCard label="Total reach" value={payload.totals.reach.toLocaleString()} hint={isSimulated ? 'Simulated' : 'Live'} />
+              <StatCard label="Total likes" value={payload.totals.likes.toLocaleString()} hint={isSimulated ? 'Simulated' : 'Live'} />
+              <StatCard label="Total comments" value={payload.totals.comments.toLocaleString()} hint={isSimulated ? 'Simulated' : 'Live'} />
+            </div>
+
+            <div className="marketing-stack" style={{ marginTop: 14 }}>
+              {payload.topPosts.length === 0 ? (
+                <EmptyState title="No posts in window" description="Publish posts in the calendar to start tracking engagement here." />
+              ) : (
+                payload.topPosts.map((post) => (
+                  <div key={post.postId} className="marketing-summary-card">
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: 12 }}>
+                      <strong>{post.title}</strong>
+                      <Badge tone={post.simulated ? 'warning' : 'positive'}>
+                        {post.simulated ? 'Simulated' : 'Live'} · {post.platform}
+                      </Badge>
+                    </div>
+                    <span>{post.venue}{post.publishedAt ? ` · ${new Date(post.publishedAt).toLocaleDateString()}` : ''}</span>
+                    {post.caption ? <span style={{ color: 'rgba(15,23,42,0.55)' }}>{post.caption}</span> : null}
+                    <div className="marketing-badges">
+                      {post.metrics.reach !== null ? <Badge tone="info">{post.metrics.reach.toLocaleString()} reach</Badge> : null}
+                      {post.metrics.likes !== null ? <Badge tone="info">{post.metrics.likes.toLocaleString()} likes</Badge> : null}
+                      {post.metrics.comments !== null ? <Badge tone="info">{post.metrics.comments.toLocaleString()} comments</Badge> : null}
+                      {post.metrics.shares !== null ? <Badge tone="info">{post.metrics.shares.toLocaleString()} shares</Badge> : null}
+                      {post.engagementRate !== null ? <Badge tone="info">{post.engagementRate}% engagement</Badge> : null}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </>
+        ) : null}
+      </Card>
+    </section>
   );
 }
 
