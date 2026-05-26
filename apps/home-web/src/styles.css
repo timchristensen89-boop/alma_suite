@@ -374,3 +374,186 @@ body {
   background: rgba(160, 70, 58, 0.12);
   color: #6E2419;
 }
+
+/* ─────────────────────────────────────────────────────────────────
+   Venue iPad mode — shared-device home at /venue
+   Stripped to 6 big tiles. Thumb-friendly. No admin, HR, reports.
+   ───────────────────────────────────────────────────────────────── */
+
+.venue-page {
+  min-height: 100vh;
+  padding: clamp(24px, 4vw, 56px);
+  display: flex;
+  flex-direction: column;
+  gap: clamp(28px, 4vw, 44px);
+  max-width: 1280px;
+  margin: 0 auto;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+}
+
+.venue-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 24px;
+  align-items: flex-end;
+  padding: clamp(26px, 3vw, 36px) clamp(28px, 3vw, 40px);
+  background: var(--color-surface, #F8F6F1);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  position: relative;
+  overflow: hidden;
+}
+
+.venue-header::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 0 0;
+  height: 2px;
+  background: linear-gradient(90deg, #244C9F 0%, #684A4A 50%, #1f5a3c 100%);
+  opacity: 0.6;
+}
+
+.venue-eyebrow {
+  margin: 0 0 8px;
+  color: var(--color-text-muted);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+}
+
+.venue-title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: clamp(40px, 6vw, 72px);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.venue-meta {
+  margin: 10px 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: clamp(15px, 1.6vw, 19px);
+  color: var(--color-text-muted);
+  letter-spacing: 0.005em;
+}
+
+.venue-header-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  align-items: flex-end;
+}
+
+.venue-action-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 12px 22px;
+  border-radius: 999px;
+  border: 1px solid var(--color-text);
+  background: var(--color-text);
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  cursor: pointer;
+  min-height: 48px;
+}
+
+.venue-action-pill--ghost {
+  background: transparent;
+  color: var(--color-text);
+}
+
+.venue-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: clamp(16px, 2vw, 24px);
+}
+
+@media (min-width: 900px) {
+  .venue-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+.venue-tile {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+  padding: clamp(22px, 3vw, 32px);
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
+  background: #FFFFFF;
+  color: var(--color-text);
+  text-decoration: none;
+  min-height: 140px;
+  transition: background 220ms cubic-bezier(0.2, 0.8, 0.2, 1), transform 220ms ease, border-color 200ms ease;
+  overflow: hidden;
+}
+
+.venue-tile::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: var(--venue-accent, var(--color-text));
+}
+
+.venue-tile:hover,
+.venue-tile:active {
+  background: var(--color-surface, #F8F6F1);
+  border-color: var(--venue-accent, var(--color-text));
+  transform: translateY(-1px);
+}
+
+.venue-tile-glyph {
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+  border-radius: 16px;
+  background: var(--venue-accent, var(--color-text));
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 18px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+.venue-tile-body {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.venue-tile-label {
+  font-family: var(--font-serif);
+  font-size: clamp(20px, 2.4vw, 28px);
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1.05;
+  color: var(--color-text);
+}
+
+.venue-tile-description {
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  letter-spacing: 0.005em;
+  color: var(--color-text-muted);
+}
+
+.venue-footer {
+  text-align: center;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  padding-top: 8px;
+}

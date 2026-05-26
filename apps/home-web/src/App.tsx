@@ -55,6 +55,17 @@ function dateString() {
 }
 
 export function App() {
+  // Route-by-pathname — no react-router needed for one extra page.
+  // /venue and /ipad both serve the shared-device home; everything else
+  // goes through the standard suite launcher.
+  const path = typeof window !== 'undefined' ? window.location.pathname.replace(/\/+$/, '') : '';
+  if (path === '/venue' || path === '/ipad') {
+    return <VenueMode />;
+  }
+  return <SuiteLauncher />;
+}
+
+function SuiteLauncher() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
@@ -141,6 +152,147 @@ export function App() {
         <span>Alma Group</span>
         <span className="home-footer-divider" aria-hidden="true">·</span>
         <a href="https://almagroup.com.au" target="_blank" rel="noreferrer">almagroup.com.au</a>
+      </footer>
+    </div>
+  );
+}
+
+/**
+ * Venue iPad home — the entry route for shared devices.
+ *
+ * Strips the suite down to exactly the actions a venue device should do:
+ * redeem · stocktake · roster · bookings · checklists · handover.
+ * Hides Admin, Reports, HR, Marketing, anything sensitive.
+ *
+ * Backend already enforces this via VENUE_DEVICE write block + per-path
+ * role gates in apps/api/src/lib/auth-middleware.ts. This page is the
+ * UI half of that gate — the floor staff never have to navigate past
+ * what they need.
+ */
+type VenueTile = {
+  id: string;
+  label: string;
+  description: string;
+  href: string;
+  // Single-glyph mark so we don't depend on any icon system being
+  // imported here. Each tile uses its app's accent stripe.
+  glyph: string;
+  accent: string;
+};
+
+const VENUE_TILES: VenueTile[] = [
+  {
+    id: 'redeem',
+    label: 'Redeem gift card',
+    description: 'Look up, redeem and print',
+    href: 'https://alma-giftcards.web.app/redeem',
+    glyph: 'GC',
+    accent: '#E5C6B0'
+  },
+  {
+    id: 'stocktake',
+    label: 'Stocktake',
+    description: 'Today’s count',
+    href: 'https://alma-stock-v18.web.app/stocktake',
+    glyph: 'ST',
+    accent: '#4F6B47'
+  },
+  {
+    id: 'roster',
+    label: 'Roster',
+    description: 'Who’s on today',
+    href: 'https://alma-staff.web.app/roster',
+    glyph: 'RT',
+    accent: '#4D5E7A'
+  },
+  {
+    id: 'bookings',
+    label: 'Bookings',
+    description: 'Tonight’s diary',
+    href: 'https://alma-reserve.web.app',
+    glyph: 'BK',
+    accent: '#253326'
+  },
+  {
+    id: 'checklists',
+    label: 'Checklists',
+    description: 'Open, close, compliance',
+    href: 'https://alma-compliance.web.app/checklists',
+    glyph: 'CL',
+    accent: '#9A3A2E'
+  },
+  {
+    id: 'handover',
+    label: 'Handover',
+    description: 'Shift to shift notes',
+    href: 'https://alma-comms.web.app',
+    glyph: 'HO',
+    accent: '#6E7682'
+  }
+];
+
+function VenueMode() {
+  // Read the venue name from localStorage if a manager has set it on
+  // this device. Otherwise we just say "Venue".
+  const venueName = typeof window !== 'undefined'
+    ? (window.localStorage.getItem('alma.venue.name') || '').trim()
+    : '';
+
+  const now = new Date();
+  const timeLabel = now.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  const dateLabel = now.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' });
+
+  function promptVenue() {
+    if (typeof window === 'undefined') return;
+    const current = window.localStorage.getItem('alma.venue.name') || '';
+    const next = window.prompt('Set the venue for this iPad (e.g. "Alma Avalon" or "St Alma"):', current);
+    if (next === null) return;
+    window.localStorage.setItem('alma.venue.name', next.trim());
+    window.location.reload();
+  }
+
+  function exitVenueMode() {
+    if (typeof window === 'undefined') return;
+    window.location.assign('/');
+  }
+
+  return (
+    <div className="venue-page">
+      <header className="venue-header">
+        <div className="venue-header-text">
+          <p className="venue-eyebrow">Alma · Venue mode</p>
+          <h1 className="venue-title">{venueName || 'Venue'}</h1>
+          <p className="venue-meta">{dateLabel} · {timeLabel}</p>
+        </div>
+        <div className="venue-header-actions">
+          <button type="button" className="venue-action-pill" onClick={promptVenue}>
+            {venueName ? 'Switch venue' : 'Set venue'}
+          </button>
+          <button type="button" className="venue-action-pill venue-action-pill--ghost" onClick={exitVenueMode}>
+            Exit venue mode
+          </button>
+        </div>
+      </header>
+
+      <main className="venue-grid" aria-label="Venue actions">
+        {VENUE_TILES.map((tile) => (
+          <a
+            key={tile.id}
+            className="venue-tile"
+            href={tile.href}
+            style={{ ['--venue-accent' as string]: tile.accent }}
+          >
+            <span className="venue-tile-glyph" aria-hidden="true">{tile.glyph}</span>
+            <span className="venue-tile-body">
+              <span className="venue-tile-label">{tile.label}</span>
+              <span className="venue-tile-description">{tile.description}</span>
+            </span>
+          </a>
+        ))}
+      </main>
+
+      <footer className="venue-footer">
+        <span>This iPad is signed in as a shared venue device. Admin, HR, payroll and reports are restricted.</span>
       </footer>
     </div>
   );
