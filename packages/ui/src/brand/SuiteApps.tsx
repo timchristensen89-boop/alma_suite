@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent, type MouseEvent, type ReactNode } from 'react';
 import {
   AlmaAppIcon,
   ALMA_APPS,
@@ -152,6 +152,52 @@ export const suiteApp: SuiteAppIdentity[] = SUITE_APPS;
 function titleCase(value: string) {
   return value.charAt(0) + value.slice(1).toLowerCase();
 }
+
+// Functional grouping for the editorial switcher — promotes from a flat list
+// to grouped-by-area once we cross the GROUP_THRESHOLD (10) apps.
+type SuiteArea = 'service' | 'operations' | 'growth' | 'system';
+
+const SUITE_AREA_BY_APP: Partial<Record<SuiteAppId, SuiteArea>> = {
+  reserve: 'service',
+  comms: 'service',
+  stock: 'operations',
+  staff: 'operations',
+  compliance: 'operations',
+  audits: 'operations',
+  reports: 'operations',
+  marketing: 'growth',
+  giftcards: 'growth',
+  training: 'growth',
+  academy: 'growth',
+  settings: 'system',
+  ops: 'system',
+  finance: 'system',
+  policies: 'operations',
+  incidents: 'operations',
+  learning: 'growth'
+};
+
+const SUITE_AREA_ORDER: { id: SuiteArea; label: string }[] = [
+  { id: 'service', label: 'Service floor' },
+  { id: 'operations', label: 'Operations' },
+  { id: 'growth', label: 'Growth' },
+  { id: 'system', label: 'System' }
+];
+
+const SUITE_SHORT_LABEL: Partial<Record<SuiteAppId, string>> = {
+  reserve: 'Bookings',
+  comms: 'Messages',
+  stock: 'Inventory',
+  staff: 'People & rosters',
+  compliance: 'Audits & logs',
+  reports: 'Performance',
+  marketing: 'Campaigns',
+  giftcards: 'Issue & redeem',
+  settings: 'Settings',
+  training: 'Academy'
+};
+
+const SUITE_GROUP_THRESHOLD = 10;
 
 function descriptionFor(id: string) {
   switch (id) {
@@ -428,60 +474,20 @@ export function SuiteAppSwitcher({
 
   if (isTopbar) {
     return (
-      <div ref={layerRef} className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
-        <button
-          type="button"
-          className="suite-switch-apps-button"
-          aria-label="Switch Alma apps"
-          aria-expanded={mobileOpen}
-          aria-controls={popoverId}
-          style={current ? appColorStyle(current) : undefined}
-          onClick={() => setMobileOpen((open) => !open)}
-        >
-          <span className="suite-switcher-current-mark" aria-hidden="true">
-            {current ? (
-              <AlmaAppIcon
-                label={current.label.toUpperCase()}
-                colorFrom={current.fromColor}
-                colorTo={current.toColor}
-                icon={current.icon}
-                size={28}
-                featureScale={0.68}
-                variant="compact"
-                showBrandMark={false}
-              />
-            ) : null}
-          </span>
-          <span className="suite-switcher-current-copy">
-            <span>Switch apps</span>
-            {current ? <strong>{current.label}</strong> : null}
-          </span>
-          <span className="suite-switcher-chevron" aria-hidden="true">
-            <svg viewBox="0 0 20 20" focusable="false">
-              <path d="M5 7.5 10 12.5 15 7.5" />
-            </svg>
-          </span>
-        </button>
-
-        <div
-          id={popoverId}
-          className="suite-switcher-popover"
-          role="dialog"
-          aria-label="Switch Alma apps"
-          aria-hidden={!mobileOpen}
-        >
-          <div className="suite-switcher-popover-head">
-            <div>
-              <span>Alma Suite</span>
-              <strong>Open another app</strong>
-            </div>
-            <a className="suite-switcher-directory-link" href={switcherHref} onClick={closeMobile}>
-              All apps
-            </a>
-          </div>
-          {grid}
-        </div>
-      </div>
+      <SuiteEditorialSwitcher
+        layerRef={layerRef}
+        className={className}
+        popoverId={popoverId}
+        switcherHref={switcherHref}
+        mobileOpen={mobileOpen}
+        setMobileOpen={setMobileOpen}
+        closeMobile={closeMobile}
+        apps={apps}
+        current={current}
+        currentApp={currentApp}
+        openWithHandoff={openWithHandoff}
+        appColorStyle={appColorStyle}
+      />
     );
   }
 
@@ -492,6 +498,313 @@ export function SuiteAppSwitcher({
     >
       {grid}
     </nav>
+  );
+}
+
+// Editorial app switcher — the redesigned topbar popover.
+// Flat list with type-to-filter; promotes to area-grouped layout once the suite
+// crosses SUITE_GROUP_THRESHOLD. Color chip per row, italic Cormorant
+// descriptor, "Here now" pill on the current app, keyboard nav.
+type SuiteEditorialSwitcherProps = {
+  layerRef: React.MutableRefObject<HTMLDivElement | null>;
+  className: string;
+  popoverId: string;
+  switcherHref: string;
+  mobileOpen: boolean;
+  setMobileOpen: (next: boolean | ((prev: boolean) => boolean)) => void;
+  closeMobile: () => void;
+  apps: SuiteAppIdentity[];
+  current: SuiteAppIdentity | undefined;
+  currentApp: SuiteAppId | undefined;
+  openWithHandoff: (href: string) => void;
+  appColorStyle: (app: SuiteAppIdentity) => CSSProperties;
+};
+
+function SuiteEditorialSwitcher({
+  layerRef,
+  className,
+  popoverId,
+  switcherHref,
+  mobileOpen,
+  setMobileOpen,
+  closeMobile,
+  apps,
+  current,
+  currentApp,
+  openWithHandoff,
+  appColorStyle
+}: SuiteEditorialSwitcherProps) {
+  const [query, setQuery] = useState('');
+  const [focusIndex, setFocusIndex] = useState(0);
+  const searchRef = useRef<HTMLInputElement | null>(null);
+
+  const grouped = apps.length >= SUITE_GROUP_THRESHOLD;
+
+  const otherApps = useMemo(
+    () => apps.filter((app) => app.id !== currentApp),
+    [apps, currentApp]
+  );
+
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return otherApps;
+    return otherApps.filter((app) =>
+      app.label.toLowerCase().includes(needle) ||
+      app.description.toLowerCase().includes(needle) ||
+      (SUITE_SHORT_LABEL[app.id] ?? '').toLowerCase().includes(needle)
+    );
+  }, [otherApps, query]);
+
+  const searching = query.trim().length > 0;
+  const showGrouped = grouped && !searching;
+
+  const groups = useMemo(() => {
+    if (!showGrouped) return [];
+    return SUITE_AREA_ORDER
+      .map((area) => ({
+        ...area,
+        apps: filtered.filter((app) => SUITE_AREA_BY_APP[app.id] === area.id)
+      }))
+      .filter((group) => group.apps.length > 0);
+  }, [filtered, showGrouped]);
+
+  // Reset focus whenever the result set changes
+  useEffect(() => {
+    setFocusIndex(0);
+  }, [query, mobileOpen]);
+
+  // Autofocus the search field when the popover opens
+  useEffect(() => {
+    if (mobileOpen) {
+      window.requestAnimationFrame(() => searchRef.current?.focus());
+    } else {
+      setQuery('');
+    }
+  }, [mobileOpen]);
+
+  function activate(app: SuiteAppIdentity) {
+    if (!app.href || app.id === currentApp || app.status !== 'active') return;
+    closeMobile();
+    openWithHandoff(app.href);
+  }
+
+  function onKey(event: KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown') {
+      event.preventDefault();
+      setFocusIndex((index) => Math.min(index + 1, filtered.length - 1));
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault();
+      setFocusIndex((index) => Math.max(index - 1, 0));
+    } else if (event.key === 'Enter') {
+      event.preventDefault();
+      const target = filtered[focusIndex];
+      if (target) activate(target);
+    } else if (event.key === 'Escape') {
+      event.preventDefault();
+      if (query) {
+        setQuery('');
+      } else {
+        closeMobile();
+      }
+    }
+  }
+
+  return (
+    <div ref={layerRef} className={`${className} ${mobileOpen ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="suite-switch-apps-button"
+        aria-label="Switch Alma apps"
+        aria-expanded={mobileOpen}
+        aria-controls={popoverId}
+        style={current ? appColorStyle(current) : undefined}
+        onClick={() => setMobileOpen((open) => !open)}
+      >
+        <span className="suite-switcher-current-mark" aria-hidden="true">
+          {current ? (
+            <AlmaAppIcon
+              label={current.label.toUpperCase()}
+              colorFrom={current.fromColor}
+              colorTo={current.toColor}
+              icon={current.icon}
+              size={28}
+              featureScale={0.68}
+              variant="compact"
+              showBrandMark={false}
+            />
+          ) : null}
+        </span>
+        <span className="suite-switcher-current-copy">
+          <span>Switch apps</span>
+          {current ? <strong>{current.label}</strong> : null}
+        </span>
+        <span className="suite-switcher-chevron" aria-hidden="true">
+          <svg viewBox="0 0 20 20" focusable="false">
+            <path d="M5 7.5 10 12.5 15 7.5" />
+          </svg>
+        </span>
+      </button>
+
+      <div
+        id={popoverId}
+        className="suite-switcher-popover suite-switcher-popover--list"
+        role="dialog"
+        aria-label="Switch Alma apps"
+        aria-hidden={!mobileOpen}
+      >
+        <div className="suite-switch-list-head">
+          <div>
+            <span className="suite-switch-eyebrow">Alma Suite</span>
+            <strong>Open another app</strong>
+          </div>
+          <span className="suite-switch-eyebrow suite-switch-eyebrow--muted">
+            {apps.length} apps
+          </span>
+        </div>
+
+        <div className="suite-switch-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16" y1="16" x2="21" y2="21" strokeLinecap="round" />
+          </svg>
+          <input
+            ref={searchRef}
+            value={query}
+            onChange={(event) => setQuery(event.currentTarget.value)}
+            onKeyDown={onKey}
+            placeholder={`Search ${apps.length} apps`}
+            aria-label="Search apps"
+            spellCheck={false}
+            autoComplete="off"
+          />
+          <span className="suite-switch-kbd">↵</span>
+        </div>
+
+        {!searching && current ? (
+          <SuiteSwitchRow app={current} current focused={false} appColorStyle={appColorStyle} onSelect={() => closeMobile()} />
+        ) : null}
+
+        {filtered.length === 0 ? (
+          <div className="suite-switch-empty">No app matches &ldquo;{query}&rdquo;.</div>
+        ) : null}
+
+        {showGrouped && groups.length > 0
+          ? groups.map((group) => (
+              <div key={group.id} className="suite-switch-group">
+                <SuiteSwitchDivider label={group.label} />
+                <div className="suite-switch-list">
+                  {group.apps.map((app) => {
+                    const i = filtered.indexOf(app);
+                    return (
+                      <SuiteSwitchRow
+                        key={app.id}
+                        app={app}
+                        focused={i === focusIndex}
+                        appColorStyle={appColorStyle}
+                        onSelect={() => activate(app)}
+                        onHover={() => setFocusIndex(i)}
+                      />
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          : null}
+
+        {!showGrouped && filtered.length > 0 ? (
+          <>
+            {!searching ? <SuiteSwitchDivider label="Switch to" /> : null}
+            <div className="suite-switch-list">
+              {filtered.map((app, i) => (
+                <SuiteSwitchRow
+                  key={app.id}
+                  app={app}
+                  focused={i === focusIndex}
+                  appColorStyle={appColorStyle}
+                  onSelect={() => activate(app)}
+                  onHover={() => setFocusIndex(i)}
+                />
+              ))}
+            </div>
+          </>
+        ) : null}
+
+        <div className="suite-switch-footer">
+          <a className="suite-switch-directory" href={switcherHref} onClick={closeMobile}>
+            All apps →
+          </a>
+          <span className="suite-switch-mode">
+            <span className={`suite-switch-mode-dot ${grouped ? 'is-grouped' : ''}`} />
+            {grouped ? 'Grouped by area' : 'Flat list'}
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SuiteSwitchDivider({ label }: { label: string }) {
+  return (
+    <div className="suite-switch-divider">
+      <span className="suite-switch-eyebrow">{label}</span>
+      <span className="suite-switch-divider-line" />
+    </div>
+  );
+}
+
+type SuiteSwitchRowProps = {
+  app: SuiteAppIdentity;
+  current?: boolean;
+  focused?: boolean;
+  onSelect: () => void;
+  onHover?: () => void;
+  appColorStyle: (app: SuiteAppIdentity) => CSSProperties;
+};
+
+function SuiteSwitchRow({ app, current = false, focused = false, onSelect, onHover, appColorStyle }: SuiteSwitchRowProps) {
+  const disabled = app.status !== 'active' || !app.href;
+  const className = [
+    'suite-switch-row',
+    current ? 'is-current' : '',
+    focused ? 'is-focused' : '',
+    disabled ? 'is-disabled' : ''
+  ].filter(Boolean).join(' ');
+
+  const Tag: 'a' | 'button' = disabled ? 'button' : 'a';
+
+  return (
+    <Tag
+      className={className}
+      style={appColorStyle(app)}
+      onMouseEnter={onHover}
+      {...(disabled
+        ? { type: 'button' as const, disabled: true }
+        : { href: app.href, onClick: (event: MouseEvent) => { event.preventDefault(); onSelect(); } })}
+    >
+      <span className="suite-switch-chip" aria-hidden="true">
+        <AlmaAppIcon
+          label={app.label.toUpperCase()}
+          colorFrom={app.fromColor}
+          colorTo={app.toColor}
+          icon={app.icon}
+          size={40}
+          featureScale={0.6}
+          variant="compact"
+          showBrandMark={false}
+        />
+      </span>
+      <span className="suite-switch-row-copy">
+        <span className="suite-switch-row-name">{app.label}</span>
+        <span className="suite-switch-row-descriptor">{app.description}</span>
+      </span>
+      {current ? (
+        <span className="suite-switch-here">Here now</span>
+      ) : (
+        <svg className="suite-switch-arrow" width="13" height="13" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M1 5 H9 M6 2 L9 5 L6 8" />
+        </svg>
+      )}
+    </Tag>
   );
 }
 

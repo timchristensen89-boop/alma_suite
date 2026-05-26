@@ -5170,6 +5170,323 @@ a.suite-app-tile:hover {
   display: none;
 }
 
+/* ==========================================================================
+   Editorial app switcher — Cormorant headlines, Avenir body, cream surface.
+   Replaces the old grid-of-tiles popover with a flat searchable list.
+   ========================================================================== */
+
+.suite-switcher-popover--list {
+  width: min(440px, calc(100vw - 24px));
+  padding: 22px;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  border-radius: 22px;
+  background: #F8F6F1;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 22px 60px -20px rgba(31, 53, 36, 0.25),
+    0 6px 18px -10px rgba(31, 53, 36, 0.15);
+}
+
+.suite-switcher--topbar.is-open .suite-switcher-popover--list {
+  display: block;
+}
+
+.suite-switch-list-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 6px 14px;
+}
+
+.suite-switch-list-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.suite-switch-list-head strong {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 22px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: #1F3524;
+  line-height: 1;
+}
+
+.suite-switch-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.45);
+  line-height: 1;
+}
+
+.suite-switch-eyebrow--muted {
+  color: rgba(31, 53, 36, 0.4);
+}
+
+.suite-switch-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: rgba(31, 53, 36, 0.04);
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  border-radius: 12px;
+  margin-bottom: 10px;
+}
+
+.suite-switch-search svg {
+  flex-shrink: 0;
+  stroke: rgba(31, 53, 36, 0.5);
+  fill: none;
+  stroke-width: 2;
+}
+
+.suite-switch-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13.5px;
+  font-weight: 500;
+  color: #1F3524;
+  padding: 0;
+}
+
+.suite-switch-search input::placeholder {
+  color: rgba(31, 53, 36, 0.45);
+}
+
+.suite-switch-search input:focus {
+  outline: none;
+}
+
+.suite-switch-kbd {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  color: rgba(31, 53, 36, 0.55);
+  background: rgba(31, 53, 36, 0.05);
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 5px;
+  padding: 2px 6px 1px;
+  min-width: 16px;
+  display: inline-flex;
+  justify-content: center;
+}
+
+.suite-switch-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 14px 6px;
+}
+
+.suite-switch-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(31, 53, 36, 0.08);
+}
+
+.suite-switch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.suite-switch-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 14px;
+  border-radius: 14px;
+  background: transparent;
+  border: 0;
+  text-decoration: none;
+  color: inherit;
+  cursor: pointer;
+  transition: background 140ms ease;
+  text-align: left;
+  font: inherit;
+}
+
+.suite-switch-row.is-current {
+  background: rgba(31, 53, 36, 0.05);
+}
+
+.suite-switch-row.is-focused,
+.suite-switch-row:hover {
+  background: rgba(31, 53, 36, 0.06);
+}
+
+.suite-switch-row.is-disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.suite-switch-row.is-disabled:hover {
+  background: transparent;
+}
+
+.suite-switch-chip {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  overflow: hidden;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.suite-switch-chip .alma-app-icon {
+  width: 40px !important;
+  height: 40px !important;
+  border-radius: 10px;
+}
+
+.suite-switch-chip svg {
+  width: 20px !important;
+  height: 20px !important;
+}
+
+.suite-switch-row-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.suite-switch-row-name {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.1;
+  color: #1F3524;
+  letter-spacing: -0.005em;
+}
+
+.suite-switch-row-descriptor {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13px;
+  line-height: 1.15;
+  color: rgba(31, 53, 36, 0.6);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.suite-switch-here {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #4F6B47;
+  padding: 4px 9px;
+  background: rgba(79, 107, 71, 0.12);
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.suite-switch-arrow {
+  flex-shrink: 0;
+  stroke: #1F3524;
+  stroke-width: 1.3;
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.3;
+  transition: opacity 140ms ease;
+}
+
+.suite-switch-row.is-focused .suite-switch-arrow,
+.suite-switch-row:hover .suite-switch-arrow {
+  opacity: 0.7;
+}
+
+.suite-switch-empty {
+  padding: 26px 14px;
+  text-align: center;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: rgba(31, 53, 36, 0.5);
+}
+
+.suite-switch-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.suite-switch-directory {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.65);
+  text-decoration: none;
+  padding: 4px 6px;
+}
+
+.suite-switch-directory:hover {
+  color: #1F3524;
+}
+
+.suite-switch-mode {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  letter-spacing: 0.04em;
+  color: rgba(31, 53, 36, 0.5);
+}
+
+.suite-switch-mode-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #4F6B47;
+}
+
+.suite-switch-mode-dot.is-grouped {
+  background: #B27935;
+}
+
+@media (max-width: 900px) {
+  .suite-switcher-popover--list {
+    position: fixed;
+    top: 70px;
+    right: 12px;
+    left: 12px;
+    width: auto;
+    max-height: calc(100vh - 88px);
+    overflow-y: auto;
+    border-radius: 20px;
+  }
+
+  .suite-switch-row-descriptor {
+    white-space: normal;
+    -webkit-line-clamp: 2;
+  }
+}
+
 @media (max-width: 1180px) and (min-width: 901px) {
   .topbar-search {
     min-width: 188px;
