@@ -262,24 +262,29 @@ p {
   position: sticky;
   top: 0;
   z-index: 5;
-  /* Full accent colour as the topbar background — each app gets its own
-     distinctive colour. A subtle gradient adds dimension: brighter on the
-     leading edge, deeper towards the bottom. The warm gold inset highlight
-     at the top is the "string" — a thin band of light that reads as premium
-     craftsmanship across every accent hue. */
-  background: linear-gradient(
-    170deg,
-    color-mix(in srgb, var(--color-accent) 70%, #fff 30%) 0%,
-    var(--color-accent) 55%,
-    color-mix(in srgb, var(--color-accent) 88%, #000 12%) 100%
-  );
-  color: #fff;
-  border-bottom: 1px solid rgba(0, 0, 0, 0.20);
-  box-shadow:
-    inset 0 1.5px 0 rgba(255, 210, 65, 0.32),
-    inset 0 0 48px rgba(255, 255, 255, 0.05),
-    0 3px 28px rgba(0, 0, 0, 0.26),
-    0 1px 4px rgba(0, 0, 0, 0.14);
+  /* Editorial paper topbar — translucent cream over the page so the rail's
+     paper surface visually continues into the bar. The bottom seam is a
+     hairline forest-tinted border, no shadow. The app's color now lives in
+     a 3px stripe along the bottom edge so the accent thread is still visible
+     (see :before below). */
+  background: rgba(250, 248, 243, 0.96);
+  color: #1F3524;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.08);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+}
+
+/* Per-app accent thread along the bottom edge of the topbar. */
+.app-shell-topbar::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--color-accent);
+  opacity: 0.6;
+  pointer-events: none;
 }
 
 .app-shell-main {
@@ -541,16 +546,26 @@ p {
 }
 
 .topbar-title {
-  font-size: 14px;
-  font-weight: 700;
-  color: #ffffff;
-  letter-spacing: -0.01em;
+  /* Editorial: Cormorant serif page title. */
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+  color: #000;
+  letter-spacing: -0.005em;
+  line-height: 1;
 }
 
 .topbar-subtitle {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.46);
-  letter-spacing: 0;
+  /* Editorial: tracked Avenir eyebrow above the title. */
+  order: -1;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  color: rgba(31, 53, 36, 0.55);
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  line-height: 1;
 }
 
 .topbar-right {
@@ -563,35 +578,35 @@ p {
 
 .app-shell-topbar .topbar-user-label,
 .app-shell-topbar .subtle {
-  color: rgba(255, 255, 255, 0.68);
+  color: rgba(31, 53, 36, 0.6);
 }
 
 .topbar-search {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 10px;
-  border: 1px solid rgba(255, 255, 255, 0.22);
-  border-radius: var(--radius-md);
-  background: rgba(255, 255, 255, 0.12);
-  color: rgba(255, 255, 255, 0.72);
+  padding: 9px 14px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-radius: 9999px;
+  background: #FFFFFF;
+  color: rgba(31, 53, 36, 0.55);
   min-width: 240px;
   font-size: 13px;
   transition: background 130ms ease, border-color 130ms ease;
 }
 
 .topbar-search:hover {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.18);
-  color: rgba(255, 255, 255, 0.90);
+  border-color: rgba(31, 53, 36, 0.25);
+  background: #FFFFFF;
+  color: #1F3524;
 }
 
 .topbar-search kbd {
   margin-left: auto;
   padding: 2px 6px;
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.10);
-  color: rgba(255, 255, 255, 0.54);
+  background: rgba(31, 53, 36, 0.06);
+  color: rgba(31, 53, 36, 0.5);
   font-size: 11px;
   font-family: var(--font-mono);
 }
@@ -602,67 +617,74 @@ p {
   width: 36px;
   height: 36px;
   border-radius: 50%;
-  background: rgba(255, 255, 255, 0.14);
-  border: 1.5px solid rgba(255, 255, 255, 0.32);
-  color: #ffffff;
+  background: #684A4A;
+  border: 1.5px solid rgba(31, 53, 36, 0.12);
+  color: #F8F6F1;
   font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
-  transition: background 140ms ease, border-color 140ms ease;
+  transition: border-color 140ms ease, transform 140ms ease;
 }
 
 .topbar-avatar:hover {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.50);
+  border-color: rgba(31, 53, 36, 0.3);
+  transform: translateY(-1px);
 }
 
 .app-shell-topbar .btn-primary,
 .app-shell-topbar .btn-secondary,
 .app-shell-topbar .btn-ghost,
 .app-shell-topbar .icon-btn {
+  /* Cream-friendly buttons — forest text on translucent forest tint, with a
+     thin forest hairline border. Mirrors the design's `.btn-outline` from
+     the Reports UI kit. */
   min-height: 36px;
-  padding-inline: 12px;
-  border-radius: 8px;
-  border-color: rgba(255, 255, 255, 0.22);
-  background: rgba(255, 255, 255, 0.11);
-  color: rgba(255, 255, 255, 0.92);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12);
-  font-weight: 600;
+  padding-inline: 14px;
+  border-radius: 9999px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  background: transparent;
+  color: #1F3524;
+  box-shadow: none;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
   transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
 }
 
 .app-shell-topbar .btn-primary {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.20);
-  color: #ffffff;
+  border-color: transparent;
+  background: #1F3524;
+  color: #F8F0E6;
   font-weight: 700;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.20), 0 1px 3px rgba(0,0,0,0.12);
 }
 
 .app-shell-topbar .btn-primary:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.46);
-  background: rgba(255, 255, 255, 0.28);
-  color: #ffffff;
+  opacity: 0.88;
+  border-color: transparent;
+  background: #1F3524;
+  color: #F8F0E6;
 }
 
 .app-shell-topbar .btn-primary:focus-visible,
 .app-shell-topbar .btn-secondary:focus-visible,
 .app-shell-topbar .btn-ghost:focus-visible,
 .app-shell-topbar .icon-btn:focus-visible {
-  outline-color: rgba(255, 255, 255, 0.72);
+  outline-color: rgba(31, 53, 36, 0.4);
 }
 
 .app-shell-topbar .btn-secondary:hover:not(:disabled),
 .app-shell-topbar .btn-ghost:hover:not(:disabled),
 .app-shell-topbar .icon-btn:hover {
-  border-color: rgba(255, 255, 255, 0.34);
-  background: rgba(255, 255, 255, 0.18);
-  color: #ffffff;
+  border-color: rgba(31, 53, 36, 0.3);
+  background: rgba(31, 53, 36, 0.04);
+  color: #1F3524;
 }
 
-/* Notifications dot — border matches the coloured topbar background */
+/* Notifications dot — border matches the cream topbar background */
 .app-shell-topbar .notifications-dot {
-  border-color: var(--color-accent);
+  border-color: #FAF8F3;
 }
 
 /* ==========================================================================
@@ -5635,6 +5657,34 @@ a.suite-app-tile:hover {
   color: #1F3524;
 }
 
+.suite-msg-close,
+.suite-alert-close {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 9999px;
+  color: rgba(31, 53, 36, 0.55);
+  transition: background 140ms ease, color 140ms ease;
+}
+
+.suite-msg-close:hover,
+.suite-alert-close:hover {
+  background: rgba(31, 53, 36, 0.06);
+  color: #1F3524;
+}
+
+.suite-msg-close svg,
+.suite-alert-close svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
 .suite-msg-compose {
   display: flex;
   gap: 8px;
@@ -7698,5 +7748,252 @@ a.suite-app-tile:hover {
   }
   .licence-callout-when {
     text-align: left;
+  }
+}
+
+/* ==========================================================================
+   Editorial design-system primitives — Reports UI kit pattern.
+   Use these for any page that wants the editorial chrome (Cormorant titles,
+   panel cards, warm pills, BigStat KPIs, sparklines, daily bars, etc.).
+   Opt-in via class; doesn't override existing patterns.
+   ========================================================================== */
+
+/* --- Panel ---------------------------------------------------------------- */
+
+.alma-panel {
+  background: #FFFFFF;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 16px;
+  overflow: hidden;
+}
+
+.alma-panel-h {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.08);
+}
+
+.alma-panel-h-text {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.alma-panel-h-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.5);
+}
+
+.alma-panel-h h2,
+.alma-panel-h-title {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  color: #000;
+  line-height: 1;
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+
+.alma-panel-h-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+/* --- Warm pill palette ---------------------------------------------------- */
+
+.alma-pill {
+  padding: 5px 10px;
+  border-radius: 9999px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+
+.alma-pill .alma-pill-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: currentColor;
+}
+
+.alma-pill-success { background: #E4EBDB; color: #2F4129; }
+.alma-pill-warn    { background: #F6E5CC; color: #6F4915; }
+.alma-pill-danger  { background: #F2D6CE; color: #6E2419; }
+.alma-pill-info    { background: #DDE3EC; color: #2F3C50; }
+.alma-pill-neutral { background: rgba(31, 53, 36, 0.1); color: #1F3524; }
+
+/* --- BigStat KPI card ---------------------------------------------------- */
+
+.alma-bigstat {
+  background: #FFFFFF;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 16px;
+  padding: 20px 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.alma-bigstat-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.alma-bigstat-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.alma-bigstat-value {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: 44px;
+  line-height: 1;
+  color: #000;
+  margin-top: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.alma-bigstat-sub {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+  color: rgba(31, 53, 36, 0.55);
+  margin-top: 6px;
+}
+
+.alma-bigstat-foot {
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.alma-bigstat-delta {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  padding: 3px 8px;
+  border-radius: 9999px;
+}
+
+.alma-bigstat-delta.is-positive { background: #E4EBDB; color: #2F4129; }
+.alma-bigstat-delta.is-negative { background: #F2D6CE; color: #6E2419; }
+
+.alma-bigstat-spark {
+  flex-shrink: 0;
+}
+
+/* --- Daily-bars chart (last 7 days w/ Closed treatment) ------------------ */
+
+.alma-daily-bars {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 18px;
+  align-items: end;
+  height: 280px;
+  padding: 26px 28px 20px;
+}
+
+.alma-daily-bar-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  height: 100%;
+}
+
+.alma-daily-bar-value {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  color: #1A2A1C;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 6px;
+}
+
+.alma-daily-bar {
+  width: 70%;
+  background: linear-gradient(180deg, #1F3524 0%, #2A4630 100%);
+  border-radius: 10px 10px 0 0;
+}
+
+.alma-daily-bar.is-closed {
+  background: rgba(31, 53, 36, 0.04);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 10px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.35);
+  font-weight: 700;
+  flex: 1;
+}
+
+.alma-daily-bar-label {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.5);
+  font-weight: 700;
+  margin-top: 10px;
+}
+
+/* --- Editorial page layout helper --------------------------------------- */
+
+.alma-page {
+  padding: 28px 32px 56px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.alma-page-grid-kpis {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+}
+
+.alma-page-grid-2col {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 1024px) {
+  .alma-page-grid-kpis {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .alma-page-grid-2col {
+    grid-template-columns: 1fr;
   }
 }

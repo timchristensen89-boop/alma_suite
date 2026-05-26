@@ -19,6 +19,13 @@ export { EmptyState } from './primitives/EmptyState';
 export { Skeleton } from './primitives/Skeleton';
 export { Spinner } from './primitives/Spinner';
 export {
+  AlmaPill,
+  BigStat,
+  DailyBars,
+  EditorialPanel,
+  Sparkline
+} from './primitives/Editorial';
+export {
   AlmaLetterA,
   AlmaLogo,
   AlmaMark,

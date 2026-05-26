@@ -187,10 +187,13 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
               ) : null}
               <button
                 type="button"
-                className="suite-msg-ghost-link"
+                className="suite-msg-close"
                 onClick={() => setOpen(false)}
+                aria-label="Close messages"
               >
-                Close
+                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+                  <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" />
+                </svg>
               </button>
             </div>
           </div>
