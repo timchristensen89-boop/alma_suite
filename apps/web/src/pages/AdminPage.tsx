@@ -2646,6 +2646,113 @@ export function AdminPage({
       </nav>
       ) : null}
 
+      {(isAll || isOverview) && integrations ? (
+        (() => {
+          // One-line integration health strip — green / amber / red dot per
+          // provider, jumps to the full Integration Health page on click.
+          // Doesn't replace the standalone health page; it's a glance.
+          type DotTone = 'positive' | 'warning' | 'danger' | 'muted';
+          type Dot = { id: string; label: string; tone: DotTone; detail?: string };
+          const dots: Dot[] = [];
+
+          // Email service
+          dots.push({
+            id: 'email',
+            label: 'Email',
+            tone: integrations.email.status === 'CONFIGURED' ? 'positive' : 'danger',
+            detail: integrations.email.status === 'CONFIGURED'
+              ? `Provider: ${integrations.email.provider}`
+              : 'Not configured'
+          });
+
+          // Token storage
+          dots.push({
+            id: 'token-storage',
+            label: 'Token storage',
+            tone: integrations.tokenStorage.configured ? 'positive' : 'danger',
+            detail: integrations.tokenStorage.configured ? 'Configured' : 'Missing INTEGRATION_TOKEN_ENCRYPTION_KEY'
+          });
+
+          // Square — connected, configured-but-not-connected, or error
+          const primarySquare = integrations.squareAccounts?.primary ?? integrations.square;
+          const squareTone: DotTone = primarySquare?.status === 'ERROR'
+            ? 'danger'
+            : primarySquare?.status === 'CONNECTED'
+              ? 'positive'
+              : primarySquare?.configured
+                ? 'warning'
+                : 'muted';
+          dots.push({
+            id: 'square',
+            label: 'Square',
+            tone: squareTone,
+            detail: primarySquare?.status?.replace(/_/g, ' ') ?? 'Not configured'
+          });
+
+          // Xero
+          const xeroTone: DotTone = integrations.xero?.status === 'ERROR'
+            ? 'danger'
+            : integrations.xero?.status === 'CONNECTED'
+              ? 'positive'
+              : integrations.xero?.configured
+                ? 'warning'
+                : 'muted';
+          dots.push({
+            id: 'xero',
+            label: 'Xero',
+            tone: xeroTone,
+            detail: integrations.xero?.status?.replace(/_/g, ' ') ?? 'Not configured'
+          });
+
+          // Meta — never reaches 'CONNECTED' yet (Marketing is in Preview);
+          // "Ready to connect" is the best we report today.
+          const metaTone: DotTone =
+            integrations.meta?.status === 'CALLBACK_RECEIVED' || integrations.meta?.status === 'READY_TO_CONNECT'
+              ? 'warning'
+              : integrations.meta?.status === 'TOKEN_STORAGE_PENDING'
+                ? 'danger'
+                : 'muted';
+          dots.push({
+            id: 'meta',
+            label: 'Meta',
+            tone: metaTone,
+            detail: integrations.meta?.status?.replace(/_/g, ' ') ?? 'Not configured'
+          });
+
+          // Govee
+          const goveeHasError = Boolean(integrations.govee.lastError);
+          const goveeTone: DotTone = goveeHasError
+            ? 'danger'
+            : integrations.govee.status === 'CONFIGURED'
+              ? 'positive'
+              : 'muted';
+          dots.push({
+            id: 'govee',
+            label: 'Govee',
+            tone: goveeTone,
+            detail: goveeHasError
+              ? integrations.govee.lastError ?? 'Error'
+              : integrations.govee.status === 'CONFIGURED'
+                ? `${integrations.govee.sensorCount ?? 0} sensors`
+                : 'Not configured'
+          });
+
+          const healthHref = standalone ? '/admin/integrations/health' : '/?admin=integrations';
+          return (
+            <a className="admin-health-strip" href={healthHref} aria-label="Open integration health">
+              <span className="admin-health-strip-label">Integration health</span>
+              {dots.map((dot) => (
+                <span key={dot.id} className={`admin-health-strip-dot is-${dot.tone}`} title={`${dot.label} · ${dot.detail ?? ''}`}>
+                  <span className="admin-health-strip-bead" aria-hidden="true" />
+                  <span className="admin-health-strip-text">{dot.label}</span>
+                </span>
+              ))}
+              <span className="admin-health-strip-cta" aria-hidden="true">View health →</span>
+            </a>
+          );
+        })()
+      ) : null}
+
       {(isAll || isOverview) ? (
       <section className="admin-section">
         <div className="admin-settings-link-list">

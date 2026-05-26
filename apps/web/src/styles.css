@@ -9771,3 +9771,83 @@ a.suite-app-tile:hover {
   width: 12px;
   height: 12px;
 }
+
+/* Admin integration-health strip — one tight line under the home
+   bubble, six coloured dots, jumps to the full health page. Intentionally
+   not a card — we're not re-introducing the launch-readiness overview
+   that was removed. */
+.admin-health-strip {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  padding: 10px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #FFFFFF;
+  color: var(--color-text);
+  text-decoration: none;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.admin-health-strip:hover {
+  background: var(--color-surface, #F8F6F1);
+  border-color: var(--color-text);
+}
+
+.admin-health-strip-label {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-right: 4px;
+}
+
+.admin-health-strip-dot {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+}
+
+.admin-health-strip-bead {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-text-muted);
+}
+
+.admin-health-strip-dot.is-positive .admin-health-strip-bead { background: #4F6B47; }
+.admin-health-strip-dot.is-warning  .admin-health-strip-bead { background: #B27935; }
+.admin-health-strip-dot.is-danger   .admin-health-strip-bead { background: #A0463A; }
+.admin-health-strip-dot.is-muted    .admin-health-strip-bead { background: rgba(31, 53, 36, 0.32); }
+
+.admin-health-strip-cta {
+  margin-left: auto;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--color-text-muted);
+}
+
+.admin-health-strip:hover .admin-health-strip-cta {
+  color: var(--color-text);
+}
+
+@media (max-width: 720px) {
+  .admin-health-strip {
+    padding: 10px 12px;
+  }
+  .admin-health-strip-cta {
+    margin-left: 0;
+    flex: 1 1 100%;
+    text-align: right;
+  }
+}
