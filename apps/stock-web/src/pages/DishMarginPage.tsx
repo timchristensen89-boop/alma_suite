@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Recipe } from '@alma/shared';
+import type { Recipe, RecipesPayload } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { api } from '../lib/api';
 
@@ -41,8 +41,13 @@ export function DishMarginPage() {
     void (async () => {
       try {
         setLoading(true);
-        const data = await api<Recipe[]>('/api/recipes');
-        setRecipes(data.filter((r) => !r.isPrepRecipe));
+        // /api/recipes returns a RecipesPayload ({ recipes, categories,
+        // recipeCategories }) — not a flat Recipe[] — so we have to pluck
+        // the recipes array before filtering. Previously this blew up as
+        // "j.filter is not a function" in the minified prod build.
+        const payload = await api<RecipesPayload>('/api/recipes');
+        const list = Array.isArray(payload) ? payload : payload?.recipes ?? [];
+        setRecipes(list.filter((r) => !r.isPrepRecipe));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load recipes');
       } finally {
