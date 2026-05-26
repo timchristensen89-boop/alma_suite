@@ -1552,9 +1552,46 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       .sort((a, b) => b.quantity - a.quantity)
       .slice(0, 6);
 
-    // Per-venue comparison rows from primeCost
-    const venueRows = data.primeCost?.venues ?? [];
-    const totalsRow = data.primeCost?.totals;
+    // Per-venue comparison rows from primeCost.
+    // Drop legacy "Both" rollup rows — the totals row beneath already plays
+    // that role, so showing both creates a confusing duplicate column.
+    const venueRows = (data.primeCost?.venues ?? []).filter(
+      (row) => row.venue && row.venue !== 'Both'
+    );
+    // If the API ever stops returning a totals row, fold the venues together
+    // ourselves so we always have a Group total to show.
+    const totalsRow = data.primeCost?.totals ?? (venueRows.length > 0
+      ? {
+          salesCents: venueRows.reduce((sum, v) => sum + v.salesCents, 0),
+          wageCents: venueRows.reduce((sum, v) => sum + v.wageCents, 0),
+          approvedWageCents: venueRows.reduce((sum, v) => sum + v.approvedWageCents, 0),
+          rosterWageEstimateCents: venueRows.reduce((sum, v) => sum + v.rosterWageEstimateCents, 0),
+          cogsCents: venueRows.reduce((sum, v) => sum + v.cogsCents, 0),
+          invoiceCogsCents: venueRows.reduce((sum, v) => sum + v.invoiceCogsCents, 0),
+          wastageCents: venueRows.reduce((sum, v) => sum + v.wastageCents, 0),
+          primeCostCents: venueRows.reduce((sum, v) => sum + v.primeCostCents, 0),
+          wagePercent: (() => {
+            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
+            const wage = venueRows.reduce((sum, v) => sum + v.wageCents, 0);
+            return sales > 0 ? (wage / sales) * 100 : null;
+          })(),
+          cogsPercent: (() => {
+            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
+            const cogs = venueRows.reduce((sum, v) => sum + v.cogsCents, 0);
+            return sales > 0 ? (cogs / sales) * 100 : null;
+          })(),
+          primeCostPercent: (() => {
+            const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
+            const prime = venueRows.reduce((sum, v) => sum + v.primeCostCents, 0);
+            return sales > 0 ? (prime / sales) * 100 : null;
+          })(),
+          timesheetHours: venueRows.reduce((sum, v) => sum + v.timesheetHours, 0),
+          rosterHours: venueRows.reduce((sum, v) => sum + v.rosterHours, 0),
+          salesDays: venueRows.reduce((sum, v) => Math.max(sum, v.salesDays), 0),
+          sourceQuality: 'incomplete' as const,
+          missing: [] as string[]
+        }
+      : null);
 
     return (
       <SectionShell
@@ -1718,47 +1755,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </button>
 
-          {/* Venue comparison — Avalon vs St Alma side-by-side for the same period */}
-          {(data.primeCost?.venues?.length ?? 0) >= 2 ? (
-            <div className="venue-comparison-card">
-              <div className="venue-comparison-head">
-                <strong>Venue comparison · {weekWindowLabel}</strong>
-                <small>Same period, side-by-side</small>
-              </div>
-              <div className="venue-comparison-grid">
-                {(data.primeCost?.venues ?? []).map((venue) => {
-                  const primeColor = venue.primeCostPercent == null
-                    ? 'muted'
-                    : venue.primeCostPercent >= 65 ? 'danger' : venue.primeCostPercent >= 55 ? 'warning' : 'positive';
-                  return (
-                    <div key={venue.venue} className="venue-comparison-col">
-                      <div className="venue-comparison-name">{venue.venue}</div>
-                      <div className="venue-comparison-row">
-                        <span>Sales</span>
-                        <strong>{formatCurrency(venue.salesCents)}</strong>
-                      </div>
-                      <div className="venue-comparison-row">
-                        <span>Trading days</span>
-                        <strong>{venue.salesDays || '—'}</strong>
-                      </div>
-                      <div className="venue-comparison-row">
-                        <span>Wages</span>
-                        <strong>{formatPercent(venue.wagePercent)}</strong>
-                      </div>
-                      <div className="venue-comparison-row">
-                        <span>COGS</span>
-                        <strong>{formatPercent(venue.cogsPercent)}</strong>
-                      </div>
-                      <div className={`venue-comparison-row is-prime is-${primeColor}`}>
-                        <span>Prime cost</span>
-                        <strong>{formatPercent(venue.primeCostPercent)}</strong>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
+          {/* Venue comparison panel removed — replaced by the editorial
+              "By venue" panel above. The new panel uses the same primeCost
+              data with the editorial chrome (eyebrow + Cormorant title +
+              AlmaPill prime cost) and merges the group total row in. */}
 
           <div className="stats-grid report-metric-grid">
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('compliance')} aria-label="Open attention reports">
@@ -2169,8 +2169,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             <div className="report-panel">
               <h4>Wages by venue</h4>
-              {data.primeCost?.venues.length ? (
-                data.primeCost.venues.map((venue) => (
+              {(data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').length ? (
+                (data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').map((venue) => (
                   <Metric
                     key={venue.venue}
                     label={venue.venue}
@@ -2371,8 +2371,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   </tr>
                 </thead>
                 <tbody>
-                  {data.primeCost?.venues.length ? (
-                    data.primeCost.venues.map((row) => (
+                  {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
+                    (data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').map((row) => (
                       <tr key={row.venue}>
                         <td>{row.venue}</td>
                         <td>{formatCurrency(row.salesCents)}</td>

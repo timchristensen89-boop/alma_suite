@@ -128,16 +128,20 @@
   max-width: 100%;
   overflow: hidden;
   scroll-margin-top: 96px;
-  padding: 18px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  background: var(--color-surface-muted);
+  padding: 20px 22px;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 16px;
+  background: #FFFFFF;
 }
 
 .report-panel h4 {
-  margin: 0 0 4px;
-  color: var(--color-text);
-  font-size: 14px;
+  margin: 0 0 6px;
+  color: #000;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.005em;
 }
 
 .sales-venue-grid {
@@ -798,82 +802,95 @@
   }
 }
 
-/* ── Prime cost hero ─────────────────────────────────────────── */
+/* ── Prime cost hero — editorial paper-cream chrome ──────────── */
 .prime-cost-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);
   gap: 28px;
   align-items: center;
-  padding: 24px 28px;
-  border: 1px solid var(--color-border);
-  border-radius: 20px;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 252, 0.94));
-  box-shadow: 0 18px 60px rgba(15, 23, 42, 0.08);
+  padding: 22px 24px;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 16px;
+  background: #FFFFFF;
+  box-shadow: none;
   cursor: pointer;
   text-align: left;
   font: inherit;
   color: inherit;
-  transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
+  transition: transform 160ms ease, border-color 160ms ease;
   width: 100%;
+  position: relative;
+  overflow: hidden;
 }
 
 .prime-cost-hero:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 26px 70px rgba(15, 23, 42, 0.14);
-  border-color: rgba(36, 76, 159, 0.32);
+  transform: translateY(-1px);
+  border-color: rgba(31, 53, 36, 0.18);
 }
 
-.prime-cost-hero.is-positive {
-  border-left: 6px solid #16a34a;
+/* App-colored left edge accent — runs in the same thread as the sidebar
+   active stripe and the per-app switcher chip. */
+.prime-cost-hero::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: rgba(31, 53, 36, 0.4);
+  border-radius: 0 9999px 9999px 0;
 }
 
-.prime-cost-hero.is-warning {
-  border-left: 6px solid #d97706;
-  background: linear-gradient(135deg, rgba(255, 251, 235, 0.96), rgba(248, 250, 252, 0.94));
-}
+.prime-cost-hero.is-positive::before { background: #4F6B47; }
+.prime-cost-hero.is-warning::before  { background: #B27935; }
+.prime-cost-hero.is-danger::before   { background: #A0463A; }
 
-.prime-cost-hero.is-danger {
-  border-left: 6px solid #dc2626;
-  background: linear-gradient(135deg, rgba(254, 242, 242, 0.96), rgba(248, 250, 252, 0.94));
-}
+/* Soft warm tint on the bg for the warn/danger states — readable, not loud. */
+.prime-cost-hero.is-warning { background: linear-gradient(180deg, #FFFFFF 0%, #FDF6EB 100%); }
+.prime-cost-hero.is-danger  { background: linear-gradient(180deg, #FFFFFF 0%, #FDEDE8 100%); }
 
 .prime-cost-hero-main {
   display: grid;
-  gap: 6px;
+  gap: 8px;
 }
 
 .prime-cost-hero-eyebrow {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: 0.18em;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  color: rgba(31, 53, 36, 0.55);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
+  line-height: 1;
 }
 
 .prime-cost-hero-value {
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: clamp(48px, 7vw, 84px);
-  font-weight: 400;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: clamp(44px, 6.5vw, 72px);
+  font-weight: 500;
   line-height: 1;
-  letter-spacing: -0.02em;
-  color: var(--color-text);
+  letter-spacing: -0.01em;
+  color: #000;
+  margin-top: 6px;
 }
 
-.prime-cost-hero.is-positive .prime-cost-hero-value { color: #166534; }
-.prime-cost-hero.is-warning .prime-cost-hero-value { color: #92400e; }
-.prime-cost-hero.is-danger .prime-cost-hero-value { color: #991b1b; }
+.prime-cost-hero.is-positive .prime-cost-hero-value { color: #2F4129; }
+.prime-cost-hero.is-warning  .prime-cost-hero-value { color: #6F4915; }
+.prime-cost-hero.is-danger   .prime-cost-hero-value { color: #6E2419; }
 
 .prime-cost-hero-split {
   display: inline-flex;
   flex-wrap: wrap;
-  gap: 10px;
-  color: var(--color-text-muted);
-  font-size: 13.5px;
+  gap: 12px;
+  color: rgba(31, 53, 36, 0.65);
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13px;
   font-weight: 600;
+  margin-top: 6px;
 }
 
 .prime-cost-hero-split span[aria-hidden] {
-  opacity: 0.4;
+  opacity: 0.35;
 }
 
 .prime-cost-hero-trend {
@@ -896,34 +913,38 @@
 
 .prime-cost-hero-bar-fill {
   width: 100%;
-  border-radius: 8px 8px 4px 4px;
-  background: linear-gradient(180deg, #94a3b8, #64748b);
+  border-radius: 10px 10px 4px 4px;
+  background: linear-gradient(180deg, #1F3524 0%, #2A4630 100%);
   min-height: 4px;
   transition: opacity 160ms ease;
 }
 
-.prime-cost-hero-bar.is-positive .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #22c55e, #15803d); }
-.prime-cost-hero-bar.is-warning .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #f59e0b, #b45309); }
-.prime-cost-hero-bar.is-danger .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #ef4444, #b91c1c); }
-.prime-cost-hero-bar.is-muted .prime-cost-hero-bar-fill {
-  background: repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 4px, #cbd5e1 4px, #cbd5e1 8px);
-  opacity: 0.6;
+.prime-cost-hero-bar.is-positive .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #5B7F50 0%, #2F4129 100%); }
+.prime-cost-hero-bar.is-warning  .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #C8924E 0%, #6F4915 100%); }
+.prime-cost-hero-bar.is-danger   .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #B85745 0%, #6E2419 100%); }
+.prime-cost-hero-bar.is-muted    .prime-cost-hero-bar-fill {
+  background: repeating-linear-gradient(45deg, rgba(31,53,36,0.06) 0 6px, transparent 6px 12px);
+  border: 1px dashed rgba(31, 53, 36, 0.18);
+  opacity: 0.7;
 }
 
 .prime-cost-hero-bar.is-current .prime-cost-hero-bar-fill {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px currentColor;
+  box-shadow: 0 0 0 2px #F8F6F1, 0 0 0 3px currentColor;
 }
 
 .prime-cost-hero-bar-label {
-  font-size: 12px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--color-text);
+  color: #1A2A1C;
+  font-variant-numeric: tabular-nums;
 }
 
 .prime-cost-hero-bar small {
-  font-size: 10.5px;
-  color: var(--color-text-muted);
-  letter-spacing: 0.04em;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9.5px;
+  color: rgba(31, 53, 36, 0.55);
+  letter-spacing: 0.06em;
 }
 
 /* ── Venue comparison ────────────────────────────────────────── */

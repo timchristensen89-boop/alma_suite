@@ -980,11 +980,11 @@ p {
    ========================================================================== */
 
 .stat-card {
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: 18px;
-  box-shadow: var(--shadow-xs);
+  background: #FFFFFF;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 16px;
+  padding: 18px 20px;
+  box-shadow: none;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1001,11 +1001,12 @@ p {
 }
 
 .stat-card-label {
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.04em;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
   text-transform: uppercase;
-  color: var(--color-text-subtle);
+  color: rgba(31, 53, 36, 0.55);
 }
 
 .stat-card-icon {
@@ -1013,25 +1014,30 @@ p {
   place-items: center;
   width: 30px;
   height: 30px;
-  border-radius: 8px;
-  background: var(--color-surface-hover);
-  color: var(--color-text-muted);
+  border-radius: 9999px;
+  background: rgba(31, 53, 36, 0.06);
+  color: #1F3524;
 }
 
 .stat-card-value {
-  font-size: 28px;
-  font-weight: 600;
-  letter-spacing: -0.02em;
-  line-height: 1.05;
-  color: var(--color-text);
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 36px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  line-height: 1;
+  color: #000;
+  font-variant-numeric: tabular-nums;
+  margin-top: 6px;
 }
 
 .stat-card-hint {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
   font-size: 12.5px;
-  color: var(--color-text-muted);
+  color: rgba(31, 53, 36, 0.6);
   display: flex;
   align-items: center;
   gap: 6px;
+  margin-top: 6px;
 }
 
 .stat-card.tone-positive .stat-card-icon { background: var(--tone-positive-bg); color: var(--tone-positive-fg); }
