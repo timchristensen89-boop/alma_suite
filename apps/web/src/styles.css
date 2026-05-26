@@ -188,25 +188,22 @@ p {
   100% { transform: translate3d(28px, -22px, 0) rotate(12deg); }
 }
 
-/* The line itself — a real fixed-position vertical line on the right
-   edge, anchored to the top of the viewport. Height animates so the
-   line "drops" from above into the fish bobbing area, and "reels up"
-   as the fish is hauled up. */
+/* The line itself — hangs off the right edge, dropping into the fish.
+   Original version that worked: positioned relative to the fish, drops
+   from above using translateY + scaleY. Simple, no height animation. */
 .suite-fish-line {
-  position: fixed;
-  top: 0;
-  right: 30px;
+  position: absolute;
+  top: -120vh;
+  right: -36px;
   width: 1.5px;
-  height: 0;
-  background: rgba(20, 36, 26, 0.6);
-  box-shadow: 0 0 1px rgba(255, 255, 255, 0.6);
-  z-index: 19;
-  pointer-events: none;
+  height: calc(120vh + 50px);
+  background: rgba(20, 36, 26, 0.55);
   transform-origin: top center;
+  pointer-events: none;
 }
 
 .suite-fish-line::after {
-  /* Bait at the bottom of the line — small amber dot with hook outline */
+  /* tiny hook + bait dot at the bottom */
   content: '';
   position: absolute;
   bottom: -3px;
@@ -215,19 +212,17 @@ p {
   height: 7px;
   border-radius: 9999px;
   background: #B27935;
-  box-shadow:
-    0 0 0 1.5px rgba(20, 36, 26, 0.55),
-    0 0 6px rgba(178, 121, 53, 0.4);
+  box-shadow: 0 0 0 1.5px rgba(20, 36, 26, 0.45);
 }
 
 .suite-fish.is-lured .suite-fish-line {
-  animation: suite-fish-line-drop 1.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: suite-fish-line-drop 1.8s ease-out forwards;
 }
 
 @keyframes suite-fish-line-drop {
-  0%   { height: 0; opacity: 0; }
-  15%  { opacity: 1; }
-  100% { height: calc(100vh - 110px); opacity: 1; }
+  0%   { transform: translateY(-30%) scaleY(0.3); opacity: 0; }
+  40%  { opacity: 1; }
+  100% { transform: translateY(0) scaleY(1); opacity: 1; }
 }
 
 /* Phase: reeling — fish bites and gets slowly hauled up the right edge.
@@ -238,10 +233,9 @@ p {
   animation: suite-fish-reel 3.2s cubic-bezier(0.35, 0, 0.45, 1) forwards;
 }
 
-/* Line stays visible the whole reel — height shrinks as the rod pulls
-   it up, so it always ends at the fish's current position. */
+/* Line stays put as the fish climbs up it; small flick at the end. */
 .suite-fish.is-reeling .suite-fish-line {
-  animation: suite-fish-line-reel 3.2s cubic-bezier(0.35, 0, 0.45, 1) forwards;
+  animation: suite-fish-line-pull 3.2s linear forwards;
 }
 
 @keyframes suite-fish-reel {
@@ -257,18 +251,10 @@ p {
   100% { transform: translate3d(-2px, -52vh, 0) rotate(0deg) scale(0.5); opacity: 0; }
 }
 
-@keyframes suite-fish-line-reel {
-  /* Mirror the fish's vertical travel — line shortens from the bottom
-     so the bait/hook stays attached to the fish as it's hauled up. */
-  0%   { height: calc(100vh - 110px); opacity: 1; }
-  8%   { height: calc(100vh - 122px); }
-  18%  { height: calc(100vh - 144px); }
-  30%  { height: calc(100vh - 182px); }
-  45%  { height: calc(100vh - 238px); }
-  60%  { height: calc(100vh - 308px); }
-  78%  { height: calc(100vh - 408px); }
-  92%  { height: calc(50vh + 0px); opacity: 1; }
-  100% { height: calc(50vh - 8px); opacity: 0; }
+@keyframes suite-fish-line-pull {
+  0%   { transform: rotate(0deg); }
+  85%  { transform: rotate(-2deg); opacity: 1; }
+  100% { transform: rotate(-4deg); opacity: 0; }
 }
 
 /* Puff of smoke at the end of the reel — fish vanishes in a quick cloud */
@@ -314,6 +300,46 @@ p {
 /* Phase: gone — fish is off-screen, nothing to render */
 .suite-fish.is-gone .suite-fish-img {
   opacity: 0;
+}
+
+/* Phase: margarita — the rare-rare outcome. Instead of the fish coming
+   back as a fish, a margarita glass plops in where the fish used to be
+   (with a small splash). Fish stays hidden. */
+.suite-fish.is-margarita .suite-fish-img {
+  opacity: 0;
+}
+
+.suite-fish-margarita {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  width: 96px;
+  height: 110px;
+  pointer-events: none;
+  transform-origin: bottom center;
+  filter: drop-shadow(0 6px 10px rgba(15, 23, 42, 0.18));
+  animation: suite-fish-margarita-in 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes suite-fish-margarita-in {
+  0%   { transform: translate3d(40px, -120px, 0) rotate(-18deg); opacity: 0; }
+  25%  { opacity: 1; }
+  60%  { transform: translate3d(4px, -8px, 0) rotate(6deg); }
+  78%  { transform: translate3d(0, 2px, 0) rotate(-3deg); }
+  92%  { transform: translate3d(0, -1px, 0) rotate(1deg); }
+  100% { transform: translate3d(0, 0, 0) rotate(0deg); opacity: 1; }
+}
+
+/* After landing, a tiny idle sway so the drink looks set on a counter */
+.suite-fish.is-margarita .suite-fish-margarita {
+  animation:
+    suite-fish-margarita-in 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards,
+    suite-fish-margarita-idle 3.6s ease-in-out 1.6s infinite;
+}
+
+@keyframes suite-fish-margarita-idle {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(-1deg); }
+  50%      { transform: translate3d(0, -1px, 0) rotate(1.5deg); }
 }
 
 /* Phase: splash — fish gets thrown back from the right side */

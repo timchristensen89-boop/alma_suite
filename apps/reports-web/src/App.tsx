@@ -1458,6 +1458,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {sectionButton('overview', 'Back to reports overview')}
         </div>
       );
+    // Overview owns its own gradient bubble header (AlmaHomeBubble); skip
+    // the Card title/subtitle so we don't render two stacked headers.
+    if (id === 'overview') {
+      return (
+        <section id={id} className="reports-section report-active-section" aria-labelledby={`${id}-heading`}>
+          {children}
+        </section>
+      );
+    }
     return (
       <section id={id} className="reports-section report-active-section" aria-labelledby={`${id}-heading`}>
         <Card
