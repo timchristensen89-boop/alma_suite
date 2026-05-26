@@ -26,7 +26,7 @@
 .giftcards-public-page {
   min-height: 100vh;
   padding: 104px 24px 54px;
-  background: #FAF8F3;
+  background: #FFFFFF;
   color: var(--giftcards-primary);
   font-family: "Avenir LT Std", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }

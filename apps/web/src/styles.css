@@ -3,10 +3,9 @@
    ========================================================================== */
 
 :root {
-  /* palette: paper-cream surfaces over a warm paper-white page (brand
-     spec — alma-paper for the page bg, alma-eggshell for raised cards
-     so boxes sit a touch warmer than the page they live on). */
-  --color-bg: #FAF8F3;
+  /* palette: paper-cream raised cards over a pure-white page so the
+     boxes sit clearly above the surface. */
+  --color-bg: #FFFFFF;
   --color-surface: #F8F6F1;
   --color-surface-muted: #FDFBF6;
   --color-surface-hover: #F2EFE6;
