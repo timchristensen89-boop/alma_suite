@@ -3023,27 +3023,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
     >
       <div className="page-stack reports-page">
-        <section className="hero">
-          <div className="hero-text">
-            <p className="page-header-eyebrow">Reports command</p>
-            <h1>Alma Group Reports</h1>
-            <p>{activeReport.description} Reports are read-only and scoped to permitted venues.</p>
-            <div className="hero-meta">
-              <span className="hero-meta-dot" aria-hidden="true" />
-              <span>{activeReport.label}</span>
-              <span aria-hidden="true">·</span>
-              <span>{loading ? 'Loading live report data…' : `Signed in as ${user.firstName}`}</span>
-            </div>
-          </div>
-          <div className="hero-actions">
-            <Button type="button" onClick={() => void load()} disabled={loading}>
-              Refresh
-            </Button>
-            <Button type="button" variant="secondary" onClick={exportOverviewCsv}>
-              Export overview
-            </Button>
-          </div>
-        </section>
+        {message ? <p className="error-text">{message}</p> : null}
+        {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}
+        {renderActiveReportSection()}
 
         <Card title="Report controls" subtitle="Choose the reporting range without changing production data.">
           <div className="reports-week-controls">
@@ -3074,10 +3056,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </Button>
           </div>
         </Card>
-
-        {message ? <p className="error-text">{message}</p> : null}
-        {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}
-        {renderActiveReportSection()}
       </div>
     </AppShell>
   );
