@@ -38,6 +38,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   Textarea,
   TopBar,
@@ -1238,6 +1239,7 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
             canAnnounce={user.role !== 'STAFF'}
           />
           <SuiteNotificationsWidget api={api} currentApp="reserve" />
+          <SuiteFeedbackWidget appId="RESERVE" api={api} userName={`${user.firstName} ${user.lastName}`} />
           <Button size="sm" type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
         </>
       }

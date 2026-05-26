@@ -550,7 +550,7 @@
 
 .giftcards-public-notes {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 14px;
 }
 
@@ -558,7 +558,7 @@
   position: relative;
   min-height: 148px;
   display: grid;
-  align-content: end;
+  align-content: start;
   gap: 8px;
   overflow: hidden;
   padding: 22px;
@@ -566,25 +566,71 @@
   background: #eef0e9;
 }
 
-.giftcards-public-notes img {
-  position: absolute;
-  right: -28px;
-  top: 18px;
-  width: 138px;
-  opacity: 0.035;
+.giftcards-public-note-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.06);
+  color: var(--color-accent, #9A3A2E);
+  margin-bottom: 4px;
 }
 
 .giftcards-public-notes strong {
   color: #050505;
   font-family: Georgia, 'Times New Roman', serif;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: 400;
-  line-height: 1;
+  line-height: 1.15;
 }
 
 .giftcards-public-notes span {
   color: rgba(0, 0, 0, 0.58);
   line-height: 1.5;
+}
+
+/* FAQ accordion — three common questions sit beneath the trust panel. */
+.giftcards-public-faq {
+  display: grid;
+  gap: 8px;
+}
+.giftcards-public-faq details {
+  padding: 16px 18px;
+  border-radius: 16px;
+  background: #f5f5f0;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+}
+.giftcards-public-faq summary {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 18px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.giftcards-public-faq summary::after {
+  content: '+';
+  font-size: 22px;
+  color: var(--color-accent, #9A3A2E);
+  transition: transform 0.15s ease;
+}
+.giftcards-public-faq details[open] summary::after {
+  content: '−';
+}
+.giftcards-public-faq p {
+  margin: 12px 0 0;
+  font-size: 14.5px;
+  line-height: 1.55;
+  color: rgba(0, 0, 0, 0.65);
+}
+.giftcards-public-faq a {
+  color: var(--color-accent-text, #3D1814);
+  text-decoration: underline;
 }
 
 .giftcards-amounts {

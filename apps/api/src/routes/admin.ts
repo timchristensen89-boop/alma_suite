@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { requireAdmin } from '../lib/auth-middleware.js';
 import { adminService } from '../services/admin.service.js';
 import { deviceService } from '../services/device.service.js';
+import { exportsService } from '../services/exports.service.js';
 
 export const adminRouter = Router();
 
@@ -104,6 +105,36 @@ adminRouter.get('/audit-events', async (req, res, next) => {
       ? req.query.eventType.trim()
       : undefined;
     res.json(await adminService.auditEvents(eventType));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Phase 4.5 — Scheduled exports. CSV download endpoints, Admin-only.
+// Drive scheduling will plug on top of these once OAuth is wired.
+adminRouter.get('/exports', async (_req, res, next) => {
+  try {
+    res.json({ exports: await exportsService.listAvailable() });
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.get('/exports/:kind', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const { filename, csv } = await exportsService.generate(
+      req.params.kind as 'sales-by-day' | 'wages-by-week' | 'timesheets' | 'stocktake-variance' | 'low-stock',
+      {
+        start: typeof req.query.start === 'string' ? req.query.start : undefined,
+        end: typeof req.query.end === 'string' ? req.query.end : undefined,
+        venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+      },
+      req.user
+    );
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
   } catch (error) {
     next(error);
   }

@@ -255,6 +255,33 @@ staffRouter.patch('/hr/records/:recordId', async (req, res, next) => {
   }
 });
 
+staffRouter.post('/hr/records/:recordId/submit-for-approval', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.submitPayChangeForApproval(String(req.params.recordId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/hr/records/:recordId/approve', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.approvePayChange(String(req.params.recordId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/hr/records/:recordId/return-to-draft', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.returnPayChangeToDraft(String(req.params.recordId), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/leave', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

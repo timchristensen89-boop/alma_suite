@@ -33,6 +33,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   Textarea,
   TopBar,
@@ -486,22 +487,62 @@ function PublicGiftCardShop() {
             </button>
           </form>
         </section>
-        <section className="giftcards-public-notes">
-          <div>
-            <img src="/images/fish.png" alt="" />
-            <strong>Redeem across venues</strong>
-            <span>Alma Avalon and St Alma Freshwater.</span>
+        <section className="giftcards-public-notes" aria-label="What's included with every Alma Group gift card">
+          <div className="giftcards-public-note">
+            <span className="giftcards-public-note-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 9.5 12 4l9 5.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z" />
+                <path d="M9 21V12h6v9" />
+              </svg>
+            </span>
+            <strong>Redeem at either venue</strong>
+            <span>Alma Avalon and St Alma Freshwater. Food, wine, the whole night.</span>
           </div>
-          <div>
-            <img src="/images/fish.png" alt="" />
-            <strong>Delivered by email</strong>
-            <span>Only after Stripe confirms payment.</span>
+          <div className="giftcards-public-note">
+            <span className="giftcards-public-note-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <rect x="3" y="5" width="18" height="14" rx="2" />
+                <path d="m3 7 9 6 9-6" />
+              </svg>
+            </span>
+            <strong>Delivered the moment we're paid</strong>
+            <span>Stripe confirms, the gift card lands by email — recipient or sender, you choose.</span>
           </div>
-          <div>
-            <img src="/images/fish.png" alt="" />
-            <strong>Easy to print</strong>
-            <span>Use the printable gift card after checkout.</span>
+          <div className="giftcards-public-note">
+            <span className="giftcards-public-note-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6 9V3h12v6" />
+                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+                <rect x="6" y="14" width="12" height="8" rx="1" />
+              </svg>
+            </span>
+            <strong>Printable, framable, giftable</strong>
+            <span>A clean printable PDF and an Apple / Google Wallet pass are ready right after checkout.</span>
           </div>
+          <div className="giftcards-public-note">
+            <span className="giftcards-public-note-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="9" />
+                <path d="M12 7v5l3 2" />
+              </svg>
+            </span>
+            <strong>Valid for three years</strong>
+            <span>No partial-redemption tricks. Spend the full balance whenever it suits.</span>
+          </div>
+        </section>
+        <section className="giftcards-public-faq" aria-label="Frequently asked questions">
+          <details>
+            <summary>Can I use the gift card across more than one visit?</summary>
+            <p>Yes. The balance ticks down each time you use the code — you can split it across as many visits and tables as you like, until the balance is gone.</p>
+          </details>
+          <details>
+            <summary>What if my email never arrives?</summary>
+            <p>Check spam, then write to us at <a href="mailto:hello@almagroup.com.au">hello@almagroup.com.au</a> with the purchaser email you used. We hold a record of every paid order and can re-send within the hour.</p>
+          </details>
+          <details>
+            <summary>Are cards refundable?</summary>
+            <p>Once delivered we can't refund a gift card, but we can transfer the balance to a different recipient and re-send it. Just write in.</p>
+          </details>
         </section>
         <a className="giftcards-staff-link" href="/redeem">Staff redeem</a>
       </div>
@@ -1080,6 +1121,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 canAnnounce={user.role !== 'STAFF'}
               />
               <SuiteNotificationsWidget api={api} currentApp="giftcards" />
+              <SuiteFeedbackWidget appId="GIFTCARDS" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }

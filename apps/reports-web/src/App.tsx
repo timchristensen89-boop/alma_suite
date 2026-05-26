@@ -37,6 +37,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   TopBar,
   useDismissibleLayer
@@ -3028,6 +3029,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 canAnnounce={user.role !== 'STAFF'}
               />
               <SuiteNotificationsWidget api={staffApi} currentApp="reports" />
+              <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
               <ReportsUserMenu user={user} onLogout={onLogout} />
             </>
           }

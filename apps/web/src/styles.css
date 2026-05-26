@@ -9874,6 +9874,65 @@ a.suite-app-tile:hover {
   letter-spacing: 0.005em;
 }
 
+/* Pay-change workflow strip — sits below the privacy callout on the
+   pay-changes page and shows the three workflow states (Draft → Submit
+   → Approve) so a new manager understands what they're looking at. */
+.pay-change-workflow {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  padding: 14px 16px;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  border-radius: 12px;
+  background: #FFFFFF;
+}
+.pay-change-workflow-step {
+  flex: 1 1 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--color-text);
+}
+.pay-change-workflow-step strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 14.5px;
+  letter-spacing: 0.005em;
+}
+.pay-change-workflow-step-num {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: rgba(160, 70, 58, 0.12);
+  color: #A0463A;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+}
+.pay-change-workflow-arrow {
+  display: flex;
+  align-items: center;
+  color: rgba(31, 53, 36, 0.45);
+  font-size: 18px;
+  user-select: none;
+}
+@media (max-width: 720px) {
+  .pay-change-workflow {
+    flex-direction: column;
+  }
+  .pay-change-workflow-arrow {
+    transform: rotate(90deg);
+    height: 18px;
+  }
+}
+
 /* Data sources hairline — shows where each block of data on the
    Reports overview is coming from. When a number looks wrong, the
    operator immediately knows where to check (Square dashboard, Xero
@@ -10009,6 +10068,99 @@ a.suite-app-tile:hover {
   }
 }
 
+/* Admin release notes (#41) — what's new card right under operational debt.
+   Hand-curated, dated groups so the owner can see what just changed. */
+.admin-release-notes {
+  margin-top: 16px;
+  padding: 20px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #FFFFFF;
+}
+.admin-release-head {
+  margin-bottom: 12px;
+}
+.admin-release-eyebrow {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+.admin-release-title {
+  margin: 4px 0 2px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+}
+.admin-release-sub {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--color-text-muted);
+}
+.admin-release-list {
+  list-style: none;
+  margin: 14px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+.admin-release-item {
+  display: grid;
+  grid-template-columns: minmax(160px, 160px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(248, 246, 241, 0.6);
+  border-left: 3px solid var(--color-text);
+}
+.admin-release-date {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--color-text);
+  text-transform: uppercase;
+}
+.admin-release-bullets {
+  list-style: disc;
+  margin: 0;
+  padding-left: 18px;
+  display: grid;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--color-text);
+}
+@media (max-width: 720px) {
+  .admin-release-item {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
+/* Admin exports (Phase 4.5) — CSV download grid, sits beneath release notes. */
+.admin-exports-card {
+  padding: 20px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #FFFFFF;
+}
+.admin-exports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+}
+
 /* Admin integration-health strip — one tight line under the home
    bubble, six coloured dots, jumps to the full health page. Intentionally
    not a card — we're not re-introducing the launch-readiness overview
@@ -10086,5 +10238,517 @@ a.suite-app-tile:hover {
     margin-left: 0;
     flex: 1 1 100%;
     text-align: right;
+  }
+}
+
+/* Manager Daily Brief (#29) — morning glance. Four hero cards across the
+   top, then heads-up alerts, then three column cards (timesheets / stock
+   / compliance). Designed to be scannable in 10 seconds. */
+.daily-brief-page .page-header h1 {
+  margin-bottom: 4px;
+}
+.daily-brief-controls {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)) auto;
+  gap: 12px;
+  align-items: end;
+}
+.daily-brief-hero {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.daily-brief-hero-card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  background: #FFFFFF;
+  border: 1px solid rgba(31, 53, 36, 0.10);
+  border-radius: 14px;
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.02);
+}
+.daily-brief-hero-label {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.6);
+}
+.daily-brief-hero-value {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: clamp(24px, 3.5vw, 30px);
+  color: var(--color-text);
+  letter-spacing: 0.005em;
+  line-height: 1.05;
+}
+.daily-brief-hero-sub {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: rgba(31, 53, 36, 0.65);
+}
+.daily-brief-headsups {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.daily-brief-headsup {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  background: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+.daily-brief-headsup-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin-top: 7px;
+  border-radius: 999px;
+  background: rgba(31, 53, 36, 0.45);
+}
+.daily-brief-headsup.is-danger {
+  border-color: rgba(154, 58, 46, 0.32);
+  background: rgba(154, 58, 46, 0.06);
+  color: #6F2418;
+}
+.daily-brief-headsup.is-danger .daily-brief-headsup-dot {
+  background: #9A3A2E;
+}
+.daily-brief-headsup.is-warning {
+  border-color: rgba(209, 138, 0, 0.32);
+  background: rgba(209, 138, 0, 0.06);
+  color: #6A4A05;
+}
+.daily-brief-headsup.is-warning .daily-brief-headsup-dot {
+  background: #D18A00;
+}
+.daily-brief-headsup.is-info {
+  border-color: rgba(36, 76, 159, 0.28);
+  background: rgba(36, 76, 159, 0.05);
+  color: #1E3565;
+}
+.daily-brief-headsup.is-info .daily-brief-headsup-dot {
+  background: #244C9F;
+}
+.daily-brief-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 14px;
+}
+.daily-brief-list {
+  list-style: none;
+  margin: 0 0 12px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.daily-brief-list-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(248, 246, 241, 0.6);
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.daily-brief-list-row span:first-child {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.daily-brief-list-row strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 14.5px;
+}
+.daily-brief-next-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.daily-brief-next-steps li {
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-text);
+  background: rgba(248, 246, 241, 0.5);
+  border-radius: 0 8px 8px 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+.daily-brief-next-steps a {
+  color: #244C9F;
+  text-decoration: underline;
+}
+@media (max-width: 720px) {
+  .daily-brief-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Venue Readiness (#20/#21) — green/amber/red checklist status.
+   Big banner row at the top showing opening / closing / overall,
+   then grouped lists for opening / service / closing. */
+.readiness-banners {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.readiness-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-radius: 14px;
+  border: 1px solid rgba(31, 53, 36, 0.10);
+  background: #FFFFFF;
+  font-family: var(--font-sans);
+}
+.readiness-banner.is-green {
+  border-color: rgba(60, 110, 70, 0.35);
+  background: rgba(60, 110, 70, 0.06);
+}
+.readiness-banner.is-amber {
+  border-color: rgba(209, 138, 0, 0.4);
+  background: rgba(209, 138, 0, 0.06);
+}
+.readiness-banner.is-red {
+  border-color: rgba(154, 58, 46, 0.45);
+  background: rgba(154, 58, 46, 0.06);
+}
+.readiness-banner.is-missing {
+  border-color: rgba(31, 53, 36, 0.14);
+  background: rgba(248, 246, 241, 0.5);
+}
+.readiness-banner-tag {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.6);
+}
+.readiness-banner-label {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: 0.005em;
+}
+.readiness-banner.is-green .readiness-banner-label { color: #2F5C36; }
+.readiness-banner.is-amber .readiness-banner-label { color: #855700; }
+.readiness-banner.is-red .readiness-banner-label { color: #6F2418; }
+.readiness-group-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 10px;
+}
+.readiness-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.6);
+}
+.readiness-subtitle {
+  margin: 4px 0 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13.5px;
+  color: rgba(31, 53, 36, 0.7);
+}
+.readiness-rollup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.readiness-rollup-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(31, 53, 36, 0.45);
+}
+.readiness-rollup.is-green { background: rgba(60, 110, 70, 0.12); color: #2F5C36; }
+.readiness-rollup.is-green .readiness-rollup-dot { background: #2F5C36; }
+.readiness-rollup.is-amber { background: rgba(209, 138, 0, 0.14); color: #855700; }
+.readiness-rollup.is-amber .readiness-rollup-dot { background: #D18A00; }
+.readiness-rollup.is-red { background: rgba(154, 58, 46, 0.14); color: #6F2418; }
+.readiness-rollup.is-red .readiness-rollup-dot { background: #9A3A2E; }
+.readiness-rollup.is-missing { background: rgba(31, 53, 36, 0.07); color: rgba(31, 53, 36, 0.7); }
+.readiness-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.readiness-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  background: rgba(248, 246, 241, 0.6);
+}
+.readiness-row-dot {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: rgba(31, 53, 36, 0.45);
+}
+.readiness-row.is-green { border-color: rgba(60, 110, 70, 0.32); }
+.readiness-row.is-green .readiness-row-dot { background: #2F5C36; }
+.readiness-row.is-amber { border-color: rgba(209, 138, 0, 0.32); }
+.readiness-row.is-amber .readiness-row-dot { background: #D18A00; }
+.readiness-row.is-red { border-color: rgba(154, 58, 46, 0.32); background: rgba(154, 58, 46, 0.04); }
+.readiness-row.is-red .readiness-row-dot { background: #9A3A2E; }
+.readiness-row-text {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.readiness-row-text strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0.005em;
+}
+.readiness-row-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+@media (max-width: 720px) {
+  .readiness-banners {
+    grid-template-columns: 1fr;
+  }
+  .readiness-row {
+    flex-wrap: wrap;
+  }
+  .readiness-row-status {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+  }
+}
+
+/* SuiteFeedbackWidget (#56) — small pill in the TopBar with a popover panel
+   for filing a bug / idea / praise. Posts to /api/issues as a
+   PRODUCT_FEEDBACK item so the team has a single inbox. */
+.suite-feedback-widget {
+  position: relative;
+  display: inline-flex;
+}
+.suite-feedback-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  height: 34px;
+  border: 1px solid rgba(31, 53, 36, 0.18);
+  border-radius: 999px;
+  background: #FFFFFF;
+  color: var(--color-text, #1F3524);
+  font-family: var(--font-sans, system-ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  letter-spacing: 0.005em;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.suite-feedback-trigger:hover {
+  background: rgba(248, 246, 241, 0.85);
+  border-color: rgba(31, 53, 36, 0.35);
+}
+.suite-feedback-trigger-icon {
+  display: inline-flex;
+  color: rgba(31, 53, 36, 0.7);
+}
+.suite-feedback-panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 360px;
+  max-width: calc(100vw - 32px);
+  padding: 16px 18px;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  border-radius: 14px;
+  background: #FFFFFF;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+  z-index: 70;
+}
+.suite-feedback-head {
+  margin-bottom: 12px;
+}
+.suite-feedback-eyebrow {
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.6);
+}
+.suite-feedback-title {
+  margin: 4px 0 2px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+}
+.suite-feedback-sub {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: rgba(31, 53, 36, 0.65);
+}
+.suite-feedback-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.suite-feedback-types {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.suite-feedback-type {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(31, 53, 36, 0.16);
+  border-radius: 999px;
+  background: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.suite-feedback-type input {
+  display: none;
+}
+.suite-feedback-type.is-active {
+  border-color: var(--color-accent, #9A3A2E);
+  background: rgba(154, 58, 46, 0.07);
+  color: #6F2418;
+}
+.suite-feedback-label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  color: rgba(31, 53, 36, 0.7);
+}
+.suite-feedback-label input,
+.suite-feedback-label textarea {
+  padding: 8px 11px;
+  border: 1px solid rgba(31, 53, 36, 0.18);
+  border-radius: 10px;
+  background: #FFFFFF;
+  font: inherit;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  color: var(--color-text);
+}
+.suite-feedback-label textarea {
+  min-height: 90px;
+  resize: vertical;
+  line-height: 1.45;
+}
+.suite-feedback-label input:focus,
+.suite-feedback-label textarea:focus {
+  outline: none;
+  border-color: var(--color-accent, #9A3A2E);
+  box-shadow: 0 0 0 3px rgba(154, 58, 46, 0.12);
+}
+.suite-feedback-message {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+.suite-feedback-message.is-success {
+  background: rgba(60, 110, 70, 0.1);
+  color: #2F5C36;
+}
+.suite-feedback-message.is-error {
+  background: rgba(154, 58, 46, 0.08);
+  color: #6F2418;
+}
+.suite-feedback-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+.suite-feedback-cancel,
+.suite-feedback-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 14px;
+  border-radius: 999px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.suite-feedback-cancel {
+  background: #FFFFFF;
+  border-color: rgba(31, 53, 36, 0.2);
+  color: var(--color-text);
+}
+.suite-feedback-submit {
+  background: var(--color-text, #1F3524);
+  color: #FFFFFF;
+}
+.suite-feedback-submit:hover {
+  filter: brightness(1.05);
+}
+.suite-feedback-cancel:disabled,
+.suite-feedback-submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+@media (max-width: 720px) {
+  .suite-feedback-trigger-label {
+    display: none;
+  }
+  .suite-feedback-panel {
+    width: calc(100vw - 24px);
+    right: 50%;
+    transform: translateX(50%);
   }
 }

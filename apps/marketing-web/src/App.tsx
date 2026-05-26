@@ -43,6 +43,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   Textarea,
   TopBar,
@@ -1261,6 +1262,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 canAnnounce={user.role !== 'STAFF'}
               />
               <SuiteNotificationsWidget api={api} currentApp="marketing" />
+              <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }

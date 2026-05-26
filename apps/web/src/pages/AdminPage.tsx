@@ -2798,6 +2798,41 @@ export function AdminPage({
               tone: 'info'
             }
           ];
+          // Recent release notes — hand-curated so the owner can see at a
+          // glance what's just shipped. Add new entries at the top.
+          const releaseNotes: Array<{ date: string; items: string[] }> = [
+            {
+              date: '27 May 2026',
+              items: [
+                'Pay-change approval workflow: managers submit, a different admin approves. Audit trail on every step.',
+                'End-of-shift wrap: structured close-of-day prompt in Comms · Handover (incidents, complaints, stock, maintenance, notes).',
+                'Manager Daily Brief at /brief: today\'s sales, wage %, approvals waiting, heads-ups, in a 10-second glance.',
+                'Venue Readiness at /readiness: green / amber / red view of today\'s opening, service and closing checklists.',
+                'Suite-wide Feedback button on every internal app — bug / idea / praise straight into the team inbox.',
+                'Scheduled CSV exports in Admin (sales by day, wages by week, timesheets, stocktake variance, low stock).',
+                'Public gift cards: cleaner trust panel with proper icons, expiry transparency, and a 3-question FAQ.'
+              ]
+            },
+            {
+              date: 'Earlier this week',
+              items: [
+                'Roster board big separation: each venue carries its own day labels, white pill backgrounds on paper-cream.',
+                'Mobile pass on daily flows: clock-in, shift acceptance, checklist sign-off all sized for a phone.',
+                'Govee temperature hourly Cloud Scheduler + Monday weekly summary email.',
+                'Xero supplier and bill import buttons aligned; Square customer / item-sales / tips importers added.',
+                'HR privacy callouts on every record page; auth middleware now returns role-aware permission text.'
+              ]
+            },
+            {
+              date: 'Earlier',
+              items: [
+                'Suite-wide editorial design system (Cormorant Garamond + Avenir, paper-cream surfaces).',
+                'AlmaHomeBubble headers on every app, lifecycle chips (live / pilot / preview) on the switcher.',
+                'Alma Home (alma-home.web.app) with venue iPad mode and role-aware launcher tiles.',
+                'Manager dashboard wired to real data; integration health strip on Admin overview.'
+              ]
+            }
+          ];
           return (
             <section className="admin-section">
               <div className="admin-debt-card">
@@ -2817,9 +2852,67 @@ export function AdminPage({
                   ))}
                 </ul>
               </div>
+
+              <div className="admin-release-notes">
+                <header className="admin-release-head">
+                  <span className="admin-release-eyebrow">What's new</span>
+                  <h2 className="admin-release-title">Recent releases</h2>
+                  <p className="admin-release-sub">
+                    The shortlist of what shipped recently. Stays here so the team — and you — remember what changed and when.
+                  </p>
+                </header>
+                <ol className="admin-release-list">
+                  {releaseNotes.map((release) => (
+                    <li key={release.date} className="admin-release-item">
+                      <span className="admin-release-date">{release.date}</span>
+                      <ul className="admin-release-bullets">
+                        {release.items.map((line, index) => (
+                          <li key={index}>{line}</li>
+                        ))}
+                      </ul>
+                    </li>
+                  ))}
+                </ol>
+              </div>
             </section>
           );
         })()
+      ) : null}
+
+      {(isAll || isOverview) ? (
+      <section className="admin-section">
+        <div className="admin-exports-card">
+          <header className="admin-release-head">
+            <span className="admin-release-eyebrow">Scheduled exports</span>
+            <h2 className="admin-release-title">Download standard CSVs</h2>
+            <p className="admin-release-sub">
+              Manual exports today. Cloud Scheduler + Google Drive drop is the next layer — these endpoints are the foundation.
+              Pulls the last 30 days unless you change the dates in the URL.
+            </p>
+          </header>
+          <div className="admin-exports-grid">
+            {[
+              { kind: 'sales-by-day', label: 'Sales by day', detail: 'One row per venue per day with sales total.' },
+              { kind: 'wages-by-week', label: 'Wages by week', detail: 'ISO-week hours, wages, shifts per venue.' },
+              { kind: 'timesheets', label: 'Timesheets', detail: 'Approved + pending timesheets with hours and wages.' },
+              { kind: 'stocktake-variance', label: 'Stocktake variance', detail: 'Recent counts vs expected, value impact.' },
+              { kind: 'low-stock', label: 'Low stock snapshot', detail: 'Items below par level right now.' }
+            ].map((item) => (
+              <a
+                key={item.kind}
+                className="admin-link-card"
+                href={`/api/admin/exports/${item.kind}`}
+              >
+                <span>
+                  <strong>{item.label}</strong>
+                  <small>{item.detail}</small>
+                </span>
+                <IconArrowRight size={16} />
+              </a>
+            ))}
+          </div>
+        </div>
+      </section>
       ) : null}
 
       {(isAll || isOverview) ? (

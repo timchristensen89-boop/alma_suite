@@ -2289,6 +2289,151 @@ export const staffService = {
     return this.updateHrRecord(recordId, { status: 'RE_REQUESTED', documentName: '', documentUrl: '' }, actor);
   },
 
+  async submitPayChangeForApproval(recordId: string, actor: AuthUser): Promise<StaffHrRecord> {
+    // Manager (with payChanges permission) submits a DRAFT pay-change for admin approval.
+    await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    const existing = await prisma.staffHrRecord.findUnique({ where: { id: recordId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType !== 'PAY_CHANGE') {
+      throw new HttpError(400, 'Only pay-change records use the approval workflow.');
+    }
+    if (existing.status === 'APPROVED') {
+      throw new HttpError(409, 'This pay change has already been approved.');
+    }
+    if (existing.status === 'PENDING') {
+      throw new HttpError(409, 'This pay change is already pending approval.');
+    }
+    if (!existing.effectiveDate || !existing.newRateCents) {
+      throw new HttpError(400, 'Set an effective date and new rate before submitting for approval.');
+    }
+    await assertActorCanAccessStaffProfile(existing.staffProfileId, actor);
+
+    const row = await prisma.staffHrRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'PENDING',
+        updatedById: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: 'STAFF_HR_PAY_CHANGE_SUBMITTED',
+      summary: `Pay change submitted for approval: ${row.title}.`,
+      actor,
+      metadata: {
+        hrRecordId: row.id,
+        oldRateCents: row.oldRateCents,
+        newRateCents: row.newRateCents,
+        effectiveDate: row.effectiveDate?.toISOString() ?? null
+      }
+    });
+
+    return toStaffHrRecord(row);
+  },
+
+  async approvePayChange(recordId: string, actor: AuthUser): Promise<StaffHrRecord> {
+    // Admin only — separate gate from "manage + payChanges" so a manager
+    // who drafts the change cannot also approve it themselves.
+    if (!(actor.isAdmin || actor.role === 'ADMIN')) {
+      throw new HttpError(403, 'Only an Alma admin can approve a pay change.');
+    }
+    const existing = await prisma.staffHrRecord.findUnique({ where: { id: recordId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType !== 'PAY_CHANGE') {
+      throw new HttpError(400, 'Only pay-change records use the approval workflow.');
+    }
+    if (existing.status === 'APPROVED') {
+      throw new HttpError(409, 'This pay change has already been approved.');
+    }
+    if (existing.status !== 'PENDING') {
+      throw new HttpError(409, 'Submit this pay change for approval before approving it.');
+    }
+    if (existing.createdById && existing.createdById === actor.id) {
+      throw new HttpError(403, 'A pay change must be approved by someone other than the person who drafted it.');
+    }
+    if (!existing.effectiveDate || !existing.newRateCents) {
+      throw new HttpError(400, 'Effective date and new rate are required before approval.');
+    }
+
+    const row = await prisma.staffHrRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'APPROVED',
+        updatedById: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: 'STAFF_HR_PAY_CHANGE_APPROVED',
+      summary: `Pay change approved: ${row.title}.`,
+      actor,
+      metadata: {
+        hrRecordId: row.id,
+        oldRateCents: row.oldRateCents,
+        newRateCents: row.newRateCents,
+        effectiveDate: row.effectiveDate?.toISOString() ?? null,
+        createdById: row.createdById,
+        approvedById: actor.id
+      }
+    });
+
+    return toStaffHrRecord(row);
+  },
+
+  async returnPayChangeToDraft(recordId: string, actor: AuthUser): Promise<StaffHrRecord> {
+    // Manager (with payChanges permission) can re-open a PENDING change for edits.
+    // Admin can also return an APPROVED one — but in practice that's a destructive
+    // op, so we keep this scope to DRAFT/PENDING only.
+    await assertStaffHrAccess(actor, { manage: true, payChanges: true });
+    const existing = await prisma.staffHrRecord.findUnique({ where: { id: recordId } });
+    if (!existing) throw new HttpError(404, 'HR record not found');
+    if (existing.recordType !== 'PAY_CHANGE') {
+      throw new HttpError(400, 'Only pay-change records use the approval workflow.');
+    }
+    if (existing.status === 'APPROVED') {
+      throw new HttpError(409, 'Approved pay changes cannot be returned to draft.');
+    }
+    if (existing.status === 'DRAFT') {
+      return toStaffHrRecord({ ...existing, staffProfile: (await prisma.staffProfile.findUnique({ where: { id: existing.staffProfileId }, select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true } }))! });
+    }
+    await assertActorCanAccessStaffProfile(existing.staffProfileId, actor);
+
+    const row = await prisma.staffHrRecord.update({
+      where: { id: recordId },
+      data: {
+        status: 'DRAFT',
+        updatedById: actor.id
+      },
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true }
+        }
+      }
+    });
+
+    await recordStaffManagementEvent({
+      staffProfileId: row.staffProfileId,
+      eventType: 'STAFF_HR_PAY_CHANGE_RETURNED_TO_DRAFT',
+      summary: `Pay change returned to draft: ${row.title}.`,
+      actor,
+      metadata: { hrRecordId: row.id }
+    });
+
+    return toStaffHrRecord(row);
+  },
+
   async addRecord(staffProfileId: string, input: unknown, actor?: AuthUser) {
     await this.getById(staffProfileId, actor);
     const data = staffComplianceRecordInputSchema.parse(input);

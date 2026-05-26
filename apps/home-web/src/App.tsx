@@ -271,10 +271,18 @@ const VENUE_TILES: VenueTile[] = [
     accent: '#9A3A2E'
   },
   {
+    id: 'shift-wrap',
+    label: 'End of shift wrap',
+    description: 'Incidents, stock, complaints, notes',
+    href: 'https://alma-comms.web.app/handover/new',
+    glyph: 'EW',
+    accent: '#9A3A2E'
+  },
+  {
     id: 'handover',
-    label: 'Handover',
-    description: 'Shift to shift notes',
-    href: 'https://alma-comms.web.app',
+    label: 'Handover inbox',
+    description: 'Last shift notes',
+    href: 'https://alma-comms.web.app/handover',
     glyph: 'HO',
     accent: '#6E7682'
   }

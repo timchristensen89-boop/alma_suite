@@ -53,6 +53,17 @@ checklistsRouter.get('/runs', async (_req, res, next) => {
   }
 });
 
+checklistsRouter.get('/today-readiness', async (req, res, next) => {
+  try {
+    res.json(await checklistService.getTodayReadiness({
+      date: typeof req.query.date === 'string' ? req.query.date : undefined,
+      venue: typeof req.query.venue === 'string' ? req.query.venue : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 checklistsRouter.get('/shift-tasks', async (req, res, next) => {
   try {
     if (!req.user) throw new HttpError(401, 'Not authenticated');

@@ -446,3 +446,110 @@
     font-size: 13px;
   }
 }
+
+/* End-of-shift wrap form (#23). Designed for iPad portrait —
+   large tap targets, clear section dividers, restrained palette. */
+.end-of-shift-form .form-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+}
+.end-of-shift-h {
+  margin: 18px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--color-border);
+  font-family: var(--font-serif, 'Cormorant Garamond', serif);
+  font-weight: 500;
+  font-size: 18px;
+  letter-spacing: 0.01em;
+  color: var(--color-text);
+}
+.end-of-shift-h:first-of-type {
+  border-top: none;
+  padding-top: 6px;
+}
+.end-of-shift-radio-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 4px 0 8px;
+}
+.end-of-shift-radio {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  min-height: 40px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface);
+  font-size: 13.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: border-color 0.12s ease, background 0.12s ease;
+}
+.end-of-shift-radio input[type="radio"] {
+  width: 16px;
+  height: 16px;
+  min-height: 0;
+  margin: 0;
+  accent-color: var(--color-accent);
+}
+.end-of-shift-radio:has(input:checked) {
+  border-color: var(--color-accent);
+  background: rgba(158, 59, 59, 0.06);
+}
+.end-of-shift-radio.is-strict:has(input:checked) {
+  border-color: #9A3A2E;
+  background: rgba(154, 58, 46, 0.08);
+  color: #9A3A2E;
+}
+.end-of-shift-check {
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-alt, #F8F6F1);
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.end-of-shift-check input {
+  width: 18px;
+  height: 18px;
+  min-height: 0;
+  margin-right: 10px;
+  accent-color: var(--color-accent);
+}
+.end-of-shift-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+  justify-content: flex-end;
+}
+.comms-success {
+  margin: 8px 0 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  background: rgba(60, 110, 70, 0.1);
+  color: #2F5C36;
+  font-size: 13.5px;
+}
+/* iPad-friendly: bigger tap targets on the touch breakpoint. */
+@media (max-width: 920px) {
+  .end-of-shift-radio {
+    flex: 1 1 calc(50% - 8px);
+    min-height: 48px;
+    font-size: 15px;
+  }
+  .end-of-shift-form input,
+  .end-of-shift-form select,
+  .end-of-shift-form textarea {
+    min-height: 44px;
+    font-size: 15.5px;
+  }
+  .end-of-shift-actions button {
+    min-height: 48px;
+    font-size: 15px;
+  }
+}

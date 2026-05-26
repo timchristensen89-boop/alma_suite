@@ -17,6 +17,7 @@ import {
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   TopBar
 } from '@alma/ui';
@@ -503,6 +504,17 @@ function FilteredThreadsPage({ title, eyebrow, category }: { title: string; eyeb
 
   return (
     <PageShell title={title} eyebrow={eyebrow}>
+      {category === 'HANDOVER' ? (
+        <Card>
+          <div className="section-heading">
+            <div>
+              <h2>End-of-shift wrap</h2>
+              <p className="comms-muted">Structured close-of-day prompt: incidents, complaints, stock, maintenance, notes for the next shift.</p>
+            </div>
+            <NavLink className="comms-button" to="/handover/new">File shift wrap</NavLink>
+          </div>
+        </Card>
+      ) : null}
       {isLoading ? <Card><p>Loading…</p></Card> : null}
       {errorMessage ? <Card><p className="comms-error">{errorMessage}</p></Card> : null}
       {!isLoading && !errorMessage ? <ThreadList threads={displayThreads} /> : null}
@@ -853,6 +865,269 @@ function ComposePage() {
   );
 }
 
+// End-of-Shift Wrap (#23): a structured handover form the manager fills
+// at close. Saves a HANDOVER comms thread the next shift's manager sees
+// in their handover inbox. Designed for fast tap-through on an iPad.
+function EndOfShiftPage() {
+  const navigate = useNavigate();
+  const today = new Date();
+  const defaultDate = today.toISOString().slice(0, 10);
+  // Default shift type by current hour: before 16:00 → Lunch, before 22:00 → Dinner, else Late.
+  const hour = today.getHours();
+  const defaultShift = hour < 16 ? 'Lunch' : hour < 22 ? 'Dinner' : 'Late';
+
+  // Pre-fill venue from the iPad localStorage if the home-web venue mode set it.
+  const localVenue = typeof window !== 'undefined'
+    ? (window.localStorage.getItem('alma.venue.name') || '').trim()
+    : '';
+
+  const [shiftDate, setShiftDate] = useState(defaultDate);
+  const [shiftType, setShiftType] = useState(defaultShift);
+  const [venue, setVenue] = useState(localVenue);
+  const [duty, setDuty] = useState('');
+  const [covers, setCovers] = useState('');
+  const [sales, setSales] = useState('');
+  const [staffOnLate, setStaffOnLate] = useState('');
+  const [incidentsHappened, setIncidentsHappened] = useState<'none' | 'minor' | 'reportable'>('none');
+  const [incidentsDetail, setIncidentsDetail] = useState('');
+  const [stockIssues, setStockIssues] = useState('');
+  const [complaints, setComplaints] = useState<'none' | 'resolved' | 'open'>('none');
+  const [complaintDetail, setComplaintDetail] = useState('');
+  const [maintenance, setMaintenance] = useState('');
+  const [bookingsTomorrow, setBookingsTomorrow] = useState('');
+  const [noteForNext, setNoteForNext] = useState('');
+  const [allLockedUp, setAllLockedUp] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [tone, setTone] = useState<'success' | 'error'>('success');
+
+  // Compose a clean markdown-ish body so the next shift can scan quickly.
+  function buildBody() {
+    const lines: string[] = [];
+    lines.push(`Shift: ${shiftType} · ${shiftDate}${venue ? ` · ${venue}` : ''}`);
+    lines.push(`Duty manager: ${duty || '—'}`);
+    lines.push('');
+    lines.push('Service');
+    lines.push(`  Covers: ${covers || '—'}`);
+    lines.push(`  Sales: ${sales || '—'}`);
+    lines.push(`  Staff staying late: ${staffOnLate || '—'}`);
+    lines.push('');
+    lines.push('Incidents');
+    if (incidentsHappened === 'none') {
+      lines.push('  None.');
+    } else {
+      lines.push(`  ${incidentsHappened === 'reportable' ? 'REPORTABLE — also log in Compliance · Incidents.' : 'Minor.'} ${incidentsDetail || ''}`.trim());
+    }
+    lines.push('');
+    lines.push('Customer complaints');
+    if (complaints === 'none') {
+      lines.push('  None.');
+    } else {
+      lines.push(`  ${complaints === 'open' ? 'OPEN — follow up tomorrow.' : 'Resolved tonight.'} ${complaintDetail || ''}`.trim());
+    }
+    lines.push('');
+    lines.push('Stock — low or out');
+    lines.push(`  ${stockIssues || 'Nothing flagged.'}`);
+    lines.push('');
+    lines.push('Maintenance / equipment');
+    lines.push(`  ${maintenance || 'Nothing flagged.'}`);
+    lines.push('');
+    lines.push('Tomorrow / next shift');
+    lines.push(`  Bookings: ${bookingsTomorrow || '—'}`);
+    lines.push(`  Notes: ${noteForNext || '—'}`);
+    lines.push('');
+    lines.push(`Locked up correctly: ${allLockedUp ? 'YES' : 'NO — please double-check.'}`);
+    return lines.join('\n');
+  }
+
+  function subjectLine() {
+    const v = venue || 'Venue';
+    return `End of shift — ${v} — ${shiftType} ${shiftDate}`;
+  }
+
+  // Pre-submit validation: the manager must at least say who was DM and lock-up state.
+  function validate(): string | null {
+    if (!duty.trim()) return 'Enter who was duty manager.';
+    if (!shiftDate.trim()) return 'Pick a shift date.';
+    if (incidentsHappened !== 'none' && !incidentsDetail.trim()) return 'Describe the incident before filing.';
+    if (complaints !== 'none' && !complaintDetail.trim()) return 'Describe the complaint before filing.';
+    return null;
+  }
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    const error = validate();
+    if (error) {
+      setTone('error');
+      setMessage(error);
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const priority = incidentsHappened === 'reportable' || complaints === 'open' ? 'HIGH' : 'NORMAL';
+      const actionRequired = incidentsHappened === 'reportable' || complaints === 'open';
+      // Fan out to the venue managers group, plus anyone with manager role at this venue.
+      // The /api/comms/handover endpoint also auto-routes to handover category.
+      await api<{ thread: { id: string } }>('/comms/handover', {
+        method: 'POST',
+        body: JSON.stringify({
+          subject: subjectLine(),
+          body: buildBody(),
+          venue: venue || undefined,
+          priority,
+          actionRequired,
+          managerVenues: venue ? [venue] : []
+        })
+      });
+      setTone('success');
+      setMessage('Shift wrap filed. Next shift can see it in Handover.');
+      // Brief delay so the success message is visible before navigation.
+      setTimeout(() => navigate('/handover'), 700);
+    } catch (err) {
+      setTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not file shift wrap.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <PageShell title="End-of-shift wrap" eyebrow="Handover">
+      <Card>
+        <p className="comms-muted">
+          Run this in the last 15 minutes of service. It captures what tomorrow needs to know so the
+          handover isn't lost in a text message. Reportable incidents and open complaints will be flagged
+          as <strong>HIGH</strong> priority so the next shift sees them first.
+        </p>
+      </Card>
+      <Card>
+        <form className="comms-form end-of-shift-form" onSubmit={submit}>
+          <div className="form-grid">
+            <label>
+              Shift date
+              <input type="date" value={shiftDate} onChange={(event) => setShiftDate(event.target.value)} required />
+            </label>
+            <label>
+              Shift type
+              <select value={shiftType} onChange={(event) => setShiftType(event.target.value)}>
+                <option value="Lunch">Lunch</option>
+                <option value="Dinner">Dinner</option>
+                <option value="Late">Late / close</option>
+                <option value="Day">All-day</option>
+              </select>
+            </label>
+            <label>
+              Venue
+              <input value={venue} onChange={(event) => setVenue(event.target.value)} placeholder="e.g. Alma Avalon" />
+            </label>
+            <label>
+              Duty manager
+              <input value={duty} onChange={(event) => setDuty(event.target.value)} placeholder="Your name" required />
+            </label>
+          </div>
+
+          <h3 className="end-of-shift-h">Service</h3>
+          <div className="form-grid">
+            <label>
+              Covers
+              <input value={covers} onChange={(event) => setCovers(event.target.value)} placeholder="e.g. 142" inputMode="numeric" />
+            </label>
+            <label>
+              Sales
+              <input value={sales} onChange={(event) => setSales(event.target.value)} placeholder="e.g. $8,420" inputMode="decimal" />
+            </label>
+            <label>
+              Staff staying late
+              <input value={staffOnLate} onChange={(event) => setStaffOnLate(event.target.value)} placeholder="Names + reason" />
+            </label>
+          </div>
+
+          <h3 className="end-of-shift-h">Incidents</h3>
+          <div className="end-of-shift-radio-row">
+            <label className="end-of-shift-radio">
+              <input type="radio" name="incidents" checked={incidentsHappened === 'none'} onChange={() => setIncidentsHappened('none')} />
+              <span>Nothing to report</span>
+            </label>
+            <label className="end-of-shift-radio">
+              <input type="radio" name="incidents" checked={incidentsHappened === 'minor'} onChange={() => setIncidentsHappened('minor')} />
+              <span>Minor — handled in-house</span>
+            </label>
+            <label className="end-of-shift-radio is-strict">
+              <input type="radio" name="incidents" checked={incidentsHappened === 'reportable'} onChange={() => setIncidentsHappened('reportable')} />
+              <span>Reportable — also file in Compliance</span>
+            </label>
+          </div>
+          {incidentsHappened !== 'none' ? (
+            <label>
+              What happened
+              <textarea value={incidentsDetail} onChange={(event) => setIncidentsDetail(event.target.value)} rows={3} placeholder="Time, what happened, who was involved, what action was taken." required />
+            </label>
+          ) : null}
+
+          <h3 className="end-of-shift-h">Customer complaints</h3>
+          <div className="end-of-shift-radio-row">
+            <label className="end-of-shift-radio">
+              <input type="radio" name="complaints" checked={complaints === 'none'} onChange={() => setComplaints('none')} />
+              <span>None</span>
+            </label>
+            <label className="end-of-shift-radio">
+              <input type="radio" name="complaints" checked={complaints === 'resolved'} onChange={() => setComplaints('resolved')} />
+              <span>Resolved tonight</span>
+            </label>
+            <label className="end-of-shift-radio is-strict">
+              <input type="radio" name="complaints" checked={complaints === 'open'} onChange={() => setComplaints('open')} />
+              <span>Open — needs follow-up</span>
+            </label>
+          </div>
+          {complaints !== 'none' ? (
+            <label>
+              Complaint detail
+              <textarea value={complaintDetail} onChange={(event) => setComplaintDetail(event.target.value)} rows={3} placeholder="Guest name (if appropriate), table, complaint, how it was handled, what's left to do." required />
+            </label>
+          ) : null}
+
+          <h3 className="end-of-shift-h">Stock — low or out</h3>
+          <label>
+            What's running low
+            <textarea value={stockIssues} onChange={(event) => setStockIssues(event.target.value)} rows={3} placeholder="e.g. 86 Riesling by-the-glass · low on chips · out of vegan brownie" />
+          </label>
+
+          <h3 className="end-of-shift-h">Maintenance & equipment</h3>
+          <label>
+            Anything broken / needs a tradie?
+            <textarea value={maintenance} onChange={(event) => setMaintenance(event.target.value)} rows={2} placeholder="e.g. fridge #2 not holding temp · dishwasher leaking · POS terminal 4 cracked" />
+          </label>
+
+          <h3 className="end-of-shift-h">Tomorrow / next shift</h3>
+          <div className="form-grid">
+            <label>
+              Bookings tomorrow
+              <input value={bookingsTomorrow} onChange={(event) => setBookingsTomorrow(event.target.value)} placeholder="e.g. 60 covers, two large tables" />
+            </label>
+            <label>
+              Notes for next shift
+              <input value={noteForNext} onChange={(event) => setNoteForNext(event.target.value)} placeholder="Heads-up worth saying" />
+            </label>
+          </div>
+
+          <label className="check-row end-of-shift-check">
+            <input type="checkbox" checked={allLockedUp} onChange={(event) => setAllLockedUp(event.target.checked)} />
+            All doors, safes and gas locked / off
+          </label>
+
+          {message ? <p className={tone === 'error' ? 'comms-error' : 'comms-success'}>{message}</p> : null}
+
+          <div className="end-of-shift-actions">
+            <button type="button" className="comms-button ghost" onClick={() => navigate('/handover')}>Cancel</button>
+            <button type="submit" disabled={busy}>{busy ? 'Filing…' : 'File shift wrap'}</button>
+          </div>
+        </form>
+      </Card>
+    </PageShell>
+  );
+}
+
 function SettingsPage() {
   return (
     <PageShell title="Comms settings" eyebrow="Admin only">
@@ -1020,6 +1295,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
         <div className="topbar-action-group">
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="comms" />
+          <SuiteFeedbackWidget appId="COMMS" api={api} userName={user?.name ?? undefined} />
           <CommsUserMenu
             user={user}
             adminUrl={adminUrl}
@@ -1043,6 +1319,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
         <Route path="/venue" element={<FilteredThreadsPage title="Venue messages" eyebrow="Venue comms" category="VENUE" />} />
         <Route path="/announcements" element={<FilteredThreadsPage title="Announcements" eyebrow="Broadcasts" category="ANNOUNCEMENT" />} />
         <Route path="/handover" element={<FilteredThreadsPage title="Shift handover" eyebrow="Handover" category="HANDOVER" />} />
+        <Route path="/handover/new" element={<EndOfShiftPage />} />
         <Route path="/tasks" element={<TasksPage />} />
         <Route path="/threads/:id" element={<ThreadDetailPage />} />
         <Route path="/compose" element={<ComposePage />} />

@@ -210,6 +210,119 @@ export const checklistService = {
     });
   },
 
+  // Venue readiness (#20/#21): for a given day, return one summary row per
+  // template, marked green / amber / red. Templates that don't have a run
+  // for that day yet are returned as "missing" so the manager sees the gap.
+  // Optional venue filter narrows to templates with that `area` value.
+  async getTodayReadiness(options: { date?: string; venue?: string } = {}) {
+    const target = options.date ? new Date(options.date) : new Date();
+    const startOfDay = new Date(target);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(startOfDay);
+    endOfDay.setDate(endOfDay.getDate() + 1);
+
+    const venueFilter = options.venue?.trim() || null;
+
+    const templates = await prisma.checklistTemplate.findMany({
+      where: venueFilter
+        ? { OR: [{ area: venueFilter }, { area: 'Whole venue' }, { area: null }] }
+        : {},
+      orderBy: [{ name: 'asc' }],
+      include: { items: { select: { id: true } } }
+    });
+
+    const runs = await prisma.checklistRun.findMany({
+      where: {
+        runDate: { gte: startOfDay, lt: endOfDay },
+        ...(venueFilter ? { OR: [{ area: venueFilter }, { area: null }] } : {})
+      },
+      orderBy: [{ updatedAt: 'desc' }],
+      include: { items: true, template: true }
+    });
+
+    const lowerName = (name: string) => name.toLowerCase();
+
+    type ReadinessRow = {
+      templateId: string;
+      templateName: string;
+      area: string | null;
+      // Buckets the template into "opening" / "closing" / "service" so the UI
+      // can split into the two columns the user asked for.
+      kind: 'opening' | 'closing' | 'service';
+      itemsTotal: number;
+      itemsPassed: number;
+      itemsFailed: number;
+      itemsPending: number;
+      // GREEN: all items PASS. AMBER: in progress / no failures. RED: any FAIL.
+      // MISSING: no run for today yet.
+      status: 'GREEN' | 'AMBER' | 'RED' | 'MISSING';
+      runId: string | null;
+      updatedAt: string | null;
+      performedBy: string | null;
+    };
+
+    function classify(name: string): ReadinessRow['kind'] {
+      const lower = lowerName(name);
+      if (lower.includes('open')) return 'opening';
+      if (lower.includes('clos')) return 'closing';
+      return 'service';
+    }
+
+    const rows: ReadinessRow[] = templates.map((template) => {
+      const run = runs.find((entry) => entry.templateId === template.id) ?? null;
+      const items = run?.items ?? [];
+      const itemsTotal = items.length || template.items.length;
+      const itemsPassed = items.filter((item) => item.result === 'PASS').length;
+      const itemsFailed = items.filter((item) => item.result === 'FAIL').length;
+      const itemsPending = Math.max(0, itemsTotal - itemsPassed - itemsFailed - items.filter((item) => item.result === 'NA').length);
+
+      let status: ReadinessRow['status'];
+      if (!run) status = 'MISSING';
+      else if (itemsFailed > 0) status = 'RED';
+      else if (itemsPassed > 0 && itemsPending === 0) status = 'GREEN';
+      else status = 'AMBER';
+
+      return {
+        templateId: template.id,
+        templateName: template.name,
+        area: template.area ?? null,
+        kind: classify(template.name),
+        itemsTotal,
+        itemsPassed,
+        itemsFailed,
+        itemsPending,
+        status,
+        runId: run?.id ?? null,
+        updatedAt: run?.updatedAt?.toISOString() ?? null,
+        performedBy: run?.performedBy ?? null
+      };
+    });
+
+    // Roll up to an overall readiness colour so the venue can hang a green
+    // banner / amber banner / red banner above the checklist grid.
+    const opening = rows.filter((row) => row.kind === 'opening');
+    const closing = rows.filter((row) => row.kind === 'closing');
+    function rollup(group: ReadinessRow[]): ReadinessRow['status'] {
+      if (group.length === 0) return 'GREEN'; // nothing to do = green
+      if (group.some((row) => row.status === 'RED')) return 'RED';
+      if (group.some((row) => row.status === 'MISSING')) return 'AMBER';
+      if (group.some((row) => row.status === 'AMBER')) return 'AMBER';
+      return 'GREEN';
+    }
+
+    return {
+      date: startOfDay.toISOString().slice(0, 10),
+      venue: venueFilter,
+      generatedAt: new Date().toISOString(),
+      overall: {
+        opening: rollup(opening),
+        closing: rollup(closing),
+        overall: rollup(rows)
+      },
+      rows
+    };
+  },
+
   async getRunById(id: string) {
     const run = await prisma.checklistRun.findUnique({
       where: { id },

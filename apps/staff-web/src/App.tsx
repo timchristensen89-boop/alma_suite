@@ -78,6 +78,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   Textarea,
   TopBar,
@@ -94,6 +95,7 @@ import {
   IconBriefcase,
   IconCalendarCheck,
   IconCalendarClock,
+  IconChecklist,
   IconClock,
   IconDashboard,
   IconFileLock,
@@ -290,6 +292,18 @@ const NAV_ITEMS = [
     description: 'Staff command centre',
     icon: <IconUsers />,
     end: true
+  },
+  {
+    to: '/brief',
+    label: 'Daily brief',
+    description: 'Your day in 10 seconds — sales, wages, approvals, heads-ups',
+    icon: <IconDashboard />
+  },
+  {
+    to: '/readiness',
+    label: 'Readiness',
+    description: 'Today’s opening, service and closing checklists at a glance',
+    icon: <IconChecklist />
   },
   {
     to: '/manager',
@@ -661,6 +675,12 @@ function canAccessPayChangeHr(user: ReturnType<typeof useAuth>['user']) {
   );
 }
 
+// A pay change must be approved by an admin who didn't draft it (separation of duties).
+// Anyone with the pay-changes permission can draft and submit; only admins can approve.
+function canApprovePayChange(user: ReturnType<typeof useAuth>['user']) {
+  return Boolean(user && (user.isAdmin || user.role === 'ADMIN'));
+}
+
 function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
   if (user?.accountType === 'VENUE_DEVICE') return DEVICE_NAV_ITEMS;
   if (user?.role === 'STAFF') return STAFF_MEMBER_NAV_ITEMS;
@@ -748,6 +768,11 @@ function TopBarWithContext() {
               canAnnounce={canManageCommunications(user)}
             />
             <SuiteNotificationsWidget api={api} currentApp="staff" />
+            <SuiteFeedbackWidget
+              appId="STAFF"
+              api={api}
+              userName={`${user.firstName} ${user.lastName}`}
+            />
             <Button
               size="sm"
               variant="secondary"
@@ -7566,7 +7591,9 @@ function emptyHrDraft(staff: StaffProfile[], type: StaffHrRecordType): HrRecordD
     staffProfileId: staff.find((member) => member.employmentStatus !== 'ARCHIVED')?.id ?? '',
     recordType: type,
     title: defaultHrTitle(type),
-    status: type === 'CONTRACT' ? 'ISSUED' : 'STORED',
+    // Pay changes flow DRAFT → PENDING → APPROVED. Contracts default to ISSUED.
+    // Everything else lands as STORED.
+    status: type === 'CONTRACT' ? 'ISSUED' : type === 'PAY_CHANGE' ? 'DRAFT' : 'STORED',
     issueDate: toDateInput(new Date()),
     effectiveDate: '',
     expiryDate: '',
@@ -7633,7 +7660,9 @@ function HrSectionPage({
   mode,
   loading,
   reload,
-  canManage
+  canManage,
+  canApprove = false,
+  currentUserId = ''
 }: {
   staff: StaffProfile[];
   records: StaffHrRecord[];
@@ -7642,6 +7671,10 @@ function HrSectionPage({
   loading: boolean;
   reload: () => Promise<void>;
   canManage: boolean;
+  // Pay-change-only workflow props. Approval is admin-only and must be a
+  // different user from the manager who drafted (separation of duties).
+  canApprove?: boolean;
+  currentUserId?: string;
 }) {
   const [staffFilter, setStaffFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
@@ -7708,10 +7741,23 @@ function HrSectionPage({
       setMessage('Title is required.');
       return;
     }
-    if ((mode === 'pay-changes') && (!draft.effectiveDate || !draft.documentUrl)) {
-      setMessageTone('error');
-      setMessage('Record the effective date and upload the approved letter before filing.');
-      return;
+    if (mode === 'pay-changes') {
+      if (!draft.effectiveDate) {
+        setMessageTone('error');
+        setMessage('Set the effective date before filing this pay change.');
+        return;
+      }
+      if (!draft.newRate) {
+        setMessageTone('error');
+        setMessage('Set the new rate before filing this pay change.');
+        return;
+      }
+      // Letter attachment can be uploaded later, but is required before APPROVED.
+      if ((draft.status === 'APPROVED' || draft.status === 'PENDING') && !draft.documentUrl) {
+        setMessageTone('error');
+        setMessage('Attach the approved pay-change letter before marking this pending or approved.');
+        return;
+      }
     }
 
     setSaving(true);
@@ -7781,6 +7827,68 @@ function HrSectionPage({
     }
   }
 
+  // Pay-change workflow actions. The API enforces real permissions and the
+  // separation-of-duties rule, these helpers just submit cleanly and reload.
+  async function submitForApproval(record: StaffHrRecord) {
+    if (!record.effectiveDate || record.newRateCents === null) {
+      setMessageTone('error');
+      setMessage('Set the effective date and new rate before submitting for approval.');
+      return;
+    }
+    if (!window.confirm(`Submit "${record.title}" for admin approval? You won't be able to edit it again until an admin returns it to draft.`)) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>(`/api/staff/hr/records/${record.id}/submit-for-approval`, { method: 'POST' });
+      setMessageTone('success');
+      setMessage('Submitted. An Alma admin will be notified to approve.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not submit for approval.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function approvePayChange(record: StaffHrRecord) {
+    const rateLine = record.newRateCents !== null
+      ? `new rate ${formatCents(record.newRateCents)}`
+      : 'new rate not recorded';
+    const effective = record.effectiveDate ? new Date(record.effectiveDate).toLocaleDateString() : 'no effective date';
+    if (!window.confirm(`Approve "${record.title}"?\n\n${rateLine}, effective ${effective}.\n\nAfter approval, remember to update Xero pay rates and Deputy if you use it. This is the auditable approval — keep the signed letter on file.`)) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>(`/api/staff/hr/records/${record.id}/approve`, { method: 'POST' });
+      setMessageTone('success');
+      setMessage('Approved. Update Xero pay rates next.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not approve.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function returnToDraft(record: StaffHrRecord) {
+    if (!window.confirm(`Return "${record.title}" to draft so it can be edited?`)) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api<StaffHrRecord>(`/api/staff/hr/records/${record.id}/return-to-draft`, { method: 'POST' });
+      setMessageTone('success');
+      setMessage('Returned to draft.');
+      await reload();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not return to draft.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   // Per-mode privacy callout — every HR surface should explicitly say
   // who can see it, audited on view (#129 from the High School review).
   const privacyByMode: Record<typeof mode, { tag: string; line: string } | null> = {
@@ -7820,6 +7928,24 @@ function HrSectionPage({
           <span className="hr-privacy-callout-line">{privacy.line}</span>
         </div>
       ) : null}
+      {mode === 'pay-changes' ? (
+        <div className="pay-change-workflow">
+          <div className="pay-change-workflow-step">
+            <span className="pay-change-workflow-step-num">1</span>
+            <span><strong>Draft</strong><br />Manager fills the form, attaches the letter once signed.</span>
+          </div>
+          <span className="pay-change-workflow-arrow">→</span>
+          <div className="pay-change-workflow-step">
+            <span className="pay-change-workflow-step-num">2</span>
+            <span><strong>Submit for approval</strong><br />Sends to an admin. Another admin must review (not the drafter).</span>
+          </div>
+          <span className="pay-change-workflow-arrow">→</span>
+          <div className="pay-change-workflow-step">
+            <span className="pay-change-workflow-step-num">3</span>
+            <span><strong>Approve</strong><br />Admin approves. Then update Xero pay rates and Deputy.</span>
+          </div>
+        </div>
+      ) : null}
       {mode === 'contracts' && canManage ? (
         <Card title="Contract templates" subtitle="Admin owns editable HR templates and legal review warnings. Staff HR stores issued and signed final documents.">
           <div className="toolbar-right">
@@ -7837,8 +7963,17 @@ function HrSectionPage({
       ) : null}
       <div className="stats-grid">
         <StatCard label="Records" value={sectionRecords.length} hint={type ? hrTypeLabel(type) : 'All HR documents'} loading={loading} />
-        <StatCard label="Needs action" value={sectionRecords.filter((record) => record.status === 'RE_REQUESTED' || record.status === 'EXPIRED').length} hint="Replacement or expiry" loading={loading} />
-        <StatCard label="With document" value={sectionRecords.filter((record) => record.documentUrl).length} hint="Viewable files" loading={loading} />
+        {mode === 'pay-changes' ? (
+          <>
+            <StatCard label="Pending approval" value={sectionRecords.filter((record) => record.status === 'PENDING').length} hint="Awaiting admin sign-off" loading={loading} />
+            <StatCard label="Drafts" value={sectionRecords.filter((record) => record.status === 'DRAFT').length} hint="Not yet submitted" loading={loading} />
+          </>
+        ) : (
+          <>
+            <StatCard label="Needs action" value={sectionRecords.filter((record) => record.status === 'RE_REQUESTED' || record.status === 'EXPIRED').length} hint="Replacement or expiry" loading={loading} />
+            <StatCard label="With document" value={sectionRecords.filter((record) => record.documentUrl).length} hint="Viewable files" loading={loading} />
+          </>
+        )}
       </div>
 
       {showCreateForm ? (
@@ -7855,7 +7990,11 @@ function HrSectionPage({
               {!type ? (
                 <Select label="Document type" value={draft.recordType} onChange={(event) => updateDraft('recordType', event.currentTarget.value as StaffHrRecordType)} options={HR_RECORD_TYPE_OPTIONS.map((item) => ({ label: hrTypeLabel(item), value: item }))} />
               ) : null}
-              <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffHrRecordStatus)} options={HR_RECORD_STATUS_OPTIONS.map((item) => ({ label: item.replaceAll('_', ' '), value: item }))} />
+              {mode === 'pay-changes' ? (
+                <Input label="Status" value="Draft" readOnly />
+              ) : (
+                <Select label="Status" value={draft.status} onChange={(event) => updateDraft('status', event.currentTarget.value as StaffHrRecordStatus)} options={HR_RECORD_STATUS_OPTIONS.map((item) => ({ label: item.replaceAll('_', ' '), value: item }))} />
+              )}
               <Input label="Title" value={draft.title} onChange={(event) => updateDraft('title', event.currentTarget.value)} />
               <Input label="Issue date" type="date" value={draft.issueDate} onChange={(event) => updateDraft('issueDate', event.currentTarget.value)} />
               <Input label="Effective date" type="date" value={draft.effectiveDate} onChange={(event) => updateDraft('effectiveDate', event.currentTarget.value)} />
@@ -7916,8 +8055,14 @@ function HrSectionPage({
           emptyTitle="No HR records found"
           canManage={canManage}
           saving={saving}
+          mode={mode}
+          canApprove={canApprove}
+          currentUserId={currentUserId}
           onRemoveDocument={removeDocument}
           onRequestDocument={requestDocument}
+          onSubmitForApproval={mode === 'pay-changes' ? submitForApproval : undefined}
+          onApprovePayChange={mode === 'pay-changes' ? approvePayChange : undefined}
+          onReturnToDraft={mode === 'pay-changes' ? returnToDraft : undefined}
         />
         {!showCreateForm ? <ActionFeedback message={message} tone={messageTone} /> : null}
       </Card>
@@ -7930,23 +8075,46 @@ function HrRecordList({
   emptyTitle,
   canManage = false,
   saving = false,
+  mode,
+  canApprove = false,
+  currentUserId = '',
   onRemoveDocument,
-  onRequestDocument
+  onRequestDocument,
+  onSubmitForApproval,
+  onApprovePayChange,
+  onReturnToDraft
 }: {
   records: StaffHrRecord[];
   emptyTitle: string;
   canManage?: boolean;
   saving?: boolean;
+  mode?: 'contracts' | 'warnings' | 'pay-changes' | 'right-to-work' | 'documents';
+  canApprove?: boolean;
+  currentUserId?: string;
   onRemoveDocument?: (record: StaffHrRecord) => Promise<void>;
   onRequestDocument?: (record: StaffHrRecord) => Promise<void>;
+  onSubmitForApproval?: (record: StaffHrRecord) => Promise<void>;
+  onApprovePayChange?: (record: StaffHrRecord) => Promise<void>;
+  onReturnToDraft?: (record: StaffHrRecord) => Promise<void>;
 }) {
   if (!records.length) {
     return <EmptyState title={emptyTitle} description="HR records filed here stay separate from normal staff compliance documents." />;
   }
 
+  const isPayChangePage = mode === 'pay-changes';
+
   return (
     <div className="staff-list">
-      {records.map((record) => (
+      {records.map((record) => {
+        const isPayChange = record.recordType === 'PAY_CHANGE';
+        // Separation of duties: the manager who drafted cannot approve their own change.
+        const draftedByMe = isPayChange && currentUserId && record.createdById === currentUserId;
+        const canShowSubmit = isPayChange && canManage && onSubmitForApproval && (record.status === 'DRAFT' || record.status === 'RE_REQUESTED');
+        const canShowApprove = isPayChange && canApprove && onApprovePayChange && record.status === 'PENDING' && !draftedByMe;
+        const canShowReturn = isPayChange && canManage && onReturnToDraft && record.status === 'PENDING';
+        const blockedBySeparation = isPayChange && canApprove && record.status === 'PENDING' && draftedByMe;
+
+        return (
         <div key={record.id} className="staff-expiry-row">
           <span>
             <strong>{record.title}</strong>
@@ -7954,7 +8122,7 @@ function HrRecordList({
             {record.effectiveDate ? <span className="subtle">Effective {new Date(record.effectiveDate).toLocaleDateString()}</span> : null}
             {record.expiryDate ? <span className="subtle">Expires {new Date(record.expiryDate).toLocaleDateString()}</span> : null}
             {record.followUpDate ? <span className="subtle">Follow up {new Date(record.followUpDate).toLocaleDateString()}</span> : null}
-            {record.recordType === 'PAY_CHANGE' ? (
+            {isPayChange ? (
               <span className="subtle">
                 {record.oldRateCents !== null ? `Old ${formatCents(record.oldRateCents)}` : 'Old rate not recorded'}
                 {' -> '}
@@ -7965,22 +8133,53 @@ function HrRecordList({
             {record.documentName ? <span className="subtle">{record.documentName}</span> : null}
             <StaffDocumentViewLink documentUrl={record.documentUrl} />
             {record.notes ? <span className="subtle">{record.notes}</span> : null}
+            {isPayChange ? (
+              <span className="subtle">
+                {record.createdById ? `Drafted by ${record.createdById === currentUserId ? 'you' : 'a manager'}` : 'Drafted'}
+                {' on '}
+                {new Date(record.createdAt).toLocaleDateString()}
+                {record.updatedById && record.updatedById !== record.createdById && record.status === 'APPROVED'
+                  ? ` · Approved ${new Date(record.updatedAt).toLocaleDateString()}${record.updatedById === currentUserId ? ' by you' : ''}`
+                  : ''}
+              </span>
+            ) : null}
+            {blockedBySeparation ? (
+              <span className="subtle" style={{ color: '#7a1f3d' }}>
+                You drafted this pay change, so another admin must approve it.
+              </span>
+            ) : null}
           </span>
           <span className="invite-row-actions">
             <Badge tone={hrStatusTone(record.status)}>{record.status.replaceAll('_', ' ')}</Badge>
-            {canManage && record.documentUrl && onRemoveDocument ? (
+            {canShowSubmit ? (
+              <Button type="button" size="sm" disabled={saving} onClick={() => void onSubmitForApproval!(record)}>
+                Submit for approval
+              </Button>
+            ) : null}
+            {canShowApprove ? (
+              <Button type="button" size="sm" disabled={saving} onClick={() => void onApprovePayChange!(record)}>
+                Approve pay change
+              </Button>
+            ) : null}
+            {canShowReturn ? (
+              <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void onReturnToDraft!(record)}>
+                Return to draft
+              </Button>
+            ) : null}
+            {canManage && record.documentUrl && onRemoveDocument && !(isPayChangePage && record.status === 'APPROVED') ? (
               <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void onRemoveDocument(record)}>
                 Remove document
               </Button>
             ) : null}
-            {canManage && onRequestDocument ? (
+            {canManage && onRequestDocument && !(isPayChangePage && record.status === 'APPROVED') ? (
               <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void onRequestDocument(record)}>
                 Re-request
               </Button>
             ) : null}
           </span>
         </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -12381,6 +12580,433 @@ function StaffMemberTipsPage() {
   );
 }
 
+// Venue Readiness (#20/#21) — green/amber/red checklist status for today.
+// Built on the existing ChecklistRun data; the API method is
+// /api/checklists/today-readiness?date=&venue=.
+type ReadinessRow = {
+  templateId: string;
+  templateName: string;
+  area: string | null;
+  kind: 'opening' | 'closing' | 'service';
+  itemsTotal: number;
+  itemsPassed: number;
+  itemsFailed: number;
+  itemsPending: number;
+  status: 'GREEN' | 'AMBER' | 'RED' | 'MISSING';
+  runId: string | null;
+  updatedAt: string | null;
+  performedBy: string | null;
+};
+
+type ReadinessPayload = {
+  date: string;
+  venue: string | null;
+  generatedAt: string;
+  overall: { opening: ReadinessRow['status']; closing: ReadinessRow['status']; overall: ReadinessRow['status'] };
+  rows: ReadinessRow[];
+};
+
+function readinessTone(status: ReadinessRow['status']): 'positive' | 'warning' | 'danger' | 'muted' {
+  if (status === 'GREEN') return 'positive';
+  if (status === 'AMBER') return 'warning';
+  if (status === 'RED') return 'danger';
+  return 'muted'; // MISSING
+}
+
+function readinessLabel(status: ReadinessRow['status']): string {
+  if (status === 'GREEN') return 'Ready';
+  if (status === 'AMBER') return 'In progress';
+  if (status === 'RED') return 'Failed item';
+  return 'Not started';
+}
+
+function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
+  const [payload, setPayload] = useState<ReadinessPayload | null>(null);
+  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [venue, setVenue] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const venueOptions = useMemo(
+    () => [
+      { label: 'All venues', value: '' },
+      ...uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((item) => ({ label: item, value: item }))
+    ],
+    [staff]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ date });
+      if (venue) params.set('venue', venue);
+      const data = await api<ReadinessPayload>(`/api/checklists/today-readiness?${params.toString()}`);
+      setPayload(data);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load venue readiness.');
+    } finally {
+      setLoading(false);
+    }
+  }, [date, venue]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    // Auto-refresh once every two minutes — readiness changes as items are
+    // ticked off, but we don't need second-by-second polling.
+    const id = setInterval(() => { void load(); }, 120_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const openingRows = payload?.rows.filter((row) => row.kind === 'opening') ?? [];
+  const closingRows = payload?.rows.filter((row) => row.kind === 'closing') ?? [];
+  const serviceRows = payload?.rows.filter((row) => row.kind === 'service') ?? [];
+
+  function renderGroup(title: string, subtitle: string, rows: ReadinessRow[], rollup: ReadinessRow['status'] | undefined) {
+    return (
+      <Card>
+        <div className="readiness-group-head">
+          <div>
+            <span className="readiness-eyebrow">{title}</span>
+            <p className="readiness-subtitle">{subtitle}</p>
+          </div>
+          {rollup ? (
+            <span className={`readiness-rollup is-${rollup.toLowerCase()}`}>
+              <span className="readiness-rollup-dot" aria-hidden="true" />
+              {readinessLabel(rollup)}
+            </span>
+          ) : null}
+        </div>
+        {rows.length ? (
+          <ul className="readiness-list">
+            {rows.map((row) => (
+              <li key={row.templateId} className={`readiness-row is-${row.status.toLowerCase()}`}>
+                <span className="readiness-row-dot" aria-hidden="true" />
+                <span className="readiness-row-text">
+                  <strong>{row.templateName}</strong>
+                  <span className="subtle">
+                    {row.area || 'Whole venue'}
+                    {' · '}
+                    {row.itemsPassed}/{row.itemsTotal} done
+                    {row.itemsFailed > 0 ? ` · ${row.itemsFailed} failed` : ''}
+                    {row.performedBy ? ` · ${row.performedBy}` : ''}
+                    {row.updatedAt ? ` · updated ${new Date(row.updatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}` : ''}
+                  </span>
+                </span>
+                <span className="readiness-row-status">
+                  <Badge tone={readinessTone(row.status)}>{readinessLabel(row.status)}</Badge>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => {
+                      // Compliance app hosts the checklist runs. Deep-link if we have a run id,
+                      // otherwise drop the manager into the checklists landing for that template.
+                      const base = 'https://alma-compliance.web.app';
+                      window.location.href = row.runId ? `${base}/checklists/runs/${row.runId}` : `${base}/checklists`;
+                    }}
+                  >
+                    Open
+                  </Button>
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="subtle">No {title.toLowerCase()} checklists scheduled for today.</p>
+        )}
+      </Card>
+    );
+  }
+
+  return (
+    <div className="page-stack readiness-page">
+      <PageHeader
+        eyebrow="Venue readiness"
+        title="Are we ready to open / close?"
+        description="Today's checklists at a glance. Green = done, amber = in progress, red = failed item, grey = not started."
+      />
+
+      <Card>
+        <div className="daily-brief-controls">
+          <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+          <Button type="button" variant="secondary" onClick={() => { void load(); }} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </Card>
+
+      {error ? <Card><p className="comms-error">{error}</p></Card> : null}
+
+      {payload ? (
+        <div className="readiness-banners">
+          <div className={`readiness-banner is-${payload.overall.opening.toLowerCase()}`}>
+            <span className="readiness-banner-tag">Opening</span>
+            <span className="readiness-banner-label">{readinessLabel(payload.overall.opening)}</span>
+          </div>
+          <div className={`readiness-banner is-${payload.overall.closing.toLowerCase()}`}>
+            <span className="readiness-banner-tag">Closing</span>
+            <span className="readiness-banner-label">{readinessLabel(payload.overall.closing)}</span>
+          </div>
+          <div className={`readiness-banner is-${payload.overall.overall.toLowerCase()}`}>
+            <span className="readiness-banner-tag">Overall</span>
+            <span className="readiness-banner-label">{readinessLabel(payload.overall.overall)}</span>
+          </div>
+        </div>
+      ) : null}
+
+      {renderGroup('Opening', 'Get-ready checks. Aim for green before service starts.', openingRows, payload?.overall.opening)}
+      {renderGroup('Closing', 'End-of-day checks. Aim for green before lockup.', closingRows, payload?.overall.closing)}
+      {serviceRows.length ? renderGroup('During service', 'Mid-service checks like temperature logs and bar walks.', serviceRows, undefined) : null}
+    </div>
+  );
+}
+
+// Manager Daily Brief (#29) — the 10-second morning glance.
+// Reads the same /manager-dashboard payload, but renders a focused,
+// scannable summary with deep-link buttons into the work surfaces.
+// Auto-refreshes once a minute so the page stays fresh through the day.
+function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
+  const { user } = useAuth();
+  const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
+  const [date, setDate] = useState(() => toDateInput(new Date()));
+  const [venue, setVenue] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const venueOptions = useMemo(
+    () => [
+      { label: 'All venues', value: '' },
+      ...uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]).map((item) => ({ label: item, value: item }))
+    ],
+    [staff]
+  );
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const params = new URLSearchParams({ date });
+      if (venue) params.set('venue', venue);
+      const payload = await api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${params.toString()}`);
+      setDashboard(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load daily brief.');
+    } finally {
+      setLoading(false);
+    }
+  }, [date, venue]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  useEffect(() => {
+    // Auto-refresh once a minute so the brief stays current through the day.
+    const id = setInterval(() => { void load(); }, 60_000);
+    return () => clearInterval(id);
+  }, [load]);
+
+  const totals = dashboard?.totals;
+  const wagePct = totals && totals.wagePercent !== null ? totals.wagePercent : null;
+  const rosterWageCents = totals?.rosterWageCents ?? 0;
+  const actualWageCents = totals?.actualWageCents ?? 0;
+  const salesCents = totals?.salesCents ?? 0;
+  const pendingTimesheets = totals?.pendingTimesheets ?? 0;
+  const lowStockCount = totals?.lowStockItems ?? 0;
+  const openIssues = totals?.openIssues ?? 0;
+  const criticalIssues = totals?.criticalIssues ?? 0;
+  const generatedAt = dashboard?.generatedAt ? new Date(dashboard.generatedAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '';
+
+  // Heads-up lines — only show the ones that are actually true so the user
+  // doesn't have to scan a fixed grid every morning.
+  const headsUps: Array<{ tone: 'danger' | 'warning' | 'info'; text: string }> = [];
+  if (criticalIssues > 0) {
+    headsUps.push({ tone: 'danger', text: `${criticalIssues} critical compliance issue${criticalIssues === 1 ? '' : 's'} open.` });
+  }
+  if (pendingTimesheets > 0) {
+    headsUps.push({ tone: 'warning', text: `${pendingTimesheets} timesheet${pendingTimesheets === 1 ? '' : 's'} waiting on your approval.` });
+  }
+  if (lowStockCount > 0) {
+    headsUps.push({ tone: 'warning', text: `${lowStockCount} item${lowStockCount === 1 ? '' : 's'} below par — check stock before ordering.` });
+  }
+  if (wagePct !== null && wagePct > 35) {
+    headsUps.push({ tone: 'warning', text: `Wage % at ${wagePct.toFixed(1)}% — over the 35% guardrail.` });
+  }
+  if (openIssues > 0 && criticalIssues === 0) {
+    headsUps.push({ tone: 'info', text: `${openIssues} open compliance item${openIssues === 1 ? '' : 's'} (no critical).` });
+  }
+
+  // Show only the top 5 of each list so the brief stays scannable.
+  const topPendingTimesheets = (dashboard?.pendingTimesheets ?? []).slice(0, 5);
+  const topLowStock = (dashboard?.lowStock ?? []).slice(0, 5);
+  const topComplianceIssues = (dashboard?.complianceIssues ?? []).slice(0, 5);
+
+  const firstName = user?.firstName?.trim() || 'manager';
+  const greeting = (() => {
+    const hr = new Date().getHours();
+    if (hr < 11) return 'Good morning';
+    if (hr < 17) return 'Good afternoon';
+    return 'Good evening';
+  })();
+
+  return (
+    <div className="page-stack daily-brief-page">
+      <PageHeader
+        eyebrow="Daily brief"
+        title={`${greeting}, ${firstName}`}
+        description={generatedAt ? `Pulled ${generatedAt}. Auto-refreshes every minute. The brief is a summary — open a card to act.` : 'Pulling today’s numbers…'}
+      />
+
+      <Card>
+        <div className="daily-brief-controls">
+          <Input label="Date" type="date" value={date} onChange={(event) => setDate(event.currentTarget.value)} />
+          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+          <Button type="button" variant="secondary" onClick={() => { void load(); }} disabled={loading}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        </div>
+      </Card>
+
+      {error ? <Card><p className="comms-error">{error}</p></Card> : null}
+
+      <div className="daily-brief-hero">
+        <div className="daily-brief-hero-card">
+          <span className="daily-brief-hero-label">Sales today</span>
+          <span className="daily-brief-hero-value">{formatCents(salesCents)}</span>
+          <span className="daily-brief-hero-sub">{venue || 'All venues'} · so far today</span>
+        </div>
+        <div className="daily-brief-hero-card">
+          <span className="daily-brief-hero-label">Wage % today</span>
+          <span className="daily-brief-hero-value">{wagePct === null ? '—' : `${wagePct.toFixed(1)}%`}</span>
+          <span className="daily-brief-hero-sub">{formatCents(actualWageCents)} actual · {formatCents(rosterWageCents)} rostered</span>
+        </div>
+        <div className="daily-brief-hero-card">
+          <span className="daily-brief-hero-label">Approvals waiting</span>
+          <span className="daily-brief-hero-value">{pendingTimesheets}</span>
+          <span className="daily-brief-hero-sub">{pendingTimesheets ? 'Open Timesheets to action' : 'All clear'}</span>
+        </div>
+        <div className="daily-brief-hero-card">
+          <span className="daily-brief-hero-label">Heads-ups</span>
+          <span className="daily-brief-hero-value">{headsUps.length}</span>
+          <span className="daily-brief-hero-sub">{headsUps.length ? 'Items below need attention' : 'Quiet day so far'}</span>
+        </div>
+      </div>
+
+      {headsUps.length ? (
+        <Card title="Heads-up" subtitle="The things worth knowing before you walk on the floor.">
+          <ul className="daily-brief-headsups">
+            {headsUps.map((item, index) => (
+              <li key={index} className={`daily-brief-headsup is-${item.tone}`}>
+                <span className="daily-brief-headsup-dot" aria-hidden="true" />
+                <span>{item.text}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      ) : null}
+
+      <div className="daily-brief-grid">
+        <Card title={`Timesheets to approve (${pendingTimesheets})`} subtitle="The oldest ones first.">
+          {topPendingTimesheets.length ? (
+            <ul className="daily-brief-list">
+              {topPendingTimesheets.map((entry) => {
+                // Compute the worked hours from clock in/out minus breaks.
+                const hours = entry.clockInAt && entry.clockOutAt
+                  ? Math.max(0, ((new Date(entry.clockOutAt).getTime() - new Date(entry.clockInAt).getTime()) / 3_600_000) - (entry.breakMinutes ?? 0) / 60)
+                  : null;
+                return (
+                  <li key={entry.id} className="daily-brief-list-row">
+                    <span>
+                      <strong>{staffLabel(entry.staffProfile)}</strong>
+                      <span className="subtle">{entry.workDate ? new Date(entry.workDate).toLocaleDateString() : '—'} · {hours !== null ? `${hours.toFixed(1)}h` : '—'}</span>
+                    </span>
+                    <Badge tone="warning">Pending</Badge>
+                  </li>
+                );
+              })}
+            </ul>
+          ) : (
+            <p className="subtle">No timesheets awaiting your sign-off.</p>
+          )}
+          <div className="toolbar-right">
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = '/timesheets'; }}>
+              Open Timesheets
+            </Button>
+          </div>
+        </Card>
+
+        <Card title={`Low stock (${lowStockCount})`} subtitle="Items below par.">
+          {topLowStock.length ? (
+            <ul className="daily-brief-list">
+              {topLowStock.map((item) => (
+                <li key={item.id} className="daily-brief-list-row">
+                  <span>
+                    <strong>{item.name}</strong>
+                    <span className="subtle">{item.onHand} {item.unit} · par {item.parLevel}{item.categoryName ? ` · ${item.categoryName}` : ''}</span>
+                  </span>
+                  <Badge tone={item.onHand === 0 ? 'danger' : 'warning'}>{item.onHand === 0 ? 'Out' : 'Low'}</Badge>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="subtle">Stock looks healthy — nothing below par.</p>
+          )}
+          <div className="toolbar-right">
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-stock-v18.web.app/orders'; }}>
+              Open Stock
+            </Button>
+          </div>
+        </Card>
+
+        <Card title={`Compliance items (${openIssues})`} subtitle={criticalIssues ? `${criticalIssues} critical — action today.` : 'Nothing critical right now.'}>
+          {topComplianceIssues.length ? (
+            <ul className="daily-brief-list">
+              {topComplianceIssues.map((item) => (
+                <li key={item.id} className="daily-brief-list-row">
+                  <span>
+                    <strong>{item.title}</strong>
+                    <span className="subtle">{item.category} · {item.assignee ?? 'Unassigned'}{item.dueDate ? ` · due ${new Date(item.dueDate).toLocaleDateString()}` : ''}</span>
+                  </span>
+                  <Badge tone={item.severity === 'CRITICAL' ? 'danger' : item.severity === 'HIGH' ? 'warning' : 'muted'}>{item.severity}</Badge>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="subtle">No open compliance items.</p>
+          )}
+          <div className="toolbar-right">
+            <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-compliance.web.app'; }}>
+              Open Compliance
+            </Button>
+          </div>
+        </Card>
+      </div>
+
+      <Card title="What's left after this" subtitle="Where to spend your next 15 minutes.">
+        <ul className="daily-brief-next-steps">
+          <li>
+            <strong>Walk the floor.</strong> Check fridges, glassware, candles, music. The brief shows numbers; the floor shows reality.
+          </li>
+          <li>
+            <strong>Sit with the team for 5 minutes.</strong> Three things: who's on, what we're pushing, what to watch.
+          </li>
+          <li>
+            <strong>Reply to last shift's handover.</strong> If anything's outstanding, acknowledge it in <a href="https://alma-comms.web.app/handover">Comms · Handover</a>.
+          </li>
+          <li>
+            <strong>Pre-walkthrough bookings.</strong> Open <a href="https://alma-reserve.web.app">Reserve</a> and read the night's notes.
+          </li>
+        </ul>
+      </Card>
+    </div>
+  );
+}
+
 function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
@@ -14201,6 +14827,8 @@ function StaffShell() {
   const canManageHr = canManageStaffHr(user);
   const canManageRightToWorkHr = canManageHr && canAccessRightToWorkHr(user);
   const canManagePayChangeHr = canManageHr && canAccessPayChangeHr(user);
+  const canApprovePayChangeHr = canApprovePayChange(user);
+  const currentUserId = user?.id ?? '';
   const navItems = navItemsForUser(user);
 
   const loadHrRecords = useCallback(async () => {
@@ -14272,6 +14900,8 @@ function StaffShell() {
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
+          <Route path="/brief" element={<ManagerDailyBriefPage staff={staff} />} />
+          <Route path="/readiness" element={<VenueReadinessPage staff={staff} />} />
           <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/profiles" element={<StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
@@ -14293,7 +14923,7 @@ function StaffShell() {
           <Route path="/hr" element={canOpenHr ? <HrOverviewPage records={hrRecords} loading={hrLoading} /> : <Navigate to="/" replace />} />
           <Route path="/hr/contracts" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="CONTRACT" mode="contracts" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/warnings" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="WARNING" mode="warnings" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
-          <Route path="/hr/pay-changes" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="PAY_CHANGE" mode="pay-changes" loading={hrLoading} reload={loadHrRecords} canManage={canManagePayChangeHr} /> : <Navigate to="/" replace />} />
+          <Route path="/hr/pay-changes" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="PAY_CHANGE" mode="pay-changes" loading={hrLoading} reload={loadHrRecords} canManage={canManagePayChangeHr} canApprove={canApprovePayChangeHr} currentUserId={currentUserId} /> : <Navigate to="/" replace />} />
           <Route path="/hr/right-to-work" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="RIGHT_TO_WORK" mode="right-to-work" loading={hrLoading} reload={loadHrRecords} canManage={canManageRightToWorkHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/documents" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} mode="documents" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
         </Routes>

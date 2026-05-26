@@ -18,6 +18,7 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteCommsWidget,
+  SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   TopBar,
   useDismissibleLayer
@@ -476,6 +477,7 @@ function AdminTopBar() {
           />
           <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="settings" />
+          <SuiteFeedbackWidget appId="settings" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
           <UserMenu />
         </>
       }
