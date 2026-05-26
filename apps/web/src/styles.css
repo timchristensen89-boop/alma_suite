@@ -3,11 +3,13 @@
    ========================================================================== */
 
 :root {
-  /* palette: slate neutrals + warm clay accent */
-  --color-bg: #f6f7f9;
-  --color-surface: #ffffff;
-  --color-surface-muted: #f8fafc;
-  --color-surface-hover: #f1f5f9;
+  /* palette: paper-cream surfaces over a warm paper-white page (brand
+     spec — alma-paper for the page bg, alma-eggshell for raised cards
+     so boxes sit a touch warmer than the page they live on). */
+  --color-bg: #FAF8F3;
+  --color-surface: #F8F6F1;
+  --color-surface-muted: #FDFBF6;
+  --color-surface-hover: #F2EFE6;
   --color-border: #e2e8f0;
   --color-border-strong: #cbd5e1;
   --color-text: #0f172a;
@@ -980,7 +982,7 @@ p {
    ========================================================================== */
 
 .stat-card {
-  background: #FFFFFF;
+  background: #F8F6F1;
   border: 1px solid rgba(31, 53, 36, 0.1);
   border-radius: 16px;
   padding: 18px 20px;
@@ -7829,7 +7831,7 @@ a.suite-app-tile:hover {
 /* --- Panel ---------------------------------------------------------------- */
 
 .alma-panel {
-  background: #FFFFFF;
+  background: #F8F6F1;
   border: 1px solid rgba(31, 53, 36, 0.1);
   border-radius: 16px;
   overflow: hidden;
@@ -7908,7 +7910,7 @@ a.suite-app-tile:hover {
 /* --- BigStat KPI card ---------------------------------------------------- */
 
 .alma-bigstat {
-  background: #FFFFFF;
+  background: #F8F6F1;
   border: 1px solid rgba(31, 53, 36, 0.1);
   border-radius: 16px;
   padding: 20px 22px;
