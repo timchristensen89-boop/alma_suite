@@ -2754,6 +2754,75 @@ export function AdminPage({
       ) : null}
 
       {(isAll || isOverview) ? (
+        (() => {
+          // Operational debt list — single curated place that surfaces
+          // known temporary gaps so they don't live in the owner's head.
+          // Hand-maintained until we have a model for it. The whole point
+          // is the reviewer's #53 from the second High School pass.
+          type DebtTone = 'warning' | 'danger' | 'info';
+          const items: Array<{ id: string; label: string; detail: string; tone: DebtTone }> = [
+            {
+              id: 'reserve-preview',
+              label: 'Reserve in Preview',
+              detail: 'SevenRooms remains the source of truth for live bookings. Anything in Alma Reserve is for testing layout, capacity logic, and the public widget.',
+              tone: 'warning'
+            },
+            {
+              id: 'marketing-preview',
+              label: 'Marketing in Preview',
+              detail: 'Live email / SMS / social sends are disabled. Drafts and segments can be built; nothing goes to customers until consent + send paths are verified.',
+              tone: 'warning'
+            },
+            {
+              id: 'roster-deputy',
+              label: 'Roster source: Deputy',
+              detail: 'Alma Staff shows roster data imported from Deputy. Deputy stays the editor of record until Alma roster scheduling is fully exercised.',
+              tone: 'info'
+            },
+            {
+              id: 'stripe-test-mode',
+              label: 'Gift Cards Stripe mode',
+              detail: 'Check Admin → Integrations to confirm Stripe is in Live mode before promoting public gift card purchase to customers.',
+              tone: 'info'
+            },
+            {
+              id: 'menu-mapping',
+              label: 'Square menu mapping coverage',
+              detail: 'Some Square menu items don\'t yet have recipe mappings, which affects COGS accuracy in menu engineering reports. See Reports → Menu engineering.',
+              tone: 'info'
+            },
+            {
+              id: 'meta-tiktok',
+              label: 'Meta / TikTok engagement read-back',
+              detail: 'We can publish to Meta but we don\'t yet pull likes / comments / reach back. Marketing content performance is one-way until Phase 4.7.',
+              tone: 'info'
+            }
+          ];
+          return (
+            <section className="admin-section">
+              <div className="admin-debt-card">
+                <header className="admin-debt-head">
+                  <span className="admin-debt-eyebrow">Operational debt</span>
+                  <h2 className="admin-debt-title">Known gaps you don't have to carry</h2>
+                  <p className="admin-debt-sub">
+                    Things that are intentionally not done yet. Listed here so they stay visible and don't surprise anyone in production.
+                  </p>
+                </header>
+                <ul className="admin-debt-list">
+                  {items.map((item) => (
+                    <li key={item.id} className={`admin-debt-row is-${item.tone}`}>
+                      <span className="admin-debt-row-tag">{item.label}</span>
+                      <span className="admin-debt-row-detail">{item.detail}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </section>
+          );
+        })()
+      ) : null}
+
+      {(isAll || isOverview) ? (
       <section className="admin-section">
         <div className="admin-settings-link-list">
           {ADMIN_ROUTE_GROUPS.map((group) => (

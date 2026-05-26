@@ -9911,6 +9911,104 @@ a.suite-app-tile:hover {
   margin-left: 4px;
 }
 
+/* Operational debt list — Admin overview. Surfaces known temporary
+   gaps so they don't live in the owner's head. */
+.admin-debt-card {
+  padding: 20px 24px;
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  background: #FFFFFF;
+}
+
+.admin-debt-head {
+  margin-bottom: 14px;
+}
+
+.admin-debt-eyebrow {
+  display: inline-block;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.admin-debt-title {
+  margin: 4px 0 2px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+}
+
+.admin-debt-sub {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14.5px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.005em;
+}
+
+.admin-debt-list {
+  display: grid;
+  gap: 8px;
+  margin: 14px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.admin-debt-row {
+  display: grid;
+  grid-template-columns: minmax(220px, 220px) minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: var(--color-surface, #F8F6F1);
+  border-left: 3px solid var(--color-text-muted);
+}
+
+.admin-debt-row.is-warning {
+  border-left-color: #B27935;
+  background: rgba(178, 121, 53, 0.06);
+}
+
+.admin-debt-row.is-danger {
+  border-left-color: #A0463A;
+  background: rgba(160, 70, 58, 0.06);
+}
+
+.admin-debt-row.is-info {
+  border-left-color: var(--color-text-muted);
+}
+
+.admin-debt-row-tag {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+}
+
+.admin-debt-row-detail {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--color-text-muted);
+  letter-spacing: 0.003em;
+}
+
+@media (max-width: 720px) {
+  .admin-debt-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+}
+
 /* Admin integration-health strip — one tight line under the home
    bubble, six coloured dots, jumps to the full health page. Intentionally
    not a card — we're not re-introducing the launch-readiness overview
