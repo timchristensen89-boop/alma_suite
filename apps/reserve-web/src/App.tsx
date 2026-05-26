@@ -958,7 +958,10 @@ function PublicBookingWidget() {
                 <div className="reserve-public-confirmation-icon" aria-hidden="true">✓</div>
                 <div className="reserve-public-confirmation-text">
                   <p className="reserve-public-eyebrow">Booking sent</p>
-                  <h2>Thanks {reservation.guestName.split(' ')[0]}, your table request is in</h2>
+                  <h2>
+                    Thanks {reservation.guestName.split(' ')[0]},
+                    <em> your table is in.</em>
+                  </h2>
                   <p>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests at {search.venue}</p>
                   <small>The venue team will confirm by email shortly. For urgent changes, please call the restaurant directly.</small>
                 </div>
@@ -1027,7 +1030,13 @@ function PublicBookingWidget() {
                 <div className="reserve-public-section-heading">
                   <div>
                     <p className="reserve-public-eyebrow">Available times</p>
-                    <h2>{availability.partySize} guests at {search.venue} on {shortDate(availability.serviceDate)}</h2>
+                    <h2>
+                      {availability.partySize} guests
+                      <em> at {search.venue}</em>
+                    </h2>
+                    <p className="reserve-public-section-sub">
+                      {shortDate(availability.serviceDate)}
+                    </p>
                   </div>
                   {selectedSlot ? (
                     <button type="button" className="reserve-change-time" onClick={() => setSelectedSlot(null)}>
@@ -1080,8 +1089,11 @@ function PublicBookingWidget() {
               !loading && config ? (
                 <section className="reserve-public-section reserve-public-ready-state">
                   <p className="reserve-public-eyebrow">Find a table</p>
-                  <h2>Choose guests, date, and time to see live availability.</h2>
-                  <p>No demo times are shown here. Results come from the venue availability rules in Alma Reserve.</p>
+                  <h2>
+                    Choose guests, date and time
+                    <em> to see live availability.</em>
+                  </h2>
+                  <p className="reserve-public-section-sub">No demo times are shown here. Results come straight from the venue's availability rules in Alma Reserve.</p>
                 </section>
               ) : null
             )}
@@ -1091,7 +1103,10 @@ function PublicBookingWidget() {
                   <div className="reserve-public-section-heading">
                     <div>
                       <p className="reserve-public-eyebrow">Guest details</p>
-                      <h2>{timeLabel(selectedSlot.startsAt)} at {search.venue}</h2>
+                      <h2>
+                        {timeLabel(selectedSlot.startsAt)}
+                        <em> at {search.venue}</em>
+                      </h2>
                       <p className="reserve-public-selection-summary">
                         {search.partySize} guests · {shortDate(selectedSlot.startsAt)} · {serviceCopy(selectedSlot.servicePeriod)}
                       </p>

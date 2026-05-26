@@ -486,13 +486,46 @@
   text-transform: uppercase;
 }
 
+/* Cormorant serif across every heading in the widget — section eyebrow
+   above each + italic em tail for accents reads as one editorial system. */
+.reserve-widget-page h1,
+.reserve-widget-page h2,
+.reserve-widget-page h3,
 .reserve-public-hero h1,
 .reserve-public-section-heading h2 {
   margin: 0;
   color: #14241A;
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, "Times New Roman", serif;
   font-weight: 500;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.005em;
+}
+
+.reserve-widget-page h2 {
+  font-size: clamp(30px, 3.6vw, 44px);
+  line-height: 1.05;
+}
+
+.reserve-widget-page h3 {
+  font-size: clamp(20px, 1.8vw, 24px);
+  line-height: 1.15;
+}
+
+.reserve-widget-page h2 em,
+.reserve-widget-page h3 em {
+  font-style: italic;
+  font-weight: 500;
+  color: rgba(20, 36, 26, 0.55);
+}
+
+.reserve-public-section-sub {
+  margin: 8px 0 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  font-weight: 500;
+  color: rgba(20, 36, 26, 0.6);
+  line-height: 1.45;
+  max-width: 56ch;
 }
 
 .reserve-public-hero h1 {
