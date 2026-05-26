@@ -171,9 +171,12 @@ p {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  padding: 18px 14px 14px;
-  background: var(--color-surface);
-  border-right: 1px solid var(--color-border);
+  padding: 18px 16px 14px;
+  /* Editorial paper rail — companion to the cream dropdown chrome. */
+  background: #F8F6F1;
+  border-right: 1px solid rgba(31, 53, 36, 0.08);
+  box-shadow: 1px 0 0 rgba(255, 255, 255, 0.7) inset,
+    0 0 0 1px rgba(31, 53, 36, 0.02);
 }
 
 .app-shell-sidebar > * {
@@ -187,9 +190,9 @@ p {
 .app-shell-brand {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px 8px 18px;
-  border-bottom: 1px solid var(--color-border);
+  gap: 12px;
+  padding: 6px 6px 16px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.06);
   margin-bottom: 14px;
 }
 
@@ -244,7 +247,7 @@ p {
 
 .app-shell-sidebar-footer {
   padding-top: 12px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(31, 53, 36, 0.06);
   margin-top: 10px;
   overflow: visible;
 }
@@ -299,54 +302,64 @@ p {
 .sidebar-nav {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   margin: 0;
   padding: 0;
   list-style: none;
 }
 
 .sidebar-nav-section {
-  padding: 12px 8px 6px;
+  /* Editorial eyebrow — Avenir wide-tracked, used as section divider. */
+  padding: 16px 14px 6px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
   text-transform: uppercase;
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  color: var(--color-text-subtle);
+  color: rgba(31, 53, 36, 0.4);
+  line-height: 1;
 }
 
 .sidebar-nav a {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border-radius: var(--radius-md);
-  color: var(--color-text-muted);
+  gap: 14px;
+  padding: 11px 14px;
+  margin: 1px 0;
+  border-radius: 12px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  color: rgba(31, 53, 36, 0.7);
   font-weight: 500;
   font-size: 13.5px;
-  transition: background 120ms ease, color 120ms ease;
+  letter-spacing: -0.003em;
+  line-height: 1;
+  transition: background 140ms ease, color 140ms ease;
   position: relative;
 }
 
 .sidebar-nav a:hover {
-  background: var(--color-surface-hover);
-  color: var(--color-text);
+  background: rgba(31, 53, 36, 0.03);
+  color: #1F3524;
 }
 
 .sidebar-nav a.active {
-  background: var(--color-accent-soft);
-  color: var(--color-accent-text);
-  font-weight: 600;
+  background: rgba(31, 53, 36, 0.06);
+  color: #1F3524;
+  font-weight: 700;
 }
 
 .sidebar-nav a.active::before {
   content: '';
   position: absolute;
-  left: -14px;
-  top: 6px;
-  bottom: 6px;
+  /* Glowing left-edge accent stripe in the current app's color — the same
+     visual thread that runs through the switcher chip and active item. */
+  left: -10px;
+  top: 8px;
+  bottom: 8px;
   width: 3px;
-  border-radius: 0 3px 3px 0;
+  border-radius: 9999px;
   background: var(--color-accent);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 
 .sidebar-nav .sidebar-nav-icon {
@@ -360,17 +373,19 @@ p {
 
 .sidebar-nav .sidebar-nav-count {
   margin-left: auto;
-  font-size: 11px;
-  padding: 1px 7px;
-  border-radius: 999px;
-  background: var(--color-surface-hover);
-  color: var(--color-text-muted);
-  font-weight: 600;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 2px 7px 1px;
+  border-radius: 9999px;
+  background: rgba(31, 53, 36, 0.08);
+  color: rgba(31, 53, 36, 0.65);
 }
 
 .sidebar-nav a.active .sidebar-nav-count {
-  background: #fff;
-  color: var(--color-accent-text);
+  background: #A0463A;
+  color: #F8F0E6;
 }
 
 .mobile-nav-toggle {
@@ -402,31 +417,34 @@ p {
   }
 
   .app-shell-sidebar-toggle {
+    /* Floating circular collapse toggle — sits on the right edge of the rail,
+       hangs half over the seam between sidebar and page. */
     position: absolute;
-    top: 14px;
-    right: 10px;
-    z-index: 2;
+    top: 22px;
+    right: -11px;
+    z-index: 3;
     display: grid;
     place-items: center;
-    width: 26px;
-    height: 26px;
-    border: 1px solid var(--color-border);
-    border-radius: 8px;
-    background: var(--color-surface);
-    color: var(--color-text-muted);
-    box-shadow: var(--shadow-xs);
+    width: 22px;
+    height: 22px;
+    border: 1px solid rgba(31, 53, 36, 0.12);
+    border-radius: 9999px;
+    background: #F8F6F1;
+    color: rgba(31, 53, 36, 0.55);
+    box-shadow: 0 2px 6px rgba(31, 53, 36, 0.18);
     cursor: pointer;
-    transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    transition: background 140ms ease, border-color 140ms ease, color 140ms ease, transform 140ms ease;
   }
 
   .app-shell-sidebar-toggle:hover {
-    background: var(--color-surface-hover);
-    border-color: var(--color-border-strong);
-    color: var(--color-text);
+    border-color: rgba(31, 53, 36, 0.3);
+    color: #1F3524;
+    transform: translateY(-1px);
   }
 
   .app-shell-sidebar-toggle span {
-    font-size: 19px;
+    font-size: 13px;
+    font-weight: 700;
     line-height: 1;
     transform: translateY(-1px);
   }
