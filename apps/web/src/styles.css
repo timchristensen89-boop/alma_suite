@@ -8185,3 +8185,178 @@ a.suite-app-tile:hover {
     display: none;
   }
 }
+
+/* --- Roster editorial header + KPI strip ------------------------------- */
+
+.alma-roster-header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.alma-roster-header-titles {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.alma-roster-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+  line-height: 1;
+}
+
+.alma-roster-title-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.alma-roster-title {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: 32px;
+  color: #1F3524;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+
+.alma-roster-title.is-italic {
+  font-style: italic;
+}
+
+.alma-roster-weeknav {
+  display: inline-flex;
+  gap: 4px;
+  margin-left: 4px;
+}
+
+.alma-roster-weeknav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: #1F3524;
+  transition: border-color 140ms ease, background 140ms ease;
+}
+
+.alma-roster-weeknav-btn:hover {
+  background: rgba(31, 53, 36, 0.04);
+  border-color: rgba(31, 53, 36, 0.3);
+}
+
+.alma-roster-weeknav-btn--text {
+  width: auto;
+  padding: 0 14px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.alma-roster-weeknav-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.alma-roster-header-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.alma-roster-publish {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 10px;
+  background: #1F3524;
+  border: 1px solid #1F3524;
+  color: #F0EBE0;
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  transition: opacity 140ms ease;
+}
+
+.alma-roster-publish:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.alma-roster-publish:hover:not(:disabled) {
+  opacity: 0.88;
+}
+
+.alma-roster-publish-sub {
+  padding: 3px 9px 2px;
+  background: rgba(255, 255, 255, 0.16);
+  border-radius: 9999px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+
+.alma-roster-kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+@media (max-width: 1180px) {
+  .alma-roster-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .alma-roster-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .alma-roster-title {
+    font-size: 26px;
+  }
+}
+
+/* Compact variant of bigstat used inside the roster strip */
+.alma-roster-kpis .alma-bigstat {
+  padding: 14px 16px;
+  gap: 8px;
+}
+
+.alma-roster-kpis .alma-bigstat-value {
+  font-size: 28px;
+  margin-top: 6px;
+}
+
+.alma-roster-kpis .alma-bigstat-foot {
+  padding-top: 10px;
+}
+
+.alma-bigstat--pill .alma-bigstat-head {
+  align-items: center;
+}

@@ -55,8 +55,10 @@ import {
 import {
   ActionFeedback,
   ActionPanel,
+  AlmaPill,
   AppShell,
   Badge,
+  BigStat,
   Button,
   Card,
   CapIcon,
@@ -9297,19 +9299,120 @@ function RosterPage({
   const viewOptionsSummary = `${viewMode === 'team' ? 'Team member' : 'Area'} · ${boardDays === 7 ? 'Week' : '2 weeks'}`;
   const toolSummary = draftCount > 0 ? `${draftCount} draft${draftCount === 1 ? '' : 's'} ready` : 'Copy, review and publish';
 
+  // Wage % of forecast revenue for the KPI strip
+  const wagePercent = forecastSalesCents > 0
+    ? ((rosterCostCents / forecastSalesCents) * 100)
+    : null;
+  const wageGuide = parsePercent(targetWagePercent);
+  const wageTone: 'success' | 'warn' | 'danger' | 'neutral' = wagePercent == null
+    ? 'neutral'
+    : wagePercent > wageGuide + 2
+      ? 'danger'
+      : wagePercent > wageGuide
+        ? 'warn'
+        : 'success';
+
   return (
     <div className="page-stack">
-      <div className="deputy-roster-header">
-        <div>
-          <p className="eyebrow">Schedule</p>
-          <h1>Weekly roster</h1>
-          <p className="subtle">{formatRange(weekStart, rosterRangeEnd)} · {roundHours(totalHours)} roster hours</p>
+      {/* Editorial roster header — eyebrow + Cormorant serif title + week nav */}
+      <div className="alma-roster-header">
+        <div className="alma-roster-header-titles">
+          <span className="alma-roster-eyebrow">Staff · Roster</span>
+          <div className="alma-roster-title-row">
+            <span className="alma-roster-title">Week of</span>
+            <span className="alma-roster-title is-italic">{formatRange(weekStart, rosterRangeEnd)}</span>
+            <div className="alma-roster-weeknav">
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Previous week"
+                onClick={() => setRosterWeek(addDays(weekStart, -7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="15 6 9 12 15 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Next week"
+                onClick={() => setRosterWeek(addDays(weekStart, 7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                onClick={() => {
+                  const today = new Date();
+                  setWeekStart(startOfWeek(today));
+                  setDate(toDateInput(today));
+                  setMobileSelectedDay(toDateInput(today));
+                }}
+              >
+                This week
+              </button>
+            </div>
+          </div>
         </div>
-        <div className="deputy-roster-actions roster-compact-actions">
+        <div className="alma-roster-header-actions">
+          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
+            Copy last week
+          </Button>
           <Button type="button" size="sm" onClick={() => newShift()}>
             Add shift
           </Button>
+          <button
+            type="button"
+            className="alma-roster-publish"
+            disabled={saving || draftCount === 0}
+            onClick={() => setPublishPreviewOpen(true)}
+          >
+            <span>Publish roster</span>
+            {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
+          </button>
         </div>
+      </div>
+
+      {/* 5-card editorial KPI strip — drives the weekly read */}
+      <div className="alma-roster-kpis">
+        <BigStat
+          eyebrow="Planned hours"
+          value={`${roundHours(totalHours)}h`}
+          sub={forecastSalesCents > 0 ? `Forecast ${formatCents(forecastSalesCents)} · ${recommendedHours.toFixed(0)}h recommended` : `${activeStaff.length} staff active`}
+        />
+        <BigStat
+          eyebrow="Wage cost"
+          value={formatCents(rosterCostCents)}
+          sub={wagePercent != null ? `${wagePercent.toFixed(1)}% of forecast revenue` : 'Add a sales forecast to compare'}
+        />
+        <div className="alma-bigstat alma-bigstat--pill">
+          <div className="alma-bigstat-head">
+            <div>
+              <div className="alma-bigstat-eyebrow">Wage guide</div>
+              <div className="alma-bigstat-value" style={{ fontSize: 32 }}>
+                {wagePercent != null ? `${wagePercent.toFixed(1)}%` : '—'}
+              </div>
+              <div className="alma-bigstat-sub">{wageGuide ? `Target ${wageGuide.toFixed(0)}%` : 'No target set'}</div>
+            </div>
+            <AlmaPill kind={wageTone}>
+              {forecastCostGapCents >= 0 ? 'Inside guide' : 'Over guide'}
+            </AlmaPill>
+          </div>
+        </div>
+        <BigStat
+          eyebrow="Drafts to publish"
+          value={String(draftCount)}
+          sub={draftCount > 0 ? 'Click Publish roster to confirm' : 'All shifts published'}
+          sparkColor="#A0463A"
+        />
+        <BigStat
+          eyebrow="Status"
+          value={draftCount > 0 ? 'Draft' : 'Published'}
+          sub={`${visibleRoster.length} shifts · ${roundHours(totalHours)}h scheduled`}
+        />
       </div>
 
       <div className="roster-primary-bar">
