@@ -15,8 +15,7 @@ type Props = PropsWithChildren<{
 // Triggers 1-in-50 page loads.
 type FishPhase = 'bobbing' | 'lured' | 'reeling' | 'gone' | 'splash' | 'margarita';
 
-// TEMP: 1 (every load) for testing. Revert to 1 / 50 before final ship.
-const FISH_ODDS = 1;
+const FISH_ODDS = 1 / 50;
 // 50/50 between coming back as a fish or as a margarita
 const MARGARITA_CHANCE = 0.5;
 
