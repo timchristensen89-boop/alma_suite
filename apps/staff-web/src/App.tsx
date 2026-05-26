@@ -12786,6 +12786,9 @@ function VenueReadinessPage({ staff }: { staff: StaffProfile[] }) {
 function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   const { user } = useAuth();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
+  // Surface venue readiness right inside the brief — managers shouldn't
+  // have to bounce between pages to see if today's checklists are on track.
+  const [readiness, setReadiness] = useState<ReadinessPayload | null>(null);
   const [date, setDate] = useState(() => toDateInput(new Date()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -12805,8 +12808,14 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
     try {
       const params = new URLSearchParams({ date });
       if (venue) params.set('venue', venue);
-      const payload = await api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${params.toString()}`);
-      setDashboard(payload);
+      // Fire both in parallel — they're independent and the brief should
+      // show both numbers and readiness in the same "as of" moment.
+      const [dashboardPayload, readinessPayload] = await Promise.all([
+        api<StaffManagerDashboardPayload>(`/api/staff/manager-dashboard?${params.toString()}`),
+        api<ReadinessPayload>(`/api/checklists/today-readiness?${params.toString()}`).catch(() => null)
+      ]);
+      setDashboard(dashboardPayload);
+      setReadiness(readinessPayload);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load daily brief.');
     } finally {
@@ -12852,6 +12861,21 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   }
   if (openIssues > 0 && criticalIssues === 0) {
     headsUps.push({ tone: 'info', text: `${openIssues} open compliance item${openIssues === 1 ? '' : 's'} (no critical).` });
+  }
+  // Pull in readiness signals — if a failed item or missing checklist is
+  // sitting there, the manager should see it before they walk on the floor.
+  if (readiness) {
+    const openingFailed = readiness.rows.filter((r) => r.kind === 'opening' && r.status === 'RED').length;
+    const openingMissing = readiness.rows.filter((r) => r.kind === 'opening' && r.status === 'MISSING').length;
+    const closingFailed = readiness.rows.filter((r) => r.kind === 'closing' && r.status === 'RED').length;
+    if (openingFailed > 0) {
+      headsUps.push({ tone: 'danger', text: `${openingFailed} opening checklist${openingFailed === 1 ? ' has' : 's have'} a failed item — fix before service.` });
+    } else if (openingMissing > 0 && new Date().getHours() < 18) {
+      headsUps.push({ tone: 'warning', text: `${openingMissing} opening checklist${openingMissing === 1 ? '' : 's'} not started yet.` });
+    }
+    if (closingFailed > 0) {
+      headsUps.push({ tone: 'warning', text: `${closingFailed} closing checklist${closingFailed === 1 ? '' : 's'} flagged a failed item from last shift.` });
+    }
   }
 
   // Show only the top 5 of each list so the brief stays scannable.
@@ -12910,6 +12934,28 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
+      {readiness ? (
+        <Card title="Venue readiness" subtitle="Today's opening, service, and closing checklists in a glance." action={
+          <Button type="button" size="sm" variant="secondary" onClick={() => { window.location.href = '/readiness'; }}>
+            Open readiness
+          </Button>
+        }>
+          <div className="readiness-banners">
+            <div className={`readiness-banner is-${readiness.overall.opening.toLowerCase()}`}>
+              <span className="readiness-banner-tag">Opening</span>
+              <span className="readiness-banner-label">{readinessLabel(readiness.overall.opening)}</span>
+            </div>
+            <div className={`readiness-banner is-${readiness.overall.closing.toLowerCase()}`}>
+              <span className="readiness-banner-tag">Closing</span>
+              <span className="readiness-banner-label">{readinessLabel(readiness.overall.closing)}</span>
+            </div>
+            <div className={`readiness-banner is-${readiness.overall.overall.toLowerCase()}`}>
+              <span className="readiness-banner-tag">Overall</span>
+              <span className="readiness-banner-label">{readinessLabel(readiness.overall.overall)}</span>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       {headsUps.length ? (
         <Card title="Heads-up" subtitle="The things worth knowing before you walk on the floor.">
           <ul className="daily-brief-headsups">
