@@ -9566,17 +9566,6 @@ function RosterPage({
         </div>
       ) : null}
 
-      {activeAreas.length > 0 ? (
-        <div className="deputy-area-legend roster-collapsed-legend" aria-label="Roster section colours">
-          {activeAreas.map((item) => (
-            <span key={item} style={areaStyle(item)}>
-              <i aria-hidden="true" />
-              {item}
-            </span>
-          ))}
-        </div>
-      ) : null}
-
       {historicalOpen ? (
         <div
           className="alma-historical-modal"
@@ -9698,16 +9687,11 @@ function RosterPage({
         </div>
       ) : null}
 
-      <div className="deputy-roster-summary">
-        <span><strong>{rosteredStaffIds.size}</strong> rostered</span>
-        <span><strong>{draftCount}</strong> draft</span>
-        <span><strong>{publishedCount}</strong> published</span>
-        <span><strong>{roundHours(totalHours)}</strong> roster hours</span>
-        <span><strong>{closedDayCount}</strong> closed</span>
-        <span><strong>{visibleRoster.filter(isDeputyImportedShift).length}</strong> Deputy import</span>
-        <span><strong>{visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length}</strong> unallocated</span>
-        {message && !messageTarget ? <span className="deputy-roster-message">{message}</span> : null}
-      </div>
+      {message && !messageTarget ? (
+        <div className="deputy-roster-summary">
+          <span className="deputy-roster-message">{message}</span>
+        </div>
+      ) : null}
 
       {isMobileRoster ? (
         <div data-roster-view="mobile" className="mobile-roster-runtime">
@@ -9832,15 +9816,14 @@ function RosterPage({
                   const venueCollapsed = collapsedVenues.has(row.venue);
                   return (
                     <div className="deputy-schedule-row deputy-venue-row" key={row.id}>
-                      <div className="deputy-row-label deputy-venue-label">
-                        <button
-                          type="button"
-                          className="row-collapse-toggle"
-                          onClick={() => toggleVenueCollapsed(row.venue)}
-                          title={venueCollapsed ? 'Expand venue' : 'Collapse venue'}
-                        >
-                          {venueCollapsed ? '▸' : '▾'}
-                        </button>
+                      <div
+                        className="deputy-row-label deputy-venue-label"
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => toggleVenueCollapsed(row.venue)}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleVenueCollapsed(row.venue); } }}
+                        title={venueCollapsed ? 'Expand venue' : 'Collapse venue'}
+                      >
                         <span className="roster-avatar small">{row.initials}</span>
                         <strong>{row.label}</strong>
                       </div>
