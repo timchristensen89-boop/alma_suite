@@ -401,6 +401,25 @@
   color: rgba(90, 36, 25, 0.78);
 }
 
+/* Over-balance warning in the redeem flow — appears when typed amount
+   exceeds remaining card value. Prevents accidental "submit" that the
+   API would reject anyway, but with a customer in front of you. */
+.giftcards-redeem-warning {
+  margin: 0 0 4px;
+  padding: 10px 14px;
+  border: 1px solid rgba(160, 70, 58, 0.32);
+  border-left: 3px solid #A0463A;
+  border-radius: 10px;
+  background: rgba(160, 70, 58, 0.06);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  color: #5A2419;
+}
+
+.giftcards-redeem-warning strong {
+  font-weight: 700;
+}
+
 .giftcards-form-heading h2 {
   font-size: clamp(32px, 3.6vw, 46px);
   line-height: 0.96;

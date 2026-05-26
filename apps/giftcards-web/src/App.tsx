@@ -1315,14 +1315,36 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                   <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={VENUES.map((item) => ({ label: item, value: item }))} />
                 </div>
                 <Textarea label="Notes" rows={2} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
-                <div className="giftcards-inline-actions">
-                  <ActionFeedback
-                    message={messageTarget === 'redeem' ? message : null}
-                    tone={message?.includes('Could') || message?.includes('low') ? 'error' : 'success'}
-                  />
-                  <Button type="submit" disabled={!card || card.status !== 'ACTIVE'}>Redeem</Button>
-                  <Button type="button" variant="secondary" onClick={() => window.open(giftCardPrintUrl(card.code), '_blank')}>Print</Button>
-                </div>
+                {(() => {
+                  // Panic-proof redeem block: concrete button label
+                  // ("Redeem $50.00"), disable for invalid/over-balance,
+                  // explicit warning if the amount exceeds the balance.
+                  const amountCents = Math.round((Number(amount) || 0) * 100);
+                  const validAmount = amountCents > 0;
+                  const overBalance = validAmount && card && amountCents > card.balanceCents;
+                  const cardActive = Boolean(card && card.status === 'ACTIVE');
+                  const disableRedeem = !card || !cardActive || !validAmount || Boolean(overBalance);
+                  const buttonLabel = validAmount
+                    ? `Redeem ${formatCents(amountCents)}`
+                    : 'Enter amount to redeem';
+                  return (
+                    <>
+                      {overBalance ? (
+                        <p className="giftcards-redeem-warning">
+                          That's more than the remaining balance of <strong>{formatCents(card!.balanceCents)}</strong>. Lower the redeem amount.
+                        </p>
+                      ) : null}
+                      <div className="giftcards-inline-actions">
+                        <ActionFeedback
+                          message={messageTarget === 'redeem' ? message : null}
+                          tone={message?.includes('Could') || message?.includes('low') ? 'error' : 'success'}
+                        />
+                        <Button type="submit" disabled={disableRedeem}>{buttonLabel}</Button>
+                        <Button type="button" variant="secondary" onClick={() => window.open(giftCardPrintUrl(card.code), '_blank')}>Print receipt</Button>
+                      </div>
+                    </>
+                  );
+                })()}
               </form>
             ) : null}
             {card && card.status !== 'CANCELLED' && card.status !== 'EXPIRED' ? (
