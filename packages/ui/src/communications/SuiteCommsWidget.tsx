@@ -176,26 +176,25 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
       </button>
       {open ? (
         <div className="suite-msg-panel" role="dialog" aria-label="Messages">
+          <button
+            type="button"
+            className="suite-msg-close suite-msg-close--corner"
+            onClick={() => setOpen(false)}
+            aria-label="Close messages"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" />
+            </svg>
+          </button>
+
           <div className="suite-msg-head">
             <div>
               <span className="suite-msg-eyebrow">Alma Suite · Inbox</span>
               <strong className="suite-msg-title">Messages</strong>
             </div>
-            <div className="suite-msg-head-actions">
-              {unreadCount > 0 ? (
-                <span className="suite-msg-pill">{unreadCount} new</span>
-              ) : null}
-              <button
-                type="button"
-                className="suite-msg-close"
-                onClick={() => setOpen(false)}
-                aria-label="Close messages"
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" />
-                </svg>
-              </button>
-            </div>
+            {unreadCount > 0 ? (
+              <span className="suite-msg-pill">{unreadCount} new</span>
+            ) : null}
           </div>
 
           {message ? <p className="suite-msg-error">{message}</p> : null}

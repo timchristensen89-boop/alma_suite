@@ -232,29 +232,23 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
       </button>
       {open ? (
         <div className="suite-alert-panel" role="dialog" aria-label="Alerts">
+          <button
+            type="button"
+            className="suite-alert-close suite-alert-close--corner"
+            onClick={() => setOpen(false)}
+            aria-label="Close alerts"
+          >
+            <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
+              <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" />
+            </svg>
+          </button>
+
           <div className="suite-alert-head">
             <div>
               <span className="suite-alert-eyebrow">
                 Alma Suite · {buckets.critical.length > 0 ? 'Attention' : 'All clear'}
               </span>
               <strong className="suite-alert-title">Needs your eye</strong>
-            </div>
-            <div className="suite-alert-head-actions">
-              {unreadCount > 0 ? (
-                <button type="button" className="suite-alert-ghost-link" onClick={markAllRead}>
-                  Mark all done
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="suite-alert-close"
-                onClick={() => setOpen(false)}
-                aria-label="Close alerts"
-              >
-                <svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true">
-                  <path d="M2.5 2.5 L9.5 9.5 M9.5 2.5 L2.5 9.5" />
-                </svg>
-              </button>
             </div>
           </div>
 
@@ -330,11 +324,18 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
             <span className="suite-alert-eyebrow suite-alert-eyebrow--muted">
               {loading ? 'Refreshing…' : `${unreadCount} unread · ${readItems.length} read`}
             </span>
-            {showRead && readItems.length > 0 ? (
-              <button type="button" className="suite-alert-ghost-link" onClick={clearAllRead}>
-                Restore all
-              </button>
-            ) : null}
+            <div className="suite-alert-footer-actions">
+              {unreadCount > 0 ? (
+                <button type="button" className="suite-alert-ghost-link" onClick={markAllRead}>
+                  Mark all done
+                </button>
+              ) : null}
+              {showRead && readItems.length > 0 ? (
+                <button type="button" className="suite-alert-ghost-link" onClick={clearAllRead}>
+                  Restore all
+                </button>
+              ) : null}
+            </div>
           </div>
         </div>
       ) : null}

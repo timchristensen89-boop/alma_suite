@@ -5586,6 +5586,25 @@ a.suite-app-tile:hover {
   color: #1F3524;
 }
 
+/* Pinned chrome for the messages panel (mirrors the switcher pattern). */
+.suite-msg-panel .suite-msg-head {
+  position: sticky;
+  top: -22px;
+  margin-top: -22px;
+  padding: 24px 6px 14px;
+  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
+}
+
+.suite-msg-panel .suite-msg-footer {
+  position: sticky;
+  bottom: -22px;
+  margin-bottom: -22px;
+  padding: 14px 6px 22px;
+  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
+}
+
 .suite-msg-head {
   display: flex;
   align-items: flex-end;
@@ -5601,11 +5620,11 @@ a.suite-app-tile:hover {
 
 .suite-msg-eyebrow {
   font-family: "Avenir LT Std", "Manrope", sans-serif;
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: rgba(31, 53, 36, 0.45);
+  color: rgba(31, 53, 36, 0.6);
   line-height: 1;
 }
 
@@ -5615,10 +5634,10 @@ a.suite-app-tile:hover {
 
 .suite-msg-title {
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 500;
   letter-spacing: -0.005em;
-  color: #1F3524;
+  color: #000;
   line-height: 1;
 }
 
@@ -5683,6 +5702,16 @@ a.suite-app-tile:hover {
   stroke: currentColor;
   stroke-width: 1.6;
   stroke-linecap: round;
+}
+
+/* Corner-floating × variant. Sits in the top-right of the panel so the
+   header eyebrow + serif title can breathe across the full width. */
+.suite-msg-close--corner,
+.suite-alert-close--corner {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 3;
 }
 
 .suite-msg-compose {
@@ -5922,6 +5951,39 @@ a.suite-app-tile:hover {
   color: #1F3524;
 }
 
+/* Pinned chrome — header + filters at top, footer at bottom. */
+.suite-alert-panel .suite-alert-head {
+  position: sticky;
+  top: -22px;
+  margin-top: -22px;
+  padding: 24px 6px 14px;
+  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
+}
+
+.suite-alert-panel .suite-alert-filters {
+  position: sticky;
+  top: 76px;
+  background: #F8F6F1;
+  z-index: 2;
+  padding-bottom: 10px;
+}
+
+.suite-alert-panel .suite-alert-footer {
+  position: sticky;
+  bottom: -22px;
+  margin-bottom: -22px;
+  padding: 14px 6px 22px;
+  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
+}
+
+.suite-alert-footer-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+}
+
 .suite-alert-head {
   display: flex;
   align-items: flex-end;
@@ -5943,11 +6005,11 @@ a.suite-app-tile:hover {
 
 .suite-alert-eyebrow {
   font-family: "Avenir LT Std", "Manrope", sans-serif;
-  font-size: 9px;
+  font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.32em;
   text-transform: uppercase;
-  color: rgba(31, 53, 36, 0.45);
+  color: rgba(31, 53, 36, 0.6);
   line-height: 1;
 }
 
@@ -5958,10 +6020,10 @@ a.suite-app-tile:hover {
 .suite-alert-title {
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-style: italic;
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 500;
   letter-spacing: -0.005em;
-  color: #1F3524;
+  color: #000;
   line-height: 1;
 }
 
