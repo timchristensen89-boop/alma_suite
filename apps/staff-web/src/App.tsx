@@ -9713,14 +9713,7 @@ function RosterPage({
       {!isMobileRoster ? (
         <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
-          <div className="roster-board-command">
-            <div>
-              <p className="eyebrow">Roster board</p>
-              <h2>{viewMode === 'team' ? 'Team schedule' : 'Venue and area schedule'}</h2>
-              <span>
-                {boardDays === 7 ? '7 day board' : '14 day board'} · {venueFilter === 'all' ? `${areaVenues.length} venues` : venueFilter}
-              </span>
-            </div>
+          <div className="roster-board-command roster-board-command--inline" aria-label={`Roster board · ${boardDays === 7 ? '7 day' : '14 day'} · ${venueFilter === 'all' ? `${areaVenues.length} venues` : venueFilter}`}>
             <div className="roster-board-command-meta" aria-label="Roster board summary">
               <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
               <span><strong>{visibleRoster.length}</strong> shifts</span>
@@ -9790,8 +9783,10 @@ function RosterPage({
                   className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}
                   title={isClosed ? `Closed${closedVenues.length ? ` · ${closedVenues.length} venue${closedVenues.length === 1 ? '' : 's'}` : ''}` : undefined}
                 >
-                  <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
-                  <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+                  <div className="deputy-day-head-line">
+                    <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
+                    <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
+                  </div>
                   {!isClosed ? (
                     <small>
                       {closedVenues.length

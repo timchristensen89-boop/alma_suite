@@ -3474,6 +3474,105 @@
   letter-spacing: 0.005em;
 }
 
+/* Inline variant — single-line metric strip with no title block above
+   it. Used when the metric strip is the entire command bar. */
+.roster-board-command--inline {
+  padding: 8px 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 6px;
+}
+
+.roster-board-command--inline .roster-board-command-meta {
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  justify-content: flex-start;
+  align-items: center;
+  gap: 6px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: thin;
+  padding-block: 2px;
+}
+
+.roster-board-command--inline .roster-board-command-meta::-webkit-scrollbar {
+  height: 4px;
+}
+
+.roster-board-command--inline .roster-board-command-meta::-webkit-scrollbar-thumb {
+  background: rgba(31, 53, 36, 0.18);
+  border-radius: 999px;
+}
+
+/* Bump pill text to be readable — the previous 12-13px was too small.
+   13.5–14px with Avenir + tracked label gives the same readable voice
+   as the "Planned hours" eyebrow + value pattern in the BigStat
+   tiles. */
+.roster-board-command--inline .roster-board-command-meta > span {
+  flex: 0 0 auto;
+  white-space: nowrap;
+  align-items: baseline;
+  gap: 4px;
+  min-height: 30px;
+  padding: 4px 12px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  box-shadow: none;
+}
+
+.roster-board-command--inline .roster-board-command-meta > span > strong {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: -0.003em;
+  color: var(--color-text);
+}
+
+.roster-board-command--inline .roster-cost-forecast-pill {
+  font-size: 13px;
+  padding: 4px 12px;
+}
+
+.roster-board-command--inline .roster-cost-forecast-pill > span:first-child {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+}
+
+.roster-board-command--inline .roster-cost-forecast-pill strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.003em;
+}
+
+.roster-board-command--inline .roster-cost-forecast-pill .roster-cost-forecast-pct {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 13px;
+}
+
+.roster-board-command--inline .roster-cost-forecast-pill small {
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.roster-board-command--inline .roster-forecast-inline {
+  padding: 4px 12px !important;
+  min-height: 30px;
+  border: 1px solid var(--color-border) !important;
+}
+
+.roster-board-command--inline .roster-forecast-inline input {
+  font-size: 13.5px;
+  width: 64px;
+  font-weight: 600;
+}
+
 .roster-board-command-meta {
   display: flex;
   flex-wrap: wrap;
@@ -3590,7 +3689,7 @@
   position: sticky;
   top: 0;
   z-index: 2;
-  min-height: 68px;
+  min-height: 48px;
   background: var(--color-surface, #F8F6F1);
 }
 
@@ -3613,10 +3712,17 @@
   flex-direction: column;
   gap: 2px;
   justify-content: center;
-  padding: 8px 10px;
+  padding: 6px 10px;
 }
 
-.deputy-day-head strong {
+/* Day + date on a single line: "Tue 26 May" — less vertical noise. */
+.deputy-day-head-line {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.deputy-day-head-line strong {
   font-family: var(--font-serif);
   font-weight: 500;
   font-size: 17px;
@@ -3625,7 +3731,25 @@
   text-transform: none;
 }
 
-.deputy-day-head span,
+.deputy-day-head-line span {
+  font-family: var(--font-sans);
+  color: var(--color-text-muted);
+  font-size: 12.5px;
+  letter-spacing: 0.01em;
+}
+
+/* Legacy fallbacks for non-grouped strong/span (kept for closed-day
+   heads which still render strong + span flat). */
+.deputy-day-head > strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+  text-transform: none;
+}
+
+.deputy-day-head > span,
 .deputy-day-head small {
   font-family: var(--font-sans);
   color: var(--color-text-muted);
@@ -3654,13 +3778,29 @@
 }
 
 .deputy-day-head.is-today {
-  box-shadow: inset 0 -3px 0 var(--color-text);
+  box-shadow: inset 0 -2px 0 var(--color-text);
   background: #FFFFFF;
   color: var(--color-text);
+  position: sticky;
 }
 
-.deputy-day-head.is-today strong {
+.deputy-day-head.is-today .deputy-day-head-line strong,
+.deputy-day-head.is-today > strong {
   font-style: italic;
+}
+
+/* Tiny italic "Today" pill above the today column — restaurant
+   shorthand. Sits in the gap between the date and the hours line. */
+.deputy-day-head.is-today::before {
+  content: 'Today';
+  display: block;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+  line-height: 1;
+  margin-bottom: 2px;
 }
 
 .deputy-day-head.is-closed {
