@@ -2,6 +2,12 @@
    Alma Suite v18 — design system
    ========================================================================== */
 
+/* Design-system fonts — Cormorant for serifs, Manrope for sans (Avenir
+   LT Std is the licensed brand sans; Manrope is the Google Fonts
+   substitute when Avenir isn't available). Hoisted here so every app
+   in the suite picks them up via the shared stylesheet. */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;0,600;0,700;1,400;1,500;1,600&family=Manrope:wght@400;500;600;700;800;900&display=swap');
+
 :root {
   /* palette: paper-cream raised cards over a pure-white page so the
      boxes sit clearly above the surface. */
@@ -46,8 +52,9 @@
   --tone-muted-fg: #64748b;
 
   /* typography */
-  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
-  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, monospace;
+  --font-sans: "Avenir LT Std", "Manrope", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-serif: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
   /* elevation */
   --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
@@ -144,14 +151,14 @@ p {
   opacity: 0.9;
   pointer-events: none;
   filter: drop-shadow(0 8px 12px rgba(15, 23, 42, 0.12));
-  animation: suite-fish-bob 4.8s ease-in-out infinite;
 }
 
-.suite-fish img {
+.suite-fish-img {
   display: block;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  animation: suite-fish-bob 4.8s ease-in-out infinite;
 }
 
 @keyframes suite-fish-bob {
@@ -163,6 +170,117 @@ p {
   50% {
     transform: translate3d(-8px, -5px, 0) rotate(2deg);
   }
+}
+
+/* ── Fish easter egg — 1-in-50 page loads ───────────────────────────── */
+
+/* Phase: lured — the fishing line drops in from the right edge, fish
+   pauses bobbing and curiously drifts toward the lure. */
+.suite-fish.is-lured .suite-fish-img {
+  animation: suite-fish-curious 1.8s ease-in-out forwards;
+}
+
+@keyframes suite-fish-curious {
+  0%   { transform: translate3d(0, 0, 0) rotate(-2deg); }
+  60%  { transform: translate3d(20px, -2px, 0) rotate(8deg); }
+  100% { transform: translate3d(28px, -1px, 0) rotate(12deg); }
+}
+
+/* The line itself — hangs off the right edge, dropping into the fish */
+.suite-fish-line {
+  position: absolute;
+  top: -120vh;
+  right: -36px;
+  width: 1.5px;
+  height: calc(120vh + 50px);
+  background: rgba(20, 36, 26, 0.55);
+  transform-origin: top center;
+  animation: suite-fish-line-drop 1.8s ease-out forwards;
+}
+
+.suite-fish-line::after {
+  /* tiny hook + bait dot at the bottom */
+  content: '';
+  position: absolute;
+  bottom: -3px;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #B27935;
+  box-shadow: 0 0 0 1.5px rgba(20, 36, 26, 0.45);
+}
+
+@keyframes suite-fish-line-drop {
+  0%   { transform: translateY(-30%) scaleY(0.3); opacity: 0; }
+  40%  { opacity: 1; }
+  100% { transform: translateY(0) scaleY(1); opacity: 1; }
+}
+
+/* Phase: reeling — fish bites and gets pulled off-screen to the right */
+.suite-fish.is-reeling .suite-fish-img {
+  animation: suite-fish-reel 1.6s cubic-bezier(0.55, 0.05, 0.8, 0.4) forwards;
+}
+
+.suite-fish.is-reeling .suite-fish-line {
+  animation: suite-fish-line-pull 1.6s cubic-bezier(0.55, 0.05, 0.8, 0.4) forwards;
+}
+
+@keyframes suite-fish-reel {
+  0%   { transform: translate3d(28px, -1px, 0) rotate(12deg); }
+  20%  { transform: translate3d(20px, -16px, 0) rotate(-8deg); }
+  60%  { transform: translate3d(80px, -40px, 0) rotate(28deg); }
+  100% { transform: translate3d(180px, -80px, 0) rotate(45deg); opacity: 0; }
+}
+
+@keyframes suite-fish-line-pull {
+  0%   { transform: rotate(0deg); }
+  100% { transform: rotate(35deg); opacity: 0; }
+}
+
+/* Phase: gone — fish is off-screen, nothing to render */
+.suite-fish.is-gone .suite-fish-img {
+  opacity: 0;
+}
+
+/* Phase: splash — fish gets thrown back from the right side */
+.suite-fish.is-splash .suite-fish-img {
+  animation: suite-fish-splash-down 1.6s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+@keyframes suite-fish-splash-down {
+  0%   { transform: translate3d(160px, -60px, 0) rotate(-32deg); opacity: 0; }
+  30%  { opacity: 1; }
+  100% { transform: translate3d(0, 0, 0) rotate(-2deg); opacity: 0.9; }
+}
+
+/* Splash droplets — three rings expanding out from the fish on landing */
+.suite-fish-splash {
+  position: absolute;
+  bottom: 16px;
+  right: 22px;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  border: 2px solid rgba(31, 53, 36, 0.4);
+  transform: scale(0);
+  opacity: 1;
+  animation: suite-fish-splash-ring 1.4s ease-out forwards;
+}
+
+.suite-fish-splash--a { animation-delay: 0.5s; }
+.suite-fish-splash--b { animation-delay: 0.7s; width: 22px; height: 22px; border-color: rgba(31, 53, 36, 0.32); }
+.suite-fish-splash--c { animation-delay: 0.9s; width: 30px; height: 30px; border-color: rgba(31, 53, 36, 0.22); }
+
+@keyframes suite-fish-splash-ring {
+  0%   { transform: scale(0); opacity: 1; }
+  100% { transform: scale(2.4); opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .suite-fish-img { animation: none; }
+  .suite-fish-line,
+  .suite-fish-splash { display: none; }
 }
 
 .app-shell-sidebar {

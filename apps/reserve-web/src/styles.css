@@ -210,10 +210,11 @@
 .reserve-widget-page {
   min-height: 100vh;
   padding: 28px 20px 56px;
-  background:
-    linear-gradient(180deg, rgba(255, 248, 250, 0.86), rgba(250, 232, 239, 0.96)),
-    #fae8ef;
-  color: #4A0820;
+  background: #FAF6EE;
+  color: #14241A;
+  font-family: "Avenir LT Std", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-weight: 400;
+  -webkit-font-smoothing: antialiased;
 }
 
 .reserve-widget-shell {
@@ -235,10 +236,11 @@
   display: inline-flex;
   align-items: center;
   gap: 12px;
-  color: #4A0820;
-  font-family: Georgia, 'Times New Roman', serif;
-  font-size: 24px;
-  letter-spacing: 0;
+  color: #14241A;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.025em;
 }
 
 .reserve-public-brand img {
@@ -248,10 +250,11 @@
 }
 
 .reserve-public-header a {
-  color: #4A0820;
-  font-size: 12px;
-  font-weight: 900;
-  letter-spacing: 0.16em;
+  color: #14241A;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-decoration: none;
   text-transform: uppercase;
 }
@@ -265,61 +268,67 @@
 }
 
 .reserve-public-eyebrow {
-  margin: 0 0 10px;
-  color: #A8224E;
+  margin: 0 0 14px;
+  color: rgba(20, 36, 26, 0.55);
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
   font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.28em;
+  font-weight: 700;
+  letter-spacing: 0.42em;
   text-transform: uppercase;
 }
 
 .reserve-public-hero h1,
 .reserve-public-section-heading h2 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, "Times New Roman", serif;
   font-weight: 500;
-  letter-spacing: -0.005em;
+  letter-spacing: -0.012em;
 }
 
 .reserve-public-hero h1 {
   max-width: 760px;
-  font-size: clamp(44px, 7.6vw, 88px);
-  line-height: 0.96;
+  font-size: clamp(48px, 8vw, 104px);
+  line-height: 0.92;
 }
 
 .reserve-public-hero p:not(.reserve-public-eyebrow) {
-  max-width: 560px;
-  margin: 18px 0 0;
-  color: rgba(74, 8, 32, 0.72);
-  font-size: 17px;
-  line-height: 1.65;
+  max-width: 32em;
+  margin: 22px 0 0;
+  color: rgba(20, 36, 26, 0.62);
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: clamp(18px, 1.6vw, 22px);
+  font-weight: 500;
+  line-height: 1.55;
 }
 
-/* Hero CTA — wine pill that pops on the dark gradient */
+/* Hero CTA — pill on ink, paper text, tracked uppercase. Same recipe
+   as the design system .btn shape from alma-avalon.html */
 .reserve-public-hero-cta {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin: 24px 0 0;
-  padding: 14px 36px;
-  border: 0;
+  gap: 14px;
+  margin: 28px 0 0;
+  padding: 14px 24px 13px;
+  border: 1px solid #14241A;
   border-radius: 999px;
-  background: #A8224E;
-  color: #fff8fa;
-  font-size: 15px;
-  font-weight: 800;
-  letter-spacing: 0.05em;
+  background: #14241A;
+  color: #FAF6EE;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   cursor: pointer;
   text-transform: uppercase;
-  box-shadow: 0 12px 32px rgba(74, 8, 32, 0.35), 0 2px 6px rgba(74, 8, 32, 0.18);
-  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+  box-shadow: none;
+  transition: transform 200ms ease, background 200ms ease;
 }
 
 .reserve-public-hero-cta:hover {
-  background: #7A1535;
+  background: #1F3524;
   transform: translateY(-1px);
-  box-shadow: 0 16px 42px rgba(74, 8, 32, 0.45), 0 3px 8px rgba(74, 8, 32, 0.22);
 }
 
 .reserve-public-hero-cta:active {
@@ -331,22 +340,23 @@
   display: inline-flex;
   align-items: center;
   padding: 9px 18px;
-  border: 1px solid rgba(168, 34, 78, 0.28);
+  border: 1px solid rgba(20, 36, 26, 0.18);
   border-radius: 999px;
-  background: rgba(255, 248, 250, 0.78);
-  color: #4A0820;
-  font-size: 11px;
-  font-weight: 900;
-  letter-spacing: 0.18em;
+  background: transparent;
+  color: #14241A;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
   text-transform: uppercase;
   text-decoration: none;
-  transition: background 120ms ease, border-color 120ms ease;
+  transition: background 200ms ease, border-color 200ms ease, color 200ms ease;
 }
 
 .reserve-public-header-link:hover {
-  background: #A8224E;
-  border-color: #A8224E;
-  color: #fff8fa;
+  background: #14241A;
+  border-color: #14241A;
+  color: #FAF6EE;
 }
 
 /* Booking confirmation panel — celebratory state after request is sent */
@@ -495,15 +505,15 @@
   grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr);
   gap: clamp(18px, 4vw, 36px);
   align-items: stretch;
-  padding: clamp(16px, 3vw, 24px);
-  border: 1px solid rgba(168, 34, 78, 0.12);
-  border-radius: 22px;
-  background: rgba(250, 232, 239, 0.76);
+  padding: clamp(20px, 3.5vw, 32px);
+  border: 1px solid rgba(20, 36, 26, 0.08);
+  border-radius: 20px;
+  background: #F8F6F1;
 }
 
 .reserve-public-venue-picker h2 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, "Times New Roman", serif;
   font-size: clamp(28px, 4vw, 42px);
   font-weight: 500;
@@ -513,7 +523,10 @@
 .reserve-public-venue-picker p:not(.reserve-public-eyebrow) {
   margin: 10px 0 0;
   max-width: 420px;
-  color: rgba(74, 8, 32, 0.72);
+  color: rgba(20, 36, 26, 0.6);
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 17px;
   line-height: 1.55;
 }
 
