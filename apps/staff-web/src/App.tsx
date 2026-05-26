@@ -1046,11 +1046,14 @@ function StaffHome({
         statusDot={readinessActionCount === 0 ? 'forest' : 'amber'}
         actions={
           <>
-            <NavLink to="/roster" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
-              Open roster →
+            <NavLink to="/brief" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
+              Daily brief →
             </NavLink>
-            <NavLink to="/profiles" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
-              Pay run
+            <NavLink to="/readiness" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
+              Today's readiness
+            </NavLink>
+            <NavLink to="/roster" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
+              Roster
             </NavLink>
           </>
         }
