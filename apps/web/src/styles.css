@@ -924,28 +924,34 @@ p {
 .page-header-eyebrow,
 .eyebrow {
   margin: 0 0 6px;
+  font-family: var(--font-sans);
   text-transform: uppercase;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.22em;
   font-size: 11px;
-  font-weight: 600;
-  color: var(--color-accent);
+  font-weight: 700;
+  color: var(--color-text-muted);
 }
 
 .page-header-title,
 .page-header h1,
 .hero-text h1 {
   margin: 0;
-  font-size: 26px;
-  letter-spacing: -0.01em;
-  line-height: 1.15;
-  font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: clamp(24px, 3vw, 32px);
+  letter-spacing: -0.005em;
+  line-height: 1.1;
+  font-weight: 500;
+  color: var(--color-text);
 }
 
 .page-header-description {
   margin-top: 8px;
+  font-family: var(--font-serif);
+  font-style: italic;
   color: var(--color-text-muted);
-  font-size: 14px;
+  font-size: clamp(14px, 1.5vw, 16px);
   max-width: 70ch;
+  letter-spacing: 0.005em;
 }
 
 .page-header-actions {
@@ -1098,17 +1104,22 @@ p {
 }
 
 .card-title {
-  font-size: 14px;
-  font-weight: 600;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 500;
   color: var(--color-text);
-  letter-spacing: -0.005em;
+  letter-spacing: -0.003em;
+  line-height: 1.2;
 }
 
 .card-subtitle {
-  margin-top: 3px;
-  font-size: 12.5px;
-  color: var(--color-text-subtle);
-  line-height: 1.45;
+  margin-top: 4px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13.5px;
+  color: var(--color-text-muted);
+  line-height: 1.4;
+  letter-spacing: 0.003em;
 }
 
 .card-action {
@@ -1163,15 +1174,20 @@ p {
 }
 
 .collapsible-card-title strong {
-  font-size: 14px;
-  font-weight: 600;
-  letter-spacing: -0.005em;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 500;
+  letter-spacing: -0.003em;
+  line-height: 1.2;
 }
 
 .collapsible-card-title small {
-  color: var(--color-text-subtle);
-  font-size: 12.5px;
-  line-height: 1.45;
+  font-family: var(--font-serif);
+  font-style: italic;
+  color: var(--color-text-muted);
+  font-size: 13.5px;
+  line-height: 1.4;
+  letter-spacing: 0.003em;
 }
 
 .collapsible-card-meta {
@@ -1330,8 +1346,10 @@ p {
   justify-content: center;
   gap: 6px;
   border-radius: var(--radius-md);
+  font-family: var(--font-sans);
   font-weight: 600;
   font-size: 13px;
+  letter-spacing: 0.01em;
   border: 1px solid transparent;
   cursor: pointer;
   transition: background 120ms ease, border-color 120ms ease, color 120ms ease, box-shadow 120ms ease, transform 80ms ease;
@@ -1447,23 +1465,25 @@ p {
 }
 
 .field-label {
-  font-weight: 600;
-  font-size: 12.5px;
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 10.5px;
   color: var(--color-text-muted);
-  letter-spacing: 0.01em;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
 }
 
 .field-control {
   appearance: none;
   width: 100%;
-  padding: 8px 11px;
-  min-height: 36px;
+  padding: 9px 12px;
+  min-height: 38px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: var(--color-surface);
+  background: #FFFFFF;
   color: var(--color-text);
+  font-family: var(--font-sans);
   font-size: 13.5px;
-  box-shadow: var(--shadow-xs);
   transition: border-color 120ms ease, box-shadow 120ms ease;
 }
 
@@ -1474,7 +1494,7 @@ p {
 .field-control:focus {
   outline: none;
   border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px rgba(158, 59, 59, 0.14);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--color-accent) 18%, transparent);
 }
 
 .field-control::placeholder {
@@ -9554,5 +9574,127 @@ a.suite-app-tile:hover {
   }
   .alma-booking-time-value {
     font-size: 20px;
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────
+   Phase 4.13 — Mobile pass on the checklist sign-off flow.
+
+   The checklist run detail page is what someone uses on a phone or
+   tablet to sign off opening/closing tasks. Pass/Fail/N/A needs to
+   be one big tap, the notes textarea needs to not feel crammed, and
+   the linked-issue jump needs to be obvious. Polish only — no JSX
+   changes required, the existing structure stacks on mobile.
+   ───────────────────────────────────────────────────────────────── */
+
+.checklist-item-card {
+  background: #FFFFFF;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  padding: 18px;
+}
+
+.checklist-item-card strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: -0.003em;
+  color: var(--color-text);
+}
+
+.checklist-item-card .muted {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  letter-spacing: 0.01em;
+}
+
+/* Pass / Fail / N/A — make them a confident touch target with
+   editorial type. Default 48px; bump to 56px on phone. */
+.checklist-result-button {
+  min-height: 48px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  border-radius: 12px;
+}
+
+/* Phone: stack the top row so the result buttons get full width and
+   sit underneath the item label + guidance. */
+@media (max-width: 720px) {
+  .checklist-item-card {
+    padding: 16px;
+    gap: 12px;
+  }
+
+  .checklist-item-top {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .checklist-result-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .checklist-result-button {
+    min-height: 56px;
+    font-size: 15px;
+  }
+
+  .checklist-item-card .form-grid.two {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .checklist-item-card .inline-actions {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  .checklist-item-card .inline-actions .btn {
+    flex: 1 1 130px;
+    min-height: 44px;
+  }
+}
+
+/* Checklist run detail header — paper-cream slab, editorial type. */
+.page-stack > .page-header:has(+ .stats-grid) {
+  /* Only when the header is followed by stats — i.e. a daily-flow detail
+     page like a checklist run. */
+}
+
+/* Checklist run stats on phone: 2-col. */
+@media (max-width: 720px) {
+  .page-stack > .stats-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+}
+
+@media (max-width: 420px) {
+  .page-stack > .stats-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Two-one grid (Run notes + Assignment) stacks on phone. */
+@media (max-width: 720px) {
+  .grid.two-one {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+}
+
+/* Compliance topbar / sidebar — slightly tighter spacing on phone so
+   the daily flows have more room. */
+@media (max-width: 720px) {
+  .app-shell-container {
+    padding-inline: 14px;
+    padding-block: 14px;
+  }
+
+  .app-shell-topbar {
+    padding-inline: 14px;
+    padding-block: 10px;
   }
 }
