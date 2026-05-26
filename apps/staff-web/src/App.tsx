@@ -7781,6 +7781,32 @@ function HrSectionPage({
     }
   }
 
+  // Per-mode privacy callout — every HR surface should explicitly say
+  // who can see it, audited on view (#129 from the High School review).
+  const privacyByMode: Record<typeof mode, { tag: string; line: string } | null> = {
+    'contracts': {
+      tag: 'Restricted',
+      line: 'Visible to HR-authorised managers and admins. Final signed contracts only — drafts live in Alma Admin → HR templates.'
+    },
+    'warnings': {
+      tag: 'Restricted',
+      line: 'Visible to HR-authorised managers and admins. These are formal records, not casual notes.'
+    },
+    'pay-changes': {
+      tag: 'Highly restricted',
+      line: 'Visible only to users with the pay-changes permission. Every view and edit is audited.'
+    },
+    'right-to-work': {
+      tag: 'Highly restricted',
+      line: 'Visible only to users with the right-to-work permission. Never accessible on a shared device. Every view and edit is audited.'
+    },
+    'documents': {
+      tag: 'Restricted',
+      line: 'General HR documents are visible to HR-authorised managers and admins.'
+    }
+  };
+  const privacy = privacyByMode[mode];
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -7788,6 +7814,12 @@ function HrSectionPage({
         title={heading.title}
         description={mode === 'right-to-work' ? 'Right-to-work records are highly sensitive and restricted to HR-authorised users.' : heading.description}
       />
+      {privacy ? (
+        <div className={`hr-privacy-callout ${mode === 'pay-changes' || mode === 'right-to-work' ? 'is-strict' : ''}`}>
+          <span className="hr-privacy-callout-tag">{privacy.tag}</span>
+          <span className="hr-privacy-callout-line">{privacy.line}</span>
+        </div>
+      ) : null}
       {mode === 'contracts' && canManage ? (
         <Card title="Contract templates" subtitle="Admin owns editable HR templates and legal review warnings. Staff HR stores issued and signed final documents.">
           <div className="toolbar-right">
