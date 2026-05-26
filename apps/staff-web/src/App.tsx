@@ -2989,14 +2989,18 @@ function profileSectionIsLocked(section: StaffProfileSectionId, options: { canOp
   return false;
 }
 
-function ProfileInfoGrid({ items }: { items: Array<{ label: string; value: ReactNode; sensitive?: boolean }> }) {
+function ProfileInfoGrid({ items }: { items: Array<{ label: string; value: ReactNode; sensitive?: boolean; redacted?: boolean }> }) {
   return (
     <div className="staff-profile-info-grid">
       {items.map((item) => (
         <div key={item.label} className={item.sensitive ? 'is-sensitive' : undefined}>
           <span className="subtle">{item.label}</span>
-          <strong>{item.value || 'Not recorded'}</strong>
-          {item.sensitive ? <Badge tone="warning">Restricted</Badge> : null}
+          {item.redacted ? (
+            <strong style={{ color: '#7a1f3d' }}>Hidden</strong>
+          ) : (
+            <strong>{item.value || 'Not recorded'}</strong>
+          )}
+          {item.redacted ? <Badge tone="danger">Permission required</Badge> : item.sensitive ? <Badge tone="warning">Restricted</Badge> : null}
         </div>
       ))}
     </div>
@@ -3788,16 +3792,25 @@ function StaffProfileWorkspacePage({
       );
     }
     if (activeSection === 'payroll') {
+      // Field-level redaction (#16) — server returns redactedFieldGroups
+      // for fields hidden from the current actor. We use that here to show
+      // "Hidden — permission required" instead of "Not recorded" so the
+      // manager can tell apart "no data" from "not allowed".
+      const hiddenGroups = member.redactedFieldGroups ?? [];
+      const payHidden = hiddenGroups.includes('pay');
+      const bankHidden = hiddenGroups.includes('banking');
+      const taxHidden = hiddenGroups.includes('tax');
+      const xeroHidden = hiddenGroups.includes('xero');
       return (
         <Card title="Payroll" subtitle="Sensitive payroll fields are restricted to authorised Staff HR users." action={canManageProfileAccess ? <Button type="button" size="sm" onClick={() => setPayrollModalOpen(true)}>Edit payroll</Button> : undefined}>
           <ProfileInfoGrid items={[
-            { label: 'Pay type', value: member.payType, sensitive: true },
-            { label: 'Base rate', value: formatCents(member.payRateCents), sensitive: true },
-            { label: 'Award', value: member.payAward, sensitive: true },
-            { label: 'Tax residency', value: member.taxResidencyStatus, sensitive: true },
-            { label: 'Super fund', value: member.superFundName, sensitive: true },
-            { label: 'Bank account', value: member.bankAccountName ? `${member.bankAccountName} · ${member.bankBsb || 'No BSB'} · ${member.bankAccountNumber || 'No account number'}` : null, sensitive: true },
-            { label: 'Xero employee', value: member.xeroEmployeeId, sensitive: true }
+            { label: 'Pay type', value: member.payType, sensitive: true, redacted: payHidden },
+            { label: 'Base rate', value: formatCents(member.payRateCents), sensitive: true, redacted: payHidden },
+            { label: 'Award', value: member.payAward, sensitive: true, redacted: payHidden },
+            { label: 'Tax residency', value: member.taxResidencyStatus, sensitive: true, redacted: taxHidden },
+            { label: 'Super fund', value: member.superFundName, sensitive: true, redacted: taxHidden },
+            { label: 'Bank account', value: member.bankAccountName ? `${member.bankAccountName} · ${member.bankBsb || 'No BSB'} · ${member.bankAccountNumber || 'No account number'}` : null, sensitive: true, redacted: bankHidden },
+            { label: 'Xero employee', value: member.xeroEmployeeId, sensitive: true, redacted: xeroHidden }
           ]} />
           {renderPayrollModal()}
           <ActionFeedback message={messageTarget === 'payroll' ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
