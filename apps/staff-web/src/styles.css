@@ -3448,14 +3448,17 @@
 /* Forecast hairline — one-line natural language summary. */
 .roster-forecast-summary {
   margin: 0;
-  padding: 10px 16px;
+  padding: 8px 16px;
   background: #FFFFFF;
   border-bottom: 1px solid var(--color-border);
   font-family: var(--font-serif);
-  font-size: 15px;
-  line-height: 1.4;
+  font-size: 14.5px;
+  line-height: 1.35;
   color: var(--color-text);
   letter-spacing: 0.003em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .roster-forecast-summary strong {
@@ -3576,18 +3579,8 @@
   background: var(--color-surface, #F8F6F1);
 }
 
-/* Weekend column tint — a barely-there cream so the eye finds Sat /
-   Sun without it feeling stripey. Subtle enough that it disappears
-   on a colorless screen. */
-.deputy-day-head.is-weekend,
-.deputy-day-summary.is-weekend,
-.deputy-schedule-cell.is-weekend {
-  background: rgba(31, 53, 36, 0.025);
-}
-
-.deputy-schedule-cell.is-weekend:hover {
-  background: var(--color-surface, #F8F6F1);
-}
+/* Weekend tint removed — Sat / Sun read fine without it and the cream
+   was reading as a blue cast on darker monitors. */
 
 /* "Today" pill above today's day-head — but skip it on closed days. */
 .deputy-day-head.is-closed::before {
@@ -3726,15 +3719,18 @@
 }
 
 .roster-board-command--inline .roster-board-command-meta {
-  flex: 1 1 auto;
-  flex-wrap: nowrap;
-  justify-content: flex-start;
-  align-items: center;
-  gap: 6px;
+  flex: 1 1 auto !important;
+  display: flex !important;
+  flex-direction: row !important;
+  flex-wrap: nowrap !important;
+  justify-content: flex-start !important;
+  align-items: center !important;
+  gap: 6px !important;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   padding-block: 2px;
+  min-width: 0;
 }
 
 .roster-board-command--inline .roster-board-command-meta::-webkit-scrollbar {

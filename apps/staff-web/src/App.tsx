@@ -9444,66 +9444,11 @@ function RosterPage({
         </div>
       </div>
 
-      {/* 5-card editorial KPI strip — drives the weekly read */}
-      <div className="alma-roster-kpis">
-        <div className={`alma-bigstat ${forecastSalesCents > 0 && totalHours < recommendedHours - 2 ? 'alma-bigstat--warn' : ''}`}>
-          <div className="alma-bigstat-head">
-            <div>
-              <div className="alma-bigstat-eyebrow">Planned hours</div>
-              <div className="alma-bigstat-value">{roundHours(totalHours)}h</div>
-              <div className="alma-bigstat-sub">
-                {forecastSalesCents > 0 ? `Forecast ${formatCents(forecastSalesCents)} · ${recommendedHours.toFixed(0)}h recommended` : `${activeStaff.length} staff active`}
-              </div>
-            </div>
-          </div>
-        </div>
-        <div className={`alma-bigstat ${isWayOverBudget ? 'alma-bigstat--danger' : isOverBudget ? 'alma-bigstat--warn' : ''}`}>
-          <div className="alma-bigstat-head">
-            <div>
-              <div className="alma-bigstat-eyebrow">Wage cost</div>
-              <div className="alma-bigstat-value">{formatCents(rosterCostCents)}</div>
-              <div className="alma-bigstat-sub">
-                {wagePercent != null ? `${wagePercent.toFixed(1)}% of forecast revenue` : 'Add a sales forecast to compare'}
-              </div>
-            </div>
-            {wageBudgetVariancePercent != null ? (
-              <span className={`alma-roster-variance is-${wageBudgetTone}`}>
-                {formatVariance(wageBudgetVariancePercent)}
-              </span>
-            ) : null}
-          </div>
-        </div>
-        <div className={`alma-bigstat alma-bigstat--pill ${wageTone === 'danger' ? 'alma-bigstat--danger' : wageTone === 'warn' ? 'alma-bigstat--warn' : ''}`}>
-          <div className="alma-bigstat-head">
-            <div>
-              <div className="alma-bigstat-eyebrow">Wage guide</div>
-              <div className="alma-bigstat-value" style={{ fontSize: 32 }}>
-                {wagePercent != null ? `${wagePercent.toFixed(1)}%` : '—'}
-              </div>
-              <div className="alma-bigstat-sub">{wageGuide ? `Target ${wageGuide.toFixed(0)}%` : 'No target set'}</div>
-            </div>
-            <AlmaPill kind={wageTone}>
-              {forecastCostGapCents >= 0 ? 'Inside guide' : 'Over guide'}
-            </AlmaPill>
-          </div>
-        </div>
-        <div className={`alma-bigstat ${coverageGap ? 'alma-bigstat--warn' : ''}`}>
-          <div className="alma-bigstat-head">
-            <div>
-              <div className="alma-bigstat-eyebrow">Drafts to publish</div>
-              <div className="alma-bigstat-value">{draftCount}</div>
-              <div className="alma-bigstat-sub">
-                {draftCount > 0 ? 'Click Publish roster to confirm' : 'All shifts published'}
-              </div>
-            </div>
-          </div>
-        </div>
-        <BigStat
-          eyebrow="Status"
-          value={draftCount > 0 ? 'Draft' : 'Published'}
-          sub={`${visibleRoster.length} shifts · ${roundHours(totalHours)}h scheduled`}
-        />
-      </div>
+      {/* The 5-card KPI strip used to live here. Everything it showed
+          (planned hours, wage cost, wage %, drafts, status) is now in
+          the forecast hairline + metric strip above the schedule grid,
+          so this top block was wasting ~150px of vertical space without
+          adding new information. */}
 
       {/* Editorial filter strip — search + venue + status + view mode + chips,
           all consolidated into one tidy row in the editorial chrome. The
