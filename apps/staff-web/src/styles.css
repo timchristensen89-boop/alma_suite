@@ -3435,8 +3435,7 @@
    day heads, day-summary strip, weekend tint, empty-cell affordance.
    ───────────────────────────────────────────────────────────────── */
 
-/* Utility action bar above the editorial header — Forecast inputs
-   on the left, action buttons on the right. */
+/* Forecast pill row — sits at the top, right-aligned. */
 .alma-roster-utility {
   display: flex;
   justify-content: flex-end;
@@ -3448,6 +3447,21 @@
 .alma-roster-utility-spacer {
   flex: 1 1 auto;
   min-width: 0;
+}
+
+/* Action row beneath the search/filter strip — Copy / Historical /
+   Add shift / Publish. One row, right-aligned, paper-cream surface so
+   it reads as part of the same control block as the filters above. */
+.alma-roster-actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: var(--color-surface, #F8F6F1);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
 }
 
 /* Forecast pill — same height as the action buttons, paper-cream
@@ -3712,15 +3726,14 @@
 }
 
 .deputy-venue-cell.deputy-day-summary.is-weekend {
-  background: rgba(36, 76, 159, 0.06);
+  background: rgba(26, 34, 56, 0.06);
 }
 
-/* Weekend tint on the day-summary boxes only — light Staff-blue wash
-   on Sat / Sun so weekend totals stand apart without colouring the
-   whole column. Same blue as the Publish button so it reads as one
-   family. */
+/* Weekend tint on the day-summary boxes — same ink family as the
+   Publish button (Staff slate ink #1A2238) at low opacity so Sat /
+   Sun totals stand apart without colouring the whole column. */
 .deputy-day-summary.is-weekend {
-  background: rgba(36, 76, 159, 0.08);
+  background: rgba(26, 34, 56, 0.08);
 }
 
 .deputy-day-summary.is-weekend .deputy-day-summary-hours {

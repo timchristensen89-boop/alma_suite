@@ -9384,10 +9384,10 @@ function RosterPage({
 
   return (
     <div className="page-stack">
-      {/* Utility action bar — forecast inputs + Copy / Historical / Add /
-          Publish live here so the editorial header below stays a calm
-          masthead. Forecast lives up top because it drives every number
-          on the page and shouldn't be hunted for inside the metric strip. */}
+      {/* Utility — Forecast pill sits at the top because it drives
+          every number on the board. The Copy / Historical / Add /
+          Publish action row was moved BELOW the search toolbar so the
+          actions sit with the filters they operate on. */}
       <div className="alma-roster-utility">
         <label className="roster-forecast-inline roster-forecast-inline--utility" title="Forecast sales · target wage %">
           <span className="roster-forecast-inline-label">Forecast</span>
@@ -9407,31 +9407,6 @@ function RosterPage({
           />
           <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
         </label>
-        <span className="alma-roster-utility-spacer" aria-hidden="true" />
-        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
-          Copy last week
-        </Button>
-        <Button
-          type="button"
-          size="sm"
-          variant="secondary"
-          onClick={() => setHistoricalOpen(true)}
-          aria-label="Open historical forecast data"
-        >
-          Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
-        </Button>
-        <Button type="button" size="sm" onClick={() => newShift()}>
-          Add shift
-        </Button>
-        <button
-          type="button"
-          className="alma-roster-publish"
-          disabled={saving || draftCount === 0}
-          onClick={() => setPublishPreviewOpen(true)}
-        >
-          <span>Publish roster</span>
-          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
-        </button>
       </div>
 
       {/* Editorial roster header — eyebrow + Cormorant serif title + week nav */}
@@ -9530,6 +9505,36 @@ function RosterPage({
           <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>Week</button>
           <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>2w</button>
         </div>
+      </div>
+
+      {/* Action row — sits directly under the search/filter strip so
+          the actions and the filters they operate on read as one
+          control block. */}
+      <div className="alma-roster-actions">
+        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
+          Copy last week
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => setHistoricalOpen(true)}
+          aria-label="Open historical forecast data"
+        >
+          Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
+        </Button>
+        <Button type="button" size="sm" onClick={() => newShift()}>
+          Add shift
+        </Button>
+        <button
+          type="button"
+          className="alma-roster-publish"
+          disabled={saving || draftCount === 0}
+          onClick={() => setPublishPreviewOpen(true)}
+        >
+          <span>Publish roster</span>
+          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
+        </button>
       </div>
 
       {activeFilterChips.length > 0 ? (
