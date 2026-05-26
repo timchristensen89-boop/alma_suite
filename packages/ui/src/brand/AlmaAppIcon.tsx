@@ -283,8 +283,8 @@ export const ALMA_APPS: AlmaAppDefinition[] = [
   {
     id: 'comms',
     label: 'COMMS',
-    from: '#EFE8DC',
-    to: '#DDD3C0',
+    from: '#B4BCC5',
+    to: '#6E7682',
     iconKey: 'comms',
     icon: <CommsGlyph />
   },

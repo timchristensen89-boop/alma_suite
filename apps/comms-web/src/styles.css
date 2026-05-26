@@ -2,10 +2,10 @@
    The imported Suite stylesheet owns AppShell, sidebar, topbar, app switcher, gutters, and global layout. */
 
 :root {
-  --color-accent: #8A7860;
-  --color-accent-hover: #5E4F3D;
-  --color-accent-soft: #EFE8DC;
-  --color-accent-text: #3D3220;
+  --color-accent: #6E7682;
+  --color-accent-hover: #535A65;
+  --color-accent-soft: #E5E8EC;
+  --color-accent-text: #2A2F37;
 }
 
 .comms-page {
