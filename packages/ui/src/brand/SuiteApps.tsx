@@ -537,6 +537,7 @@ function SuiteEditorialSwitcher({
   const [query, setQuery] = useState('');
   const [focusIndex, setFocusIndex] = useState(0);
   const searchRef = useRef<HTMLInputElement | null>(null);
+  const popoverRef = useRef<HTMLDivElement | null>(null);
 
   const grouped = apps.length >= SUITE_GROUP_THRESHOLD;
 
@@ -572,6 +573,14 @@ function SuiteEditorialSwitcher({
   useEffect(() => {
     setFocusIndex(0);
   }, [query, mobileOpen]);
+
+  // When keyboard nav moves focus past the visible area, scroll it into view.
+  // Skip when focus is 0 (start of list) so the header stays visible.
+  useEffect(() => {
+    if (!mobileOpen || !popoverRef.current) return;
+    const row = popoverRef.current.querySelector<HTMLElement>('.suite-switch-row.is-focused');
+    if (row) row.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [focusIndex, mobileOpen]);
 
   // Autofocus the search field when the popover opens
   useEffect(() => {
@@ -646,6 +655,7 @@ function SuiteEditorialSwitcher({
       </button>
 
       <div
+        ref={popoverRef}
         id={popoverId}
         className="suite-switcher-popover suite-switcher-popover--list"
         role="dialog"

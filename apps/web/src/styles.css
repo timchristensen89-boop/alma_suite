@@ -5195,6 +5195,12 @@ a.suite-app-tile:hover {
 
 .suite-switcher-popover--list {
   width: min(440px, calc(100vw - 24px));
+  /* Cap the panel so it never spills past the viewport, and scroll the
+     contents inside instead. The header + search stay sticky so they're
+     always reachable while scrolling the list. */
+  max-height: calc(100vh - 96px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 22px;
   border: 1px solid rgba(31, 53, 36, 0.08);
   border-radius: 22px;
@@ -5203,6 +5209,31 @@ a.suite-app-tile:hover {
     0 1px 0 rgba(255, 255, 255, 0.7) inset,
     0 22px 60px -20px rgba(31, 53, 36, 0.25),
     0 6px 18px -10px rgba(31, 53, 36, 0.15);
+}
+
+/* Keep the header + search visible while the list scrolls. */
+.suite-switcher-popover--list .suite-switch-list-head {
+  position: sticky;
+  top: -22px;
+  margin-top: -22px;
+  padding-top: 24px;
+  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
+}
+
+.suite-switcher-popover--list .suite-switch-search {
+  position: sticky;
+  top: 56px;
+  z-index: 2;
+}
+
+.suite-switcher-popover--list .suite-switch-footer {
+  position: sticky;
+  bottom: -22px;
+  margin-bottom: -22px;
+  padding-bottom: 22px;
+  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  z-index: 2;
 }
 
 .suite-switcher--topbar.is-open .suite-switcher-popover--list {
