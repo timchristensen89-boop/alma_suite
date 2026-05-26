@@ -18,6 +18,7 @@ import type {
   Timesheet
 } from '@alma/shared';
 import {
+  AlmaHomeBubble,
   AlmaPill,
   AppShell,
   ActionPanel,
@@ -27,7 +28,6 @@ import {
   Card,
   ChartIcon,
   DocumentIcon,
-  EditorialAppHeader,
   EditorialPanel,
   Input,
   ProductLogo,
@@ -1615,18 +1615,35 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               if (variancePct != null && variancePct < -5) {
                 return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
               }
-              return `Sales ${formatCurrency(salesCentsForRange)} across the period · prime cost ${formatPercent(primeTotals?.primeCostPercent)}.`;
+              return `Signed in as ${user.firstName}`;
             })();
             return (
-              <EditorialAppHeader
-                eyebrow="Reports · Alma group"
-                title="The numbers"
-                italic="this week."
-                sub={sub}
+              <AlmaHomeBubble
+                app="reports"
+                appName="Reports"
+                appIcon={<ChartIcon />}
+                eyebrow="Reports command"
+                description="High-level attention signals across the suite. Reports are read-only and scoped to the venues you have access to."
+                statusLabel="Overview"
+                statusHint={sub}
+                statusDot={variancePct != null && variancePct > 5 ? 'terracotta' : variancePct != null && variancePct < -5 ? 'forest' : 'amber'}
                 actions={
-                  <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
-                    Export overview CSV
-                  </Button>
+                  <>
+                    <button
+                      type="button"
+                      className="alma-home-bubble-btn alma-home-bubble-btn--primary"
+                      onClick={() => void load()}
+                    >
+                      Refresh →
+                    </button>
+                    <button
+                      type="button"
+                      className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
+                      onClick={exportOverviewCsv}
+                    >
+                      Export overview
+                    </button>
+                  </>
                 }
               />
             );

@@ -17,6 +17,7 @@ import {
   ActionFeedback,
   ActionPanel,
   Badge,
+  AlmaHomeBubble,
   Button,
   Card,
   ChartIcon,
@@ -1084,20 +1085,36 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           const activeCount = giftCards.filter((c) => !c.testMode && c.status === 'ACTIVE').length;
           const outstandingLabel = new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD', maximumFractionDigits: 0 }).format(outstandingCents / 100);
           return (
-            <EditorialAppHeader
-              eyebrow="Gift cards · Alma group"
-              title={outstandingCents > 0 ? outstandingLabel : 'No outstanding'}
-              italic="in outstanding cards."
-              sub={(() => {
+            <AlmaHomeBubble
+              app="giftcards"
+              appName="Gift Cards"
+              appIcon={<DocumentIcon />}
+              eyebrow="Gift card command"
+              description={`Sell, redeem, reconcile. The card register holds ${outstandingLabel} in outstanding balance across ${activeCount} active cards.`}
+              statusLabel="Week to date"
+              statusHint={(() => {
                 if (loading) return 'Loading card data…';
                 if (message && !messageTarget) return 'Could not refresh gift cards.';
-                if (activeCount === 0) return 'No active cards in circulation.';
-                return `${activeCount} active card${activeCount === 1 ? '' : 's'}. ${orderActionItems.length > 0 ? `${orderActionItems.length} order action${orderActionItems.length === 1 ? '' : 's'} waiting.` : 'No fulfilment items pending.'}`;
+                if (orderActionItems.length === 0) return 'No fulfilment items pending.';
+                return `${orderActionItems.length} order action${orderActionItems.length === 1 ? '' : 's'} waiting.`;
               })()}
+              statusDot={orderActionItems.length > 0 ? 'amber' : 'forest'}
               actions={
                 <>
-                  <Button type="button" variant="secondary" onClick={() => window.location.assign('/orders')}>View orders</Button>
-                  <Button type="button" onClick={() => window.location.assign('/redeem')}>Redeem card</Button>
+                  <button
+                    type="button"
+                    className="alma-home-bubble-btn alma-home-bubble-btn--primary"
+                    onClick={() => window.location.assign('/redeem')}
+                  >
+                    Sell a card →
+                  </button>
+                  <button
+                    type="button"
+                    className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
+                    onClick={() => window.location.assign('/orders')}
+                  >
+                    Open ledger
+                  </button>
                 </>
               }
             />

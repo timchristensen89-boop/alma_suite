@@ -55,6 +55,7 @@ import {
 import {
   ActionFeedback,
   ActionPanel,
+  AlmaHomeBubble,
   AlmaPill,
   AppShell,
   Badge,
@@ -991,11 +992,14 @@ function StaffHome({
 
   return (
     <div className="page-stack staff-settings-page">
-      <EditorialAppHeader
-        eyebrow="Staff · Alma group"
-        title="The team"
-        italic="this week."
-        sub={(() => {
+      <AlmaHomeBubble
+        app="staff"
+        appName="Staff"
+        appIcon={<PeopleIcon />}
+        eyebrow="People command"
+        description="Rosters, pay, contracts, certifications. Where the team and the working week meet."
+        statusLabel="Week 25–31 May"
+        statusHint={(() => {
           if (loading) return 'Loading the staff register…';
           if (readinessActionCount === 0) {
             return `${activeStaff.length} active profile${activeStaff.length === 1 ? '' : 's'}. Register is ready for daily use.`;
@@ -1004,17 +1008,16 @@ function StaffHome({
           if (pending.length > 0) bits.push(`${pending.length} pending onboarding`);
           if (expiringSoon.length > 0) bits.push(`${expiringSoon.length} expiring record${expiringSoon.length === 1 ? '' : 's'}`);
           if (missingPayRate.length > 0) bits.push(`${missingPayRate.length} missing pay rate`);
-          return bits.length > 0
-            ? `${bits.join(' · ')}.`
-            : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review.`;
+          return bits.length > 0 ? bits.join(' · ') : `${readinessActionCount} readiness item${readinessActionCount === 1 ? '' : 's'} need review`;
         })()}
+        statusDot={readinessActionCount === 0 ? 'forest' : 'amber'}
         actions={
           <>
-            <NavLink to="/roster">
-              <Button type="button" variant="secondary">Open roster</Button>
+            <NavLink to="/roster" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
+              Open roster →
             </NavLink>
-            <NavLink to="/profiles">
-              <Button type="button">Open profiles</Button>
+            <NavLink to="/profiles" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
+              Pay run
             </NavLink>
           </>
         }

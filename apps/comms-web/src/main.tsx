@@ -10,9 +10,10 @@ import {
   useParams
 } from 'react-router-dom';
 import {
+  AlmaHomeBubble,
   AppShell,
   Card,
-  EditorialAppHeader,
+  CommsGlyph,
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
@@ -396,20 +397,28 @@ function HomePage() {
 
   return (
     <section className="comms-page">
-      <EditorialAppHeader
-        eyebrow="Comms · Alma group"
-        title={urgentThreads.length > 0 ? `${urgentThreads.length} unread` : 'All clear'}
-        italic={urgentThreads.length > 0 ? (urgentThreads.length === 1 ? 'thread.' : 'threads.') : 'on the wire.'}
-        sub={(() => {
+      <AlmaHomeBubble
+        app="comms"
+        appName="Comms"
+        appIcon={<CommsGlyph />}
+        eyebrow="Team comms"
+        description="Pinned announcements, group threads, supplier sign-offs. The internal voice of the group."
+        statusLabel={urgentThreads.length > 0 ? `${urgentThreads.length} unread` : 'All clear'}
+        statusHint={(() => {
           if (loading) return 'Loading the inbox…';
           if (message) return 'Could not refresh Comms.';
           if (urgentThreads.length === 0) return 'Inbox is current, no handovers pending.';
           return `${urgentThreads.length} priority thread${urgentThreads.length === 1 ? '' : 's'} waiting on a reply.`;
         })()}
+        statusDot={urgentThreads.length > 0 ? 'amber' : 'forest'}
         actions={
           <>
-            <NavLink className="btn btn-secondary" to="/inbox">Open inbox</NavLink>
-            <NavLink className="btn btn-primary" to="/compose">New message</NavLink>
+            <NavLink className="alma-home-bubble-btn alma-home-bubble-btn--primary" to="/compose">
+              New thread →
+            </NavLink>
+            <NavLink className="alma-home-bubble-btn alma-home-bubble-btn--ghost" to="/inbox">
+              Broadcast
+            </NavLink>
           </>
         }
       />

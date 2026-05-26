@@ -129,6 +129,68 @@ export function DailyBars({ days, max }: DailyBarsProps) {
   );
 }
 
+// --- Alma Home Bubble (gradient hero bubble per design) ----------------
+// Per-app coloured gradient hero card with eyebrow + serif title (italic
+// app name) + description + status line + actions, with a giant initial
+// letter watermark to the right.
+
+type AlmaApp =
+  | 'reports'
+  | 'reserve'
+  | 'stock'
+  | 'staff'
+  | 'compliance'
+  | 'marketing'
+  | 'comms'
+  | 'giftcards'
+  | 'admin';
+
+type AlmaHomeBubbleProps = {
+  app: AlmaApp;
+  appName: string;
+  appIcon?: ReactNode;
+  eyebrow: string;
+  description: ReactNode;
+  statusLabel: string;
+  statusHint?: ReactNode;
+  statusDot?: 'forest' | 'amber' | 'terracotta' | 'slate';
+  actions?: ReactNode;
+};
+
+export function AlmaHomeBubble({
+  app,
+  appName,
+  appIcon,
+  eyebrow,
+  description,
+  statusLabel,
+  statusHint,
+  statusDot = 'forest',
+  actions
+}: AlmaHomeBubbleProps) {
+  return (
+    <section className={`alma-home-bubble alma-home-bubble--${app}`}>
+      <span className="alma-home-bubble-watermark" aria-hidden="true">
+        {appName.charAt(0).toUpperCase()}
+      </span>
+      <div className="alma-home-bubble-body">
+        <span className="alma-home-bubble-eyebrow">{eyebrow}</span>
+        <h1 className="alma-home-bubble-title">
+          {appIcon ? <span className="alma-home-bubble-icon" aria-hidden="true">{appIcon}</span> : null}
+          <span>Alma Suite <em>{appName}</em></span>
+        </h1>
+        {description ? <p className="alma-home-bubble-desc">{description}</p> : null}
+        <div className="alma-home-bubble-status">
+          <span className={`alma-home-bubble-dot is-${statusDot}`} aria-hidden="true" />
+          <span className="alma-home-bubble-status-label">{statusLabel}</span>
+          {statusHint ? <span className="alma-home-bubble-status-hint">{statusHint}</span> : null}
+        </div>
+      </div>
+      {actions ? <div className="alma-home-bubble-actions">{actions}</div> : null}
+    </section>
+  );
+}
+
 // --- Editorial App Header (per-app home page hero) ---------------------
 
 type EditorialAppHeaderProps = {

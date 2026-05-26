@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { StockDashboardPayload } from '@alma/shared';
-import { Badge, Card, EditorialAppHeader, EmptyState, Select, Spinner, StatCard } from '@alma/ui';
+import { AlmaHomeBubble, Badge, Card, EmptyState, ProduceIcon, Select, Spinner, StatCard } from '@alma/ui';
 import { IconInvoices, IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -75,11 +75,14 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <EditorialAppHeader
-        eyebrow={`Stock · ${activeVenue || 'Alma group'}`}
-        title="Pantry"
-        italic="& the orders board."
-        sub={(() => {
+      <AlmaHomeBubble
+        app="stock"
+        appName="Stock"
+        appIcon={<ProduceIcon />}
+        eyebrow="Inventory command"
+        description="Pantries, suppliers, and the orders board across both venues. Re-order suggestions update every hour."
+        statusLabel={activeVenue ? activeVenue.toUpperCase() : 'All venues'}
+        statusHint={(() => {
           if (loading) return 'Loading stock signals…';
           if (error) return 'Could not refresh the stock dashboard.';
           const low = dashboard?.summary.lowStockItems ?? 0;
@@ -92,13 +95,14 @@ export function DashboardPage() {
           if (parts.length === 0) return 'Everything is on the shelf and stocktakes are clear.';
           return `${parts.join(' · ')}.`;
         })()}
+        statusDot={(dashboard?.summary.outOfStockItems ?? 0) > 0 ? 'terracotta' : (dashboard?.summary.lowStockItems ?? 0) > 0 ? 'amber' : 'forest'}
         actions={
           <>
-            <Link className="btn btn-secondary" to="/items">
-              Items
+            <Link className="alma-home-bubble-btn alma-home-bubble-btn--primary" to="/stocktake">
+              Take stock →
             </Link>
-            <Link className="btn btn-primary" to="/stocktake">
-              Stocktake
+            <Link className="alma-home-bubble-btn alma-home-bubble-btn--ghost" to="/items">
+              Catalogue
             </Link>
           </>
         }

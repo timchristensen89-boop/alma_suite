@@ -5,7 +5,7 @@ import type {
   StaffSummary,
   TemperatureSummary
 } from '@alma/shared';
-import { Badge, Button, Card, EditorialAppHeader, StatCard } from '@alma/ui';
+import { AlmaHomeBubble, Badge, Button, Card, ShieldIcon, StatCard } from '@alma/ui';
 import { useAsync } from '../hooks/useAsync';
 import { api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -60,20 +60,22 @@ export function DashboardPage() {
 
   return (
     <div className="page-stack">
-      <EditorialAppHeader
-        eyebrow="Compliance · Alma group"
-        title={headerTitle}
-        italic={headerItalic}
-        sub={headerSub}
+      <AlmaHomeBubble
+        app="compliance"
+        appName="Compliance"
+        appIcon={<ShieldIcon />}
+        eyebrow="Standards command"
+        description="Audits, allergens, food safety logs. The unglamorous backbone that keeps the doors open."
+        statusLabel={openIssues > 0 ? `${openIssues} open` : 'All venues · today'}
+        statusHint={openIssues > 0 || overdueChecks > 0 ? headerSub : 'No issues. Logs are current.'}
+        statusDot={openIssues > 0 ? 'terracotta' : overdueChecks > 0 ? 'amber' : 'forest'}
         actions={
           <>
-            <Link to="/issues/new">
-              <Button leftIcon={<IconPlus size={14} />}>New issue</Button>
+            <Link to="/issues/new" className="alma-home-bubble-btn alma-home-bubble-btn--primary">
+              Log now →
             </Link>
-            <Link to="/checklists/new">
-              <Button variant="secondary" leftIcon={<IconChecklist size={14} />}>
-                Start checklist
-              </Button>
+            <Link to="/checklists/new" className="alma-home-bubble-btn alma-home-bubble-btn--ghost">
+              Pre-audit checklist
             </Link>
           </>
         }

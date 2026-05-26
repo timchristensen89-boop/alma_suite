@@ -19,6 +19,7 @@ export { EmptyState } from './primitives/EmptyState';
 export { Skeleton } from './primitives/Skeleton';
 export { Spinner } from './primitives/Spinner';
 export {
+  AlmaHomeBubble,
   AlmaPill,
   BigStat,
   DailyBars,
@@ -44,9 +45,11 @@ export {
   BookIcon,
   CapIcon,
   ChartIcon,
+  CommsGlyph,
   DocumentIcon,
   GearIcon,
   PeopleIcon,
+  ProduceIcon,
   SearchIcon,
   ShieldIcon,
   WarningIcon,
