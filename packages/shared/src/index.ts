@@ -4546,6 +4546,7 @@ export type StockDeliveryCheckItem = {
   discrepancy: boolean;
   discrepancyReason: string | null;
   notes: string | null;
+  photoUrl: string | null;
   createdAt: string;
   updatedAt: string;
   stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'avgCostCents'> | null;

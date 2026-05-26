@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useState } from 'react';
-import type { StockDeliveryCheck, StockDeliveryChecksPayload } from '@alma/shared';
+import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
+import type { StockDeliveryCheck, StockDeliveryCheckItem, StockDeliveryChecksPayload } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, Textarea } from '@alma/ui';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -27,6 +27,108 @@ function statusTone(status: string): 'positive' | 'warning' | 'danger' | 'muted'
   return 'muted';
 }
 
+type DeliveryLineRowProps = {
+  line: StockDeliveryCheckItem;
+  uploading: boolean;
+  onUpload: (file: File) => void;
+  onRemove: () => void;
+  onView: (path: string) => Promise<void>;
+  cachedPhotoUrl: string | undefined;
+  resolvePhotoUrl: (path: string) => Promise<string | null>;
+};
+
+function DeliveryLineRow({ line, uploading, onUpload, onRemove, onView, cachedPhotoUrl, resolvePhotoUrl }: DeliveryLineRowProps) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [thumbUrl, setThumbUrl] = useState<string | undefined>(cachedPhotoUrl);
+
+  // Lazy-resolve the thumbnail URL the first time the row is rendered
+  useEffect(() => {
+    let cancelled = false;
+    if (line.photoUrl && !thumbUrl) {
+      void resolvePhotoUrl(line.photoUrl).then((url) => {
+        if (!cancelled && url) setThumbUrl(url);
+      });
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [line.photoUrl, thumbUrl, resolvePhotoUrl]);
+
+  // Sync external cache changes (e.g. after upload)
+  useEffect(() => {
+    if (cachedPhotoUrl && cachedPhotoUrl !== thumbUrl) setThumbUrl(cachedPhotoUrl);
+  }, [cachedPhotoUrl, thumbUrl]);
+
+  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    if (file) onUpload(file);
+    if (inputRef.current) inputRef.current.value = '';
+  }
+
+  const variance = (() => {
+    const expected = line.expectedQuantity ?? null;
+    const received = line.receivedQuantity ?? null;
+    if (expected === null || received === null) return null;
+    const diff = received - expected;
+    if (Math.abs(diff) < 0.001) return null;
+    return diff;
+  })();
+
+  return (
+    <div className={`delivery-line-detail${line.discrepancy ? ' delivery-line-detail--flagged' : ''}`}>
+      <div className="delivery-line-detail-main">
+        <div className="delivery-line-detail-summary">
+          <strong>{line.description}</strong>
+          <span className="subtle">
+            Expected {line.expectedQuantity ?? '—'} · Received {line.receivedQuantity ?? '—'}
+            {line.unit ? ` ${line.unit}` : ''}
+            {variance !== null ? ` · Variance ${variance > 0 ? '+' : ''}${variance}` : ''}
+          </span>
+          {line.discrepancyReason ? <span className="subtle">Note: {line.discrepancyReason}</span> : null}
+          {line.notes ? <span className="subtle">{line.notes}</span> : null}
+        </div>
+        <div className="delivery-line-detail-photo">
+          {line.photoUrl ? (
+            <button
+              type="button"
+              className="delivery-photo-thumb"
+              onClick={() => void onView(line.photoUrl as string)}
+              aria-label="View delivery photo"
+            >
+              {thumbUrl ? <img src={thumbUrl} alt="Delivery line evidence" /> : <span className="subtle">Loading…</span>}
+            </button>
+          ) : (
+            <div className="delivery-photo-placeholder">No photo</div>
+          )}
+          <div className="delivery-photo-actions">
+            <input
+              ref={inputRef}
+              type="file"
+              accept="image/jpeg,image/png,image/heic,image/heif,image/webp"
+              hidden
+              onChange={handleFileChange}
+            />
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              disabled={uploading}
+              onClick={() => inputRef.current?.click()}
+            >
+              {uploading ? 'Uploading…' : line.photoUrl ? 'Replace photo' : 'Add photo'}
+            </Button>
+            {line.photoUrl ? (
+              <Button type="button" size="sm" variant="ghost" onClick={onRemove}>
+                Remove
+              </Button>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function DeliveriesPage() {
   useDocumentTitle('Delivery checks');
   const [data, setData] = useState<StockDeliveryChecksPayload | null>(null);
@@ -35,6 +137,84 @@ export function DeliveriesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedCheckId, setExpandedCheckId] = useState<string | null>(null);
+  const [uploadingLineId, setUploadingLineId] = useState<string | null>(null);
+  const [photoUrlCache, setPhotoUrlCache] = useState<Record<string, string>>({});
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
+
+  // Resolve gs:// paths to viewable signed URLs (1h validity) on demand.
+  // Cached in-memory so re-renders don't re-fetch.
+  async function resolvePhotoUrl(path: string): Promise<string | null> {
+    if (photoUrlCache[path]) return photoUrlCache[path] ?? null;
+    try {
+      const result = await api<{ url: string }>('/api/uploads/view', {
+        method: 'POST',
+        body: JSON.stringify({ path })
+      });
+      setPhotoUrlCache((current) => ({ ...current, [path]: result.url }));
+      return result.url;
+    } catch {
+      return null;
+    }
+  }
+
+  async function uploadLinePhoto(lineId: string, file: File) {
+    setUploadingLineId(lineId);
+    setError(null);
+    try {
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('File too large — max 5MB.');
+      }
+      // 1. Ask the API for a signed PUT URL
+      const signed = await api<{ uploadUrl: string; publicPath: string; maxBytes: number }>(
+        '/api/uploads/sign',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            folder: 'deliveries',
+            mimeType: file.type || 'image/jpeg',
+            filename: file.name
+          })
+        }
+      );
+
+      // 2. PUT the file directly to Cloud Storage (bypasses our API server)
+      const putResponse = await fetch(signed.uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type || 'image/jpeg',
+          'x-goog-content-length-range': `0,${signed.maxBytes}`
+        },
+        body: file
+      });
+      if (!putResponse.ok) {
+        throw new Error('Upload failed — try again or pick a smaller file.');
+      }
+
+      // 3. Persist the gs:// path on the line record
+      await api(`/api/operations/deliveries/lines/${lineId}/photo`, {
+        method: 'PATCH',
+        body: JSON.stringify({ photoUrl: signed.publicPath })
+      });
+      await load(activeVenue);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not upload photo.');
+    } finally {
+      setUploadingLineId(null);
+    }
+  }
+
+  async function removeLinePhoto(lineId: string) {
+    try {
+      await api(`/api/operations/deliveries/lines/${lineId}/photo`, {
+        method: 'PATCH',
+        body: JSON.stringify({ photoUrl: null })
+      });
+      await load(activeVenue);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not remove photo.');
+    }
+  }
 
   async function load(venue = selectedVenue) {
     setLoading(true);
@@ -180,20 +360,65 @@ export function DeliveriesPage() {
           {!loading && !data?.checks.length ? <EmptyState title="No delivery checks" description="Create the first invoice checklist when a delivery arrives." /> : null}
           {data?.checks.length ? (
             <div className="stock-mobile-list">
-              {data.checks.map((check) => (
-                <div key={check.id} className="stock-operation-row">
-                  <span>
-                    <strong>{check.supplierName}</strong>
-                    <span className="subtle">{check.invoiceNumber || 'No invoice'} · {new Date(check.deliveryDate).toLocaleDateString()} · {check.items.length} lines</span>
-                    {check.items.some((item) => item.discrepancy) ? <span className="subtle">Discrepancy: {check.items.filter((item) => item.discrepancy).map((item) => item.description).join(', ')}</span> : null}
-                  </span>
-                  <span className="stock-operation-row-actions">
-                    <Badge tone={statusTone(check.status)}>{check.status.replaceAll('_', ' ')}</Badge>
-                    {check.status !== 'COMPLETED' && check.status !== 'DISCREPANCY' ? <Button type="button" size="sm" disabled={saving} onClick={() => void complete(check)}>Complete</Button> : null}
-                  </span>
-                </div>
-              ))}
+              {data.checks.map((check) => {
+                const isExpanded = expandedCheckId === check.id;
+                const photoCount = check.items.filter((item) => item.photoUrl).length;
+                return (
+                  <div key={check.id} className="delivery-check-block">
+                    <div className="stock-operation-row">
+                      <span>
+                        <strong>{check.supplierName}</strong>
+                        <span className="subtle">{check.invoiceNumber || 'No invoice'} · {new Date(check.deliveryDate).toLocaleDateString()} · {check.items.length} lines{photoCount > 0 ? ` · 📷 ${photoCount}` : ''}</span>
+                        {check.items.some((item) => item.discrepancy) ? <span className="subtle">Discrepancy: {check.items.filter((item) => item.discrepancy).map((item) => item.description).join(', ')}</span> : null}
+                      </span>
+                      <span className="stock-operation-row-actions">
+                        <Badge tone={statusTone(check.status)}>{check.status.replaceAll('_', ' ')}</Badge>
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => setExpandedCheckId(isExpanded ? null : check.id)}
+                        >
+                          {isExpanded ? 'Hide lines' : 'Show lines'}
+                        </Button>
+                        {check.status !== 'COMPLETED' && check.status !== 'DISCREPANCY' ? <Button type="button" size="sm" disabled={saving} onClick={() => void complete(check)}>Complete</Button> : null}
+                      </span>
+                    </div>
+                    {isExpanded ? (
+                      <div className="delivery-line-detail-list">
+                        {check.items.map((item) => (
+                          <DeliveryLineRow
+                            key={item.id}
+                            line={item}
+                            uploading={uploadingLineId === item.id}
+                            onUpload={(file) => void uploadLinePhoto(item.id, file)}
+                            onRemove={() => void removeLinePhoto(item.id)}
+                            onView={async (path) => {
+                              const url = await resolvePhotoUrl(path);
+                              if (url) setLightboxUrl(url);
+                            }}
+                            cachedPhotoUrl={item.photoUrl ? photoUrlCache[item.photoUrl] : undefined}
+                            resolvePhotoUrl={resolvePhotoUrl}
+                          />
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
+          ) : null}
+
+          {lightboxUrl ? (
+            <button
+              type="button"
+              className="delivery-photo-lightbox"
+              onClick={() => setLightboxUrl(null)}
+              aria-label="Close photo"
+            >
+              <img src={lightboxUrl} alt="Delivery photo" />
+              <span className="delivery-photo-lightbox-hint">Tap to close</span>
+            </button>
           ) : null}
         </Card>
       </div>

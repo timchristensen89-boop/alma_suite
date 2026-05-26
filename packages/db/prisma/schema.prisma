@@ -2255,6 +2255,7 @@ model StockDeliveryCheckItem {
   discrepancy         Boolean  @default(false)
   discrepancyReason   String?
   notes               String?
+  photoUrl            String?
   createdAt           DateTime @default(now())
   updatedAt           DateTime @updatedAt
   deliveryCheck       StockDeliveryCheck @relation(fields: [deliveryCheckId], references: [id], onDelete: Cascade)

@@ -351,6 +351,7 @@ function toDeliveryPayload(row: Prisma.StockDeliveryCheckGetPayload<{
       discrepancy: item.discrepancy,
       discrepancyReason: item.discrepancyReason,
       notes: item.notes,
+      photoUrl: item.photoUrl ?? null,
       createdAt: item.createdAt.toISOString(),
       updatedAt: item.updatedAt.toISOString(),
       stockItem: item.stockItem
@@ -565,6 +566,32 @@ export const stockOperationsService = {
           items: { orderBy: { createdAt: 'asc' }, include: { stockItem: { select: itemSelect } } }
         }
       });
+    });
+    return toDeliveryPayload(row);
+  },
+
+  // Attach (or clear) a Cloud Storage gs:// path to a single delivery line.
+  // The browser has already PUT the file to the signed URL — this just
+  // persists the resulting object key on the line record.
+  async updateDeliveryLinePhoto(lineId: string, photoUrl: string | null, actor?: AuthUser | null): Promise<StockDeliveryCheck> {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const line = await prisma.stockDeliveryCheckItem.findUnique({
+      where: { id: lineId },
+      select: { id: true, deliveryCheckId: true }
+    });
+    if (!line) throw new HttpError(404, 'Delivery line not found');
+
+    await prisma.stockDeliveryCheckItem.update({
+      where: { id: lineId },
+      data: { photoUrl }
+    });
+
+    const row = await prisma.stockDeliveryCheck.findUniqueOrThrow({
+      where: { id: line.deliveryCheckId },
+      include: {
+        supplier: { select: { id: true, name: true } },
+        items: { orderBy: { createdAt: 'asc' }, include: { stockItem: { select: itemSelect } } }
+      }
     });
     return toDeliveryPayload(row);
   },

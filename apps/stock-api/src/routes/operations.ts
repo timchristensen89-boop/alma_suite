@@ -52,6 +52,18 @@ operationsRouter.post('/deliveries/:id/complete', async (req, res, next) => {
   }
 });
 
+// Attach (or clear) a photo on a delivery line — used after the browser has
+// uploaded directly to Cloud Storage via /api/uploads/sign.
+operationsRouter.patch('/deliveries/lines/:lineId/photo', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const photoUrl = typeof body.photoUrl === 'string' && body.photoUrl ? body.photoUrl : null;
+    res.json(await stockOperationsService.updateDeliveryLinePhoto(String(req.params.lineId), photoUrl, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 operationsRouter.get('/reorder-notices', async (req, res, next) => {
   try {
     res.json(await stockOperationsService.listReorderNotices(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
