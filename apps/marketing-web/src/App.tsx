@@ -969,6 +969,85 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     }
   }
 
+  // Test send — sends ONE email to the user or a specified address so
+  // they can preview the rendered email before triggering a live send.
+  async function testSendCampaign(campaignId: string) {
+    const defaultTo = user.email ?? '';
+    const to = window.prompt('Send a test email to which address?', defaultTo);
+    if (!to || !to.includes('@')) {
+      setError(`campaign-test:${campaignId}`, new Error('Enter a valid email.'), 'Enter a valid email.');
+      return;
+    }
+    try {
+      const result = await api<{ message: string; delivered: boolean }>(`/api/marketing/campaigns/${campaignId}/test-send`, {
+        method: 'POST',
+        body: JSON.stringify({ to: to.trim().toLowerCase() })
+      });
+      if (result.delivered) {
+        setSuccess(`campaign-test:${campaignId}`, result.message);
+      } else {
+        setError(`campaign-test:${campaignId}`, new Error(result.message), result.message);
+      }
+      await load();
+    } catch (error) {
+      setError(`campaign-test:${campaignId}`, error, 'Could not send the test email.');
+    }
+  }
+
+  // Live send — strict confirmation flow. The user has to type the
+  // word SEND to confirm, and the API rejects without a recent test.
+  async function liveSendCampaign(campaign: MarketingCampaign) {
+    if (campaign.sentAt) {
+      setError(`campaign-live:${campaign.id}`, new Error('Already sent'), 'This campaign has already been sent live.');
+      return;
+    }
+    if (!campaign.simulatedAt) {
+      window.alert('Send a test email to yourself first. Live sends are blocked until a test has been verified.');
+      return;
+    }
+    const recipientCount = campaign.recipients.length || 0;
+    const ack = window.prompt(
+      `LIVE SEND — "${campaign.name}"\n\n` +
+      `This will deliver real emails to ${recipientCount > 0 ? recipientCount : 'all matching'} recipients.\n` +
+      `It cannot be undone.\n\n` +
+      `Type SEND to confirm.`,
+      ''
+    );
+    if (ack?.trim().toUpperCase() !== 'SEND') {
+      setError(`campaign-live:${campaign.id}`, new Error('Cancelled'), 'Live send cancelled.');
+      return;
+    }
+    try {
+      const result = await api<{ message: string; sent: number; failed: number; skipped: number }>(`/api/marketing/campaigns/${campaign.id}/live-send`, {
+        method: 'POST',
+        body: JSON.stringify({ confirmToken: campaign.id, override: false })
+      });
+      setSuccess(`campaign-live:${campaign.id}`, result.message);
+      await load();
+    } catch (error) {
+      // If the API returned "needs override" wording, offer to retry with override.
+      const message = error instanceof Error ? error.message : 'Could not send live.';
+      if (message.includes('override=true')) {
+        const ack2 = window.confirm(`${message}\n\nClick OK to send anyway.`);
+        if (ack2) {
+          try {
+            const result = await api<{ message: string }>(`/api/marketing/campaigns/${campaign.id}/live-send`, {
+              method: 'POST',
+              body: JSON.stringify({ confirmToken: campaign.id, override: true })
+            });
+            setSuccess(`campaign-live:${campaign.id}`, result.message);
+            await load();
+            return;
+          } catch (retryError) {
+            setError(`campaign-live:${campaign.id}`, retryError, 'Could not send live with override.');
+            return;
+          }
+        }
+      }
+      setError(`campaign-live:${campaign.id}`, error, 'Could not send live.');
+    }
+  }
+
   async function issueGiftCardsForCampaign(campaignId: string) {
     const valueInput = window.prompt(
       'How much should each gift card be worth? (AUD, minimum 5)',
@@ -1274,9 +1353,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     >
       <div className="marketing-page">
         <div className="alma-preview-banner" role="status">
-          <span className="alma-preview-banner-tag">Preview</span>
+          <span className="alma-preview-banner-tag">Pilot</span>
           <span className="alma-preview-banner-text">
-            Live sends are <strong>disabled</strong>. You can draft campaigns, build segments, and review the content calendar — but no email, SMS, or social post will be delivered to customers until consent + send paths are verified.
+            <strong>Email campaigns can now send live.</strong> Every send requires a test first + an explicit "SEND" confirmation, admin role, and routes through the Resend / SMTP provider. Social posts and SMS remain simulated until publisher tokens are wired.
           </span>
         </div>
         <AlmaHomeBubble
@@ -2069,7 +2148,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)}>Preview</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void issueGiftCardsForCampaign(campaign.id)}>🎁 Issue gift cards</Button>
-                      <Button type="button" size="sm" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)}>📧 Test send</Button>
+                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={!campaign.simulatedAt || Boolean(campaign.sentAt)}>
+                        {campaign.sentAt ? 'Sent ✓' : 'Send live'}
+                      </Button>
                     </div>
                     <ActionFeedback
                       message={

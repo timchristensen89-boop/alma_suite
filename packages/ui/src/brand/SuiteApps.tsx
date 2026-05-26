@@ -89,10 +89,9 @@ const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
   reports: 'pilot',
   comms: 'pilot',
   giftcards: 'pilot',
+  reserve: 'pilot',      // promoted from preview — booking confirmation emails working
+  marketing: 'pilot',    // promoted from preview — live campaign send shipped with safety net
   // Preview = visible, not operational — clicking is at your own risk
-  reserve: 'preview',
-  marketing: 'preview',
-  // Anything else stays hidden
   training: 'preview',
   audits: 'preview'
 };

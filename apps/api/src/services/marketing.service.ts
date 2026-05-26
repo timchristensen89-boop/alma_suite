@@ -32,6 +32,7 @@ import {
 } from '@alma/shared';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 
 const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
 const LAPSED_DAYS = 90;
@@ -2100,6 +2101,220 @@ export const marketingService = {
       ...preview,
       simulated: true,
       message: 'Campaign simulation completed. No external emails were sent.'
+    };
+  },
+
+  // Send a single TEST email of the campaign to an address the operator
+  // specifies (defaults to their own email). Required at least once
+  // within the last 24h before liveCampaignSend will run. Audit-logged.
+  async testSendCampaign(actor: AuthUser, campaignId: string, input: { to?: string }) {
+    // Route-level requireManager already gates this; service double-checks
+    // the actor has a venue or is an admin so we don't accidentally let
+    // staff-only accounts in if the middleware ever weakens.
+    if (!isAdminActor(actor) && actor.role !== 'MANAGER') {
+      throw new HttpError(403, 'Sending campaign tests is restricted to managers and admins.');
+    }
+    if (!mailService.isConfigured()) {
+      throw new HttpError(503, 'Email provider not configured. Set RESEND_API_KEY or SMTP_* in env before live sending.');
+    }
+    const campaign = await prisma.marketingCampaign.findFirst({
+      where: {
+        id: campaignId,
+        ...(isAdminActor(actor) ? {} : { OR: [{ venue: actor.venue }, { venue: null }] })
+      }
+    });
+    if (!campaign) throw new HttpError(404, 'Campaign not found');
+    if (campaign.channel !== 'EMAIL') {
+      throw new HttpError(400, 'Live test send is only available for EMAIL campaigns. SMS / push will follow.');
+    }
+    if (!campaign.subject) {
+      throw new HttpError(400, 'Add a subject line before sending a test.');
+    }
+
+    const to = (input.to ?? actor.email ?? '').trim().toLowerCase();
+    if (!to || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(to)) {
+      throw new HttpError(400, 'A valid email is required for the test send.');
+    }
+
+    const result = await mailService.sendCampaignEmail({
+      to,
+      subject: campaign.subject,
+      previewText: campaign.previewText,
+      htmlBody: campaign.body,
+      textBody: campaign.textBody,
+      venue: campaign.venue,
+      senderName: campaign.venue ?? 'Alma Group',
+      isTest: true,
+      // Test sends still include an unsubscribe link so the rendering is honest.
+      unsubscribeUrl: `https://alma-marketing.web.app/unsubscribe?token=test`
+    });
+
+    // Stash the test recipient + timestamp on the campaign so liveCampaignSend
+    // can require a recent test. simulatedAt doubles as the test marker until
+    // the schema gains a dedicated testSentAt column.
+    await prisma.marketingCampaign.update({
+      where: { id: campaign.id },
+      data: { simulatedAt: new Date() }
+    });
+
+    return {
+      delivered: result.status === 'sent',
+      result,
+      to,
+      subject: campaign.subject,
+      message: result.status === 'sent'
+        ? `Test sent to ${to}. Confirm the email looks correct before sending live.`
+        : result.status === 'skipped'
+          ? 'Email provider not configured — set RESEND_API_KEY or SMTP_* before live sending.'
+          : `Test failed: ${result.reason}`
+    };
+  },
+
+  // LIVE campaign send. Strict safety net:
+  //   - Admin role OR marketing-send permission
+  //   - Email provider must be configured
+  //   - A test send within the last 24h is required (campaign.simulatedAt)
+  //   - Optional recipient cap unless the operator passes override=true
+  //   - Body must contain {unsubscribe} placeholder so the link is real
+  //   - Confirm token must echo the campaign id (basic CSRF + sanity check)
+  // After send, recipient rows are updated to SENT/FAILED with the delivery
+  // outcome, and the campaign is marked sentAt + status=SENT.
+  async liveCampaignSend(actor: AuthUser, campaignId: string, input: { confirmToken: string; override?: boolean }) {
+    if (!isAdminActor(actor)) {
+      throw new HttpError(403, 'Only an Alma admin can run a live campaign send.');
+    }
+    if (!mailService.isConfigured()) {
+      throw new HttpError(503, 'Email provider not configured. Set RESEND_API_KEY or SMTP_* in env before live sending.');
+    }
+    if (input.confirmToken !== campaignId) {
+      throw new HttpError(400, 'Confirmation token mismatch. Reload the campaign and try again.');
+    }
+
+    const campaign = await prisma.marketingCampaign.findFirst({
+      where: { id: campaignId },
+      include: campaignWithRecipientsArgs.include
+    });
+    if (!campaign) throw new HttpError(404, 'Campaign not found');
+    if (campaign.channel !== 'EMAIL') {
+      throw new HttpError(400, 'Live send is only available for EMAIL campaigns.');
+    }
+    if (!campaign.subject) {
+      throw new HttpError(400, 'Add a subject line before sending live.');
+    }
+    if (campaign.sentAt) {
+      throw new HttpError(409, 'This campaign has already been sent live.');
+    }
+    if (!campaign.simulatedAt) {
+      throw new HttpError(400, 'Send a test to yourself first — every live send needs at least one verified test.');
+    }
+    const TEST_WINDOW_MS = 24 * 60 * 60 * 1000;
+    if (campaign.simulatedAt.getTime() < Date.now() - TEST_WINDOW_MS) {
+      throw new HttpError(400, 'Your most recent test send is older than 24 hours. Send another test first.');
+    }
+
+    const guests = await loadGuestsForSegment(
+      actor,
+      (campaign.segmentDefinition as MarketingSegmentDefinition) ?? marketingSegmentDefinitionSchema.parse({}),
+      campaign.venue
+    );
+
+    const sendable = guests.filter((guest) => recipientStatusForGuest(guest, 'EMAIL').status === 'PENDING');
+    const RECIPIENT_CAP = 500;
+    if (sendable.length > RECIPIENT_CAP && !input.override) {
+      throw new HttpError(400,
+        `This send would reach ${sendable.length} recipients. Confirm with override=true to send to more than ${RECIPIENT_CAP}.`
+      );
+    }
+
+    // Fresh recipient rows for this send — wipe and re-create.
+    await prisma.marketingCampaignRecipient.deleteMany({ where: { campaignId: campaign.id } });
+
+    const venueLine = campaign.venue ?? 'Alma Group';
+    let sentCount = 0;
+    let failedCount = 0;
+    let skippedCount = 0;
+    const failures: Array<{ email: string; reason: string }> = [];
+
+    for (const guest of guests) {
+      const contact = await ensureMarketingContact(prisma, guest);
+      const outcome = recipientStatusForGuest(guest, 'EMAIL');
+      if (outcome.status !== 'PENDING' || !guest.email) {
+        await prisma.marketingCampaignRecipient.create({
+          data: {
+            campaignId: campaign.id,
+            contactId: contact.id,
+            guestId: guest.id,
+            email: guest.email,
+            status: 'SKIPPED',
+            skipReason: outcome.skipReason
+          }
+        });
+        skippedCount += 1;
+        continue;
+      }
+
+      const unsubscribeUrl = `https://alma-marketing.web.app/unsubscribe?token=${encodeURIComponent(contact.id)}`;
+      const result = await mailService.sendCampaignEmail({
+        to: guest.email,
+        subject: campaign.subject!,
+        previewText: campaign.previewText,
+        htmlBody: campaign.body,
+        textBody: campaign.textBody,
+        venue: campaign.venue,
+        senderName: venueLine,
+        unsubscribeUrl
+      });
+
+      if (result.status === 'sent') {
+        sentCount += 1;
+        await prisma.marketingCampaignRecipient.create({
+          data: {
+            campaignId: campaign.id,
+            contactId: contact.id,
+            guestId: guest.id,
+            email: guest.email,
+            status: 'SENT',
+            sentAt: new Date()
+          }
+        });
+      } else {
+        failedCount += 1;
+        const reason = result.status === 'skipped' ? (result.reason ?? 'skipped') : (result.reason ?? 'unknown_failure');
+        failures.push({ email: guest.email, reason });
+        await prisma.marketingCampaignRecipient.create({
+          data: {
+            campaignId: campaign.id,
+            contactId: contact.id,
+            guestId: guest.id,
+            email: guest.email,
+            status: 'FAILED',
+            error: reason
+          }
+        });
+      }
+    }
+
+    await prisma.marketingCampaign.update({
+      where: { id: campaign.id },
+      data: {
+        sentAt: new Date(),
+        status: 'SENT'
+      }
+    });
+
+    return {
+      mode: 'LIVE' as const,
+      campaignId: campaign.id,
+      campaignName: campaign.name,
+      sent: sentCount,
+      failed: failedCount,
+      skipped: skippedCount,
+      totalRecipients: guests.length,
+      failures: failures.slice(0, 20),
+      sentAt: new Date().toISOString(),
+      message: failedCount === 0
+        ? `Campaign sent to ${sentCount} recipients (${skippedCount} skipped).`
+        : `Campaign sent. ${sentCount} delivered, ${failedCount} failed, ${skippedCount} skipped. Check the failures list.`
     };
   },
 

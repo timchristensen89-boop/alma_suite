@@ -2796,6 +2796,12 @@ export function AdminPage({
               label: 'Meta / TikTok engagement read-back',
               detail: 'Performance page is live in Marketing — but live Meta Graph API insights need page tokens persisted after the OAuth callback. Until then the Performance page returns simulated numbers tagged "Simulated" so the surface is real but the values are obviously not.',
               tone: 'info'
+            },
+            {
+              id: 'marketing-social-live',
+              label: 'Live social publishing (Meta / TikTok)',
+              detail: 'Email campaigns can now send live. Social post publishing (Meta / Instagram / TikTok) is still simulation-only until page tokens are persisted post-OAuth and MARKETING_SOCIAL_LIVE_PUBLISH_ENABLED=true is set.',
+              tone: 'info'
             }
           ];
           // Recent release notes — hand-curated so the owner can see at a
@@ -2812,7 +2818,11 @@ export function AdminPage({
                 'Scheduled CSV exports in Admin (sales by day, wages by week, timesheets, stocktake variance, low stock).',
                 'Public gift cards: cleaner trust panel with proper icons, expiry transparency, and a 3-question FAQ.',
                 'Field-level redaction on staff profiles: pay / bank / TFN / super / DOB show "Hidden" instead of leaking to managers without HR perms.',
-                'Marketing Performance page (Phase 4.7 foundation): post engagement surface with simulated metrics until Meta page tokens are persisted.'
+                'Marketing Performance page (Phase 4.7 foundation): post engagement surface with simulated metrics until Meta page tokens are persisted.',
+                'Deputy CSV import stop-gap on the roster header — paste / upload, dry-run preview, idempotent re-import.',
+                'Tips week selector now uses the editorial roster nav for visual continuity.',
+                'Marketing → Pilot: live campaign email send shipped with test-first + admin-only + 24h test window + recipient cap + audit trail.',
+                'Reserve → Pilot: booking confirmation emails working, public widget live. Banner updated from "preview" to "pilot" — Reserve is now your source of truth, not SevenRooms.'
               ]
             },
             {

@@ -2043,10 +2043,10 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     >
       <div className="reserve-page">
         <div className="alma-preview-banner" role="status">
-          <span className="alma-preview-banner-tag">Preview</span>
+          <span className="alma-preview-banner-tag">Pilot</span>
           <span className="alma-preview-banner-text">
-            Alma Reserve isn't live yet. <strong>SevenRooms remains the source of truth</strong> for real bookings.
-            Anything created here is for testing layout, capacity logic, and the public widget — it may not flow to your booking system.
+            <strong>Bookings created here are real.</strong> Confirmation emails go out automatically, and the public booking widget is live.
+            SevenRooms is no longer the source of truth — Alma Reserve is. Verify cover counts, special requests, and table assignments before each service.
           </span>
         </div>
         {(() => {

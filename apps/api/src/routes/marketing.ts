@@ -466,6 +466,28 @@ marketingRouter.post('/campaigns/:id/simulate-send', requireManager, async (req,
   }
 });
 
+// Test send — single email to the actor or a specified address. Required
+// before live send. Audit: marketingCampaign.simulatedAt is bumped.
+marketingRouter.post('/campaigns/:id/test-send', requireManager, async (req, res, next) => {
+  try {
+    const to = typeof req.body?.to === 'string' ? req.body.to : undefined;
+    res.json(await marketingService.testSendCampaign(req.user!, String(req.params.id), { to }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// LIVE send — admin only, requires confirmation token + a recent test send.
+marketingRouter.post('/campaigns/:id/live-send', requireManager, async (req, res, next) => {
+  try {
+    const confirmToken = typeof req.body?.confirmToken === 'string' ? req.body.confirmToken : '';
+    const override = Boolean(req.body?.override);
+    res.json(await marketingService.liveCampaignSend(req.user!, String(req.params.id), { confirmToken, override }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.post('/campaigns/:id/issue-gift-cards', requireManager, async (req, res, next) => {
   try {
     const body = (req.body ?? {}) as Record<string, unknown>;

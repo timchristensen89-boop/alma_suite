@@ -413,5 +413,80 @@ export const mailService = {
     `;
 
     return deliverEmail({ to: input.to, subject: input.subject, text, html });
+  },
+
+  // Campaign email send — used for both test sends and live sends by the
+  // Marketing service. Renders a wrapper that includes the unsubscribe
+  // link + business address (CAN-SPAM / AU Spam Act compliance) so we
+  // don't have to remember to include it in every campaign body.
+  async sendCampaignEmail(input: {
+    to: string;
+    subject: string;
+    previewText?: string | null;
+    htmlBody: string;
+    textBody?: string | null;
+    venue?: string | null;
+    unsubscribeUrl?: string | null;
+    senderName?: string | null;
+    businessAddress?: string | null;
+    isTest?: boolean;
+  }): Promise<EmailDeliveryResult> {
+    const venueLine = input.venue ? escapeHtml(input.venue) : 'Alma Group';
+    const safeSubject = input.isTest ? `[TEST] ${input.subject}` : input.subject;
+    const safeUnsub = input.unsubscribeUrl ? escapeHtml(input.unsubscribeUrl) : '';
+    const safeAddress = input.businessAddress ? escapeHtml(input.businessAddress) : 'Alma Group · Sydney NSW';
+    const safeSender = input.senderName ? escapeHtml(input.senderName) : venueLine;
+    const safePreview = input.previewText ? escapeHtml(input.previewText) : '';
+
+    // The body comes from the campaign — already HTML. We append the
+    // compliance footer rather than wrapping it heavily so editorial
+    // designs aren't fought.
+    const html = `
+      <div style="font-family:'Cormorant Garamond',Georgia,serif;line-height:1.55;color:#0f172a;max-width:600px;margin:0 auto;padding:24px;background:#ffffff">
+        ${safePreview ? `<div style="display:none;font-size:1px;color:#ffffff;line-height:1px;max-height:0;max-width:0;opacity:0;overflow:hidden">${safePreview}</div>` : ''}
+        ${input.isTest ? `
+          <div style="background:#FAE8E0;border-left:3px solid #B3262E;padding:10px 14px;font-size:12px;color:#3D1814;letter-spacing:0.08em;text-transform:uppercase;font-family:'Avenir LT Std',Manrope,sans-serif;font-weight:700;margin-bottom:18px;border-radius:4px">
+            Test send · Real recipients won't receive this
+          </div>
+        ` : ''}
+        <div>${input.htmlBody}</div>
+        <div style="margin-top:32px;border-top:1px solid #e2e8f0;padding-top:18px;font-family:'Avenir LT Std',Manrope,sans-serif;font-size:11px;color:#64748b;line-height:1.5">
+          You're receiving this because you've opted in to hear from ${safeSender}.<br />
+          ${safeAddress}<br />
+          ${safeUnsub ? `<a href="${safeUnsub}" style="color:#64748b;text-decoration:underline">Unsubscribe</a>` : 'To unsubscribe, reply with the word UNSUBSCRIBE.'}
+        </div>
+      </div>
+    `;
+
+    const text = [
+      input.textBody?.trim() || stripHtmlToText(input.htmlBody),
+      '',
+      '---',
+      `From ${input.senderName || venueLine}`,
+      input.businessAddress || 'Alma Group · Sydney NSW',
+      input.unsubscribeUrl ? `Unsubscribe: ${input.unsubscribeUrl}` : 'To unsubscribe, reply with the word UNSUBSCRIBE.'
+    ].join('\n');
+
+    return deliverEmail({ to: input.to, subject: safeSubject, text, html });
   }
 };
+
+// Lightweight HTML → text fallback used when the campaign doesn't supply
+// an explicit textBody. Not a full converter — keeps headings, links and
+// paragraph breaks readable enough for inbox previews.
+function stripHtmlToText(html: string): string {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<\/?(p|div|h[1-6]|br|li)[^>]*>/gi, '\n')
+    .replace(/<a [^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi, '$2 ($1)')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
