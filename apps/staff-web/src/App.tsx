@@ -8430,12 +8430,26 @@ function RosterPage({
   }, {} as Record<string, number>), [days, forecastVenues]);
   const historicalForecastSalesCents = useMemo(() => Object.values(historicalDailyForecast).reduce((sum, cents) => sum + cents, 0), [historicalDailyForecast]);
   const forecastHasManualDailyInputs = useMemo(() => days.some((day) => parseMoneyCents(dailyForecastSales[toDateInput(day)] ?? '') > 0), [dailyForecastSales, days]);
+  // Sum of MANUAL per-day forecast inputs only. Previously this fell
+  // through to the historical daily forecast when no per-day inputs
+  // were set — but that meant typing $50,000 into the weekly forecast
+  // field was silently overridden by ~$57,992 of historical sales,
+  // and labour-% maths used the historical number instead of the user
+  // input. Now the historical fallback only kicks in at the top level
+  // (when both daily and weekly are empty).
   const dailyForecastTotalCents = useMemo(() => days.reduce((sum, day) => {
     const key = toDateInput(day);
-    const manualCents = parseMoneyCents(dailyForecastSales[key] ?? '');
-    return sum + (manualCents || (!forecastHasManualDailyInputs ? historicalDailyForecast[key] ?? 0 : 0));
-  }, 0), [dailyForecastSales, days, forecastHasManualDailyInputs, historicalDailyForecast]);
-  const forecastSalesCents = useMemo(() => dailyForecastTotalCents || parseMoneyCents(forecastSales) || historicalForecastSalesCents, [dailyForecastTotalCents, forecastSales, historicalForecastSalesCents]);
+    return sum + parseMoneyCents(dailyForecastSales[key] ?? '');
+  }, 0), [dailyForecastSales, days]);
+  // Priority for the weekly aggregate: per-day manual sum → weekly
+  // manual input → historical reference. Whichever the user actually
+  // touched most recently wins.
+  const forecastSalesCents = useMemo(() => {
+    if (dailyForecastTotalCents > 0) return dailyForecastTotalCents;
+    const weekly = parseMoneyCents(forecastSales);
+    if (weekly > 0) return weekly;
+    return historicalForecastSalesCents;
+  }, [dailyForecastTotalCents, forecastSales, historicalForecastSalesCents]);
   const wageBudgetCents = useMemo(() => Math.round(forecastSalesCents * (parsePercent(targetWagePercent) / 100)), [forecastSalesCents, targetWagePercent]);
   const recommendedHours = averageRateCents > 0 ? wageBudgetCents / averageRateCents : 0;
   const forecastCostGapCents = wageBudgetCents - rosterCostCents;
@@ -9370,9 +9384,30 @@ function RosterPage({
 
   return (
     <div className="page-stack">
-      {/* Utility action bar — Copy / Historical / Add / Publish live here so the
-          editorial header below stays a calm masthead. */}
+      {/* Utility action bar — forecast inputs + Copy / Historical / Add /
+          Publish live here so the editorial header below stays a calm
+          masthead. Forecast lives up top because it drives every number
+          on the page and shouldn't be hunted for inside the metric strip. */}
       <div className="alma-roster-utility">
+        <label className="roster-forecast-inline roster-forecast-inline--utility" title="Forecast sales · target wage %">
+          <span className="roster-forecast-inline-label">Forecast</span>
+          <span className="roster-forecast-inline-prefix" aria-hidden="true">$</span>
+          <input
+            value={forecastSales}
+            onChange={(event) => setForecastSales(event.currentTarget.value)}
+            placeholder="Sales"
+            aria-label="Weekly forecast sales"
+          />
+          <span className="forecast-sep">·</span>
+          <input
+            value={targetWagePercent}
+            onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
+            placeholder="28"
+            aria-label="Target wage %"
+          />
+          <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
+        </label>
+        <span className="alma-roster-utility-spacer" aria-hidden="true" />
         <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
           Copy last week
         </Button>
@@ -9723,30 +9758,30 @@ function RosterPage({
                   </span>
                 );
               })()}
-              <span className="roster-forecast-inline" title="Forecast sales · target wage %">
-                <input
-                  value={forecastSales}
-                  onChange={(event) => setForecastSales(event.currentTarget.value)}
-                  placeholder="Sales $"
-                  aria-label="Weekly forecast sales"
-                />
-                <span className="forecast-sep">·</span>
-                <input
-                  value={targetWagePercent}
-                  onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
-                  placeholder="28%"
-                  aria-label="Target wage %"
-                />
-              </span>
+              {!sidePanelCollapsed ? (
+                <span className="roster-board-command-staff-inline">
+                  <span className="roster-right-rail-title">Staff</span>
+                  <button
+                    type="button"
+                    className="roster-board-command-staff-collapse"
+                    onClick={() => setSidePanelCollapsed(true)}
+                    aria-label="Collapse Staff rail"
+                  >
+                    Collapse
+                  </button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  className="roster-board-command-staff-inline roster-board-command-staff-inline--expand"
+                  onClick={() => setSidePanelCollapsed(false)}
+                  aria-label="Expand Staff rail"
+                >
+                  <span className="roster-right-rail-title">Staff</span>
+                  <span>Expand</span>
+                </button>
+              )}
             </div>
-            {!sidePanelCollapsed ? (
-              <div className="roster-board-command-staff-controls">
-                <span className="roster-right-rail-title">Staff</span>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setSidePanelCollapsed(true)}>
-                  Collapse
-                </Button>
-              </div>
-            ) : null}
           </div>
           <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
             <div className="deputy-schedule-corner">
