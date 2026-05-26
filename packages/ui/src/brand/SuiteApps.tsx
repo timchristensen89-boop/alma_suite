@@ -48,12 +48,18 @@ export type SuiteAppId =
 
 export type SuiteAppStatus = 'active' | 'disabled';
 
+// Lifecycle label shown on every suite tile + switcher item so trust isn't
+// burned by clicking into an unfinished app. Distinct from `status`, which
+// just decides whether the app appears at all.
+export type SuiteAppLifecycle = 'live' | 'pilot' | 'preview' | 'setup' | 'hidden';
+
 export type SuiteAppIdentity = {
   id: SuiteAppId;
   label: string;
   shortLabel: string;
   description: string;
   status: SuiteAppStatus;
+  lifecycle: SuiteAppLifecycle;
   href?: string;
   fromColor: string;
   toColor: string;
@@ -67,9 +73,28 @@ type SuiteAppSeed = {
   shortLabel: string;
   description: string;
   status: SuiteAppStatus;
+  lifecycle: SuiteAppLifecycle;
   fromColor: string;
   toColor: string;
   iconKey: AlmaAppIconKey;
+};
+
+const LIFECYCLE_BY_APP: Partial<Record<SuiteAppId, SuiteAppLifecycle>> = {
+  // Live = ready for real operations
+  settings: 'live',
+  // Pilot = manager trial / internal use, working but not yet broadly rolled out
+  compliance: 'pilot',
+  stock: 'pilot',
+  staff: 'pilot',
+  reports: 'pilot',
+  comms: 'pilot',
+  giftcards: 'pilot',
+  // Preview = visible, not operational — clicking is at your own risk
+  reserve: 'preview',
+  marketing: 'preview',
+  // Anything else stays hidden
+  training: 'preview',
+  audits: 'preview'
 };
 
 const ICON_FACTORY: Record<AlmaAppIconKey, () => ReactNode> = {
@@ -106,6 +131,7 @@ const SUITE_APP_SEEDS: SuiteAppSeed[] = ALMA_APPS.map((app): SuiteAppSeed => ({
     app.id === 'settings'
       ? 'active'
       : 'disabled',
+  lifecycle: LIFECYCLE_BY_APP[app.id as SuiteAppId] ?? 'hidden',
   fromColor: app.from,
   toColor: app.to,
   iconKey: app.iconKey
@@ -428,11 +454,17 @@ export function SuiteAppSwitcher({
               />
             </span>
             <span className="suite-app-label">{app.label}</span>
+            {app.lifecycle && app.lifecycle !== 'live' && app.lifecycle !== 'hidden' ? (
+              <span className={`suite-app-lifecycle is-${app.lifecycle}`} aria-label={`Status: ${app.lifecycle}`}>
+                {app.lifecycle === 'pilot' ? 'Pilot' : app.lifecycle === 'preview' ? 'Preview' : 'Setup'}
+              </span>
+            ) : null}
             <span className="suite-app-tooltip" role="tooltip">
               <strong>Alma {app.label}</strong>
               <span>{app.description}</span>
               <em>
                 {isCurrent ? 'Current app' : isAvailable ? 'Open app' : 'Coming soon'}
+                {app.lifecycle === 'pilot' ? ' · Pilot' : app.lifecycle === 'preview' ? ' · Preview · not operational' : app.lifecycle === 'setup' ? ' · Setup required' : ''}
               </em>
             </span>
           </>

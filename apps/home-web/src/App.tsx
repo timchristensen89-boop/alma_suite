@@ -168,7 +168,14 @@ function AppTile({ app, notifications }: { app: SuiteAppIdentity; notifications:
         {app.icon}
       </div>
       <div className="home-tile-body">
-        <span className="home-tile-label">{label}</span>
+        <span className="home-tile-label">
+          {label}
+          {app.lifecycle && app.lifecycle !== 'live' && app.lifecycle !== 'hidden' ? (
+            <span className={`home-tile-lifecycle is-${app.lifecycle}`}>
+              {app.lifecycle === 'pilot' ? 'Pilot' : app.lifecycle === 'preview' ? 'Preview' : 'Setup'}
+            </span>
+          ) : null}
+        </span>
         {tagline ? <span className="home-tile-tagline">{tagline}</span> : null}
       </div>
       {badge > 0 ? (

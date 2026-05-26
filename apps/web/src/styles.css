@@ -9701,3 +9701,73 @@ a.suite-app-tile:hover {
     padding-block: 10px;
   }
 }
+
+/* Suite app lifecycle chip — italic Cormorant pill that surfaces in the
+   switcher popover (and on home tiles) so unfinished apps don't look
+   equal to finished ones. Live and hidden lifecycles render no chip. */
+.suite-app-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.005em;
+  pointer-events: none;
+}
+
+.suite-app-lifecycle.is-pilot {
+  background: rgba(36, 76, 159, 0.14);
+  color: #1A2238;
+}
+
+.suite-app-lifecycle.is-preview {
+  background: rgba(178, 121, 53, 0.18);
+  color: #5A3D14;
+}
+
+.suite-app-lifecycle.is-setup {
+  background: rgba(160, 70, 58, 0.14);
+  color: #6E2419;
+}
+
+/* In topbar / sidebar switcher variants, the chip needs to be tiny so
+   it doesn't dominate the tile. */
+.suite-switcher--topbar .suite-app-lifecycle,
+.suite-switcher--sidebar .suite-app-lifecycle {
+  font-size: 10px;
+  padding: 1px 6px;
+}
+
+/* "Alma Home" jump button in every app's topbar — keeps the suite
+   feeling like one product. */
+.app-shell-topbar-home {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface, #F8F6F1);
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 140ms ease, border-color 140ms ease;
+}
+
+.app-shell-topbar-home:hover {
+  background: #FFFFFF;
+  border-color: var(--color-text);
+}
+
+.app-shell-topbar-home svg {
+  width: 12px;
+  height: 12px;
+}

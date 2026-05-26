@@ -337,3 +337,40 @@ body {
     height: 48px;
   }
 }
+
+/* Lifecycle chip on each home tile — tells you at a glance whether
+   the app is ready for real use ("live" hides this chip), in pilot,
+   in preview (not operational), or pending setup. */
+.home-tile-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.home-tile-lifecycle {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 11px;
+  letter-spacing: 0.005em;
+  font-weight: 500;
+}
+
+.home-tile-lifecycle.is-pilot {
+  background: rgba(36, 76, 159, 0.12);
+  color: #1A2238;
+}
+
+.home-tile-lifecycle.is-preview {
+  background: rgba(178, 121, 53, 0.16);
+  color: #5A3D14;
+}
+
+.home-tile-lifecycle.is-setup {
+  background: rgba(160, 70, 58, 0.12);
+  color: #6E2419;
+}
