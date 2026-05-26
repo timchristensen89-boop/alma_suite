@@ -3705,25 +3705,59 @@
   min-height: 56px;
 }
 
-/* Venue header cells — show per-venue hours / cost / wage% in the
-   same voice as the top day-summary strip, but on the cream venue
-   surface so they read as "this venue's totals". Hard reset of any
-   inherited grid/flex layout from .deputy-schedule-cell so there's
-   no class-conflict cascade. */
+/* Venue header cells — now self-contained per venue. Each cell carries
+   the day label, hours, cost, and wage% so each venue's section is its
+   own roster without a global header above. */
 .deputy-venue-cell {
   display: flex !important;
   flex-direction: column !important;
   align-items: flex-start !important;
-  justify-content: center !important;
-  gap: 1px;
-  padding: 5px 10px !important;
-  min-height: 44px !important;
+  justify-content: flex-start !important;
+  gap: 3px;
+  padding: 8px 10px 7px !important;
+  min-height: 76px !important;
   border-top: 1px solid var(--color-border) !important;
   background: var(--color-surface, #F8F6F1);
 }
 
 .deputy-venue-cell.is-weekend {
   background: rgba(26, 34, 56, 0.06);
+}
+
+.deputy-venue-cell.is-today {
+  background: #FFFFFF;
+  box-shadow: inset 0 -2px 0 var(--color-text);
+}
+
+/* Day label baked into the cell — Cormorant for "Tue", italic for
+   "26 May", same voice as the old day-head row. */
+.deputy-venue-cell-day {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  margin-bottom: 1px;
+}
+
+.deputy-venue-cell-day strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.005em;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.deputy-venue-cell-day em {
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--color-text-muted);
+  line-height: 1;
+}
+
+.deputy-venue-cell.is-today .deputy-venue-cell-day strong {
+  font-style: italic;
 }
 
 .deputy-venue-cell-hours {
@@ -3758,6 +3792,21 @@
   font-style: italic;
   font-size: 12px;
   color: rgba(31, 53, 36, 0.4);
+}
+
+/* Venue label sits taller now because the venue cells in the same row
+   carry day + summary content. Match heights so the row reads cleanly. */
+.is-venue-separated .deputy-venue-label {
+  min-height: 76px;
+  padding: 10px 14px 8px;
+}
+
+/* No more sticky day-head / day-summary block at the top since they
+   no longer exist. Remove the sticky positioning that used to stack
+   them. */
+.is-venue-separated .deputy-day-summary,
+.is-venue-separated .deputy-day-summary-corner {
+  position: static;
 }
 
 /* Weekend tint on the day-summary boxes — same ink family as the

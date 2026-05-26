@@ -9788,63 +9788,11 @@ function RosterPage({
               )}
             </div>
           </div>
-          <div className={`deputy-schedule-grid roster-days-${boardDays}`} style={scheduleGridStyle}>
-            <div className="deputy-schedule-corner">
-              <span>{viewMode === 'team' ? 'Team member' : 'Area'}</span>
-            </div>
-            {days.map((day, dayIndex) => {
-              const closedVenues = closedVenuesForDay(day);
-              const isClosed = isDayClosedForCurrentView(day);
-              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-              return (
-                <div
-                  key={day.toISOString()}
-                  className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
-                  title={isClosed ? `Closed${closedVenues.length ? ` · ${closedVenues.length} venue${closedVenues.length === 1 ? '' : 's'}` : ''}` : undefined}
-                >
-                  <div className="deputy-day-head-line">
-                    <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
-                    <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
-                  </div>
-                </div>
-              );
-            })}
-
-            {/* Day summary strip — hours + cost + wage% per day. Sits right
-                below the day-head row so the date headers stay calm. */}
-            <div className="deputy-day-summary-corner" aria-hidden="true" />
-            {days.map((day, dayIndex) => {
-              const summary = dailySummaries[dayIndex];
-              const closedVenues = closedVenuesForDay(day);
-              const isClosed = isDayClosedForCurrentView(day);
-              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-              const hasCost = !isClosed && summary && summary.plannedCostCents > 0;
-              const costClass = hasCost && summary.forecastCents > 0
-                ? summary.plannedCostCents > summary.budgetCents ? 'is-over' : 'is-under'
-                : '';
-              return (
-                <div
-                  key={`summary-${day.toISOString()}`}
-                  className={`deputy-day-summary ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''} ${sameDay(day, new Date()) ? 'is-today' : ''}`}
-                >
-                  {isClosed ? (
-                    <span className="deputy-day-summary-closed">
-                      {closedVenues.length ? `${closedVenues.length} venue closed` : 'Closed'}
-                    </span>
-                  ) : (
-                    <>
-                      <span className="deputy-day-summary-hours">{roundHours(summary?.hours ?? 0)}</span>
-                      {hasCost ? (
-                        <span className={`deputy-day-summary-cost ${costClass}`}>
-                          {formatCents(summary.plannedCostCents)}
-                          {summary.wagePercent ? <em>{summary.wagePercent.toFixed(0)}%</em> : null}
-                        </span>
-                      ) : null}
-                    </>
-                  )}
-                </div>
-              );
-            })}
+          <div className={`deputy-schedule-grid roster-days-${boardDays} is-venue-separated`} style={scheduleGridStyle}>
+            {/* The global day-head and day-summary rows are gone — each
+                venue now carries its own day labels + per-day summary
+                in the venue header row beneath. No group total at the
+                top until we add a per-venue comparison view. */}
 
             {scheduleRows.length === 0 ? (
               <div className="deputy-schedule-empty">No rows match the current filters.</div>
@@ -9884,11 +9832,18 @@ function RosterPage({
                         const wagePercent = venueForecastCents > 0 ? (dayCostCents / venueForecastCents) * 100 : 0;
                         const isOver = venueForecastCents > 0 && dayCostCents > Math.round(venueForecastCents * targetWagePercentParsed);
                         const hasCost = !isClosed && dayCostCents > 0;
+                        const isTodayCell = sameDay(day, new Date());
                         return (
                           <div
                             key={`${row.id}-${day.toISOString()}`}
-                            className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
+                            className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''} ${isTodayCell ? 'is-today' : ''}`}
                           >
+                            {/* Day label folds INTO the venue cell so each
+                                venue's section is self-contained. */}
+                            <span className="deputy-venue-cell-day">
+                              <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
+                              <em>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</em>
+                            </span>
                             {isClosed ? (
                               <span className="deputy-venue-cell-closed">Closed</span>
                             ) : (
