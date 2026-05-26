@@ -5487,6 +5487,609 @@ a.suite-app-tile:hover {
   }
 }
 
+/* ==========================================================================
+   Editorial dropdowns — Messages + Alerts share the same cream panel chrome.
+   ========================================================================== */
+
+.suite-msg-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.suite-msg-panel {
+  position: fixed;
+  right: 12px;
+  top: 72px;
+  width: min(440px, calc(100vw - 24px));
+  max-height: calc(100vh - 92px);
+  overflow: auto;
+  z-index: 220;
+  padding: 22px;
+  background: #F8F6F1;
+  border-radius: 22px;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 22px 60px -20px rgba(31, 53, 36, 0.25),
+    0 6px 18px -10px rgba(31, 53, 36, 0.15);
+  color: #1F3524;
+}
+
+.suite-msg-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 6px 14px;
+}
+
+.suite-msg-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.suite-msg-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.45);
+  line-height: 1;
+}
+
+.suite-msg-eyebrow--muted {
+  color: rgba(31, 53, 36, 0.35);
+}
+
+.suite-msg-title {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: #1F3524;
+  line-height: 1;
+}
+
+.suite-msg-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suite-msg-pill {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: #4F6B47;
+  padding: 4px 9px 3px;
+  background: rgba(79, 107, 71, 0.12);
+  border-radius: 9999px;
+}
+
+.suite-msg-ghost-link {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.65);
+  padding: 4px 6px;
+}
+
+.suite-msg-ghost-link:hover {
+  color: #1F3524;
+}
+
+.suite-msg-compose {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.suite-msg-compose-input {
+  flex: 1;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 12px;
+  background: #FFFFFF;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13.5px;
+  color: #1F3524;
+  outline: none;
+}
+
+.suite-msg-compose-input:focus {
+  border-color: rgba(31, 53, 36, 0.3);
+}
+
+.suite-msg-textarea {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 12px;
+  background: #FFFFFF;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13.5px;
+  color: #1F3524;
+  outline: none;
+  resize: vertical;
+  min-height: 64px;
+}
+
+.suite-msg-compose-send {
+  background: #1F3524;
+  color: #F8F0E6;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  padding: 10px 16px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.suite-msg-compose-send:hover {
+  opacity: 0.88;
+}
+
+.suite-msg-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 14px 14px 8px;
+}
+
+.suite-msg-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(31, 53, 36, 0.08);
+}
+
+.suite-msg-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  cursor: pointer;
+  transition: background 140ms ease;
+}
+
+.suite-msg-row:hover {
+  background: rgba(31, 53, 36, 0.035);
+}
+
+.suite-msg-avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 9999px;
+  display: grid;
+  place-items: center;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: -0.01em;
+  color: #F8F6F1;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.18), 0 1px 0 rgba(31, 53, 36, 0.08);
+}
+
+.suite-msg-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.suite-msg-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.suite-msg-name {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13.5px;
+  font-weight: 700;
+  color: #1F3524;
+  line-height: 1.1;
+  letter-spacing: -0.005em;
+}
+
+.suite-msg-role {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: rgba(31, 53, 36, 0.5);
+  letter-spacing: 0.04em;
+}
+
+.suite-msg-time {
+  margin-left: auto;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: rgba(31, 53, 36, 0.45);
+}
+
+.suite-msg-subject {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: #1F3524;
+  margin-top: 4px;
+  line-height: 1.2;
+  letter-spacing: -0.005em;
+}
+
+.suite-msg-row.is-unread .suite-msg-subject {
+  font-weight: 700;
+}
+
+.suite-msg-snippet {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13.5px;
+  color: rgba(31, 53, 36, 0.62);
+  margin-top: 3px;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.suite-msg-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: #A0463A;
+  margin-top: 6px;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px rgba(160, 70, 58, 0.16);
+}
+
+.suite-msg-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 14.5px;
+  color: rgba(31, 53, 36, 0.5);
+}
+
+.suite-msg-error {
+  margin: 4px 6px 8px;
+  color: #A0463A;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+}
+
+.suite-msg-subtle {
+  margin: 4px 6px 8px;
+  color: rgba(31, 53, 36, 0.55);
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+}
+
+.suite-msg-announcement {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+}
+
+.suite-msg-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+/* ---------- Alerts dropdown ---------- */
+
+.suite-alert-anchor {
+  position: relative;
+  display: inline-flex;
+}
+
+.suite-alert-panel {
+  position: fixed;
+  right: 12px;
+  top: 72px;
+  width: min(460px, calc(100vw - 24px));
+  max-height: calc(100vh - 92px);
+  overflow: auto;
+  z-index: 230;
+  padding: 22px;
+  background: #F8F6F1;
+  border-radius: 22px;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 22px 60px -20px rgba(31, 53, 36, 0.25),
+    0 6px 18px -10px rgba(31, 53, 36, 0.15);
+  color: #1F3524;
+}
+
+.suite-alert-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 6px 14px;
+}
+
+.suite-alert-head > div {
+  display: grid;
+  gap: 5px;
+}
+
+.suite-alert-head-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.suite-alert-eyebrow {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.45);
+  line-height: 1;
+}
+
+.suite-alert-eyebrow--muted {
+  color: rgba(31, 53, 36, 0.35);
+}
+
+.suite-alert-title {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 24px;
+  font-weight: 500;
+  letter-spacing: -0.005em;
+  color: #1F3524;
+  line-height: 1;
+}
+
+.suite-alert-ghost-link {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.65);
+  padding: 4px 6px;
+}
+
+.suite-alert-ghost-link:hover {
+  color: #1F3524;
+}
+
+.suite-alert-filters {
+  display: flex;
+  gap: 6px;
+  padding: 0 6px 10px;
+  flex-wrap: wrap;
+}
+
+.suite-alert-chip {
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 9999px;
+  padding: 5px 11px 4px;
+  cursor: pointer;
+  background: transparent;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.suite-alert-chip.is-active {
+  background: rgba(31, 53, 36, 0.07);
+  color: #1F3524;
+}
+
+.suite-alert-chip-count {
+  opacity: 0.55;
+  margin-left: 3px;
+}
+
+.suite-alert-divider {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 14px 14px 8px;
+}
+
+.suite-alert-divider-line {
+  flex: 1;
+  height: 1px;
+  background: rgba(31, 53, 36, 0.08);
+}
+
+.suite-alert-severity-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  flex-shrink: 0;
+}
+
+.suite-alert-row {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 12px 14px;
+  border-radius: 14px;
+  transition: background 140ms ease;
+}
+
+.suite-alert-row:hover {
+  background: rgba(31, 53, 36, 0.035);
+}
+
+.suite-alert-row.is-read {
+  opacity: 0.55;
+}
+
+.suite-alert-chip-icon {
+  position: relative;
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 14px;
+  letter-spacing: -0.02em;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+}
+
+.suite-alert-severity-pip {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 10px;
+  height: 10px;
+  border-radius: 9999px;
+  box-shadow: 0 0 0 2.5px #F8F6F1;
+}
+
+.suite-alert-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.suite-alert-meta {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.suite-alert-link {
+  flex: 1;
+  min-width: 0;
+  text-decoration: none;
+  color: inherit;
+}
+
+.suite-alert-title-line {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #1F3524;
+  line-height: 1.15;
+  letter-spacing: -0.005em;
+}
+
+.suite-alert-time {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 10.5px;
+  color: rgba(31, 53, 36, 0.45);
+  flex-shrink: 0;
+}
+
+.suite-alert-detail {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 13.5px;
+  color: rgba(31, 53, 36, 0.62);
+  margin-top: 3px;
+  line-height: 1.3;
+}
+
+.suite-alert-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.suite-alert-primary-btn {
+  background: #1F3524;
+  color: #F8F0E6;
+  border: 0;
+  border-radius: 9999px;
+  cursor: pointer;
+  padding: 5px 11px 4px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  text-decoration: none;
+}
+
+.suite-alert-primary-btn:hover {
+  opacity: 0.88;
+}
+
+.suite-alert-ghost-btn {
+  background: transparent;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  color: rgba(31, 53, 36, 0.65);
+  border-radius: 9999px;
+  cursor: pointer;
+  padding: 5px 11px 4px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+}
+
+.suite-alert-ghost-btn:hover {
+  border-color: rgba(31, 53, 36, 0.3);
+  color: #1F3524;
+}
+
+.suite-alert-empty {
+  padding: 18px 14px;
+  text-align: center;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 14.5px;
+  color: rgba(31, 53, 36, 0.5);
+}
+
+.suite-alert-error {
+  margin: 4px 6px 8px;
+  color: #A0463A;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+}
+
+.suite-alert-footer {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
 @media (max-width: 1180px) and (min-width: 901px) {
   .topbar-search {
     min-width: 188px;

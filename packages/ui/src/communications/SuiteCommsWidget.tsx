@@ -42,34 +42,44 @@ function apiPath(path: string) {
   return path.startsWith('/api/') ? path : `/api/${path.replace(/^\/+/, '')}`;
 }
 
-const panelStyle = {
-  position: 'fixed',
-  right: 12,
-  top: 72,
-  width: 'min(420px, calc(100vw - 24px))',
-  maxHeight: 'calc(100vh - 92px)',
-  overflow: 'auto',
-  zIndex: 220,
-  padding: 16,
-  borderRadius: 16,
-  border: '1px solid rgba(148, 163, 184, 0.35)',
-  background: '#fff',
-  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)'
-} as const;
+// Editorial palette pulled from the Alma Suite design system. Cream surface,
+// Cormorant for reading material, Avenir for UI affordances.
+const INK = '#1F3524';
+const AVATAR_TINTS = ['#4F6B47', '#684A4A', '#A0463A', '#3D5C3F', '#5A3D3D', '#B27935', '#4F627E'];
 
-const sectionStyle = {
-  display: 'grid',
-  gap: 10,
-  padding: '12px 0',
-  borderTop: '1px solid rgba(148, 163, 184, 0.22)'
-} as const;
+function initialsFrom(name: string | null | undefined): string {
+  if (!name) return 'AS';
+  const parts = name.trim().split(/\s+/).slice(0, 2);
+  if (parts.length === 0) return 'AS';
+  return parts.map((part) => part.charAt(0).toUpperCase()).join('') || 'AS';
+}
 
-const cardStyle = {
-  padding: 12,
-  borderRadius: 12,
-  background: '#f8fafc',
-  border: '1px solid rgba(148, 163, 184, 0.2)'
-} as const;
+// Pick a stable avatar tint based on the user's name so each contact keeps the
+// same color across renders.
+function avatarTintFor(name: string | null | undefined): string {
+  const fallback = '#4F6B47';
+  if (!name) return AVATAR_TINTS[0] ?? fallback;
+  let hash = 0;
+  for (let i = 0; i < name.length; i += 1) {
+    hash = (hash * 31 + name.charCodeAt(i)) % AVATAR_TINTS.length;
+  }
+  return AVATAR_TINTS[hash] ?? fallback;
+}
+
+function formatRelativeTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  const diffMs = Date.now() - date.getTime();
+  const minutes = Math.round(diffMs / 60000);
+  if (minutes < 1) return 'now';
+  if (minutes < 60) return `${minutes} min`;
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) return `${hours}h`;
+  const days = Math.round(hours / 24);
+  if (days === 1) return 'Yesterday';
+  if (days < 7) return `${days}d`;
+  return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+}
 
 export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = false }: Props) {
   const layerRef = useRef<HTMLDivElement>(null);
@@ -151,8 +161,11 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
     }
   }
 
+  const unreadCount = data.announcements.length + data.chat.length;
+  const totalCount = unreadCount; // every loaded item is treated as recent
+
   return (
-    <div ref={layerRef} style={{ position: 'relative' }}>
+    <div ref={layerRef} className="suite-msg-anchor">
       <button
         type="button"
         className="btn btn-secondary"
@@ -162,94 +175,155 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
         Messages
       </button>
       {open ? (
-        <div style={panelStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div className="suite-msg-panel" role="dialog" aria-label="Messages">
+          <div className="suite-msg-head">
             <div>
-              <strong style={{ display: 'block', color: '#0f172a' }}>Team messages</strong>
-              <span style={{ color: '#64748b', fontSize: 13 }}>
-                Announcements and general chat for {venue || 'all venues'}
-              </span>
+              <span className="suite-msg-eyebrow">Alma Suite · Inbox</span>
+              <strong className="suite-msg-title">Messages</strong>
             </div>
-            <button type="button" className="icon-btn" onClick={() => setOpen(false)} aria-label="Close chat">
-              ×
-            </button>
-          </div>
-
-          {message ? <p className="error-text">{message}</p> : null}
-          {loading ? <p className="subtle">Loading messages...</p> : null}
-
-          <div style={sectionStyle}>
-            <strong>Announcements</strong>
-            {data.announcements.length === 0 ? (
-              <p className="subtle">No announcements are pinned for this app.</p>
-            ) : (
-              data.announcements.map((announcement) => (
-                <article key={announcement.id} style={cardStyle}>
-                  <strong>{announcement.title}</strong>
-                  <p style={{ margin: '4px 0 0', color: '#475569' }}>{announcement.body}</p>
-                  <span style={{ color: '#94a3b8', fontSize: 12 }}>
-                    {announcement.createdByName || 'ALMA'} · {displayTime(announcement.createdAt)}
-                  </span>
-                </article>
-              ))
-            )}
-          </div>
-
-          <div style={sectionStyle}>
-            <strong>General team chat</strong>
-            <div style={{ display: 'grid', gap: 8 }}>
-              {data.chat.length === 0 ? (
-                <p className="subtle">No general chat messages yet. New messages use the same Comms inbox.</p>
-              ) : (
-                data.chat.map((item) => (
-                  <div key={item.id} style={{ ...cardStyle, display: 'grid', gap: 4 }}>
-                    <span style={{ color: '#64748b', fontSize: 12 }}>
-                      {item.createdByName || 'Team'} · {displayTime(item.createdAt)}
-                    </span>
-                    <span style={{ color: '#0f172a' }}>{item.body}</span>
-                  </div>
-                ))
-              )}
-            </div>
-            <form onSubmit={submitChat} style={{ display: 'flex', gap: 8 }}>
-              <input
-                className="field-control"
-                value={chatText}
-                onChange={(event) => setChatText(event.currentTarget.value)}
-                placeholder={`General message as ${userName || 'team'}`}
-              />
-              <button className="btn btn-primary" type="submit">
-                Send
+            <div className="suite-msg-head-actions">
+              {unreadCount > 0 ? (
+                <span className="suite-msg-pill">{unreadCount} new</span>
+              ) : null}
+              <button
+                type="button"
+                className="suite-msg-ghost-link"
+                onClick={() => setOpen(false)}
+              >
+                Close
               </button>
-            </form>
-            <p className="subtle" style={{ margin: 0 }}>
-              Direct one-to-one messages are available from Comms and the Staff Messages page.
-            </p>
+            </div>
           </div>
+
+          {message ? <p className="suite-msg-error">{message}</p> : null}
+
+          <form onSubmit={submitChat} className="suite-msg-compose">
+            <input
+              className="suite-msg-compose-input"
+              value={chatText}
+              onChange={(event) => setChatText(event.currentTarget.value)}
+              placeholder={`Message the team as ${userName || 'you'}`}
+            />
+            <button type="submit" className="suite-msg-compose-send" aria-label="Send">
+              Send
+            </button>
+          </form>
+
+          {loading ? <p className="suite-msg-subtle">Loading messages…</p> : null}
+
+          {data.announcements.length > 0 ? (
+            <>
+              <SuiteMsgDivider label="Pinned" />
+              {data.announcements.map((announcement) => (
+                <MessageRow
+                  key={announcement.id}
+                  who={announcement.createdByName || 'ALMA'}
+                  role={announcement.pinned ? 'Pinned announcement' : 'Announcement'}
+                  subject={announcement.title}
+                  snippet={announcement.body}
+                  time={formatRelativeTime(announcement.createdAt)}
+                  unread
+                />
+              ))}
+            </>
+          ) : null}
+
+          <SuiteMsgDivider label={data.chat.length > 0 ? 'Recent' : 'General team chat'} />
+          {data.chat.length === 0 && data.announcements.length === 0 && !loading ? (
+            <div className="suite-msg-empty">
+              No messages yet. Anything you post here lands in the Comms inbox.
+            </div>
+          ) : (
+            data.chat.map((item) => (
+              <MessageRow
+                key={item.id}
+                who={item.createdByName || 'Team'}
+                role="Team chat"
+                subject={item.body}
+                snippet=""
+                time={formatRelativeTime(item.createdAt)}
+              />
+            ))
+          )}
 
           {canAnnounce ? (
-            <form onSubmit={submitAnnouncement} style={sectionStyle}>
-              <strong>New announcement</strong>
+            <form onSubmit={submitAnnouncement} className="suite-msg-announcement">
+              <span className="suite-msg-eyebrow">New announcement</span>
               <input
-                className="field-control"
+                className="suite-msg-compose-input"
                 value={announcementTitle}
                 onChange={(event) => setAnnouncementTitle(event.currentTarget.value)}
                 placeholder="Title"
               />
               <textarea
-                className="field-textarea"
+                className="suite-msg-textarea"
                 value={announcementBody}
                 onChange={(event) => setAnnouncementBody(event.currentTarget.value)}
                 placeholder="What should the team know?"
                 rows={3}
               />
-              <button className="btn btn-primary" type="submit">
+              <button type="submit" className="suite-msg-compose-send">
                 Publish announcement
               </button>
             </form>
           ) : null}
+
+          <div className="suite-msg-footer">
+            <span className="suite-msg-eyebrow suite-msg-eyebrow--muted">
+              {totalCount} in inbox
+            </span>
+            <span className="suite-msg-eyebrow suite-msg-eyebrow--muted">
+              {venue || 'All venues'}
+            </span>
+          </div>
         </div>
       ) : null}
     </div>
   );
 }
+
+function SuiteMsgDivider({ label }: { label: string }) {
+  return (
+    <div className="suite-msg-divider">
+      <span className="suite-msg-eyebrow">{label}</span>
+      <span className="suite-msg-divider-line" />
+    </div>
+  );
+}
+
+type MessageRowProps = {
+  who: string;
+  role: string;
+  subject: string;
+  snippet?: string;
+  time: string;
+  unread?: boolean;
+};
+
+function MessageRow({ who, role, subject, snippet, time, unread = false }: MessageRowProps) {
+  return (
+    <div className={`suite-msg-row ${unread ? 'is-unread' : ''}`}>
+      <span
+        className="suite-msg-avatar"
+        style={{ background: avatarTintFor(who) }}
+        aria-hidden="true"
+      >
+        {initialsFrom(who)}
+      </span>
+      <div className="suite-msg-body">
+        <div className="suite-msg-meta">
+          <span className="suite-msg-name">{who}</span>
+          {role ? <span className="suite-msg-role">· {role}</span> : null}
+          <span className="suite-msg-time">{time}</span>
+        </div>
+        <div className="suite-msg-subject">{subject}</div>
+        {snippet ? <div className="suite-msg-snippet">{snippet}</div> : null}
+      </div>
+      {unread ? <span className="suite-msg-dot" aria-label="Unread" /> : null}
+    </div>
+  );
+}
+
+// Suppress unused-var noise from helpers kept for callers that import them
+void INK;
+void displayTime;

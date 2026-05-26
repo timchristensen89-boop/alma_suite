@@ -51,39 +51,53 @@ function persistReadState(state: ReadState) {
   }
 }
 
-const panelStyle = {
-  position: 'fixed',
-  right: 12,
-  top: 72,
-  width: 'min(420px, calc(100vw - 24px))',
-  maxHeight: 'calc(100vh - 92px)',
-  overflow: 'auto',
-  zIndex: 230,
-  padding: 16,
-  borderRadius: 16,
-  border: '1px solid rgba(148, 163, 184, 0.35)',
-  background: '#fff',
-  boxShadow: '0 24px 70px rgba(15, 23, 42, 0.22)'
-} as const;
+// Map a notification's tone to the severity bucket from the design. Three
+// urgency tiers, color-coded via earthy palette pulls — no traffic lights.
+type AlertSeverity = 'critical' | 'today' | 'thisWeek';
 
-const itemBaseStyle = {
-  display: 'grid',
-  gap: 4,
-  width: '100%',
-  padding: 12,
-  borderRadius: 12,
-  border: '1px solid rgba(148, 163, 184, 0.24)',
-  color: '#0f172a',
-  textDecoration: 'none',
-  textAlign: 'left'
-} as const;
-
-const toneColour: Record<SuiteNotification['tone'], string> = {
-  danger: '#b91c1c',
-  warning: '#a16207',
-  info: '#2563eb',
-  positive: '#15803d'
+const TONE_TO_SEVERITY: Record<SuiteNotification['tone'], AlertSeverity> = {
+  danger: 'critical',
+  warning: 'today',
+  info: 'thisWeek',
+  positive: 'thisWeek'
 };
+
+const SEVERITY_LABEL: Record<AlertSeverity, string> = {
+  critical: 'Critical · now',
+  today: 'Today',
+  thisWeek: 'This week'
+};
+
+const SEVERITY_COLOR: Record<AlertSeverity, string> = {
+  critical: '#A0463A',
+  today: '#B27935',
+  thisWeek: '#4F627E'
+};
+
+// App chip palette — kept in sync with the editorial switcher. Inlined to
+// avoid an import cycle with brand/SuiteApps.
+const APP_CHIP_PALETTE: Record<string, { bg: string; fg: string }> = {
+  compliance: { bg: '#A0463A', fg: '#FBEFE8' },
+  stock:      { bg: '#3D5C3F', fg: '#EDF1E2' },
+  reports:    { bg: '#B27935', fg: '#FBF1DC' },
+  staff:      { bg: '#4F627E', fg: '#EDF1F6' },
+  reserve:    { bg: '#1F2A1E', fg: '#E6E8DD' },
+  marketing:  { bg: '#5A3D3D', fg: '#F0E0DC' },
+  comms:      { bg: '#6E7682', fg: '#F4F6F9' },
+  giftcards:  { bg: '#E6B895', fg: '#3D2218' },
+  settings:   { bg: '#1A1A18', fg: '#E6E2D8' },
+  admin:      { bg: '#1A1A18', fg: '#E6E2D8' }
+};
+
+function chipFor(appId: string | undefined): { bg: string; fg: string } {
+  if (!appId) return { bg: '#1F3524', fg: '#F8F0E6' };
+  return APP_CHIP_PALETTE[appId] ?? { bg: '#1F3524', fg: '#F8F0E6' };
+}
+
+function appInitial(appId: string | undefined, appLabel: string | undefined): string {
+  const source = appLabel || appId || 'A';
+  return source.charAt(0).toUpperCase();
+}
 
 function timeAgo(iso: string) {
   const date = new Date(iso);
@@ -174,6 +188,8 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     persistReadState({});
   }, []);
 
+  const [filter, setFilter] = useState<'all' | AlertSeverity>('all');
+
   const { unreadItems, readItems } = useMemo(() => {
     const unread: SuiteNotification[] = [];
     const read: SuiteNotification[] = [];
@@ -187,8 +203,25 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
   const displayItems = showRead ? items : unreadItems;
   const unreadCount = unreadItems.length;
 
+  // Bucket items by severity for the grouped layout.
+  const buckets = useMemo(() => {
+    const out: Record<AlertSeverity, SuiteNotification[]> = {
+      critical: [],
+      today: [],
+      thisWeek: []
+    };
+    for (const item of displayItems) {
+      out[TONE_TO_SEVERITY[item.tone]].push(item);
+    }
+    return out;
+  }, [displayItems]);
+
+  const filteredOrder: AlertSeverity[] = filter === 'all'
+    ? ['critical', 'today', 'thisWeek']
+    : [filter];
+
   return (
-    <div ref={layerRef} style={{ position: 'relative' }}>
+    <div ref={layerRef} className="suite-alert-anchor">
       <button
         type="button"
         className="btn btn-secondary"
@@ -198,111 +231,161 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
         Alerts{unreadCount > 0 ? ` ${unreadCount > 9 ? '9+' : unreadCount}` : ''}
       </button>
       {open ? (
-        <div style={panelStyle}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, alignItems: 'start' }}>
+        <div className="suite-alert-panel" role="dialog" aria-label="Alerts">
+          <div className="suite-alert-head">
             <div>
-              <strong style={{ display: 'block', color: '#0f172a' }}>Suite alerts</strong>
-              <span style={{ color: '#64748b', fontSize: 13 }}>
-                {loading
-                  ? 'Refreshing...'
-                  : `${unreadCount} unread${readItems.length > 0 ? ` · ${readItems.length} read` : ''}`}
+              <span className="suite-alert-eyebrow">
+                Alma Suite · {buckets.critical.length > 0 ? 'Attention' : 'All clear'}
               </span>
+              <strong className="suite-alert-title">Needs your eye</strong>
             </div>
-            <button type="button" className="icon-btn" onClick={() => setOpen(false)} aria-label="Close alerts">
-              ×
-            </button>
+            <div className="suite-alert-head-actions">
+              {unreadCount > 0 ? (
+                <button type="button" className="suite-alert-ghost-link" onClick={markAllRead}>
+                  Mark all done
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="suite-alert-ghost-link"
+                onClick={() => setOpen(false)}
+              >
+                Close
+              </button>
+            </div>
           </div>
 
-          {message ? <p className="error-text">{message}</p> : null}
-
-          <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-            {unreadCount > 0 ? (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={markAllRead}>
-                Mark all read
+          {/* Filter chips */}
+          <div className="suite-alert-filters">
+            {(
+              [
+                ['all', 'All', displayItems.length],
+                ['critical', 'Critical', buckets.critical.length],
+                ['today', 'Today', buckets.today.length],
+                ['thisWeek', 'This week', buckets.thisWeek.length]
+              ] as Array<['all' | AlertSeverity, string, number]>
+            ).map(([id, label, count]) => (
+              <button
+                key={id}
+                type="button"
+                className={`suite-alert-chip ${filter === id ? 'is-active' : ''}`}
+                onClick={() => setFilter(id)}
+              >
+                {label} <span className="suite-alert-chip-count">{count}</span>
               </button>
-            ) : null}
+            ))}
             {readItems.length > 0 ? (
               <button
                 type="button"
-                className="btn btn-ghost btn-sm"
+                className={`suite-alert-chip ${showRead ? 'is-active' : ''}`}
                 onClick={() => setShowRead((value) => !value)}
               >
                 {showRead ? 'Hide read' : `Show ${readItems.length} read`}
               </button>
             ) : null}
-            {showRead && readItems.length > 0 ? (
-              <button type="button" className="btn btn-ghost btn-sm" onClick={clearAllRead}>
-                Restore all
-              </button>
-            ) : null}
           </div>
 
-          <div style={{ display: 'grid', gap: 10, marginTop: 14 }}>
-            {!displayItems.length && !loading ? (
-              <p className="subtle" style={{ margin: 0 }}>
-                {unreadCount === 0 && items.length > 0 ? 'All caught up.' : 'Nothing needs attention right now.'}
-              </p>
-            ) : null}
-            {displayItems.map((item) => {
-              const href = targetFor(item);
-              const isRead = !!readState[item.id];
-              return (
-                <div
-                  key={item.id}
-                  style={{
-                    ...itemBaseStyle,
-                    background: isRead ? '#f1f5f9' : '#f8fafc',
-                    opacity: isRead ? 0.65 : 1,
-                    position: 'relative'
-                  }}
-                >
-                  <a
-                    href={href}
-                    style={{ color: 'inherit', textDecoration: 'none', display: 'grid', gap: 4 }}
-                    onClick={(event) => {
+          {message ? <p className="suite-alert-error">{message}</p> : null}
+
+          {displayItems.length === 0 && !loading ? (
+            <div className="suite-alert-empty">
+              {unreadCount === 0 && items.length > 0 ? 'All caught up.' : 'Nothing needs attention right now.'}
+            </div>
+          ) : null}
+
+          {filteredOrder.map((severity) => {
+            const bucket = buckets[severity];
+            if (bucket.length === 0) return null;
+            return (
+              <div key={severity} className="suite-alert-group">
+                <div className="suite-alert-divider">
+                  <span className="suite-alert-severity-dot" style={{ background: SEVERITY_COLOR[severity] }} />
+                  <span className="suite-alert-eyebrow">{SEVERITY_LABEL[severity]}</span>
+                  <span className="suite-alert-divider-line" />
+                </div>
+                {bucket.map((item) => (
+                  <AlertRow
+                    key={item.id}
+                    item={item}
+                    severity={severity}
+                    isRead={!!readState[item.id]}
+                    onAction={(event) => {
+                      const href = targetFor(item);
                       markRead(item.id);
                       setOpen(false);
                       openWithSuiteHandoff(event, href);
                     }}
-                  >
-                    <span style={{ display: 'flex', justifyContent: 'space-between', gap: 8 }}>
-                      <strong>{item.title}</strong>
-                      <span style={{ color: toneColour[item.tone], fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
-                        {item.tone}
-                      </span>
-                    </span>
-                    <span style={{ color: '#475569', fontSize: 13 }}>{item.description}</span>
-                    <span style={{ color: '#94a3b8', fontSize: 12 }}>
-                      {item.appLabel ?? item.appId ?? 'Alma'} · {timeAgo(item.createdAt)}
-                    </span>
-                  </a>
-                  {!isRead ? (
-                    <button
-                      type="button"
-                      onClick={() => markRead(item.id)}
-                      aria-label="Mark as read"
-                      style={{
-                        position: 'absolute',
-                        top: 8,
-                        right: 8,
-                        border: 0,
-                        background: 'transparent',
-                        color: '#94a3b8',
-                        cursor: 'pointer',
-                        fontSize: 13,
-                        padding: '2px 6px',
-                        borderRadius: 6
-                      }}
-                    >
-                      ✓
-                    </button>
-                  ) : null}
-                </div>
-              );
-            })}
+                    onSnooze={() => markRead(item.id)}
+                    onDismiss={() => markRead(item.id)}
+                  />
+                ))}
+              </div>
+            );
+          })}
+
+          <div className="suite-alert-footer">
+            <span className="suite-alert-eyebrow suite-alert-eyebrow--muted">
+              {loading ? 'Refreshing…' : `${unreadCount} unread · ${readItems.length} read`}
+            </span>
+            {showRead && readItems.length > 0 ? (
+              <button type="button" className="suite-alert-ghost-link" onClick={clearAllRead}>
+                Restore all
+              </button>
+            ) : null}
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+type AlertRowProps = {
+  item: SuiteNotification;
+  severity: AlertSeverity;
+  isRead: boolean;
+  onAction: (event: MouseEvent<HTMLAnchorElement>) => void;
+  onSnooze: () => void;
+  onDismiss: () => void;
+};
+
+function AlertRow({ item, severity, isRead, onAction, onSnooze, onDismiss }: AlertRowProps) {
+  const chip = chipFor(item.appId);
+  const href = targetFor(item);
+  return (
+    <div className={`suite-alert-row ${isRead ? 'is-read' : ''}`}>
+      <span className="suite-alert-chip-icon" style={{ background: chip.bg, color: chip.fg }} aria-hidden="true">
+        {appInitial(item.appId, item.appLabel)}
+        <span
+          className="suite-alert-severity-pip"
+          style={{ background: SEVERITY_COLOR[severity] }}
+        />
+      </span>
+      <div className="suite-alert-body">
+        <div className="suite-alert-meta">
+          <a
+            href={href}
+            className="suite-alert-link"
+            onClick={onAction}
+          >
+            <span className="suite-alert-title-line">{item.title}</span>
+          </a>
+          <span className="suite-alert-time">{timeAgo(item.createdAt)}</span>
+        </div>
+        {item.description ? (
+          <div className="suite-alert-detail">{item.description}</div>
+        ) : null}
+        <div className="suite-alert-actions">
+          <a href={href} className="suite-alert-primary-btn" onClick={onAction}>
+            Open
+          </a>
+          <button type="button" className="suite-alert-ghost-btn" onClick={onSnooze}>
+            Snooze
+          </button>
+          <button type="button" className="suite-alert-ghost-btn" onClick={onDismiss}>
+            Dismiss
+          </button>
+        </div>
+      </div>
     </div>
   );
 }
