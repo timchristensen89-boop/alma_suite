@@ -1318,7 +1318,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
         <div className="marketing-layout">
           <section className="marketing-main">
-            <section id="dashboard" className="marketing-page-section" hidden={!isActiveSection('/')}>
+            {isActiveSection('/') ? (
+            <section id="dashboard" className="marketing-page-section">
               {/* Upcoming birthdays — surfaces guests with a birthday in the
                   next 30 days so front-of-house can send a quick gesture. */}
               {(() => {
@@ -1452,8 +1453,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               ) : null}
               </Card>
             </section>
+            ) : null}
 
-            <section id="content" className="marketing-page-section" hidden={!showContentSection}>
+            {showContentSection ? (
+            <section id="content" className="marketing-page-section">
               <Card
                 title={
                   showContentAssets
@@ -1759,8 +1762,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 ) : null}
               </Card>
             </section>
+            ) : null}
 
-            <section id="guests" className="marketing-page-section" hidden={!isActiveSection('/guests')}>
+            {isActiveSection('/guests') ? (
+            <section id="guests" className="marketing-page-section">
               <Card title="Guest CRM" subtitle="Profiles, consent status, tags, and visit history">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1860,8 +1865,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </div>
               </Card>
             </section>
+            ) : null}
 
-            <section id="segments" className="marketing-page-section" hidden={!isActiveSection('/segments')}>
+            {isActiveSection('/segments') ? (
+            <section id="segments" className="marketing-page-section">
               <Card title="Tags and segments" subtitle="Manual tags plus automatic audience rules">
               <div className="marketing-section-grid">
                 <div className="marketing-stack">
@@ -1971,10 +1978,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </div>
               </Card>
             </section>
+            ) : null}
           </section>
 
           <aside className="marketing-side">
-            <section id="templates" className="marketing-page-section" hidden={!isActiveSection('/templates')}>
+            {isActiveSection('/templates') ? (
+            <section id="templates" className="marketing-page-section">
               <Card title="Templates" subtitle="HTML accepted. Preview rendered inside a sandboxed iframe.">
               <form className="marketing-form" onSubmit={(event) => void saveTemplate(event)}>
                 <div className="form-grid two">
@@ -2004,8 +2013,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </div>
               </Card>
             </section>
+            ) : null}
 
-            <section id="campaigns" className="marketing-page-section" hidden={!isActiveSection('/campaigns')}>
+            {isActiveSection('/campaigns') ? (
+            <section id="campaigns" className="marketing-page-section">
               <Card title="Campaigns" subtitle="Recipient preview and simulation only. No external send.">
               <form className="marketing-form" onSubmit={(event) => void saveCampaign(event)}>
                 <div className="form-grid two">
@@ -2071,8 +2082,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               ) : null}
               </Card>
             </section>
+            ) : null}
 
-            <section id="automations" className="marketing-page-section" hidden={!isActiveSection('/automations')}>
+            {isActiveSection('/automations') ? (
+            <section id="automations" className="marketing-page-section">
               <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">
@@ -2161,6 +2174,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               </div>
               </Card>
             </section>
+            ) : null}
           </aside>
         </div>
       </div>

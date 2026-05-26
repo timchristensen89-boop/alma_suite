@@ -280,25 +280,6 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      <div className="grid two">
-        <Card
-          title="Modules wired now"
-          subtitle="End-to-end flows ready for the floor"
-          action={<Badge tone="positive" dot>Live</Badge>}
-        >
-          <ul className="detail-list" style={{ listStyle: 'none', padding: 0, margin: 0 }}>
-            <li><span>Issues</span><strong>Create · list · detail · edit</strong></li>
-            <li><span>Checklists</span><strong>Templates · runs · item notes</strong></li>
-            {managerAccess ? (
-              <>
-                <li><span>Staff</span><strong>Profiles · records · expiry tracking</strong></li>
-                <li><span>Temperatures</span><strong>Manual logs · govee sync</strong></li>
-              </>
-            ) : null}
-            <li><span>Incidents</span><strong>Reports · people · follow-up</strong></li>
-          </ul>
-        </Card>
-      </div>
     </div>
   );
 }

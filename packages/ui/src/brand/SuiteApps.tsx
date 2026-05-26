@@ -124,7 +124,7 @@ const SUITE_APP_HOSTS: Partial<Record<SuiteAppId, string>> = {
   reserve: 'https://alma-reserve.web.app',
   reports: 'https://alma-reports.web.app',
   marketing: 'https://alma-marketing.web.app',
-  giftcards: 'https://alma-giftcards.web.app',
+  giftcards: 'https://alma-giftcards.web.app/redeem',
   comms: 'https://alma-comms.web.app',
   settings: 'https://alma-suite-admin.web.app'
 };

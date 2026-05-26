@@ -1,10 +1,12 @@
 import { FormEvent, ReactNode, useEffect, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
+  AlmaHomeBubble,
   Badge,
   Button,
   Card,
   EmptyState,
+  GearIcon,
   Input,
   PageHeader,
   Select,
@@ -2460,34 +2462,37 @@ export function AdminPage({
 
   return (
     <div className="page-stack">
-      <section className="hero admin-command-hero">
-        <div className="hero-text">
-          <p className="page-header-eyebrow">Admin command</p>
-          <h1>{routeCopy.title}</h1>
-          <p>{routeCopy.description}</p>
-          <div className="hero-meta">
-            <span className="hero-meta-dot" aria-hidden="true" />
-            <span>{overview.readiness.status === 'ready' ? 'Suite setup is operational' : 'Setup needs review'}</span>
-            <span aria-hidden="true">·</span>
-            <span>Generated {formatDate(overview.generatedAt)}</span>
-          </div>
-        </div>
-        <div className="hero-actions">
-          {standalone && !isOverview ? (
-            <Button type="button" variant="ghost" onClick={() => { window.location.href = '/'; }}>
-              Admin overview
-            </Button>
-          ) : null}
-          <Button
-            variant="secondary"
-            leftIcon={<IconRefresh size={16} />}
-            onClick={() => void loadDashboard()}
-            disabled={loading}
-          >
-            Refresh
-          </Button>
-        </div>
-      </section>
+      <AlmaHomeBubble
+        app="admin"
+        appName="Admin"
+        appIcon={<GearIcon />}
+        eyebrow="Admin command"
+        description={routeCopy.description}
+        statusLabel={routeCopy.title}
+        statusHint={loading ? 'Refreshing admin data…' : `Generated ${formatDate(overview.generatedAt)}`}
+        statusDot={overview.readiness.status === 'ready' ? 'forest' : 'amber'}
+        actions={
+          <>
+            <button
+              type="button"
+              className="alma-home-bubble-btn alma-home-bubble-btn--primary"
+              onClick={() => void loadDashboard()}
+              disabled={loading}
+            >
+              Refresh →
+            </button>
+            {standalone && !isOverview ? (
+              <button
+                type="button"
+                className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
+                onClick={() => { window.location.href = '/'; }}
+              >
+                Admin home
+              </button>
+            ) : null}
+          </>
+        }
+      />
 
       {!standalone && SETTINGS_WEB_URL ? (
         <Card
@@ -2503,7 +2508,6 @@ export function AdminPage({
 
       {showRouteNav ? (
       <nav className="admin-section-nav" aria-label="Admin sections">
-        <a href="#overview">Overview</a>
         <a href="#business">Business and venues</a>
         <a href="#access">Users and access</a>
         <a href="#permission-editor">Permission editor</a>
@@ -2520,72 +2524,6 @@ export function AdminPage({
 
       {(isAll || isOverview) ? (
       <section className="admin-section">
-        <SectionHeading
-          id="overview"
-          eyebrow="Overview"
-          title="Is the suite ready to use?"
-          description="A small launch-readiness view across the apps that matter most."
-        />
-        <div className="admin-readiness-card">
-          <div>
-            <Badge tone={overview.readiness.status === 'ready' ? 'positive' : 'warning'} dot>
-              {overview.readiness.status === 'ready' ? 'Ready' : 'Needs attention'}
-            </Badge>
-            <h2>{overview.readiness.label}</h2>
-            <p>
-              Generated {formatDate(overview.generatedAt)}. This is a read-only Admin snapshot, not a migration or
-              integration run.
-            </p>
-          </div>
-          <Button
-            rightIcon={<IconArrowRight size={14} />}
-            onClick={() => void openSuiteLink({ appId: 'staff', href: '/settings' })}
-          >
-            Open Staff settings
-          </Button>
-        </div>
-
-        <div className="stats-grid">
-          <StatCard label="Active staff" value={overview.counts.activeStaff} hint="Current active profiles" icon={<IconStaff />} />
-          <StatCard label="Missing staff access" value={overview.counts.staffMissingStaffAccess} hint="Active profiles without Staff app" tone={overview.counts.staffMissingStaffAccess ? 'warning' : 'positive'} icon={<IconUsers />} />
-          <StatCard label="Monday roster" value={overview.counts.mondayRosterLoaded ? 'Loaded' : 'Not loaded'} hint={`${overview.counts.mondayRosterShiftCount} shifts`} tone={overview.counts.mondayRosterLoaded ? 'positive' : 'warning'} icon={<IconClock />} />
-          <StatCard label="Open clock sessions" value={overview.counts.openClockSessions} hint="Needs manager follow-up if stale" tone={overview.counts.openClockSessions ? 'warning' : 'positive'} icon={<IconTemperature />} />
-        </div>
-
-        <div className="admin-grid two">
-          <Card title="Key warnings" subtitle="Only real checks from existing suite data">
-            {overview.readiness.warnings.length ? (
-              <div className="admin-warning-list">
-                {overview.readiness.warnings.map((warning) => (
-                  <div key={`${warning.label}-${warning.detail}`} className="admin-warning-item">
-                    <Badge tone={toneToBadge(warning.tone)} dot>{warning.label}</Badge>
-                    <p>{warning.detail}</p>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                icon={<IconChecklist />}
-                title="No Admin warnings"
-                description="No launch-readiness warnings were returned from the current checks."
-              />
-            )}
-          </Card>
-
-          <Card title="App handoff links" subtitle="Open the app for each daily workflow">
-            <div className="admin-card-list">
-              {overview.handoffLinks.map((link) => (
-                <button key={`${link.appId}-${link.href}`} className="admin-link-card" type="button" onClick={() => void openSuiteLink(link)}>
-                  <span>
-                    <strong>{link.label}</strong>
-                    <small>{link.description}</small>
-                  </span>
-                  <IconExternalLink size={16} />
-                </button>
-              ))}
-            </div>
-          </Card>
-        </div>
         <div className="admin-settings-link-list">
           {ADMIN_ROUTE_GROUPS.map((group) => (
             <Card key={group.title} title={group.title} subtitle="Open the page for that workflow">

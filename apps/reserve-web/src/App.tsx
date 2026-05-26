@@ -1689,6 +1689,24 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [widgetAvailability, setWidgetAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [guestDetail, setGuestDetail] = useState<MarketingGuestDetail | null>(null);
+  // Track active section by hash so each Reserve tool gets its own page.
+  // Defaults to #dashboard; SidebarNav already manages updating window.location.hash.
+  const [activeHash, setActiveHash] = useState<string>(() =>
+    (typeof window !== 'undefined' && window.location.hash) || '#dashboard'
+  );
+  useEffect(() => {
+    const syncHash = () => setActiveHash(window.location.hash || '#dashboard');
+    syncHash();
+    window.addEventListener('hashchange', syncHash);
+    return () => window.removeEventListener('hashchange', syncHash);
+  }, []);
+  const showDashboard = activeHash === '#dashboard' || activeHash === '';
+  const showFloorPlan = activeHash === '#floor-plan';
+  const showGuests = activeHash === '#guests';
+  const showWaitlist = activeHash === '#waitlist';
+  const showAvailability = activeHash === '#availability';
+  const showWidget = activeHash === '#widget-preview';
+  const showGoogleReserve = activeHash === '#google-reserve';
   // Recent visit history for the guest being booked — shown when the email
   // entered in the quick-create form matches an existing guest in this venue.
   const [formGuestHistory, setFormGuestHistory] = useState<{
@@ -2062,8 +2080,8 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           );
         })()}
 
-        {(() => {
-          // Editorial Bookings · tonight header
+        {showDashboard && (() => {
+          // Editorial Bookings · tonight header — only on the dashboard tab.
           const isToday = selectedDate === new Date().toISOString().slice(0, 10);
           const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
           const dateObj = new Date(`${selectedDate}T12:00:00`);
@@ -2200,6 +2218,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         <div className="reserve-layout">
           <section className="reserve-main">
+            {showDashboard ? (
             <section id="dashboard">
               <Card title="Today and upcoming" subtitle={scopedVenueParam ?? 'All venues'}>
               {loading ? <Spinner label="Loading reserve dashboard..." /> : null}
@@ -2312,7 +2331,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               ) : null}
               </Card>
             </section>
+            ) : null}
 
+            {showGuests ? (
             <section id="guests">
               <Card title="Guest CRM" subtitle="Searchable venue guests, consent, and reservation history">
               <div className="reserve-toolbar">
@@ -2400,11 +2421,15 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               </div>
               </Card>
             </section>
+            ) : null}
 
+            {showWaitlist ? (
             <section id="waitlist">
               <WaitlistSection defaultVenue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
             </section>
+            ) : null}
 
+            {showFloorPlan ? (
             <section id="floor-plan">
               <FloorPlanSection
                 venue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter}
@@ -2424,7 +2449,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 }}
               />
             </section>
+            ) : null}
 
+            {showAvailability ? (
             <section id="availability">
               <Card title="Availability rules and blackouts" subtitle="The first safe online-booking layer">
               <div className="reserve-section-grid">
@@ -2550,6 +2577,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               </div>
               </Card>
             </section>
+            ) : null}
           </section>
 
           <aside className="reserve-side">
@@ -2669,6 +2697,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               </div>
             </Card>
 
+            {showWidget ? (
             <section id="widget-preview">
               <Card title="Public widget preview" subtitle="Safe slot preview with no internal notes exposed">
               <form className="reserve-form" onSubmit={(event) => void previewWidgetAvailability(event)}>
@@ -2704,7 +2733,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               </Button>
               </Card>
             </section>
+            ) : null}
 
+            {showGoogleReserve ? (
             <section id="google-reserve">
               <Card title="Google Reserve setup" subtitle="Setup required. No live feed submission in this pass.">
               <form className="reserve-form" onSubmit={(event) => void saveGoogleReserve(event)}>
@@ -2740,6 +2771,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               )}
               </Card>
             </section>
+            ) : null}
           </aside>
         </div>
       </div>
