@@ -9772,6 +9772,57 @@ a.suite-app-tile:hover {
   height: 12px;
 }
 
+/* Preview banner — persistent at the top of any app that isn't fully
+   operational. Sits above the editorial home bubble so the "this isn't
+   live yet" signal can't be missed. */
+.alma-preview-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+  padding: 12px 18px;
+  border: 1px solid rgba(178, 121, 53, 0.32);
+  border-left: 4px solid #B27935;
+  border-radius: 12px;
+  background: rgba(255, 247, 232, 0.92);
+  color: #4A3216;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  line-height: 1.45;
+}
+
+.alma-preview-banner-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 10px;
+  border-radius: 999px;
+  background: #B27935;
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-top: 1px;
+}
+
+.alma-preview-banner-text {
+  flex: 1 1 auto;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14.5px;
+  line-height: 1.4;
+  letter-spacing: 0.005em;
+  color: #4A3216;
+}
+
+.alma-preview-banner-text strong {
+  font-family: var(--font-sans);
+  font-style: normal;
+  font-weight: 700;
+  letter-spacing: 0.005em;
+}
+
 /* Admin integration-health strip — one tight line under the home
    bubble, six coloured dots, jumps to the full health page. Intentionally
    not a card — we're not re-introducing the launch-readiness overview

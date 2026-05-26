@@ -382,8 +382,8 @@ function AlertRow({ item, severity, isRead, onAction, onSnooze, onDismiss }: Ale
           <a href={href} className="suite-alert-primary-btn" onClick={onAction}>
             Open
           </a>
-          <button type="button" className="suite-alert-ghost-btn" onClick={onSnooze}>
-            Snooze
+          <button type="button" className="suite-alert-ghost-btn" onClick={onSnooze} title="Mark as done for now (this alert won't return)">
+            Done for now
           </button>
           <button type="button" className="suite-alert-ghost-btn" onClick={onDismiss}>
             Dismiss

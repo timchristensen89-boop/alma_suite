@@ -1268,6 +1268,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       }
     >
       <div className="marketing-page">
+        <div className="alma-preview-banner" role="status">
+          <span className="alma-preview-banner-tag">Preview</span>
+          <span className="alma-preview-banner-text">
+            Live sends are <strong>disabled</strong>. You can draft campaigns, build segments, and review the content calendar — but no email, SMS, or social post will be delivered to customers until consent + send paths are verified.
+          </span>
+        </div>
         <AlmaHomeBubble
           app="marketing"
           appName="Marketing"

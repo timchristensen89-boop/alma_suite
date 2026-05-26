@@ -2040,6 +2040,13 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       topBar={<TopBarWithContext user={user} onLogout={onLogout} />}
     >
       <div className="reserve-page">
+        <div className="alma-preview-banner" role="status">
+          <span className="alma-preview-banner-tag">Preview</span>
+          <span className="alma-preview-banner-text">
+            Alma Reserve isn't live yet. <strong>SevenRooms remains the source of truth</strong> for real bookings.
+            Anything created here is for testing layout, capacity logic, and the public widget — it may not flow to your booking system.
+          </span>
+        </div>
         {(() => {
           const covers = dashboard?.totals.coversToday ?? 0;
           const bookings = dashboard?.totals.todayBookings ?? 0;

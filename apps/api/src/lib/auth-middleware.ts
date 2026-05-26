@@ -159,67 +159,69 @@ export async function authMiddleware(
   }
 
   if (req.user.accountType === 'VENUE_DEVICE' && isWrite(req) && !req.path.startsWith('/api/device')) {
-    return next(new HttpError(403, 'Staff PIN required on this shared device.'));
+    return next(new HttpError(403, 'Shared-device sign-in only lets you read the venue board. Sign in as a staff PIN to take this action.'));
   }
 
   const settingsRequest = req.path.startsWith('/api/settings') || req.path.startsWith('/api/shift-task-rules');
 
   if (settingsRequest && !hasSettingsAccess(req.user)) {
-    return next(new HttpError(403, 'Settings access required'));
+    return next(new HttpError(403, 'This is an Admin setting. Ask an Alma admin if you need access.'));
   }
 
   if (!settingsRequest) {
     if (req.path.startsWith('/api/staff')) {
       if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE'])) {
-        return next(new HttpError(403, 'Staff access disabled'));
+        return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
       }
     } else if (req.path.startsWith('/api/reports')) {
       if (!hasAnyEnabledAppAccess(req.user, ['REPORTS', 'COMPLIANCE'])) {
-        return next(new HttpError(403, 'Reports access disabled'));
+        return next(new HttpError(403, 'Alma Reports is restricted to managers and admins. Ask an Alma admin if you need access.'));
       }
     } else if (req.path.startsWith('/api/reserve')) {
       if (!hasAnyEnabledAppAccess(req.user, ['RESERVE', 'COMPLIANCE'])) {
-        return next(new HttpError(403, 'Reserve access disabled'));
+        return next(new HttpError(403, 'Alma Reserve is currently in Preview and isn’t open to your role.'));
       }
     } else if (req.path.startsWith('/api/marketing')) {
       if (!hasAnyEnabledAppAccess(req.user, ['MARKETING', 'COMPLIANCE'])) {
-        return next(new HttpError(403, 'Marketing access disabled'));
+        return next(new HttpError(403, 'Alma Marketing is currently in Preview and isn’t open to your role.'));
       }
     } else if (req.path.startsWith('/api/gift-cards')) {
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
-        return next(new HttpError(403, 'Gift cards access disabled'));
+        return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
       }
     } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/comms') || req.path.startsWith('/api/communications')) {
       if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
-        return next(new HttpError(403, 'Suite access disabled'));
+        return next(new HttpError(403, 'Your Alma Suite access is turned off. Ask an Alma admin.'));
       }
     } else if (!hasEnabledAppAccess(req.user, 'COMPLIANCE')) {
-      return next(new HttpError(403, 'Compliance access disabled'));
+      return next(new HttpError(403, 'Alma Compliance isn’t enabled on your account. Ask an Alma admin.'));
     }
   }
 
   if (!isManager(req.user) && !isStaffWriteAllowed(req)) {
-    return next(new HttpError(403, 'Manager access required'));
+    return next(new HttpError(403, 'This is a manager-only action. Ask your manager to do it.'));
   }
 
   return next();
 }
 
 export function requireAdmin(req: Request, _res: Response, next: NextFunction) {
-  if (!req.user) return next(new HttpError(401, 'Not authenticated'));
-  if (req.user.accountType === 'VENUE_DEVICE' || req.user.deviceAccount) return next(new HttpError(403, 'Admin access required'));
-  if (!req.user.isAdmin) return next(new HttpError(403, 'Admin access required'));
+  if (!req.user) return next(new HttpError(401, 'You’re not signed in. Sign in with your Alma account.'));
+  if (req.user.accountType === 'VENUE_DEVICE' || req.user.deviceAccount) {
+    return next(new HttpError(403, 'Admin tools aren’t available on a shared device. Open Alma Admin on a personal device.'));
+  }
+  if (!req.user.isAdmin) return next(new HttpError(403, 'This needs Alma Admin access. Ask the owner if you need it.'));
   return next();
 }
 
 export function requireManager(req: Request, _res: Response, next: NextFunction) {
-  if (!req.user) return next(new HttpError(401, 'Not authenticated'));
-  if (!isManager(req.user)) return next(new HttpError(403, 'Manager access required'));
+  if (!req.user) return next(new HttpError(401, 'You’re not signed in. Sign in with your Alma account.'));
+  if (!isManager(req.user)) return next(new HttpError(403, 'This is a manager-only action. Ask your manager to do it.'));
   return next();
 }
 
 export function requireSettingsAdmin(req: Request, _res: Response, next: NextFunction) {
-  if (!req.user) return next(new HttpError(401, 'Not authenticated'));
-  if (!hasSettingsAccess(req.user)) return next(new HttpError(403, 'Settings admin access required'));
+  if (!req.user) return next(new HttpError(401, 'You’re not signed in. Sign in with your Alma account.'));
+  if (!hasSettingsAccess(req.user)) return next(new HttpError(403, 'This is an Alma Admin setting. Ask an Alma admin if you need access.'));
   return next();
 }

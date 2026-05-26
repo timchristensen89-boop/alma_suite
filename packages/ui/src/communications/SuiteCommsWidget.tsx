@@ -161,8 +161,11 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
     }
   }
 
-  const unreadCount = data.announcements.length + data.chat.length;
-  const totalCount = unreadCount; // every loaded item is treated as recent
+  // We don't have per-user read receipts yet, so this is "loaded recently"
+  // rather than true unread-to-you. Label it accurately so the badge isn't
+  // dishonest. Real read state is on the to-do.
+  const recentCount = data.announcements.length + data.chat.length;
+  const totalCount = recentCount;
 
   return (
     <div ref={layerRef} className="suite-msg-anchor">
@@ -189,11 +192,11 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
 
           <div className="suite-msg-head">
             <div>
-              <span className="suite-msg-eyebrow">Alma Suite · Inbox</span>
-              <strong className="suite-msg-title">Messages</strong>
+              <span className="suite-msg-eyebrow">Alma Suite · Team</span>
+              <strong className="suite-msg-title">Team chat &amp; announcements</strong>
             </div>
-            {unreadCount > 0 ? (
-              <span className="suite-msg-pill">{unreadCount} new</span>
+            {recentCount > 0 ? (
+              <span className="suite-msg-pill" title="Loaded recently. Per-user unread state is coming.">{recentCount} recent</span>
             ) : null}
           </div>
 
