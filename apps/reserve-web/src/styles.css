@@ -209,12 +209,221 @@
 
 .reserve-widget-page {
   min-height: 100vh;
-  padding: 28px 20px 56px;
+  padding: 0;
   background: #FAF6EE;
   color: #14241A;
   font-family: "Avenir LT Std", "Manrope", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-weight: 400;
   -webkit-font-smoothing: antialiased;
+}
+
+.reserve-widget-page .reserve-widget-shell {
+  width: min(1180px, 100%);
+  margin: 0 auto;
+  padding: 36px 28px 64px;
+  display: grid;
+  gap: 24px;
+}
+
+/* ── Editorial venue hero — full-bleed photo with forest gradient ─── */
+
+.reserve-public-hero-v2 {
+  position: relative;
+  min-height: 78vh;
+  overflow: hidden;
+  color: #FAF6EE;
+  isolation: isolate;
+}
+
+.reserve-public-hero-v2::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: var(--hero-image, none) center / cover no-repeat;
+  filter: brightness(0.62);
+  z-index: -2;
+}
+
+.reserve-public-hero-v2::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    180deg,
+    rgba(20, 36, 26, 0.55) 0%,
+    rgba(20, 36, 26, 0.15) 25%,
+    rgba(20, 36, 26, 0.15) 55%,
+    rgba(20, 36, 26, 0.85) 100%
+  );
+  z-index: -1;
+}
+
+.reserve-public-hero-nav {
+  position: relative;
+  padding: 22px clamp(22px, 4vw, 40px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+
+.reserve-public-wordmark {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: #FAF6EE;
+}
+
+.reserve-public-wordmark em {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0.04em;
+  color: rgba(245, 220, 206, 0.75);
+  margin-left: 6px;
+}
+
+.reserve-public-hero-link {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  color: #F5DCCE;
+  text-decoration: none;
+  text-transform: uppercase;
+  transition: opacity 200ms ease;
+}
+
+.reserve-public-hero-link:hover { opacity: 0.7; }
+
+.reserve-public-hero-content {
+  position: relative;
+  min-height: calc(78vh - 80px);
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: clamp(60px, 12vh, 140px) clamp(22px, 4vw, 40px) clamp(40px, 6vh, 60px);
+  display: grid;
+  grid-template-rows: 1fr auto;
+  gap: 40px;
+}
+
+.reserve-public-hero-mark {
+  display: inline-block;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 17px;
+  letter-spacing: 0.30em;
+  text-transform: uppercase;
+  color: #F5DCCE;
+  margin-bottom: 28px;
+}
+
+.reserve-public-hero-mark em {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: 0.04em;
+  color: rgba(245, 220, 206, 0.7);
+  text-transform: none;
+}
+
+.reserve-public-hero-display {
+  margin: 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 400;
+  font-size: clamp(56px, 9vw, 132px);
+  line-height: 0.92;
+  letter-spacing: -0.012em;
+  color: #FAF6EE;
+  max-width: 14ch;
+}
+
+.reserve-public-hero-italic {
+  display: block;
+  font-style: italic;
+  font-weight: 500;
+  color: #F5DCCE;
+}
+
+.reserve-public-hero-bottom {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 40px;
+  flex-wrap: wrap;
+}
+
+.reserve-public-hero-tag {
+  margin: 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: clamp(17px, 1.6vw, 21px);
+  line-height: 1.55;
+  font-weight: 500;
+  color: #F5DCCE;
+  max-width: 38ch;
+}
+
+.reserve-public-hero-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.reserve-public-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 22px 13px;
+  border-radius: 999px;
+  border: 1px solid #14241A;
+  background: #14241A;
+  color: #FAF6EE;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  text-decoration: none;
+  transition: transform 200ms ease, background 200ms ease;
+}
+
+.reserve-public-btn:hover { transform: translateY(-1px); }
+
+.reserve-public-btn--shell {
+  background: #F5DCCE;
+  border-color: #F5DCCE;
+  color: #14241A;
+}
+
+.reserve-public-btn--shell:hover { background: #F8E8DC; }
+
+.reserve-public-btn--ghost-light {
+  background: transparent;
+  color: #FAF6EE;
+  border-color: rgba(245, 220, 206, 0.55);
+}
+
+.reserve-public-btn--ghost-light:hover {
+  background: rgba(245, 220, 206, 0.1);
+  border-color: rgba(245, 220, 206, 0.85);
+}
+
+.reserve-public-arrow {
+  width: 14px;
+  height: 6px;
+}
+
+@media (max-width: 900px) {
+  .reserve-public-hero-display { font-size: clamp(44px, 11vw, 80px); }
+  .reserve-public-hero-mark { font-size: 14px; }
+  .reserve-public-hero-bottom { align-items: flex-start; flex-direction: column; }
 }
 
 .reserve-widget-shell {

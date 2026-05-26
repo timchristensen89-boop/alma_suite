@@ -910,28 +910,47 @@ function PublicBookingWidget() {
 
   return (
     <main className="login-page reserve-widget-page">
+      <header
+        className="reserve-public-hero-v2"
+        style={{ '--hero-image': `url(${selectedVenueDetail.image})` } as React.CSSProperties}
+      >
+        <nav className="reserve-public-hero-nav">
+          <div className="reserve-public-wordmark">
+            alma <em>Restaurant &amp; Bar</em>
+          </div>
+          <a href="https://almagroup.com.au/" className="reserve-public-hero-link">
+            Visit website →
+          </a>
+        </nav>
+        <div className="reserve-public-hero-content">
+          <div>
+            <span className="reserve-public-hero-mark">Alma <em>Group · Reservations</em></span>
+            <h1 className="reserve-public-hero-display">
+              {search.venue},
+              <span className="reserve-public-hero-italic">a seat for you.</span>
+            </h1>
+          </div>
+          <div className="reserve-public-hero-bottom">
+            <p className="reserve-public-hero-tag">{selectedVenueDetail.summary}</p>
+            <div className="reserve-public-hero-actions">
+              <button
+                type="button"
+                className="reserve-public-btn reserve-public-btn--shell"
+                onClick={() => document.querySelector('.reserve-public-booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+              >
+                Reserve a table
+                <svg className="reserve-public-arrow" viewBox="0 0 14 6" fill="none" aria-hidden="true">
+                  <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+              <a href="https://almagroup.com.au/menu" className="reserve-public-btn reserve-public-btn--ghost-light">
+                See the menu
+              </a>
+            </div>
+          </div>
+        </div>
+      </header>
       <div className="reserve-widget-shell">
-        <header className="reserve-public-header">
-          <div className="reserve-public-brand" aria-label="Alma Group reservations">
-            <img src="/brand/alma-fish.png" alt="" />
-            <span>Alma Group</span>
-          </div>
-          <a href="https://almagroup.com.au/" className="reserve-public-header-link">Visit website</a>
-        </header>
-        <section className="reserve-public-hero" style={{ backgroundImage: `linear-gradient(180deg, rgba(40, 4, 16, 0.1), rgba(40, 4, 16, 0.62)), url(${selectedVenueDetail.image})` }}>
-          <div className="reserve-public-hero-copy">
-            <p className="reserve-public-eyebrow">Alma Group reservations</p>
-            <h1>{search.venue}</h1>
-            <p>{selectedVenueDetail.summary}</p>
-            <button
-              type="button"
-              className="reserve-public-hero-cta"
-              onClick={() => document.querySelector('.reserve-public-booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            >
-              Book a table
-            </button>
-          </div>
-        </section>
         <section className="reserve-public-layout" aria-label="Book a table">
           <div className="reserve-public-primary">
             {reservation ? (
