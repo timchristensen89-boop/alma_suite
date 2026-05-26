@@ -551,5 +551,12 @@
   .end-of-shift-actions button {
     min-height: 48px;
     font-size: 15px;
+/* ==========================================================================
+   Mobile pass (≤480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .comms-grid,
+  .recipient-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }

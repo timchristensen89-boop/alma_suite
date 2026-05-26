@@ -517,3 +517,20 @@
     justify-content: flex-start;
   }
 }
+
+/* ==========================================================================
+   Mobile pass (≤480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .marketing-section-grid,
+  .content-studio-grid,
+  .content-bottom-grid,
+  .content-asset-grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .stats-grid.compact {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
