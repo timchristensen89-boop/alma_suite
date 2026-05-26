@@ -2794,7 +2794,7 @@ export function AdminPage({
             {
               id: 'meta-tiktok',
               label: 'Meta / TikTok engagement read-back',
-              detail: 'We can publish to Meta but we don\'t yet pull likes / comments / reach back. Marketing content performance is one-way until Phase 4.7.',
+              detail: 'Performance page is live in Marketing — but live Meta Graph API insights need page tokens persisted after the OAuth callback. Until then the Performance page returns simulated numbers tagged "Simulated" so the surface is real but the values are obviously not.',
               tone: 'info'
             }
           ];
@@ -2810,7 +2810,9 @@ export function AdminPage({
                 'Venue Readiness at /readiness: green / amber / red view of today\'s opening, service and closing checklists.',
                 'Suite-wide Feedback button on every internal app — bug / idea / praise straight into the team inbox.',
                 'Scheduled CSV exports in Admin (sales by day, wages by week, timesheets, stocktake variance, low stock).',
-                'Public gift cards: cleaner trust panel with proper icons, expiry transparency, and a 3-question FAQ.'
+                'Public gift cards: cleaner trust panel with proper icons, expiry transparency, and a 3-question FAQ.',
+                'Field-level redaction on staff profiles: pay / bank / TFN / super / DOB show "Hidden" instead of leaking to managers without HR perms.',
+                'Marketing Performance page (Phase 4.7 foundation): post engagement surface with simulated metrics until Meta page tokens are persisted.'
               ]
             },
             {
