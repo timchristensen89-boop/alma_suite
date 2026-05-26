@@ -180,6 +180,9 @@ type RedactionMask = {
 function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask: RedactionMask): T {
   // Clone — we never mutate the row that came from Prisma.
   const out: Record<string, unknown> = { ...profile };
+  // Sidecar — tells the UI which field groups were hidden so it can render
+  // "Hidden — needs permission" instead of "Not set" for those fields.
+  const hidden: string[] = [];
   if (mask.pay) {
     out.payRateCents = null;
     out.trainingPayRateCents = null;
@@ -189,11 +192,13 @@ function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask
     if (payProfile && typeof payProfile === 'object') {
       out.payProfile = { ...payProfile, baseRateCents: null, salaryCents: null, redacted: true };
     }
+    hidden.push('pay');
   }
   if (mask.banking) {
     out.bankAccountName = null;
     out.bankBsb = null;
     out.bankAccountNumber = null;
+    hidden.push('banking');
   }
   if (mask.tax) {
     out.taxFileNumber = null;
@@ -204,21 +209,31 @@ function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask
     out.superFundAbn = null;
     out.superFundUsi = null;
     out.superMemberNumber = null;
+    hidden.push('tax');
   }
-  if (mask.dob) out.dateOfBirth = null;
+  if (mask.dob) {
+    out.dateOfBirth = null;
+    hidden.push('dob');
+  }
   if (mask.address) {
     out.addressLine1 = null;
     out.addressLine2 = null;
     out.suburb = null;
     out.state = null;
     out.postcode = null;
+    hidden.push('address');
   }
-  if (mask.emergencyPhone) out.emergencyContactPhone = null;
+  if (mask.emergencyPhone) {
+    out.emergencyContactPhone = null;
+    hidden.push('emergencyPhone');
+  }
   if (mask.xero) {
     out.xeroEmployeeId = null;
     out.xeroPayrollCalendarId = null;
     out.xeroEarningsRateId = null;
+    hidden.push('xero');
   }
+  if (hidden.length) out.redactedFieldGroups = hidden;
   return out as T;
 }
 

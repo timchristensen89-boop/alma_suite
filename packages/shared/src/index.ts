@@ -4014,6 +4014,10 @@ export type StaffProfile = {
   appAccess: StaffAppAccess[];
   rosterShifts: RosterShift[];
   trainingRecords: StaffTrainingRecord[];
+  // Field-level redaction sidecar (#16). Lists the field GROUPS the server
+  // nulled out before sending — so the UI can show "Hidden — needs
+  // permission" instead of "Not set". Absent or empty array = nothing hidden.
+  redactedFieldGroups?: Array<'pay' | 'banking' | 'tax' | 'dob' | 'address' | 'emergencyPhone' | 'xero'>;
 };
 
 export type TrainingOverview = {
