@@ -1174,6 +1174,10 @@ function IntegrationCard({
   onRefresh,
   onSyncLocations,
   onImportSales,
+  onSyncCatalog,
+  onImportItemSales,
+  onImportTips,
+  onImportCustomers,
   callbackBanner,
   xeroHealth
 }: {
@@ -1186,6 +1190,10 @@ function IntegrationCard({
   onRefresh?: () => void;
   onSyncLocations?: () => void;
   onImportSales?: () => void;
+  onSyncCatalog?: () => void;
+  onImportItemSales?: () => void;
+  onImportTips?: () => void;
+  onImportCustomers?: () => void;
   callbackBanner?: CallbackBanner;
   xeroHealth?: XeroConnectionHealthPayload | null;
 }) {
@@ -1196,6 +1204,10 @@ function IntegrationCard({
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isImportSalesBusy = busy === `square${accountSuffix}-import-sales`;
+  const isSyncCatalogBusy = busy === `square${accountSuffix}-sync-catalog`;
+  const isImportItemSalesBusy = busy === `square${accountSuffix}-import-item-sales`;
+  const isImportTipsBusy = busy === `square${accountSuffix}-import-tips`;
+  const isImportCustomersBusy = busy === `square${accountSuffix}-import-customers`;
   const isXero = integration.provider === 'xero';
   const isSquare = integration.provider === 'square';
   const squareSetup = integration.squareSetup;
@@ -1402,6 +1414,26 @@ function IntegrationCard({
               {isImportSalesBusy ? 'Importing...' : 'Import sales'}
             </Button>
           ) : null}
+          {isSquare && onImportItemSales ? (
+            <Button variant="secondary" disabled={isImportItemSalesBusy || integration.status !== 'CONNECTED'} onClick={onImportItemSales}>
+              {isImportItemSalesBusy ? 'Importing...' : 'Import item sales'}
+            </Button>
+          ) : null}
+          {isSquare && onSyncCatalog ? (
+            <Button variant="secondary" disabled={isSyncCatalogBusy || integration.status !== 'CONNECTED'} onClick={onSyncCatalog}>
+              {isSyncCatalogBusy ? 'Syncing...' : 'Sync catalog'}
+            </Button>
+          ) : null}
+          {isSquare && onImportTips ? (
+            <Button variant="secondary" disabled={isImportTipsBusy || integration.status !== 'CONNECTED'} onClick={onImportTips}>
+              {isImportTipsBusy ? 'Importing...' : 'Import tips'}
+            </Button>
+          ) : null}
+          {isSquare && onImportCustomers ? (
+            <Button variant="primary" disabled={isImportCustomersBusy || integration.status !== 'CONNECTED'} onClick={onImportCustomers}>
+              {isImportCustomersBusy ? 'Importing customers...' : 'Import customers → guest CRM'}
+            </Button>
+          ) : null}
           {isSquare && onRefresh ? (
             <Button variant="ghost" disabled={isRefreshBusy} onClick={onRefresh}>
               {isRefreshBusy ? 'Refreshing...' : 'Refresh token'}
@@ -1509,13 +1541,13 @@ function XeroSyncPanel({
           </div>
         ) : null}
         {feedback ? <Badge tone="info">{feedback}</Badge> : null}
-        <div className="admin-grid two">
-          <div className="admin-provider-card">
-            <div>
+        <div className="admin-grid two xero-import-grid">
+          <div className="admin-provider-card xero-import-card">
+            <div className="xero-import-card-head">
               <strong>Supplier contacts</strong>
               <p>Review Xero contacts that are marked as suppliers, then create or update selected Alma suppliers.</p>
             </div>
-            <div className="inline-actions">
+            <div className="inline-actions xero-import-actions">
               <Button variant="secondary" disabled={Boolean(busy)} onClick={onPreviewContacts}>
                 {busy === 'xero-contacts-preview' ? 'Loading...' : 'Preview contacts'}
               </Button>
@@ -1553,12 +1585,12 @@ function XeroSyncPanel({
             ) : null}
           </div>
 
-          <div className="admin-provider-card">
-            <div>
+          <div className="admin-provider-card xero-import-card">
+            <div className="xero-import-card-head">
               <strong>Supplier bills</strong>
               <p>Preview recent Xero ACCPAY bills, match suppliers, then import selected bills into Stock invoices.</p>
             </div>
-            <div className="inline-actions">
+            <div className="inline-actions xero-import-actions">
               <Button variant="secondary" disabled={Boolean(busy)} onClick={onPreviewBills}>
                 {busy === 'xero-bills-preview' ? 'Loading...' : 'Preview bills'}
               </Button>
@@ -1962,16 +1994,108 @@ export function AdminPage({
   }
 
   async function importSquareSales(integration: IntegrationProviderStatus) {
+    const days = window.prompt('How many days of Square sales should we import? (1–365)', '14');
+    if (days === null) return;
+    const lookbackDays = Math.max(1, Math.min(365, Number(days) || 14));
     setIntegrationBusy(integrationBusyKey(integration, '-import-sales'));
     setError(null);
     try {
-      await api(`/api/integrations/square/import-sales${integrationAccountQuery(integration)}`, {
+      const result = await api<{ imported?: number; updated?: number; rowsCount?: number; warnings?: string[] }>(`/api/integrations/square/import-sales${integrationAccountQuery(integration)}`, {
         method: 'POST',
-        body: JSON.stringify({ lookbackDays: 7, limit: 1000 })
+        body: JSON.stringify({ lookbackDays, limit: 5000 })
       });
       await loadDashboard();
+      window.alert(`Square sales imported.\nLast ${lookbackDays} days · ${result.imported ?? 0} new / ${result.updated ?? 0} updated rows.${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not import Square sales.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function syncSquareCatalog(integration: IntegrationProviderStatus) {
+    setIntegrationBusy(integrationBusyKey(integration, '-sync-catalog'));
+    setError(null);
+    try {
+      const result = await api<{ candidatesUpserted?: number; suggestionsCreated?: number; warnings?: string[] }>(`/api/integrations/square/sync-catalog${integrationAccountQuery(integration)}`, {
+        method: 'POST'
+      });
+      await loadDashboard();
+      window.alert(`Square catalog synced.\n${result.candidatesUpserted ?? 0} items refreshed, ${result.suggestionsCreated ?? 0} recipe-match suggestions.${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not sync Square catalog.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function importSquareItemSales(integration: IntegrationProviderStatus) {
+    const days = window.prompt('How many days of Square item-level sales should we import? (1–90)', '14');
+    if (days === null) return;
+    const lookbackDays = Math.max(1, Math.min(90, Number(days) || 14));
+    setIntegrationBusy(integrationBusyKey(integration, '-import-item-sales'));
+    setError(null);
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+      const result = await api<{ imported?: number; updated?: number; ordersRead?: number; itemRows?: number; warnings?: string[] }>(`/api/integrations/square/import-item-sales${integrationAccountQuery(integration)}`, {
+        method: 'POST',
+        body: JSON.stringify({ start: start.toISOString(), end: end.toISOString(), lookbackDays })
+      });
+      await loadDashboard();
+      window.alert(`Square item sales imported.\nLast ${lookbackDays} days · ${result.ordersRead ?? 0} orders → ${result.itemRows ?? 0} line items (${result.imported ?? 0} new / ${result.updated ?? 0} updated).${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import Square item sales.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function importSquareTips(integration: IntegrationProviderStatus) {
+    const venue = window.prompt('Which venue should the tips be credited to?', 'Alma Avalon');
+    if (!venue) return;
+    const days = window.prompt('How many days of tip data? (1–62)', '14');
+    if (days === null) return;
+    const lookbackDays = Math.max(1, Math.min(62, Number(days) || 14));
+    setIntegrationBusy(integrationBusyKey(integration, '-import-tips'));
+    setError(null);
+    try {
+      const end = new Date();
+      const start = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
+      const result = await api<{ imported?: number; updated?: number; tipRows?: number; amountCents?: number; warnings?: string[] }>(`/api/integrations/square/import-tips${integrationAccountQuery(integration)}`, {
+        method: 'POST',
+        body: JSON.stringify({ start: start.toISOString(), end: end.toISOString(), venue })
+      });
+      await loadDashboard();
+      const dollars = ((result.amountCents ?? 0) / 100).toFixed(2);
+      window.alert(`Square tips imported for ${venue}.\n${result.tipRows ?? 0} tip payments · $${dollars} total · ${result.imported ?? 0} new / ${result.updated ?? 0} updated.${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import Square tips.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function importSquareCustomers(integration: IntegrationProviderStatus) {
+    const venue = window.prompt('Default venue for imported customers (optional — leave blank to use the first Square location):', '');
+    if (venue === null) return;
+    const daysRaw = window.prompt('Only import customers updated within the last N days. Leave blank to import everyone Square has on file.', '');
+    if (daysRaw === null) return;
+    const updatedSinceDays = daysRaw.trim() ? Math.max(1, Math.min(3650, Number(daysRaw) || 365)) : undefined;
+    setIntegrationBusy(integrationBusyKey(integration, '-import-customers'));
+    setError(null);
+    try {
+      const result = await api<{ imported?: number; updated?: number; skipped?: number; customersRead?: number; warnings?: string[] }>(`/api/integrations/square/import-customers${integrationAccountQuery(integration)}`, {
+        method: 'POST',
+        body: JSON.stringify({
+          defaultVenue: venue.trim() || undefined,
+          ...(updatedSinceDays != null ? { updatedSinceDays } : {})
+        })
+      });
+      await loadDashboard();
+      window.alert(`Square customers imported into Reserve guests.\n${result.customersRead ?? 0} Square customers read → ${result.imported ?? 0} new guests, ${result.updated ?? 0} updated, ${result.skipped ?? 0} skipped (no name/email/phone).${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import Square customers.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -3197,6 +3321,10 @@ export function AdminPage({
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
                   onImportSales={integration.provider === 'square' ? () => void importSquareSales(integration) : undefined}
+                  onSyncCatalog={integration.provider === 'square' ? () => void syncSquareCatalog(integration) : undefined}
+                  onImportItemSales={integration.provider === 'square' ? () => void importSquareItemSales(integration) : undefined}
+                  onImportTips={integration.provider === 'square' ? () => void importSquareTips(integration) : undefined}
+                  onImportCustomers={integration.provider === 'square' ? () => void importSquareCustomers(integration) : undefined}
                   callbackBanner={callbackBanner}
                   xeroHealth={integration.provider === 'xero' ? xeroHealth : null}
                 />

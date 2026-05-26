@@ -1318,6 +1318,20 @@ const squareTipsImportInputSchema = z.object({
   locationId: z.string().optional().or(z.literal(''))
 });
 
+const squareCustomerImportInputSchema = z.object({
+  accountKey: z.enum(['primary', 'secondary']).optional(),
+  account: z.enum(['primary', 'secondary']).optional(),
+  // Venue is stored on every guest so reports/filters work. Falls back to
+  // the first known venue if the operator didn't pick one.
+  defaultVenue: z.string().optional().or(z.literal('')),
+  // Hard cap on pages; Square returns 100 per page, so 50 = 5000 customers
+  // max per run. Set higher for bigger backfills.
+  maxPages: z.number().int().min(1).max(200).optional(),
+  // Only import customers updated within the last N days (creation OR update).
+  // Leave blank to import everyone Square has on file.
+  updatedSinceDays: z.number().int().min(1).max(3650).optional()
+});
+
 function parseIntegrationDate(value: string, label: string) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) {
@@ -2519,6 +2533,237 @@ export const integrationService = {
           : [`No Square location name clearly matched ${data.venue}; imported completed tip payments from the whole connected Square account.`]),
         ...(paymentResponse.limited ? ['Square returned more tip payments than the import limit; narrow the date range and import again.'] : [])
       ]
+    };
+  },
+
+  // Square Customer Directory → ReserveGuest CRM.
+  //
+  // Square stores customer profiles built from POS, online ordering, gift cards,
+  // and loyalty signups. Pulling these into ReserveGuest gives Marketing a
+  // ready-made guest book without re-entering anyone manually.
+  //
+  // Dedupe strategy:
+  //   1. If the customer has an email, match an existing ReserveGuest by email.
+  //   2. Otherwise, match by (firstName + lastName + phone) when phone is set.
+  //   3. Otherwise, insert a new guest row.
+  //
+  // The Square customer id is stashed in `preferences.squareCustomerId` so a
+  // second run can re-find the same guest even when emails change.
+  async importSquareCustomers(input: unknown, actor: AuthUser) {
+    const data = squareCustomerImportInputSchema.parse(input ?? {});
+    const accountKey = normaliseSquareAccountKey(data.accountKey ?? data.account);
+    const maxPages = data.maxPages ?? 50; // 50 × 100 = 5,000 customers
+    const updatedSince = typeof data.updatedSinceDays === 'number'
+      ? new Date(Date.now() - data.updatedSinceDays * 24 * 60 * 60 * 1000)
+      : null;
+    let connection = await connectedSquareConnection(accountKey);
+
+    // Default venue: first known location name if none was passed.
+    let defaultVenue = data.defaultVenue?.trim() || '';
+    if (!defaultVenue) {
+      const locResponse = await listSquareLocations(connection);
+      connection = locResponse.connection;
+      defaultVenue = locResponse.locations.find((l) => l.id)?.name?.trim() || '';
+    }
+
+    type SquareCustomer = {
+      id?: string;
+      created_at?: string;
+      updated_at?: string;
+      given_name?: string;
+      family_name?: string;
+      nickname?: string;
+      company_name?: string;
+      email_address?: string;
+      phone_number?: string;
+      birthday?: string;
+      note?: string;
+      reference_id?: string;
+      preferences?: { email_unsubscribed?: boolean };
+      creation_source?: string;
+    };
+    type SquareCustomersResponse = {
+      customers?: SquareCustomer[];
+      cursor?: string;
+    };
+
+    const customers: SquareCustomer[] = [];
+    let cursor: string | undefined;
+    let pages = 0;
+    let limited = false;
+
+    do {
+      const params = new URLSearchParams({ limit: '100', sort_field: 'CREATED_AT', sort_order: 'DESC' });
+      if (cursor) params.set('cursor', cursor);
+      const response = await squareGetJson<SquareCustomersResponse>(`/customers?${params.toString()}`, {
+        connection
+      });
+      connection = response.connection;
+      const batch = response.data.customers ?? [];
+      // Apply updatedSince filter client-side — Square's sort_field=UPDATED_AT
+      // works but isn't reliable across all account histories. Easier to filter
+      // here and stop paging once we cross the boundary while sorting DESC.
+      let crossedBoundary = false;
+      for (const customer of batch) {
+        if (updatedSince) {
+          const ts = customer.updated_at || customer.created_at;
+          if (ts && new Date(ts) < updatedSince) {
+            crossedBoundary = true;
+            continue;
+          }
+        }
+        customers.push(customer);
+      }
+      cursor = response.data.cursor;
+      pages += 1;
+      if (crossedBoundary) {
+        // We sorted DESC by created_at; anything further back is older than the
+        // boundary, so stop paging.
+        cursor = undefined;
+      }
+      if (pages >= maxPages) {
+        limited = Boolean(cursor);
+        cursor = undefined;
+      }
+    } while (cursor);
+
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+    const warnings: string[] = [];
+
+    for (const customer of customers) {
+      const firstName = (customer.given_name || customer.nickname || '').trim();
+      const lastName = (customer.family_name || '').trim();
+      const email = (customer.email_address || '').trim().toLowerCase();
+      const phone = (customer.phone_number || '').trim();
+
+      // Square allows empty names entirely. Skip these — ReserveGuest needs
+      // firstName.
+      if (!firstName && !lastName && !email && !phone) {
+        skipped += 1;
+        continue;
+      }
+
+      const safeFirstName = firstName || (email ? email.split('@')[0]! : 'Guest');
+      const safeLastName = lastName || '';
+
+      // Match by email first.
+      let existing = email
+        ? await prisma.reserveGuest.findFirst({ where: { email } })
+        : null;
+
+      // Fallback: match by name + phone if phone is present.
+      if (!existing && phone) {
+        existing = await prisma.reserveGuest.findFirst({
+          where: {
+            phone,
+            firstName: { equals: safeFirstName, mode: 'insensitive' },
+            lastName: { equals: safeLastName, mode: 'insensitive' }
+          }
+        });
+      }
+
+      const birthday = customer.birthday
+        ? new Date(`${customer.birthday}T00:00:00Z`)
+        : null;
+      const emailUnsub = customer.preferences?.email_unsubscribed
+        ? new Date()
+        : null;
+      const preferences: Prisma.InputJsonObject = {
+        squareCustomerId: customer.id || '',
+        squareCreationSource: customer.creation_source || '',
+        squareReferenceId: customer.reference_id || '',
+        squareLastSeenAt: customer.updated_at || customer.created_at || ''
+      };
+
+      if (existing) {
+        await prisma.reserveGuest.update({
+          where: { id: existing.id },
+          data: {
+            firstName: existing.firstName || safeFirstName,
+            lastName: existing.lastName || safeLastName,
+            email: existing.email || (email || null),
+            phone: existing.phone || (phone || null),
+            birthday: existing.birthday ?? birthday,
+            notes: existing.notes || (customer.note?.trim() || null),
+            venue: existing.venue || (defaultVenue || null),
+            preferences: {
+              ...((existing.preferences as Prisma.JsonObject) ?? {}),
+              ...preferences
+            },
+            emailUnsubscribedAt: existing.emailUnsubscribedAt ?? emailUnsub
+          }
+        });
+        updated += 1;
+      } else {
+        await prisma.reserveGuest.create({
+          data: {
+            venue: defaultVenue || null,
+            firstName: safeFirstName,
+            lastName: safeLastName,
+            email: email || null,
+            phone: phone || null,
+            birthday,
+            notes: customer.note?.trim() || null,
+            source: 'square_import',
+            preferences,
+            emailUnsubscribedAt: emailUnsub
+          }
+        });
+        imported += 1;
+      }
+    }
+
+    await prisma.integrationSyncRun.create({
+      data: {
+        provider: 'SQUARE',
+        connectionId: connection.id,
+        syncType: 'MANUAL',
+        status: 'SUCCESS',
+        finishedAt: new Date(),
+        recordsImported: imported,
+        recordsUpdated: updated
+      }
+    });
+
+    await recordEvent({
+      provider: 'SQUARE',
+      connectionId: connection.id,
+      eventType: 'SQUARE_CUSTOMERS_IMPORTED',
+      summary: `${squareAccountConfig(accountKey).label} Square customer import finished: ${imported} new, ${updated} updated guests.`,
+      actor,
+      metadata: {
+        accountKey,
+        defaultVenue,
+        customersRead: customers.length,
+        pages,
+        imported,
+        updated,
+        skipped,
+        limited,
+        updatedSinceDays: data.updatedSinceDays ?? null
+      }
+    });
+
+    if (limited) {
+      warnings.push(`Hit the ${maxPages}-page cap — there are more Square customers to import. Re-run with a smaller "updated within last N days" window, or raise maxPages.`);
+    }
+    if (skipped) {
+      warnings.push(`${skipped} Square customer record${skipped === 1 ? '' : 's'} had no name, email, or phone and ${skipped === 1 ? 'was' : 'were'} skipped.`);
+    }
+
+    return {
+      label: squareAccountConfig(accountKey).label,
+      accountKey,
+      defaultVenue,
+      customersRead: customers.length,
+      pages,
+      imported,
+      updated,
+      skipped,
+      limited,
+      warnings
     };
   },
 

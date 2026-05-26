@@ -7474,6 +7474,37 @@ a.suite-app-tile:hover {
   align-items: flex-start;
 }
 
+/* Xero supplier + bill import — align the Preview/Import button rows
+   across both cards even though the description paragraphs wrap to
+   different heights. The head block takes the same min-height in both
+   cards, and the action row is pushed to its anchor with margin-top. */
+.xero-import-grid {
+  align-items: stretch;
+}
+
+.xero-import-card .xero-import-card-head {
+  min-height: 72px;
+}
+
+.xero-import-card .xero-import-actions {
+  margin-top: 0;
+  width: 100%;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.xero-import-card .xero-import-actions > .btn {
+  flex: 1 1 auto;
+  min-width: 160px;
+}
+
+@media (max-width: 640px) {
+  .xero-import-card .xero-import-card-head {
+    min-height: 0;
+  }
+}
+
 .admin-social-form {
   display: flex;
   flex-direction: column;

@@ -103,6 +103,46 @@ integrationsRouter.post('/square/sync-catalog', async (req, res, next) => {
   }
 });
 
+// Pull Square customer profiles (POS, online, gift card, loyalty signups)
+// into the ReserveGuest CRM. Body: { defaultVenue?, maxPages?, updatedSinceDays? }
+integrationsRouter.post('/square/import-customers', async (req, res, next) => {
+  try {
+    res.json(await integrationService.importSquareCustomers({
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+      account: req.query.account ?? req.body?.account
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Pull Square item-level sales — payment totals are imported by /import-sales;
+// this one breaks orders down to the line-item level so Reports can do
+// menu-engineering. Body: { start, end, venue?, locationId? }
+integrationsRouter.post('/square/import-item-sales', async (req, res, next) => {
+  try {
+    res.json(await integrationService.importSquareItemSales({
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+      account: req.query.account ?? req.body?.account
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Pull completed Square payment tips into the staff tip-card ledger.
+// Body: { start, end, venue, locationId? }
+integrationsRouter.post('/square/import-tips', async (req, res, next) => {
+  try {
+    res.json(await integrationService.importSquareTips({
+      ...(req.body && typeof req.body === 'object' ? req.body : {}),
+      account: req.query.account ?? req.body?.account
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/xero/health-check', async (req, res, next) => {
   try {
     res.json(await integrationService.checkXeroHealth(req.user!));
