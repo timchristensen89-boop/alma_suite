@@ -3579,8 +3579,17 @@
   background: var(--color-surface, #F8F6F1);
 }
 
-/* Weekend tint removed — Sat / Sun read fine without it and the cream
-   was reading as a blue cast on darker monitors. */
+/* Weekend tint on the day-summary boxes only — light Staff-blue wash
+   on Sat / Sun so weekend totals stand apart without colouring the
+   whole column. Same blue as the Publish button so it reads as one
+   family. */
+.deputy-day-summary.is-weekend {
+  background: rgba(36, 76, 159, 0.08);
+}
+
+.deputy-day-summary.is-weekend .deputy-day-summary-hours {
+  color: var(--color-text);
+}
 
 /* "Today" pill above today's day-head — but skip it on closed days. */
 .deputy-day-head.is-closed::before {

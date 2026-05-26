@@ -8566,8 +8566,9 @@ a.suite-app-tile:hover {
   gap: 10px;
   padding: 8px 8px 8px 16px;
   border-radius: 10px;
-  background: #1F3524;
-  border: 1px solid #1F3524;
+  /* Staff brand blue — matches the rest of the Staff app chrome. */
+  background: #244C9F;
+  border: 1px solid #244C9F;
   color: #F0EBE0;
   cursor: pointer;
   font-family: "Avenir LT Std", "Manrope", sans-serif;
