@@ -331,19 +331,74 @@
 
 .giftcards-test-banner {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
+  align-items: flex-start;
   gap: 16px;
-  padding: 16px 18px;
-  border: 1px solid rgba(185, 130, 22, 0.34);
+  padding: 18px 20px;
+  border: 1px solid rgba(185, 130, 22, 0.45);
+  border-left: 4px solid #B27935;
   border-radius: 14px;
-  background: #fff6df;
-  color: #73520e;
+  background: #FFF1D6;
+  color: #4A3216;
+  font-family: var(--font-sans);
   font-size: 14px;
+  line-height: 1.4;
 }
 
-.giftcards-test-banner strong {
-  color: #4b3509;
+.giftcards-test-banner.is-setup_required {
+  background: #FAE0DA;
+  border-color: rgba(160, 70, 58, 0.42);
+  border-left-color: #A0463A;
+  color: #5A2419;
+}
+
+.giftcards-test-banner-tag {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 12px;
+  border-radius: 999px;
+  background: #B27935;
+  color: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  margin-top: 2px;
+}
+
+.giftcards-test-banner.is-setup_required .giftcards-test-banner-tag {
+  background: #A0463A;
+}
+
+.giftcards-test-banner-body {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.giftcards-test-banner-body strong {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 15.5px;
+  line-height: 1.35;
+  color: #4A3216;
+}
+
+.giftcards-test-banner.is-setup_required .giftcards-test-banner-body strong {
+  color: #5A2419;
+}
+
+.giftcards-test-banner-body span {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: rgba(74, 50, 22, 0.78);
+}
+
+.giftcards-test-banner.is-setup_required .giftcards-test-banner-body span {
+  color: rgba(90, 36, 25, 0.78);
 }
 
 .giftcards-form-heading h2 {

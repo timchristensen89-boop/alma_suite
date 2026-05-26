@@ -379,10 +379,19 @@ function PublicGiftCardShop() {
           </div>
         </section>
 
-        {checkoutNotice ? (
-          <section className="giftcards-test-banner">
-            <strong>{checkoutMode === 'test' ? 'Test checkout is on.' : 'Payment setup required.'}</strong>
-            <span>{checkoutNotice}</span>
+        {checkoutMode !== 'live' ? (
+          <section className={`giftcards-test-banner is-${checkoutMode}`}>
+            <span className="giftcards-test-banner-tag">
+              {checkoutMode === 'test' ? 'Test mode' : 'Setup required'}
+            </span>
+            <span className="giftcards-test-banner-body">
+              <strong>
+                {checkoutMode === 'test'
+                  ? 'This is a test checkout. No card will be charged and no gift card is created on a real Stripe account.'
+                  : 'Online checkout is being set up. Card payments aren’t live yet.'}
+              </strong>
+              {checkoutNotice ? <span>{checkoutNotice}</span> : null}
+            </span>
           </section>
         ) : null}
 
