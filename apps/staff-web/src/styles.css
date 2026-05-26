@@ -3430,6 +3430,248 @@
   background: var(--color-surface, #F8F6F1);
 }
 
+/* ─────────────────────────────────────────────────────────────────
+   Roster premium polish — flat surfaces, paper-cream rhythm, sticky
+   day heads, day-summary strip, weekend tint, empty-cell affordance.
+   ───────────────────────────────────────────────────────────────── */
+
+/* Utility action bar above the editorial header — Copy / Historical /
+   Add shift / Publish. One row, right-aligned. */
+.alma-roster-utility {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Forecast hairline — one-line natural language summary. */
+.roster-forecast-summary {
+  margin: 0;
+  padding: 10px 16px;
+  background: #FFFFFF;
+  border-bottom: 1px solid var(--color-border);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.4;
+  color: var(--color-text);
+  letter-spacing: 0.003em;
+}
+
+.roster-forecast-summary strong {
+  font-family: var(--font-sans);
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+}
+
+.roster-forecast-summary em {
+  font-style: italic;
+  color: var(--color-text-muted);
+}
+
+/* Day summary strip — sits right under the day-head row, gives the
+   cost + hours + % for each column without crowding the date header. */
+.deputy-day-summary-corner {
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface, #F8F6F1);
+  position: sticky;
+  left: 0;
+  z-index: 2;
+}
+
+.deputy-day-summary {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 10px;
+  min-height: 36px;
+  border-right: 1px solid var(--color-border);
+  border-bottom: 1px solid var(--color-border);
+  background: #FFFFFF;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  letter-spacing: 0.01em;
+  color: var(--color-text-muted);
+}
+
+.deputy-day-summary-hours {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 11.5px;
+  color: var(--color-text);
+  letter-spacing: 0.005em;
+}
+
+.deputy-day-summary-hours::after {
+  content: 'h';
+  margin-left: 1px;
+  font-weight: 400;
+  color: var(--color-text-muted);
+}
+
+.deputy-day-summary-cost {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+}
+
+.deputy-day-summary-cost em {
+  font-style: normal;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.deputy-day-summary-cost.is-over em { color: #6E2419; }
+.deputy-day-summary-cost.is-under em { color: #2F4129; }
+
+.deputy-day-summary.is-closed {
+  background: var(--color-surface, #F8F6F1);
+  color: rgba(31, 53, 36, 0.4);
+}
+
+.deputy-day-summary-closed {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12px;
+  letter-spacing: 0.005em;
+}
+
+.deputy-day-summary.is-today {
+  background: #FFFFFF;
+  box-shadow: inset 0 -2px 0 var(--color-text);
+}
+
+/* Venue row eyebrow — replaces the 2px ink top border with a small
+   Avenir tracked label above the venue name. Reads as a section
+   heading, not a divider line. */
+.deputy-venue-eyebrow {
+  display: block;
+  font-family: var(--font-sans);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 2px;
+}
+
+.deputy-venue-label {
+  /* Drop the 2px ink top border in favour of a thin hairline. */
+  border-top: 1px solid var(--color-border) !important;
+  background: var(--color-surface, #F8F6F1);
+  padding: 8px 14px 10px;
+  min-height: 56px;
+}
+
+.deputy-venue-cell {
+  border-top: 1px solid var(--color-border) !important;
+  background: var(--color-surface, #F8F6F1);
+}
+
+/* Weekend column tint — a barely-there cream so the eye finds Sat /
+   Sun without it feeling stripey. Subtle enough that it disappears
+   on a colorless screen. */
+.deputy-day-head.is-weekend,
+.deputy-day-summary.is-weekend,
+.deputy-schedule-cell.is-weekend {
+  background: rgba(31, 53, 36, 0.025);
+}
+
+.deputy-schedule-cell.is-weekend:hover {
+  background: var(--color-surface, #F8F6F1);
+}
+
+/* "Today" pill above today's day-head — but skip it on closed days. */
+.deputy-day-head.is-closed::before {
+  content: none !important;
+}
+
+/* On closed days, keep the day letter + date visible. The old design
+   hid them until hover; with the new day-summary row we have a
+   dedicated place for "closed" so the header can stay calm and
+   legible. */
+.deputy-day-head.is-closed .deputy-day-head-line strong,
+.deputy-day-head.is-closed .deputy-day-head-line span {
+  visibility: visible;
+}
+
+/* Empty-cell affordance — keep it visible but very quiet so the grid
+   reads as interactive rather than dead. */
+.deputy-add-shift {
+  display: grid;
+  place-items: center;
+  min-height: 32px;
+  border: 1px dashed rgba(31, 53, 36, 0.16);
+  border-radius: 6px;
+  color: rgba(31, 53, 36, 0.42);
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  background: transparent;
+  opacity: 1;
+}
+
+.deputy-schedule-cell:hover .deputy-add-shift {
+  color: var(--color-text);
+  border-color: var(--color-text);
+  background: rgba(255, 255, 255, 0.7);
+  opacity: 1;
+}
+
+/* Drop shadows across the roster surface — flat surfaces only. */
+.deputy-schedule-panel,
+.deputy-shift-card,
+.deputy-shift-card:hover,
+.roster-board-command-meta > span,
+.roster-cost-forecast-pill,
+.roster-team-member,
+.roster-team-member.is-rostered,
+.roster-staff-bubble,
+.deputy-day-head,
+.deputy-schedule-cell.has-shifts,
+.deputy-add-shift {
+  box-shadow: none !important;
+}
+
+/* Sticky day-head + day-summary so they stay visible on long
+   vertical scroll. (`top: 0` + `top: 48px` so they stack cleanly.) */
+.deputy-day-head {
+  z-index: 4;
+}
+
+.deputy-day-summary,
+.deputy-day-summary-corner {
+  position: sticky;
+  top: 48px;
+  z-index: 3;
+}
+
+/* Right-rail Staff list typography — match the schedule grid voice
+   so it doesn't feel like a different surface. */
+.roster-team-member strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 15px;
+  letter-spacing: -0.003em;
+  color: var(--color-text);
+}
+
+.roster-team-member .subtle {
+  font-family: var(--font-sans);
+  font-size: 11.5px;
+  color: var(--color-text-muted);
+  letter-spacing: 0.01em;
+}
+
 .roster-board-command {
   display: flex;
   align-items: center;
@@ -4096,22 +4338,22 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: 6px 8px;
-  border: 1px solid color-mix(in srgb, var(--shift-border, var(--color-accent)) 40%, transparent);
-  border-left: 3px solid var(--shift-border, var(--color-accent));
-  border-radius: 8px;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.6), transparent),
-    var(--shift-bg, #eef5ff);
-  color: var(--shift-text, #102e69);
-  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.08);
+  padding: 6px 8px 6px 11px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid var(--shift-border, var(--color-text));
+  border-radius: 6px;
+  /* Flat paper-cream surface; the only saturated colour is the 3px left
+     stripe taken from the area theme. Reads like a NYer page, not a
+     kanban. */
+  background: var(--color-surface, #F8F6F1);
+  color: var(--color-text);
   cursor: grab;
-  transition: transform 100ms ease, box-shadow 100ms ease;
+  transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
 }
 
 .deputy-shift-card:hover {
-  transform: translateY(-1px);
-  box-shadow: 0 6px 16px rgba(15, 23, 42, 0.12);
+  background: #FFFFFF;
+  border-color: var(--shift-border, var(--color-text));
 }
 
 .deputy-shift-card:focus-visible {
@@ -4136,19 +4378,21 @@
 }
 
 .deputy-shift-card.is-deputy-import {
-  box-shadow: inset 0 0 0 1px rgba(36, 76, 159, 0.18), 0 1px 2px rgba(15, 23, 42, 0.08);
+  border-style: dashed;
+  border-left-style: solid;
 }
 
 .deputy-shift-card.is-unallocated {
   border-left-style: dashed;
-  background: #fff7ed;
-  color: #7c2d12;
+  background: rgba(178, 121, 53, 0.08);
 }
 
 .deputy-shift-card strong {
-  color: inherit;
-  font-size: 12px;
-  font-weight: 900;
+  color: var(--color-text);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 700;
+  letter-spacing: 0.005em;
 }
 
 .deputy-shift-card span,
@@ -4156,11 +4400,14 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-family: var(--font-sans);
   font-size: 11px;
+  color: var(--color-text-muted);
 }
 
 .deputy-shift-card small {
-  opacity: 0.78;
+  opacity: 1;
+  color: var(--color-text-muted);
 }
 
 .deputy-shift-topline {

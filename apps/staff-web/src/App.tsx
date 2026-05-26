@@ -9370,6 +9370,35 @@ function RosterPage({
 
   return (
     <div className="page-stack">
+      {/* Utility action bar — Copy / Historical / Add / Publish live here so the
+          editorial header below stays a calm masthead. */}
+      <div className="alma-roster-utility">
+        <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
+          Copy last week
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          variant="secondary"
+          onClick={() => setHistoricalOpen(true)}
+          aria-label="Open historical forecast data"
+        >
+          Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
+        </Button>
+        <Button type="button" size="sm" onClick={() => newShift()}>
+          Add shift
+        </Button>
+        <button
+          type="button"
+          className="alma-roster-publish"
+          disabled={saving || draftCount === 0}
+          onClick={() => setPublishPreviewOpen(true)}
+        >
+          <span>Publish roster</span>
+          {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
+        </button>
+      </div>
+
       {/* Editorial roster header — eyebrow + Cormorant serif title + week nav */}
       <div className="alma-roster-header">
         <div className="alma-roster-header-titles">
@@ -9412,32 +9441,6 @@ function RosterPage({
               </button>
             </div>
           </div>
-        </div>
-        <div className="alma-roster-header-actions">
-          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
-            Copy last week
-          </Button>
-          <Button
-            type="button"
-            size="sm"
-            variant="secondary"
-            onClick={() => setHistoricalOpen(true)}
-            aria-label="Open historical forecast data"
-          >
-            Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
-          </Button>
-          <Button type="button" size="sm" onClick={() => newShift()}>
-            Add shift
-          </Button>
-          <button
-            type="button"
-            className="alma-roster-publish"
-            disabled={saving || draftCount === 0}
-            onClick={() => setPublishPreviewOpen(true)}
-          >
-            <span>Publish roster</span>
-            {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
-          </button>
         </div>
       </div>
 
@@ -9713,6 +9716,41 @@ function RosterPage({
       {!isMobileRoster ? (
         <div data-roster-view="desktop" className={`deputy-roster-layout desktop-roster-surface ${sidePanelCollapsed ? 'is-side-collapsed' : 'is-side-open'}`}>
         <section className="deputy-schedule-panel" aria-label="Weekly roster grid">
+          {/* One-line natural-language summary above the metric strip —
+              the executive read; pills below are the breakdown. */}
+          {(() => {
+            if (forecastSalesCents === 0 && rosterCostCents === 0) return null;
+            const targetPct = parsePercent(targetWagePercent);
+            const wagePct = forecastSalesCents > 0 ? (rosterCostCents / forecastSalesCents) * 100 : null;
+            const gap = wagePct != null ? wagePct - targetPct : null;
+            const status = gap == null
+              ? null
+              : Math.abs(gap) < 0.5
+                ? 'on target'
+                : gap > 0
+                  ? `${gap.toFixed(1)}% over target`
+                  : `${Math.abs(gap).toFixed(1)}% under target`;
+            return (
+              <p className="roster-forecast-summary" aria-live="polite">
+                {forecastSalesCents > 0 ? (
+                  <>
+                    Forecasting <strong>{formatCents(forecastSalesCents)}</strong>
+                    {' · planning '}
+                    <strong>{formatCents(rosterCostCents)}</strong>
+                    {wagePct != null ? <> <em>({wagePct.toFixed(1)}%)</em></> : null}
+                    {status ? <>{' · '}<em>{status}</em></> : null}
+                  </>
+                ) : (
+                  <>
+                    Planning <strong>{formatCents(rosterCostCents)}</strong>
+                    {' · '}
+                    <em>set a weekly forecast to see target variance</em>
+                  </>
+                )}
+              </p>
+            );
+          })()}
+
           <div className="roster-board-command roster-board-command--inline" aria-label={`Roster board · ${boardDays === 7 ? '7 day' : '14 day'} · ${venueFilter === 'all' ? `${areaVenues.length} venues` : venueFilter}`}>
             <div className="roster-board-command-meta" aria-label="Roster board summary">
               <span><strong>{scheduleRows.filter((row) => !('isVenueHeader' in row && row.isVenueHeader)).length}</strong> rows</span>
@@ -9770,35 +9808,55 @@ function RosterPage({
               <span>{viewMode === 'team' ? 'Team member' : 'Area'}</span>
             </div>
             {days.map((day, dayIndex) => {
-              const summary = dailySummaries[dayIndex];
               const closedVenues = closedVenuesForDay(day);
               const isClosed = isDayClosedForCurrentView(day);
-              const hasCost = !isClosed && summary && summary.plannedCostCents > 0;
-              const costClass = hasCost && summary.forecastCents > 0
-                ? summary.plannedCostCents > summary.budgetCents ? 'is-over' : 'is-under'
-                : '';
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
               return (
                 <div
                   key={day.toISOString()}
-                  className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''}`}
+                  className={`deputy-day-head ${sameDay(day, new Date()) ? 'is-today' : ''} ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
                   title={isClosed ? `Closed${closedVenues.length ? ` · ${closedVenues.length} venue${closedVenues.length === 1 ? '' : 's'}` : ''}` : undefined}
                 >
                   <div className="deputy-day-head-line">
                     <strong>{day.toLocaleDateString(undefined, { weekday: 'short' })}</strong>
                     <span>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</span>
                   </div>
-                  {!isClosed ? (
-                    <small>
-                      {closedVenues.length
-                        ? `${closedVenues.length} venue closed`
-                        : roundHours(summary?.hours ?? 0)}
-                    </small>
-                  ) : null}
-                  {!isClosed && hasCost ? (
-                    <span className={`day-head-cost ${costClass}`}>
-                      {formatCents(summary.plannedCostCents)}{summary.wagePercent ? ` · ${summary.wagePercent.toFixed(0)}%` : ''}
+                </div>
+              );
+            })}
+
+            {/* Day summary strip — hours + cost + wage% per day. Sits right
+                below the day-head row so the date headers stay calm. */}
+            <div className="deputy-day-summary-corner" aria-hidden="true" />
+            {days.map((day, dayIndex) => {
+              const summary = dailySummaries[dayIndex];
+              const closedVenues = closedVenuesForDay(day);
+              const isClosed = isDayClosedForCurrentView(day);
+              const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+              const hasCost = !isClosed && summary && summary.plannedCostCents > 0;
+              const costClass = hasCost && summary.forecastCents > 0
+                ? summary.plannedCostCents > summary.budgetCents ? 'is-over' : 'is-under'
+                : '';
+              return (
+                <div
+                  key={`summary-${day.toISOString()}`}
+                  className={`deputy-day-summary ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''} ${sameDay(day, new Date()) ? 'is-today' : ''}`}
+                >
+                  {isClosed ? (
+                    <span className="deputy-day-summary-closed">
+                      {closedVenues.length ? `${closedVenues.length} venue closed` : 'Closed'}
                     </span>
-                  ) : null}
+                  ) : (
+                    <>
+                      <span className="deputy-day-summary-hours">{roundHours(summary?.hours ?? 0)}</span>
+                      {hasCost ? (
+                        <span className={`deputy-day-summary-cost ${costClass}`}>
+                          {formatCents(summary.plannedCostCents)}
+                          {summary.wagePercent ? <em>{summary.wagePercent.toFixed(0)}%</em> : null}
+                        </span>
+                      ) : null}
+                    </>
+                  )}
                 </div>
               );
             })}
@@ -9819,15 +9877,16 @@ function RosterPage({
                         onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggleVenueCollapsed(row.venue); } }}
                         title={venueCollapsed ? 'Expand venue' : 'Collapse venue'}
                       >
-                        <span className="roster-avatar small">{row.initials}</span>
+                        <span className="deputy-venue-eyebrow">Venue</span>
                         <strong>{row.label}</strong>
                       </div>
                       {days.map((day) => {
                         const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
                         const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
                         const isClosed = isVenueClosedOnDate(row.venue, day);
+                        const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                         return (
-                          <div key={`${row.id}-${day.toISOString()}`} className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''}`}>
+                          <div key={`${row.id}-${day.toISOString()}`} className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}>
                             <strong>{isClosed ? 'Closed' : dayShifts.length}</strong>
                             <small>{isClosed && dayShifts.length ? `${dayShifts.length} shifts` : roundHours(dayHours)}</small>
                           </div>
@@ -9858,6 +9917,7 @@ function RosterPage({
                     </div>
                     {days.map((day) => {
                       const cellShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
+                      const isWeekend = day.getDay() === 0 || day.getDay() === 6;
                       // Match leave on this staff member for this day
                       const memberLeave = row.member
                         ? leaveOverlays.find((l) => l.staffProfileId === row.member!.id && leaveOverlapsDay(l, day))
@@ -9867,7 +9927,7 @@ function RosterPage({
                           <button
                             key={`${row.id}-${day.toISOString()}`}
                             type="button"
-                            className={`deputy-schedule-cell is-row-collapsed${memberLeave ? ' has-leave' : ''}`}
+                            className={`deputy-schedule-cell is-row-collapsed${memberLeave ? ' has-leave' : ''}${isWeekend ? ' is-weekend' : ''}`}
                             onClick={() => {
                               toggleRowCollapsed(row.id);
                               prefillCell(row, day);
@@ -9890,7 +9950,7 @@ function RosterPage({
                         <button
                           key={`${row.id}-${day.toISOString()}`}
                           type="button"
-                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}${memberLeave ? ` has-leave is-leave-${memberLeave.status.toLowerCase()}` : ''}`}
+                          className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}${memberLeave ? ` has-leave is-leave-${memberLeave.status.toLowerCase()}` : ''}${isWeekend ? ' is-weekend' : ''}`}
                           aria-disabled={isClosed}
                           onClick={() => prefillCell(row, day)}
                           onDragOver={(event) => {
