@@ -18,10 +18,12 @@ import type {
 } from '@alma/shared';
 import {
   ActionFeedback,
+  AlmaHomeBubble,
   AlmaPill,
   AppShell,
   Badge,
   BigStat,
+  BookIcon,
   Button,
   Card,
   DocumentIcon,
@@ -2020,6 +2022,46 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       topBar={<TopBarWithContext user={user} onLogout={onLogout} />}
     >
       <div className="reserve-page">
+        {(() => {
+          const covers = dashboard?.totals.coversToday ?? 0;
+          const bookings = dashboard?.totals.todayBookings ?? 0;
+          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          return (
+            <AlmaHomeBubble
+              app="reserve"
+              appName="Reserve"
+              appIcon={<BookIcon />}
+              eyebrow="Reserve command"
+              description="Bookings, covers, guests, and the front-of-house plan for tonight. Live across every venue you can see."
+              statusLabel={`${venueLabel}`}
+              statusHint={
+                loading
+                  ? 'Loading reserve dashboard…'
+                  : `${bookings} bookings · ${covers} covers booked today`
+              }
+              statusDot={covers > 60 ? 'forest' : covers > 0 ? 'amber' : 'slate'}
+              actions={
+                <>
+                  <button
+                    type="button"
+                    className="alma-home-bubble-btn alma-home-bubble-btn--primary"
+                    onClick={() => void load()}
+                  >
+                    Refresh →
+                  </button>
+                  <button
+                    type="button"
+                    className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
+                    onClick={() => document.getElementById('guests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                  >
+                    Guest CRM
+                  </button>
+                </>
+              }
+            />
+          );
+        })()}
+
         {(() => {
           // Editorial Bookings · tonight header
           const isToday = selectedDate === new Date().toISOString().slice(0, 10);

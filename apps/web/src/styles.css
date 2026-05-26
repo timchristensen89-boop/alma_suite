@@ -8814,11 +8814,11 @@ a.suite-app-tile:hover {
 }
 
 .alma-home-bubble--comms {
-  background: linear-gradient(135deg, #EBE3AB 0%, #D7CD80 100%);
-  color: #5A4914;
-  --bubble-fg: #5A4914;
-  --bubble-btn: #6B5614;
-  --bubble-btn-text: #F8F0D6;
+  background: linear-gradient(135deg, #D8DCE2 0%, #B4BCC5 100%);
+  color: #303642;
+  --bubble-fg: #303642;
+  --bubble-btn: #4A525F;
+  --bubble-btn-text: #ECEEF2;
 }
 
 .alma-home-bubble--giftcards {

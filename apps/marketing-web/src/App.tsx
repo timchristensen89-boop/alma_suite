@@ -26,6 +26,7 @@ import type {
 } from '@alma/shared';
 import {
   ActionFeedback,
+  AlmaHomeBubble,
   AppShell,
   Badge,
   Button,
@@ -34,7 +35,6 @@ import {
   EmptyState,
   GearIcon,
   Input,
-  PageHeader,
   ProductLogo,
   SearchIcon,
   Select,
@@ -1268,18 +1268,44 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       }
     >
       <div className="marketing-page">
-        <PageHeader
-          eyebrow="ALMA Marketing"
-          title={activePage.label}
-          description={`${activePage.description}. Consent, previews, simulations, and setup status stay visible without crowding every tool into one screen.`}
+        <AlmaHomeBubble
+          app="marketing"
+          appName="Marketing"
+          appIcon={<SearchIcon />}
+          eyebrow="Marketing command"
+          description="Guest CRM, segments, campaigns, content calendar, and automations — consent and preview status stay in view."
+          statusLabel={activePage.label}
+          statusHint={
+            loading
+              ? 'Loading marketing data…'
+              : `${overview?.totals.guests ?? 0} guests · ${overview?.totals.optedInGuests ?? 0} opted in`
+          }
+          statusDot={(overview?.totals.lapsedGuests ?? 0) > 50 ? 'amber' : 'forest'}
           actions={
             <>
-              <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={options} />
-              <Input label="Guest search" value={guestSearch} onChange={(event) => setGuestSearch(event.currentTarget.value)} placeholder="Name, email, or phone" />
-              <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>Refresh</Button>
+              <button
+                type="button"
+                className="alma-home-bubble-btn alma-home-bubble-btn--primary"
+                onClick={() => void load()}
+                disabled={loading}
+              >
+                Refresh →
+              </button>
+              <button
+                type="button"
+                className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
+                onClick={() => navigateMarketingPath('/guests')}
+              >
+                Guest CRM
+              </button>
             </>
           }
         />
+
+        <div className="marketing-page-filters">
+          <Select label="Venue" value={venueFilter} onChange={(event) => setVenueFilter(event.currentTarget.value)} options={options} />
+          <Input label="Guest search" value={guestSearch} onChange={(event) => setGuestSearch(event.currentTarget.value)} placeholder="Name, email, or phone" />
+        </div>
 
         {feedback.target === 'page' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
 
