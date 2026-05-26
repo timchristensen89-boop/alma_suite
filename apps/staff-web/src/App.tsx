@@ -9861,14 +9861,42 @@ function RosterPage({
                         <strong>{row.label}</strong>
                       </div>
                       {days.map((day) => {
+                        // Per-venue daily summary in the same style as the
+                        // top global summary strip — hours / cost / wage%
+                        // scoped to this venue. The top strip aggregates
+                        // these across all venues, so they're not double
+                        // counted in any downstream total.
                         const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
                         const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
+                        const dayCostCents = dayShifts.reduce((sum, shift) => {
+                          const member = staffById.get(shift.staffProfileId);
+                          const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+                          return sum + Math.round(shiftHours(shift) * rateCents);
+                        }, 0);
                         const isClosed = isVenueClosedOnDate(row.venue, day);
                         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+                        const venueForecastCents = Math.round(historicalSalesForDate(row.venue, day) * 100);
+                        const wagePercent = venueForecastCents > 0 ? (dayCostCents / venueForecastCents) * 100 : 0;
+                        const isOver = venueForecastCents > 0 && dayCostCents > Math.round(venueForecastCents * targetWagePercentParsed);
+                        const hasCost = !isClosed && dayCostCents > 0;
                         return (
-                          <div key={`${row.id}-${day.toISOString()}`} className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}>
-                            <strong>{isClosed ? 'Closed' : dayShifts.length}</strong>
-                            <small>{isClosed && dayShifts.length ? `${dayShifts.length} shifts` : roundHours(dayHours)}</small>
+                          <div
+                            key={`${row.id}-${day.toISOString()}`}
+                            className={`deputy-schedule-cell deputy-venue-cell deputy-day-summary ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
+                          >
+                            {isClosed ? (
+                              <span className="deputy-day-summary-closed">Closed</span>
+                            ) : (
+                              <>
+                                <span className="deputy-day-summary-hours">{roundHours(dayHours)}</span>
+                                {hasCost ? (
+                                  <span className={`deputy-day-summary-cost ${isOver ? 'is-over' : 'is-under'}`}>
+                                    {formatCents(dayCostCents)}
+                                    {wagePercent > 0 ? <em>{wagePercent.toFixed(0)}%</em> : null}
+                                  </span>
+                                ) : null}
+                              </>
+                            )}
                           </div>
                         );
                       })}

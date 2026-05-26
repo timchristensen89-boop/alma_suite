@@ -3696,6 +3696,25 @@
   background: var(--color-surface, #F8F6F1);
 }
 
+/* Per-venue day-summary cell — uses the same hours / cost / wage%
+   layout as the top global summary, but tinted onto the venue surface
+   so it reads as "this venue's totals" instead of a shift count. */
+.deputy-venue-cell.deputy-day-summary {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  place-items: stretch !important;
+  justify-content: center;
+  gap: 1px;
+  padding: 5px 10px;
+  min-height: 44px;
+  background: var(--color-surface, #F8F6F1);
+}
+
+.deputy-venue-cell.deputy-day-summary.is-weekend {
+  background: rgba(36, 76, 159, 0.06);
+}
+
 /* Weekend tint on the day-summary boxes only — light Staff-blue wash
    on Sat / Sun so weekend totals stand apart without colouring the
    whole column. Same blue as the Publish button so it reads as one
