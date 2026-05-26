@@ -9384,31 +9384,6 @@ function RosterPage({
 
   return (
     <div className="page-stack">
-      {/* Utility — Forecast pill sits at the top because it drives
-          every number on the board. The Copy / Historical / Add /
-          Publish action row was moved BELOW the search toolbar so the
-          actions sit with the filters they operate on. */}
-      <div className="alma-roster-utility">
-        <label className="roster-forecast-inline roster-forecast-inline--utility" title="Forecast sales · target wage %">
-          <span className="roster-forecast-inline-label">Forecast</span>
-          <span className="roster-forecast-inline-prefix" aria-hidden="true">$</span>
-          <input
-            value={forecastSales}
-            onChange={(event) => setForecastSales(event.currentTarget.value)}
-            placeholder="Sales"
-            aria-label="Weekly forecast sales"
-          />
-          <span className="forecast-sep">·</span>
-          <input
-            value={targetWagePercent}
-            onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
-            placeholder="28"
-            aria-label="Target wage %"
-          />
-          <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
-        </label>
-      </div>
-
       {/* Editorial roster header — eyebrow + Cormorant serif title + week nav */}
       <div className="alma-roster-header">
         <div className="alma-roster-header-titles">
@@ -9526,6 +9501,24 @@ function RosterPage({
         <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
           Add shift
         </Button>
+        <label className="roster-forecast-inline roster-forecast-inline--utility" title="Forecast sales · target wage %">
+          <span className="roster-forecast-inline-label">Forecast</span>
+          <span className="roster-forecast-inline-prefix" aria-hidden="true">$</span>
+          <input
+            value={forecastSales}
+            onChange={(event) => setForecastSales(event.currentTarget.value)}
+            placeholder="Sales"
+            aria-label="Weekly forecast sales"
+          />
+          <span className="forecast-sep">·</span>
+          <input
+            value={targetWagePercent}
+            onChange={(event) => setTargetWagePercent(event.currentTarget.value)}
+            placeholder="28"
+            aria-label="Target wage %"
+          />
+          <span className="roster-forecast-inline-suffix" aria-hidden="true">%</span>
+        </label>
         <button
           type="button"
           className="alma-roster-publish"

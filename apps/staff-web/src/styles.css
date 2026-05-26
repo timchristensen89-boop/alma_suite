@@ -3427,7 +3427,7 @@
   overflow: hidden;
   border: 1px solid var(--color-border);
   border-radius: 14px;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
 }
 
 /* ─────────────────────────────────────────────────────────────────
@@ -3450,8 +3450,8 @@
 }
 
 /* Action row beneath the search/filter strip — Copy / Historical /
-   Add shift / Publish. One row, right-aligned, paper-cream surface so
-   it reads as part of the same control block as the filters above. */
+   Add shift / Forecast pill / Publish. One row, right-aligned, white
+   surface to match the other bubbles on the page. */
 .alma-roster-actions {
   display: flex;
   justify-content: flex-end;
@@ -3459,7 +3459,7 @@
   gap: 8px;
   flex-wrap: wrap;
   padding: 10px 14px;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
   border: 1px solid var(--color-border);
   border-radius: 14px;
 }
@@ -3700,7 +3700,7 @@
 .deputy-venue-label {
   /* Drop the 2px ink top border in favour of a thin hairline. */
   border-top: 1px solid var(--color-border) !important;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
   padding: 8px 14px 10px;
   min-height: 56px;
 }
@@ -3717,7 +3717,7 @@
   padding: 8px 10px 7px !important;
   min-height: 76px !important;
   border-top: 1px solid var(--color-border) !important;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
 }
 
 .deputy-venue-cell.is-weekend {
@@ -3910,7 +3910,7 @@
   gap: 12px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
 }
 
 .roster-board-command > div:first-child {
@@ -4166,7 +4166,7 @@
   top: 0;
   z-index: 2;
   min-height: 48px;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
 }
 
 .deputy-schedule-corner {
@@ -4346,14 +4346,14 @@
   justify-content: center;
   min-height: 78px;
   padding: 12px 14px;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
   text-align: center;
   cursor: pointer;
   transition: background 140ms ease;
 }
 
 .deputy-row-label:hover {
-  background: #FFFFFF;
+  background: var(--color-surface, #F8F6F1);
 }
 
 /* Larger avatar in the row label — it's the focal point now that the
@@ -4409,7 +4409,7 @@
 .deputy-venue-label,
 .deputy-venue-cell {
   min-height: 36px;
-  background: var(--color-surface, #F8F6F1);
+  background: #FFFFFF;
   color: var(--color-text);
 }
 
