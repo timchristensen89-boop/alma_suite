@@ -130,6 +130,98 @@ function withoutStaffSecrets<T extends { passwordHash?: string | null; pinHash?:
   return safeProfile;
 }
 
+// Field-level redaction (#16). Returns the profile with sensitive fields
+// nulled out based on what the actor is allowed to see. Layers on top of
+// `withoutStaffSecrets` which always strips passwordHash + pinHash.
+//
+// Tiers:
+//  - Admin or self: see everything
+//  - Manager with staffHrPayChanges: pay + training pay rates
+//  - Manager with staffHrRightToWork: bank, TFN, super, DOB, full address
+//  - Plain manager: name, email, phone, role, venue — basic identity only
+//
+// Hidden fields come back as `null` so the existing UI degrades cleanly to
+// "Not set" (instead of leaking the data and trusting the client to hide it).
+function redactStaffProfileFields<T extends Record<string, unknown> & { id?: string }>(profile: T, actor?: AuthUser | null): T {
+  // No actor → public-ish view (shouldn't normally happen, but safe to hide).
+  if (!actor) return nullSensitiveFields(profile, { pay: true, banking: true, tax: true, dob: true, address: true, emergencyPhone: true, xero: true });
+  if (actor.isAdmin || actor.role === 'ADMIN') return profile;
+  // Staff member viewing their own profile sees everything.
+  if (actor.role === 'STAFF' && actor.id === profile.id) return profile;
+  // Anyone else falls through to the permission-based redaction below.
+  const access = actor.appAccess?.find((entry) => entry.appId === 'STAFF' && entry.status === 'ENABLED');
+  const permissions = access?.permissions ?? {};
+  const isAccessAdmin = access?.role === 'ADMIN' || Boolean(permissions.admin);
+  if (isAccessAdmin) return profile;
+  const canSeePay = Boolean(permissions.staffHrPayChanges);
+  const canSeeRtwData = Boolean(permissions.staffHrRightToWork);
+  const canSeeHrGeneral = Boolean(permissions.staffHrView || permissions.staffHrManage);
+  return nullSensitiveFields(profile, {
+    pay: !canSeePay,
+    banking: !canSeeRtwData,
+    tax: !canSeeRtwData,
+    dob: !canSeeRtwData,
+    address: !canSeeRtwData,
+    emergencyPhone: !canSeeHrGeneral,
+    xero: !canSeePay
+  });
+}
+
+type RedactionMask = {
+  pay?: boolean;
+  banking?: boolean;
+  tax?: boolean;
+  dob?: boolean;
+  address?: boolean;
+  emergencyPhone?: boolean;
+  xero?: boolean;
+};
+
+function nullSensitiveFields<T extends Record<string, unknown>>(profile: T, mask: RedactionMask): T {
+  // Clone — we never mutate the row that came from Prisma.
+  const out: Record<string, unknown> = { ...profile };
+  if (mask.pay) {
+    out.payRateCents = null;
+    out.trainingPayRateCents = null;
+    out.payAward = null;
+    // The full payProfile is a separate object — redact it if present.
+    const payProfile = out.payProfile;
+    if (payProfile && typeof payProfile === 'object') {
+      out.payProfile = { ...payProfile, baseRateCents: null, salaryCents: null, redacted: true };
+    }
+  }
+  if (mask.banking) {
+    out.bankAccountName = null;
+    out.bankBsb = null;
+    out.bankAccountNumber = null;
+  }
+  if (mask.tax) {
+    out.taxFileNumber = null;
+    out.taxResidencyStatus = null;
+    out.taxFreeThreshold = null;
+    out.hasStudyTrainingLoan = null;
+    out.superFundName = null;
+    out.superFundAbn = null;
+    out.superFundUsi = null;
+    out.superMemberNumber = null;
+  }
+  if (mask.dob) out.dateOfBirth = null;
+  if (mask.address) {
+    out.addressLine1 = null;
+    out.addressLine2 = null;
+    out.suburb = null;
+    out.state = null;
+    out.postcode = null;
+  }
+  if (mask.emergencyPhone) out.emergencyContactPhone = null;
+  if (mask.xero) {
+    out.xeroEmployeeId = null;
+    out.xeroPayrollCalendarId = null;
+    out.xeroEarningsRateId = null;
+  }
+  return out as T;
+}
+
 function appendRecordNote(existing: string | null | undefined, note: string) {
   return [existing?.trim(), note].filter(Boolean).join('\n');
 }
@@ -1559,7 +1651,7 @@ export const staffService = {
         }
       }
     });
-    return profiles.map((profile) => withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)));
+    return profiles.map((profile) => redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)), actor));
   },
 
   async getById(id: string, actor?: AuthUser) {
@@ -1592,7 +1684,7 @@ export const staffService = {
       throw new HttpError(404, 'Staff profile not found');
     }
 
-    return withoutStaffSecrets(attachDefaultPayProfile(profile, await getStaffDefaults()));
+    return redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(profile, await getStaffDefaults())), actor);
   },
 
   async create(input: unknown, actor?: AuthUser) {
@@ -1665,7 +1757,7 @@ export const staffService = {
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
     });
-    return withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults));
+    return redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)), actor);
   },
 
   async update(id: string, input: unknown, actor?: AuthUser) {
@@ -1764,7 +1856,7 @@ export const staffService = {
       });
     }
 
-    return withoutStaffSecrets(attachDefaultPayProfile(updated));
+    return redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(updated)), actor);
   },
 
   async delete(id: string, actor?: AuthUser) {
@@ -5579,7 +5671,7 @@ export const staffService = {
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] }
       }
     });
-    return withoutStaffSecrets(approvedProfile);
+    return redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor);
   },
 
   async changeOwnPin(actor: AuthUser, input: unknown) {
