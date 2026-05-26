@@ -8059,3 +8059,129 @@ a.suite-app-tile:hover {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- Editorial venue-comparison table (Reports overview) ---------------- */
+
+.alma-venue-table {
+  display: flex;
+  flex-direction: column;
+}
+
+.alma-venue-table-head {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 12px 22px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+  font-weight: 700;
+}
+
+.alma-venue-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.4fr) repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 14px 22px;
+  align-items: center;
+  border-top: 1px solid rgba(31, 53, 36, 0.06);
+}
+
+.alma-venue-row.is-total {
+  background: rgba(31, 53, 36, 0.025);
+  font-weight: 600;
+}
+
+.alma-venue-name {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: #1F3524;
+}
+
+.alma-venue-row.is-total .alma-venue-name {
+  font-weight: 700;
+}
+
+.alma-venue-num {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #1F3524;
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- Top dishes list ---------------------------------------------------- */
+
+.alma-top-dishes {
+  display: flex;
+  flex-direction: column;
+}
+
+.alma-top-dish-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 70px 110px;
+  gap: 14px;
+  align-items: center;
+  padding: 14px 22px;
+  border-top: 1px solid rgba(31, 53, 36, 0.06);
+}
+
+.alma-top-dish-row:first-child {
+  border-top: 0;
+}
+
+.alma-top-dish-rank {
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: 18px;
+  color: rgba(31, 53, 36, 0.4);
+  font-variant-numeric: tabular-nums;
+}
+
+.alma-top-dish-name {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13.5px;
+  color: #1A2A1C;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alma-top-dish-count {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  color: #1F3524;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.alma-top-dish-sales {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 500;
+  font-size: 13px;
+  color: rgba(31, 53, 36, 0.65);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+@media (max-width: 720px) {
+  .alma-venue-table-head,
+  .alma-venue-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+  .alma-venue-table-head {
+    display: none;
+  }
+  .alma-top-dish-row {
+    grid-template-columns: 24px minmax(0, 1fr) auto;
+  }
+  .alma-top-dish-sales {
+    display: none;
+  }
+}

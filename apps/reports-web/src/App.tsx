@@ -18,13 +18,16 @@ import type {
   Timesheet
 } from '@alma/shared';
 import {
+  AlmaPill,
   AppShell,
   ActionPanel,
   Badge,
+  BigStat,
   Button,
   Card,
   ChartIcon,
   DocumentIcon,
+  EditorialPanel,
   Input,
   ProductLogo,
   Select,
@@ -1513,6 +1516,46 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const heroTone: 'positive' | 'warning' | 'danger' | 'neutral' =
       currentPct == null ? 'neutral' : currentPct >= 65 ? 'danger' : currentPct >= 55 ? 'warning' : 'positive';
 
+    // Weekly Snapshot (editorial dashboard from the design)
+    const salesCentsForRange = primeTotals?.salesCents ?? 0;
+    const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
+    const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
+    const noShowsForRange = data.overview?.reserve.noShows ?? 0;
+    const bookingsForRange = (data.overview?.reserve.bookingsToday ?? 0) + (data.overview?.reserve.upcomingBookings ?? 0);
+    const avgPerCoverCents = coversForRange > 0 ? salesCentsForRange / coversForRange : 0;
+    const noShowDenominator = coversForRange + noShowsForRange;
+    const noShowRate = noShowDenominator > 0 ? (noShowsForRange / noShowDenominator) * 100 : null;
+
+    // Trends from the 5-week history we already pull
+    const salesTrend = primeCostHistory.length > 1 ? primeCostHistory.map((p) => p.salesCents / 100) : undefined;
+
+    // Compare current vs previous week for delta pills
+    const previousWeek = primeCostHistory[primeCostHistory.length - 1];
+    function deltaPill(curr: number | null | undefined, prev: number | null | undefined): string | undefined {
+      if (curr == null || prev == null || prev === 0) return undefined;
+      const pct = ((curr - prev) / prev) * 100;
+      if (Math.abs(pct) < 0.5) return '~ flat';
+      return `${pct > 0 ? '+' : '−'}${Math.abs(pct).toFixed(0)}%`;
+    }
+    const takingsDelta = deltaPill(salesCentsForRange, previousWeek?.salesCents);
+
+    // Top dishes — built from itemSales entries we already pull
+    const dishGroups = new Map<string, { name: string; quantity: number; netSalesCents: number }>();
+    for (const entry of data.itemSales?.entries ?? []) {
+      const key = entry.itemName;
+      const row = dishGroups.get(key) ?? { name: entry.itemName, quantity: 0, netSalesCents: 0 };
+      row.quantity += entry.quantity;
+      row.netSalesCents += entry.netSalesCents;
+      dishGroups.set(key, row);
+    }
+    const topDishes = Array.from(dishGroups.values())
+      .sort((a, b) => b.quantity - a.quantity)
+      .slice(0, 6);
+
+    // Per-venue comparison rows from primeCost
+    const venueRows = data.primeCost?.venues ?? [];
+    const totalsRow = data.primeCost?.totals;
+
     return (
       <SectionShell
         id="overview"
@@ -1521,6 +1564,119 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         action={<Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>Export overview CSV</Button>}
       >
         <div className="report-section-stack">
+          {/* Weekly Snapshot — editorial dashboard from the design */}
+          <div className="alma-page-grid-kpis">
+            <BigStat
+              eyebrow={`Takings · ${weekWindowLabel}`}
+              value={formatCurrency(salesCentsForRange)}
+              sub={data.primeCost?.sources.sales === 'missing' ? 'Sales import missing' : 'Group total'}
+              delta={takingsDelta}
+              trend={salesTrend}
+              sparkColor="#684A4A"
+            />
+            <BigStat
+              eyebrow={`Covers · ${weekWindowLabel}`}
+              value={coversForRange.toLocaleString()}
+              sub={itemSalesQuantity > 0
+                ? `${data.itemSales?.entries.length ?? 0} menu rows · Square actuals`
+                : `${bookingsForRange} bookings on the books`}
+            />
+            <BigStat
+              eyebrow="Avg per cover"
+              value={avgPerCoverCents > 0 ? formatCurrency(avgPerCoverCents) : '—'}
+              sub={coversForRange > 0 ? `${coversForRange.toLocaleString()} covers` : 'Awaiting Square import'}
+            />
+            <BigStat
+              eyebrow="No-show rate"
+              value={noShowRate != null ? `${noShowRate.toFixed(1)}%` : '—'}
+              sub={`${noShowsForRange} no-shows today`}
+              sparkColor="#9A3A2E"
+            />
+          </div>
+
+          {/* By venue — editorial panel using primeCost venues data */}
+          {venueRows.length > 0 && totalsRow ? (
+            <EditorialPanel
+              eyebrow={`This week · ${weekWindowLabel}`}
+              title="By venue"
+              actions={
+                <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
+                  Export CSV
+                </Button>
+              }
+            >
+              <div className="alma-venue-table">
+                <div className="alma-venue-table-head">
+                  <span>Venue</span>
+                  <span>Sales</span>
+                  <span>Wages %</span>
+                  <span>COGS %</span>
+                  <span>Prime cost</span>
+                </div>
+                {venueRows.map((row) => (
+                  <div className="alma-venue-row" key={row.venue}>
+                    <span className="alma-venue-name">{row.venue}</span>
+                    <span className="alma-venue-num">{formatCurrency(row.salesCents)}</span>
+                    <span className="alma-venue-num">{formatPercent(row.wagePercent)}</span>
+                    <span className="alma-venue-num">{formatPercent(row.cogsPercent)}</span>
+                    <span>
+                      <AlmaPill kind={row.primeCostPercent == null
+                        ? 'neutral'
+                        : row.primeCostPercent >= 65
+                          ? 'danger'
+                          : row.primeCostPercent >= 55
+                            ? 'warn'
+                            : 'success'}>
+                        {row.primeCostPercent != null ? `${row.primeCostPercent.toFixed(1)}%` : '—'}
+                      </AlmaPill>
+                    </span>
+                  </div>
+                ))}
+                <div className="alma-venue-row is-total">
+                  <span className="alma-venue-name">Group total</span>
+                  <span className="alma-venue-num">{formatCurrency(totalsRow.salesCents)}</span>
+                  <span className="alma-venue-num">{formatPercent(totalsRow.wagePercent)}</span>
+                  <span className="alma-venue-num">{formatPercent(totalsRow.cogsPercent)}</span>
+                  <span>
+                    <AlmaPill kind={totalsRow.primeCostPercent == null
+                      ? 'neutral'
+                      : totalsRow.primeCostPercent >= 65
+                        ? 'danger'
+                        : totalsRow.primeCostPercent >= 55
+                          ? 'warn'
+                          : 'success'}>
+                      {totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(1)}%` : '—'}
+                    </AlmaPill>
+                  </span>
+                </div>
+              </div>
+            </EditorialPanel>
+          ) : null}
+
+          {/* Top dishes — editorial panel */}
+          {topDishes.length > 0 ? (
+            <EditorialPanel
+              eyebrow={`This week · ${weekWindowLabel}`}
+              title="Top dishes"
+              actions={
+                <Button type="button" size="sm" variant="ghost" onClick={() => selectReportSection('sales')}>
+                  Open sales detail
+                </Button>
+              }
+            >
+              <div className="alma-top-dishes">
+                {topDishes.map((dish, index) => (
+                  <div className="alma-top-dish-row" key={dish.name}>
+                    <span className="alma-top-dish-rank">{index + 1}</span>
+                    <span className="alma-top-dish-name">{dish.name}</span>
+                    <span className="alma-top-dish-count">{dish.quantity.toLocaleString()}</span>
+                    <span className="alma-top-dish-sales">{formatCurrency(dish.netSalesCents)}</span>
+                  </div>
+                ))}
+              </div>
+            </EditorialPanel>
+          ) : null}
+
           {/* Prime cost hero — the single most important metric */}
           <button
             type="button"
