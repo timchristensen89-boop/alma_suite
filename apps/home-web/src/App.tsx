@@ -10,6 +10,26 @@ type Notification = {
   link?: string;
 };
 
+// Minimal user shape — Home only needs role + accountType + admin flag
+// to decide which tiles to show. We grab it from /api/auth/me, which
+// already returns this in production.
+type HomeUser = {
+  role?: 'ADMIN' | 'MANAGER' | 'STAFF' | string;
+  isAdmin?: boolean;
+  accountType?: 'HUMAN' | 'VENUE_DEVICE' | string;
+  appAccess?: Array<{ appId: string; status?: string }>;
+};
+
+// Which Suite app IDs each role can actually USE. Used to filter the
+// Home tile grid so casual staff don't see admin noise. Apps still appear
+// on the suite switcher inside each app for managers — this only filters
+// the launcher.
+const TILES_BY_ROLE: Record<string, string[]> = {
+  STAFF: ['staff', 'training'],
+  MANAGER: ['staff', 'stock', 'compliance', 'giftcards', 'reports', 'comms', 'reserve', 'training'],
+  ADMIN: ['staff', 'stock', 'compliance', 'giftcards', 'reports', 'comms', 'reserve', 'marketing', 'training', 'settings']
+};
+
 const APP_LABELS: Record<string, string> = {
   staff: 'Staff',
   compliance: 'Compliance',
@@ -69,32 +89,61 @@ function SuiteLauncher() {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState(true);
   const [authPromptVisible, setAuthPromptVisible] = useState(false);
+  const [user, setUser] = useState<HomeUser | null>(null);
 
   useEffect(() => {
     void (async () => {
       try {
-        // Try compliance API for notifications (where the API actually lives)
-        const apiUrl = 'https://alma-compliance.web.app/api/notifications';
-        const response = await fetch(apiUrl, { credentials: 'include' });
-        if (response.status === 401) {
+        // Pull notifications + user role in parallel from compliance API.
+        // User role drives which tiles we show.
+        const [notifResp, userResp] = await Promise.all([
+          fetch('https://alma-compliance.web.app/api/notifications', { credentials: 'include' }),
+          fetch('https://alma-compliance.web.app/api/auth/me', { credentials: 'include' }).catch(() => null)
+        ]);
+        if (notifResp.status === 401) {
           setAuthPromptVisible(true);
           return;
         }
-        if (!response.ok) throw new Error('Could not load notifications');
-        const data = await response.json();
-        setNotifications(Array.isArray(data) ? data : []);
+        if (notifResp.ok) {
+          const data = await notifResp.json();
+          setNotifications(Array.isArray(data) ? data : []);
+        }
+        if (userResp && userResp.ok) {
+          const userData = await userResp.json();
+          // /api/auth/me returns { user } in the staff API; the compliance
+          // shape may differ. Handle both.
+          const u = (userData?.user ?? userData) as HomeUser | null;
+          if (u) {
+            setUser(u);
+            // Venue devices auto-redirect to the venue iPad home.
+            if (u.accountType === 'VENUE_DEVICE' && window.location.pathname !== '/venue') {
+              window.location.replace('/venue');
+              return;
+            }
+          }
+        }
       } catch {
-        // Silent fallback — show empty notification state
+        // Silent fallback — show empty state and all tiles
       } finally {
         setLoadingNotifications(false);
       }
     })();
   }, []);
 
-  const activeApps = useMemo(
-    () => SUITE_APPS.filter((app) => app.status === 'active'),
-    []
-  );
+  const activeApps = useMemo(() => {
+    const all = SUITE_APPS.filter((app) => app.status === 'active');
+    // No user loaded yet (signed out or fetch failed): show everything,
+    // so the visitor knows what's in the suite. Per-app auth still gates
+    // access on click.
+    if (!user) return all;
+    // Admin / no explicit role on an isAdmin user: full set.
+    if (user.isAdmin || user.role === 'ADMIN') return TILES_BY_ROLE.ADMIN
+      ? all.filter((app) => TILES_BY_ROLE.ADMIN!.includes(app.id))
+      : all;
+    const allowed = TILES_BY_ROLE[String(user.role ?? '').toUpperCase()];
+    if (!allowed) return all;
+    return all.filter((app) => allowed.includes(app.id));
+  }, [user]);
 
   const notificationsByApp = useMemo(() => {
     const map = new Map<string, Notification[]>();

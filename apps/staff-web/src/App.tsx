@@ -708,6 +708,12 @@ function TopBarWithContext() {
   const active = currentPage(location.pathname, navItems);
   useDocumentTitle(active.label);
 
+  // Casual staff get a simpler topbar — they don't switch apps (they only
+  // have access to Staff anyway) and they don't post announcements.
+  // Strip back to: Messages · Alerts · Sign out. Managers and admins still
+  // see the full toolkit.
+  const isCasualStaff = user?.role === 'STAFF';
+
   return (
     <TopBar
       title={active.label}
@@ -731,7 +737,9 @@ function TopBarWithContext() {
                 </Button>
               </div>
             ) : null}
-            <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
+            {!isCasualStaff ? (
+              <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
+            ) : null}
             <SuiteCommsWidget
               appId="STAFF"
               api={api}
