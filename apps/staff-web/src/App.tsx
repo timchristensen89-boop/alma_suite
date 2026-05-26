@@ -9415,92 +9415,69 @@ function RosterPage({
         />
       </div>
 
-      <div className="roster-primary-bar">
-        <div className="roster-week-controls" aria-label="Roster week controls">
-          <Button type="button" variant="secondary" size="sm" onClick={() => setRosterWeek(addDays(weekStart, -7))}>
-            Prev
-          </Button>
-          <div className="roster-week-label">
-            <strong>{formatRange(weekStart, rosterRangeEnd)}</strong>
-            <span>{draftCount} draft · {roundHours(totalHours)}</span>
-          </div>
-          <Button type="button" variant="secondary" size="sm" onClick={() => setRosterWeek(addDays(weekStart, 7))}>
-            Next
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            onClick={() => {
-              const today = new Date();
-              setWeekStart(startOfWeek(today));
-              setDate(toDateInput(today));
-              setMobileSelectedDay(toDateInput(today));
-            }}
-          >
-            Today
-          </Button>
+      {/* Editorial filter strip — search + venue + status + view mode + chips,
+          all consolidated into one tidy row in the editorial chrome. The
+          duplicate prev/next/today nav and Copy/Review/Publish buttons
+          previously here are now handled by the editorial header above. */}
+      <div className="alma-roster-toolbar">
+        <div className="alma-roster-toolbar-search">
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="11" cy="11" r="7" />
+            <line x1="16" y1="16" x2="21" y2="21" strokeLinecap="round" />
+          </svg>
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.currentTarget.value)}
+            placeholder="Search team or area"
+            aria-label="Search"
+            spellCheck={false}
+            autoComplete="off"
+          />
         </div>
-
         <Select
-          label="Venue"
+          aria-label="Venue"
           value={venueFilter}
           onChange={(event) => setVenueFilter(event.currentTarget.value)}
           options={[{ label: 'All venues', value: 'all' }, ...venues.map((venue) => ({ label: venue, value: venue }))]}
         />
+        <Select
+          aria-label="Status"
+          value={statusFilter}
+          onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
+          options={[
+            { label: 'All statuses', value: 'all' },
+            { label: 'Draft', value: 'DRAFT' },
+            { label: 'Published', value: 'PUBLISHED' },
+            { label: 'Completed', value: 'COMPLETED' },
+            { label: 'Cancelled', value: 'CANCELLED' }
+          ]}
+        />
+        <div className="alma-segmented" aria-label="Schedule view">
+          <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>Team</button>
+          <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>Area</button>
+        </div>
+        <div className="alma-segmented" aria-label="Roster range">
+          <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>Week</button>
+          <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>2w</button>
+        </div>
       </div>
 
       {activeFilterChips.length > 0 ? (
-        <div className="roster-filter-chips" aria-label="Active roster filters">
+        <div className="alma-roster-active-chips" aria-label="Active roster filters">
           {activeFilterChips.map((chip) => (
             <button key={chip.key} type="button" onClick={chip.clear}>
               <span>{chip.label}</span>
-              <strong aria-hidden="true">x</strong>
+              <span aria-hidden="true" className="alma-roster-active-chip-x">×</span>
             </button>
           ))}
         </div>
       ) : null}
 
-      <div className="roster-combined-toolbar">
-        <div className="roster-combined-toolbar-left">
-          <Input value={search} onChange={(event) => setSearch(event.currentTarget.value)} placeholder="Search team or area" aria-label="Search" />
-          <Select
-            value={statusFilter}
-            onChange={(event) => setStatusFilter(event.currentTarget.value as typeof statusFilter)}
-            aria-label="Status"
-            options={[
-              { label: 'All statuses', value: 'all' },
-              { label: 'Draft', value: 'DRAFT' },
-              { label: 'Published', value: 'PUBLISHED' },
-              { label: 'Completed', value: 'COMPLETED' },
-              { label: 'Cancelled', value: 'CANCELLED' }
-            ]}
-          />
-          <div className="deputy-view-toggle" aria-label="Schedule view">
-            <button type="button" className={viewMode === 'team' ? 'is-active' : ''} onClick={() => setViewMode('team')}>Team</button>
-            <button type="button" className={viewMode === 'area' ? 'is-active' : ''} onClick={() => setViewMode('area')}>Area</button>
-          </div>
-          <div className="deputy-view-toggle" aria-label="Roster range">
-            <button type="button" className={boardDays === 7 ? 'is-active' : ''} onClick={() => setBoardDays(7)}>Week</button>
-            <button type="button" className={boardDays === 14 ? 'is-active' : ''} onClick={() => setBoardDays(14)}>2w</button>
-          </div>
+      {messageTarget === 'copy-week' && message ? (
+        <div className="alma-roster-toolbar-feedback">
+          <ActionFeedback message={message} tone={message.includes('Could') ? 'error' : 'success'} />
         </div>
-        <div className="roster-combined-toolbar-right">
-          <ActionFeedback
-            message={messageTarget === 'copy-week' ? message : null}
-            tone={message?.includes('Could') ? 'error' : 'success'}
-          />
-          <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void copyPreviousWeek()}>
-            Copy last week
-          </Button>
-          <Button type="button" variant="secondary" size="sm" disabled={draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-            Review drafts
-          </Button>
-          <Button type="button" size="sm" disabled={saving || draftCount === 0} onClick={() => setPublishPreviewOpen(true)}>
-            Publish {draftCount > 0 ? `(${draftCount})` : ''}
-          </Button>
-        </div>
-      </div>
+      ) : null}
 
       {activeAreas.length > 0 ? (
         <div className="deputy-area-legend roster-collapsed-legend" aria-label="Roster section colours">

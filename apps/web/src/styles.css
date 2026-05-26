@@ -8367,6 +8367,148 @@ a.suite-app-tile:hover {
   align-items: center;
 }
 
+/* --- Editorial roster toolbar (consolidated filter strip) ------------- */
+
+.alma-roster-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 10px 14px;
+  background: #F8F6F1;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  border-radius: 16px;
+  margin-bottom: 12px;
+}
+
+.alma-roster-toolbar-search {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  background: #FFFFFF;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  border-radius: 9999px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.alma-roster-toolbar-search svg {
+  flex-shrink: 0;
+  stroke: rgba(31, 53, 36, 0.5);
+  fill: none;
+  stroke-width: 1.7;
+}
+
+.alma-roster-toolbar-search input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13px;
+  color: #1F3524;
+  padding: 0;
+}
+
+.alma-roster-toolbar-search input::placeholder {
+  color: rgba(31, 53, 36, 0.45);
+}
+
+/* Tighter Select inside the toolbar — pill rounded, paper bg */
+.alma-roster-toolbar .field {
+  margin: 0;
+}
+
+.alma-roster-toolbar .field select {
+  padding: 8px 32px 8px 12px;
+  border-radius: 9999px;
+  border: 1px solid rgba(31, 53, 36, 0.1);
+  background-color: #FFFFFF;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1F3524;
+  min-height: 36px;
+}
+
+.alma-segmented {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 10px;
+  background: rgba(31, 53, 36, 0.06);
+  border: 1px solid rgba(31, 53, 36, 0.08);
+}
+
+.alma-segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px 4px;
+  border-radius: 7px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+  transition: background 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+
+.alma-segmented button.is-active {
+  background: #FFFFFF;
+  color: #1F3524;
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.08);
+}
+
+.alma-segmented button:hover:not(.is-active) {
+  color: #1F3524;
+}
+
+.alma-roster-active-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.alma-roster-active-chips button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px 4px 11px;
+  border-radius: 9999px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  background: #FFFFFF;
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: #1F3524;
+}
+
+.alma-roster-active-chip-x {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 9999px;
+  background: rgba(31, 53, 36, 0.08);
+  font-size: 12px;
+  letter-spacing: 0;
+}
+
+.alma-roster-toolbar-feedback {
+  margin-bottom: 10px;
+}
+
 /* --- Reserve · Tonight service feed ------------------------------------ */
 
 .alma-reserve-header {
