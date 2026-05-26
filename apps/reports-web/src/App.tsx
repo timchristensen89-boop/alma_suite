@@ -1658,6 +1658,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             );
           })()}
 
+          {/* Data sources hairline — every report depends on data flowing
+              from external systems. Make the lineage visible so when a
+              number looks wrong, the operator knows where to check. */}
+          <p className="alma-reports-sources" aria-label="Report data sources">
+            <span className="alma-reports-sources-label">Sources</span>
+            <span>Sales <strong>Square</strong></span>
+            <span>Wages <strong>Alma roster + Xero pay rates</strong></span>
+            <span>Bills <strong>Xero</strong></span>
+            <span>Temperatures <strong>Govee</strong></span>
+            <span>Stock <strong>Alma</strong></span>
+          </p>
+
           {/* Weekly Snapshot — editorial dashboard from the design */}
           <div className="alma-page-grid-kpis">
             <BigStat
