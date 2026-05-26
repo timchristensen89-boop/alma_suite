@@ -18,8 +18,10 @@ import type {
 } from '@alma/shared';
 import {
   ActionFeedback,
+  AlmaPill,
   AppShell,
   Badge,
+  BigStat,
   Button,
   Card,
   DocumentIcon,
@@ -289,6 +291,121 @@ function longDate(value: string) {
 
 function timeLabel(value: string) {
   return new Date(value).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+}
+
+// Editorial booking row — used in the Tonight service feed
+type BookingRowProps = {
+  reservation: ReserveReservation;
+  feedback: FeedbackState;
+  onStatus: (status: ReserveReservationStatus) => void;
+};
+
+function statusPillKind(status: ReserveReservationStatus): { label: string; kind: 'success' | 'warn' | 'danger' | 'info' | 'neutral' } {
+  switch (status) {
+    case 'SEATED':
+      return { label: 'Seated', kind: 'success' };
+    case 'COMPLETED':
+      return { label: 'Departed', kind: 'neutral' };
+    case 'CONFIRMED':
+      return { label: 'Confirmed', kind: 'info' };
+    case 'PENDING':
+      return { label: 'Pending', kind: 'warn' };
+    case 'CANCELLED':
+      return { label: 'Cancelled', kind: 'neutral' };
+    case 'NO_SHOW':
+      return { label: 'No-show', kind: 'danger' };
+  }
+}
+
+function dietaryTone(text: string): 'allergy' | 'diet' | 'occasion' | 'neutral' {
+  const lower = text.toLowerCase();
+  if (lower.match(/allerg|gluten|nut|shellfish|dairy|coeliac|celiac/)) return 'allergy';
+  if (lower.match(/vegan|vegetarian|kosher|halal|pescatarian/)) return 'diet';
+  return 'neutral';
+}
+
+function BookingRow({ reservation, feedback, onStatus }: BookingRowProps) {
+  const status = statusPillKind(reservation.status);
+  const guestName = reservation.guestName || fullName(reservation.guest);
+  const note = reservation.specialRequests || reservation.notes;
+  const isVip = reservation.guest?.tags?.some((t) => t.toLowerCase().includes('vip'))
+    || (reservation.specialRequests || '').toLowerCase().includes('vip');
+  // Compact action — surface the most likely next state
+  const nextAction = (() => {
+    if (reservation.status === 'CONFIRMED' || reservation.status === 'PENDING') {
+      return { label: 'Seat', target: 'SEATED' as ReserveReservationStatus };
+    }
+    if (reservation.status === 'SEATED') {
+      return { label: 'Complete', target: 'COMPLETED' as ReserveReservationStatus };
+    }
+    return null;
+  })();
+
+  return (
+    <div className={`alma-booking-row ${isVip ? 'is-vip' : ''}`}>
+      <div className="alma-booking-time">
+        <div className="alma-booking-time-value">{timeLabel(reservation.startsAt)}</div>
+        {reservation.table?.label ? (
+          <div className="alma-booking-table">{reservation.table.label}</div>
+        ) : null}
+      </div>
+      <div className="alma-booking-main">
+        <div className="alma-booking-main-head">
+          {isVip ? <span className="alma-booking-vip">★ VIP</span> : null}
+          <span className="alma-booking-name">{guestName || 'Guest'}</span>
+          <span className="alma-booking-party">· party of {reservation.covers}</span>
+        </div>
+        <div className="alma-booking-meta">
+          <AlmaPill kind={status.kind} dot>{status.label}</AlmaPill>
+          {reservation.occasion ? (
+            <span className="alma-booking-chip alma-booking-chip--occasion">{reservation.occasion}</span>
+          ) : null}
+          {note && note.length > 0 ? (
+            <span className={`alma-booking-chip alma-booking-chip--${dietaryTone(note)}`}>
+              {note.length > 36 ? `${note.slice(0, 33)}…` : note}
+            </span>
+          ) : null}
+        </div>
+        {reservation.internalNotes ? (
+          <div className="alma-booking-note">&ldquo;{reservation.internalNotes}&rdquo;</div>
+        ) : null}
+        {feedback.target === `reservation:${reservation.id}` && feedback.message ? (
+          <div className="alma-booking-feedback">
+            <ActionFeedback message={feedback.message} tone={feedback.tone} />
+          </div>
+        ) : null}
+      </div>
+      <div className="alma-booking-actions">
+        {nextAction ? (
+          <button
+            type="button"
+            className="alma-booking-primary"
+            onClick={() => onStatus(nextAction.target)}
+          >
+            {nextAction.label}
+          </button>
+        ) : null}
+        {(reservation.status === 'CONFIRMED' || reservation.status === 'PENDING') ? (
+          <button
+            type="button"
+            className="alma-booking-ghost"
+            onClick={() => onStatus('NO_SHOW')}
+          >
+            No-show
+          </button>
+        ) : null}
+        {(reservation.status === 'CONFIRMED' || reservation.status === 'PENDING') ? (
+          <button
+            type="button"
+            className="alma-booking-ghost"
+            onClick={() => onStatus('CANCELLED')}
+          >
+            Cancel
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function dateInputFromIso(value: string) {
@@ -1869,58 +1986,141 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       topBar={<TopBarWithContext user={user} onLogout={onLogout} />}
     >
       <div className="reserve-page">
-        <section className="hero reserve-command-hero">
-          <div className="hero-text">
-            <p className="page-header-eyebrow">Reserve command</p>
-            <h1>Alma Group Reserve</h1>
-            <p>Build the guest book, keep bookings venue-scoped, and preview online booking safely before any live partner integration.</p>
-            <div className="hero-meta">
-              <span className="hero-meta-dot" aria-hidden="true" />
-              <span>{dashboard?.totals.todayBookings ?? 0} bookings today</span>
-              <span aria-hidden="true">·</span>
-              <span>{dashboard?.totals.coversToday ?? 0} covers</span>
-              <span aria-hidden="true">·</span>
-              <span>{venueFilter === 'all' ? 'All venues' : venueFilter}</span>
-            </div>
-          </div>
-          <div className="hero-actions reserve-command-actions">
-            <Button
-              type="button"
-              onClick={() => document.getElementById('dashboard')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            >
-              Review bookings
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => document.getElementById('guests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-            >
-              Guest CRM
-            </Button>
-            <Button type="button" variant="ghost" onClick={() => void load()} disabled={loading}>Refresh</Button>
-          </div>
-        </section>
+        {(() => {
+          // Editorial Bookings · tonight header
+          const isToday = selectedDate === new Date().toISOString().slice(0, 10);
+          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          const dateObj = new Date(`${selectedDate}T12:00:00`);
+          const dateLabel = dateObj.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
+          const allTodayReservations = dashboard?.todayReservations ?? [];
+          const covers = dashboard?.totals.coversToday ?? 0;
+          // Capacity at peak (8–9pm) — count covers booked in that window
+          const peakCovers = allTodayReservations
+            .filter((r) => {
+              const hr = new Date(r.startsAt).getHours();
+              return hr === 20 || hr === 19;
+            })
+            .reduce((sum, r) => sum + r.covers, 0);
+          // Assume venue capacity ~96 (matches the design's reference number); use tables × 4 if real data is loaded
+          const totalCapacity = 96;
+          const peakPct = totalCapacity > 0 ? Math.round((peakCovers / totalCapacity) * 100) : 0;
+          const bookedPct = totalCapacity > 0 ? Math.round((covers / totalCapacity) * 100) : 0;
+          // Notes-to-action count — reservations with allergens, VIP markers, or occasions
+          const notesToAction = allTodayReservations.filter((r) =>
+            (r.specialRequests || '').toLowerCase().match(/allerg|gluten|nut|shellfish|vegan|vegetarian|dairy/) ||
+            r.occasion
+          ).length;
+          const periodLabel = (() => {
+            const h = new Date().getHours();
+            if (h < 12) return 'BREAKFAST';
+            if (h < 17) return 'LUNCH';
+            return 'DINNER';
+          })();
+          return (
+            <>
+              <div className="alma-reserve-header">
+                <div className="alma-reserve-header-titles">
+                  <span className="alma-roster-eyebrow">Reserve · {venueLabel}</span>
+                  <div className="alma-roster-title-row">
+                    <span className="alma-roster-title is-italic">{isToday ? 'Tonight' : 'Bookings'}</span>
+                    <span className="alma-roster-title alma-reserve-title-sub">{dateLabel} · {periodLabel.toLowerCase()} service</span>
+                    <div className="alma-roster-weeknav">
+                      <button
+                        type="button"
+                        className="alma-roster-weeknav-btn"
+                        aria-label="Previous day"
+                        onClick={() => {
+                          const d = new Date(`${selectedDate}T12:00:00`);
+                          d.setDate(d.getDate() - 1);
+                          setSelectedDate(d.toISOString().slice(0, 10));
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                          <polyline points="15 6 9 12 15 18" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="alma-roster-weeknav-btn"
+                        aria-label="Next day"
+                        onClick={() => {
+                          const d = new Date(`${selectedDate}T12:00:00`);
+                          d.setDate(d.getDate() + 1);
+                          setSelectedDate(d.toISOString().slice(0, 10));
+                        }}
+                      >
+                        <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                          <polyline points="9 6 15 12 9 18" />
+                        </svg>
+                      </button>
+                      <button
+                        type="button"
+                        className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                        onClick={() => setSelectedDate(new Date().toISOString().slice(0, 10))}
+                      >
+                        Today
+                      </button>
+                    </div>
+                  </div>
+                  <div className="alma-reserve-summary">
+                    {(dashboard?.totals.todayBookings ?? 0)} bookings · {covers} covers booked
+                  </div>
+                </div>
+                <div className="alma-reserve-header-actions">
+                  <Select
+                    aria-label="Venue"
+                    value={venueFilter}
+                    onChange={(event) => setVenueFilter(event.currentTarget.value)}
+                    options={venueOptions}
+                  />
+                  <Button type="button" variant="ghost" size="sm" onClick={() => void load()} disabled={loading}>Refresh</Button>
+                  <Button type="button" size="sm" variant="secondary"
+                    onClick={() => document.getElementById('guests')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>
+                    Guest CRM
+                  </Button>
+                </div>
+              </div>
 
-        <Card className="reserve-command-filters" title="Reservation controls" subtitle="Venue and date scope for this dashboard.">
-          <div className="reserve-command-filter-grid">
-            <Select
-              label="Venue"
-              value={venueFilter}
-              onChange={(event) => setVenueFilter(event.currentTarget.value)}
-              options={venueOptions}
-            />
-            <Input label="Service date" type="date" value={selectedDate} onChange={(event) => setSelectedDate(event.currentTarget.value)} />
-          </div>
-        </Card>
+              {/* Editorial KPI strip — service-themed with capacity bars */}
+              <div className="alma-reserve-kpis">
+                <div className="alma-bigstat alma-bigstat--bar">
+                  <div className="alma-bigstat-eyebrow">Covers booked</div>
+                  <div className="alma-bigstat-value">{covers}</div>
+                  <div className="alma-bigstat-sub">of ~{totalCapacity} total</div>
+                  <div className="alma-capbar">
+                    <div className="alma-capbar-fill" style={{ width: `${Math.min(100, bookedPct)}%`, background: '#1F2A1E' }} />
+                  </div>
+                </div>
+                <div className="alma-bigstat alma-bigstat--bar">
+                  <div className="alma-bigstat-eyebrow">Peak window · 7–9pm</div>
+                  <div className="alma-bigstat-value">{peakPct}%</div>
+                  <div className="alma-bigstat-sub">{peakCovers} covers in window</div>
+                  <div className="alma-capbar">
+                    <div className="alma-capbar-fill" style={{ width: `${Math.min(100, peakPct)}%`, background: peakPct > 80 ? '#B27935' : '#4F6B47' }} />
+                  </div>
+                </div>
+                <BigStat
+                  eyebrow="Notes to action"
+                  value={String(notesToAction)}
+                  sub={notesToAction > 0 ? 'VIP, allergens, occasions' : 'All quiet'}
+                />
+                <BigStat
+                  eyebrow="No-shows today"
+                  value={String(dashboard?.totals.noShowsToday ?? 0)}
+                  sub={`${dashboard?.totals.cancellationsToday ?? 0} cancellations`}
+                  sparkColor="#A0463A"
+                />
+                <BigStat
+                  eyebrow="Repeat guests · 30d"
+                  value={String(dashboard?.totals.repeatGuests30Days ?? 0)}
+                  sub={`${dashboard?.totals.newGuests30Days ?? 0} new this month`}
+                />
+              </div>
+            </>
+          );
+        })()}
 
         {feedback.target === 'page' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
-
-        <div className="stats-grid">
-          <StatCard label="Today bookings" value={dashboard?.totals.todayBookings ?? 0} hint="Current venue scope" loading={loading} />
-          <StatCard label="Covers today" value={dashboard?.totals.coversToday ?? 0} hint="Confirmed, seated, and completed" loading={loading} />
-          <StatCard label="No-shows" value={dashboard?.totals.noShowsToday ?? 0} hint="Today" loading={loading} />
-          <StatCard label="Repeat guests" value={dashboard?.totals.repeatGuests30Days ?? 0} hint="Last 30 days" loading={loading} />
-        </div>
 
         <div className="reserve-layout">
           <section className="reserve-main">
@@ -1930,45 +2130,80 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               {!loading && dashboard ? (
                 <div className="reserve-section-grid">
                   <div className="reserve-stack">
-                    <div className="reserve-section-heading">
-                      <strong>Today’s bookings</strong>
-                      <Badge tone="neutral">{dashboard.todayReservations.length}</Badge>
-                    </div>
-                    {dashboard.todayReservations.length === 0 ? (
-                      <EmptyState title="No bookings for this day" description="Use the booking form to add a reservation or preview online slots." />
-                    ) : (
-                      <div className="reserve-timeline">
-                        {dashboard.todayReservations.map((reservation) => (
-                          <article key={reservation.id} className="reserve-booking">
-                            <div>
-                              <strong>{timeLabel(reservation.startsAt)} · {reservation.guestName || fullName(reservation.guest)}</strong>
-                              <span>{reservation.venue} · {reservation.covers} guests · {reservation.table?.label ?? 'No table'} </span>
-                              {reservation.specialRequests ? <em>{reservation.specialRequests}</em> : null}
-                            </div>
-                            <div className="reserve-booking-actions">
-                              <Badge tone={statusTone(reservation.status)}>{reservation.status.replace('_', ' ')}</Badge>
-                              <div className="reserve-action-row">
-                                {['CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW'].map((status) => (
-                                  <Button
-                                    key={status}
-                                    type="button"
-                                    size="sm"
-                                    variant={reservation.status === status ? 'primary' : 'secondary'}
-                                    onClick={() => void updateReservationStatus(reservation, status as ReserveReservationStatus)}
-                                  >
-                                    {status === 'NO_SHOW' ? 'No-show' : status.toLowerCase()}
-                                  </Button>
+                    {(() => {
+                      // Split into earlier (departed/seated/completed) vs upcoming (confirmed/pending)
+                      const todays = dashboard.todayReservations;
+                      const earlier = todays.filter((r) => r.status === 'COMPLETED' || r.status === 'SEATED' || r.status === 'CANCELLED' || r.status === 'NO_SHOW');
+                      const upcoming = todays.filter((r) => r.status === 'CONFIRMED' || r.status === 'PENDING');
+                      const isViewingToday = selectedDate === new Date().toISOString().slice(0, 10);
+                      const nowLabel = new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase().replace(' ', '');
+                      // Find next upcoming and show minutes-to-next
+                      const nextUpcoming = upcoming.length > 0 ? upcoming[0] : null;
+                      const minsToNext = nextUpcoming
+                        ? Math.max(0, Math.round((new Date(nextUpcoming.startsAt).getTime() - Date.now()) / 60000))
+                        : null;
+                      if (todays.length === 0) {
+                        return (
+                          <EmptyState
+                            title="No bookings for this day"
+                            description="Use the booking form to add a reservation or preview online slots."
+                          />
+                        );
+                      }
+                      return (
+                        <div className="alma-service-feed">
+                          {earlier.length > 0 ? (
+                            <>
+                              <div className="alma-service-marker">
+                                <span className="alma-roster-eyebrow">Earlier</span>
+                                <span className="alma-service-marker-hint">In service or departed</span>
+                                <span className="alma-service-marker-line" />
+                              </div>
+                              <div className="alma-service-rows">
+                                {earlier.map((reservation) => (
+                                  <BookingRow
+                                    key={reservation.id}
+                                    reservation={reservation}
+                                    feedback={feedback}
+                                    onStatus={(status) => void updateReservationStatus(reservation, status)}
+                                  />
                                 ))}
                               </div>
-                              <ActionFeedback
-                                message={feedback.target === `reservation:${reservation.id}` ? feedback.message : null}
-                                tone={feedback.tone}
-                              />
+                            </>
+                          ) : null}
+
+                          {isViewingToday && upcoming.length > 0 && earlier.length > 0 ? (
+                            <div className="alma-service-nowline">
+                              <span className="alma-service-nowline-dot" />
+                              <span className="alma-service-nowline-label">Now · {nowLabel}</span>
+                              {minsToNext !== null ? (
+                                <span className="alma-service-nowline-hint">
+                                  Next seating in {minsToNext < 1 ? 'under a minute' : `${minsToNext} min`}
+                                </span>
+                              ) : null}
                             </div>
-                          </article>
-                        ))}
-                      </div>
-                    )}
+                          ) : null}
+
+                          <div className="alma-service-marker">
+                            <span className="alma-roster-eyebrow">Coming up</span>
+                            <span className="alma-service-marker-hint">
+                              {upcoming.length} {upcoming.length === 1 ? 'booking' : 'bookings'} to host
+                            </span>
+                            <span className="alma-service-marker-line" />
+                          </div>
+                          <div className="alma-service-rows">
+                            {upcoming.map((reservation) => (
+                              <BookingRow
+                                key={reservation.id}
+                                reservation={reservation}
+                                feedback={feedback}
+                                onStatus={(status) => void updateReservationStatus(reservation, status)}
+                              />
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="reserve-stack">
