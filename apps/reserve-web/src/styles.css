@@ -146,7 +146,7 @@
   gap: 4px;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--color-surface-muted);
 }
 
@@ -173,7 +173,7 @@
 .reserve-guest-row.active,
 .reserve-slot-button.active {
   border-color: var(--color-accent);
-  background: #F5DCE4;
+  background: #F5DCCE;
 }
 
 .reserve-inline-check {
@@ -203,7 +203,7 @@
 .reserve-table-list span {
   padding: 9px 10px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 0;
   background: var(--color-surface-muted);
 }
 
@@ -575,12 +575,12 @@
   gap: 22px;
   align-items: center;
   padding: clamp(20px, 3vw, 30px);
-  border: 1px solid rgba(168, 34, 78, 0.18);
-  border-radius: 24px;
+  border: 1px solid rgba(20, 36, 26, 0.16);
+  border-radius: 0;
   background:
-    linear-gradient(135deg, rgba(168, 34, 78, 0.06), rgba(255, 248, 250, 0.96)),
-    rgba(255, 248, 250, 0.98);
-  box-shadow: 0 24px 90px rgba(74, 8, 32, 0.12);
+    linear-gradient(135deg, rgba(20, 36, 26, 0.06), #FAF6EE),
+    #FAF6EE;
+  box-shadow: 0 24px 90px rgba(20, 36, 26, 0.10);
 }
 
 .reserve-public-confirmation-icon {
@@ -589,8 +589,8 @@
   width: 64px;
   height: 64px;
   border-radius: 50%;
-  background: #A8224E;
-  color: #fff8fa;
+  background: #14241A;
+  color: #FAF6EE;
   font-size: 32px;
   font-weight: 800;
   box-shadow: 0 12px 28px rgba(74, 8, 32, 0.28);
@@ -604,7 +604,7 @@
 
 .reserve-public-confirmation-text h2 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: clamp(24px, 3vw, 32px);
   font-weight: 400;
@@ -635,9 +635,9 @@
 
 .reserve-public-steps li {
   padding: 9px 14px;
-  border: 1px solid rgba(168, 34, 78, 0.16);
+  border: 1px solid rgba(20, 36, 26, 0.14);
   border-radius: 999px;
-  background: rgba(255, 248, 250, 0.78);
+  background: transparent;
   color: rgba(74, 8, 32, 0.78);
   font-size: 13px;
   font-weight: 800;
@@ -648,10 +648,10 @@
   overflow: hidden;
   min-height: 440px;
   margin: 0;
-  border: 1px solid rgba(168, 34, 78, 0.16);
-  border-radius: 26px;
-  background: #4A0820;
-  box-shadow: 0 28px 90px rgba(74, 8, 32, 0.18);
+  border: 1px solid rgba(20, 36, 26, 0.14);
+  border-radius: 0;
+  background: #14241A;
+  box-shadow: 0 28px 90px rgba(20, 36, 26, 0.15);
 }
 
 .reserve-public-image-card img {
@@ -677,7 +677,7 @@
   z-index: 1;
   display: grid;
   gap: 4px;
-  color: #fff8fa;
+  color: #FAF6EE;
 }
 
 .reserve-public-image-card figcaption span {
@@ -696,11 +696,12 @@
 
 .reserve-public-booking-panel,
 .reserve-public-section {
-  padding: clamp(18px, 3vw, 30px);
-  border: 1px solid rgba(31, 53, 36, 0.1);
-  border-radius: 20px;
-  background: #F8F6F1;
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+  padding: clamp(28px, 4vw, 44px);
+  border: 0;
+  border-top: 1px solid rgba(20, 36, 26, 0.12);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .reserve-public-search,
@@ -714,10 +715,11 @@
   grid-template-columns: minmax(0, 0.8fr) minmax(360px, 1.2fr);
   gap: clamp(18px, 4vw, 36px);
   align-items: stretch;
-  padding: clamp(20px, 3.5vw, 32px);
-  border: 1px solid rgba(20, 36, 26, 0.08);
-  border-radius: 20px;
-  background: #F8F6F1;
+  padding: clamp(28px, 4vw, 44px) 0;
+  border: 0;
+  border-top: 1px solid rgba(20, 36, 26, 0.12);
+  border-radius: 0;
+  background: transparent;
 }
 
 .reserve-public-venue-picker h2 {
@@ -750,35 +752,37 @@
   grid-template-columns: 92px minmax(0, 1fr);
   gap: 14px;
   min-height: 132px;
-  padding: 12px;
+  padding: 14px;
   cursor: pointer;
   text-align: left;
-  border: 1px solid rgba(168, 34, 78, 0.16);
-  border-radius: 20px;
-  background: rgba(255, 248, 250, 0.88);
-  color: #4A0820;
-  box-shadow: 0 14px 34px rgba(74, 8, 32, 0.08);
+  border: 1px solid rgba(20, 36, 26, 0.14);
+  border-radius: 0;
+  background: transparent;
+  color: #14241A;
+  box-shadow: none;
   align-items: stretch;
+  transition: border-color 200ms ease, background 200ms ease, transform 200ms ease;
 }
 
 .reserve-venue-button:hover,
 .reserve-venue-button:focus-visible {
-  border-color: rgba(168, 34, 78, 0.48);
+  border-color: #14241A;
+  background: rgba(245, 220, 206, 0.18);
   outline: none;
   transform: translateY(-1px);
 }
 
 .reserve-venue-button.active {
-  border-color: #A8224E;
-  background: #A8224E;
-  color: #fff8fa;
+  border-color: #14241A;
+  background: #14241A;
+  color: #FAF6EE;
 }
 
 .reserve-venue-thumb {
   width: 92px;
   height: 100%;
   min-height: 108px;
-  border-radius: 14px;
+  border-radius: 0;
   object-fit: cover;
 }
 
@@ -806,7 +810,7 @@
 
 .reserve-public-flow-heading h2 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-size: 22px;
   letter-spacing: 0;
 }
@@ -830,8 +834,8 @@
   min-height: 48px;
   border-radius: 999px;
   padding-inline: 28px;
-  background: #A8224E;
-  border-color: #A8224E;
+  background: #14241A;
+  border-color: #14241A;
 }
 
 .reserve-public-help-note {
@@ -850,8 +854,8 @@
 .reserve-slot-button {
   text-align: left;
   cursor: pointer;
-  border-radius: 16px;
-  background: #fff8fa;
+  border-radius: 0;
+  background: #FAF6EE;
 }
 
 .reserve-slot-grid.compact {
@@ -886,21 +890,21 @@
   display: flex;
   align-items: flex-end;
   padding: clamp(24px, 5vw, 56px);
-  border-radius: 30px;
+  border-radius: 0;
   background-position: center;
   background-size: cover;
-  box-shadow: 0 30px 90px rgba(74, 8, 32, 0.18);
+  box-shadow: 0 30px 90px rgba(20, 36, 26, 0.15);
 }
 
 .reserve-public-hero-copy {
   width: min(680px, 100%);
-  color: #fff8fa;
+  color: #FAF6EE;
 }
 
 .reserve-public-hero-copy .reserve-public-eyebrow,
 .reserve-public-hero-copy h1,
 .reserve-public-hero-copy p {
-  color: #fff8fa;
+  color: #FAF6EE;
 }
 
 .reserve-public-hero-copy p:not(.reserve-public-eyebrow) {
@@ -950,7 +954,7 @@
   border: 0;
   border-radius: 999px;
   background: transparent;
-  color: #4A0820;
+  color: #14241A;
   cursor: pointer;
   text-align: left;
 }
@@ -965,12 +969,12 @@
 }
 
 .reserve-venue-tab.active {
-  background: #A8224E;
-  color: #fff8fa;
+  background: #14241A;
+  color: #FAF6EE;
 }
 
 .reserve-venue-tab.active small {
-  color: rgba(255, 248, 250, 0.78);
+  color: transparent;
 }
 
 .reserve-public-floating-panel .reserve-public-search-grid {
@@ -988,9 +992,9 @@
   position: sticky;
   top: 18px;
   overflow: hidden;
-  border: 1px solid rgba(168, 34, 78, 0.14);
-  border-radius: 24px;
-  background: rgba(255, 248, 250, 0.96);
+  border: 1px solid rgba(20, 36, 26, 0.12);
+  border-radius: 0;
+  background: #FAF6EE;
   box-shadow: 0 24px 90px rgba(74, 8, 32, 0.1);
 }
 
@@ -1010,7 +1014,7 @@
 .reserve-public-info-card h2,
 .reserve-public-ready-state h2 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 30px;
   font-weight: 400;
@@ -1021,7 +1025,7 @@
 .reserve-public-ready-state p,
 .reserve-public-selection-summary {
   margin: 0;
-  color: rgba(74, 8, 32, 0.72);
+  color: rgba(20, 36, 26, 0.72);
   line-height: 1.55;
 }
 
@@ -1035,11 +1039,11 @@
   display: grid;
   gap: 2px;
   padding-top: 10px;
-  border-top: 1px solid rgba(168, 34, 78, 0.12);
+  border-top: 1px solid rgba(20, 36, 26, 0.12);
 }
 
 .reserve-public-info-card dt {
-  color: rgba(74, 8, 32, 0.62);
+  color: rgba(20, 36, 26, 0.62);
   font-size: 11px;
   font-weight: 900;
   letter-spacing: 0.14em;
@@ -1048,13 +1052,13 @@
 
 .reserve-public-info-card dd {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-weight: 800;
 }
 
 .reserve-public-info-card a,
 .reserve-change-time {
-  color: #A8224E;
+  color: #14241A;
   font-weight: 900;
   text-decoration: none;
 }
@@ -1074,7 +1078,7 @@
 
 .reserve-slot-date-group h3 {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-size: 15px;
 }
 
@@ -1094,7 +1098,7 @@
 
 .reserve-alternate-dates p {
   margin: 0;
-  color: #4A0820;
+  color: #14241A;
   font-weight: 900;
 }
 
@@ -1106,10 +1110,10 @@
 
 .reserve-alternate-dates button {
   min-height: 48px;
-  border: 1px solid rgba(168, 34, 78, 0.16);
+  border: 1px solid rgba(20, 36, 26, 0.14);
   border-radius: 999px;
-  background: #fff8fa;
-  color: #4A0820;
+  background: #FAF6EE;
+  color: #14241A;
   cursor: pointer;
 }
 
@@ -1152,7 +1156,7 @@
   }
 
   .reserve-public-floating-panel {
-    border-radius: 24px;
+    border-radius: 0;
   }
 
   .reserve-public-floating-panel .reserve-public-search-grid {
@@ -1206,7 +1210,7 @@
 
   .reserve-public-booking-panel,
   .reserve-public-section {
-    border-radius: 20px;
+    border-radius: 0;
     padding: 16px;
   }
 
@@ -1223,7 +1227,7 @@
   }
 
   .reserve-public-image-card {
-    border-radius: 22px;
+    border-radius: 0;
   }
 
   .reserve-public-image-card figcaption {
@@ -1244,7 +1248,7 @@
   .reserve-public-hero {
     min-height: 330px;
     padding: 100px 18px 22px;
-    border-radius: 24px;
+    border-radius: 0;
   }
 
   .reserve-public-layout {
@@ -1252,12 +1256,12 @@
   }
 
   .reserve-venue-tabs {
-    border-radius: 18px;
+    border-radius: 0;
     flex-direction: column;
   }
 
   .reserve-venue-tab {
-    border-radius: 16px;
+    border-radius: 0;
   }
 
   .reserve-public-floating-panel .btn-primary,
@@ -1271,9 +1275,9 @@
 .reserve-guest-match-panel {
   margin-top: 18px;
   padding: 14px 16px;
-  border: 1px solid rgba(168, 34, 78, 0.18);
-  border-radius: 14px;
-  background: linear-gradient(135deg, rgba(168, 34, 78, 0.04), rgba(255, 248, 250, 0.96));
+  border: 1px solid rgba(20, 36, 26, 0.16);
+  border-radius: 0;
+  background: linear-gradient(135deg, rgba(20, 36, 26, 0.04), #FAF6EE);
 }
 
 .reserve-guest-match-head {
@@ -1288,7 +1292,7 @@
   display: block;
   font-size: 13px;
   font-weight: 700;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .reserve-guest-match-head small {
@@ -1301,8 +1305,8 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
   padding: 10px 0;
-  border-top: 1px solid rgba(168, 34, 78, 0.14);
-  border-bottom: 1px solid rgba(168, 34, 78, 0.14);
+  border-top: 1px solid rgba(20, 36, 26, 0.12);
+  border-bottom: 1px solid rgba(20, 36, 26, 0.12);
 }
 
 .reserve-guest-match-stats > div {
@@ -1321,7 +1325,7 @@
 .reserve-guest-match-stats strong {
   font-size: 16px;
   font-weight: 700;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .reserve-guest-match-stats strong.is-warning {
@@ -1350,13 +1354,13 @@
   align-items: center;
   padding: 7px 10px;
   background: rgba(255, 255, 255, 0.7);
-  border-radius: 8px;
+  border-radius: 0;
   font-size: 12.5px;
 }
 
 .reserve-guest-match-row > span:first-child {
   font-weight: 700;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .reserve-guest-match-row > span:nth-child(2) {
@@ -1368,7 +1372,7 @@
   gap: 4px;
   margin-top: 10px;
   font-size: 12.5px;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .reserve-guest-match-notes p {
@@ -1376,7 +1380,7 @@
 }
 
 .reserve-guest-match-notes strong {
-  color: #4A0820;
+  color: #14241A;
 }
 
 /* Waitlist */
@@ -1402,12 +1406,12 @@
   align-items: center;
   padding: 12px 14px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--color-surface);
 }
 
 .waitlist-row.is-waiting {
-  border-left: 4px solid #A8224E;
+  border-left: 4px solid #14241A;
 }
 
 .waitlist-row.is-seated {
@@ -1459,9 +1463,9 @@
 /* Function / event enquiry — collapsible panel on the public widget */
 .function-enquiry-panel {
   margin-top: 14px;
-  border: 1px solid rgba(168, 34, 78, 0.24);
-  border-radius: 16px;
-  background: rgba(255, 248, 250, 0.94);
+  border: 1px solid rgba(20, 36, 26, 0.22);
+  border-radius: 0;
+  background: #FAF6EE;
   overflow: hidden;
 }
 
@@ -1479,7 +1483,7 @@
 }
 
 .function-enquiry-toggle:hover {
-  background: rgba(168, 34, 78, 0.04);
+  background: rgba(20, 36, 26, 0.04);
 }
 
 .function-enquiry-toggle strong {
@@ -1487,7 +1491,7 @@
   font-family: Georgia, 'Times New Roman', serif;
   font-size: 18px;
   font-weight: 400;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .function-enquiry-toggle small {
@@ -1499,7 +1503,7 @@
 
 .function-enquiry-chevron {
   font-size: 14px;
-  color: #A8224E;
+  color: #14241A;
   font-weight: 800;
 }
 
@@ -1514,17 +1518,17 @@
   align-items: center;
   margin-top: 14px;
   padding: 18px 22px;
-  border: 1px solid rgba(168, 34, 78, 0.24);
-  border-radius: 16px;
-  background: linear-gradient(135deg, rgba(168, 34, 78, 0.06), rgba(255, 248, 250, 0.98));
+  border: 1px solid rgba(20, 36, 26, 0.22);
+  border-radius: 0;
+  background: linear-gradient(135deg, rgba(20, 36, 26, 0.06), #FAF6EE);
 }
 
 .function-enquiry-success-icon {
   width: 44px;
   height: 44px;
   border-radius: 50%;
-  background: #A8224E;
-  color: #fff8fa;
+  background: #14241A;
+  color: #FAF6EE;
   display: grid;
   place-items: center;
   font-size: 22px;
@@ -1534,12 +1538,12 @@
 .function-enquiry-success strong {
   display: block;
   font-size: 15px;
-  color: #4A0820;
+  color: #14241A;
 }
 
 .function-enquiry-success p {
   margin: 4px 0 0;
-  color: rgba(74, 8, 32, 0.72);
+  color: rgba(20, 36, 26, 0.72);
   font-size: 13.5px;
 }
 
@@ -1555,9 +1559,9 @@
 .floor-plan-canvas {
   position: relative;
   border: 2px dashed var(--color-border);
-  border-radius: 14px;
+  border-radius: 0;
   background:
-    radial-gradient(circle at 20% 30%, rgba(168, 34, 78, 0.04), transparent 45%),
+    radial-gradient(circle at 20% 30%, rgba(20, 36, 26, 0.04), transparent 45%),
     repeating-linear-gradient(
       45deg,
       rgba(15, 23, 42, 0.02) 0,
@@ -1574,7 +1578,7 @@
 .floor-plan-canvas.is-editing {
   border-color: var(--color-accent);
   background:
-    radial-gradient(circle at 20% 30%, rgba(168, 34, 78, 0.06), transparent 45%),
+    radial-gradient(circle at 20% 30%, rgba(20, 36, 26, 0.06), transparent 45%),
     var(--color-surface);
 }
 
@@ -1594,7 +1598,7 @@
   min-width: 90px;
   padding: 8px 10px;
   border: 2px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--color-surface);
   box-shadow: 0 4px 12px rgba(15, 23, 42, 0.08);
   transform: translate(-50%, -50%);
@@ -1655,7 +1659,7 @@
   gap: 8px;
   padding: 14px;
   border: 1px solid var(--color-border);
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--color-surface-muted);
   max-height: 520px;
   overflow-y: auto;
@@ -1674,7 +1678,7 @@
   gap: 2px;
   padding: 10px 12px;
   border: 1px solid var(--color-border);
-  border-radius: 10px;
+  border-radius: 0;
   background: var(--color-surface);
   cursor: grab;
   transition: border-color 100ms ease, box-shadow 100ms ease, transform 80ms ease;
