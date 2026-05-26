@@ -1,6 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { requireAdmin } from '../lib/auth-middleware.js';
+import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { integrationService } from '../services/integration.service.js';
+import { deputyService } from '../services/deputy.service.js';
 
 export const integrationsRouter = Router();
 
@@ -17,6 +18,29 @@ integrationsRouter.get('/:provider/callback', async (req, res, next) => {
   try {
     const redirectUrl = await integrationService.handleCallback(String(req.params.provider), req.query);
     res.redirect(302, redirectUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Deputy stop-gap import routes — manager-accessible so they can refresh
+// the roster while Alma roster is being tested. Service enforces its own
+// role checks on top of requireManager.
+integrationsRouter.get('/deputy/status', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await deputyService.getStatus());
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/deputy/import-roster', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+    const filename = typeof req.body?.filename === 'string' ? req.body.filename : undefined;
+    const dryRun = Boolean(req.body?.dryRun);
+    res.json(await deputyService.importRosterCsv({ csv, filename, dryRun, actor: req.user }));
   } catch (error) {
     next(error);
   }

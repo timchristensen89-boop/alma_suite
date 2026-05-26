@@ -8591,6 +8591,8 @@ function RosterPage({
   // overlay on roster cells so managers don't have to cross-check leave
   // before scheduling a shift.
   const [leaveOverlays, setLeaveOverlays] = useState<StaffLeaveRequest[]>([]);
+  // Deputy stop-gap import modal — open via the editorial header button.
+  const [deputyImportOpen, setDeputyImportOpen] = useState(false);
   const [draggingShiftId, setDraggingShiftId] = useState<string | null>(null);
   const [staffDropTargetShiftId, setStaffDropTargetShiftId] = useState<string | null>(null);
   const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
@@ -9679,6 +9681,14 @@ function RosterPage({
               >
                 This week
               </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                onClick={() => setDeputyImportOpen(true)}
+                title="Import the latest Deputy roster CSV — stop-gap until Alma roster is fully tested."
+              >
+                Import from Deputy
+              </button>
             </div>
           </div>
         </div>
@@ -10724,6 +10734,198 @@ function RosterPage({
           </div>
         );
       })() : null}
+
+      {/* Deputy stop-gap import modal — opens when "Import from Deputy" is
+          clicked in the editorial roster header. */}
+      {deputyImportOpen ? (
+        <DeputyImportModal
+          onClose={() => setDeputyImportOpen(false)}
+          onSuccess={async () => {
+            await reload(weekStart, weekEnd);
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// Deputy roster CSV importer modal. Takes a CSV paste or file upload,
+// runs a dry-run preview first, then the real import. Stays a stop-gap
+// until Alma roster is fully tested.
+function DeputyImportModal({ onClose, onSuccess }: { onClose: () => void; onSuccess: () => Promise<void> | void }) {
+  const [csv, setCsv] = useState('');
+  const [filename, setFilename] = useState('');
+  const [preview, setPreview] = useState<{
+    source: string;
+    rowsRead: number;
+    shiftsCreated: number;
+    previousImportedShiftsDeleted: number;
+    staffCreated: number;
+    staffMatched: number;
+    unallocatedShifts: number;
+    dateRange: { start: string | null; end: string | null };
+    skippedRows: Array<{ row: number; reason: string }>;
+  } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTone, setMessageTone] = useState<'success' | 'error'>('success');
+  const [step, setStep] = useState<'paste' | 'preview' | 'done'>('paste');
+
+  async function handleFile(file: File) {
+    try {
+      const text = await file.text();
+      setCsv(text);
+      setFilename(file.name);
+      setMessage(null);
+    } catch {
+      setMessageTone('error');
+      setMessage('Could not read that file. Try copy-pasting the CSV content instead.');
+    }
+  }
+
+  async function runPreview() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api<typeof preview>('/api/integrations/deputy/import-roster', {
+        method: 'POST',
+        body: JSON.stringify({ csv, filename: filename || undefined, dryRun: true })
+      });
+      setPreview(result);
+      setStep('preview');
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not preview the Deputy import.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runImport() {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api<typeof preview>('/api/integrations/deputy/import-roster', {
+        method: 'POST',
+        body: JSON.stringify({ csv, filename: filename || undefined, dryRun: false })
+      });
+      setPreview(result);
+      setStep('done');
+      setMessageTone('success');
+      setMessage(`Imported ${result?.shiftsCreated ?? 0} shifts.`);
+      await onSuccess();
+    } catch (err) {
+      setMessageTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not run the Deputy import.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="staff-modal-backdrop" role="dialog" aria-labelledby="deputy-import-title" onClick={(event) => {
+      // Click on backdrop closes, but clicks inside the dialog don't bubble.
+      if (event.target === event.currentTarget && !busy) onClose();
+    }}>
+      <div className="staff-modal staff-modal--deputy">
+        <header className="staff-modal-head">
+          <span className="suite-feedback-eyebrow">Stop-gap integration</span>
+          <h2 id="deputy-import-title" className="staff-modal-title">Import roster from Deputy</h2>
+          <p className="staff-modal-sub">
+            Deputy stays the source of truth until Alma roster is fully tested.
+            Drop the latest CSV here to refresh shifts. Re-imports of the same file
+            replace previous Deputy shifts in the same date range so they're idempotent.
+          </p>
+        </header>
+
+        {step === 'paste' ? (
+          <div className="staff-modal-body">
+            <label className="field">
+              <span className="field-label">Upload CSV</span>
+              <input
+                type="file"
+                accept=".csv,text/csv"
+                disabled={busy}
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = '';
+                  if (file) void handleFile(file);
+                }}
+              />
+            </label>
+            <label className="field">
+              <span className="field-label">Or paste CSV content</span>
+              <textarea
+                value={csv}
+                onChange={(event) => setCsv(event.currentTarget.value)}
+                placeholder="Paste the CSV exported from Deputy (headers included)…"
+                rows={8}
+                className="field-control"
+                style={{ fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace', fontSize: '12px' }}
+              />
+            </label>
+            {filename ? <p className="subtle">Loaded: {filename}</p> : null}
+          </div>
+        ) : null}
+
+        {step === 'preview' && preview ? (
+          <div className="staff-modal-body">
+            <div className="stats-grid">
+              <StatCard label="Rows read" value={preview.rowsRead} hint="Total CSV rows" />
+              <StatCard label="Shifts to create" value={preview.shiftsCreated || (preview.rowsRead - preview.skippedRows.length)} hint="After validation" />
+              <StatCard label="Staff matched" value={preview.staffMatched} hint="Existing profiles" />
+              <StatCard label="Staff to create" value={preview.staffCreated} hint="New from this CSV" />
+            </div>
+            {preview.dateRange.start ? (
+              <p className="subtle">
+                Range: {new Date(preview.dateRange.start).toLocaleDateString()} → {preview.dateRange.end ? new Date(preview.dateRange.end).toLocaleDateString() : '—'}
+              </p>
+            ) : null}
+            {preview.skippedRows.length ? (
+              <div className="alma-preview-banner" role="status">
+                <strong>{preview.skippedRows.length} rows will be skipped</strong>
+                <span>{preview.skippedRows.slice(0, 3).map((r) => `Row ${r.row}: ${r.reason}`).join(' · ')}{preview.skippedRows.length > 3 ? ' …' : ''}</span>
+              </div>
+            ) : null}
+            <p className="subtle">
+              On confirm, previously-imported Deputy shifts in this date range with the same filename will be deleted and re-created so the data stays consistent with the latest Deputy export.
+            </p>
+          </div>
+        ) : null}
+
+        {step === 'done' && preview ? (
+          <div className="staff-modal-body">
+            <div className="alma-preview-banner" role="status">
+              <strong>Done — Deputy roster imported.</strong>
+              <span>
+                {preview.shiftsCreated} shifts created · {preview.previousImportedShiftsDeleted} replaced ·
+                {preview.staffCreated} new staff · {preview.staffMatched} matched · {preview.unallocatedShifts} unallocated
+              </span>
+            </div>
+            <p className="subtle">
+              The roster grid will refresh once you close this dialog.
+            </p>
+          </div>
+        ) : null}
+
+        {message ? <ActionFeedback message={message} tone={messageTone} /> : null}
+
+        <footer className="staff-modal-actions">
+          <Button type="button" variant="ghost" onClick={onClose} disabled={busy}>
+            {step === 'done' ? 'Close' : 'Cancel'}
+          </Button>
+          {step === 'paste' ? (
+            <Button type="button" onClick={() => void runPreview()} disabled={busy || !csv.trim()}>
+              {busy ? 'Checking…' : 'Preview import'}
+            </Button>
+          ) : null}
+          {step === 'preview' ? (
+            <Button type="button" onClick={() => void runImport()} disabled={busy}>
+              {busy ? 'Importing…' : 'Confirm import'}
+            </Button>
+          ) : null}
+        </footer>
+      </div>
     </div>
   );
 }
@@ -12123,14 +12325,50 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         }
       />
 
-      {/* Week + venue + breakage controls */}
+      {/* Tips week navigator — same editorial style as the roster board so
+          the two pages feel like one tool. Venue + breakage live below. */}
+      <div className="alma-roster-header alma-roster-header--tight">
+        <div className="alma-roster-header-titles">
+          <span className="alma-roster-eyebrow">Staff · Tips</span>
+          <div className="alma-roster-title-row">
+            <span className="alma-roster-title">Week of</span>
+            <span className="alma-roster-title is-italic">{formatRange(weekStart, addDays(weekEnd, -1))}</span>
+            <div className="alma-roster-weeknav">
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Previous week"
+                onClick={() => setWeekStart(addDays(weekStart, -7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="15 6 9 12 15 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Next week"
+                onClick={() => setWeekStart(addDays(weekStart, 7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                onClick={() => setWeekStart(startOfWeek(new Date()))}
+              >
+                This week
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Venue + breakage controls live just below the week selector. */}
       <Card padding="tight">
         <div className="tips-controls-row">
-          <div className="roster-week-controls" aria-label="Tips week controls">
-            <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, -7))}>‹</Button>
-            <strong>{formatRange(weekStart, addDays(weekEnd, -1))}</strong>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>›</Button>
-          </div>
           <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
           <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
         </div>

@@ -8472,6 +8472,12 @@ a.suite-app-tile:hover {
   flex-wrap: wrap;
 }
 
+/* Tighter variant used on pages that don't need as much top breathing room
+   as the roster board itself (e.g. Tips). */
+.alma-roster-header.alma-roster-header--tight {
+  margin-bottom: 8px;
+}
+
 .alma-roster-header-titles {
   display: flex;
   flex-direction: column;
@@ -10555,6 +10561,60 @@ a.suite-app-tile:hover {
     flex: 1 1 100%;
     justify-content: flex-end;
   }
+}
+
+/* Generic centered modal used by the Deputy roster import flow.
+   Backdrop dims the page; the dialog floats over with padded sections. */
+.staff-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 80;
+  padding: 16px;
+}
+.staff-modal {
+  width: 100%;
+  max-width: 640px;
+  max-height: 90vh;
+  overflow-y: auto;
+  background: #FFFFFF;
+  border-radius: 18px;
+  box-shadow: 0 28px 60px rgba(15, 23, 42, 0.22), 0 4px 10px rgba(15, 23, 42, 0.08);
+  padding: 22px 24px;
+}
+.staff-modal-head {
+  margin-bottom: 12px;
+}
+.staff-modal-title {
+  margin: 4px 0 4px;
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 22px;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+}
+.staff-modal-sub {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: rgba(31, 53, 36, 0.65);
+  line-height: 1.5;
+}
+.staff-modal-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 14px 0;
+}
+.staff-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 14px;
 }
 
 /* SuiteFeedbackWidget (#56) — small pill in the TopBar with a popover panel
