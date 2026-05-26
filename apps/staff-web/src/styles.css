@@ -3705,28 +3705,59 @@
   min-height: 56px;
 }
 
+/* Venue header cells — show per-venue hours / cost / wage% in the
+   same voice as the top day-summary strip, but on the cream venue
+   surface so they read as "this venue's totals". Hard reset of any
+   inherited grid/flex layout from .deputy-schedule-cell so there's
+   no class-conflict cascade. */
 .deputy-venue-cell {
+  display: flex !important;
+  flex-direction: column !important;
+  align-items: flex-start !important;
+  justify-content: center !important;
+  gap: 1px;
+  padding: 5px 10px !important;
+  min-height: 44px !important;
   border-top: 1px solid var(--color-border) !important;
   background: var(--color-surface, #F8F6F1);
 }
 
-/* Per-venue day-summary cell — uses the same hours / cost / wage%
-   layout as the top global summary, but tinted onto the venue surface
-   so it reads as "this venue's totals" instead of a shift count. */
-.deputy-venue-cell.deputy-day-summary {
-  display: flex !important;
-  flex-direction: column !important;
-  align-items: flex-start !important;
-  place-items: stretch !important;
-  justify-content: center;
-  gap: 1px;
-  padding: 5px 10px;
-  min-height: 44px;
-  background: var(--color-surface, #F8F6F1);
+.deputy-venue-cell.is-weekend {
+  background: rgba(26, 34, 56, 0.06);
 }
 
-.deputy-venue-cell.deputy-day-summary.is-weekend {
-  background: rgba(26, 34, 56, 0.06);
+.deputy-venue-cell-hours {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.005em;
+  color: var(--color-text);
+  line-height: 1.1;
+}
+
+.deputy-venue-cell-cost {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.1;
+}
+
+.deputy-venue-cell-pct {
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  line-height: 1.1;
+}
+
+.deputy-venue-cell-pct.is-over { color: #6E2419; }
+.deputy-venue-cell-pct.is-under { color: #2F4129; }
+
+.deputy-venue-cell-closed {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 12px;
+  color: rgba(31, 53, 36, 0.4);
 }
 
 /* Weekend tint on the day-summary boxes — same ink family as the

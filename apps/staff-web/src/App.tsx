@@ -9523,7 +9523,7 @@ function RosterPage({
         >
           Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
         </Button>
-        <Button type="button" size="sm" onClick={() => newShift()}>
+        <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
           Add shift
         </Button>
         <button
@@ -9887,18 +9887,22 @@ function RosterPage({
                         return (
                           <div
                             key={`${row.id}-${day.toISOString()}`}
-                            className={`deputy-schedule-cell deputy-venue-cell deputy-day-summary ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
+                            className={`deputy-schedule-cell deputy-venue-cell ${isClosed ? 'is-closed' : ''} ${isWeekend ? 'is-weekend' : ''}`}
                           >
                             {isClosed ? (
-                              <span className="deputy-day-summary-closed">Closed</span>
+                              <span className="deputy-venue-cell-closed">Closed</span>
                             ) : (
                               <>
-                                <span className="deputy-day-summary-hours">{roundHours(dayHours)}</span>
+                                <span className="deputy-venue-cell-hours">{roundHours(dayHours)}h</span>
                                 {hasCost ? (
-                                  <span className={`deputy-day-summary-cost ${isOver ? 'is-over' : 'is-under'}`}>
-                                    {formatCents(dayCostCents)}
-                                    {wagePercent > 0 ? <em>{wagePercent.toFixed(0)}%</em> : null}
-                                  </span>
+                                  <>
+                                    <span className="deputy-venue-cell-cost">{formatCents(dayCostCents)}</span>
+                                    {wagePercent > 0 ? (
+                                      <span className={`deputy-venue-cell-pct ${isOver ? 'is-over' : 'is-under'}`}>
+                                        {wagePercent.toFixed(0)}%
+                                      </span>
+                                    ) : null}
+                                  </>
                                 ) : null}
                               </>
                             )}
@@ -10555,7 +10559,7 @@ function MobileRosterView({
             {venueLabel} · {selectedSummary?.shifts ?? shifts.length} shifts
           </span>
         </div>
-        <Button type="button" size="sm" onClick={onAddShift}>
+        <Button type="button" size="sm" variant="secondary" onClick={onAddShift}>
           Add shift
         </Button>
       </div>
