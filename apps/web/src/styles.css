@@ -8369,6 +8369,123 @@ a.suite-app-tile:hover {
   align-items: center;
 }
 
+/* Tinted BigStat variants — surface for KPI cards that represent an
+   issue (over budget, coverage gap, etc.). Subtle warm tint so the
+   eye is drawn without screaming. */
+.alma-bigstat--warn {
+  background: linear-gradient(180deg, #F8F6F1 0%, #FAEBC8 100%);
+  border-color: rgba(178, 121, 53, 0.28);
+}
+
+.alma-bigstat--danger {
+  background: linear-gradient(180deg, #F8F6F1 0%, #F2D6CE 100%);
+  border-color: rgba(160, 70, 58, 0.28);
+}
+
+/* Forecast variance pill — sits on the wage cost BigStat */
+.alma-roster-variance {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px 3px;
+  border-radius: 9999px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.alma-roster-variance.is-success { background: #E4EBDB; color: #2F4129; }
+.alma-roster-variance.is-warn    { background: #F6E5CC; color: #6F4915; }
+.alma-roster-variance.is-danger  { background: #F2D6CE; color: #6E2419; }
+.alma-roster-variance.is-neutral { background: rgba(31, 53, 36, 0.06); color: rgba(31, 53, 36, 0.55); }
+
+/* Historical data modal */
+.alma-historical-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 250;
+  background: rgba(31, 53, 36, 0.42);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: grid;
+  place-items: center;
+  padding: 32px 24px;
+  overflow-y: auto;
+}
+
+.alma-historical-modal-panel {
+  width: min(960px, 100%);
+  background: #FAF8F3;
+  border: 1px solid rgba(31, 53, 36, 0.08);
+  border-radius: 22px;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.7) inset,
+    0 22px 60px -20px rgba(31, 53, 36, 0.4);
+  overflow: hidden;
+}
+
+.alma-historical-modal-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 22px 26px 18px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.08);
+}
+
+.alma-historical-modal-title {
+  margin: 6px 0 4px;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 28px;
+  font-weight: 500;
+  color: #000;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+
+.alma-historical-modal-sub {
+  margin: 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: rgba(31, 53, 36, 0.6);
+}
+
+.alma-historical-modal-close {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  color: rgba(31, 53, 36, 0.55);
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease;
+}
+
+.alma-historical-modal-close:hover {
+  background: rgba(31, 53, 36, 0.04);
+  border-color: rgba(31, 53, 36, 0.3);
+  color: #1F3524;
+}
+
+.alma-historical-modal-close svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+}
+
+.alma-historical-modal-body {
+  padding: 22px 26px 26px;
+  display: grid;
+  gap: 16px;
+}
+
 /* --- Editorial roster toolbar (consolidated filter strip) ------------- */
 
 .alma-roster-toolbar {

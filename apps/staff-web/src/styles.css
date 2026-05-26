@@ -4075,6 +4075,14 @@
   font-size: 13px;
 }
 
+/* Blocking variant — used when leave or overlapping shift hard-prevents
+   the save (no override). Reads as a stop, not a warn. */
+.roster-conflict-warning.is-blocking {
+  border-color: rgba(160, 70, 58, 0.4);
+  background: #F2D6CE;
+  color: #6E2419;
+}
+
 .deputy-schedule-empty {
   grid-column: 1 / -1;
   padding: 28px;

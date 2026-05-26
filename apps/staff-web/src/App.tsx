@@ -8629,7 +8629,19 @@ function RosterPage({
       );
     });
   }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
-  const canSaveShift = Boolean(staffProfileId && date && startTime && endTime && selectedShiftHours);
+  // Leave clashes — if the staff is on approved/pending leave during the
+  // shift window, surface it so we can hard-block the save.
+  const shiftLeaveClashes = useMemo(() => {
+    if (!selectedShiftHours || !staffProfileId) return [];
+    const start = selectedShiftHours.startsAt;
+    return leaveOverlays.filter((leave) => {
+      if (leave.staffProfileId !== staffProfileId) return false;
+      if (leave.status === 'CANCELLED' || leave.status === 'DECLINED') return false;
+      return leaveOverlapsDay(leave, start);
+    });
+  }, [leaveOverlays, selectedShiftHours, staffProfileId]);
+  const hasHardClash = shiftConflicts.length > 0 || shiftLeaveClashes.length > 0;
+  const canSaveShift = Boolean(staffProfileId && date && startTime && endTime && selectedShiftHours) && !hasHardClash;
   const scheduleRows: RosterScheduleRow[] = useMemo(() =>
     viewMode === 'team'
       ? activeStaff
@@ -8841,12 +8853,24 @@ function RosterPage({
       setMessage('Check the shift date and times.');
       return;
     }
-    if (
-      shiftConflicts.length > 0 &&
-      !window.confirm(
-        `${selectedMember?.firstName ?? 'This team member'} already has ${shiftConflicts.length} overlapping shift${shiftConflicts.length === 1 ? '' : 's'}. Save anyway?`
-      )
-    ) {
+    // Hard block — staff on leave can't be rostered for this window.
+    // No prompt-to-override, they need to clear the leave first.
+    if (shiftLeaveClashes.length > 0) {
+      const leave = shiftLeaveClashes[0]!;
+      setMessage(
+        `${selectedMember?.firstName ?? 'This team member'} is on ${leave.type.toLowerCase().replace('_', ' ')} this day. Resolve the leave request first or pick a different person.`
+      );
+      return;
+    }
+    // Hard block — staff already rostered overlapping (at this venue or
+    // any other) can't be double-booked. They need to be released from
+    // the existing shift first.
+    if (shiftConflicts.length > 0) {
+      const clash = shiftConflicts[0]!;
+      const clashVenue = clash.venue || clash.staffProfile?.venue || 'another venue';
+      setMessage(
+        `${selectedMember?.firstName ?? 'This team member'} is already rostered ${timeOf(clash.startsAt)}–${timeOf(clash.endsAt)} at ${clashVenue}. Release that shift first or pick a different person.`
+      );
       return;
     }
     setSaving(true);
@@ -9312,6 +9336,27 @@ function RosterPage({
         ? 'warn'
         : 'success';
 
+  // Forecast variance — how far off-guide we are as a percent. Drives the
+  // red-down / green-up pill on the KPI strip and the tint on issue cards.
+  const wageBudgetVariancePercent = wageBudgetCents > 0
+    ? ((rosterCostCents - wageBudgetCents) / wageBudgetCents) * 100
+    : null;
+  const isOverBudget = (wageBudgetVariancePercent ?? 0) > 0;
+  const isWayOverBudget = (wageBudgetVariancePercent ?? 0) > 10;
+  const wageBudgetTone: 'success' | 'warn' | 'danger' | 'neutral' = wageBudgetVariancePercent == null
+    ? 'neutral'
+    : wageBudgetVariancePercent > 5
+      ? 'danger'
+      : wageBudgetVariancePercent > 0
+        ? 'warn'
+        : 'success';
+  function formatVariance(pct: number | null): string {
+    if (pct == null) return '—';
+    if (Math.abs(pct) < 0.5) return '~ on budget';
+    return `${pct > 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`;
+  }
+  const coverageGap = draftCount === 0 && totalHours < recommendedHours - 2;
+
   return (
     <div className="page-stack">
       {/* Editorial roster header — eyebrow + Cormorant serif title + week nav */}
@@ -9361,6 +9406,15 @@ function RosterPage({
           <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
             Copy last week
           </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => setHistoricalOpen(true)}
+            aria-label="Open historical forecast data"
+          >
+            Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
+          </Button>
           <Button type="button" size="sm" onClick={() => newShift()}>
             Add shift
           </Button>
@@ -9378,17 +9432,34 @@ function RosterPage({
 
       {/* 5-card editorial KPI strip — drives the weekly read */}
       <div className="alma-roster-kpis">
-        <BigStat
-          eyebrow="Planned hours"
-          value={`${roundHours(totalHours)}h`}
-          sub={forecastSalesCents > 0 ? `Forecast ${formatCents(forecastSalesCents)} · ${recommendedHours.toFixed(0)}h recommended` : `${activeStaff.length} staff active`}
-        />
-        <BigStat
-          eyebrow="Wage cost"
-          value={formatCents(rosterCostCents)}
-          sub={wagePercent != null ? `${wagePercent.toFixed(1)}% of forecast revenue` : 'Add a sales forecast to compare'}
-        />
-        <div className="alma-bigstat alma-bigstat--pill">
+        <div className={`alma-bigstat ${forecastSalesCents > 0 && totalHours < recommendedHours - 2 ? 'alma-bigstat--warn' : ''}`}>
+          <div className="alma-bigstat-head">
+            <div>
+              <div className="alma-bigstat-eyebrow">Planned hours</div>
+              <div className="alma-bigstat-value">{roundHours(totalHours)}h</div>
+              <div className="alma-bigstat-sub">
+                {forecastSalesCents > 0 ? `Forecast ${formatCents(forecastSalesCents)} · ${recommendedHours.toFixed(0)}h recommended` : `${activeStaff.length} staff active`}
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className={`alma-bigstat ${isWayOverBudget ? 'alma-bigstat--danger' : isOverBudget ? 'alma-bigstat--warn' : ''}`}>
+          <div className="alma-bigstat-head">
+            <div>
+              <div className="alma-bigstat-eyebrow">Wage cost</div>
+              <div className="alma-bigstat-value">{formatCents(rosterCostCents)}</div>
+              <div className="alma-bigstat-sub">
+                {wagePercent != null ? `${wagePercent.toFixed(1)}% of forecast revenue` : 'Add a sales forecast to compare'}
+              </div>
+            </div>
+            {wageBudgetVariancePercent != null ? (
+              <span className={`alma-roster-variance is-${wageBudgetTone}`}>
+                {formatVariance(wageBudgetVariancePercent)}
+              </span>
+            ) : null}
+          </div>
+        </div>
+        <div className={`alma-bigstat alma-bigstat--pill ${wageTone === 'danger' ? 'alma-bigstat--danger' : wageTone === 'warn' ? 'alma-bigstat--warn' : ''}`}>
           <div className="alma-bigstat-head">
             <div>
               <div className="alma-bigstat-eyebrow">Wage guide</div>
@@ -9402,12 +9473,17 @@ function RosterPage({
             </AlmaPill>
           </div>
         </div>
-        <BigStat
-          eyebrow="Drafts to publish"
-          value={String(draftCount)}
-          sub={draftCount > 0 ? 'Click Publish roster to confirm' : 'All shifts published'}
-          sparkColor="#A0463A"
-        />
+        <div className={`alma-bigstat ${coverageGap ? 'alma-bigstat--warn' : ''}`}>
+          <div className="alma-bigstat-head">
+            <div>
+              <div className="alma-bigstat-eyebrow">Drafts to publish</div>
+              <div className="alma-bigstat-value">{draftCount}</div>
+              <div className="alma-bigstat-sub">
+                {draftCount > 0 ? 'Click Publish roster to confirm' : 'All shifts published'}
+              </div>
+            </div>
+          </div>
+        </div>
         <BigStat
           eyebrow="Status"
           value={draftCount > 0 ? 'Draft' : 'Published'}
@@ -9490,12 +9566,38 @@ function RosterPage({
         </div>
       ) : null}
 
-      <RosterCollapsiblePanel
-        title="Historical data"
-        summary={`${formatCents(forecastSalesCents)} forecast · ${forecastCostGapCents >= 0 ? 'Inside guide' : 'Over guide'}`}
-        open={historicalOpen}
-        onToggle={() => setHistoricalOpen((current) => !current)}
-      >
+      {historicalOpen ? (
+        <div
+          className="alma-historical-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-label="Historical data and forecast"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) setHistoricalOpen(false);
+          }}
+        >
+          <div className="alma-historical-modal-panel">
+            <div className="alma-historical-modal-head">
+              <div>
+                <span className="alma-roster-eyebrow">Roster · Forecast</span>
+                <h2 className="alma-historical-modal-title">Historical data</h2>
+                <p className="alma-historical-modal-sub">
+                  {formatCents(forecastSalesCents)} forecast · {forecastCostGapCents >= 0 ? 'Inside guide' : 'Over guide'}
+                  {wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)} vs budget` : ''}
+                </p>
+              </div>
+              <button
+                type="button"
+                className="alma-historical-modal-close"
+                aria-label="Close historical data"
+                onClick={() => setHistoricalOpen(false)}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+                  <path d="M3 3 L11 11 M11 3 L3 11" />
+                </svg>
+              </button>
+            </div>
+            <div className="alma-historical-modal-body">
         <div className="roster-historical-grid">
           {/* Left col: inputs + callout */}
           <div className="roster-historical-left">
@@ -9580,7 +9682,10 @@ function RosterPage({
             ))}
           </div>
         ) : null}
-      </RosterCollapsiblePanel>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="deputy-roster-summary">
         <span><strong>{rosteredStaffIds.size}</strong> rostered</span>
@@ -10144,13 +10249,24 @@ function RosterPage({
                   {selectedShiftHours.endsAt.getDate() !== selectedShiftHours.startsAt.getDate() ? ' · overnight' : ''}
                 </p>
               ) : null}
+              {shiftLeaveClashes.length > 0 ? (
+                <div className="roster-conflict-warning is-blocking">
+                  <strong>On leave this day · save blocked</strong>
+                  <span>
+                    {shiftLeaveClashes
+                      .slice(0, 2)
+                      .map((leave) => `${leave.type.toLowerCase().replace('_', ' ')}${leave.status === 'PENDING' ? ' (pending)' : ''}`)
+                      .join(', ')}
+                  </span>
+                </div>
+              ) : null}
               {shiftConflicts.length > 0 ? (
-                <div className="roster-conflict-warning">
-                  <strong>{shiftConflicts.length} overlap warning</strong>
+                <div className="roster-conflict-warning is-blocking">
+                  <strong>Already rostered · save blocked</strong>
                   <span>
                     {shiftConflicts
                       .slice(0, 2)
-                      .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.area || 'Shift'}`)
+                      .map((shift) => `${timeOf(shift.startsAt)}-${timeOf(shift.endsAt)} ${shift.venue || shift.area || 'Shift'}`)
                       .join(', ')}
                   </span>
                 </div>
