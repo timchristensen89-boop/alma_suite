@@ -2,7 +2,9 @@ import crypto from 'node:crypto';
 import { Router } from 'express';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
+import { adminService } from '../services/admin.service.js';
 import { integrationService } from '../services/integration.service.js';
+import { temperatureService } from '../services/temperature.service.js';
 
 export const integrationJobsRouter = Router();
 
@@ -50,6 +52,27 @@ integrationJobsRouter.post('/xero/import', async (req, res, next) => {
 integrationJobsRouter.post('/run', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledIntegrationImports(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Govee temperature pull — invoked hourly by Cloud Scheduler so the dashboard
+// stays current without anyone clicking "Sync".
+integrationJobsRouter.post('/govee/sync', async (_req, res, next) => {
+  try {
+    res.json(await temperatureService.syncGovee());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Weekly summary email — Monday 7am Sydney by Cloud Scheduler. Body { previewOnly:true }
+// is supported for safe dry-runs from the scheduler config.
+integrationJobsRouter.post('/weekly-summary', async (req, res, next) => {
+  try {
+    const previewOnly = Boolean((req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>).previewOnly : undefined));
+    res.json(await adminService.sendWeeklySummary({ previewOnly }));
   } catch (error) {
     next(error);
   }

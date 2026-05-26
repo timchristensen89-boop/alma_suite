@@ -2266,6 +2266,9 @@ export type AdminIntegrationsStatusPayload = {
   govee: {
     status: 'CONFIGURED' | 'NOT_CONFIGURED';
     baseUrl: string | null;
+    lastSyncedAt: string | null;
+    lastError: string | null;
+    sensorCount: number;
   };
 };
 

@@ -953,6 +953,14 @@ export const adminService = {
     const mailProvider = provider();
     const integrations = await integrationService.status();
 
+    // Real Govee health — read the canonical integration row so the admin
+    // dashboard can show the actual last sync time, last error, and how many
+    // sensors we've discovered. Defaults are safe if the table is empty.
+    const goveeIntegration = await prisma.temperatureIntegration.findUnique({
+      where: { provider: 'govee' },
+      include: { _count: { select: { sensors: true } } }
+    });
+
     return {
       ...integrations,
       email: {
@@ -961,7 +969,10 @@ export const adminService = {
       },
       govee: {
         status: settings.goveeApiKey ? 'CONFIGURED' : 'NOT_CONFIGURED',
-        baseUrl: settings.goveeBaseUrl
+        baseUrl: settings.goveeBaseUrl,
+        lastSyncedAt: goveeIntegration?.lastSyncedAt?.toISOString() ?? null,
+        lastError: goveeIntegration?.lastError ?? null,
+        sensorCount: goveeIntegration?._count.sensors ?? 0
       }
     };
   },

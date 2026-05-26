@@ -40,7 +40,9 @@ type Tile = {
   provider: string;
   status: ReturnType<typeof statusLabel>;
   tone: Tone;
-  lastSyncAt: string | null;
+  // null = unknown, 'n/a' = the concept doesn't apply (e.g. email is push-only,
+  // the encryption key isn't a sync target), otherwise an ISO timestamp.
+  lastSyncAt: string | null | 'n/a';
   lastError: string | null;
   detail: string | null;
   account?: string | null;
@@ -172,42 +174,56 @@ export function IntegrationHealthPage() {
       });
     }
 
-    // Govee
+    // Govee — real lastSyncedAt from temperatureIntegration row.
+    // If the API key is set but no sync has run yet, the tile shows
+    // "Connected" with "Never" until Cloud Scheduler or a manual sync fires.
+    const goveeHasError = Boolean(data.govee.lastError);
     out.push({
       id: 'govee',
       name: 'Govee',
       provider: 'Temperature sensors, compliance alerts',
-      status: data.govee.status === 'CONFIGURED' ? 'Connected' : 'Not configured',
-      tone: data.govee.status === 'CONFIGURED' ? 'positive' : 'muted',
-      lastSyncAt: null,
-      lastError: null,
-      detail: data.govee.baseUrl ?? null,
+      status: goveeHasError
+        ? 'Error'
+        : data.govee.status === 'CONFIGURED'
+          ? 'Connected'
+          : 'Not configured',
+      tone: goveeHasError
+        ? 'danger'
+        : data.govee.status === 'CONFIGURED'
+          ? 'positive'
+          : 'muted',
+      lastSyncAt: data.govee.lastSyncedAt,
+      lastError: data.govee.lastError,
+      detail: [
+        data.govee.baseUrl,
+        data.govee.sensorCount ? `${data.govee.sensorCount} sensor${data.govee.sensorCount === 1 ? '' : 's'} discovered` : null
+      ].filter(Boolean).join(' · ') || null,
       canResync: false
     });
 
-    // Email service
+    // Email service — push-only, no sync timestamp applies.
     out.push({
       id: 'email',
       name: 'Email service',
       provider: 'Notifications, gift cards, comms',
       status: data.email.status === 'CONFIGURED' ? 'Connected' : 'Not configured',
       tone: data.email.status === 'CONFIGURED' ? 'positive' : 'danger',
-      lastSyncAt: null,
+      lastSyncAt: 'n/a',
       lastError: null,
-      detail: data.email.provider !== 'none' ? `Provider: ${data.email.provider}` : null,
+      detail: data.email.provider !== 'none' ? `Provider: ${data.email.provider} · push-only` : null,
       canResync: false
     });
 
-    // Token storage (encryption key)
+    // Token storage (encryption key) — stateless secret, nothing to sync.
     out.push({
       id: 'token-storage',
       name: 'Token storage',
       provider: 'Encryption key for connected integrations',
       status: data.tokenStorage.configured ? 'Configured' : 'Not configured',
       tone: data.tokenStorage.configured ? 'positive' : 'danger',
-      lastSyncAt: null,
+      lastSyncAt: 'n/a',
       lastError: null,
-      detail: `Required env var: ${data.tokenStorage.requiredEnvVar}`,
+      detail: `Required env var: ${data.tokenStorage.requiredEnvVar} · stateless`,
       canResync: false
     });
 
@@ -255,10 +271,12 @@ export function IntegrationHealthPage() {
                   <Badge tone={tile.tone}>{tile.status}</Badge>
                 </div>
                 <div className="integration-health-tile-body">
-                  <div className="integration-health-line">
-                    <span>Last sync</span>
-                    <strong>{timeAgo(tile.lastSyncAt)}</strong>
-                  </div>
+                  {tile.lastSyncAt !== 'n/a' ? (
+                    <div className="integration-health-line">
+                      <span>Last sync</span>
+                      <strong>{timeAgo(tile.lastSyncAt)}</strong>
+                    </div>
+                  ) : null}
                   {tile.detail ? (
                     <div className="integration-health-line">
                       <span>Account</span>
