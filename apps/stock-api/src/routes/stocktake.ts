@@ -169,3 +169,15 @@ stocktakeRouter.get('/:id/export.csv', async (req, res, next) => {
     next(error);
   }
 });
+
+// Variance report — compares this stocktake against the previous LOCKED
+// stocktake at the same venue. Sorted by absolute value variance so
+// the worst surprises bubble to the top.
+stocktakeRouter.get('/:id/variance', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await stocktakesService.varianceReport(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});

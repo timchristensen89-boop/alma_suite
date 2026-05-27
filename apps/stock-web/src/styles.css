@@ -1754,3 +1754,98 @@ tbody tr.row-detail:hover {
   grid-row: 1 / span 3;
   align-self: center;
 }
+
+/* iPad / mobile polish for the stocktake page — big tap targets,
+   stacked groups, full-width inputs. Triggers at 920px so most iPads
+   pick it up in landscape too. (Sprint 1 #7) */
+@media (max-width: 920px) {
+  /* Quantity input is the busiest control on the page in a real count;
+     pump it up to be unmissable on touch. */
+  .stocktake-line-group input[type="number"],
+  .stocktake-line-group input[type="text"] {
+    min-height: 46px;
+    font-size: 17px;
+    padding: 10px 12px;
+  }
+  .stocktake-line-group {
+    margin-bottom: 14px;
+  }
+  .stocktake-line-group-title {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    padding: 10px 12px;
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--color-border);
+    font-size: 14.5px;
+  }
+  /* Bigger action buttons so a Save / Submit / Lock isn't a fat-finger hazard */
+  .stocktake-page button:not(.field-link):not(.btn-sm) {
+    min-height: 48px;
+    font-size: 14.5px;
+    padding: 10px 18px;
+  }
+  /* Drop the variance summary to a single column on tight widths */
+  .stocktake-variance-summary {
+    grid-template-columns: 1fr 1fr !important;
+  }
+}
+
+/* Data quality + variance review surfaces — both shared by the
+   stocktake page and the Loaded replacement dashboard. */
+.stocktake-data-quality {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+.stocktake-data-quality-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(248, 246, 241, 0.6);
+  border-left: 3px solid rgba(31, 53, 36, 0.18);
+}
+.stocktake-data-quality-cell.is-warning {
+  border-left-color: #D18A00;
+  background: rgba(209, 138, 0, 0.06);
+}
+.stocktake-data-quality-cell.is-danger {
+  border-left-color: #9A3A2E;
+  background: rgba(154, 58, 46, 0.06);
+}
+.stocktake-data-quality-cell strong {
+  font-family: var(--font-serif, 'Cormorant Garamond', serif);
+  font-weight: 500;
+  font-size: 22px;
+}
+.stocktake-data-quality-cell span {
+  font-size: 11.5px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+.stocktake-variance-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.stocktake-variance-table th,
+.stocktake-variance-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--color-border);
+  text-align: left;
+}
+.stocktake-variance-table tr.is-high-variance {
+  background: rgba(209, 138, 0, 0.05);
+}
+.stocktake-variance-table tr.is-zero {
+  background: rgba(154, 58, 46, 0.05);
+}
+.stocktake-variance-table tr.is-new {
+  background: rgba(60, 110, 70, 0.04);
+}

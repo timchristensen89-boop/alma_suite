@@ -36,6 +36,18 @@ itemsRouter.get('/low-stock', async (req, res, next) => {
   }
 });
 
+// Data quality report (Loaded replacement Sprint 1 #5) — surfaces
+// catalogue warnings: missing unit / count unit / conversion / category
+// / count area / latest cost, plus a stale-cost flag.
+itemsRouter.get('/data-quality', async (req, res, next) => {
+  try {
+    const staleDays = typeof req.query.staleDays === 'string' ? Number(req.query.staleDays) : undefined;
+    res.json(await itemsService.dataQualityReport(req.user, { staleDays: Number.isFinite(staleDays) ? staleDays : undefined }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/:id/usage-history', async (req, res, next) => {
   try {
     res.json(await itemsService.usageHistory(String(req.params.id), {

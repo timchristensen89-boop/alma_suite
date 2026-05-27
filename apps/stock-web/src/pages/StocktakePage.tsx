@@ -26,6 +26,29 @@ type FormState =
   | { mode: 'create' }
   | { mode: 'edit'; stocktake: StocktakeWithLines };
 
+// Data quality report from /api/items/data-quality. Shape lives in
+// stock-api/src/services/items.service.ts → dataQualityReport.
+type DataQualityPayload = {
+  generatedAt: string;
+  totalActiveItems: number;
+  itemsWithWarning: number;
+  quality: 'good' | 'partial' | 'poor';
+  counts: Record<string, number>;
+  countAreas: string[];
+  problemItems: Array<{
+    id: string;
+    name: string;
+    category: string | null;
+    unit: string;
+    countUnit: string | null;
+    countArea: string | null;
+    conversionFactor: number;
+    latestCostCents: number | null;
+    latestCostAt: string | null;
+    warnings: string[];
+  }>;
+};
+
 type LineDraft = {
   itemId: string;
   label: string;
@@ -209,19 +232,27 @@ export function StocktakePage() {
   const [deleting, setDeleting] = useState(false);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
+  // Data quality snapshot from /api/items/data-quality — fed by Sprint 1's
+  // new dataQualityReport service. Renders as a Card above the stocktake
+  // list so the user spots catalogue gaps before counting.
+  const [dataQuality, setDataQuality] = useState<DataQualityPayload | null>(null);
   const canManageReview = canManageStock(user);
 
   async function load() {
     setLoading(true);
     try {
-      const [list, sum, itemPayload] = await Promise.all([
+      const [list, sum, itemPayload, quality] = await Promise.all([
         api<StocktakesPayload>('/api/stocktake'),
         api<StocktakesSummary>('/api/stocktake/summary'),
-        api<StockItemsPayload>('/api/items')
+        api<StockItemsPayload>('/api/items'),
+        // Data quality is optional — gracefully degrade if the endpoint
+        // isn't deployed yet so older builds don't break.
+        api<DataQualityPayload>('/api/items/data-quality').catch(() => null)
       ]);
       setData(list);
       setSummary(sum);
       setItems(itemPayload.items);
+      setDataQuality(quality);
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load stocktakes');
@@ -458,13 +489,71 @@ export function StocktakePage() {
         : 'Stocktake history';
 
   return (
-    <div className="page-stack">
+    <div className="page-stack stocktake-page">
       <div className="stat-grid">
         <StatCard icon={<IconStocktake size={18} />} label="Stocktakes" value={loading ? '—' : String(summary?.totalStocktakes ?? 0)} hint="On record across venues" />
         <StatCard label="Last counted" value={loading ? '—' : summary?.lastCountedAt ? formatDate(summary.lastCountedAt) : 'Never'} hint="Most recent count" />
         <StatCard label="In progress" value={loading ? '—' : String(summary?.inProgress ?? 0)} hint="Counts not yet submitted" tone={summary && summary.inProgress > 0 ? 'warning' : 'neutral'} />
         <StatCard label="Ready for review" value={loading ? '—' : String(summary?.submitted ?? 0)} hint="Submitted counts" tone={summary && summary.submitted > 0 ? 'warning' : 'neutral'} />
       </div>
+
+      {dataQuality ? (
+        <Card
+          title="Catalogue data quality"
+          subtitle={`Sprint 1 / Loaded replacement: catches missing units, conversion factors, count areas, and stale costs. Grade: ${dataQuality.quality.toUpperCase()} (${dataQuality.itemsWithWarning} of ${dataQuality.totalActiveItems} active items have at least one warning).`}
+          action={
+            <Badge tone={dataQuality.quality === 'good' ? 'positive' : dataQuality.quality === 'partial' ? 'warning' : 'danger'}>
+              {dataQuality.quality === 'good' ? 'Good' : dataQuality.quality === 'partial' ? 'Partial' : 'Poor'}
+            </Badge>
+          }
+        >
+          <div className="stocktake-data-quality">
+            {([
+              ['missing_unit', 'Missing unit'],
+              ['missing_count_unit', 'No count unit'],
+              ['missing_conversion', 'No conversion'],
+              ['missing_category', 'No category'],
+              ['missing_count_area', 'No count area'],
+              ['missing_latest_cost', 'No cost'],
+              ['stale_latest_cost', 'Stale cost (>90d)']
+            ] as const).map(([key, label]) => {
+              const value = dataQuality.counts[key] ?? 0;
+              const tone = value > 0 ? (key === 'missing_unit' || key === 'missing_latest_cost' || key === 'missing_count_unit' ? 'is-danger' : 'is-warning') : '';
+              return (
+                <div key={key} className={`stocktake-data-quality-cell ${tone}`}>
+                  <strong>{value}</strong>
+                  <span>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+          {dataQuality.countAreas.length > 0 ? (
+            <p className="subtle" style={{ marginTop: 12 }}>
+              Walking-order areas: {dataQuality.countAreas.join(' · ')}
+            </p>
+          ) : (
+            <p className="subtle" style={{ marginTop: 12 }}>
+              No count areas configured. Set a <em>countArea</em> on each item so stocktakes group by walking order.
+            </p>
+          )}
+          {dataQuality.problemItems.length > 0 ? (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 600 }}>
+                Items with warnings ({dataQuality.problemItems.length} shown)
+              </summary>
+              <ul style={{ marginTop: 8, paddingLeft: 18, fontSize: 13 }}>
+                {dataQuality.problemItems.slice(0, 30).map((row) => (
+                  <li key={row.id} style={{ marginBottom: 4 }}>
+                    <strong>{row.name}</strong>
+                    {' — '}
+                    <span style={{ color: '#9A3A2E' }}>{row.warnings.join(', ')}</span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          ) : null}
+        </Card>
+      ) : null}
 
       <Card
         title="Review queue"

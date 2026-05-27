@@ -1143,6 +1143,117 @@ export const stocktakesService = {
     return toStocktakePayload(row);
   },
 
+  // Variance review (#9). Compares the target stocktake to the previous
+  // LOCKED stocktake at the same venue. Returns line-level deltas + a
+  // categorised summary so the manager can spot the worst movers fast.
+  async varianceReport(id: string, actor?: AuthUser | null) {
+    const target = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
+      include: {
+        lines: { include: { item: { include: { category: true } } } }
+      }
+    });
+    if (!target) throw new HttpError(404, 'Stocktake not found');
+
+    // Find the previous LOCKED stocktake at the same venue, before this one.
+    const previous = await prisma.stocktake.findFirst({
+      where: {
+        ...(target.venue ? { venue: target.venue } : {}),
+        status: 'LOCKED',
+        id: { not: target.id },
+        countedAt: { lt: target.countedAt }
+      },
+      orderBy: [{ countedAt: 'desc' }],
+      include: { lines: true }
+    });
+
+    const previousByItemId = new Map<string, { qty: number; valueCents: number | null }>();
+    if (previous) {
+      for (const line of previous.lines) {
+        if (!line.itemId) continue;
+        previousByItemId.set(line.itemId, {
+          qty: line.countedQty,
+          valueCents: line.stockValueCents
+        });
+      }
+    }
+
+    const HIGH_VARIANCE_THRESHOLD = 0.2; // ±20% qty change flags as high
+    let highVarianceCount = 0;
+    let missingCount = 0;
+    let zeroCount = 0;
+    let newItemCount = 0;
+
+    const rows = target.lines.map((line) => {
+      const prev = line.itemId ? previousByItemId.get(line.itemId) : undefined;
+      const varianceQty = prev !== undefined ? line.countedQty - prev.qty : null;
+      const varianceValueCents = prev !== undefined && prev.valueCents !== null && line.stockValueCents !== null
+        ? line.stockValueCents - prev.valueCents
+        : null;
+      const variancePct = prev !== undefined && prev.qty > 0
+        ? (line.countedQty - prev.qty) / prev.qty
+        : null;
+
+      const isMissing = line.countedQty === null || Number.isNaN(line.countedQty);
+      const isZero = line.countedQty === 0;
+      const isNew = prev === undefined && line.itemId !== null;
+      const isHighVariance = variancePct !== null && Math.abs(variancePct) > HIGH_VARIANCE_THRESHOLD;
+
+      if (isMissing) missingCount += 1;
+      else if (isZero) zeroCount += 1;
+      if (isHighVariance) highVarianceCount += 1;
+      if (isNew) newItemCount += 1;
+
+      return {
+        lineId: line.id,
+        itemId: line.itemId,
+        label: line.label,
+        category: line.item?.category?.name ?? null,
+        countArea: line.location ?? line.item?.countArea ?? null,
+        unit: line.unit ?? line.item?.countUnit ?? line.item?.unit ?? null,
+        currentQty: line.countedQty,
+        previousQty: prev?.qty ?? null,
+        varianceQty,
+        variancePct,
+        currentValueCents: line.stockValueCents,
+        previousValueCents: prev?.valueCents ?? null,
+        varianceValueCents,
+        flags: {
+          missing: isMissing,
+          zero: isZero,
+          newItem: isNew,
+          highVariance: isHighVariance
+        },
+        latestCostCents: line.item?.latestCostCents ?? line.item?.avgCostCents ?? null
+      };
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      stocktakeId: target.id,
+      stocktakeName: target.name,
+      stocktakeStatus: target.status,
+      countedAt: target.countedAt.toISOString(),
+      previousLocked: previous
+        ? { id: previous.id, name: previous.name, countedAt: previous.countedAt.toISOString() }
+        : null,
+      summary: {
+        totalLines: rows.length,
+        highVariance: highVarianceCount,
+        missing: missingCount,
+        zero: zeroCount,
+        newItems: newItemCount,
+        highVarianceThresholdPct: HIGH_VARIANCE_THRESHOLD * 100
+      },
+      // Worst variances first so the manager sees the most surprising lines.
+      rows: rows.sort((a, b) => {
+        const av = a.varianceValueCents === null ? 0 : Math.abs(a.varianceValueCents);
+        const bv = b.varianceValueCents === null ? 0 : Math.abs(b.varianceValueCents);
+        return bv - av;
+      })
+    };
+  },
+
   // CSV export — drops the stocktake into a one-row-per-line CSV.
   // Used by the Loaded replacement archive flow + ad-hoc downloads.
   async exportCsv(id: string, actor?: AuthUser | null): Promise<{ filename: string; csv: string }> {

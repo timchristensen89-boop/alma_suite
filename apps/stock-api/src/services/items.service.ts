@@ -816,5 +816,96 @@ export const itemsService = {
     });
 
     return { deleted: result.count };
+  },
+
+  // Data quality report for the Loaded replacement catalogue check
+  // (Sprint 1 #5). Returns counts per warning type plus an actionable
+  // list of problem items so the admin can fix them in bulk.
+  //
+  // Warnings:
+  //   missing_unit              - unit (purchase unit) is null/empty
+  //   missing_count_unit        - countUnit is null AND unit != generic
+  //   missing_conversion        - conversionFactor is 1 but countUnit
+  //                               differs from unit (likely unconfigured)
+  //   missing_category          - categoryId is null
+  //   missing_count_area        - countArea is null (item has no walking
+  //                               group, so stocktake can't be ordered)
+  //   missing_latest_cost       - latestCostCents is null
+  //   stale_latest_cost         - latestCostAt older than 90 days
+  async dataQualityReport(actor?: AuthUser | null, options: { staleDays?: number } = {}) {
+    const items = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      include: { category: { select: { id: true, name: true } } }
+    });
+    const staleDays = options.staleDays ?? 90;
+    const staleCutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
+
+    const warningsByItem = items.map((item) => {
+      const warnings: string[] = [];
+      if (!item.unit || !item.unit.trim()) warnings.push('missing_unit');
+      if (!item.countUnit) warnings.push('missing_count_unit');
+      if (item.conversionFactor === 1 && item.countUnit && item.countUnit !== item.unit) {
+        warnings.push('missing_conversion');
+      }
+      if (!item.categoryId) warnings.push('missing_category');
+      if (!item.countArea) warnings.push('missing_count_area');
+      if (item.latestCostCents === null && item.avgCostCents === null) warnings.push('missing_latest_cost');
+      if (item.latestCostAt && item.latestCostAt < staleCutoff) warnings.push('stale_latest_cost');
+      return { item, warnings };
+    });
+
+    const counts: Record<string, number> = {
+      missing_unit: 0,
+      missing_count_unit: 0,
+      missing_conversion: 0,
+      missing_category: 0,
+      missing_count_area: 0,
+      missing_latest_cost: 0,
+      stale_latest_cost: 0
+    };
+    for (const entry of warningsByItem) {
+      for (const w of entry.warnings) counts[w] = (counts[w] ?? 0) + 1;
+    }
+
+    // Items with warnings, sorted by warning count (worst first) so the
+    // admin can fix the biggest ones in one pass.
+    const problemItems = warningsByItem
+      .filter((entry) => entry.warnings.length > 0)
+      .sort((a, b) => b.warnings.length - a.warnings.length)
+      .slice(0, 200)
+      .map((entry) => ({
+        id: entry.item.id,
+        name: entry.item.name,
+        category: entry.item.category?.name ?? null,
+        unit: entry.item.unit,
+        countUnit: entry.item.countUnit,
+        countArea: entry.item.countArea,
+        conversionFactor: entry.item.conversionFactor,
+        latestCostCents: entry.item.latestCostCents ?? entry.item.avgCostCents,
+        latestCostAt: entry.item.latestCostAt?.toISOString() ?? null,
+        warnings: entry.warnings
+      }));
+
+    // Distinct count areas in current use — useful for the admin to see
+    // their walking-order configuration without a separate settings UI.
+    const areas = Array.from(new Set(items.map((item) => item.countArea).filter((area): area is string => Boolean(area)))).sort();
+
+    // Overall data quality grade — drives the Reports + Loaded replacement
+    // "Good / Partial / Poor" indicator the spec calls for.
+    const totalActive = items.length;
+    const itemsWithAnyWarning = warningsByItem.filter((entry) => entry.warnings.length > 0).length;
+    const ratio = totalActive === 0 ? 1 : 1 - itemsWithAnyWarning / totalActive;
+    const quality: 'good' | 'partial' | 'poor' = ratio >= 0.9 ? 'good' : ratio >= 0.6 ? 'partial' : 'poor';
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totalActiveItems: totalActive,
+      itemsWithWarning: itemsWithAnyWarning,
+      quality,
+      counts,
+      countAreas: areas,
+      problemItems,
+      _scope: { venue: actorVenueScope(actor) }
+    };
   }
 };
