@@ -1220,3 +1220,1444 @@
   letter-spacing: 0.08em;
   font-family: ui-monospace, 'SF Mono', Monaco, Consolas, monospace !important;
 }
+
+/* =========================================================
+   Public gift-card buy page — alma · group
+   Long-form marketing + configurator page. Source: Claude
+   Design handoff (alma-suite-design-system/project/
+   gift-cards-buy.html). Scoped to .alma-giftcards-page.
+   ========================================================= */
+.alma-giftcards-page {
+  --gc-paper:        #FAF6EE;
+  --gc-bone:         #EFE8DC;
+  --gc-shell:        #F5DCCE;
+  --gc-clay:         #EEF0E9;
+  --gc-clay-deep:    #D7DDD0;
+  --gc-forest:       #1F3524;
+  --gc-forest-deep:  #14241A;
+  --gc-cocoa:        #684A4A;
+  --gc-cocoa-deep:   #3D2A2A;
+  --gc-ink:          #14241A;
+  --gc-ash:          rgba(20, 36, 26, 0.55);
+  --gc-hair:         rgba(20, 36, 26, 0.12);
+  --gc-hair-strong:  rgba(20, 36, 26, 0.22);
+  --gc-serif:        "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  --gc-sans:         "Avenir LT Std", "Manrope", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+
+  background: var(--gc-paper);
+  color: var(--gc-ink);
+  font-family: var(--gc-sans);
+  font-weight: 400;
+  font-size: 17px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+  min-height: 100vh;
+  scroll-behavior: smooth;
+}
+.alma-giftcards-page * { box-sizing: border-box; }
+.alma-giftcards-page a { color: inherit; text-decoration: none; }
+.alma-giftcards-page button { font: inherit; }
+
+.alma-giftcards-container {
+  max-width: 1280px;
+  margin: 0 auto;
+}
+
+/* ── Typography recipes ── */
+.alma-giftcards-eyebrow {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+}
+.alma-giftcards-eyebrow--light { color: rgba(245, 220, 206, 0.7); }
+.alma-giftcards-display {
+  margin: 28px 0 0;
+  font-family: var(--gc-serif);
+  font-weight: 400;
+  font-size: clamp(56px, 9vw, 124px);
+  line-height: 0.92;
+  letter-spacing: -0.012em;
+  color: var(--gc-ink);
+}
+.alma-giftcards-display em {
+  display: block;
+  font-style: italic;
+  font-weight: 500;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-h1 {
+  margin: 14px 0 0;
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: clamp(40px, 5vw, 64px);
+  line-height: 1.0;
+  letter-spacing: -0.005em;
+  color: var(--gc-ink);
+}
+.alma-giftcards-h1 em { font-style: italic; color: var(--gc-cocoa); }
+.alma-giftcards-h3 {
+  margin: 0;
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 24px;
+  line-height: 1.2;
+  color: var(--gc-ink);
+}
+.alma-giftcards-h3 em { font-style: italic; color: var(--gc-cocoa); }
+.alma-giftcards-lede {
+  margin: 30px 0 0;
+  font-family: var(--gc-serif);
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1.55;
+  color: var(--gc-ink);
+  font-style: italic;
+  font-weight: 500;
+  max-width: 30em;
+}
+
+/* ── Top nav ── */
+.alma-giftcards-nav {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 100;
+  padding: 18px 36px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  transition: background 300ms, padding 300ms, border-color 300ms;
+  color: var(--gc-ink);
+}
+.alma-giftcards-nav.is-solid {
+  background: rgba(250, 246, 238, 0.96);
+  backdrop-filter: blur(20px);
+  border-bottom-color: var(--gc-hair);
+  padding: 12px 36px;
+}
+.alma-giftcards-nav__word {
+  font-family: var(--gc-sans);
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.alma-giftcards-nav__word em {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0;
+  color: var(--gc-ash);
+  margin-left: 6px;
+}
+.alma-giftcards-nav__links {
+  display: flex;
+  gap: 26px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.alma-giftcards-nav__links a {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.7;
+  transition: opacity 200ms;
+  position: relative;
+}
+.alma-giftcards-nav__links a:hover,
+.alma-giftcards-nav__links a.is-current { opacity: 1; }
+.alma-giftcards-nav__links a.is-current::after {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  bottom: -8px;
+  height: 1px;
+  background: var(--gc-ink);
+}
+.alma-giftcards-nav__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px 9px;
+  border-radius: 9999px;
+  border: 1.5px solid var(--gc-ink);
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  transition: background 200ms, color 200ms;
+}
+.alma-giftcards-nav__cta:hover {
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+}
+
+/* ── Buttons ── */
+.alma-giftcards-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 24px 14px;
+  border-radius: 9999px;
+  border: 1px solid var(--gc-ink);
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 200ms, opacity 200ms, background 200ms;
+}
+.alma-giftcards-btn:hover { transform: translateY(-1px); opacity: 0.92; }
+.alma-giftcards-btn:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+.alma-giftcards-btn--ghost {
+  background: transparent;
+  color: var(--gc-ink);
+}
+.alma-giftcards-btn--ghost-sm {
+  padding: 10px 16px 9px;
+  font-size: 10px;
+  letter-spacing: 0.20em;
+  background: transparent;
+  color: var(--gc-ink);
+}
+.alma-giftcards-btn--primary { /* alias for clarity; identical to default */ }
+.alma-giftcards-arrow { width: 14px; height: 6px; }
+
+/* ── Hero ── */
+.alma-giftcards-hero {
+  position: relative;
+  padding: 160px 36px 90px;
+  background: var(--gc-clay);
+  border-bottom: 1px solid var(--gc-hair);
+  overflow: hidden;
+}
+.alma-giftcards-hero::before {
+  content: "";
+  position: absolute;
+  width: 720px; height: 720px;
+  right: -160px; top: -200px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(31, 53, 36, 0.05) 0%, rgba(31, 53, 36, 0) 70%);
+  pointer-events: none;
+}
+.alma-giftcards-hero__grid {
+  position: relative;
+  z-index: 1;
+  max-width: 1400px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.05fr 0.95fr;
+  gap: 80px;
+  align-items: center;
+}
+.alma-giftcards-hero__left { padding-top: 20px; }
+.alma-giftcards-hero__eyebrow-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 28px;
+}
+.alma-giftcards-hero__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--gc-cocoa);
+}
+.alma-giftcards-hero__meta {
+  margin-top: 40px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px 36px;
+  font-family: var(--gc-sans);
+  font-size: 13px;
+}
+.alma-giftcards-hero__meta > div {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.alma-giftcards-meta-label {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-meta-value {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 18px;
+  color: var(--gc-ink);
+}
+
+/* ── Hero card stack ── */
+.alma-giftcards-hero__cardwrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.alma-giftcards-cardstack {
+  position: relative;
+  width: 100%;
+  max-width: 460px;
+  perspective: 1400px;
+}
+.alma-giftcards-cardstack__bg {
+  position: absolute;
+  width: 100%;
+  aspect-ratio: 1.586 / 1;
+  border-radius: 14px;
+  pointer-events: none;
+  box-shadow: 0 20px 50px -20px rgba(20, 36, 26, 0.25);
+}
+.alma-giftcards-cardstack__bg--back {
+  top: 38px; left: 28px;
+  background: var(--gc-shell);
+  transform: rotate(-4deg);
+}
+.alma-giftcards-cardstack__bg--mid {
+  top: 18px; left: 12px;
+  background: var(--gc-bone);
+  transform: rotate(-1.5deg);
+}
+
+/* ── The card itself ── */
+.alma-giftcards-card {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1.586 / 1;
+  border-radius: 14px;
+  background: var(--gc-forest);
+  color: var(--gc-paper);
+  padding: 28px 30px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  overflow: hidden;
+  box-shadow: 0 30px 70px -30px rgba(20, 36, 26, 0.45),
+              0 1px 0 rgba(255, 255, 255, 0.08) inset;
+  transition: background 400ms cubic-bezier(0.22, 1, 0.36, 1), color 400ms;
+}
+.alma-giftcards-card--forest { background: var(--gc-forest); color: var(--gc-paper); }
+.alma-giftcards-card--cocoa  { background: var(--gc-cocoa); color: var(--gc-shell); }
+.alma-giftcards-card--shell  { background: var(--gc-shell); color: var(--gc-cocoa-deep); }
+.alma-giftcards-card--bone   { background: var(--gc-bone); color: var(--gc-ink); }
+.alma-giftcards-card__shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 35%, rgba(0, 0, 0, 0.08) 100%);
+  pointer-events: none;
+}
+.alma-giftcards-card__watermark {
+  position: absolute;
+  right: -60px; bottom: -120px;
+  width: 360px; height: 360px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+  opacity: 0.18;
+  pointer-events: none;
+}
+.alma-giftcards-card__watermark::after {
+  content: "";
+  position: absolute;
+  inset: 36px;
+  border-radius: 50%;
+  border: 1px solid currentColor;
+}
+.alma-giftcards-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  position: relative;
+  z-index: 1;
+}
+.alma-giftcards-card__mark {
+  font-family: var(--gc-sans);
+  font-weight: 900;
+  font-size: 22px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+}
+.alma-giftcards-card__mark em {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 17px;
+  letter-spacing: 0;
+  opacity: 0.7;
+  margin-left: 6px;
+}
+.alma-giftcards-card__eyebrow {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  text-align: right;
+}
+.alma-giftcards-card__amount {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  padding-top: 8px;
+}
+.alma-giftcards-card__currency {
+  font-family: var(--gc-serif);
+  font-size: 28px;
+  font-weight: 500;
+  opacity: 0.55;
+  vertical-align: top;
+  margin-right: 2px;
+  line-height: 1;
+  position: relative;
+  top: 14px;
+}
+.alma-giftcards-card__value {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 84px;
+  line-height: 0.9;
+  letter-spacing: -0.02em;
+}
+.alma-giftcards-card__bottom {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 20px;
+  font-family: var(--gc-sans);
+}
+.alma-giftcards-card__bottom > div { display: flex; flex-direction: column; }
+.alma-giftcards-card__label {
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-bottom: 6px;
+}
+.alma-giftcards-card__recipient {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  letter-spacing: -0.005em;
+}
+.alma-giftcards-card__ref {
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 11.5px;
+  letter-spacing: 0.18em;
+  opacity: 0.85;
+}
+.alma-giftcards-card__back {
+  position: relative;
+  z-index: 1;
+  align-self: end;
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.4;
+  opacity: 0.85;
+  max-width: 32ch;
+}
+
+/* ── Quick info pill row ── */
+.alma-giftcards-quickinfo {
+  padding: 22px 36px;
+  background: var(--gc-paper);
+  border-bottom: 1px solid var(--gc-hair);
+  display: flex;
+  gap: 36px;
+  justify-content: center;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.alma-giftcards-quickinfo__pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--gc-sans);
+  font-weight: 500;
+  font-size: 13px;
+}
+.alma-giftcards-quickinfo__pill strong {
+  font-weight: 700;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  font-size: 10px;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-quickinfo__dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4F6B47;
+  box-shadow: 0 0 0 3px rgba(79, 107, 71, 0.2);
+}
+.alma-giftcards-quickinfo__sep {
+  width: 1px; height: 18px;
+  background: var(--gc-hair);
+}
+
+/* ── Test mode banner ── */
+.alma-giftcards-mode {
+  max-width: 1280px;
+  margin: 28px auto 0;
+  padding: 18px 28px;
+  border-radius: 12px;
+  border: 1px solid var(--gc-hair);
+  background: var(--gc-bone);
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.alma-giftcards-mode--setup_required {
+  background: rgba(178, 121, 53, 0.08);
+  border-color: rgba(178, 121, 53, 0.30);
+}
+.alma-giftcards-mode__tag {
+  padding: 6px 12px 5px;
+  border-radius: 9999px;
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.alma-giftcards-mode__body { display: flex; flex-direction: column; gap: 4px; }
+
+/* ── Paid (success) banner ── */
+.alma-giftcards-paid {
+  max-width: 1280px;
+  margin: 110px auto 0;
+  padding: 0 36px;
+}
+.alma-giftcards-paid__inner {
+  background: var(--gc-bone);
+  border-radius: 18px;
+  border: 1px solid var(--gc-hair);
+  padding: 36px;
+  display: grid;
+  gap: 18px;
+}
+.alma-giftcards-paid__title {
+  margin: 12px 0 0;
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 42px;
+  letter-spacing: -0.005em;
+}
+.alma-giftcards-paid__title em { font-style: italic; color: var(--gc-cocoa); }
+.alma-giftcards-paid__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 28px;
+  align-items: center;
+}
+.alma-giftcards-paid__details > div { display: flex; flex-direction: column; gap: 4px; }
+.alma-giftcards-paid__label {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+}
+.alma-giftcards-paid__details strong {
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 22px;
+  color: var(--gc-ink);
+}
+.alma-giftcards-paid__badges { flex-direction: row !important; gap: 8px; }
+.alma-giftcards-paid__qr { width: 140px; height: 140px; }
+.alma-giftcards-paid__actions { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.alma-giftcards-error {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: #7A2A20;
+  margin: 0;
+}
+
+/* ── Configurator ── */
+.alma-giftcards-configure {
+  padding: 110px 36px 130px;
+  background: var(--gc-paper);
+}
+.alma-giftcards-configure__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 32px;
+  margin-bottom: 56px;
+  flex-wrap: wrap;
+}
+.alma-giftcards-configure__head .alma-giftcards-h1 { max-width: 14ch; }
+.alma-giftcards-configure__meta {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 17px;
+  color: var(--gc-ash);
+  max-width: 28em;
+  text-align: right;
+  line-height: 1.5;
+  margin: 0;
+}
+.alma-giftcards-grid {
+  display: grid;
+  grid-template-columns: 0.85fr 1fr;
+  gap: 80px;
+  align-items: start;
+}
+
+/* ── Preview column (sticky) ── */
+.alma-giftcards-preview { position: sticky; top: 110px; }
+.alma-giftcards-preview__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 18px;
+  padding: 0 2px;
+}
+.alma-giftcards-preview__live {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.alma-giftcards-preview__live::before {
+  content: "";
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: #4F6B47;
+  box-shadow: 0 0 0 3px rgba(79, 107, 71, 0.2);
+}
+.alma-giftcards-preview__switch {
+  display: inline-flex;
+  padding: 3px;
+  border-radius: 9999px;
+  background: var(--gc-bone);
+  border: 1px solid var(--gc-hair);
+}
+.alma-giftcards-preview__switch button {
+  padding: 6px 14px 5px;
+  border: 0;
+  background: transparent;
+  border-radius: 9999px;
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+  cursor: pointer;
+  transition: background 180ms, color 180ms;
+}
+.alma-giftcards-preview__switch button.is-on {
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+}
+.alma-giftcards-preview__message {
+  margin-top: 26px;
+  padding: 22px 26px;
+  background: var(--gc-bone);
+  border-radius: 14px;
+  border: 1px solid var(--gc-hair);
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 18px;
+  line-height: 1.5;
+  color: var(--gc-ink);
+  min-height: 88px;
+  position: relative;
+}
+.alma-giftcards-preview__quote {
+  position: absolute;
+  left: 14px; top: 4px;
+  font-family: var(--gc-serif);
+  font-size: 60px;
+  line-height: 1;
+  color: var(--gc-cocoa);
+  opacity: 0.25;
+}
+.alma-giftcards-preview__message p {
+  margin: 0 0 0 24px;
+}
+.alma-giftcards-preview__signoff {
+  margin-top: 14px;
+  font-family: var(--gc-sans);
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+  font-style: normal;
+  font-weight: 700;
+}
+.alma-giftcards-preview__note {
+  margin-top: 18px;
+  display: flex;
+  gap: 14px;
+  font-family: var(--gc-sans);
+  font-size: 12.5px;
+  color: var(--gc-ash);
+  line-height: 1.5;
+}
+.alma-giftcards-preview__note svg { flex-shrink: 0; margin-top: 2px; color: var(--gc-cocoa); }
+
+/* ── Form column ── */
+.alma-giftcards-form { padding-top: 4px; }
+.alma-giftcards-step {
+  padding: 0 0 40px;
+  border-bottom: 1px solid var(--gc-hair);
+  margin-bottom: 40px;
+}
+.alma-giftcards-step:last-of-type { border-bottom: 0; }
+.alma-giftcards-step__head {
+  display: flex;
+  align-items: baseline;
+  gap: 18px;
+  margin-bottom: 22px;
+}
+.alma-giftcards-step__num {
+  width: 30px; height: 30px;
+  border-radius: 50%;
+  background: var(--gc-bone);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 18px;
+  color: var(--gc-cocoa);
+  flex-shrink: 0;
+}
+.alma-giftcards-step__hint {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 15px;
+  color: var(--gc-ash);
+  margin-top: 6px;
+}
+
+/* Amount pills */
+.alma-giftcards-amounts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+.alma-giftcards-amount {
+  padding: 18px 8px 16px;
+  border: 1px solid var(--gc-hair);
+  background: var(--gc-paper);
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 200ms;
+  color: var(--gc-ink);
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alma-giftcards-amount:hover {
+  border-color: var(--gc-hair-strong);
+  transform: translateY(-1px);
+}
+.alma-giftcards-amount.is-on {
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+  border-color: var(--gc-ink);
+}
+.alma-giftcards-amount__value {
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 24px;
+}
+.alma-giftcards-amount__currency {
+  font-size: 14px;
+  opacity: 0.55;
+  vertical-align: top;
+  margin-right: 1px;
+  position: relative;
+  top: 3px;
+}
+.alma-giftcards-amount__label {
+  font-family: var(--gc-sans);
+  font-style: normal;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.alma-giftcards-amount-custom {
+  grid-column: span 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 14px 4px 20px;
+  border: 1px solid var(--gc-hair);
+  border-radius: 12px;
+  background: var(--gc-paper);
+  margin-top: 4px;
+}
+.alma-giftcards-amount-custom__lbl {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-amount-custom__currency {
+  font-family: var(--gc-serif);
+  font-size: 22px;
+  color: var(--gc-ash);
+}
+.alma-giftcards-amount-custom input {
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 22px;
+  color: var(--gc-ink);
+  padding: 12px 0;
+}
+.alma-giftcards-amount-custom input::placeholder {
+  color: var(--gc-ash);
+  font-style: italic;
+}
+.alma-giftcards-amount-custom__range {
+  font-family: var(--gc-sans);
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+  font-weight: 700;
+}
+
+/* Design picker */
+.alma-giftcards-designs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 12px;
+}
+.alma-giftcards-design {
+  cursor: pointer;
+  border: 1px solid var(--gc-hair);
+  background: var(--gc-paper);
+  border-radius: 14px;
+  padding: 14px;
+  transition: border-color 200ms, transform 200ms;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.alma-giftcards-design:hover {
+  transform: translateY(-2px);
+  border-color: var(--gc-hair-strong);
+}
+.alma-giftcards-design.is-on {
+  border-color: var(--gc-ink);
+  box-shadow: 0 0 0 1px var(--gc-ink);
+}
+.alma-giftcards-design__swatch {
+  aspect-ratio: 1.586 / 1;
+  border-radius: 8px;
+  margin-bottom: 6px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 14px -6px rgba(20, 36, 26, 0.25);
+}
+.alma-giftcards-design__swatch::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 35%, rgba(0, 0, 0, 0.08) 100%);
+}
+.alma-giftcards-design__swatch--forest { background: var(--gc-forest); }
+.alma-giftcards-design__swatch--cocoa  { background: var(--gc-cocoa); }
+.alma-giftcards-design__swatch--shell  { background: var(--gc-shell); }
+.alma-giftcards-design__swatch--bone   { background: var(--gc-bone); }
+.alma-giftcards-design__mark {
+  position: absolute;
+  top: 10px; left: 12px;
+  font-family: var(--gc-sans);
+  font-weight: 900;
+  font-size: 12px;
+  letter-spacing: -0.02em;
+  color: var(--gc-paper);
+  z-index: 1;
+}
+.alma-giftcards-design__swatch--shell .alma-giftcards-design__mark,
+.alma-giftcards-design__swatch--bone .alma-giftcards-design__mark {
+  color: var(--gc-ink);
+}
+.alma-giftcards-design__name {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--gc-ink);
+}
+.alma-giftcards-design__who {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+}
+
+/* Delivery toggles */
+.alma-giftcards-deliver {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+.alma-giftcards-toggle {
+  cursor: pointer;
+  border: 1px solid var(--gc-hair);
+  background: var(--gc-paper);
+  border-radius: 12px;
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 200ms;
+  text-align: left;
+}
+.alma-giftcards-toggle:hover { border-color: var(--gc-hair-strong); }
+.alma-giftcards-toggle.is-on {
+  border-color: var(--gc-ink);
+  box-shadow: 0 0 0 1px var(--gc-ink);
+}
+.alma-giftcards-toggle__title {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+.alma-giftcards-toggle__sub {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 14px;
+  color: var(--gc-ash);
+}
+
+/* Form fields */
+.alma-giftcards-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.alma-giftcards-field__label {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-field__hint {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 13px;
+  color: var(--gc-ash);
+  margin-top: -2px;
+}
+.alma-giftcards-field input,
+.alma-giftcards-field textarea,
+.alma-giftcards-field select {
+  padding: 14px 16px;
+  border: 1px solid var(--gc-hair);
+  border-radius: 12px;
+  background: var(--gc-paper);
+  font-family: var(--gc-sans);
+  font-size: 15px;
+  color: var(--gc-ink);
+  outline: 0;
+  transition: border-color 200ms;
+  width: 100%;
+}
+.alma-giftcards-field input:focus,
+.alma-giftcards-field textarea:focus { border-color: var(--gc-ink); }
+.alma-giftcards-field input::placeholder,
+.alma-giftcards-field textarea::placeholder {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  color: var(--gc-ash);
+}
+.alma-giftcards-field textarea {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 17px;
+  resize: vertical;
+  min-height: 100px;
+  line-height: 1.5;
+}
+.alma-giftcards-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.alma-giftcards-charcount {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--gc-ash);
+  margin-top: 4px;
+  text-align: right;
+}
+.alma-giftcards-quickmsg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.alma-giftcards-quickmsg__btn {
+  padding: 7px 13px 6px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid var(--gc-hair);
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 13.5px;
+  color: var(--gc-ash);
+  cursor: pointer;
+  transition: all 180ms;
+}
+.alma-giftcards-quickmsg__btn:hover {
+  border-color: var(--gc-cocoa);
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-promo {
+  display: flex;
+  gap: 8px;
+}
+.alma-giftcards-promo input { flex: 1; }
+
+/* Summary */
+.alma-giftcards-summary {
+  margin-top: 30px;
+  background: var(--gc-bone);
+  border-radius: 16px;
+  padding: 24px 28px;
+  border: 1px solid var(--gc-hair);
+}
+.alma-giftcards-summary__line {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding: 8px 0;
+  font-family: var(--gc-sans);
+  font-size: 14px;
+  color: var(--gc-ash);
+}
+.alma-giftcards-summary__line strong {
+  color: var(--gc-ink);
+  font-weight: 500;
+}
+.alma-giftcards-summary__total {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  padding-top: 16px;
+  margin-top: 12px;
+  border-top: 1px solid var(--gc-hair);
+}
+.alma-giftcards-summary__total-label {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--gc-cocoa);
+}
+.alma-giftcards-summary__total-amt {
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 36px;
+  color: var(--gc-ink);
+  letter-spacing: -0.005em;
+}
+.alma-giftcards-summary__total-currency {
+  font-size: 18px;
+  vertical-align: top;
+  opacity: 0.55;
+  margin-right: 1px;
+}
+.alma-giftcards-summary__actions {
+  margin-top: 22px;
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.alma-giftcards-summary__actions .alma-giftcards-btn {
+  flex: 1;
+  justify-content: center;
+  min-width: 220px;
+}
+.alma-giftcards-summary__pay {
+  margin-top: 14px;
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  font-family: var(--gc-sans);
+  font-size: 11.5px;
+  color: var(--gc-ash);
+}
+.alma-giftcards-summary__stamps { display: flex; gap: 8px; }
+.alma-giftcards-summary__stamps span {
+  padding: 4px 9px 3px;
+  border-radius: 4px;
+  background: var(--gc-paper);
+  border: 1px solid var(--gc-hair);
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--gc-ink);
+}
+
+/* ── How it works strip ── */
+.alma-giftcards-how {
+  padding: 110px 36px;
+  background: var(--gc-bone);
+}
+.alma-giftcards-how__head {
+  text-align: center;
+  margin-bottom: 64px;
+}
+.alma-giftcards-how__head .alma-giftcards-h1 {
+  max-width: 18ch;
+  margin: 12px auto 0;
+}
+.alma-giftcards-how__grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 48px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+.alma-giftcards-how__grid article {
+  padding-top: 28px;
+  border-top: 1px solid var(--gc-hair-strong);
+}
+.alma-giftcards-how__num {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 60px;
+  line-height: 0.9;
+  color: var(--gc-cocoa);
+  margin-bottom: 18px;
+}
+.alma-giftcards-how__grid h4 {
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 26px;
+  margin: 0 0 14px;
+  line-height: 1.15;
+  color: var(--gc-ink);
+}
+.alma-giftcards-how__grid p {
+  font-family: var(--gc-sans);
+  font-size: 15px;
+  line-height: 1.7;
+  color: var(--gc-ash);
+  margin: 0;
+  max-width: 28em;
+}
+
+/* ── Venues ── */
+.alma-giftcards-venues {
+  padding: 110px 36px;
+  background: var(--gc-paper);
+}
+.alma-giftcards-venues__head { margin-bottom: 48px; }
+.alma-giftcards-venues__head .alma-giftcards-h1 { max-width: 18ch; }
+.alma-giftcards-venues__grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+.alma-giftcards-venue {
+  position: relative;
+  aspect-ratio: 5 / 3;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 30px 60px -30px rgba(20, 36, 26, 0.30);
+  display: block;
+}
+.alma-giftcards-venue img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.75);
+  transition: transform 600ms;
+}
+.alma-giftcards-venue:hover img { transform: scale(1.04); }
+.alma-giftcards-venue__overlay {
+  position: absolute;
+  inset: 0;
+  padding: 36px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--gc-paper);
+}
+.alma-giftcards-venue__overlay h3 {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 40px;
+  margin: 0;
+  color: var(--gc-paper);
+  letter-spacing: -0.005em;
+}
+.alma-giftcards-venue__meta {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  color: rgba(245, 220, 206, 0.85);
+  margin-top: 14px;
+}
+
+/* ── FAQ ── */
+.alma-giftcards-faq {
+  padding: 110px 36px 130px;
+  background: var(--gc-paper);
+  border-top: 1px solid var(--gc-hair);
+}
+.alma-giftcards-faq__container { max-width: 920px; }
+.alma-giftcards-faq__head {
+  margin-bottom: 56px;
+  text-align: center;
+}
+.alma-giftcards-faq__head .alma-giftcards-h1 {
+  max-width: 18ch;
+  margin: 14px auto 0;
+}
+.alma-giftcards-faq__item {
+  border-top: 1px solid var(--gc-hair);
+  padding: 26px 0;
+}
+.alma-giftcards-faq__item:last-child { border-bottom: 1px solid var(--gc-hair); }
+.alma-giftcards-faq__item summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 30px;
+  align-items: center;
+  cursor: pointer;
+  list-style: none;
+  font-family: var(--gc-serif);
+  font-weight: 500;
+  font-size: 22px;
+  color: var(--gc-ink);
+}
+.alma-giftcards-faq__item summary::-webkit-details-marker { display: none; }
+.alma-giftcards-faq__item summary::after {
+  content: "+";
+  font-family: var(--gc-serif);
+  font-size: 28px;
+  color: var(--gc-cocoa);
+  font-style: italic;
+  line-height: 1;
+  transition: transform 200ms;
+}
+.alma-giftcards-faq__item[open] summary::after { transform: rotate(45deg); }
+.alma-giftcards-faq__item p {
+  font-family: var(--gc-sans);
+  font-size: 15px;
+  line-height: 1.75;
+  color: var(--gc-ash);
+  margin: 14px 0 0;
+  max-width: 56em;
+}
+
+/* ── Reserve cross-link strip ── */
+.alma-giftcards-reserve-strip {
+  background: var(--gc-clay);
+  padding: 80px 36px;
+  text-align: center;
+}
+.alma-giftcards-reserve-strip__title {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  color: var(--gc-forest-deep);
+  margin: 0 0 18px;
+  font-size: clamp(40px, 6vw, 78px);
+  line-height: 0.95;
+}
+.alma-giftcards-reserve-strip__title em { font-style: italic; }
+.alma-giftcards-reserve-strip p {
+  font-family: var(--gc-serif);
+  font-size: 19px;
+  color: var(--gc-cocoa);
+  margin: 0 auto 36px;
+  max-width: 36ch;
+  line-height: 1.5;
+}
+
+/* ── Footer ── */
+.alma-giftcards-footer {
+  background: var(--gc-ink);
+  color: var(--gc-paper);
+  padding: 80px 36px 40px;
+}
+.alma-giftcards-footer__row {
+  max-width: 1280px;
+  margin: 0 auto;
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 48px;
+  padding-bottom: 56px;
+  border-bottom: 1px solid rgba(245, 220, 206, 0.10);
+}
+.alma-giftcards-footer h5 {
+  font-family: var(--gc-sans);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: rgba(245, 220, 206, 0.55);
+  margin: 0 0 18px;
+}
+.alma-giftcards-footer ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.alma-giftcards-footer ul a {
+  font-size: 14px;
+  color: rgba(245, 220, 206, 0.88);
+  transition: color 200ms;
+}
+.alma-giftcards-footer ul a:hover { color: var(--gc-shell); }
+.alma-giftcards-footer__word {
+  font-family: var(--gc-sans);
+  font-weight: 900;
+  font-size: 36px;
+  letter-spacing: -0.025em;
+  line-height: 1;
+  color: var(--gc-paper);
+}
+.alma-giftcards-footer__word em {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 26px;
+  letter-spacing: 0;
+  color: rgba(245, 220, 206, 0.7);
+  margin-left: 6px;
+}
+.alma-giftcards-footer__tagline {
+  font-family: var(--gc-serif);
+  font-style: italic;
+  font-size: 16px;
+  color: rgba(245, 220, 206, 0.7);
+  margin-top: 16px;
+  max-width: 28ch;
+  line-height: 1.5;
+}
+.alma-giftcards-footer__legal {
+  max-width: 1280px;
+  margin: 30px auto 0;
+  display: flex;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+  font-family: var(--gc-sans);
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: rgba(245, 220, 206, 0.4);
+}
+.alma-giftcards-staff-link { color: rgba(245, 220, 206, 0.5); }
+.alma-giftcards-staff-link:hover { color: var(--gc-shell); }
+
+/* ── Responsive ── */
+@media (max-width: 1100px) {
+  .alma-giftcards-grid {
+    grid-template-columns: 1fr;
+    gap: 56px;
+  }
+  .alma-giftcards-preview {
+    position: static;
+    max-width: 460px;
+    margin: 0 auto;
+  }
+  .alma-giftcards-configure__head {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .alma-giftcards-configure__meta { text-align: left; }
+}
+@media (max-width: 900px) {
+  .alma-giftcards-nav { padding: 14px 22px; }
+  .alma-giftcards-nav__links { display: none; }
+  .alma-giftcards-hero { padding: 130px 22px 70px; }
+  .alma-giftcards-hero__grid {
+    grid-template-columns: 1fr;
+    gap: 56px;
+  }
+  .alma-giftcards-configure,
+  .alma-giftcards-how,
+  .alma-giftcards-venues,
+  .alma-giftcards-faq { padding: 80px 22px; }
+  .alma-giftcards-reserve-strip { padding: 56px 22px; }
+  .alma-giftcards-amounts { grid-template-columns: repeat(2, 1fr); }
+  .alma-giftcards-amount-custom { grid-column: span 2; }
+  .alma-giftcards-designs { grid-template-columns: repeat(2, 1fr); }
+  .alma-giftcards-deliver { grid-template-columns: 1fr; }
+  .alma-giftcards-row { grid-template-columns: 1fr; }
+  .alma-giftcards-how__grid { grid-template-columns: 1fr; gap: 32px; }
+  .alma-giftcards-venues__grid { grid-template-columns: 1fr; }
+  .alma-giftcards-quickinfo { gap: 18px; padding: 20px; }
+  .alma-giftcards-quickinfo__sep { display: none; }
+  .alma-giftcards-footer__row { grid-template-columns: 1fr 1fr; }
+}

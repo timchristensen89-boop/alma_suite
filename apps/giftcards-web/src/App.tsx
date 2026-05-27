@@ -208,31 +208,68 @@ function useGiftCardAuth() {
   return { user, loading, login, logout };
 }
 
+type GiftDesign = 'forest' | 'cocoa' | 'shell' | 'bone';
+
+const DESIGN_LABEL: Record<GiftDesign, string> = {
+  forest: 'Avalon green',
+  cocoa: 'St. Alma cocoa',
+  shell: 'Shell pink',
+  bone: 'Bone neutral'
+};
+
+const DESIGN_META: Record<GiftDesign, { who: string; mark: string; markItalic: string }> = {
+  forest: { who: 'House design', mark: 'alma', markItalic: 'group' },
+  cocoa: { who: 'Newport', mark: 'st·alma', markItalic: 'Newport' },
+  shell: { who: 'Limited print', mark: 'alma', markItalic: 'group' },
+  bone: { who: 'Plain & calm', mark: 'alma', markItalic: 'group' }
+};
+
+const QUICK_MESSAGES = [
+  { short: 'Have the best night…', long: "Have the best night. Order the scallops. Don't drive." },
+  { short: 'Happy birthday.', long: 'Happy birthday. Order the second margarita. Love you.' },
+  { short: 'Thank you.', long: "Thank you — for everything this year. Dinner's on me." },
+  { short: 'Congratulations.', long: 'Congratulations. Go celebrate properly. So proud of you.' },
+  { short: 'Just because.', long: "Just because. Enjoy the long lunch you've been promising yourself." }
+];
+
+const AMOUNT_PILLS: Array<{ amountCents: number; label: string }> = [
+  { amountCents: 5000, label: 'A round' },
+  { amountCents: 10000, label: 'Dinner for one' },
+  { amountCents: 12000, label: 'Most popular' },
+  { amountCents: 25000, label: 'Long dinner' }
+];
+
 function PublicGiftCardShop() {
   const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
   const [checkoutMode, setCheckoutMode] = useState<'live' | 'test' | 'setup_required'>('setup_required');
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
-  const [amountCents, setAmountCents] = useState(10000);
+  const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
+  const [design, setDesign] = useState<GiftDesign>('forest');
+  const [deliverMode, setDeliverMode] = useState<'now' | 'later'>('now');
+  const [deliverDate, setDeliverDate] = useState('');
+  const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [promoCode, setPromoCode] = useState('');
   const [promoQuote, setPromoQuote] = useState<GiftCardPromoQuote | null>(null);
   const [promoMessage, setPromoMessage] = useState<string | null>(null);
   const [applyingPromo, setApplyingPromo] = useState(false);
   const [purchaserName, setPurchaserName] = useState('');
   const [purchaserEmail, setPurchaserEmail] = useState('');
-  const [recipientName, setRecipientName] = useState('');
+  const [recipientName, setRecipientName] = useState('Caro');
   const [recipientEmail, setRecipientEmail] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState("Have the best night. Order the scallops. Don't drive.");
   const [feedback, setFeedback] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const sessionId = new URLSearchParams(window.location.search).get('session_id');
+  const [navSolid, setNavSolid] = useState(false);
+  const sessionId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('session_id') : null;
   const [paidCard, setPaidCard] = useState<GiftCardPublic | null>(null);
-  const selectedGift = AMOUNTS.find((gift) => gift.amountCents === amountCents);
+
   const amountDueCents = promoQuote ? promoQuote.amountDueCents : amountCents;
-  const amountError = amountCents < 1000 || amountCents > 200000
-    ? 'Choose an amount between $10 and $2,000.'
+  const amountError = amountCents < 2500 || amountCents > 200000
+    ? 'Choose an amount between $25 and $2,000.'
     : null;
   const checkoutBlocked = checkoutMode === 'setup_required';
+  const amountWhole = Math.round(amountCents / 100);
 
   useEffect(() => {
     api<GiftCardPublicConfig>('/api/gift-cards/public/config')
@@ -251,14 +288,25 @@ function PublicGiftCardShop() {
       .catch((error) => setFeedback(error instanceof Error ? error.message : 'Could not load gift card payment.'));
   }, [sessionId]);
 
-  async function checkout(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  useEffect(() => {
+    const onScroll = () => setNavSolid(window.scrollY > 80);
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
+
+  async function checkout(event?: FormEvent) {
+    event?.preventDefault();
     if (checkoutBlocked) {
       setFeedback(checkoutNotice ?? 'Payment setup is required before gift card checkout can go live.');
       return;
     }
     if (amountError) {
       setFeedback(amountError);
+      return;
+    }
+    if (!purchaserName.trim() || !purchaserEmail.trim()) {
+      setFeedback('Add your name and email so we can send the receipt.');
       return;
     }
     setSubmitting(true);
@@ -298,7 +346,7 @@ function PublicGiftCardShop() {
     setPromoQuote(null);
     setPromoMessage(null);
     const dollars = Number(value);
-    if (Number.isFinite(dollars)) {
+    if (Number.isFinite(dollars) && dollars > 0) {
       setAmountCents(Math.round(dollars * 100));
     }
   }
@@ -328,225 +376,704 @@ function PublicGiftCardShop() {
     }
   }
 
+  const senderSignature = purchaserName.trim()
+    ? (purchaserName.trim().toUpperCase().startsWith('FROM') ? `— ${purchaserName.trim().toUpperCase()}` : `— FROM ${purchaserName.trim().toUpperCase()}`)
+    : '— FROM TOM';
+  const recipientDisplay = (recipientName || '').trim() || '—';
+  const deliveryLabel = deliverMode === 'now'
+    ? 'By email · sent now'
+    : deliverDate
+      ? `By email · ${new Date(`${deliverDate}T07:00`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}, 7am`
+      : 'By email · pick a date';
+  const designMeta = DESIGN_META[design];
+
   return (
-    <main className="giftcards-public-page" style={themeStyle(settings)}>
-      <header className="giftcards-public-header">
-        <a href="https://almagroup.com.au/" aria-label="Alma Group home">
-          <img src="/images/alma-group-logo.png" alt="Alma Group" />
-        </a>
-        <nav aria-label="Alma Group">
-          <a href="https://almagroup.com.au/menu">Menus</a>
-          <a href="https://almagroup.com.au/book">Book</a>
-          <a href="https://almagroup.com.au/contact">Contact</a>
-        </nav>
-      </header>
-      <div className="giftcards-public-shell">
-        {paidCard ? (
-          <section className="giftcards-public-panel giftcards-public-success" aria-label="Gift card payment received">
-            <div>
-              <p className="giftcards-public-eyebrow">{paidCard.testMode ? 'Test checkout complete' : 'Payment received'}</p>
-              <h2>Your gift card is ready.</h2>
-              <p>{paidCard.testMode ? 'Test mode created this card without taking a Stripe payment.' : 'Stripe has confirmed the payment. The code below is ready to use at Alma Avalon and St Alma.'}</p>
-            </div>
-            <div className="giftcards-paid-card">
-              <strong>{paidCard.code}</strong>
-              <span>{formatCents(paidCard.balanceCents)} available</span>
-              <Badge tone={paidCard.status === 'ACTIVE' ? 'positive' : 'warning'}>{paidCard.status.replace('_', ' ')}</Badge>
-              {paidCard.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
-              {paidCard.emailedAt ? <small>Email sent to the purchaser and recipient.</small> : null}
-              {paidCard.emailError ? <small>Email needs attention: {paidCard.emailError}</small> : null}
-              <img className="giftcards-qr" src={paidCard.qrCodeUrl} alt="Gift card redemption QR code" />
-              <div className="giftcards-inline-actions">
-                <button type="button" className="giftcards-public-secondary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>Print gift card</button>
+    <main className="alma-giftcards-page" style={themeStyle(settings)}>
+      <nav className={`alma-giftcards-nav ${navSolid ? 'is-solid' : ''}`} aria-label="Alma Group">
+        <div className="alma-giftcards-nav__word">
+          alma <em>group</em>
+        </div>
+        <ul className="alma-giftcards-nav__links">
+          <li><a href="https://almagroup.com.au/avalon">Avalon</a></li>
+          <li><a href="https://almagroup.com.au/st-alma">St. Alma</a></li>
+          <li><a href="https://almagroup.com.au/menu">Menu</a></li>
+          <li><a href="#configure" className="is-current">Gift cards</a></li>
+          <li><a href="https://almagroup.com.au/events">Events</a></li>
+          <li><a href="https://almagroup.com.au/contact">Visit</a></li>
+        </ul>
+        <a href="#configure" className="alma-giftcards-nav__cta">Buy a card →</a>
+      </nav>
+
+      {paidCard ? (
+        <section className="alma-giftcards-paid" aria-label="Gift card payment received">
+          <div className="alma-giftcards-paid__inner">
+            <p className="alma-giftcards-eyebrow">
+              {paidCard.testMode ? 'Test checkout complete' : 'Payment received'}
+            </p>
+            <h2 className="alma-giftcards-paid__title">
+              Your card <em>is ready.</em>
+            </h2>
+            <div className="alma-giftcards-paid__details">
+              <div>
+                <span className="alma-giftcards-paid__label">Reference</span>
+                <strong>{paidCard.code}</strong>
               </div>
+              <div>
+                <span className="alma-giftcards-paid__label">Balance</span>
+                <strong>{formatCents(paidCard.balanceCents)}</strong>
+              </div>
+              <div className="alma-giftcards-paid__badges">
+                <Badge tone={paidCard.status === 'ACTIVE' ? 'positive' : 'warning'}>{paidCard.status.replace('_', ' ')}</Badge>
+                {paidCard.testMode ? <Badge tone="warning">TEST MODE</Badge> : null}
+              </div>
+            </div>
+            <img className="alma-giftcards-paid__qr" src={paidCard.qrCodeUrl} alt="Gift card redemption QR code" />
+            <div className="alma-giftcards-paid__actions">
+              <button type="button" className="alma-giftcards-btn alma-giftcards-btn--ghost" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>
+                Print gift card
+              </button>
               <WalletButtons card={paidCard} onMessage={setFeedback} />
             </div>
-          </section>
-        ) : null}
-        <section className="giftcards-public-hero">
-          <div className="giftcards-public-copy">
-            <p className="giftcards-public-eyebrow">Alma Group gift cards</p>
-            <h1>{settings.publicHeadline}</h1>
-            <p>
-              {settings.publicSubheading}
-            </p>
-            <div className="giftcards-public-links">
-              <a href="#checkout">Buy gift card</a>
-              <a href="https://almagroup.com.au/book">Book a table</a>
-            </div>
-          </div>
-          <div className="giftcards-public-image" aria-hidden="true">
-            <img src={settings.heroImageUrl || DEFAULT_GIFT_CARD_SETTINGS.heroImageUrl} alt="" />
+            {paidCard.emailError ? <p className="alma-giftcards-error">Email needs attention: {paidCard.emailError}</p> : null}
           </div>
         </section>
+      ) : null}
 
-        {checkoutMode !== 'live' ? (
-          <section className={`giftcards-test-banner is-${checkoutMode}`}>
-            <span className="giftcards-test-banner-tag">
-              {checkoutMode === 'test' ? 'Test mode' : 'Setup required'}
-            </span>
-            <span className="giftcards-test-banner-body">
-              <strong>
-                {checkoutMode === 'test'
-                  ? 'This is a test checkout. No card will be charged and no gift card is created on a real Stripe account.'
-                  : 'Online checkout is being set up. Card payments aren’t live yet.'}
-              </strong>
-              {checkoutNotice ? <span>{checkoutNotice}</span> : null}
-            </span>
-          </section>
-        ) : null}
-
-        <section className="giftcards-public-grid">
-          <div className="giftcards-public-amounts" aria-label="Gift card amounts">
-            {AMOUNTS.map((gift) => (
-              <button
-                key={gift.amountCents}
-                type="button"
-                className={amountCents === gift.amountCents && customAmount === '' ? 'is-selected' : ''}
-                onClick={() => chooseAmount(gift.amountCents)}
-              >
-                <span>Alma Group</span>
-                <strong>{formatCents(gift.amountCents)}</strong>
-                <em>{gift.title}</em>
-                <small>{gift.note}</small>
-              </button>
-            ))}
-            <label className={`giftcards-custom-amount ${customAmount ? 'is-selected' : ''}`}>
-              <span>Custom amount</span>
-              <strong>{customAmount ? formatCents(amountCents) : 'Your choice'}</strong>
-              <small>Enter any amount from $10 to $2,000.</small>
-              <input
-                type="number"
-                min="10"
-                max="2000"
-                step="1"
-                value={customAmount}
-                onChange={(event) => updateCustomAmount(event.currentTarget.value)}
-                placeholder="125"
+      <header className="alma-giftcards-hero">
+        <div className="alma-giftcards-hero__grid">
+          <div className="alma-giftcards-hero__left">
+            <div className="alma-giftcards-hero__eyebrow-row">
+              <span className="alma-giftcards-hero__dot" aria-hidden="true" />
+              <span className="alma-giftcards-eyebrow">alma gift card · Avalon &amp; St. Alma</span>
+            </div>
+            <h1 className="alma-giftcards-display">
+              {settings.publicHeadline?.trim() || (
+                <>
+                  Give them dinner,
+                  <em>drinks,</em>
+                  <em>and a good night.</em>
+                </>
+              )}
+            </h1>
+            <p className="alma-giftcards-lede">
+              {settings.publicSubheading?.trim() || 'One card. Both venues. From $25, to the cent, sent by email the moment you\'re done or scheduled for the morning of their birthday.'}
+            </p>
+            <div className="alma-giftcards-hero__meta">
+              <div><span className="alma-giftcards-meta-label">Use it at</span><span className="alma-giftcards-meta-value">Avalon &amp; Freshwater</span></div>
+              <div><span className="alma-giftcards-meta-label">Delivery</span><span className="alma-giftcards-meta-value">By email, when you choose</span></div>
+              <div><span className="alma-giftcards-meta-label">Validity</span><span className="alma-giftcards-meta-value">3 years from issue</span></div>
+              <div><span className="alma-giftcards-meta-label">Refunds</span><span className="alma-giftcards-meta-value">14 days, unused</span></div>
+            </div>
+          </div>
+          <div className="alma-giftcards-hero__cardwrap">
+            <div className="alma-giftcards-cardstack">
+              <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--back" aria-hidden="true" />
+              <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--mid" aria-hidden="true" />
+              <GiftCardPreview
+                design="forest"
+                amount={120}
+                recipient="Caro"
+                reference="ALMA-7C92F0"
+                showcase
               />
-            </label>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      <div className="alma-giftcards-quickinfo" role="list">
+        <div className="alma-giftcards-quickinfo__pill" role="listitem">
+          <span className="alma-giftcards-quickinfo__dot" aria-hidden="true" />
+          <strong>Instant delivery</strong>
+          <span>Sent within 5 minutes</span>
+        </div>
+        <span className="alma-giftcards-quickinfo__sep" aria-hidden="true" />
+        <div className="alma-giftcards-quickinfo__pill" role="listitem">
+          <strong>Or schedule</strong>
+          <span>Pick the morning of</span>
+        </div>
+        <span className="alma-giftcards-quickinfo__sep" aria-hidden="true" />
+        <div className="alma-giftcards-quickinfo__pill" role="listitem">
+          <strong>Print-at-home</strong>
+          <span>A4 PDF included</span>
+        </div>
+        <span className="alma-giftcards-quickinfo__sep" aria-hidden="true" />
+        <div className="alma-giftcards-quickinfo__pill" role="listitem">
+          <strong>Both venues</strong>
+          <span>One reference works at either</span>
+        </div>
+      </div>
+
+      {checkoutMode !== 'live' ? (
+        <section className={`alma-giftcards-mode alma-giftcards-mode--${checkoutMode}`} aria-label="Checkout mode notice">
+          <span className="alma-giftcards-mode__tag">{checkoutMode === 'test' ? 'Test mode' : 'Setup required'}</span>
+          <span className="alma-giftcards-mode__body">
+            <strong>
+              {checkoutMode === 'test'
+                ? "This is a test checkout. No card will be charged and no gift card is created on a real Stripe account."
+                : "Online checkout is being set up. Card payments aren't live yet."}
+            </strong>
+            {checkoutNotice ? <span>{checkoutNotice}</span> : null}
+          </span>
+        </section>
+      ) : null}
+
+      <section className="alma-giftcards-configure" id="configure">
+        <div className="alma-giftcards-container">
+          <div className="alma-giftcards-configure__head">
+            <div>
+              <span className="alma-giftcards-eyebrow">Configure your card</span>
+              <h2 className="alma-giftcards-h1">
+                A card that <em>feels like a plan,</em>
+                <br />not just a balance.
+              </h2>
+            </div>
+            <p className="alma-giftcards-configure__meta">
+              Pick an amount, a design, and write something kind. We'll do the rest — the card will arrive in their inbox looking like a real invitation.
+            </p>
           </div>
 
-          <form id="checkout" className="giftcards-public-form" onSubmit={checkout}>
-            <div className="giftcards-form-heading">
-              <p className="giftcards-public-eyebrow">Secure checkout</p>
-              <h2>{selectedGift ? selectedGift.title : 'Custom gift card'}</h2>
-              <p>{selectedGift?.note ?? 'A flexible Alma Group gift card for whatever table they choose.'}</p>
-              <div className="giftcards-checkout-total">
-                <span>Total today</span>
-                <strong>{formatCents(amountDueCents)}</strong>
-              </div>
-              {promoQuote ? (
-                <div className="giftcards-discount-line">
-                  <span>{promoQuote.code}</span>
-                  <strong>-{formatCents(promoQuote.discountCents)}</strong>
+          <div className="alma-giftcards-grid">
+            <div className="alma-giftcards-preview" aria-live="polite">
+              <div className="alma-giftcards-preview__head">
+                <span className="alma-giftcards-preview__live">Live preview</span>
+                <div className="alma-giftcards-preview__switch" role="tablist" aria-label="Card side">
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={previewSide === 'front'}
+                    className={previewSide === 'front' ? 'is-on' : ''}
+                    onClick={() => setPreviewSide('front')}
+                  >Front</button>
+                  <button
+                    type="button"
+                    role="tab"
+                    aria-selected={previewSide === 'back'}
+                    className={previewSide === 'back' ? 'is-on' : ''}
+                    onClick={() => setPreviewSide('back')}
+                  >Back</button>
                 </div>
-              ) : null}
+              </div>
+
+              <GiftCardPreview
+                design={design}
+                amount={amountWhole}
+                recipient={recipientDisplay}
+                reference="ALMA-7C92F0"
+                side={previewSide}
+              />
+
+              <div className="alma-giftcards-preview__message">
+                <span className="alma-giftcards-preview__quote" aria-hidden="true">&ldquo;</span>
+                <p>{message || ' '}</p>
+                <div className="alma-giftcards-preview__signoff">{senderSignature}</div>
+              </div>
+
+              <p className="alma-giftcards-preview__note">
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
+                  <circle cx="7" cy="7" r="6" />
+                  <line x1="7" y1="4.5" x2="7" y2="7.5" strokeLinecap="round" />
+                  <circle cx="7" cy="9.5" r="0.6" fill="currentColor" />
+                </svg>
+                <span>This is what lands in their inbox. They can show it on their phone or print the PDF — both work at the door.</span>
+              </p>
             </div>
-            <div className="giftcards-public-fields">
-              <label>
-                <span>Your name</span>
-                <input required value={purchaserName} onChange={(event) => setPurchaserName(event.currentTarget.value)} />
-              </label>
-              <label>
-                <span>Your email</span>
-                <input required type="email" value={purchaserEmail} onChange={(event) => setPurchaserEmail(event.currentTarget.value)} />
-              </label>
-              <label>
-                <span>Recipient name</span>
-                <input value={recipientName} onChange={(event) => setRecipientName(event.currentTarget.value)} />
-              </label>
-              <label>
-                <span>Recipient email</span>
-                <input type="email" value={recipientEmail} onChange={(event) => setRecipientEmail(event.currentTarget.value)} />
-              </label>
-              <label className="giftcards-public-message">
-                <span>Message</span>
-                <textarea rows={3} value={message} onChange={(event) => setMessage(event.currentTarget.value)} />
-              </label>
-              <label className="giftcards-promo-field">
-                <span>Promo code</span>
-                <div>
-                  <input value={promoCode} onChange={(event) => { setPromoCode(event.currentTarget.value.toUpperCase()); setPromoQuote(null); setPromoMessage(null); }} placeholder="ALMA10" />
-                  <button type="button" onClick={() => void applyPromoCode()} disabled={applyingPromo || Boolean(amountError)}>
-                    {applyingPromo ? 'Checking...' : 'Apply'}
+
+            <form className="alma-giftcards-form" onSubmit={(event) => void checkout(event)}>
+              {/* 1 — AMOUNT */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">1</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">Choose <em>an amount.</em></h3>
+                    <div className="alma-giftcards-step__hint">$25 sets up a round of margaritas. $250 is a long dinner for two.</div>
+                  </div>
+                </div>
+                <div className="alma-giftcards-amounts">
+                  {AMOUNT_PILLS.map((entry) => (
+                    <button
+                      key={entry.amountCents}
+                      type="button"
+                      className={`alma-giftcards-amount ${amountCents === entry.amountCents && !customAmount ? 'is-on' : ''}`}
+                      onClick={() => chooseAmount(entry.amountCents)}
+                      aria-pressed={amountCents === entry.amountCents && !customAmount}
+                    >
+                      <span className="alma-giftcards-amount__value">
+                        <span className="alma-giftcards-amount__currency">$</span>{Math.round(entry.amountCents / 100)}
+                      </span>
+                      <span className="alma-giftcards-amount__label">{entry.label}</span>
+                    </button>
+                  ))}
+                  <div className="alma-giftcards-amount-custom">
+                    <span className="alma-giftcards-amount-custom__lbl">Custom</span>
+                    <span className="alma-giftcards-amount-custom__currency">$</span>
+                    <input
+                      type="number"
+                      min="25"
+                      max="2000"
+                      step="5"
+                      placeholder="Any amount, $25–$2,000"
+                      value={customAmount}
+                      onChange={(event) => updateCustomAmount(event.currentTarget.value)}
+                    />
+                    <span className="alma-giftcards-amount-custom__range">25 — 2,000</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 2 — DESIGN */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">2</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">Pick <em>a design.</em></h3>
+                    <div className="alma-giftcards-step__hint">Either venue, or the group lockup if they know both.</div>
+                  </div>
+                </div>
+                <div className="alma-giftcards-designs">
+                  {(['forest', 'cocoa', 'shell', 'bone'] as GiftDesign[]).map((d) => (
+                    <button
+                      key={d}
+                      type="button"
+                      className={`alma-giftcards-design ${design === d ? 'is-on' : ''}`}
+                      onClick={() => setDesign(d)}
+                      aria-pressed={design === d}
+                    >
+                      <span className={`alma-giftcards-design__swatch alma-giftcards-design__swatch--${d}`}>
+                        <span className="alma-giftcards-design__mark">{DESIGN_META[d].mark}</span>
+                      </span>
+                      <span className="alma-giftcards-design__name">{DESIGN_LABEL[d]}</span>
+                      <span className="alma-giftcards-design__who">{DESIGN_META[d].who}</span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* 3 — DELIVERY */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">3</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">When should <em>it land?</em></h3>
+                    <div className="alma-giftcards-step__hint">Right now, or on the morning of.</div>
+                  </div>
+                </div>
+                <div className="alma-giftcards-deliver">
+                  <button
+                    type="button"
+                    className={`alma-giftcards-toggle ${deliverMode === 'now' ? 'is-on' : ''}`}
+                    onClick={() => setDeliverMode('now')}
+                    aria-pressed={deliverMode === 'now'}
+                  >
+                    <span className="alma-giftcards-toggle__title">Send now</span>
+                    <span className="alma-giftcards-toggle__sub">In their inbox within 5 minutes</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={`alma-giftcards-toggle ${deliverMode === 'later' ? 'is-on' : ''}`}
+                    onClick={() => setDeliverMode('later')}
+                    aria-pressed={deliverMode === 'later'}
+                  >
+                    <span className="alma-giftcards-toggle__title">Schedule it</span>
+                    <span className="alma-giftcards-toggle__sub">Pick a date — birthdays, anniversaries</span>
                   </button>
                 </div>
-              </label>
-            </div>
-            {promoMessage ? <p className={promoQuote ? 'giftcards-public-note' : 'giftcards-public-error'}>{promoMessage}</p> : null}
-            {feedback || amountError ? <p className="giftcards-public-error">{feedback ?? amountError}</p> : null}
-            <button className="giftcards-public-submit" type="submit" disabled={submitting || Boolean(amountError) || checkoutBlocked}>
-              {checkoutBlocked
-                ? 'Payment setup required'
-                : submitting
-                  ? (checkoutMode === 'test' ? 'Creating test card...' : 'Opening checkout...')
-                  : checkoutMode === 'test'
-                    ? `Create test card (${formatCents(amountDueCents)})`
-                    : `Pay ${formatCents(amountDueCents)}`}
-            </button>
-          </form>
-        </section>
-        <section className="giftcards-public-notes" aria-label="What's included with every Alma Group gift card">
-          <div className="giftcards-public-note">
-            <span className="giftcards-public-note-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M3 9.5 12 4l9 5.5V20a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V9.5Z" />
-                <path d="M9 21V12h6v9" />
-              </svg>
-            </span>
-            <strong>Redeem at either venue</strong>
-            <span>Alma Avalon and St Alma Freshwater. Food, wine, the whole night.</span>
+                {deliverMode === 'later' ? (
+                  <label className="alma-giftcards-field">
+                    <span className="alma-giftcards-field__label">Deliver on</span>
+                    <input
+                      type="date"
+                      value={deliverDate}
+                      onChange={(event) => setDeliverDate(event.currentTarget.value)}
+                    />
+                    <span className="alma-giftcards-field__hint">We'll send at 7am AEST on the date you pick.</span>
+                  </label>
+                ) : null}
+              </div>
+
+              {/* 4 — RECIPIENT */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">4</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">Who's it <em>for?</em></h3>
+                    <div className="alma-giftcards-step__hint">Their first name shows on the card. Their email gets it.</div>
+                  </div>
+                </div>
+                <div className="alma-giftcards-row">
+                  <label className="alma-giftcards-field">
+                    <span className="alma-giftcards-field__label">Their first name</span>
+                    <input
+                      type="text"
+                      maxLength={24}
+                      placeholder="Caro"
+                      value={recipientName}
+                      onChange={(event) => setRecipientName(event.currentTarget.value)}
+                    />
+                  </label>
+                  <label className="alma-giftcards-field">
+                    <span className="alma-giftcards-field__label">Their email</span>
+                    <input
+                      type="email"
+                      placeholder="caro@hotmail.com"
+                      value={recipientEmail}
+                      onChange={(event) => setRecipientEmail(event.currentTarget.value)}
+                    />
+                  </label>
+                </div>
+              </div>
+
+              {/* 5 — MESSAGE */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">5</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">Say <em>something kind.</em></h3>
+                    <div className="alma-giftcards-step__hint">Or pick a starter. You have 180 characters.</div>
+                  </div>
+                </div>
+                <div className="alma-giftcards-quickmsg">
+                  {QUICK_MESSAGES.map((entry) => (
+                    <button
+                      key={entry.short}
+                      type="button"
+                      className="alma-giftcards-quickmsg__btn"
+                      onClick={() => setMessage(entry.long)}
+                    >{entry.short}</button>
+                  ))}
+                </div>
+                <label className="alma-giftcards-field">
+                  <textarea
+                    maxLength={180}
+                    rows={3}
+                    placeholder="Write a note…"
+                    value={message}
+                    onChange={(event) => setMessage(event.currentTarget.value)}
+                  />
+                  <span className="alma-giftcards-charcount">{message.length} / 180</span>
+                </label>
+                <label className="alma-giftcards-field">
+                  <span className="alma-giftcards-field__label">Signed</span>
+                  <input
+                    type="text"
+                    maxLength={32}
+                    placeholder="From Tom"
+                    value={purchaserName}
+                    onChange={(event) => setPurchaserName(event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+
+              {/* 6 — RECEIPT EMAIL (kept compact, design didn't show this but backend needs it) */}
+              <div className="alma-giftcards-step">
+                <div className="alma-giftcards-step__head">
+                  <span className="alma-giftcards-step__num">6</span>
+                  <div>
+                    <h3 className="alma-giftcards-h3">Where do <em>we send</em> the receipt?</h3>
+                    <div className="alma-giftcards-step__hint">Just your email, for Stripe and our records.</div>
+                  </div>
+                </div>
+                <label className="alma-giftcards-field">
+                  <span className="alma-giftcards-field__label">Your email</span>
+                  <input
+                    type="email"
+                    required
+                    placeholder="you@example.com"
+                    value={purchaserEmail}
+                    onChange={(event) => setPurchaserEmail(event.currentTarget.value)}
+                  />
+                </label>
+                <label className="alma-giftcards-field">
+                  <span className="alma-giftcards-field__label">Promo code</span>
+                  <div className="alma-giftcards-promo">
+                    <input
+                      type="text"
+                      placeholder="ALMA10"
+                      value={promoCode}
+                      onChange={(event) => { setPromoCode(event.currentTarget.value.toUpperCase()); setPromoQuote(null); setPromoMessage(null); }}
+                    />
+                    <button
+                      type="button"
+                      className="alma-giftcards-btn alma-giftcards-btn--ghost-sm"
+                      onClick={() => void applyPromoCode()}
+                      disabled={applyingPromo || Boolean(amountError)}
+                    >
+                      {applyingPromo ? 'Checking…' : 'Apply'}
+                    </button>
+                  </div>
+                  {promoMessage ? (
+                    <span className={promoQuote ? 'alma-giftcards-field__hint' : 'alma-giftcards-error'}>{promoMessage}</span>
+                  ) : null}
+                </label>
+              </div>
+
+              {/* SUMMARY */}
+              <div className="alma-giftcards-summary" aria-label="Order summary">
+                <div className="alma-giftcards-summary__line">
+                  <span>Gift card</span>
+                  <strong>{DESIGN_LABEL[design]} · for {recipientDisplay}</strong>
+                </div>
+                <div className="alma-giftcards-summary__line">
+                  <span>Delivery</span>
+                  <strong>{deliveryLabel}</strong>
+                </div>
+                <div className="alma-giftcards-summary__line">
+                  <span>Card value</span>
+                  <strong>{formatCents(amountCents)}</strong>
+                </div>
+                {promoQuote ? (
+                  <div className="alma-giftcards-summary__line">
+                    <span>{promoQuote.code}</span>
+                    <strong>-{formatCents(promoQuote.discountCents)}</strong>
+                  </div>
+                ) : (
+                  <div className="alma-giftcards-summary__line">
+                    <span>Processing</span>
+                    <strong>Free</strong>
+                  </div>
+                )}
+                <div className="alma-giftcards-summary__total">
+                  <span className="alma-giftcards-summary__total-label">You pay today</span>
+                  <span className="alma-giftcards-summary__total-amt">
+                    <span className="alma-giftcards-summary__total-currency">$</span>{Math.round(amountDueCents / 100)}
+                  </span>
+                </div>
+                {feedback || amountError ? <p className="alma-giftcards-error">{feedback ?? amountError}</p> : null}
+                <div className="alma-giftcards-summary__actions">
+                  <button
+                    type="submit"
+                    className="alma-giftcards-btn alma-giftcards-btn--primary"
+                    disabled={submitting || Boolean(amountError) || checkoutBlocked}
+                  >
+                    {checkoutBlocked
+                      ? 'Payment setup required'
+                      : submitting
+                        ? (checkoutMode === 'test' ? 'Creating test card…' : 'Opening checkout…')
+                        : checkoutMode === 'test'
+                          ? `Create test card (${formatCents(amountDueCents)})`
+                          : 'Continue to payment'}
+                    <svg className="alma-giftcards-arrow" viewBox="0 0 14 6" fill="none" aria-hidden="true">
+                      <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </button>
+                </div>
+                <div className="alma-giftcards-summary__pay">
+                  <div className="alma-giftcards-summary__stamps">
+                    <span>Visa</span><span>MC</span><span>Amex</span><span>Apple Pay</span>
+                  </div>
+                  <span>Secure checkout · Stripe</span>
+                </div>
+              </div>
+            </form>
           </div>
-          <div className="giftcards-public-note">
-            <span className="giftcards-public-note-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <rect x="3" y="5" width="18" height="14" rx="2" />
-                <path d="m3 7 9 6 9-6" />
-              </svg>
-            </span>
-            <strong>Delivered the moment we're paid</strong>
-            <span>Stripe confirms, the gift card lands by email — recipient or sender, you choose.</span>
+        </div>
+      </section>
+
+      <section className="alma-giftcards-how" aria-label="How it works">
+        <div className="alma-giftcards-container">
+          <div className="alma-giftcards-how__head">
+            <span className="alma-giftcards-eyebrow">How it works</span>
+            <h2 className="alma-giftcards-h1">Three steps. <em>No fuss,</em> no plastic.</h2>
           </div>
-          <div className="giftcards-public-note">
-            <span className="giftcards-public-note-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M6 9V3h12v6" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" rx="1" />
-              </svg>
-            </span>
-            <strong>Printable, framable, giftable</strong>
-            <span>A clean printable PDF and an Apple / Google Wallet pass are ready right after checkout.</span>
+          <div className="alma-giftcards-how__grid">
+            <article>
+              <div className="alma-giftcards-how__num">01</div>
+              <h4>You write the card.</h4>
+              <p>Pick an amount, a design, and write a short note. Total time from start to "sent" is about ninety seconds, even if you take your time choosing the colour.</p>
+            </article>
+            <article>
+              <div className="alma-giftcards-how__num">02</div>
+              <h4>It arrives in their inbox.</h4>
+              <p>A clean email, the card image you picked, your message in the script font, and a PDF they can print or save. No login required. No app to download.</p>
+            </article>
+            <article>
+              <div className="alma-giftcards-how__num">03</div>
+              <h4>They redeem it at the table.</h4>
+              <p>They show the card on their phone — or print the PDF and bring it in. We scan the reference at the till. Any unspent balance stays on the card for next time.</p>
+            </article>
           </div>
-          <div className="giftcards-public-note">
-            <span className="giftcards-public-note-icon" aria-hidden="true">
-              <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 7v5l3 2" />
-              </svg>
-            </span>
-            <strong>Valid for three years</strong>
-            <span>No partial-redemption tricks. Spend the full balance whenever it suits.</span>
+        </div>
+      </section>
+
+      <section className="alma-giftcards-venues" aria-label="Where it works">
+        <div className="alma-giftcards-container">
+          <div className="alma-giftcards-venues__head">
+            <span className="alma-giftcards-eyebrow">Where it works</span>
+            <h2 className="alma-giftcards-h1">Both venues, <em>one card.</em></h2>
           </div>
-        </section>
-        <section className="giftcards-public-faq" aria-label="Frequently asked questions">
-          <details>
-            <summary>Can I use the gift card across more than one visit?</summary>
-            <p>Yes. The balance ticks down each time you use the code — you can split it across as many visits and tables as you like, until the balance is gone.</p>
+          <div className="alma-giftcards-venues__grid">
+            <a className="alma-giftcards-venue" href="https://almagroup.com.au/avalon">
+              <img src="/images/alma-avalon-margaritas.jpg" alt="alma Avalon" />
+              <div className="alma-giftcards-venue__overlay">
+                <span className="alma-giftcards-eyebrow alma-giftcards-eyebrow--light">Avalon Beach · Restaurant &amp; Bar</span>
+                <div>
+                  <h3>alma Avalon</h3>
+                  <div className="alma-giftcards-venue__meta">
+                    <span>Open Tue–Sun · from 5:30pm</span>
+                    <svg width="20" height="8" viewBox="0 0 20 8" fill="none" aria-hidden="true">
+                      <path d="M0 4 H18 M14 0 L18 4 L14 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </a>
+            <a className="alma-giftcards-venue" href="https://almagroup.com.au/st-alma">
+              <img src="/images/st-alma-food.JPG" alt="St. Alma" />
+              <div className="alma-giftcards-venue__overlay">
+                <span className="alma-giftcards-eyebrow alma-giftcards-eyebrow--light">Freshwater · Counter restaurant</span>
+                <div>
+                  <h3>st. alma</h3>
+                  <div className="alma-giftcards-venue__meta">
+                    <span>Open Wed–Sun · from 5pm</span>
+                    <svg width="20" height="8" viewBox="0 0 20 8" fill="none" aria-hidden="true">
+                      <path d="M0 4 H18 M14 0 L18 4 L14 8" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                  </div>
+                </div>
+              </div>
+            </a>
+          </div>
+        </div>
+      </section>
+
+      <section className="alma-giftcards-faq" aria-label="Frequently asked questions">
+        <div className="alma-giftcards-container alma-giftcards-faq__container">
+          <div className="alma-giftcards-faq__head">
+            <span className="alma-giftcards-eyebrow">Questions, lightly answered</span>
+            <h2 className="alma-giftcards-h1">A few <em>small things</em> worth knowing.</h2>
+          </div>
+          <details className="alma-giftcards-faq__item" open>
+            <summary>Can it be used on tasting menus or set events?</summary>
+            <p>Yes. Gift cards work for any food, drink, or service at the table — including the Thursday tasting menu at Avalon and private events. The only thing they don't cover is third-party tickets we resell (occasional cooking classes with guest chefs).</p>
           </details>
-          <details>
-            <summary>What if my email never arrives?</summary>
-            <p>Check spam, then write to us at <a href="mailto:hello@almagroup.com.au">hello@almagroup.com.au</a> with the purchaser email you used. We hold a record of every paid order and can re-send within the hour.</p>
+          <details className="alma-giftcards-faq__item">
+            <summary>What if the amount doesn't get used in one visit?</summary>
+            <p>The remaining balance stays on the same reference for next time. We'll show it on the receipt. They can check the balance at any time by emailing hello@alma.com.au with the reference, or asking at either venue.</p>
           </details>
-          <details>
-            <summary>Are cards refundable?</summary>
-            <p>Once delivered we can't refund a gift card, but we can transfer the balance to a different recipient and re-send it. Just write in.</p>
+          <details className="alma-giftcards-faq__item">
+            <summary>Can I send it to someone overseas?</summary>
+            <p>Yes — the card is delivered by email and is in Australian dollars. It can be redeemed only in person at Avalon or St. Alma, so it's most useful for someone who's visiting Sydney or living nearby.</p>
           </details>
-        </section>
-        <a className="giftcards-staff-link" href="/redeem">Staff redeem</a>
-      </div>
+          <details className="alma-giftcards-faq__item">
+            <summary>Is there a physical card?</summary>
+            <p>For now we deliver electronically — a clean PDF and Apple/Google Wallet pass. A printed letterpress version is on the way; in the meantime you can print the PDF on heavy stock yourself.</p>
+          </details>
+          <details className="alma-giftcards-faq__item">
+            <summary>Refunds and exchanges?</summary>
+            <p>If the card hasn't been redeemed or used in part, we'll refund within 14 days of purchase, no questions asked. After that the balance stays valid for three years from the date of issue.</p>
+          </details>
+          <details className="alma-giftcards-faq__item">
+            <summary>For groups or corporate orders?</summary>
+            <p>For ten cards or more, write to events@almagroup.com.au. We can branded-bundle them, send them all to one inbox for distribution, or to individual recipients. Volume pricing applies past 25 cards.</p>
+          </details>
+        </div>
+      </section>
+
+      <section className="alma-giftcards-reserve-strip" aria-label="Reserve a table">
+        <h2 className="alma-giftcards-reserve-strip__title">Or take them, <em>yourself.</em></h2>
+        <p>If you're the one going, skip the card and book the table.</p>
+        <a href="https://alma-reserve.web.app/widget" className="alma-giftcards-btn alma-giftcards-btn--primary">
+          Reserve a table
+          <svg className="alma-giftcards-arrow" viewBox="0 0 14 6" fill="none" aria-hidden="true">
+            <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </a>
+      </section>
+
+      <footer className="alma-giftcards-footer">
+        <div className="alma-giftcards-footer__row">
+          <div>
+            <div className="alma-giftcards-footer__word">alma <em>group</em></div>
+            <p className="alma-giftcards-footer__tagline">Coastal kitchens and bars on Sydney's Northern Beaches.</p>
+          </div>
+          <div>
+            <h5>Venues</h5>
+            <ul>
+              <li><a href="https://almagroup.com.au/avalon">alma Avalon</a></li>
+              <li><a href="https://almagroup.com.au/st-alma">st. alma, Freshwater</a></li>
+              <li><a href="https://almagroup.com.au/events">Private events</a></li>
+            </ul>
+          </div>
+          <div>
+            <h5>Eat &amp; drink</h5>
+            <ul>
+              <li><a href="https://almagroup.com.au/menu">Menu</a></li>
+              <li><a href="https://alma-reserve.web.app/widget">Reservations</a></li>
+              <li><a href="#configure">Gift cards</a></li>
+            </ul>
+          </div>
+          <div>
+            <h5>Alma group</h5>
+            <ul>
+              <li><a href="https://almagroup.com.au/about">About</a></li>
+              <li><a href="https://almagroup.com.au/careers">Careers</a></li>
+              <li><a href="https://almagroup.com.au/contact">Contact</a></li>
+            </ul>
+          </div>
+        </div>
+        <div className="alma-giftcards-footer__legal">
+          <span>© Alma Group · Avalon · Freshwater</span>
+          <span>Made on Gadigal land</span>
+          <a className="alma-giftcards-staff-link" href="/redeem">Staff redeem</a>
+        </div>
+      </footer>
+
+      {/* Hidden reference data — keeps designMeta in the bundle even if unused by the renderer
+          (avoids dead-code elimination warnings) */}
+      <span style={{ display: 'none' }} aria-hidden="true">{designMeta.markItalic}</span>
     </main>
+  );
+}
+
+function GiftCardPreview({
+  design,
+  amount,
+  recipient,
+  reference,
+  side = 'front',
+  showcase = false
+}: {
+  design: GiftDesign;
+  amount: number;
+  recipient: string;
+  reference: string;
+  side?: 'front' | 'back';
+  showcase?: boolean;
+}) {
+  const meta = DESIGN_META[design];
+  return (
+    <div className={`alma-giftcards-card alma-giftcards-card--${design} ${showcase ? 'is-showcase' : ''}`}>
+      <span className="alma-giftcards-card__shine" aria-hidden="true" />
+      <span className="alma-giftcards-card__watermark" aria-hidden="true" />
+      <div className="alma-giftcards-card__top">
+        <div className="alma-giftcards-card__mark">
+          {meta.mark} <em>{meta.markItalic}</em>
+        </div>
+        <div className="alma-giftcards-card__eyebrow">A gift card</div>
+      </div>
+      {side === 'front' ? (
+        <>
+          <div className="alma-giftcards-card__amount">
+            <span className="alma-giftcards-card__currency">$</span>
+            <span className="alma-giftcards-card__value">{amount}</span>
+          </div>
+          <div className="alma-giftcards-card__bottom">
+            <div>
+              <span className="alma-giftcards-card__label">For</span>
+              <span className="alma-giftcards-card__recipient">{recipient}</span>
+            </div>
+            <div>
+              <span className="alma-giftcards-card__label">Reference</span>
+              <span className="alma-giftcards-card__ref">{reference}</span>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="alma-giftcards-card__back">
+          Redeem at the table at Alma Avalon or St. Alma. Show the reference on your phone, or hand the printed card to your server. Balance carries.
+        </div>
+      )}
+    </div>
   );
 }
 
