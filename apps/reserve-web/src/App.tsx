@@ -770,443 +770,674 @@ function FunctionEnquiryPanel({ venue }: { venue: string }) {
 }
 
 function PublicBookingWidget() {
+  // Public booking widget redesigned per the Claude Design handoff
+  // (reservation-widget.jsx). Four-step flow: venue + date + party →
+  // time → details → confirmation ticket. The API contract is unchanged
+  // — same /api/reserve/public-widget/{config,availability,book} —
+  // only the UI changes. See styles.css `.alma-booking-page` block.
   const [config, setConfig] = useState<ReservePublicWidgetConfig | null>(null);
+  const [loadingConfig, setLoadingConfig] = useState(true);
+  const [configError, setConfigError] = useState<string | null>(null);
+  const [step, setStep] = useState<0 | 1 | 2 | 3>(0);
+
+  const today = useMemo(() => {
+    const value = new Date();
+    value.setHours(0, 0, 0, 0);
+    return value;
+  }, []);
+  const [venue, setVenue] = useState<string>('Alma Avalon');
+  const [dateIdx, setDateIdx] = useState(0);
+  const [partySize, setPartySize] = useState(2);
+
   const [availability, setAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
-  const [loading, setLoading] = useState(true);
   const [searching, setSearching] = useState(false);
-  const [booking, setBooking] = useState(false);
-  const [feedback, setFeedback] = useState<FeedbackState>(defaultFeedback());
-  const [search, setSearch] = useState<WidgetSearchForm>(() => defaultWidgetSearch(KNOWN_VENUES[0]!));
-  const [bookingForm, setBookingForm] = useState<WidgetBookingForm>(defaultWidgetBooking);
+  const [availabilityError, setAvailabilityError] = useState<string | null>(null);
   const [selectedSlot, setSelectedSlot] = useState<ReservePublicAvailabilityResponse['slots'][number] | null>(null);
+
+  const [guest, setGuest] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    phone: '',
+    dietaryTags: [] as string[],
+    occasion: null as string | null,
+    kitchenNote: '',
+    marketingOptIn: false
+  });
+  const [submitting, setSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReservePublicBookingConfirmation | null>(null);
 
-  const loadConfig = useCallback(async () => {
-    setLoading(true);
-    setFeedback(defaultFeedback());
-    try {
-      const nextConfig = await api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config');
-      setConfig(nextConfig);
-      const firstVenue = nextConfig.venues.find((venue) => venue.onlineEnabled)?.name ?? nextConfig.venues[0]?.name ?? KNOWN_VENUES[0]!;
-      setSearch(defaultWidgetSearch(firstVenue));
-    } catch (error) {
-      setFeedback({
-        target: 'widget',
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not load booking page'
-      });
-    } finally {
-      setLoading(false);
-    }
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const nextConfig = await api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config');
+        if (cancelled) return;
+        setConfig(nextConfig);
+        const firstOnline = nextConfig.venues.find((v) => v.onlineEnabled);
+        const fallback = firstOnline ?? nextConfig.venues[0];
+        if (fallback?.name) setVenue(fallback.name);
+      } catch (error) {
+        if (cancelled) return;
+        setConfigError(error instanceof Error ? error.message : 'Could not load booking page');
+      } finally {
+        if (!cancelled) setLoadingConfig(false);
+      }
+    })();
+    return () => { cancelled = true; };
   }, []);
 
-  useEffect(() => {
-    void loadConfig();
-  }, [loadConfig]);
+  const calendar = useMemo(() => {
+    return Array.from({ length: 14 }, (_, offset) => {
+      const date = new Date(today);
+      date.setDate(date.getDate() + offset);
+      return date;
+    });
+  }, [today]);
 
-  const requestAvailability = useCallback(async (nextSearch: WidgetSearchForm) => {
+  const selectedDate = calendar[dateIdx] ?? calendar[0]!;
+  const venueAccent = venueAccentFor(venue);
+  const venueTagline = venueTaglineFor(venue);
+  const venueOptions = useMemo(() => {
+    const fromConfig = (config?.venues ?? []).map((entry) => ({
+      name: entry.name,
+      tagline: venueTaglineFor(entry.name),
+      accent: venueAccentFor(entry.name),
+      onlineEnabled: entry.onlineEnabled
+    }));
+    if (fromConfig.length) return fromConfig;
+    return [
+      { name: 'Alma Avalon', tagline: 'Restaurant & Bar', accent: '#3D5C3F', onlineEnabled: true },
+      { name: 'St Alma', tagline: 'Freshwater dining', accent: '#A0463A', onlineEnabled: true }
+    ];
+  }, [config]);
+
+  const isOversize = partySize >= 8;
+
+  const requestAvailability = useCallback(async () => {
     setSearching(true);
-    setFeedback(defaultFeedback());
+    setAvailabilityError(null);
     setSelectedSlot(null);
-    setReservation(null);
     try {
-      setAvailability(
-        await api<ReservePublicAvailabilityResponse>('/api/reserve/public-widget/availability', {
-          method: 'POST',
-          body: JSON.stringify({
-            venue: nextSearch.venue,
-            date: `${nextSearch.date}T00:00:00`,
-            partySize: Number(nextSearch.partySize || 1),
-            servicePeriod: nextSearch.servicePeriod
-          })
+      const date = toDateInput(selectedDate);
+      const next = await api<ReservePublicAvailabilityResponse>('/api/reserve/public-widget/availability', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue,
+          date: `${date}T00:00:00`,
+          partySize,
+          servicePeriod: 'DINNER'
         })
-      );
-    } catch (error) {
-      setFeedback({
-        target: 'widget-search',
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not check availability'
       });
+      setAvailability(next);
+      return next;
+    } catch (error) {
+      setAvailabilityError(error instanceof Error ? error.message : 'Could not check availability');
+      setAvailability(null);
+      return null;
     } finally {
       setSearching(false);
     }
-  }, []);
+  }, [selectedDate, venue, partySize]);
 
-  async function checkAvailability(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await requestAvailability(search);
+  async function goToTimes() {
+    if (isOversize) {
+      const target = document.getElementById('alma-booking-function-enquiry');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      return;
+    }
+    const result = await requestAvailability();
+    if (result) setStep(1);
   }
 
-  async function tryAnotherDate(date: string) {
-    const nextSearch = { ...search, date };
-    setSearch(nextSearch);
-    await requestAvailability(nextSearch);
+  function pickSlot(slot: ReservePublicAvailabilityResponse['slots'][number]) {
+    if (slot.capacityRemaining <= 0) return;
+    setSelectedSlot(slot);
   }
 
-  async function submitBooking(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function submitBooking() {
     if (!selectedSlot) return;
-    setBooking(true);
-    setFeedback(defaultFeedback());
+    setSubmitting(true);
+    setSubmitError(null);
     try {
       const created = await api<ReservePublicBookingConfirmation>('/api/reserve/public-widget/book', {
         method: 'POST',
         body: JSON.stringify({
-          venue: search.venue,
+          venue,
           availabilityRuleId: selectedSlot.availabilityRuleId || '',
-          serviceDate: `${search.date}T00:00:00`,
+          serviceDate: `${toDateInput(selectedDate)}T00:00:00`,
           startsAt: selectedSlot.startsAt,
-          partySize: Number(search.partySize || 1),
-          durationMinutes: Math.round((new Date(selectedSlot.endsAt).getTime() - new Date(selectedSlot.startsAt).getTime()) / 60_000),
-          ...bookingForm
+          partySize,
+          durationMinutes: Math.max(60, Math.round((new Date(selectedSlot.endsAt).getTime() - new Date(selectedSlot.startsAt).getTime()) / 60_000)),
+          firstName: guest.firstName.trim(),
+          lastName: guest.lastName.trim(),
+          email: guest.email.trim(),
+          phone: guest.phone.trim(),
+          occasion: guest.occasion ?? '',
+          dietaryNotes: guest.dietaryTags.join(', '),
+          specialRequests: guest.kitchenNote.trim(),
+          marketingOptIn: guest.marketingOptIn
         })
       });
       setReservation(created);
-      setFeedback({
-        target: 'widget-booking',
-        tone: 'success',
-        message: 'Booking request received. The venue team has the details and will follow up if anything needs to change.'
-      });
+      setStep(3);
     } catch (error) {
-      setFeedback({
-        target: 'widget-booking',
-        tone: 'error',
-        message: error instanceof Error ? error.message : 'Could not confirm booking'
-      });
+      setSubmitError(error instanceof Error ? error.message : 'Could not confirm booking');
     } finally {
-      setBooking(false);
+      setSubmitting(false);
     }
   }
 
-  const configuredVenues = config?.venues.length
-    ? config.venues
-    : KNOWN_VENUES.map((name) => ({ name, onlineEnabled: false, activeRules: 0, googleReserveReady: false }));
-  const venueOptions = configuredVenues
-    .map((venue) => ({
-      activeRules: venue.activeRules,
-      detail: RESERVE_PUBLIC_VENUES[venue.name] ?? DEFAULT_RESERVE_PUBLIC_VENUE,
-      onlineEnabled: venue.onlineEnabled,
-      value: venue.name
-    }));
-  const selectedVenue = venueOptions.find((venue) => venue.value === search.venue) ?? venueOptions[0];
-  const selectedVenueDetail = selectedVenue?.detail ?? RESERVE_PUBLIC_VENUES[search.venue] ?? DEFAULT_RESERVE_PUBLIC_VENUE;
-  const groupedSlots = useMemo(() => {
-    const groups = new Map<string, ReservePublicAvailabilityResponse['slots']>();
-    for (const slot of availability?.slots ?? []) {
-      const key = slotDateKey(slot.startsAt);
-      groups.set(key, [...(groups.get(key) ?? []), slot]);
-    }
-    return Array.from(groups.entries()).map(([date, slots]) => ({ date, slots }));
-  }, [availability]);
-  const alternateDates = nextDateOptions(search.date);
-  const noAvailabilityTitle = selectedVenue?.onlineEnabled
-    ? `No online tables for ${longDate(`${search.date}T00:00:00`)}`
-    : `${search.venue} is not taking online bookings for this service`;
-
-  function chooseVenue(venue: string) {
-    setSearch((current) => ({ ...current, venue }));
-    setAvailability(null);
+  function restart() {
+    setStep(0);
     setSelectedSlot(null);
     setReservation(null);
-    setFeedback(defaultFeedback());
+    setAvailability(null);
+    setGuest({
+      firstName: '',
+      lastName: '',
+      email: '',
+      phone: '',
+      dietaryTags: [],
+      occasion: null,
+      kitchenNote: '',
+      marketingOptIn: false
+    });
   }
 
+  const detailsValid = guest.firstName.trim().length > 0 && guest.phone.trim().length >= 6;
+  const ticketStripeStyle = { ['--abk-venue-accent' as string]: venueAccent } as React.CSSProperties;
+  const slotsForDay = availability?.slots ?? [];
+
   return (
-    <main className="login-page reserve-widget-page">
-      <header
-        className="reserve-public-hero-v2"
-        style={{ '--hero-image': `url(${selectedVenueDetail.image})` } as React.CSSProperties}
-      >
-        <nav className="reserve-public-hero-nav">
-          <div className="reserve-public-wordmark">
-            alma <em>Restaurant &amp; Bar</em>
+    <main className="alma-booking-page">
+      <div className="alma-booking-layout">
+        <section className="alma-booking-hero" aria-label="About Alma">
+          <div className="alma-booking-hero__eyebrow">alma · reserve a table</div>
+          <h1 className="alma-booking-hero__display">
+            Save a table
+            <br />
+            <em>for tonight.</em>
+          </h1>
+          <p className="alma-booking-hero__tag">
+            Coastal dining at {venue}. Bookings open 30 days ahead.
+            Walk-ins welcome on the bar &amp; terrace from 5pm.
+          </p>
+          <div className="alma-booking-hero__policy" aria-label="House policy">
+            <span className="alma-booking-hero__policy-pill">30-day rolling release</span>
+            <span className="alma-booking-hero__policy-pill">2-hour seating</span>
+            <span className="alma-booking-hero__policy-pill">24-hour cancellation</span>
           </div>
-          <a href="https://almagroup.com.au/" className="reserve-public-hero-link">
-            Visit website →
-          </a>
-        </nav>
-        <div className="reserve-public-hero-content">
-          <div>
-            <span className="reserve-public-hero-mark">Alma <em>Group · Reservations</em></span>
-            <h1 className="reserve-public-hero-display">
-              {search.venue},
-              <span className="reserve-public-hero-italic">a seat for you.</span>
-            </h1>
+          <div className="alma-booking-hero__links">
+            <a className="alma-booking-hero__link" href="https://almagroup.com.au/menu">See the menu</a>
+            <a className="alma-booking-hero__link" href="#alma-booking-function-enquiry">Functions &amp; private dining</a>
           </div>
-          <div className="reserve-public-hero-bottom">
-            <p className="reserve-public-hero-tag">{selectedVenueDetail.summary}</p>
-            <div className="reserve-public-hero-actions">
-              <button
-                type="button"
-                className="reserve-public-btn reserve-public-btn--shell"
-                onClick={() => document.querySelector('.reserve-public-booking-panel')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
-              >
-                Reserve a table
-                <svg className="reserve-public-arrow" viewBox="0 0 14 6" fill="none" aria-hidden="true">
-                  <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              </button>
-              <a href="https://almagroup.com.au/menu" className="reserve-public-btn reserve-public-btn--ghost-light">
-                See the menu
-              </a>
+        </section>
+
+        <aside className="alma-booking-card" aria-label="Book a table">
+          <header className="alma-booking-card__head">
+            <div className="alma-booking-card__brand">
+              alma <em>reserve</em>
             </div>
-          </div>
-        </div>
-      </header>
-      <div className="reserve-widget-shell">
-        <section className="reserve-public-layout" aria-label="Book a table">
-          <div className="reserve-public-primary">
-            {reservation ? (
-              <section className="reserve-public-confirmation" aria-live="polite">
-                <div className="reserve-public-confirmation-icon" aria-hidden="true">✓</div>
-                <div className="reserve-public-confirmation-text">
-                  <p className="reserve-public-eyebrow">Booking sent</p>
-                  <h2>
-                    Thanks {reservation.guestName.split(' ')[0]},
-                    <em> your table is in.</em>
-                  </h2>
-                  <p>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests at {search.venue}</p>
-                  <small>The venue team will confirm by email shortly. For urgent changes, please call the restaurant directly.</small>
-                </div>
-              </section>
-            ) : null}
-            <section className="reserve-public-booking-panel reserve-public-floating-panel">
-              {loading ? <Spinner label="Loading booking form..." /> : null}
-              {feedback.target === 'widget' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
-              {!loading && config ? (
-                <form className="reserve-public-search" onSubmit={(event) => void checkAvailability(event)}>
-                  <div className="reserve-venue-tabs" aria-label="Choose a venue">
-                    {venueOptions.map((venue) => (
-                      <button
-                        key={venue.value}
-                        type="button"
-                        className={`reserve-venue-tab ${search.venue === venue.value ? 'active' : ''}`}
-                        onClick={() => chooseVenue(venue.value)}
-                        aria-pressed={search.venue === venue.value}
-                      >
-                        <span>{venue.value}</span>
-                        <small>{venue.detail.location}</small>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="reserve-public-search-grid">
-                    <Input
-                      label="Guests"
-                      type="number"
-                      min="1"
-                      max="20"
-                      value={search.partySize}
-                      onChange={(event) => setSearch((current) => ({ ...current, partySize: event.currentTarget.value }))}
-                    />
-                    <Input
-                      label="Date"
-                      type="date"
-                      value={search.date}
-                      onChange={(event) => setSearch((current) => ({ ...current, date: event.currentTarget.value }))}
-                    />
-                    <Select
-                      label="Time"
-                      value={search.servicePeriod}
-                      onChange={(event) => setSearch((current) => ({ ...current, servicePeriod: event.currentTarget.value as ReserveServicePeriod | '' }))}
-                      options={[{ label: 'Any time', value: '' }, ...SERVICE_PERIODS.map((value) => ({ label: servicePeriodLabels[value], value }))]}
-                    />
-                    <Button type="submit" disabled={searching}>{searching ? 'Checking...' : 'Search'}</Button>
-                  </div>
-                  <ActionFeedback
-                    message={feedback.target === 'widget-search' ? feedback.message : null}
-                    tone={feedback.tone}
+            {step < 3 ? (
+              <div className="alma-booking-progress" aria-label={`Step ${step + 1} of 4`}>
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className={
+                      i === step
+                        ? 'alma-booking-progress__dot alma-booking-progress__dot--active'
+                        : i < step
+                          ? 'alma-booking-progress__dot alma-booking-progress__dot--filled'
+                          : 'alma-booking-progress__dot'
+                    }
                   />
-                </form>
-              ) : null}
-            </section>
+                ))}
+              </div>
+            ) : (
+              <span className="alma-booking-status">Confirmed</span>
+            )}
+          </header>
 
-            <p className="reserve-public-help-note">
-              For larger groups or special requests, the venue team may follow up before confirming the booking details.
-            </p>
+          {loadingConfig ? <div className="alma-booking-loading">Loading availability…</div> : null}
+          {configError && !loadingConfig ? (
+            <div className="alma-booking-error">{configError}</div>
+          ) : null}
 
-            {/* Function / event enquiry — for groups 10+ or special occasions */}
-            <FunctionEnquiryPanel venue={search.venue} />
+          {!loadingConfig && !configError && step === 0 ? (
+            <div>
+              <div className="alma-booking-step__eyebrow">Step one · when</div>
+              <h2 className="alma-booking-step__headline">
+                Where would you like
+                <br /><em>to come to dinner?</em>
+              </h2>
 
-
-            {availability ? (
-              <section className="reserve-public-section">
-                <div className="reserve-public-section-heading">
-                  <div>
-                    <p className="reserve-public-eyebrow">Available times</p>
-                    <h2>
-                      {availability.partySize} guests
-                      <em> at {search.venue}</em>
-                    </h2>
-                    <p className="reserve-public-section-sub">
-                      {shortDate(availability.serviceDate)}
-                    </p>
-                  </div>
-                  {selectedSlot ? (
-                    <button type="button" className="reserve-change-time" onClick={() => setSelectedSlot(null)}>
-                      Change time
-                    </button>
-                  ) : null}
+              <div className="alma-booking-field">
+                <div className="alma-booking-field__eyebrow">Venue</div>
+                <div className="alma-booking-venues">
+                  {venueOptions.map((v) => {
+                    const active = v.name === venue;
+                    const style = { ['--abk-venue-accent' as string]: v.accent } as React.CSSProperties;
+                    return (
+                      <button
+                        key={v.name}
+                        type="button"
+                        className={`alma-booking-venue ${active ? 'alma-booking-venue--active' : ''}`}
+                        onClick={() => setVenue(v.name)}
+                        aria-pressed={active}
+                        style={style}
+                      >
+                        <span className="alma-booking-venue__label">{v.name}</span>
+                        <div className="alma-booking-venue__tagline">{v.tagline}</div>
+                      </button>
+                    );
+                  })}
                 </div>
-                {availability.slots.length === 0 ? (
-                  <div className="reserve-empty-availability">
-                    <EmptyState
-                      title={noAvailabilityTitle}
-                      description="We would still love to see you. Choose another date below or adjust the time and guest count."
-                    />
-                    <div className="reserve-alternate-dates" aria-label="Try another date">
-                      <p>Try another date</p>
-                      <div>
-                        {alternateDates.map((date) => (
-                          <button key={date} type="button" onClick={() => void tryAnotherDate(date)} disabled={searching}>
-                            <strong>{shortDate(`${date}T00:00:00`)}</strong>
-                          </button>
-                        ))}
+              </div>
+
+              <div className="alma-booking-field">
+                <div className="alma-booking-field__eyebrow">Day</div>
+                <div className="alma-booking-calendar">
+                  {calendar.map((date, index) => {
+                    const isToday = index === 0;
+                    const selected = index === dateIdx;
+                    return (
+                      <button
+                        key={date.toISOString()}
+                        type="button"
+                        className={`alma-booking-day ${selected ? 'alma-booking-day--active' : ''}`}
+                        onClick={() => setDateIdx(index)}
+                        aria-pressed={selected}
+                      >
+                        <div className="alma-booking-day__dow">{date.toLocaleDateString(undefined, { weekday: 'short' })}</div>
+                        <div className="alma-booking-day__num">{date.getDate()}</div>
+                        {isToday && !selected ? <div className="alma-booking-day__today-mark" aria-hidden="true" /> : null}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="alma-booking-field">
+                <div className="alma-booking-field__eyebrow">How many of you?</div>
+                <div className="alma-booking-party">
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      className={`alma-booking-party__pill ${partySize === n ? 'alma-booking-party__pill--active' : ''}`}
+                      onClick={() => setPartySize(n)}
+                      aria-pressed={partySize === n}
+                    >
+                      {n === 7 ? <>7<em>+</em></> : n}
+                    </button>
+                  ))}
+                </div>
+                {isOversize ? (
+                  <div className="alma-booking-party__overflow">
+                    For parties of 8 or more we'll set up a private booking —
+                    please <a href="tel:+61299184476">call us</a> or <a href="#alma-booking-function-enquiry">send a note</a>.
+                  </div>
+                ) : null}
+              </div>
+
+              <div className="alma-booking-actions">
+                <span />
+                <button
+                  type="button"
+                  className="alma-booking-btn"
+                  onClick={() => void goToTimes()}
+                  disabled={searching}
+                >
+                  {searching ? 'Checking…' : isOversize ? 'Send a function enquiry' : 'Next: pick a time'}
+                  <AlmaBookingArrow />
+                </button>
+              </div>
+              {availabilityError ? <div className="alma-booking-error" style={{ marginTop: 16 }}>{availabilityError}</div> : null}
+            </div>
+          ) : null}
+
+          {!loadingConfig && !configError && step === 1 ? (
+            <div>
+              <div className="alma-booking-step__eyebrow">Step two · time</div>
+              {slotsForDay.length > 0 ? (
+                <>
+                  <h2 className="alma-booking-step__headline">
+                    We have <em>these times</em>
+                    <br />for you.
+                  </h2>
+                  <div className="alma-booking-step__context">
+                    {venue} · {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · party of {partySize}
+                  </div>
+                  <div className="alma-booking-times">
+                    {slotsForDay.map((slot) => {
+                      const isFull = slot.capacityRemaining <= 0;
+                      const isLimited = !isFull && slot.capacityRemaining <= 2;
+                      const isActive = selectedSlot?.startsAt === slot.startsAt;
+                      return (
+                        <button
+                          key={slot.startsAt}
+                          type="button"
+                          disabled={isFull}
+                          onClick={() => pickSlot(slot)}
+                          className={`alma-booking-time ${isActive ? 'alma-booking-time--active' : ''} ${isFull ? 'alma-booking-time--full' : ''} ${isLimited ? 'alma-booking-time--limited' : ''}`}
+                          aria-pressed={isActive}
+                        >
+                          <div className="alma-booking-time__label">{slot.label}</div>
+                          <div className="alma-booking-time__status">
+                            {isFull ? 'Full' : isLimited ? 'Limited' : 'Open'}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <h2 className="alma-booking-step__headline">
+                    We're <em>fully booked</em>
+                    <br />for {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}.
+                  </h2>
+                  <div className="alma-booking-step__context">
+                    Try another day below — or leave us your number and we'll text the moment a table opens.
+                  </div>
+                  <div className="alma-booking-waitlist-banner">
+                    <span className="alma-booking-waitlist-banner__dot" aria-hidden="true" />
+                    <div className="alma-booking-waitlist-banner__body">
+                      Walk-ins welcome at the bar &amp; terrace from 5pm. For a guaranteed table,
+                      try a weeknight or pick a date further out.
+                    </div>
+                  </div>
+                </>
+              )}
+
+              <div className="alma-booking-note">
+                <span className="alma-booking-note__dot" aria-hidden="true" />
+                <div>
+                  <div className="alma-booking-note__title">Don't see your time?</div>
+                  <div className="alma-booking-note__body">
+                    Walk-ins are welcome at the bar from 5pm. Or pick a different day on the previous step.
+                  </div>
+                </div>
+              </div>
+
+              <div className="alma-booking-actions">
+                <button type="button" className="alma-booking-btn alma-booking-btn--link" onClick={() => setStep(0)}>← Back</button>
+                <button
+                  type="button"
+                  className="alma-booking-btn"
+                  onClick={() => setStep(2)}
+                  disabled={!selectedSlot}
+                  aria-disabled={!selectedSlot}
+                >
+                  Next: your details
+                  <AlmaBookingArrow />
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {!loadingConfig && !configError && step === 2 ? (
+            <form
+              onSubmit={(event) => {
+                event.preventDefault();
+                if (!detailsValid) return;
+                void submitBooking();
+              }}
+            >
+              <div className="alma-booking-step__eyebrow">Step three · the rest</div>
+              <h2 className="alma-booking-step__headline">
+                A few <em>last details,</em>
+                <br />then we're set.
+              </h2>
+              <div className="alma-booking-step__context">
+                {venue} · {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · {selectedSlot ? new Date(selectedSlot.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'select a time'} · {partySize} guests
+              </div>
+
+              <div className="alma-booking-grid">
+                <label>
+                  <span className="alma-booking-field__eyebrow">Your name</span>
+                  <input
+                    className="alma-booking-input"
+                    required
+                    value={guest.firstName}
+                    onChange={(event) => setGuest((g) => ({ ...g, firstName: event.currentTarget.value }))}
+                    placeholder="First name"
+                  />
+                </label>
+                <label>
+                  <span className="alma-booking-field__eyebrow">Phone</span>
+                  <input
+                    className="alma-booking-input"
+                    required
+                    type="tel"
+                    value={guest.phone}
+                    onChange={(event) => setGuest((g) => ({ ...g, phone: event.currentTarget.value }))}
+                    placeholder="04xx xxx xxx"
+                  />
+                </label>
+                <label>
+                  <span className="alma-booking-field__eyebrow">Last name</span>
+                  <input
+                    className="alma-booking-input"
+                    value={guest.lastName}
+                    onChange={(event) => setGuest((g) => ({ ...g, lastName: event.currentTarget.value }))}
+                    placeholder="(optional)"
+                  />
+                </label>
+                <label>
+                  <span className="alma-booking-field__eyebrow">Email</span>
+                  <input
+                    className="alma-booking-input"
+                    type="email"
+                    value={guest.email}
+                    onChange={(event) => setGuest((g) => ({ ...g, email: event.currentTarget.value }))}
+                    placeholder="for your confirmation"
+                  />
+                </label>
+              </div>
+
+              <div className="alma-booking-field">
+                <div className="alma-booking-field__eyebrow">Anything we should know?</div>
+                <div className="alma-booking-chips">
+                  {ALMA_DIETARY_TAGS.map((tag) => {
+                    const on = guest.dietaryTags.includes(tag);
+                    return (
+                      <button
+                        key={tag}
+                        type="button"
+                        className={`alma-booking-chip ${on ? 'alma-booking-chip--active' : ''}`}
+                        onClick={() => setGuest((g) => ({
+                          ...g,
+                          dietaryTags: on ? g.dietaryTags.filter((t) => t !== tag) : [...g.dietaryTags, tag]
+                        }))}
+                        aria-pressed={on}
+                      >
+                        {tag}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="alma-booking-field">
+                <div className="alma-booking-field__eyebrow">Occasion · optional</div>
+                <div className="alma-booking-chips">
+                  {ALMA_OCCASIONS.map((occ) => {
+                    const on = guest.occasion === occ;
+                    return (
+                      <button
+                        key={occ}
+                        type="button"
+                        className={`alma-booking-chip alma-booking-chip--occasion ${on ? 'alma-booking-chip--active' : ''}`}
+                        onClick={() => setGuest((g) => ({ ...g, occasion: on ? null : occ }))}
+                        aria-pressed={on}
+                      >
+                        {occ}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              <div className="alma-booking-field">
+                <label>
+                  <span className="alma-booking-field__eyebrow">A note for the kitchen?</span>
+                  <textarea
+                    className="alma-booking-textarea"
+                    rows={2}
+                    value={guest.kitchenNote}
+                    onChange={(event) => setGuest((g) => ({ ...g, kitchenNote: event.currentTarget.value }))}
+                    placeholder="e.g. We'd love a quiet corner. It's our first time."
+                  />
+                </label>
+              </div>
+
+              <label className="alma-booking-field" style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 14 }}>
+                <input
+                  type="checkbox"
+                  checked={guest.marketingOptIn}
+                  onChange={(event) => setGuest((g) => ({ ...g, marketingOptIn: event.currentTarget.checked }))}
+                  style={{ width: 16, height: 16 }}
+                />
+                <span style={{ fontSize: 13, fontWeight: 500 }}>Save these for next time and send me occasional updates.</span>
+              </label>
+
+              {submitError ? <div className="alma-booking-error" style={{ marginTop: 16 }}>{submitError}</div> : null}
+
+              <div className="alma-booking-actions">
+                <button type="button" className="alma-booking-btn alma-booking-btn--link" onClick={() => setStep(1)}>← Back</button>
+                <button
+                  type="submit"
+                  className="alma-booking-btn"
+                  disabled={!detailsValid || submitting}
+                >
+                  {submitting ? 'Sending…' : 'Confirm booking'}
+                  <AlmaBookingArrow />
+                </button>
+              </div>
+            </form>
+          ) : null}
+
+          {step === 3 && reservation ? (
+            <div>
+              <div className="alma-booking-step__eyebrow">Step four · all set</div>
+              <h2 className="alma-booking-step__headline">
+                You're <em>booked.</em>
+              </h2>
+              <div className="alma-booking-step__context">
+                {guest.email ? `A confirmation is on its way to ${guest.email}. ` : ''}See you soon.
+              </div>
+
+              <div className="alma-booking-ticket" style={ticketStripeStyle}>
+                <div className="alma-booking-ticket__stripe" />
+                <div className="alma-booking-ticket__body">
+                  <div className="alma-booking-ticket__head">
+                    <div>
+                      <div className="alma-booking-ticket__eyebrow">{venueTagline}</div>
+                      <div className="alma-booking-ticket__title">
+                        {firstWordOf(reservation.venue)} <em>{restOf(reservation.venue)}</em>
+                      </div>
+                    </div>
+                    <span className="alma-booking-ticket__confirmed">
+                      <svg width="10" height="10" viewBox="0 0 14 14" fill="none" stroke="#3F5739" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                        <polyline points="2,7 6,11 12,3" />
+                      </svg>
+                      Confirmed
+                    </span>
+                  </div>
+                  <div className="alma-booking-ticket__details">
+                    <div>
+                      <div className="alma-booking-ticket__field-label">When</div>
+                      <div className="alma-booking-ticket__field-value">
+                        {new Date(reservation.serviceDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}
+                        <br />
+                        <em>{new Date(reservation.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</em>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="alma-booking-ticket__field-label">Party</div>
+                      <div className="alma-booking-ticket__field-value">
+                        {reservation.covers} guests
+                        <br />
+                        <em>{reservation.occasion || '—'}</em>
+                      </div>
+                    </div>
+                    <div>
+                      <div className="alma-booking-ticket__field-label">Reference</div>
+                      <div className="alma-booking-ticket__ref">
+                        ALMA-{reservation.id.slice(0, 6).toUpperCase()}
                       </div>
                     </div>
                   </div>
-                ) : (
-                  <div className="reserve-slot-date-groups">
-                    {groupedSlots.map((group) => (
-                      <section key={group.date} className="reserve-slot-date-group">
-                        <h3>{shortDate(`${group.date}T00:00:00`)}</h3>
-                        <div className="reserve-slot-grid">
-                          {group.slots.map((slot) => (
-                            <button
-                              key={`${slot.startsAt}-${slot.availabilityRuleId ?? 'any'}`}
-                              type="button"
-                              className={`reserve-slot-button ${selectedSlot?.startsAt === slot.startsAt ? 'active' : ''}`}
-                              onClick={() => setSelectedSlot(slot)}
-                            >
-                              <strong>{slot.label}</strong>
-                              <span>{serviceCopy(slot.servicePeriod)}</span>
-                              <small>{slot.capacityRemaining} covers left</small>
-                            </button>
-                          ))}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-                )}
-              </section>
-            ) : (
-              !loading && config ? (
-                <section className="reserve-public-section reserve-public-ready-state">
-                  <p className="reserve-public-eyebrow">Find a table</p>
-                  <h2>
-                    Choose guests, date and time
-                    <em> to see live availability.</em>
-                  </h2>
-                  <p className="reserve-public-section-sub">No demo times are shown here. Results come straight from the venue's availability rules in Alma Reserve.</p>
-                </section>
-              ) : null
-            )}
-
-            {selectedSlot ? (
-              <section className="reserve-public-section">
-                  <div className="reserve-public-section-heading">
-                    <div>
-                      <p className="reserve-public-eyebrow">Guest details</p>
-                      <h2>
-                        {timeLabel(selectedSlot.startsAt)}
-                        <em> at {search.venue}</em>
-                      </h2>
-                      <p className="reserve-public-selection-summary">
-                        {search.partySize} guests · {shortDate(selectedSlot.startsAt)} · {serviceCopy(selectedSlot.servicePeriod)}
-                      </p>
-                    </div>
-                    <button type="button" className="reserve-change-time" onClick={() => setSelectedSlot(null)}>
-                      Change time
-                    </button>
-                  </div>
-                  <form className="reserve-form" onSubmit={(event) => void submitBooking(event)}>
-                    <div className="form-grid two">
-                      <Input label="First name" required value={bookingForm.firstName} onChange={(event) => setBookingForm((current) => ({ ...current, firstName: event.currentTarget.value }))} />
-                      <Input label="Last name" required value={bookingForm.lastName} onChange={(event) => setBookingForm((current) => ({ ...current, lastName: event.currentTarget.value }))} />
-                      <Input label="Email" type="email" value={bookingForm.email} onChange={(event) => setBookingForm((current) => ({ ...current, email: event.currentTarget.value }))} />
-                      <Input label="Phone" required value={bookingForm.phone} onChange={(event) => setBookingForm((current) => ({ ...current, phone: event.currentTarget.value }))} />
-                      <Input label="Birthday" type="date" value={bookingForm.birthday} onChange={(event) => setBookingForm((current) => ({ ...current, birthday: event.currentTarget.value }))} />
-                      <Input label="Anniversary" type="date" value={bookingForm.anniversary} onChange={(event) => setBookingForm((current) => ({ ...current, anniversary: event.currentTarget.value }))} />
-                    </div>
-                    <Input label="Occasion" value={bookingForm.occasion} onChange={(event) => setBookingForm((current) => ({ ...current, occasion: event.currentTarget.value }))} />
-                    <Select
-                      label="Seating preference"
-                      value={bookingForm.seatingPreference}
-                      onChange={(event) => setBookingForm((current) => ({ ...current, seatingPreference: event.currentTarget.value }))}
-                      options={[
-                        { label: 'No preference', value: '' },
-                        { label: 'Outdoor', value: 'outdoor' },
-                        { label: 'Bar seating', value: 'bar' },
-                        { label: 'Accessible table', value: 'accessibility' }
-                      ]}
-                    />
-                    <Textarea label="Dietary notes" rows={2} value={bookingForm.dietaryNotes} onChange={(event) => setBookingForm((current) => ({ ...current, dietaryNotes: event.currentTarget.value }))} />
-                    <Textarea label="Special requests" rows={3} value={bookingForm.specialRequests} onChange={(event) => setBookingForm((current) => ({ ...current, specialRequests: event.currentTarget.value }))} />
-                    <div className="reserve-note-list">
-                      {BOOKING_PREFERENCE_FIELDS.map(({ key, label }) => (
-                        <label key={key} className="reserve-inline-check">
-                          <input
-                            type="checkbox"
-                            checked={bookingForm[key]}
-                            onChange={(event) => {
-                              const checked = event.currentTarget.checked;
-                              setBookingForm((current) => ({ ...current, [key]: checked }));
-                            }}
-                          />
-                          <span>{label}</span>
-                        </label>
-                      ))}
-                    </div>
-                    <label className="reserve-inline-check">
-                      <input
-                        type="checkbox"
-                        checked={bookingForm.marketingOptIn}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked;
-                          setBookingForm((current) => ({ ...current, marketingOptIn: checked }));
-                        }}
-                      />
-                      <span>Send me future restaurant updates for this venue.</span>
-                    </label>
-                    <div className="reserve-public-actions">
-                      <ActionFeedback
-                        message={feedback.target === 'widget-booking' ? feedback.message : null}
-                        tone={feedback.tone}
-                      />
-                      <Button type="submit" disabled={booking}>{booking ? 'Sending...' : 'Request booking'}</Button>
-                    </div>
-                  </form>
-                  {reservation ? (
-                    <div className="reserve-summary-card">
-                      <strong>{reservation.guestName}</strong>
-                      <span>{shortDate(reservation.serviceDate)} · {timeLabel(reservation.startsAt)} · {reservation.covers} guests</span>
+                  {guest.dietaryTags.length > 0 ? (
+                    <div className="alma-booking-ticket__tags">
+                      <div className="alma-booking-ticket__field-label">Kitchen note</div>
+                      <div style={{ marginTop: 6 }}>
+                        {guest.dietaryTags.map((tag) => (
+                          <span key={tag} className="alma-booking-ticket__tag">{tag}</span>
+                        ))}
+                      </div>
                     </div>
                   ) : null}
-                </section>
-            ) : null}
-          </div>
-          <aside className="reserve-public-info-card" aria-label="Venue information">
-            <img src={selectedVenueDetail.image} alt={`${search.venue} venue`} />
-            <div>
-              <p className="reserve-public-eyebrow">Venue</p>
-              <h2>{search.venue}</h2>
-              <p>{selectedVenueDetail.description}</p>
-              <dl>
-                <div>
-                  <dt>Location</dt>
-                  <dd>{selectedVenueDetail.location}</dd>
                 </div>
-                <div>
-                  <dt>Booking status</dt>
-                  <dd>{selectedVenue?.onlineEnabled ? 'Online booking requests open' : 'Limited online availability'}</dd>
+                <div className="alma-booking-ticket__footer">
+                  <button type="button" onClick={() => window.print()}>Print</button>
+                  <button type="button" onClick={restart}>Make another booking</button>
                 </div>
-              </dl>
-              <a href={selectedVenueDetail.website} target="_blank" rel="noreferrer">Open venue website</a>
+              </div>
             </div>
-          </aside>
-        </section>
+          ) : null}
+        </aside>
       </div>
+
+      <section
+        id="alma-booking-function-enquiry"
+        style={{ width: '100%', maxWidth: 1200, margin: '0 auto', padding: '0 32px 56px' }}
+        aria-label="Functions and large groups"
+      >
+        <FunctionEnquiryPanel venue={venue} />
+      </section>
     </main>
   );
+}
+
+const ALMA_DIETARY_TAGS = ['Vegetarian', 'Vegan', 'Gluten-free', 'Shellfish allergy', 'Nut allergy', 'Dairy-free'];
+const ALMA_OCCASIONS = ['Birthday', 'Anniversary', 'First date', 'Business', 'Just dinner'];
+
+function AlmaBookingArrow() {
+  return (
+    <svg className="alma-booking-btn__arrow" viewBox="0 0 13 6" fill="none" aria-hidden="true">
+      <path d="M0 3 H12 M9 0 L12 3 L9 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function venueAccentFor(name: string) {
+  const key = name.toLowerCase();
+  if (key.includes('avalon')) return '#3D5C3F';
+  if (key.includes('st alma') || key.includes('st. alma') || key.includes('freshwater')) return '#A0463A';
+  return '#1F3524';
+}
+
+function venueTaglineFor(name: string) {
+  const key = name.toLowerCase();
+  if (key.includes('avalon')) return 'Restaurant & Bar';
+  if (key.includes('st alma') || key.includes('st. alma') || key.includes('freshwater')) return 'Freshwater dining';
+  return 'Alma Group';
+}
+
+function firstWordOf(value: string) {
+  const parts = value.split(' ');
+  if (parts.length <= 1) return value;
+  return parts.slice(0, -1).join(' ');
+}
+
+function restOf(value: string) {
+  const parts = value.split(' ');
+  if (parts.length <= 1) return '';
+  return parts[parts.length - 1] ?? '';
 }
 
 function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
