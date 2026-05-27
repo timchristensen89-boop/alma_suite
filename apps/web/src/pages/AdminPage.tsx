@@ -2822,7 +2822,8 @@ export function AdminPage({
                 'Deputy CSV import stop-gap on the roster header — paste / upload, dry-run preview, idempotent re-import.',
                 'Tips week selector now uses the editorial roster nav for visual continuity.',
                 'Marketing → Pilot: live campaign email send shipped with test-first + admin-only + 24h test window + recipient cap + audit trail.',
-                'Reserve → Pilot: booking confirmation emails working, public widget live. Banner updated from "preview" to "pilot" — Reserve is now your source of truth, not SevenRooms.'
+                'Reserve → Pilot: booking confirmation emails working, public widget live. Banner updated from "preview" to "pilot" — Reserve is now your source of truth, not SevenRooms.',
+                'Loaded replacement tracker at Admin → System → Loaded replacement: cutover checklist, parallel comparison cycles, and a hard cancellation guard that stays RED until every required check is ready and two comparisons are explained.'
               ]
             },
             {

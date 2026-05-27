@@ -3,6 +3,7 @@ import { requireAdmin } from '../lib/auth-middleware.js';
 import { adminService } from '../services/admin.service.js';
 import { deviceService } from '../services/device.service.js';
 import { exportsService } from '../services/exports.service.js';
+import { loadedReplacementService } from '../services/loaded-replacement.service.js';
 
 export const adminRouter = Router();
 
@@ -135,6 +136,70 @@ adminRouter.get('/exports/:kind', async (req, res, next) => {
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
     res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Loaded replacement tracking — admin-only readiness dashboard. The
+// data shape is owned by loaded-replacement.service.ts.
+adminRouter.get('/loaded-replacement', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await loadedReplacementService.getOverview(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-replacement/check/:id', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const status = typeof req.body?.status === 'string' ? req.body.status : '';
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes : undefined;
+    res.json(await loadedReplacementService.updateCheck(req.user, String(req.params.id), {
+      status: status as 'not_started' | 'needs_work' | 'ready' | 'verified',
+      notes
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-replacement/notes/:category', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const notes = typeof req.body?.notes === 'string' ? req.body.notes : '';
+    res.json(await loadedReplacementService.updateCategoryNotes(
+      req.user,
+      String(req.params.category) as 'reports' | 'stocktake' | 'historical_data' | 'comparison' | 'cutover',
+      notes
+    ));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-replacement/comparison', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const body = req.body ?? {};
+    res.json(await loadedReplacementService.recordComparison(req.user, {
+      label: typeof body.label === 'string' ? body.label : '',
+      loaded: body.loaded ?? { stockValueCents: null, salesCents: null, cogsCents: null, categoryTotals: {} },
+      alma: body.alma ?? { stockValueCents: null, salesCents: null, cogsCents: null, categoryTotals: {} },
+      notes: typeof body.notes === 'string' ? body.notes : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-replacement/comparison/:id/explained', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const explained = Boolean(req.body?.explained);
+    res.json(await loadedReplacementService.markComparisonExplained(req.user, String(req.params.id), explained));
   } catch (error) {
     next(error);
   }

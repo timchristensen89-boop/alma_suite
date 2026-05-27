@@ -1824,6 +1824,10 @@ model AppSettings {
   onboardingSettings   Json     @default("{}")
   staffDefaults        Json     @default("{}")
   giftCardSettings     Json     @default("{}")
+  // Loaded replacement tracking — stores LoadedCutoverCheck statuses + notes
+  // keyed by check id, plus comparison data and free-text notes per section.
+  // See loaded-replacement.service.ts for the shape.
+  loadedCutoverState   Json     @default("{}")
   goveeApiKey          String?
   goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
   notifyEmail          String?

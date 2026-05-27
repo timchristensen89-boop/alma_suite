@@ -10563,6 +10563,86 @@ a.suite-app-tile:hover {
   }
 }
 
+/* Loaded replacement admin page — checklist rows + status buttons. */
+.loaded-replacement-page .admin-debt-title { font-size: 26px; }
+.loaded-replacement-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.loaded-replacement-row {
+  display: grid;
+  grid-template-columns: 130px 1fr;
+  gap: 14px;
+  align-items: start;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(248, 246, 241, 0.6);
+  border-left: 3px solid rgba(31, 53, 36, 0.18);
+}
+.loaded-replacement-row.is-ready,
+.loaded-replacement-row.is-verified {
+  border-left-color: #2F5C36;
+  background: rgba(60, 110, 70, 0.06);
+}
+.loaded-replacement-row.is-needs_work {
+  border-left-color: #D18A00;
+  background: rgba(209, 138, 0, 0.06);
+}
+.loaded-replacement-row.is-not_started {
+  border-left-color: rgba(31, 53, 36, 0.2);
+}
+.loaded-replacement-status-btn {
+  display: inline-flex;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: pointer;
+  align-self: start;
+}
+.loaded-replacement-status-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.loaded-replacement-row-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+.loaded-replacement-row-body strong {
+  font-family: var(--font-serif);
+  font-weight: 500;
+  font-size: 15px;
+}
+.loaded-replacement-required {
+  color: #9A3A2E;
+  margin-left: 6px;
+  font-size: 14px;
+}
+.loaded-replacement-notes-input {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid rgba(31, 53, 36, 0.15);
+  border-radius: 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: #FFFFFF;
+}
+.loaded-replacement-notes-input:focus {
+  outline: none;
+  border-color: var(--color-accent, #9A3A2E);
+  box-shadow: 0 0 0 3px rgba(154, 58, 46, 0.1);
+}
+@media (max-width: 720px) {
+  .loaded-replacement-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* Generic centered modal used by the Deputy roster import flow.
    Backdrop dims the page; the dialog floats over with padded sections. */
 .staff-modal-backdrop {

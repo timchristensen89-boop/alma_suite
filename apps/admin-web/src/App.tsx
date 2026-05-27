@@ -70,6 +70,7 @@ import {
 } from './pages/AdminFeaturePages';
 import { BulkStaffOnboardingPage } from './pages/BulkStaffOnboardingPage';
 import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
+import { LoadedReplacementPage } from './pages/LoadedReplacementPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
 import { WageForecastsPage } from './pages/WageForecastsPage';
@@ -277,6 +278,12 @@ const NAV_GROUPS: AdminNavGroup[] = [
     id: 'system',
     label: 'System',
     items: [
+      {
+        to: '/loaded-replacement',
+        label: 'Loaded replacement',
+        description: 'Cutover readiness, parallel comparison, cancellation guard',
+        icon: <IconChecklist />
+      },
       {
         to: '/danger-zone',
         label: 'Danger zone',
@@ -618,6 +625,8 @@ function AdminWorkspace() {
         <Route path="/integrations/square/menu-mapping" element={<SquareMenuMappingPage />} />
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/danger-zone" element={<DangerZonePage />} />
+        <Route path="/loaded-replacement" element={<LoadedReplacementPage />} />
+        <Route path="/admin/loaded-replacement" element={<Navigate to="/loaded-replacement" replace />} />
         <Route path="/meta-human-agent-demo" element={<HumanAgentDemoPage />} />
         <Route path="/admin/compliance-settings" element={<Navigate to="/compliance-settings" replace />} />
         <Route path="/admin/checklist-templates" element={<Navigate to="/checklist-templates" replace />} />
