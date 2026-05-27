@@ -137,20 +137,29 @@ export function IntegrationHealthPage() {
       });
     }
 
-    // Xero
+    // Xero — one OAuth connection can cover multiple tenants/orgs
+    // (e.g. both Alma Avalon and St Alma). Surface the full tenant
+    // list when there's more than one so the operator can see at a
+    // glance which orgs the scheduler is syncing.
     {
       const status = data.xero;
       const connected = !!status.connected;
       const hasError = !!status.lastError;
+      const tenantCount = status.tenants?.length ?? 0;
+      const detail = tenantCount > 1
+        ? `${tenantCount} tenants: ${status.tenants!.map((tenant) => tenant.name ?? tenant.idMasked ?? 'tenant').join(' · ')}`
+        : status.providerAccountName ?? null;
       out.push({
         id: 'xero',
         name: 'Xero',
-        provider: 'Bookkeeping, supplier bills, payroll sync',
+        provider: tenantCount > 1
+          ? 'Bookkeeping, supplier bills, payroll sync — multi-tenant'
+          : 'Bookkeeping, supplier bills, payroll sync',
         status: statusLabel(connected, hasError, status.configured),
         tone: statusTone(connected, hasError, status.configured),
         lastSyncAt: status.lastSyncAt,
         lastError: status.lastError,
-        detail: status.providerAccountName ?? null,
+        detail,
         canResync: false
       });
     }

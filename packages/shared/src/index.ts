@@ -1913,6 +1913,15 @@ export type IntegrationProviderStatus = {
     timezone: string | null;
   }>;
   lastLocationSyncAt?: string | null;
+  // For multi-tenant providers (Xero) — every org/tenant on this single
+  // OAuth connection. Empty array for single-tenant providers. Tenant
+  // IDs are masked the same way providerAccountId is masked.
+  tenants?: Array<{
+    id: string;
+    idMasked: string | null;
+    name: string | null;
+    isPrimary: boolean;
+  }>;
 };
 
 export type IntegrationSyncRunSummary = {

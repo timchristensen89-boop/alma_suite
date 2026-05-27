@@ -45,6 +45,14 @@ The Xero scheduled job imports:
 
 It deliberately skips bills that look like duplicates, have no supplier match, or have no line items. Those remain for manual review/import. Payroll, payments and bank feeds are not imported by this job.
 
+### Multi-tenant
+
+A single Xero OAuth grant can cover multiple tenants/orgs (e.g. both Alma Avalon and St Alma). The scheduled job iterates every tenant captured on `connection.metadata.xeroTenants` and runs the contacts + bills import once per tenant.
+
+To authorise multiple tenants in one connection: when prompted on the Xero consent screen, select every org the integration should be able to read. Reconnecting always refreshes the tenant list. Old connections (made before this rollout) keep their single-tenant behaviour until they're reconnected; the scheduler falls back to `providerAccountId` for those.
+
+Per-tenant detail (contacts created, bills imported, warnings) is returned in the `tenants[]` array of the scheduled-import response. Admin → Integrations → Xero displays the tenant list when more than one is connected.
+
 Admin shows the scheduler endpoint readiness and the latest `SCHEDULED` Xero run in:
 
 ```text
