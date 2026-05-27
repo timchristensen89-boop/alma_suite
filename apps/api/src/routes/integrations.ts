@@ -23,9 +23,9 @@ integrationsRouter.get('/:provider/callback', async (req, res, next) => {
   }
 });
 
-// Deputy stop-gap import routes — manager-accessible so they can refresh
-// the roster while Alma roster is being tested. Service enforces its own
-// role checks on top of requireManager.
+// Deputy sync routes — manager-accessible so they can trigger a refresh
+// from staff admin without needing the integrations admin page. The
+// service enforces its own role checks on top of requireManager.
 integrationsRouter.get('/deputy/status', requireManager, async (_req, res, next) => {
   try {
     res.json(await deputyService.getStatus());
@@ -34,13 +34,37 @@ integrationsRouter.get('/deputy/status', requireManager, async (_req, res, next)
   }
 });
 
-integrationsRouter.post('/deputy/import-roster', requireManager, async (req, res, next) => {
+integrationsRouter.post('/deputy/sync-roster', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new Error('Not authenticated');
-    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
-    const filename = typeof req.body?.filename === 'string' ? req.body.filename : undefined;
-    const dryRun = Boolean(req.body?.dryRun);
-    res.json(await deputyService.importRosterCsv({ csv, filename, dryRun, actor: req.user }));
+    res.json(await deputyService.syncRosterNow(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/deputy/sync-employees', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await deputyService.syncEmployeesNow(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/deputy/sync-documents', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await deputyService.syncDocumentsNow(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/deputy/sync-all', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await deputyService.syncAllNow(req.user));
   } catch (error) {
     next(error);
   }
@@ -60,6 +84,15 @@ integrationsRouter.get('/meta/connect', async (req, res, next) => {
 integrationsRouter.get('/square/connect', async (req, res, next) => {
   try {
     const payload = await integrationService.startConnect('square', req.user!, req.query.account);
+    res.redirect(302, payload.authorizationUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.get('/deputy/connect', async (req, res, next) => {
+  try {
+    const payload = await integrationService.startConnect('deputy', req.user!);
     res.redirect(302, payload.authorizationUrl);
   } catch (error) {
     next(error);

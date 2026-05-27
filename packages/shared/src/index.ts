@@ -1821,7 +1821,7 @@ export type DeviceStaffListResponse = {
   staff: DeviceStaffOption[];
 };
 
-export type IntegrationProviderKey = 'square' | 'xero';
+export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';
 export type AdminMetaIntegrationStatus = {
   provider: 'meta';
   label: string;
@@ -1949,6 +1949,7 @@ export type IntegrationStatusPayload = {
   square: IntegrationProviderStatus;
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: IntegrationProviderStatus;
+  deputy: IntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
@@ -2252,6 +2253,7 @@ export type AdminIntegrationsStatusPayload = {
   square: AdminIntegrationProviderStatus;
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: AdminIntegrationProviderStatus;
+  deputy: AdminIntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];

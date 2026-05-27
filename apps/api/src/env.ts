@@ -128,6 +128,21 @@ export const env = {
       redirectUrl: process.env.XERO_REDIRECT_URL ?? `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/xero/callback`,
       webhookKey: process.env.XERO_WEBHOOK_KEY ?? ''
     },
+    deputy: {
+      // Deputy OAuth 2.0 ("Install on Deputy"). Auth endpoints live on the
+      // shared host once.deputy.com; the token response then hands us a
+      // per-tenant `endpoint` (e.g. someinstall.au.deputy.com) that we use
+      // for all API calls and refreshes from there on.
+      clientId: process.env.DEPUTY_CLIENT_ID ?? '',
+      clientSecret: process.env.DEPUTY_CLIENT_SECRET ?? '',
+      redirectUrl:
+        process.env.DEPUTY_REDIRECT_URL ??
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/deputy/callback`,
+      // Single scope; Deputy uses `longlife_refresh_token` for all OAuth apps.
+      scope: 'longlife_refresh_token',
+      authorizeUrl: 'https://once.deputy.com/my/oauth/login',
+      tokenUrl: 'https://once.deputy.com/my/oauth/access_token'
+    },
     meta: {
       appId: process.env.META_APP_ID ?? '',
       appSecret: process.env.META_APP_SECRET ?? '',

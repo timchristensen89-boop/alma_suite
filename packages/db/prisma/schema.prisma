@@ -363,6 +363,7 @@ enum GoogleReserveIntegrationStatus {
 enum IntegrationProvider {
   SQUARE
   XERO
+  DEPUTY
 }
 
 enum IntegrationConnectionStatus {
