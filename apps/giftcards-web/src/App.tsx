@@ -246,8 +246,10 @@ function PublicGiftCardShop() {
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
   const [design, setDesign] = useState<GiftDesign>('forest');
+  // Scheduled delivery is intentionally locked to 'now' until the backend
+  // supports a deliverAt field + a scheduler drain (task #5). The toggle
+  // below shows "Schedule it" as Coming soon.
   const [deliverMode, setDeliverMode] = useState<'now' | 'later'>('now');
-  const [deliverDate, setDeliverDate] = useState('');
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [promoCode, setPromoCode] = useState('');
   const [promoQuote, setPromoQuote] = useState<GiftCardPromoQuote | null>(null);
@@ -381,10 +383,8 @@ function PublicGiftCardShop() {
     : '— FROM TOM';
   const recipientDisplay = (recipientName || '').trim() || '—';
   const deliveryLabel = deliverMode === 'now'
-    ? 'By email · sent now'
-    : deliverDate
-      ? `By email · ${new Date(`${deliverDate}T07:00`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}, 7am`
-      : 'By email · pick a date';
+    ? 'By email · sent right after payment'
+    : 'By email · scheduled (coming soon)';
   const designMeta = DESIGN_META[design];
 
   return (
@@ -627,7 +627,7 @@ function PublicGiftCardShop() {
                   <span className="alma-giftcards-step__num">2</span>
                   <div>
                     <h3 className="alma-giftcards-h3">Pick <em>a design.</em></h3>
-                    <div className="alma-giftcards-step__hint">Either venue, or the group lockup if they know both.</div>
+                    <div className="alma-giftcards-step__hint">Preview only for now — the emailed card uses the house artwork while custom designs ship.</div>
                   </div>
                 </div>
                 <div className="alma-giftcards-designs">
@@ -661,34 +661,24 @@ function PublicGiftCardShop() {
                 <div className="alma-giftcards-deliver">
                   <button
                     type="button"
-                    className={`alma-giftcards-toggle ${deliverMode === 'now' ? 'is-on' : ''}`}
+                    className="alma-giftcards-toggle is-on"
                     onClick={() => setDeliverMode('now')}
-                    aria-pressed={deliverMode === 'now'}
+                    aria-pressed={true}
                   >
                     <span className="alma-giftcards-toggle__title">Send now</span>
                     <span className="alma-giftcards-toggle__sub">In their inbox within 5 minutes</span>
                   </button>
                   <button
                     type="button"
-                    className={`alma-giftcards-toggle ${deliverMode === 'later' ? 'is-on' : ''}`}
-                    onClick={() => setDeliverMode('later')}
-                    aria-pressed={deliverMode === 'later'}
+                    className="alma-giftcards-toggle"
+                    disabled
+                    aria-disabled={true}
+                    title="Scheduled delivery is coming soon"
                   >
                     <span className="alma-giftcards-toggle__title">Schedule it</span>
-                    <span className="alma-giftcards-toggle__sub">Pick a date — birthdays, anniversaries</span>
+                    <span className="alma-giftcards-toggle__sub">Coming soon — for now we send right after payment</span>
                   </button>
                 </div>
-                {deliverMode === 'later' ? (
-                  <label className="alma-giftcards-field">
-                    <span className="alma-giftcards-field__label">Deliver on</span>
-                    <input
-                      type="date"
-                      value={deliverDate}
-                      onChange={(event) => setDeliverDate(event.currentTarget.value)}
-                    />
-                    <span className="alma-giftcards-field__hint">We'll send at 7am AEST on the date you pick.</span>
-                  </label>
-                ) : null}
               </div>
 
               {/* 4 — RECIPIENT */}
