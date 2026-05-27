@@ -1245,5 +1245,67 @@ export const reportsService = {
     });
 
     return { deleted: deleted.count };
+  },
+
+  // Stocktake status overview (Sprint 2.4) — for each venue, return the
+  // latest LOCKED stocktake (the one Reports trust for stock value /
+  // COGS) plus a freshness signal. Used by the Reports Overview widget.
+  async stocktakeStatus(actor: AuthUser) {
+    const venue = actorVenueScope(actor);
+    const venues = venue
+      ? [venue]
+      : Array.from(new Set((await prisma.stocktake.findMany({ where: { venue: { not: null } }, select: { venue: true }, distinct: ['venue'] })).map((s) => s.venue!).filter(Boolean)));
+
+    const STALE_DAYS = 14;
+    const staleCutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
+
+    const venueStatuses = await Promise.all(venues.map(async (v) => {
+      const latestLocked = await prisma.stocktake.findFirst({
+        where: { venue: v, status: 'LOCKED' },
+        orderBy: [{ countedAt: 'desc' }],
+        include: {
+          _count: { select: { lines: true } },
+          lines: { select: { stockValueCents: true } }
+        }
+      });
+      const latestAny = await prisma.stocktake.findFirst({
+        where: { venue: v },
+        orderBy: [{ countedAt: 'desc' }],
+        select: { id: true, status: true, countedAt: true, name: true }
+      });
+      const stockValueCents = latestLocked?.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0) ?? null;
+      const stale = latestLocked ? latestLocked.countedAt < staleCutoff : true;
+
+      return {
+        venue: v,
+        latestLocked: latestLocked ? {
+          id: latestLocked.id,
+          name: latestLocked.name,
+          countedAt: latestLocked.countedAt.toISOString(),
+          lockedAt: latestLocked.lockedAt?.toISOString() ?? null,
+          lineCount: latestLocked._count.lines,
+          stockValueCents,
+          stale
+        } : null,
+        latestAny: latestAny ? {
+          id: latestAny.id,
+          name: latestAny.name,
+          status: latestAny.status,
+          countedAt: latestAny.countedAt.toISOString()
+        } : null,
+        // Quality grade — green if locked AND fresh, amber if locked but
+        // stale OR submitted/reviewed but not locked, red if no stocktake
+        // at all OR only IN_PROGRESS drafts.
+        quality: latestLocked
+          ? (stale ? 'partial' : 'good')
+          : (latestAny && (latestAny.status === 'SUBMITTED' || latestAny.status === 'REVIEWED') ? 'partial' : 'poor')
+      };
+    }));
+
+    return {
+      generatedAt: new Date().toISOString(),
+      staleDays: STALE_DAYS,
+      venues: venueStatuses
+    };
   }
 };

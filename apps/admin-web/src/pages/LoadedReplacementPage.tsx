@@ -143,6 +143,22 @@ export function LoadedReplacementPage() {
     }
   }
 
+  async function recordComparison(input: ComparisonInput) {
+    setMessage(null);
+    try {
+      const data = await api<Overview>('/api/admin/loaded-replacement/comparison', {
+        method: 'POST',
+        body: JSON.stringify(input)
+      });
+      setOverview(data);
+      setTone('success');
+      setMessage(`Comparison cycle "${input.label}" recorded.`);
+    } catch (err) {
+      setTone('error');
+      setMessage(err instanceof Error ? err.message : 'Could not record comparison.');
+    }
+  }
+
   async function toggleExplained(cycleId: string, explained: boolean) {
     setMessage(null);
     try {
@@ -213,6 +229,7 @@ export function LoadedReplacementPage() {
 
       <Card title="Useful jumps" subtitle="Pages that feed the checklist below.">
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <Button type="button" variant="secondary" onClick={() => { window.location.href = '/loaded-import'; }}>Import from Loaded</Button>
           <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-stock-v18.web.app/items'; }}>Open Stock catalogue</Button>
           <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-stock-v18.web.app/stocktake'; }}>Open Stocktake</Button>
           <Button type="button" variant="secondary" onClick={() => { window.location.href = 'https://alma-reports.web.app'; }}>Open Reports</Button>
@@ -271,37 +288,165 @@ export function LoadedReplacementPage() {
 
       <Card title="Parallel comparison cycles" subtitle="Run Alma and Loaded side-by-side for at least two stocktake cycles before cancelling.">
         {overview.comparisons.length === 0 ? (
-          <p className="subtle">
-            No comparison cycles recorded yet. After your next stocktake, record Loaded's totals here so the variance is visible and explainable.
-            Future passes of this page will let you submit cycles inline — for now, drop the variance notes into the related checks above.
+          <p className="subtle" style={{ marginBottom: 14 }}>
+            No comparison cycles recorded yet. After your next stocktake, fill out the form below so the variance between Loaded and Alma is visible and explainable.
           </p>
         ) : (
-          <ul className="loaded-replacement-list">
-            {overview.comparisons.map((cycle) => (
-              <li key={cycle.id} className={`loaded-replacement-row is-${cycle.explained ? 'ready' : 'needs_work'}`}>
-                <Badge tone={cycle.explained ? 'positive' : 'warning'}>
-                  Cycle {cycle.cycleNumber} {cycle.explained ? '· explained' : '· needs review'}
-                </Badge>
-                <div className="loaded-replacement-row-body">
-                  <strong>{cycle.label}</strong>
-                  <small>Recorded {formatTime(cycle.recordedAt)} by {cycle.recordedBy}</small>
-                  {cycle.notes ? <span className="subtle">{cycle.notes}</span> : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={cycle.explained ? 'ghost' : 'primary'}
-                    onClick={() => void toggleExplained(cycle.id, !cycle.explained)}
-                  >
-                    {cycle.explained ? 'Mark as needing review' : 'Mark variance explained'}
-                  </Button>
-                </div>
-              </li>
-            ))}
+          <ul className="loaded-replacement-list" style={{ marginBottom: 14 }}>
+            {overview.comparisons.map((cycle) => {
+              const stockVariance = cycle.alma.stockValueCents !== null && cycle.loaded.stockValueCents !== null
+                ? cycle.alma.stockValueCents - cycle.loaded.stockValueCents
+                : null;
+              const cogsVariance = cycle.alma.cogsCents !== null && cycle.loaded.cogsCents !== null
+                ? cycle.alma.cogsCents - cycle.loaded.cogsCents
+                : null;
+              return (
+                <li key={cycle.id} className={`loaded-replacement-row is-${cycle.explained ? 'ready' : 'needs_work'}`}>
+                  <Badge tone={cycle.explained ? 'positive' : 'warning'}>
+                    Cycle {cycle.cycleNumber} {cycle.explained ? '· explained' : '· needs review'}
+                  </Badge>
+                  <div className="loaded-replacement-row-body">
+                    <strong>{cycle.label}</strong>
+                    <small>Recorded {formatTime(cycle.recordedAt)} by {cycle.recordedBy}</small>
+                    {stockVariance !== null ? (
+                      <span className="subtle">
+                        Stock value variance: <strong>{(stockVariance / 100).toLocaleString(undefined, { style: 'currency', currency: 'AUD' })}</strong> ({stockVariance > 0 ? 'Alma higher' : 'Alma lower'})
+                      </span>
+                    ) : null}
+                    {cogsVariance !== null ? (
+                      <span className="subtle">
+                        COGS variance: <strong>{(cogsVariance / 100).toLocaleString(undefined, { style: 'currency', currency: 'AUD' })}</strong>
+                      </span>
+                    ) : null}
+                    {cycle.notes ? <span className="subtle">Notes: {cycle.notes}</span> : null}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={cycle.explained ? 'ghost' : 'primary'}
+                      onClick={() => void toggleExplained(cycle.id, !cycle.explained)}
+                    >
+                      {cycle.explained ? 'Mark as needing review' : 'Mark variance explained'}
+                    </Button>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         )}
+        <ComparisonForm onSubmit={recordComparison} />
       </Card>
 
       {message ? <ActionFeedback message={message} tone={tone} /> : null}
     </div>
   );
 }
+
+// Comparison entry form. Captures Loaded's totals + Alma's totals so we
+// can store + display the variance for each parallel-run cycle.
+function ComparisonForm({ onSubmit }: { onSubmit: (input: ComparisonInput) => Promise<void> }) {
+  const [label, setLabel] = useState('');
+  const [loadedStock, setLoadedStock] = useState('');
+  const [loadedSales, setLoadedSales] = useState('');
+  const [loadedCogs, setLoadedCogs] = useState('');
+  const [almaStock, setAlmaStock] = useState('');
+  const [almaSales, setAlmaSales] = useState('');
+  const [almaCogs, setAlmaCogs] = useState('');
+  const [notes, setNotes] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  function dollarsToCents(value: string): number | null {
+    const trimmed = value.trim().replace(/[$,]/g, '');
+    if (!trimmed) return null;
+    const n = Number(trimmed);
+    return Number.isFinite(n) ? Math.round(n * 100) : null;
+  }
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    try {
+      await onSubmit({
+        label: label.trim(),
+        loaded: {
+          stockValueCents: dollarsToCents(loadedStock),
+          salesCents: dollarsToCents(loadedSales),
+          cogsCents: dollarsToCents(loadedCogs),
+          categoryTotals: {}
+        },
+        alma: {
+          stockValueCents: dollarsToCents(almaStock),
+          salesCents: dollarsToCents(almaSales),
+          cogsCents: dollarsToCents(almaCogs),
+          categoryTotals: {}
+        },
+        notes: notes.trim() || undefined
+      });
+      setLabel('');
+      setLoadedStock(''); setLoadedSales(''); setLoadedCogs('');
+      setAlmaStock(''); setAlmaSales(''); setAlmaCogs('');
+      setNotes('');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <details>
+      <summary style={{ cursor: 'pointer', fontWeight: 600, padding: '8px 0' }}>
+        + Record a new comparison cycle
+      </summary>
+      <form onSubmit={submit} style={{ display: 'grid', gap: 10, marginTop: 10 }}>
+        <input
+          type="text"
+          placeholder="Cycle label (e.g. February month-end)"
+          value={label}
+          onChange={(event) => setLabel(event.target.value)}
+          className="loaded-replacement-notes-input"
+        />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <strong>Loaded totals (AUD)</strong>
+            <input className="loaded-replacement-notes-input" placeholder="Stock value $" value={loadedStock} onChange={(event) => setLoadedStock(event.target.value)} />
+            <input className="loaded-replacement-notes-input" placeholder="Sales $" value={loadedSales} onChange={(event) => setLoadedSales(event.target.value)} />
+            <input className="loaded-replacement-notes-input" placeholder="COGS $" value={loadedCogs} onChange={(event) => setLoadedCogs(event.target.value)} />
+          </div>
+          <div style={{ display: 'grid', gap: 6 }}>
+            <strong>Alma totals (AUD)</strong>
+            <input className="loaded-replacement-notes-input" placeholder="Stock value $" value={almaStock} onChange={(event) => setAlmaStock(event.target.value)} />
+            <input className="loaded-replacement-notes-input" placeholder="Sales $" value={almaSales} onChange={(event) => setAlmaSales(event.target.value)} />
+            <input className="loaded-replacement-notes-input" placeholder="COGS $" value={almaCogs} onChange={(event) => setAlmaCogs(event.target.value)} />
+          </div>
+        </div>
+        <textarea
+          className="loaded-replacement-notes-input"
+          placeholder="Why does the variance exist? (timing, item mappings, missing recipes…)"
+          rows={2}
+          value={notes}
+          onChange={(event) => setNotes(event.target.value)}
+        />
+        <div>
+          <Button type="submit" disabled={busy || !label.trim()}>
+            {busy ? 'Recording…' : 'Record comparison cycle'}
+          </Button>
+        </div>
+      </form>
+    </details>
+  );
+}
+
+type ComparisonInput = {
+  label: string;
+  loaded: {
+    stockValueCents: number | null;
+    salesCents: number | null;
+    cogsCents: number | null;
+    categoryTotals: Record<string, number>;
+  };
+  alma: {
+    stockValueCents: number | null;
+    salesCents: number | null;
+    cogsCents: number | null;
+    categoryTotals: Record<string, number>;
+  };
+  notes?: string;
+};

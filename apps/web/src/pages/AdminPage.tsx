@@ -2826,7 +2826,11 @@ export function AdminPage({
                 'Loaded replacement tracker at Admin → System → Loaded replacement: cutover checklist, parallel comparison cycles, and a hard cancellation guard that stays RED until every required check is ready and two comparisons are explained.',
                 'Stock catalogue gained countUnit + conversionFactor + countArea + latestCostCents + latestCostAt for proper stocktake by physical area + COGS confidence.',
                 'Stocktake state machine: IN_PROGRESS → SUBMITTED → REVIEWED → LOCKED → REOPENED. Reports prefer LOCKED stocktakes. Reopen requires a reason (≥5 characters) for the audit trail.',
-                'Stocktake CSV export at /stocktakes/:id/export.csv — one row per line, includes the latest cost + stock value.'
+                'Stocktake CSV export at /stocktakes/:id/export.csv — one row per line, includes the latest cost + stock value.',
+                'Sprint 2: Loaded item CSV import with preview → commit, classifies rows as create / update / skip / error.',
+                'Sprint 2: Historical Loaded stocktake CSV import — lands as LOCKED sessions tagged "Imported from Loaded".',
+                'Sprint 2: Comparison form on the Loaded replacement page so admins can record + explain parallel-run variance cycles.',
+                'Sprint 2: Reports now shows a per-venue stocktake status hairline (Good / Partial / Poor + last-locked date) so the operator knows whether stock value can be trusted.'
               ]
             },
             {

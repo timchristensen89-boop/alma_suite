@@ -70,6 +70,7 @@ import {
 } from './pages/AdminFeaturePages';
 import { BulkStaffOnboardingPage } from './pages/BulkStaffOnboardingPage';
 import { IntegrationHealthPage } from './pages/IntegrationHealthPage';
+import { LoadedImportPage } from './pages/LoadedImportPage';
 import { LoadedReplacementPage } from './pages/LoadedReplacementPage';
 import { SquareMenuMappingPage } from './pages/SquareMenuMappingPage';
 import { StaffHrTemplatesPage } from './pages/StaffHrTemplatesPage';
@@ -283,6 +284,12 @@ const NAV_GROUPS: AdminNavGroup[] = [
         label: 'Loaded replacement',
         description: 'Cutover readiness, parallel comparison, cancellation guard',
         icon: <IconChecklist />
+      },
+      {
+        to: '/loaded-import',
+        label: 'Loaded CSV import',
+        description: 'Import the Loaded item catalogue + historical stocktakes',
+        icon: <IconUpload />
       },
       {
         to: '/danger-zone',
@@ -626,6 +633,7 @@ function AdminWorkspace() {
         <Route path="/imports" element={<ImportsPage />} />
         <Route path="/danger-zone" element={<DangerZonePage />} />
         <Route path="/loaded-replacement" element={<LoadedReplacementPage />} />
+        <Route path="/loaded-import" element={<LoadedImportPage />} />
         <Route path="/admin/loaded-replacement" element={<Navigate to="/loaded-replacement" replace />} />
         <Route path="/meta-human-agent-demo" element={<HumanAgentDemoPage />} />
         <Route path="/admin/compliance-settings" element={<Navigate to="/compliance-settings" replace />} />

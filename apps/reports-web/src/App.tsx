@@ -1671,6 +1671,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <span>Stock <strong>Alma</strong></span>
           </p>
 
+          {/* Stocktake status widget (Sprint 2.4 / Loaded replacement #16).
+              Tells the operator whether stock value + COGS in this report
+              can be trusted, per venue. */}
+          <StocktakeStatusWidget />
+
+
           {/* Weekly Snapshot — editorial dashboard from the design */}
           <div className="alma-page-grid-kpis">
             <BigStat
@@ -3074,6 +3080,73 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     </AppShell>
   );
 
+}
+
+// Stocktake status widget — Sprint 2.4 / Loaded replacement #16.
+// Calls /api/reports/stocktake-status and renders a per-venue badge
+// row showing the latest LOCKED stocktake + a Good/Partial/Poor grade.
+type StocktakeStatusPayload = {
+  generatedAt: string;
+  staleDays: number;
+  venues: Array<{
+    venue: string;
+    latestLocked: {
+      id: string;
+      name: string;
+      countedAt: string;
+      lockedAt: string | null;
+      lineCount: number;
+      stockValueCents: number | null;
+      stale: boolean;
+    } | null;
+    latestAny: { id: string; name: string; status: string; countedAt: string } | null;
+    quality: 'good' | 'partial' | 'poor';
+  }>;
+};
+
+function StocktakeStatusWidget() {
+  const [data, setData] = useState<StocktakeStatusPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    staffApi<StocktakeStatusPayload>('/api/reports/stocktake-status')
+      .then((payload) => { if (!cancelled) { setData(payload); setError(null); } })
+      .catch((err) => { if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load stocktake status'); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (loading || !data || data.venues.length === 0) return null;
+  if (error) {
+    return (
+      <p className="alma-reports-sources" style={{ borderTopColor: 'rgba(154, 58, 46, 0.32)' }}>
+        <span className="alma-reports-sources-label">Stocktake</span>
+        <span>Could not load status: <strong>{error}</strong></span>
+      </p>
+    );
+  }
+
+  return (
+    <p className="alma-reports-sources" aria-label="Stocktake freshness">
+      <span className="alma-reports-sources-label">Stocktake</span>
+      {data.venues.map((venue) => {
+        const lockedLabel = venue.latestLocked
+          ? new Date(venue.latestLocked.countedAt).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
+          : 'never locked';
+        const qualityLabel = venue.quality === 'good' ? 'Good' : venue.quality === 'partial' ? 'Partial' : 'Poor';
+        const colour = venue.quality === 'good' ? '#2F5C36' : venue.quality === 'partial' ? '#855700' : '#6F2418';
+        return (
+          <span key={venue.venue}>
+            {venue.venue} <strong style={{ color: colour }}>{qualityLabel}</strong>
+            {venue.latestLocked ? ` · last locked ${lockedLabel}` : ''}
+          </span>
+        );
+      })}
+    </p>
+  );
 }
 
 export function App() {

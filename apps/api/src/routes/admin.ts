@@ -3,6 +3,7 @@ import { requireAdmin } from '../lib/auth-middleware.js';
 import { adminService } from '../services/admin.service.js';
 import { deviceService } from '../services/device.service.js';
 import { exportsService } from '../services/exports.service.js';
+import { loadedImportService } from '../services/loaded-import.service.js';
 import { loadedReplacementService } from '../services/loaded-replacement.service.js';
 
 export const adminRouter = Router();
@@ -200,6 +201,49 @@ adminRouter.post('/loaded-replacement/comparison/:id/explained', async (req, res
     if (!req.user) throw new Error('Not authenticated');
     const explained = Boolean(req.body?.explained);
     res.json(await loadedReplacementService.markComparisonExplained(req.user, String(req.params.id), explained));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Loaded CSV import endpoints. Mirror the ones in stock-api but live
+// here so admin-web hits its own backend without crossing origins.
+adminRouter.post('/loaded-import/items/preview', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+    res.json(await loadedImportService.previewItemImport(req.user, csv));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-import/items/commit', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+    res.json(await loadedImportService.commitItemImport(req.user, csv));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-import/stocktakes/preview', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+    res.json(await loadedImportService.previewStocktakeImport(req.user, csv));
+  } catch (error) {
+    next(error);
+  }
+});
+
+adminRouter.post('/loaded-import/stocktakes/commit', async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const csv = typeof req.body?.csv === 'string' ? req.body.csv : '';
+    const skipUnmatched = req.body?.skipUnmatched !== false;
+    res.json(await loadedImportService.commitStocktakeImport(req.user, csv, { skipUnmatched }));
   } catch (error) {
     next(error);
   }

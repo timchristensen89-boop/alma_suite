@@ -36,6 +36,17 @@ reportsRouter.get('/stock', requireManager, async (req, res, next) => {
   }
 });
 
+// Stocktake status widget data (Sprint 2.4). Returns per-venue latest
+// LOCKED stocktake + freshness + quality grade so Reports can show
+// whether their stock value is trustworthy.
+reportsRouter.get('/stocktake-status', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.stocktakeStatus(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.get('/prime-cost', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.primeCost({
