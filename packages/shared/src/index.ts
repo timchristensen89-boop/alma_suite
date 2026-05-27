@@ -1330,6 +1330,10 @@ export const googleReserveIntegrationSettingInputSchema = z.object({
   lastError: z.string().optional().or(z.literal(''))
 });
 
+export const GIFT_CARD_DESIGNS = ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'] as const;
+export type GiftCardDesign = (typeof GIFT_CARD_DESIGNS)[number];
+export const giftCardDesignSchema = z.enum(GIFT_CARD_DESIGNS);
+
 export const giftCardCheckoutInputSchema = z.object({
   amountCents: z.coerce.number().int().min(1000).max(200000),
   purchaserName: z.string().min(2),
@@ -1337,6 +1341,7 @@ export const giftCardCheckoutInputSchema = z.object({
   recipientName: z.string().optional().or(z.literal('')),
   recipientEmail: z.string().email().optional().or(z.literal('')),
   message: z.string().max(500).optional().or(z.literal('')),
+  design: giftCardDesignSchema.optional(),
   promoCode: z.string().max(40).optional().or(z.literal('')),
   successUrl: z.string().url().optional().or(z.literal('')),
   cancelUrl: z.string().url().optional().or(z.literal(''))
@@ -3656,6 +3661,7 @@ export type GiftCard = {
   recipientName: string | null;
   recipientEmail: string | null;
   message: string | null;
+  design: string | null;
   promoCodeId: string | null;
   promoCodeSnapshot: string | null;
   testMode: boolean;
@@ -3683,6 +3689,7 @@ export type GiftCardPublic = Pick<
   | 'currency'
   | 'recipientName'
   | 'message'
+  | 'design'
   | 'paidAt'
   | 'expiresAt'
   | 'emailedAt'
