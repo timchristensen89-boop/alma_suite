@@ -1771,3 +1771,771 @@
     max-height: 280px;
   }
 }
+
+/* =========================================================
+   Public booking widget — alma · reserve
+   Four-step flow: venue + date + party → time → details → ticket
+   Source: Claude Design handoff (alma-suite-design-system/
+   project/reservation-widget.jsx), informed by 20-venue
+   Sydney research (Saint Peter, Catalina, Aalia/Esca,
+   Bistecca, Ester, Pilu — see docs/booking-page-research.md).
+   ========================================================= */
+.alma-booking-page {
+  --abk-paper:    #FAF6EE;
+  --abk-bone:     #EFE8DC;
+  --abk-shell:    #F5DCCE;
+  --abk-cocoa:    #684A4A;
+  --abk-cocoa-deep: #3D2A2A;
+  --abk-forest:   #1F3524;
+  --abk-ink:      #14241A;
+  --abk-ink-90:   rgba(20, 36, 26, 0.90);
+  --abk-ink-65:   rgba(20, 36, 26, 0.65);
+  --abk-ink-55:   rgba(20, 36, 26, 0.55);
+  --abk-ink-45:   rgba(20, 36, 26, 0.45);
+  --abk-ink-30:   rgba(20, 36, 26, 0.30);
+  --abk-ink-20:   rgba(20, 36, 26, 0.20);
+  --abk-hair:     rgba(20, 36, 26, 0.12);
+  --abk-hair-soft: rgba(20, 36, 26, 0.08);
+  --abk-moss:     #4F6B47;
+  --abk-amber:    #B27935;
+  --abk-amber-deep: #7A4E18;
+  --abk-avalon:   #3D5C3F;
+  --abk-stalma:   #A0463A;
+
+  min-height: 100vh;
+  background: var(--abk-paper);
+  color: var(--abk-ink);
+  font-family: "Avenir LT Std", "Manrope", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
+  display: flex;
+  flex-direction: column;
+}
+
+.alma-booking-page * { box-sizing: border-box; }
+
+/* ── Page hero (left column on desktop, stacked on mobile) ── */
+.alma-booking-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(420px, 0.95fr);
+  gap: 56px;
+  align-items: center;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 56px 32px 80px;
+}
+
+.alma-booking-hero { color: var(--abk-ink); min-width: 0; }
+.alma-booking-hero__eyebrow {
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.42em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+.alma-booking-hero__display {
+  margin: 18px 0 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(48px, 5.4vw, 76px);
+  line-height: 0.96;
+  letter-spacing: -0.01em;
+  color: var(--abk-ink);
+}
+.alma-booking-hero__display em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--abk-cocoa);
+}
+.alma-booking-hero__tag {
+  margin: 22px 0 0;
+  max-width: 36ch;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 19px;
+  line-height: 1.5;
+  color: var(--abk-ink-65);
+}
+.alma-booking-hero__policy {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.alma-booking-hero__policy-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px 6px;
+  border-radius: 9999px;
+  border: 1px solid var(--abk-hair);
+  background: rgba(255, 255, 255, 0.5);
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.18em;
+  text-transform: uppercase;
+  color: var(--abk-ink-65);
+}
+.alma-booking-hero__policy-pill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 9999px;
+  background: var(--abk-cocoa);
+}
+.alma-booking-hero__links {
+  margin-top: 28px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 22px;
+}
+.alma-booking-hero__link {
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--abk-ink);
+  text-decoration: none;
+  border-bottom: 1px solid var(--abk-ink-30);
+  padding-bottom: 3px;
+}
+.alma-booking-hero__link:hover { border-bottom-color: var(--abk-cocoa); color: var(--abk-cocoa); }
+
+/* ── The widget card ── */
+.alma-booking-card {
+  width: 100%;
+  max-width: 580px;
+  justify-self: end;
+  padding: 28px 30px 30px;
+  background: #FFFFFF;
+  border: 1px solid var(--abk-hair);
+  border-radius: 22px;
+  box-shadow: 0 30px 70px -30px rgba(20, 36, 26, 0.30), 0 1px 0 rgba(255, 255, 255, 0.7) inset;
+}
+
+.alma-booking-card__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding-bottom: 18px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--abk-hair);
+}
+.alma-booking-card__brand {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 900;
+  font-size: 20px;
+  letter-spacing: -0.025em;
+  color: var(--abk-ink);
+}
+.alma-booking-card__brand em {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--abk-ink-55);
+  letter-spacing: 0;
+  margin-left: 2px;
+}
+
+.alma-booking-progress { display: flex; gap: 6px; align-items: center; }
+.alma-booking-progress__dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--abk-ink-20);
+  transition: width 200ms ease, background 200ms ease;
+}
+.alma-booking-progress__dot--filled { background: var(--abk-ink); }
+.alma-booking-progress__dot--active { width: 20px; background: var(--abk-ink); }
+
+.alma-booking-status {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px 3px;
+  border-radius: 9999px;
+  background: rgba(178, 121, 53, 0.16);
+  color: var(--abk-amber-deep);
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+}
+
+/* ── Step shared ── */
+.alma-booking-step__eyebrow {
+  font-weight: 700;
+  font-size: 10px;
+  letter-spacing: 0.36em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+.alma-booking-step__headline {
+  margin: 12px 0 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-weight: 500;
+  font-size: clamp(28px, 4vw, 38px);
+  line-height: 1.0;
+  letter-spacing: -0.005em;
+  color: var(--abk-ink);
+}
+.alma-booking-step__headline em {
+  font-style: italic;
+  font-weight: 500;
+  color: var(--abk-cocoa);
+}
+.alma-booking-step__context {
+  margin-top: 6px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--abk-ink-55);
+}
+
+.alma-booking-field { margin-top: 24px; }
+.alma-booking-field__eyebrow {
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+
+/* ── Venue toggle ── */
+.alma-booking-venues {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+.alma-booking-venue {
+  position: relative;
+  padding: 16px 18px 16px 26px;
+  border-radius: 12px;
+  background: transparent;
+  border: 1px solid var(--abk-hair);
+  cursor: pointer;
+  text-align: left;
+  transition: background 140ms, border-color 140ms;
+}
+.alma-booking-venue::before {
+  content: "";
+  position: absolute;
+  left: 12px;
+  top: 18px;
+  bottom: 18px;
+  width: 3px;
+  background: transparent;
+  border-radius: 9999px;
+  transition: background 140ms;
+}
+.alma-booking-venue--active { background: #FFFFFF; border-color: var(--abk-venue-accent, var(--abk-forest)); box-shadow: 0 1px 0 rgba(31, 53, 36, 0.13) inset; }
+.alma-booking-venue--active::before { background: var(--abk-venue-accent, var(--abk-forest)); }
+.alma-booking-venue__label {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+  color: var(--abk-ink);
+}
+.alma-booking-venue__tagline {
+  margin-top: 6px;
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+.alma-booking-venue--active .alma-booking-venue__tagline { color: var(--abk-venue-accent, var(--abk-forest)); }
+
+/* ── Calendar strip ── */
+.alma-booking-calendar {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.alma-booking-day {
+  padding: 10px 4px 8px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--abk-hair);
+  cursor: pointer;
+  text-align: center;
+  transition: all 140ms;
+}
+.alma-booking-day__dow {
+  font-weight: 700;
+  font-size: 8.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+.alma-booking-day__num {
+  margin-top: 3px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  font-size: 18px;
+  line-height: 1;
+  color: var(--abk-ink);
+}
+.alma-booking-day__today-mark {
+  margin: 4px 8px 0;
+  height: 2px;
+  background: var(--abk-cocoa);
+  border-radius: 9999px;
+}
+.alma-booking-day:hover:not(.alma-booking-day--active):not(.alma-booking-day--closed) { border-color: var(--abk-ink-30); }
+.alma-booking-day--active { background: var(--abk-ink); border-color: var(--abk-ink); color: var(--abk-paper); }
+.alma-booking-day--active .alma-booking-day__dow { color: rgba(250, 246, 238, 0.75); }
+.alma-booking-day--active .alma-booking-day__num { color: var(--abk-paper); }
+.alma-booking-day--closed { background: transparent; border-color: transparent; opacity: 0.32; cursor: default; }
+.alma-booking-day--closed .alma-booking-day__num,
+.alma-booking-day--closed .alma-booking-day__dow { color: var(--abk-ink-45); }
+
+/* ── Party pills ── */
+.alma-booking-party {
+  margin-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 6px;
+}
+.alma-booking-party__pill {
+  padding: 12px 4px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--abk-hair);
+  color: var(--abk-ink);
+  cursor: pointer;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  font-size: 20px;
+  line-height: 1;
+}
+.alma-booking-party__pill:hover { border-color: var(--abk-ink-30); }
+.alma-booking-party__pill--active { background: var(--abk-ink); border-color: var(--abk-ink); color: var(--abk-paper); }
+.alma-booking-party__pill em { font-style: italic; font-size: 14px; opacity: 0.6; }
+
+.alma-booking-party__overflow {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(245, 220, 206, 0.4);
+  border: 1px solid rgba(104, 74, 74, 0.18);
+  border-radius: 12px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--abk-cocoa-deep);
+}
+.alma-booking-party__overflow a { color: var(--abk-cocoa); }
+
+/* ── Time slot grid ── */
+.alma-booking-times {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+@media (max-width: 480px) {
+  .alma-booking-times { grid-template-columns: repeat(3, 1fr); }
+}
+.alma-booking-time {
+  padding: 16px 10px 12px;
+  border-radius: 12px;
+  background: #FFFFFF;
+  border: 1px solid var(--abk-hair);
+  color: var(--abk-ink);
+  cursor: pointer;
+  text-align: center;
+}
+.alma-booking-time:hover:not(.alma-booking-time--active):not(.alma-booking-time--full) {
+  border-color: var(--abk-ink-30);
+}
+.alma-booking-time__label {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  font-size: 22px;
+  line-height: 1;
+}
+.alma-booking-time__status {
+  margin-top: 6px;
+  font-weight: 700;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--abk-moss);
+}
+.alma-booking-time--limited .alma-booking-time__status { color: var(--abk-amber); }
+.alma-booking-time--full {
+  opacity: 0.55;
+  cursor: default;
+  color: var(--abk-ink-45);
+}
+.alma-booking-time--full .alma-booking-time__status { color: var(--abk-ink-45); }
+.alma-booking-time--active {
+  background: var(--abk-ink);
+  border-color: var(--abk-ink);
+  color: var(--abk-paper);
+}
+.alma-booking-time--active .alma-booking-time__status { color: rgba(250, 246, 238, 0.7); }
+
+/* ── Walk-in note ── */
+.alma-booking-note {
+  margin-top: 20px;
+  padding: 12px 14px;
+  background: rgba(245, 220, 206, 0.5);
+  border: 1px solid rgba(104, 74, 74, 0.18);
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.alma-booking-note__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--abk-cocoa);
+  margin-top: 7px;
+  flex-shrink: 0;
+}
+.alma-booking-note__title {
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--abk-cocoa-deep);
+}
+.alma-booking-note__body {
+  margin-top: 4px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--abk-cocoa-deep);
+}
+.alma-booking-note__link {
+  margin-top: 6px;
+  background: transparent;
+  border: 0;
+  padding: 0;
+  color: var(--abk-cocoa);
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+/* ── Step 3 — details ── */
+.alma-booking-grid {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.alma-booking-grid--full > * { grid-column: 1 / -1; }
+.alma-booking-input,
+.alma-booking-textarea {
+  width: 100%;
+  margin-top: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--abk-hair);
+  border-radius: 12px;
+  background: #FFFFFF;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--abk-ink);
+  outline: none;
+}
+.alma-booking-input:focus,
+.alma-booking-textarea:focus {
+  border-color: var(--abk-ink);
+  box-shadow: 0 0 0 3px rgba(20, 36, 26, 0.08);
+}
+.alma-booking-textarea {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 15px;
+  resize: vertical;
+  min-height: 60px;
+}
+
+.alma-booking-chips {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.alma-booking-chip {
+  padding: 7px 13px 6px;
+  border-radius: 9999px;
+  background: transparent;
+  color: var(--abk-ink);
+  border: 1px solid var(--abk-hair);
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+.alma-booking-chip:hover { border-color: var(--abk-ink-30); }
+.alma-booking-chip--active {
+  background: var(--abk-ink);
+  color: var(--abk-paper);
+  border-color: var(--abk-ink);
+}
+.alma-booking-chip--occasion {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 14px;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--abk-ink-55);
+}
+.alma-booking-chip--occasion.alma-booking-chip--active {
+  background: rgba(104, 74, 74, 0.10);
+  color: var(--abk-cocoa-deep);
+  border-color: rgba(104, 74, 74, 0.30);
+}
+
+/* ── Buttons / actions ── */
+.alma-booking-actions {
+  margin-top: 28px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.alma-booking-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 26px 15px;
+  border-radius: 9999px;
+  border: 1px solid var(--abk-ink);
+  background: var(--abk-ink);
+  color: var(--abk-paper);
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: transform 200ms, opacity 200ms;
+}
+.alma-booking-btn:hover { transform: translateY(-1px); }
+.alma-booking-btn:disabled,
+.alma-booking-btn[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+  transform: none;
+}
+.alma-booking-btn--ghost {
+  background: transparent;
+  border: 1px solid var(--abk-ink);
+  color: var(--abk-ink);
+}
+.alma-booking-btn--ghost:hover { background: rgba(20, 36, 26, 0.05); }
+.alma-booking-btn--link {
+  background: transparent;
+  border: 0;
+  color: var(--abk-ink-55);
+  padding: 8px 4px;
+  font-size: 10.5px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+}
+.alma-booking-btn--link:hover { color: var(--abk-ink); }
+.alma-booking-btn__arrow {
+  width: 13px;
+  height: 6px;
+}
+
+/* ── Step 4 — ticket ── */
+.alma-booking-ticket {
+  margin-top: 22px;
+  position: relative;
+  background: #FFFFFF;
+  border-radius: 16px;
+  border: 1px solid var(--abk-hair);
+  overflow: hidden;
+  box-shadow: 0 14px 32px -16px rgba(20, 36, 26, 0.20);
+}
+.alma-booking-ticket__stripe {
+  height: 4px;
+  background: var(--abk-venue-accent, var(--abk-forest));
+}
+.alma-booking-ticket__body { padding: 22px 22px 14px; }
+.alma-booking-ticket__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+}
+.alma-booking-ticket__eyebrow {
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--abk-venue-accent, var(--abk-forest));
+}
+.alma-booking-ticket__title {
+  margin-top: 6px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  font-size: 30px;
+  color: var(--abk-ink);
+  line-height: 1;
+}
+.alma-booking-ticket__title em {
+  font-style: italic;
+  color: var(--abk-venue-accent, var(--abk-forest));
+}
+.alma-booking-ticket__confirmed {
+  padding: 4px 10px 3px;
+  border-radius: 9999px;
+  background: rgba(79, 107, 71, 0.12);
+  color: #3F5739;
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+.alma-booking-ticket__details {
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--abk-hair);
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 14px;
+}
+.alma-booking-ticket__field-label {
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.32em;
+  text-transform: uppercase;
+  color: var(--abk-ink-55);
+}
+.alma-booking-ticket__field-value {
+  margin-top: 4px;
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-weight: 500;
+  font-size: 19px;
+  color: var(--abk-ink);
+  line-height: 1.1;
+}
+.alma-booking-ticket__field-value em { font-style: italic; color: var(--abk-ink-55); }
+.alma-booking-ticket__ref {
+  margin-top: 4px;
+  font-family: "IBM Plex Mono", ui-monospace, monospace;
+  font-size: 14px;
+  color: var(--abk-ink);
+  letter-spacing: 0.14em;
+}
+.alma-booking-ticket__tags {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px dashed var(--abk-hair);
+}
+.alma-booking-ticket__tag {
+  display: inline-block;
+  margin: 4px 4px 0 0;
+  padding: 2px 9px 1px;
+  border-radius: 9999px;
+  background: rgba(160, 70, 58, 0.10);
+  color: #7A2A20;
+  font-weight: 700;
+  font-size: 9.5px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.alma-booking-ticket__footer {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  border-top: 1px solid var(--abk-hair);
+}
+.alma-booking-ticket__footer button {
+  padding: 14px 12px;
+  background: transparent;
+  border: 0;
+  border-left: 1px solid var(--abk-hair);
+  cursor: pointer;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-weight: 700;
+  font-size: 10.5px;
+  letter-spacing: 0.20em;
+  text-transform: uppercase;
+  color: var(--abk-ink);
+}
+.alma-booking-ticket__footer button:first-child { border-left: 0; }
+
+/* ── Spinner / empty / error ── */
+.alma-booking-loading,
+.alma-booking-error {
+  padding: 18px 14px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+  border: 1px solid var(--abk-hair);
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 16px;
+  color: var(--abk-ink-65);
+  text-align: center;
+}
+.alma-booking-error {
+  background: rgba(160, 70, 58, 0.07);
+  border-color: rgba(160, 70, 58, 0.25);
+  color: #7A2A20;
+}
+
+/* ── Waitlist alternate ── */
+.alma-booking-waitlist-banner {
+  margin-top: 16px;
+  padding: 12px 14px;
+  background: rgba(178, 121, 53, 0.10);
+  border: 1px solid rgba(178, 121, 53, 0.22);
+  border-radius: 12px;
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+.alma-booking-waitlist-banner__dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--abk-amber);
+  margin-top: 7px;
+  flex-shrink: 0;
+}
+.alma-booking-waitlist-banner__body {
+  font-family: "Cormorant Garamond", Georgia, serif;
+  font-style: italic;
+  font-size: 14px;
+  color: var(--abk-cocoa-deep);
+  line-height: 1.45;
+}
+
+@media (max-width: 960px) {
+  .alma-booking-layout {
+    grid-template-columns: 1fr;
+    gap: 32px;
+    padding: 36px 22px 56px;
+  }
+  .alma-booking-card { justify-self: stretch; max-width: 100%; padding: 24px 22px 26px; }
+}
+@media (max-width: 480px) {
+  .alma-booking-venues { grid-template-columns: 1fr; }
+  .alma-booking-calendar,
+  .alma-booking-party { grid-template-columns: repeat(7, minmax(0, 1fr)); }
+  .alma-booking-ticket__details { grid-template-columns: 1fr 1fr; }
+}
