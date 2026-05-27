@@ -1587,6 +1587,73 @@ function xeroBillId(invoice: XeroInvoice) {
   return optionalText(invoice.InvoiceID);
 }
 
+// ─── Stock rules 6/7/8 — invoice classification at import time ──────
+// Mirror of the helpers in apps/stock-api/src/services/stock-rules.service.ts.
+// Inlined here so this service doesn't need to cross-package import.
+const WINE_SUPPLIER_HINTS = ['winery', 'wines', 'wine co', 'vineyard', 'cellar'] as const;
+const WINE_LINE_KEYWORDS = /\b(wine|red|white|rosé|rose|sparkling|champagne|pinot|shiraz|chard|riesling|merlot|cabernet|sauvignon|grenache|tempranillo)\b/i;
+const WET_RATE = 0.29;
+const GST_TOLERANCE_CENTS = 5;
+
+function applyInvoiceRulesAfterImport(input: {
+  supplierName: string;
+  subtotalCents: number;
+  taxCents: number;
+  totalCents: number;
+  lineCount: number;
+  lineDescriptions: string[];
+}): {
+  isStatement: boolean;
+  statementReason: string | null;
+  isWine: boolean;
+  wetEstimateCents: number | null;
+  gstEstimateCents: number;
+  gstDriftCents: number;
+  gstReason: string | null;
+  evaluatedAt: string;
+} {
+  // Rule 6: statement detection.
+  const isStatement = input.lineCount === 0 && input.totalCents > 0;
+  const statementReason = isStatement ? 'No line items + non-zero total — Xero treats this as a statement, not an invoice.' : null;
+
+  // Rule 7: wine detection. Either the supplier name looks like a wine
+  // business OR >=30% of line descriptions mention wine keywords.
+  const supplier = input.supplierName.toLowerCase();
+  const supplierLooksLikeWine = WINE_SUPPLIER_HINTS.some((hint) => supplier.includes(hint));
+  const wineLineHits = input.lineDescriptions.filter((desc) => WINE_LINE_KEYWORDS.test(desc)).length;
+  const isWine = supplierLooksLikeWine || (input.lineDescriptions.length > 0 && wineLineHits >= Math.max(1, Math.floor(input.lineDescriptions.length * 0.3)));
+
+  // For wine bills with tax > 11% of subtotal, the tax bucket likely
+  // includes WET on top of GST. Back-derive the WET portion at 29%.
+  let wetEstimateCents: number | null = null;
+  let gstEstimateCents = input.taxCents;
+  if (isWine && input.subtotalCents > 0) {
+    const taxRatio = input.taxCents / input.subtotalCents;
+    if (taxRatio > 0.11) {
+      wetEstimateCents = Math.round(input.subtotalCents * WET_RATE);
+      gstEstimateCents = Math.max(input.taxCents - wetEstimateCents, 0);
+    }
+  }
+
+  // Rule 8: GST drift. subtotal + tax must equal total within ±5c.
+  const expectedTotal = input.subtotalCents + input.taxCents;
+  const gstDriftCents = input.totalCents - expectedTotal;
+  const gstReason = Math.abs(gstDriftCents) > GST_TOLERANCE_CENTS
+    ? `Subtotal + tax (${expectedTotal}c) doesn't match total (${input.totalCents}c). Drift ${gstDriftCents}c. Do not file in a BAS until reconciled.`
+    : null;
+
+  return {
+    isStatement,
+    statementReason,
+    isWine,
+    wetEstimateCents,
+    gstEstimateCents,
+    gstDriftCents,
+    gstReason,
+    evaluatedAt: new Date().toISOString()
+  };
+}
+
 function billInvoiceNumber(invoice: XeroInvoice) {
   return optionalText(invoice.InvoiceNumber) ?? optionalText(invoice.Reference);
 }
@@ -3764,6 +3831,31 @@ export const integrationService = {
             }
           });
           lineCount += 1;
+        }
+
+        // Stock rules 6 + 7 + 8: classify the imported bill so accounting
+        // doesn't trip over statements, WET-bearing wine bills, or GST
+        // drift. Annotates the invoice in-place via sourceMetadata + flips
+        // status to STATEMENT when appropriate.
+        const ruleFlags = applyInvoiceRulesAfterImport({
+          supplierName,
+          subtotalCents: invoice.subtotalCents,
+          taxCents: invoice.taxCents,
+          totalCents: invoice.totalCents,
+          lineCount,
+          lineDescriptions: (bill.LineItems ?? []).map((line) => optionalText(line.Description) ?? '')
+        });
+        if (ruleFlags.isStatement || ruleFlags.gstDriftCents !== 0 || ruleFlags.isWine) {
+          await tx.supplierInvoice.update({
+            where: { id: invoice.id },
+            data: {
+              ...(ruleFlags.isStatement && { status: 'STATEMENT' }),
+              sourceMetadata: {
+                ...(invoice.sourceMetadata as Record<string, unknown> | null ?? {}),
+                ruleFlags
+              }
+            }
+          });
         }
 
         existingInvoices.push({

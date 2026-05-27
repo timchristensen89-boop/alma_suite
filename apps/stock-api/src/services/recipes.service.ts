@@ -19,6 +19,7 @@ import {
   type RecipesSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
 
 type RecipeRow = Prisma.RecipeGetPayload<{
   include: { _count: { select: { lines: true } } };
@@ -682,6 +683,9 @@ export const recipesService = {
         status: data.status ?? 'ACTIVE',
         estimatedCost: data.estimatedCost ?? 0,
         notes: normaliseOptionalText(data.notes) ?? null,
+        // Rule 3: recipes without explicit per-line wastage default to 2%.
+        // The applyDefaultWastage helper records whether each line was
+        // defaulted so we can surface it in the UI.
         lines: data.lines
           ? {
               create: data.lines.map((line, index) => ({
@@ -690,7 +694,7 @@ export const recipesService = {
                 quantity: line.quantity ?? null,
                 unit: normaliseOptionalText(line.unit) ?? null,
                 cost: line.cost ?? null,
-                wastePercent: line.wastePercent ?? null,
+                wastePercent: applyDefaultWastage({ wastePercent: line.wastePercent }).wastePercent,
                 itemId: normaliseOptionalText(line.itemId) ?? null,
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
@@ -706,7 +710,16 @@ export const recipesService = {
         }
       }
     });
-    return toRecipeWithLinesPayload(await refreshRecipeEstimatedCost(row.id));
+    const refreshed = await refreshRecipeEstimatedCost(row.id);
+    // Rule 4: auto-attach Square menu items / stock items that share this
+    // recipe's title for manual review. Best-effort — failures don't
+    // block recipe creation.
+    try {
+      await attachMatchesForReview(row.id, row.title);
+    } catch (err) {
+      console.warn('[stock-rules] attachMatchesForReview failed', err);
+    }
+    return toRecipeWithLinesPayload(refreshed);
   },
 
   async updateRecipe(id: string, input: unknown): Promise<RecipeWithLines> {

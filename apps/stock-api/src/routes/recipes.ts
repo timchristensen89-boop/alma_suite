@@ -62,6 +62,18 @@ recipesRouter.get('/:id/cost', async (req, res, next) => {
   }
 });
 
+// Rule 1: cost-sanity check. Returns warnings if a recipe's estimated
+// cost looks "stupidly expensive" (likely a unit / conversion mistake).
+// The recipe detail UI surfaces this above the line list.
+recipesRouter.get('/:id/sanity', async (req, res, next) => {
+  try {
+    const { recipeCostSanity } = await import('../services/stock-rules.service.js');
+    res.json(await recipeCostSanity(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await recipesService.get(String(req.params.id)));

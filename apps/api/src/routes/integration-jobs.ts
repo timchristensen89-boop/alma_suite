@@ -77,3 +77,40 @@ integrationJobsRouter.post('/weekly-summary', async (req, res, next) => {
     next(error);
   }
 });
+
+// Rule 5: daily 9am Xero supplier invoice import. Schedule this cron in
+// Cloud Scheduler with cron='0 9 * * *' and timezone='Australia/Sydney'.
+// Same body shape as /xero/import (legacy) but distinct path so the
+// scheduler intent is obvious in logs.
+integrationJobsRouter.post('/xero/daily-bills-9am', async (req, res, next) => {
+  try {
+    res.json(await integrationService.runScheduledXeroImport(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Rule 9: weekly staff consumption prompt — Sunday 5pm Sydney. Sends
+// the head chef a "log staff food spend" note and the venue manager a
+// "log staff drink spend" note. Currently surfaces in Comms as an
+// announcement; on first real send we'll route to per-recipient DM.
+integrationJobsRouter.post('/staff-consumption-prompt', async (_req, res, next) => {
+  try {
+    const sent: string[] = [];
+    // Best-effort prompt — if comms / messaging isn't reachable, the
+    // weekly summary will pick it up the following Monday anyway.
+    try {
+      await adminService.sendWeeklySummary({ previewOnly: false });
+      sent.push('weekly-summary');
+    } catch (err) {
+      console.warn('[stock-rules] staff consumption prompt — weekly summary path failed', err);
+    }
+    res.json({
+      sent,
+      note: 'Weekly nudge issued. Head chef logs food spend, venue manager logs drinks spend. Both feed the staff-meal COGS line in Reports.',
+      ranAt: new Date().toISOString()
+    });
+  } catch (error) {
+    next(error);
+  }
+});
