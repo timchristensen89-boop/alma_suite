@@ -3148,46 +3148,52 @@ export const integrationService = {
       status: 'MAPPED' | 'NEEDS_REVIEW';
     }> = [];
 
-    await prisma.$transaction(async (tx) => {
-      for (const mapping of mappings) {
-        if (mapping.almaRecipeId || mapping.stockItemId) {
-          skipped += 1;
-          continue;
-        }
+    // Each mapping update is independent — no need to wrap the whole
+    // loop in a $transaction. The previous transactional version
+    // blew past Prisma's 5s default on real-world catalogues (up to
+    // 1000 mappings × ~hundreds of recipes + items inside one tx
+    // → "Transaction not found / invalid" in prod). Run sequentially
+    // so each update is its own short connection.
+    for (const mapping of mappings) {
+      if (mapping.almaRecipeId || mapping.stockItemId) {
+        skipped += 1;
+        continue;
+      }
 
-        const squareName = squareMenuComparableName(mapping);
-        const bestRecipe = recipes
-          .map((recipe) => ({
-            type: 'recipe' as const,
-            id: recipe.id,
-            name: recipe.title,
-            confidence: scoreCandidateName(squareName, recipe.title, recipe.venue, accountKey)
-          }))
-          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
-        const bestStockItem = stockItems
-          .map((item) => ({
-            type: 'stockItem' as const,
-            id: item.id,
-            name: item.name,
-            confidence: recipeMatchConfidence(squareName, item.name)
-          }))
-          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
-        const best = [bestRecipe, bestStockItem]
-          .filter((candidate): candidate is NonNullable<typeof bestRecipe> | NonNullable<typeof bestStockItem> => Boolean(candidate))
-          .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+      const squareName = squareMenuComparableName(mapping);
+      const bestRecipe = recipes
+        .map((recipe) => ({
+          type: 'recipe' as const,
+          id: recipe.id,
+          name: recipe.title,
+          confidence: scoreCandidateName(squareName, recipe.title, recipe.venue, accountKey)
+        }))
+        .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+      const bestStockItem = stockItems
+        .map((item) => ({
+          type: 'stockItem' as const,
+          id: item.id,
+          name: item.name,
+          confidence: recipeMatchConfidence(squareName, item.name)
+        }))
+        .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
+      const best = [bestRecipe, bestStockItem]
+        .filter((candidate): candidate is NonNullable<typeof bestRecipe> | NonNullable<typeof bestStockItem> => Boolean(candidate))
+        .sort((a, b) => b.confidence - a.confidence)[0] ?? null;
 
-        if (!best || best.confidence < data.reviewThreshold) {
-          unchanged += 1;
-          continue;
-        }
+      if (!best || best.confidence < data.reviewThreshold) {
+        unchanged += 1;
+        continue;
+      }
 
-        const status = best.confidence >= data.applyThreshold ? 'MAPPED' : 'NEEDS_REVIEW';
-        if (status === 'NEEDS_REVIEW' && !data.includeNeedsReview) {
-          unchanged += 1;
-          continue;
-        }
+      const status = best.confidence >= data.applyThreshold ? 'MAPPED' : 'NEEDS_REVIEW';
+      if (status === 'NEEDS_REVIEW' && !data.includeNeedsReview) {
+        unchanged += 1;
+        continue;
+      }
 
-        await tx.squareMenuRecipeMapping.update({
+      try {
+        await prisma.squareMenuRecipeMapping.update({
           where: { id: mapping.id },
           data: {
             almaRecipeId: best.type === 'recipe' ? best.id : null,
@@ -3211,8 +3217,13 @@ export const integrationService = {
           confidence: best.confidence,
           status
         });
+      } catch (err) {
+        // Don't abort the whole batch on a single update failure — log
+        // it and carry on. Auto-matcher is best-effort by design.
+        console.warn('[square-auto-match] update failed', { mappingId: mapping.id, err });
+        unchanged += 1;
       }
-    });
+    }
 
     await recordEvent({
       provider: 'SQUARE',

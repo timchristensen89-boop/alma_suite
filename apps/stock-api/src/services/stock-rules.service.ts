@@ -298,6 +298,181 @@ export function validateInvoiceGst(invoice: { supplierName: string; subtotalCent
   };
 }
 
+// ─── Rule 11: "portion / portions" lines are yield, not ingredients ─
+
+// When a recipe line's ingredient text reads "portion", "portions",
+// "serves", "yields", or "makes N portions" it isn't an ingredient — it
+// states the recipe's total portion count. The cost calc must skip it
+// and write the parsed count into Recipe.portionSize.
+const PORTION_LINE_RE = /\b(portion|portions|serves|serving|yields?|makes)\b/i;
+const PORTION_NUMBER_RE = /(-?\d+(?:\.\d+)?)/;
+
+export type PortionLineParse = {
+  isPortionLine: boolean;
+  portionCount: number | null;
+  reason?: string;
+};
+
+export function parsePortionLine(line: { ingredientName: string; quantity?: number | null }): PortionLineParse {
+  const name = (line.ingredientName ?? '').trim();
+  if (!name) return { isPortionLine: false, portionCount: null };
+  if (!PORTION_LINE_RE.test(name)) return { isPortionLine: false, portionCount: null };
+
+  // Prefer the explicit quantity field if it's present — Loaded sometimes
+  // ships "portions" as the unit with the count in quantity.
+  if (typeof line.quantity === 'number' && line.quantity > 0) {
+    return {
+      isPortionLine: true,
+      portionCount: line.quantity,
+      reason: `"${name}" recognised as portion line — using quantity ${line.quantity} as total servings.`
+    };
+  }
+
+  // Otherwise pull the first number out of the ingredient text itself.
+  const match = name.match(PORTION_NUMBER_RE);
+  if (match) {
+    const value = Number(match[1]);
+    if (Number.isFinite(value) && value > 0) {
+      return {
+        isPortionLine: true,
+        portionCount: value,
+        reason: `"${name}" recognised as portion line — parsed ${value} servings from the text.`
+      };
+    }
+  }
+  return {
+    isPortionLine: true,
+    portionCount: null,
+    reason: `"${name}" looks like a portion line but the count couldn't be parsed. Set Recipe.portionSize manually.`
+  };
+}
+
+// Apply rule 11 to a recipe's lines: separate the portion declaration
+// from the actual ingredients + return the resolved portion count.
+export function splitPortionFromIngredients<TLine extends { ingredientName: string; quantity?: number | null }>(
+  lines: TLine[]
+): { portionCount: number | null; ingredientLines: TLine[]; portionLines: TLine[]; warnings: string[] } {
+  const ingredientLines: TLine[] = [];
+  const portionLines: TLine[] = [];
+  const warnings: string[] = [];
+  let portionCount: number | null = null;
+
+  for (const line of lines) {
+    const parsed = parsePortionLine(line);
+    if (parsed.isPortionLine) {
+      portionLines.push(line);
+      if (parsed.portionCount !== null && portionCount === null) {
+        portionCount = parsed.portionCount;
+      }
+      if (parsed.reason) warnings.push(parsed.reason);
+    } else {
+      ingredientLines.push(line);
+    }
+  }
+  if (portionLines.length > 1) {
+    warnings.push(`${portionLines.length} portion lines found — using the first valid count. Remove duplicates.`);
+  }
+  return { portionCount, ingredientLines, portionLines, warnings };
+}
+
+// ─── Rule 12: pull unit hints from the item name ─────────────────────
+
+// Most supplier catalogues encode the unit of measure in the item name.
+// "Eggs Free Range 60g x 12" → "12 each, each = 60g". This regex hunts
+// for the common patterns and returns the best guess so the manual
+// editor doesn't have to dig.
+const UNIT_HINT_REGEXES: Array<{ re: RegExp; unit: string; multiplier?: number }> = [
+  // 750ml, 1.5L, 250g, 2kg, 12oz
+  { re: /(\d+(?:\.\d+)?)\s?ml\b/i, unit: 'ml' },
+  { re: /(\d+(?:\.\d+)?)\s?l\b/i, unit: 'L' },
+  { re: /(\d+(?:\.\d+)?)\s?g\b/i, unit: 'g' },
+  { re: /(\d+(?:\.\d+)?)\s?kg\b/i, unit: 'kg' },
+  { re: /(\d+(?:\.\d+)?)\s?oz\b/i, unit: 'oz' },
+  { re: /(\d+(?:\.\d+)?)\s?lb\b/i, unit: 'lb' },
+  { re: /(\d+(?:\.\d+)?)\s?(?:fl\.?\s?oz|floz)\b/i, unit: 'fl_oz' }
+];
+const PACK_RE = /\b(?:x|×|pack of)\s?(\d+)\b/i;
+
+export type UnitHintFromName = {
+  packCount: number | null;
+  baseQuantity: number | null;
+  baseUnit: string | null;
+  derived: boolean;
+  reason?: string;
+};
+
+export function pickUnitHintFromName(name: string): UnitHintFromName {
+  const trimmed = (name ?? '').trim();
+  if (!trimmed) return { packCount: null, baseQuantity: null, baseUnit: null, derived: false };
+
+  // Pack count — "x 12", "× 6", "pack of 24"
+  const packMatch = trimmed.match(PACK_RE);
+  const packCount = packMatch ? Number(packMatch[1]) : null;
+
+  for (const candidate of UNIT_HINT_REGEXES) {
+    const match = trimmed.match(candidate.re);
+    if (match) {
+      const value = Number(match[1]);
+      if (Number.isFinite(value)) {
+        return {
+          packCount,
+          baseQuantity: value,
+          baseUnit: candidate.unit,
+          derived: true,
+          reason: `Unit "${candidate.unit}" parsed from item name. ${packCount ? `Pack of ${packCount}.` : ''}`.trim()
+        };
+      }
+    }
+  }
+  return { packCount, baseQuantity: null, baseUnit: null, derived: false };
+}
+
+// ─── Rule 13: prefer metric base units (kg, g, L, ml) ────────────────
+
+// Imperial → metric conversion factors. Apply when we detect lb / oz / fl_oz
+// either in the item name (via rule 12) or in a recipe line's unit field.
+const METRIC_BASE_CONVERSION: Record<string, { factor: number; to: 'kg' | 'g' | 'L' | 'ml' }> = {
+  lb: { factor: 0.45359237, to: 'kg' },
+  pound: { factor: 0.45359237, to: 'kg' },
+  pounds: { factor: 0.45359237, to: 'kg' },
+  oz: { factor: 28.3495231, to: 'g' },
+  ounce: { factor: 28.3495231, to: 'g' },
+  ounces: { factor: 28.3495231, to: 'g' },
+  fl_oz: { factor: 29.5735296, to: 'ml' },
+  cup: { factor: 250, to: 'ml' },       // AU metric cup
+  cups: { factor: 250, to: 'ml' },
+  tbsp: { factor: 20, to: 'ml' },        // AU metric tablespoon (not US)
+  tbs: { factor: 20, to: 'ml' },
+  tsp: { factor: 5, to: 'ml' }
+};
+
+export type MetricNormalisation = {
+  quantity: number;
+  unit: 'kg' | 'g' | 'L' | 'ml' | string;
+  converted: boolean;
+  factor: number;
+  reason?: string;
+};
+
+export function normaliseToMetric(quantity: number, unit: string): MetricNormalisation {
+  const u = (unit ?? '').trim().toLowerCase().replace(/\s+/g, '_');
+  const passthrough = ['kg', 'g', 'l', 'ml'];
+  if (passthrough.includes(u)) {
+    return { quantity, unit: u === 'l' ? 'L' : (u as MetricNormalisation['unit']), converted: false, factor: 1 };
+  }
+  const entry = METRIC_BASE_CONVERSION[u];
+  if (entry) {
+    return {
+      quantity: quantity * entry.factor,
+      unit: entry.to,
+      converted: true,
+      factor: entry.factor,
+      reason: `Converted ${quantity}${unit} → ${(quantity * entry.factor).toFixed(2)}${entry.to} (factor ${entry.factor}).`
+    };
+  }
+  return { quantity, unit, converted: false, factor: 1 };
+}
+
 // ─── Rule 10: Over-portion alert escalation ──────────────────────────
 
 const OVER_PORTION_THRESHOLD_PCT = 5;
