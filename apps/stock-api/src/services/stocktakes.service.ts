@@ -610,7 +610,7 @@ export const stocktakesService = {
         updated.lines.map((line) => line.itemId)
       );
       return updated;
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
     return loadStocktakeWithVenueOnHand(row.id, actor);
   },
 
@@ -698,7 +698,7 @@ export const stocktakesService = {
       });
 
       return { stocktake: appliedStocktake, movements };
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
 
     return {
       stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
@@ -835,7 +835,7 @@ export const stocktakesService = {
       });
 
       return { stocktake: updatedStocktake, movements };
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
 
     return {
       stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),
@@ -950,7 +950,7 @@ export const stocktakesService = {
       });
 
       return { stocktake: updatedStocktake, movements };
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
 
     return {
       stocktake: await loadStocktakeWithVenueOnHand(result.stocktake.id, reviewer),

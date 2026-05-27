@@ -602,6 +602,11 @@ export const stockOperationsService = {
     if (existing.status === 'COMPLETED') throw new HttpError(409, 'Delivery check is already completed');
     const hasDiscrepancy = existing.items.some((item) => item.discrepancy);
 
+    // Delivery completions can process many line items, each touching
+    // venueStockItem + inventoryMovement + reorder evaluation. The Prisma
+    // default 5s transaction timeout blows out on bigger deliveries — bump
+    // to 30s and let the maxWait stretch too so we don't get stuck in a
+    // queue waiting for a connection.
     await prisma.$transaction(async (tx) => {
       for (const item of existing.items) {
         if (!item.stockItemId || !item.receivedQuantity || item.receivedQuantity <= 0) continue;
@@ -623,7 +628,7 @@ export const stockOperationsService = {
           completedById: actor.id
         }
       });
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
     return toDeliveryPayload(await loadDelivery(id, actor));
   },
 
@@ -637,9 +642,14 @@ export const stockOperationsService = {
       },
       include: { stockItem: { select: itemSelect } }
     });
+    // Reorder-notice sweep walks every active venue stock row at the
+    // venue. That can easily exceed Prisma's 5s default — and this is the
+    // exact path that triggered the prod "Transaction already closed"
+    // error. The work is read-mostly (only stockReorderNotice writes
+    // happen per item), so a 30s ceiling is safe.
     await prisma.$transaction(async (tx) => {
       for (const row of venueRows) await evaluateReorderForItem(tx, row.stockItemId, row.venue);
-    });
+    }, { maxWait: 15_000, timeout: 30_000 });
     const [notices, venues] = await Promise.all([
       prisma.stockReorderNotice.findMany({
         where: { ...(venue ? { venue } : {}), status: 'OPEN' },
