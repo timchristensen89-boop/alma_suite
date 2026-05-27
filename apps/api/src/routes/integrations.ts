@@ -287,3 +287,11 @@ export async function xeroWebhookReceiver(req: Request, res: Response, next: Nex
     next(error);
   }
 }
+
+export async function deputyWebhookReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await integrationService.handleDeputyWebhook(req));
+  } catch (error) {
+    next(error);
+  }
+}

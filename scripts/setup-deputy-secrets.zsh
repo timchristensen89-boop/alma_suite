@@ -88,6 +88,7 @@ gcloud config get-value project >/dev/null
 
 DEPUTY_CLIENT_ID="$(prompt_value "Deputy client ID")"
 DEPUTY_CLIENT_SECRET="$(prompt_secret "Deputy client secret")"
+DEPUTY_WEBHOOK_SECRET="$(prompt_secret "Deputy webhook secret (leave blank to skip)")"
 DEPUTY_REDIRECT_URL="$(prompt_value "Deputy OAuth redirect URL [${DEPUTY_REDIRECT_URL_DEFAULT}]")"
 
 DEPUTY_REDIRECT_URL="${DEPUTY_REDIRECT_URL:-$DEPUTY_REDIRECT_URL_DEFAULT}"
@@ -98,6 +99,7 @@ require_value "DEPUTY_CLIENT_SECRET" "$DEPUTY_CLIENT_SECRET"
 printf "\nValues captured. Length check only:\n"
 printf "  Client ID: %d chars\n" "${#DEPUTY_CLIENT_ID}"
 printf "  Client secret: %d chars\n" "${#DEPUTY_CLIENT_SECRET}"
+printf "  Webhook secret: %d chars\n" "${#DEPUTY_WEBHOOK_SECRET}"
 printf "\nCloud Run will be updated with:\n"
 printf "  Redirect URL: %s\n" "$DEPUTY_REDIRECT_URL"
 printf "\nType UPDATE to write secrets and update Cloud Run: "
@@ -110,12 +112,19 @@ fi
 write_secret "DEPUTY_CLIENT_ID" "$DEPUTY_CLIENT_ID"
 write_secret "DEPUTY_CLIENT_SECRET" "$DEPUTY_CLIENT_SECRET"
 
+SECRETS_FLAG="DEPUTY_CLIENT_ID=DEPUTY_CLIENT_ID:latest,DEPUTY_CLIENT_SECRET=DEPUTY_CLIENT_SECRET:latest"
+if [[ -n "$DEPUTY_WEBHOOK_SECRET" ]]; then
+  write_secret "DEPUTY_WEBHOOK_SECRET" "$DEPUTY_WEBHOOK_SECRET"
+  SECRETS_FLAG="${SECRETS_FLAG},DEPUTY_WEBHOOK_SECRET=DEPUTY_WEBHOOK_SECRET:latest"
+fi
+
 gcloud run services update "$SERVICE_NAME" \
   --project "$PROJECT_ID" \
   --region "$REGION" \
-  --update-secrets "DEPUTY_CLIENT_ID=DEPUTY_CLIENT_ID:latest,DEPUTY_CLIENT_SECRET=DEPUTY_CLIENT_SECRET:latest" \
+  --update-secrets "$SECRETS_FLAG" \
   --update-env-vars "DEPUTY_REDIRECT_URL=${DEPUTY_REDIRECT_URL}" >/dev/null
 
 printf "\nDeputy secrets updated for %s.\n" "$SERVICE_NAME"
-printf "Confirm the same redirect URL is registered on the Deputy developer app:\n"
+printf "Confirm the same URLs are registered on the Deputy developer app:\n"
 printf "  OAuth redirect: %s\n" "$DEPUTY_REDIRECT_URL"
+printf "  Webhook delivery: %s\n" "${DEPUTY_REDIRECT_URL%/api/integrations/deputy/callback}/api/integrations/deputy/webhook"

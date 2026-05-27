@@ -141,7 +141,11 @@ export const env = {
       // Single scope; Deputy uses `longlife_refresh_token` for all OAuth apps.
       scope: 'longlife_refresh_token',
       authorizeUrl: 'https://once.deputy.com/my/oauth/login',
-      tokenUrl: 'https://once.deputy.com/my/oauth/access_token'
+      tokenUrl: 'https://once.deputy.com/my/oauth/access_token',
+      // Deputy webhooks send an `Authorization: <secret>` header that
+      // matches the value we registered on the webhook subscription.
+      // Compared in constant time before recording the event.
+      webhookSecret: process.env.DEPUTY_WEBHOOK_SECRET ?? ''
     },
     meta: {
       appId: process.env.META_APP_ID ?? '',

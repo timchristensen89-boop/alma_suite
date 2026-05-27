@@ -2087,6 +2087,18 @@ function verifyXeroSignature(req: Request, rawBody: string) {
   return safeCompareBase64(signature, generated);
 }
 
+function verifyDeputySignature(req: Request) {
+  // Deputy posts an `Authorization` header with the secret we registered
+  // on the subscription. Constant-time compare against env config.
+  const provided = req.header('authorization') ?? req.header('x-deputy-signature') ?? '';
+  const expected = env.integrations.deputy.webhookSecret;
+  if (!expected) throw new HttpError(503, 'Deputy webhook verification is not configured.');
+  const bearer = /^Bearer\s+(.+)$/i.exec(provided);
+  const value = bearer?.[1] ?? provided;
+  if (!value || value.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
+}
+
 function rawBodyFromRequest(req: Request) {
   if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
   if (typeof req.body === 'string') return req.body;
@@ -5108,5 +5120,13 @@ export const integrationService = {
       throw new HttpError(401, 'Invalid Xero webhook signature.');
     }
     return recordWebhook('XERO', rawBody);
+  },
+
+  async handleDeputyWebhook(req: Request) {
+    const rawBody = rawBodyFromRequest(req);
+    if (!verifyDeputySignature(req)) {
+      throw new HttpError(401, 'Invalid Deputy webhook signature.');
+    }
+    return recordWebhook('DEPUTY', rawBody);
   }
 };
