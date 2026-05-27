@@ -1044,5 +1044,153 @@ export const stocktakesService = {
       where: { AND: [stocktakeScope(actor), { id: { in: uniqueIds } }] }
     });
     return { deleted: result.count };
+  },
+
+  // ──────────────────────────────────────────────────────────────
+  // Stocktake state machine (Loaded replacement Sprint 1)
+  //
+  // IN_PROGRESS → SUBMITTED → REVIEWED → LOCKED. LOCKED can be
+  // REOPENED back to IN_PROGRESS with a reason. Once LOCKED, reports
+  // prefer this stocktake when computing stock value + COGS.
+  // ──────────────────────────────────────────────────────────────
+
+  async submitStocktake(id: string, actor?: AuthUser | null): Promise<Stocktake> {
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    if (existing.status !== 'IN_PROGRESS') {
+      throw new HttpError(409, `Stocktake is ${existing.status}, only IN_PROGRESS draft stocktakes can be submitted.`);
+    }
+    const row = await prisma.stocktake.update({
+      where: { id },
+      data: {
+        status: 'SUBMITTED',
+        submittedAt: new Date(),
+        submittedByUserId: actor?.id ?? null
+      },
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    return toStocktakePayload(row);
+  },
+
+  async reviewStocktake(id: string, actor: AuthUser | undefined | null, input: { notes?: string }): Promise<Stocktake> {
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    if (existing.status !== 'SUBMITTED') {
+      throw new HttpError(409, `Stocktake is ${existing.status}, only SUBMITTED stocktakes can be reviewed.`);
+    }
+    const row = await prisma.stocktake.update({
+      where: { id },
+      data: {
+        status: 'REVIEWED',
+        reviewedAt: new Date(),
+        reviewedByUserId: actor?.id ?? null,
+        ...(input.notes ? { notes: existing.notes ? `${existing.notes}\n\nReviewer: ${input.notes.trim()}` : `Reviewer: ${input.notes.trim()}` } : {})
+      },
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    return toStocktakePayload(row);
+  },
+
+  async lockStocktake(id: string, actor?: AuthUser | null): Promise<Stocktake> {
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    if (!['REVIEWED', 'SUBMITTED'].includes(existing.status)) {
+      throw new HttpError(409, `Stocktake is ${existing.status}, only REVIEWED or SUBMITTED stocktakes can be locked.`);
+    }
+    const row = await prisma.stocktake.update({
+      where: { id },
+      data: {
+        status: 'LOCKED',
+        lockedAt: new Date(),
+        lockedByUserId: actor?.id ?? null
+      },
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    return toStocktakePayload(row);
+  },
+
+  async reopenStocktakeWithReason(id: string, actor: AuthUser | undefined | null, reason: string): Promise<Stocktake> {
+    const existing = await prisma.stocktake.findFirst({ where: scopedStocktakeWhere(id, actor) });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+    if (!['SUBMITTED', 'REVIEWED', 'LOCKED'].includes(existing.status)) {
+      throw new HttpError(409, `Stocktake is ${existing.status}, only SUBMITTED / REVIEWED / LOCKED stocktakes can be reopened.`);
+    }
+    if (!reason || reason.trim().length < 5) {
+      throw new HttpError(400, 'Reopen requires a reason of at least 5 characters — it goes into the audit log.');
+    }
+    const row = await prisma.stocktake.update({
+      where: { id },
+      data: {
+        status: 'REOPENED',
+        reopenedAt: new Date(),
+        reopenedByUserId: actor?.id ?? null,
+        reopenReason: reason.trim()
+      },
+      include: {
+        _count: { select: { lines: true } },
+        lines: { select: { stockValueCents: true } }
+      }
+    });
+    return toStocktakePayload(row);
+  },
+
+  // CSV export — drops the stocktake into a one-row-per-line CSV.
+  // Used by the Loaded replacement archive flow + ad-hoc downloads.
+  async exportCsv(id: string, actor?: AuthUser | null): Promise<{ filename: string; csv: string }> {
+    const existing = await prisma.stocktake.findFirst({
+      where: scopedStocktakeWhere(id, actor),
+      include: {
+        lines: {
+          include: { item: { include: { category: true } } },
+          orderBy: [{ position: 'asc' }]
+        }
+      }
+    });
+    if (!existing) throw new HttpError(404, 'Stocktake not found');
+
+    function csvCell(value: unknown): string {
+      const text = value == null ? '' : String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    }
+
+    const headers = [
+      'stocktake_id', 'name', 'venue', 'status', 'counted_at',
+      'area', 'category', 'item', 'sku', 'quantity', 'unit',
+      'latest_cost_cents', 'stock_value_cents', 'notes'
+    ];
+    const rows = existing.lines.map((line) => ({
+      stocktake_id: existing.id,
+      name: existing.name,
+      venue: existing.venue ?? '',
+      status: existing.status,
+      counted_at: existing.countedAt?.toISOString().slice(0, 10) ?? '',
+      area: line.location ?? line.item?.countArea ?? '',
+      category: line.item?.category?.name ?? '',
+      item: line.label,
+      sku: line.item?.sku ?? '',
+      quantity: line.countedQty,
+      unit: line.unit ?? line.item?.countUnit ?? line.item?.unit ?? '',
+      latest_cost_cents: line.item?.latestCostCents ?? line.item?.avgCostCents ?? '',
+      stock_value_cents: line.stockValueCents ?? '',
+      notes: line.notes ?? ''
+    }));
+
+    const csv = [headers, ...rows.map((row) => headers.map((header) => csvCell((row as Record<string, unknown>)[header])))]
+      .map((row) => row.map((cell) => (typeof cell === 'string' ? cell : csvCell(cell))).join(','))
+      .join('\n');
+
+    return {
+      filename: `alma-stocktake-${existing.name.replace(/\s+/g, '-').toLowerCase()}-${existing.id}.csv`,
+      csv
+    };
   }
 };

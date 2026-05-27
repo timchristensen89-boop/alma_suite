@@ -75,7 +75,7 @@ export const temperatureLogSourceSchema = z.enum(['MANUAL', 'GOVEE']);
 export const temperatureLogStatusSchema = z.enum(['IN_RANGE', 'OUT_OF_RANGE']);
 export const stockItemStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const supplierStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
-export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED']);
+export const stocktakeStatusSchema = z.enum(['IN_PROGRESS', 'SUBMITTED', 'REVIEWED', 'LOCKED', 'REOPENED']);
 export const stockWastageReasonSchema = z.enum([
   'SPOILED',
   'BROKEN',
