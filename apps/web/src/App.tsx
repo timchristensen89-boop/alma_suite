@@ -13,7 +13,8 @@ import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './pages/PasswordRecoveryPages';
 import { SuiteAppLoginPage } from './pages/SuiteAppLoginPage';
-import { AdminPage } from './pages/AdminPage';
+// AdminPage is exported from this package for admin-web to consume, but the
+// Compliance app no longer renders it — admin lives at alma-suite-admin.web.app.
 import { SettingsPage } from './pages/SettingsPage';
 import { IssuesListPage } from './pages/issues/IssuesListPage';
 import { IssueDetailPage } from './pages/issues/IssueDetailPage';
@@ -299,14 +300,39 @@ function AuthenticatedApp() {
           <Route path="/handbook/maintenance" element={<MaintenancePage />} />
           <Route path="/admin/handbook" element={<RequireRole minimum="ADMIN"><HandbookAdminPage /></RequireRole>} />
           <Route path="/icon-export" element={<RequireRole minimum="ADMIN"><IconExportPage /></RequireRole>} />
-          <Route path="/admin" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
-          <Route path="/admin/*" element={<RequireRole minimum="ADMIN"><AdminPage /></RequireRole>} />
+          {/* Admin moved out of Compliance into the dedicated admin app
+              at alma-suite-admin.web.app. Anyone landing on /admin in
+              Compliance is bounced to the right place. */}
+          <Route path="/admin" element={<AdminRedirect />} />
+          <Route path="/admin/*" element={<AdminRedirect />} />
           <Route path="/settings" element={<RequireRole minimum="ADMIN"><SettingsPage /></RequireRole>} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ErrorBoundary>
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </AppShell>
+  );
+}
+
+// Admin lives at alma-suite-admin.web.app. If anyone hits /admin in the
+// Compliance app, redirect them there preserving the sub-path so
+// /admin/loaded-replacement → admin app's /loaded-replacement, etc.
+// The full AdminPage component still ships from this package because
+// admin-web imports it — we just don't render it inside Compliance anymore.
+function AdminRedirect() {
+  const location = useLocation();
+  const target = (import.meta.env.VITE_ADMIN_WEB_URL as string | undefined) ?? 'https://alma-suite-admin.web.app';
+  // /admin → admin home; /admin/users → /users on admin-web; same for everything else.
+  const subPath = location.pathname.replace(/^\/admin/, '') || '/';
+  const search = location.search ?? '';
+  const hash = location.hash ?? '';
+  if (typeof window !== 'undefined') {
+    window.location.href = `${target.replace(/\/+$/, '')}${subPath}${search}${hash}`;
+  }
+  return (
+    <div className="full-page-loader">
+      <Spinner label="Sending you to the Admin app…" />
+    </div>
   );
 }
 
