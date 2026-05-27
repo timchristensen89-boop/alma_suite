@@ -2823,7 +2823,10 @@ export function AdminPage({
                 'Tips week selector now uses the editorial roster nav for visual continuity.',
                 'Marketing → Pilot: live campaign email send shipped with test-first + admin-only + 24h test window + recipient cap + audit trail.',
                 'Reserve → Pilot: booking confirmation emails working, public widget live. Banner updated from "preview" to "pilot" — Reserve is now your source of truth, not SevenRooms.',
-                'Loaded replacement tracker at Admin → System → Loaded replacement: cutover checklist, parallel comparison cycles, and a hard cancellation guard that stays RED until every required check is ready and two comparisons are explained.'
+                'Loaded replacement tracker at Admin → System → Loaded replacement: cutover checklist, parallel comparison cycles, and a hard cancellation guard that stays RED until every required check is ready and two comparisons are explained.',
+                'Stock catalogue gained countUnit + conversionFactor + countArea + latestCostCents + latestCostAt for proper stocktake by physical area + COGS confidence.',
+                'Stocktake state machine: IN_PROGRESS → SUBMITTED → REVIEWED → LOCKED → REOPENED. Reports prefer LOCKED stocktakes. Reopen requires a reason (≥5 characters) for the audit trail.',
+                'Stocktake CSV export at /stocktakes/:id/export.csv — one row per line, includes the latest cost + stock value.'
               ]
             },
             {
