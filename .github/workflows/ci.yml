@@ -36,6 +36,13 @@ jobs:
       - name: Generate Prisma client
         run: pnpm db:generate
 
+      # @alma/shared and @alma/db publish their type declarations from
+      # `dist/` (see their package.json `main` + `types` fields), and
+      # `dist/` is gitignored. Build them so downstream packages can
+      # resolve `@alma/shared` / `@alma/db` during typecheck.
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
       - name: Typecheck all packages
         run: pnpm typecheck
 
