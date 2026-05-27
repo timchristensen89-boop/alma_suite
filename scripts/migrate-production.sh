@@ -16,14 +16,24 @@ trap "kill $PROXY_PID 2>/dev/null; echo '→ Proxy stopped.'" EXIT
 sleep 4
 
 echo "→ Rewriting socket URL to TCP..."
-TCP_URL=$(python3 -c "
-import re, sys
-url = sys.stdin.read().strip()
-# Cloud SQL socket format: postgresql://user:pass@/dbname?host=/cloudsql/...
-# Convert to TCP:          postgresql://user:pass@127.0.0.1:PORT/dbname
-url = re.sub(r'@/([^?]+)\?host=\S+', '@127.0.0.1:$PORT/\1', url)
-print(url)
-" <<< "$RAW_URL")
+# Pass PORT as an env var + raw URL via stdin. Cloud SQL stores the
+# socket as ?host=/cloudsql/... — strip that + any sslmode flag (the
+# local proxy doesn't need SSL) and point at 127.0.0.1:$PORT instead.
+TCP_URL=$(PROXY_PORT="$PORT" RAW_URL="$RAW_URL" python3 -c "
+import os
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
+url = os.environ['RAW_URL'].strip()
+port = os.environ['PROXY_PORT']
+parts = urlsplit(url)
+query = [(k, v) for k, v in parse_qsl(parts.query, keep_blank_values=True) if k not in ('host', 'sslmode')]
+new_netloc = (parts.username or '')
+if parts.password is not None:
+    new_netloc += ':' + parts.password
+if new_netloc:
+    new_netloc += '@'
+new_netloc += '127.0.0.1:' + port
+print(urlunsplit((parts.scheme, new_netloc, parts.path, urlencode(query), parts.fragment)))
+")
 
 echo "→ Running prisma migrate deploy..."
 cd "$(dirname "$0")/.."
