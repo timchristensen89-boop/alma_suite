@@ -93,6 +93,11 @@ export const stockInvoiceMatchingStatusSchema = z.enum([
   'MANUAL_MATCHED',
   'NEEDS_REVIEW'
 ]);
+export const stockInvoiceTriageStatusSchema = z.enum([
+  'PENDING',
+  'NO_ITEM',
+  'NEEDS_REVIEW'
+]);
 export const almaAppIdSchema = z.enum(['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS']);
 export const staffAppAccessStatusSchema = z.enum(['ENABLED', 'DISABLED', 'PENDING']);
 export const staffAccountTypeSchema = z.enum(['HUMAN', 'VENUE_DEVICE']);
@@ -2536,6 +2541,9 @@ export type SupplierStatus = z.infer<typeof supplierStatusSchema>;
 export type StocktakeStatus = z.infer<typeof stocktakeStatusSchema>;
 export type StockInvoiceMatchingStatus = z.infer<
   typeof stockInvoiceMatchingStatusSchema
+>;
+export type StockInvoiceTriageStatus = z.infer<
+  typeof stockInvoiceTriageStatusSchema
 >;
 export type AlmaAppId = z.infer<typeof almaAppIdSchema>;
 export type StaffAppAccessStatus = z.infer<typeof staffAppAccessStatusSchema>;
@@ -5011,6 +5019,14 @@ export type StockSupplierInvoiceLine = {
   updatedAt: string;
 };
 
+export type StockInvoiceAssignee = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  roleTitle: string;
+};
+
 export type StockSupplierInvoice = {
   id: string;
   source: string;
@@ -5036,6 +5052,11 @@ export type StockSupplierInvoice = {
   lineCount: number;
   matchedLineCount: number;
   needsReviewLineCount: number;
+  triageStatus: StockInvoiceTriageStatus;
+  triagedAt: string | null;
+  triagedBy: StockInvoiceAssignee | null;
+  assignedTo: StockInvoiceAssignee | null;
+  triageNotes: string | null;
   lines?: StockSupplierInvoiceLine[];
 };
 
@@ -5049,6 +5070,13 @@ export type StockInvoicesSummary = {
   needsReviewLines: number;
   matchedLines: number;
   importedThisWeek: number;
+  pendingTriageInvoices: number;
+  needsReviewTriageInvoices: number;
+  noItemInvoices: number;
+};
+
+export type StockInvoiceAssigneesPayload = {
+  assignees: StockInvoiceAssignee[];
 };
 
 export type StockInvoiceImportResult = {
@@ -5090,11 +5118,33 @@ export const stockInvoiceLineRematchInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const stockInvoiceMarkNoItemInputSchema = z.object({
+  notes: z.string().optional().or(z.literal(''))
+});
+
+export const stockInvoiceMarkNeedsReviewInputSchema = z.object({
+  assigneeStaffProfileId: z.string().min(1, 'Pick a manager to review this invoice'),
+  notes: z.string().optional().or(z.literal(''))
+});
+
+export const stockInvoiceDeleteInputSchema = z.object({
+  confirmationText: z.literal('DELETE INVOICE', {
+    errorMap: () => ({ message: 'Type DELETE INVOICE to confirm deletion' })
+  })
+});
+
 export type StockInvoiceImportInput = z.infer<typeof stockInvoiceImportInputSchema>;
 export type StockInvoiceRipInput = z.infer<typeof stockInvoiceRipInputSchema>;
 export type StockInvoiceLineRematchInput = z.infer<
   typeof stockInvoiceLineRematchInputSchema
 >;
+export type StockInvoiceMarkNoItemInput = z.infer<
+  typeof stockInvoiceMarkNoItemInputSchema
+>;
+export type StockInvoiceMarkNeedsReviewInput = z.infer<
+  typeof stockInvoiceMarkNeedsReviewInputSchema
+>;
+export type StockInvoiceDeleteInput = z.infer<typeof stockInvoiceDeleteInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Recipes                                                                    */

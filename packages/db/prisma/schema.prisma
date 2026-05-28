@@ -642,6 +642,8 @@ model StaffProfile {
   trainingRecords  StaffTrainingRecord[]
   tipPaymentRunLines    StaffTipPaymentRunLine[]
   tipManualHoursEntries StaffTipManualHoursEntry[]
+  triagedSupplierInvoices    SupplierInvoice[] @relation("SupplierInvoiceTriagedBy")
+  assignedSupplierInvoices   SupplierInvoice[] @relation("SupplierInvoiceAssignedTo")
 
   @@index([venue])
   @@index([accountType, venue])
@@ -2578,36 +2580,45 @@ model Supplier {
 }
 
 model SupplierInvoice {
-  id                String                @id @default(cuid())
-  source            String                @default("XERO")
-  invoiceKey        String
-  externalInvoiceId String?
-  invoiceNumber     String?
-  supplierId        String?
-  supplierName      String
-  supplierEmail     String?
-  venue             String?
-  invoiceDate       DateTime?
-  dueDate           DateTime?
-  currencyCode      String                @default("AUD")
-  status            String                @default("DRAFT")
-  subtotalCents     Int                   @default(0)
-  taxCents          Int                   @default(0)
-  totalCents        Int                   @default(0)
-  sourceFileName    String?
-  sourceFileType    String?
-  sourceMetadata    Json?
-  importedAt        DateTime              @default(now())
-  createdAt         DateTime              @default(now())
-  updatedAt         DateTime              @updatedAt
-  supplier          Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  lines             SupplierInvoiceLine[]
+  id                       String                @id @default(cuid())
+  source                   String                @default("XERO")
+  invoiceKey               String
+  externalInvoiceId        String?
+  invoiceNumber            String?
+  supplierId               String?
+  supplierName             String
+  supplierEmail            String?
+  venue                    String?
+  invoiceDate              DateTime?
+  dueDate                  DateTime?
+  currencyCode             String                @default("AUD")
+  status                   String                @default("DRAFT")
+  subtotalCents            Int                   @default(0)
+  taxCents                 Int                   @default(0)
+  totalCents               Int                   @default(0)
+  sourceFileName           String?
+  sourceFileType           String?
+  sourceMetadata           Json?
+  triageStatus             String                @default("PENDING")
+  triagedAt                DateTime?
+  triagedByStaffProfileId  String?
+  assignedToStaffProfileId String?
+  triageNotes              String?
+  importedAt               DateTime              @default(now())
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+  supplier                 Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  triagedBy                StaffProfile?         @relation("SupplierInvoiceTriagedBy", fields: [triagedByStaffProfileId], references: [id], onDelete: SetNull)
+  assignedTo               StaffProfile?         @relation("SupplierInvoiceAssignedTo", fields: [assignedToStaffProfileId], references: [id], onDelete: SetNull)
+  lines                    SupplierInvoiceLine[]
 
   @@unique([source, invoiceKey])
   @@index([venue, invoiceDate])
   @@index([supplierId, invoiceDate])
   @@index([externalInvoiceId])
   @@index([invoiceNumber])
+  @@index([triageStatus])
+  @@index([assignedToStaffProfileId])
 }
 
 model SupplierInvoiceLine {

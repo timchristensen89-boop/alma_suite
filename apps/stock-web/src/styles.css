@@ -415,6 +415,54 @@ tbody tr.row-interactive {
   align-items: end;
 }
 
+.stock-invoice-triage {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  margin-bottom: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-subtle, var(--color-surface));
+}
+
+.stock-invoice-triage__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.stock-invoice-triage__header p {
+  margin: 4px 0 0;
+}
+
+.stock-invoice-triage__actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.stock-invoice-triage__buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stock-invoice-filter-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--color-text-muted, inherit);
+  cursor: pointer;
+  user-select: none;
+}
+
+.stock-invoice-filter-toggle input {
+  margin: 0;
+}
+
 /* Stock operations — wastage, delivery checks, and reorder notices. */
 .stock-operations-grid {
   display: grid;
