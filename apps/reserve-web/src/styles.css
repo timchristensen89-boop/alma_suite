@@ -2590,6 +2590,8 @@
   .alma-booking-calendar,
   .alma-booking-party { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .alma-booking-ticket__details { grid-template-columns: 1fr 1fr; }
+}
+
 /* ==========================================================================
    Mobile pass (≤480px)
    ========================================================================== */
