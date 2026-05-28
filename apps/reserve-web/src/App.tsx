@@ -10,6 +10,7 @@ import type {
   ReserveGuest,
   ReservePublicAvailabilityResponse,
   ReservePublicBookingConfirmation,
+  ReservePublicManageView,
   ReservePublicWidgetConfig,
   ReserveReservation,
   ReserveReservationStatus,
@@ -1491,6 +1492,9 @@ function PublicBookingWidget() {
                 </div>
                 <div className="alma-booking-ticket__footer">
                   <button type="button" onClick={() => window.print()}>Print</button>
+                  {reservation.manageUrl ? (
+                    <a href={reservation.manageUrl} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Manage booking</a>
+                  ) : null}
                   <button type="button" onClick={restart}>Make another booking</button>
                 </div>
               </div>
@@ -1518,6 +1522,129 @@ function AlmaBookingArrow() {
     <svg className="alma-booking-btn__arrow" viewBox="0 0 13 6" fill="none" aria-hidden="true">
       <path d="M0 3 H12 M9 0 L12 3 L9 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
+  );
+}
+
+function ManageBookingPage() {
+  const token = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('token') ?? '' : '';
+  const [view, setView] = useState<ReservePublicManageView | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [confirm, setConfirm] = useState(false);
+
+  useEffect(() => {
+    if (!token) {
+      setError('This management link is missing.');
+      setLoading(false);
+      return;
+    }
+    (async () => {
+      try {
+        const next = await api<ReservePublicManageView>(`/api/reserve/public/manage/${encodeURIComponent(token)}`);
+        setView(next);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Could not load your booking.');
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, [token]);
+
+  async function cancel() {
+    setCancelling(true);
+    setError(null);
+    try {
+      const next = await api<ReservePublicManageView>(`/api/reserve/public/manage/${encodeURIComponent(token)}/cancel`, { method: 'POST' });
+      setView(next);
+      setConfirm(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not cancel the booking.');
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  const whenLabel = view ? new Date(view.startsAt).toLocaleString(undefined, {
+    weekday: 'long', day: 'numeric', month: 'long',
+    hour: 'numeric', minute: '2-digit'
+  }) : '';
+
+  return (
+    <main className="alma-booking-page">
+      <div className="alma-booking-layout" style={{ gridTemplateColumns: 'minmax(0, 1fr)', maxWidth: 720 }}>
+        <aside className="alma-booking-card" style={{ justifySelf: 'center', width: '100%' }}>
+          <header className="alma-booking-card__head">
+            <div className="alma-booking-card__brand">alma <em>reserve</em></div>
+            <span className="alma-booking-status">Manage</span>
+          </header>
+
+          {loading ? <div className="alma-booking-loading">Loading your booking…</div> : null}
+          {error ? <div className="alma-booking-error">{error}</div> : null}
+
+          {view ? (
+            <div>
+              <div className="alma-booking-step__eyebrow">Your booking</div>
+              <h2 className="alma-booking-step__headline">
+                {view.guestName.split(' ')[0] || 'You'} <em>at {view.venue}.</em>
+              </h2>
+              <div className="alma-booking-step__context">{whenLabel} · {view.covers} {view.covers === 1 ? 'guest' : 'guests'}</div>
+
+              <div style={{ marginTop: 22, padding: '14px 16px', border: '1px solid var(--abk-hair)', borderRadius: 12, background: '#FFFFFF' }}>
+                <div style={{ fontWeight: 700, fontSize: 10, letterSpacing: '0.22em', textTransform: 'uppercase', color: 'var(--abk-ink-55)' }}>Status</div>
+                <div style={{ marginTop: 6, fontFamily: '"Cormorant Garamond", Georgia, serif', fontStyle: 'italic', fontSize: 22, color: 'var(--abk-ink)' }}>
+                  {view.status === 'CANCELLED' ? 'Cancelled' : view.status.replace('_', ' ').toLowerCase()}
+                </div>
+                {view.cancellationDeadline ? (
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--abk-ink-55)' }}>
+                    Free to cancel until {new Date(view.cancellationDeadline).toLocaleString(undefined, { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}
+                  </div>
+                ) : null}
+                {view.cancellationNotice ? (
+                  <div style={{ marginTop: 8, fontSize: 12, color: 'var(--abk-cocoa)' }}>{view.cancellationNotice}</div>
+                ) : null}
+              </div>
+
+              {view.cancellable && !confirm ? (
+                <div className="alma-booking-actions">
+                  <a href="https://alma-reserve.web.app/widget" className="alma-booking-btn alma-booking-btn--link">← Make another booking</a>
+                  <button type="button" className="alma-booking-btn alma-booking-btn--ghost" onClick={() => setConfirm(true)}>
+                    Cancel this booking
+                  </button>
+                </div>
+              ) : null}
+
+              {confirm && view.cancellable ? (
+                <div className="alma-booking-note">
+                  <span className="alma-booking-note__dot" aria-hidden="true" />
+                  <div>
+                    <div className="alma-booking-note__title">Sure you want to cancel?</div>
+                    <div className="alma-booking-note__body">
+                      We'll free the table for someone on the waitlist. This can't be undone — you'd need to make a new booking.
+                    </div>
+                    <div style={{ marginTop: 12, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                      <button type="button" className="alma-booking-btn alma-booking-btn--ghost" disabled={cancelling} onClick={() => setConfirm(false)}>
+                        Keep my booking
+                      </button>
+                      <button type="button" className="alma-booking-btn" disabled={cancelling} onClick={() => void cancel()}>
+                        {cancelling ? 'Cancelling…' : 'Yes, cancel it'}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
+              {view.status === 'CANCELLED' ? (
+                <div className="alma-booking-actions">
+                  <span />
+                  <a href="https://alma-reserve.web.app/widget" className="alma-booking-btn">Book another time<AlmaBookingArrow /></a>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
+        </aside>
+      </div>
+    </main>
   );
 }
 
@@ -3128,8 +3255,11 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
 export function App() {
   const auth = useReserveAuth();
-  const publicMode = typeof window !== 'undefined' && window.location.pathname.includes('/widget');
+  const path = typeof window !== 'undefined' ? window.location.pathname : '';
+  const publicMode = path.includes('/widget');
+  const manageMode = path.includes('/manage');
 
+  if (manageMode) return <ManageBookingPage />;
   if (publicMode) return <PublicBookingWidget />;
 
   if (auth.loading) {

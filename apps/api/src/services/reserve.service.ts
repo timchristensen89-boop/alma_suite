@@ -18,6 +18,7 @@ import {
   type AuthUser,
   type ReserveGuest,
   type ReservePublicBookingConfirmation,
+  type ReservePublicManageView,
   type ReservePublicWaitlistConfirmation,
   type ReserveReservation,
   type ReserveReservationStatus,
@@ -27,6 +28,7 @@ import {
   type MarketingSegmentDefinition
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { createReservationManageToken, reservationManageUrl, verifyReservationManageToken } from '../lib/reservation-manage-token.js';
 import { mailService } from './mail.service.js';
 import { buildGuestTimeline, recalculateAutoTagsForGuest } from './marketing.service.js';
 
@@ -1312,6 +1314,12 @@ export const reserveService = {
 
     await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
 
+    const manageToken = createReservationManageToken(reservation.id);
+    const manageUrl = reservationManageUrl(
+      reservation.id,
+      process.env.RESERVE_WEB_URL ?? 'https://alma-reserve.web.app'
+    );
+
     const confirmation: ReservePublicBookingConfirmation = {
       id: reservation.id,
       venue: reservation.venue,
@@ -1325,8 +1333,30 @@ export const reserveService = {
       marketingOptIn: reservation.marketingOptIn,
       occasion: reservation.occasion,
       specialRequests: reservation.specialRequests,
-      createdAt: reservation.createdAt.toISOString()
+      createdAt: reservation.createdAt.toISOString(),
+      manageUrl,
+      manageToken
     };
+
+    // Fire-and-forget confirmation email with the manage URL. Failures
+    // are logged by mailService — we don't want a flaky SMTP/Resend
+    // outage to roll back a successful Stripe-less booking.
+    const guestEmail = reservation.guest.email?.trim();
+    if (guestEmail) {
+      void mailService.sendReservationConfirmation({
+        to: guestEmail,
+        guestFirstName: reservation.guest.firstName,
+        venue: reservation.venue,
+        startsAt: reservation.startsAt,
+        covers: reservation.covers,
+        manageUrl
+      }).catch((error) => {
+        console.error('[reserve] confirmation email failed', {
+          reservationId: reservation.id,
+          reason: error instanceof Error ? error.message : 'unknown'
+        });
+      });
+    }
 
     return confirmation;
   },
@@ -1431,5 +1461,53 @@ export const reserveService = {
       createdAt: entry.createdAt.toISOString(),
       updatedAt: entry.updatedAt.toISOString()
     };
+  },
+
+  async getPublicManageView(token: string): Promise<ReservePublicManageView> {
+    const verified = verifyReservationManageToken(token);
+    if (!verified) throw new HttpError(401, 'This management link has expired or is invalid.');
+    const reservation = await prisma.reserveReservation.findUnique({
+      where: { id: verified.reservationId },
+      include: { guest: true }
+    });
+    if (!reservation) throw new HttpError(404, 'Reservation not found.');
+    const now = Date.now();
+    const startMs = reservation.startsAt.getTime();
+    const hoursAway = (startMs - now) / (1000 * 60 * 60);
+    // Match the policy text shown on the booking widget hero: 24-hour
+    // cancellation window. Bookings inside 24h need to call the venue.
+    const cancellable = ACTIVE_BOOKING_STATUSES.has(reservation.status) && hoursAway >= 24;
+    const deadline = new Date(startMs - 24 * 60 * 60 * 1000);
+    return {
+      id: reservation.id,
+      venue: reservation.venue,
+      serviceDate: reservation.serviceDate.toISOString(),
+      startsAt: reservation.startsAt.toISOString(),
+      endsAt: reservation.endsAt.toISOString(),
+      covers: reservation.covers,
+      guestName: reservation.guestName ?? `${reservation.guest.firstName} ${reservation.guest.lastName}`.trim(),
+      status: reservation.status,
+      occasion: reservation.occasion,
+      specialRequests: reservation.specialRequests,
+      cancellable,
+      cancellationDeadline: hoursAway >= 24 ? deadline.toISOString() : null,
+      cancellationNotice: cancellable
+        ? null
+        : reservation.status !== 'PENDING' && reservation.status !== 'CONFIRMED'
+          ? `This booking is already ${reservation.status.toLowerCase()}.`
+          : 'Inside 24 hours of service — please call the venue to cancel.'
+    };
+  },
+
+  async cancelPublicReservation(token: string): Promise<ReservePublicManageView> {
+    const view = await this.getPublicManageView(token);
+    if (!view.cancellable) {
+      throw new HttpError(409, view.cancellationNotice ?? 'This booking cannot be cancelled online.');
+    }
+    await prisma.reserveReservation.update({
+      where: { id: view.id },
+      data: { status: 'CANCELLED', cancelledAt: new Date() }
+    });
+    return this.getPublicManageView(token);
   }
 };

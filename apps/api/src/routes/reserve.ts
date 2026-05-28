@@ -281,3 +281,22 @@ reserveRouter.patch('/waitlist/:id', requireManager, async (req, res, next) => {
     next(error);
   }
 });
+
+// Public — view or cancel a reservation via the signed token that's
+// emailed to the guest on confirmation. No auth — the signature IS
+// the auth.
+reserveRouter.get('/public/manage/:token', async (req, res, next) => {
+  try {
+    res.json(await reserveService.getPublicManageView(String(req.params.token)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.post('/public/manage/:token/cancel', async (req, res, next) => {
+  try {
+    res.json(await reserveService.cancelPublicReservation(String(req.params.token)));
+  } catch (error) {
+    next(error);
+  }
+});
