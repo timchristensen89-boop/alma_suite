@@ -1370,9 +1370,12 @@ export const reserveService = {
   },
 
   async listWaitlist(actor: AuthUser, query: { venue?: string; status?: string }): Promise<ReserveWaitlistEntry[]> {
-    void actor;
+    // Venue-scoped managers must only see their venue's entries —
+    // these rows include guest name, phone and email. Admins see all
+    // venues when no `?venue=` filter is supplied.
+    const scopedVenue = actorVenueScope(actor, query.venue ?? null, 'Reserve');
     const where: Prisma.ReserveWaitlistEntryWhereInput = {};
-    if (query.venue) where.venue = query.venue;
+    if (scopedVenue) where.venue = scopedVenue;
     if (query.status) where.status = query.status as Prisma.EnumReserveWaitlistStatusFilter;
     const entries = await prisma.reserveWaitlistEntry.findMany({
       where,
@@ -1401,6 +1404,14 @@ export const reserveService = {
 
   async updateWaitlistEntry(actor: AuthUser, id: string, input: unknown): Promise<ReserveWaitlistEntry> {
     const data = reserveWaitlistUpdateInputSchema.parse(input);
+    // Confirm the entry is in the actor's venue scope before mutating.
+    // Admins skip the check (actorVenueScope returns null).
+    const existing = await prisma.reserveWaitlistEntry.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Waitlist entry not found.');
+    const allowedVenue = actorVenueScope(actor, existing.venue, 'Reserve');
+    if (allowedVenue && existing.venue !== allowedVenue) {
+      throw new HttpError(403, 'Reserve is limited to your venue.');
+    }
     const patch: Prisma.ReserveWaitlistEntryUpdateInput = {};
     if (data.status) {
       patch.status = data.status;
