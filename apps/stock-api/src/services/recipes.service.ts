@@ -525,7 +525,9 @@ export const recipesService = {
       const toDate = new Date();
       toDate.setUTCHours(23, 59, 59, 999);
       const fromDate = new Date(toDate);
-      fromDate.setUTCDate(fromDate.getUTCDate() - lookbackDays);
+      // Inclusive on both ends — subtract lookbackDays-1 so withSales=7
+      // covers exactly 7 daily serviceDate buckets, not 8.
+      fromDate.setUTCDate(fromDate.getUTCDate() - (lookbackDays - 1));
       fromDate.setUTCHours(0, 0, 0, 0);
 
       const [salesAgg, mappedRecipeRows] = await Promise.all([
@@ -581,6 +583,24 @@ export const recipesService = {
             orderCount: 0,
             lineCount: 0,
             hasMapping: true
+          });
+        }
+      }
+      // Recipes with no Square mapping AND no sales: surface them with
+      // hasMapping=false so the UI shows "Not mapped to Square" instead
+      // of "—" (which is indistinguishable from a sales gap).
+      for (const recipe of recipes) {
+        if (!salesByRecipeId.has(recipe.id)) {
+          salesByRecipeId.set(recipe.id, {
+            lookbackDays,
+            fromDate: fromIso,
+            toDate: toIso,
+            quantitySold: 0,
+            netSalesCents: 0,
+            grossSalesCents: 0,
+            orderCount: 0,
+            lineCount: 0,
+            hasMapping: false
           });
         }
       }
