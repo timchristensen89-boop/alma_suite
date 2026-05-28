@@ -1922,20 +1922,14 @@
   border-bottom: 1px solid var(--abk-hair);
 }
 .alma-booking-card__brand {
-  font-family: "Avenir LT Std", "Manrope", sans-serif;
-  font-weight: 900;
-  font-size: 20px;
-  letter-spacing: -0.025em;
-  color: var(--abk-ink);
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
 }
-.alma-booking-card__brand em {
-  font-family: "Cormorant Garamond", Georgia, serif;
-  font-style: italic;
-  font-weight: 500;
-  font-size: 16px;
-  color: var(--abk-ink-55);
-  letter-spacing: 0;
-  margin-left: 2px;
+.alma-booking-card__brand img {
+  height: 36px;
+  width: auto;
+  display: block;
 }
 
 .alma-booking-progress { display: flex; gap: 6px; align-items: center; }

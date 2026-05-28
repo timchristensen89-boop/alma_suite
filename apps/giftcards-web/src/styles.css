@@ -1341,20 +1341,14 @@
   padding: 12px 36px;
 }
 .alma-giftcards-nav__word {
-  font-family: var(--gc-sans);
-  font-weight: 900;
-  font-size: 22px;
-  letter-spacing: -0.025em;
-  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  line-height: 0;
 }
-.alma-giftcards-nav__word em {
-  font-family: var(--gc-serif);
-  font-style: italic;
-  font-weight: 500;
-  font-size: 17px;
-  letter-spacing: 0;
-  color: var(--gc-ash);
-  margin-left: 6px;
+.alma-giftcards-nav__word img {
+  height: 40px;
+  width: auto;
+  display: block;
 }
 .alma-giftcards-nav__links {
   display: flex;
