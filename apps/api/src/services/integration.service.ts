@@ -1607,6 +1607,39 @@ function dateKeyInTimeZone(value: Date, timeZone: string) {
   return year && month && day ? `${year}-${month}-${day}` : value.toISOString().slice(0, 10);
 }
 
+/**
+ * Returns the UTC instant that corresponds to 00:00:00 on the given
+ * Sydney local date (YYYY-MM-DD). Picks AEST (+10) or AEDT (+11)
+ * automatically by round-tripping through Intl: the offset that
+ * Sydney is "really" using on that date is the one whose anchored
+ * midnight, when projected back into Sydney local time, lands on the
+ * same date.
+ */
+function sydneyMidnightUtc(localDateIso: string): Date {
+  for (const offsetHours of [10, 11]) {
+    const offsetStr = `+${String(offsetHours).padStart(2, '0')}:00`;
+    const candidate = new Date(`${localDateIso}T00:00:00${offsetStr}`);
+    if (Number.isNaN(candidate.getTime())) continue;
+    if (dateKeyInTimeZone(candidate, 'Australia/Sydney') === localDateIso) {
+      return candidate;
+    }
+  }
+  // DST boundary fall-back — extremely rare; default to AEST.
+  return new Date(`${localDateIso}T00:00:00+10:00`);
+}
+
+/**
+ * Adds N days (positive or negative) to a YYYY-MM-DD date key in
+ * Sydney-local date space. Operates on the calendar value only —
+ * does not touch wall-clock time — so it's safe across the DST
+ * flip. Used by the backfill chunker to walk Sydney days.
+ */
+function addSydneyDays(dateKey: string, days: number): string {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
 function startOfUtcDate(dateKey: string) {
   return new Date(`${dateKey}T00:00:00.000Z`);
 }
@@ -4481,7 +4514,11 @@ export const integrationService = {
   async runScheduledXeroImport(input: Record<string, unknown> = {}) {
     const generatedAt = new Date();
     const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_XERO_LOOKBACK_DAYS, 180);
-    const billsLimit = clampLimit(input.billsLimit, DEFAULT_SCHEDULED_XERO_BILLS_LIMIT, 100);
+    // Cap raised from 100 → 1000 so the admin "Backfill 90d" button can
+    // pull a full quarter of supplier bills without silent truncation.
+    // Scheduled jobs continue to use the lower DEFAULT_…_BILLS_LIMIT
+    // unless they explicitly opt in to a larger window.
+    const billsLimit = clampLimit(input.billsLimit, DEFAULT_SCHEDULED_XERO_BILLS_LIMIT, 1000);
     const contactsLimit = clampLimit(input.contactsLimit, DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT, 500);
     const includeContacts = input.includeContacts !== false;
     const includeBills = input.includeBills !== false;
@@ -5313,11 +5350,27 @@ export const integrationService = {
     const days = clampLimit(input.days, 90, 90);
     const chunkDays = 7;
     const accountKey = input.account ?? 'primary';
-    const end = new Date();
-    end.setUTCHours(23, 59, 59, 999);
-    const start = new Date(end);
-    start.setUTCDate(start.getUTCDate() - days);
-    start.setUTCHours(0, 0, 0, 0);
+
+    // Chunk boundaries are pinned to Sydney local midnight so a single
+    // Sydney service day never spans two chunks. importSquareSales
+    // upserts by (venue, serviceDate, source, externalId) with
+    // REPLACEMENT semantics, so a boundary inside a Sydney day would
+    // let the later chunk overwrite the earlier chunk's partial totals
+    // for that day — under-reporting sales on every chunk seam.
+    //
+    // Working in Sydney-local date space (then converting to UTC) keeps
+    // the chunking honest across the AEST↔AEDT DST flip.
+    const todaySydneyKey = dateKeyInTimeZone(new Date(), 'Australia/Sydney');
+    const boundaryKeys: string[] = [];
+    // Walk back from "tomorrow Sydney" in chunkDays steps so the final
+    // boundary closes at end-of-today Sydney and every Sydney day is
+    // wholly contained in exactly one chunk.
+    boundaryKeys.push(addSydneyDays(todaySydneyKey, 1));
+    for (let offset = chunkDays; offset < days; offset += chunkDays) {
+      boundaryKeys.unshift(addSydneyDays(todaySydneyKey, 1 - offset));
+    }
+    boundaryKeys.unshift(addSydneyDays(todaySydneyKey, 1 - days));
+    const chunkBoundaries: Date[] = boundaryKeys.map(sydneyMidnightUtc);
 
     let chunks = 0;
     let paymentsRead = 0;
@@ -5326,14 +5379,15 @@ export const integrationService = {
     let totalSalesCents = 0;
     const warnings: string[] = [];
 
-    let windowStart = new Date(start);
-    while (windowStart < end) {
-      const windowEnd = new Date(windowStart);
-      windowEnd.setUTCDate(windowEnd.getUTCDate() + chunkDays);
-      if (windowEnd > end) windowEnd.setTime(end.getTime());
-
-      const startIso = windowStart.toISOString().slice(0, 10);
-      const endIso = windowEnd.toISOString().slice(0, 10);
+    for (let i = 0; i < chunkBoundaries.length - 1; i += 1) {
+      const windowStart = chunkBoundaries[i]!;
+      const windowEnd = chunkBoundaries[i + 1]!;
+      // Pass full ISO datetimes (with the Sydney-aligned UTC time) so
+      // squareImportDateRange doesn't truncate to UTC midnight.
+      const startIso = windowStart.toISOString();
+      const endIso = windowEnd.toISOString();
+      const startLabel = dateKeyInTimeZone(windowStart, 'Australia/Sydney');
+      const endLabel = dateKeyInTimeZone(new Date(windowEnd.getTime() - 1), 'Australia/Sydney');
       try {
         const sales = await integrationService.importSquareSales(
           { account: accountKey, startDate: startIso, endDate: endIso, limit: 1000 },
@@ -5345,13 +5399,12 @@ export const integrationService = {
         itemRows += sales.itemSalesRowsUpserted ?? 0;
         totalSalesCents += sales.totalSalesCents ?? 0;
         if (Array.isArray(sales.warnings)) {
-          warnings.push(...sales.warnings.map((w: string) => `${startIso}: ${w}`));
+          warnings.push(...sales.warnings.map((w: string) => `${startLabel}..${endLabel}: ${w}`));
         }
       } catch (error) {
-        warnings.push(`${startIso}..${endIso}: ${error instanceof Error ? error.message : String(error)}`);
+        warnings.push(`${startLabel}..${endLabel}: ${error instanceof Error ? error.message : String(error)}`);
       }
       chunks += 1;
-      windowStart = windowEnd;
     }
 
     return {
@@ -5369,8 +5422,12 @@ export const integrationService = {
 
   async backfillXeroBills(input: { days?: number } = {}, _actor: AuthUser) {
     const days = clampLimit(input.days, 90, 180);
+    // Override billsLimit to 1000 (matching the raised cap in
+    // runScheduledXeroImport) so a 90-day backfill on an active venue
+    // doesn't silently truncate at the 100-bill scheduled default.
     const result = await integrationService.runScheduledXeroImport({
       lookbackDays: days,
+      billsLimit: 1000,
       allowCreateSuppliers: false
     });
     const billsImported = result.tenants.reduce(
