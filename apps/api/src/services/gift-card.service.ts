@@ -482,6 +482,7 @@ export const giftCardService = {
         recipientName: data.recipientName?.trim() || null,
         recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
         message: data.message?.trim() || null,
+        design: data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
         expiresAt
