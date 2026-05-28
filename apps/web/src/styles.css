@@ -10890,6 +10890,9 @@ a.suite-app-tile:hover {
     width: calc(100vw - 24px);
     right: 50%;
     transform: translateX(50%);
+  }
+}
+
 /* ==========================================================================
    Mobile pass (≤480px) — generic grids, form grids, and shell padding.
    App-specific overrides live in each app's own styles.css.
