@@ -946,7 +946,12 @@ function PublicBookingWidget() {
     });
   }
 
-  const detailsValid = guest.firstName.trim().length > 0 && guest.phone.trim().length >= 6;
+  // Backend schema requires first + last + phone — keep client validation
+  // in sync so we don't enable the Confirm button on a payload that the
+  // server will reject (reservePublicBookingInputSchema in @alma/shared).
+  const detailsValid = guest.firstName.trim().length > 0
+    && guest.lastName.trim().length > 0
+    && guest.phone.trim().length >= 6;
   const ticketStripeStyle = { ['--abk-venue-accent' as string]: venueAccent } as React.CSSProperties;
   const slotsForDay = availability?.slots ?? [];
 
@@ -1062,21 +1067,30 @@ function PublicBookingWidget() {
               <div className="alma-booking-field">
                 <div className="alma-booking-field__eyebrow">How many of you?</div>
                 <div className="alma-booking-party">
-                  {[1, 2, 3, 4, 5, 6, 7].map((n) => (
-                    <button
-                      key={n}
-                      type="button"
-                      className={`alma-booking-party__pill ${partySize === n ? 'alma-booking-party__pill--active' : ''}`}
-                      onClick={() => setPartySize(n)}
-                      aria-pressed={partySize === n}
-                    >
-                      {n === 7 ? <>7<em>+</em></> : n}
-                    </button>
-                  ))}
+                  {[1, 2, 3, 4, 5, 6, 7].map((n) => {
+                    // The "7+" pill maps to partySize 8 so the >= 8
+                    // oversize branch (function enquiry) actually triggers
+                    // — otherwise a party of 7 books online as if it
+                    // were a small group.
+                    const stored = n === 7 ? 8 : n;
+                    const active = partySize === stored;
+                    return (
+                      <button
+                        key={n}
+                        type="button"
+                        className={`alma-booking-party__pill ${active ? 'alma-booking-party__pill--active' : ''}`}
+                        onClick={() => setPartySize(stored)}
+                        aria-pressed={active}
+                        aria-label={n === 7 ? '7 or more guests' : `${n} guests`}
+                      >
+                        {n === 7 ? <>7<em>+</em></> : n}
+                      </button>
+                    );
+                  })}
                 </div>
                 {isOversize ? (
                   <div className="alma-booking-party__overflow">
-                    For parties of 8 or more we'll set up a private booking —
+                    For parties of 7 or more we'll set up a private booking —
                     please <a href="tel:+61299184476">call us</a> or <a href="#alma-booking-function-enquiry">send a note</a>.
                   </div>
                 ) : null}
@@ -1221,9 +1235,10 @@ function PublicBookingWidget() {
                   <span className="alma-booking-field__eyebrow">Last name</span>
                   <input
                     className="alma-booking-input"
+                    required
                     value={guest.lastName}
                     onChange={(event) => setGuest((g) => ({ ...g, lastName: event.currentTarget.value }))}
-                    placeholder="(optional)"
+                    placeholder="Last name"
                   />
                 </label>
                 <label>
