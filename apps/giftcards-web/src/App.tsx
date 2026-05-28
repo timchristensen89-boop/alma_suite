@@ -388,16 +388,16 @@ function PublicGiftCardShop() {
   return (
     <main className="alma-giftcards-page" style={themeStyle(settings)}>
       <nav className={`alma-giftcards-nav ${navSolid ? 'is-solid' : ''}`} aria-label="Alma Group">
-        <div className="alma-giftcards-nav__word">
-          alma <em>group</em>
-        </div>
+        <a href="https://www.almagroup.com.au/" className="alma-giftcards-nav__word" aria-label="Alma Group">
+          <img src="/images/alma-group-logo.png" alt="Alma Group" />
+        </a>
         <ul className="alma-giftcards-nav__links">
-          <li><a href="https://almagroup.com.au/avalon">Avalon</a></li>
-          <li><a href="https://almagroup.com.au/st-alma">St. Alma</a></li>
-          <li><a href="https://almagroup.com.au/menu">Menu</a></li>
+          <li><a href="https://www.almagroup.com.au/alma-avalon">Avalon</a></li>
+          <li><a href="https://www.almagroup.com.au/st-alma">St. Alma</a></li>
+          <li><a href="https://www.almagroup.com.au/menu">Menu</a></li>
           <li><a href="#configure" className="is-current">Gift cards</a></li>
-          <li><a href="https://almagroup.com.au/events">Events</a></li>
-          <li><a href="https://almagroup.com.au/contact">Visit</a></li>
+          <li><a href="https://www.almagroup.com.au/events">Events</a></li>
+          <li><a href="https://www.almagroup.com.au/contact">Visit</a></li>
         </ul>
         <a href="#configure" className="alma-giftcards-nav__cta">Buy a card →</a>
       </nav>
@@ -909,7 +909,7 @@ function PublicGiftCardShop() {
             <h2 className="alma-giftcards-h1">Both venues, <em>one card.</em></h2>
           </div>
           <div className="alma-giftcards-venues__grid">
-            <a className="alma-giftcards-venue" href="https://almagroup.com.au/avalon">
+            <a className="alma-giftcards-venue" href="https://www.almagroup.com.au/alma-avalon">
               <img src="/images/alma-avalon-margaritas.jpg" alt="alma Avalon" />
               <div className="alma-giftcards-venue__overlay">
                 <span className="alma-giftcards-eyebrow alma-giftcards-eyebrow--light">Avalon Beach · Restaurant &amp; Bar</span>
@@ -924,7 +924,7 @@ function PublicGiftCardShop() {
                 </div>
               </div>
             </a>
-            <a className="alma-giftcards-venue" href="https://almagroup.com.au/st-alma">
+            <a className="alma-giftcards-venue" href="https://www.almagroup.com.au/st-alma">
               <img src="/images/st-alma-food.JPG" alt="St. Alma" />
               <div className="alma-giftcards-venue__overlay">
                 <span className="alma-giftcards-eyebrow alma-giftcards-eyebrow--light">Freshwater · Counter restaurant</span>
@@ -996,15 +996,15 @@ function PublicGiftCardShop() {
           <div>
             <h5>Venues</h5>
             <ul>
-              <li><a href="https://almagroup.com.au/avalon">alma Avalon</a></li>
-              <li><a href="https://almagroup.com.au/st-alma">st. alma, Freshwater</a></li>
-              <li><a href="https://almagroup.com.au/events">Private events</a></li>
+              <li><a href="https://www.almagroup.com.au/alma-avalon">alma Avalon</a></li>
+              <li><a href="https://www.almagroup.com.au/st-alma">st. alma, Freshwater</a></li>
+              <li><a href="https://www.almagroup.com.au/events">Private events</a></li>
             </ul>
           </div>
           <div>
             <h5>Eat &amp; drink</h5>
             <ul>
-              <li><a href="https://almagroup.com.au/menu">Menu</a></li>
+              <li><a href="https://www.almagroup.com.au/menu">Menu</a></li>
               <li><a href="https://alma-reserve.web.app/widget">Reservations</a></li>
               <li><a href="#configure">Gift cards</a></li>
             </ul>
@@ -1012,9 +1012,9 @@ function PublicGiftCardShop() {
           <div>
             <h5>Alma group</h5>
             <ul>
-              <li><a href="https://almagroup.com.au/about">About</a></li>
-              <li><a href="https://almagroup.com.au/careers">Careers</a></li>
-              <li><a href="https://almagroup.com.au/contact">Contact</a></li>
+              <li><a href="https://www.almagroup.com.au/about">About</a></li>
+              <li><a href="https://www.almagroup.com.au/careers">Careers</a></li>
+              <li><a href="https://www.almagroup.com.au/contact">Contact</a></li>
             </ul>
           </div>
         </div>

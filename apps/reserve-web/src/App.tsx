@@ -59,7 +59,7 @@ const DEFAULT_RESERVE_PUBLIC_VENUE = {
   image: '/images/alma-avalon-margaritas.jpg',
   summary: 'Alma Group dining with online booking availability.',
   description: 'Choose your venue, check available times, and send a booking request through to the restaurant team.',
-  website: 'https://almagroup.com.au/'
+  website: 'https://www.almagroup.com.au/'
 };
 const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; summary: string; description: string; website: string }> = {
   'Alma Avalon': {
@@ -67,14 +67,14 @@ const RESERVE_PUBLIC_VENUES: Record<string, { location: string; image: string; s
     image: '/images/alma-avalon-margaritas.jpg',
     summary: 'Beachside Mexican dining, margaritas, long lunches, and relaxed evening bookings.',
     description: 'A relaxed coastal dining room for tacos, shared plates, margaritas, birthdays, and long lunches near the beach.',
-    website: 'https://almagroup.com.au/'
+    website: 'https://www.almagroup.com.au/alma-avalon'
   },
   'St Alma': {
     location: 'Freshwater',
     image: '/images/st-alma-food.JPG',
     summary: 'Coastal dining in Freshwater with bright share plates, cocktails, and group tables.',
     description: 'A bright Freshwater venue for coastal dining, cocktails, group tables, and neighbourhood catch-ups.',
-    website: 'https://almagroup.com.au/'
+    website: 'https://www.almagroup.com.au/st-alma'
   }
 };
 const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
@@ -1020,16 +1020,16 @@ function PublicBookingWidget() {
             <span className="alma-booking-hero__policy-pill">24-hour cancellation</span>
           </div>
           <div className="alma-booking-hero__links">
-            <a className="alma-booking-hero__link" href="https://almagroup.com.au/menu">See the menu</a>
+            <a className="alma-booking-hero__link" href="https://www.almagroup.com.au/menu">See the menu</a>
             <a className="alma-booking-hero__link" href="#alma-booking-function-enquiry">Functions &amp; private dining</a>
           </div>
         </section>
 
         <aside className="alma-booking-card" aria-label="Book a table">
           <header className="alma-booking-card__head">
-            <div className="alma-booking-card__brand">
-              alma <em>reserve</em>
-            </div>
+            <a href="https://www.almagroup.com.au/" className="alma-booking-card__brand" aria-label="Alma Group">
+              <img src="/images/alma-group-logo.png" alt="Alma Group" />
+            </a>
             {step < 3 ? (
               <div className="alma-booking-progress" aria-label={`Step ${step + 1} of 4`}>
                 {[0, 1, 2, 3].map((i) => (
