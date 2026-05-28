@@ -7,6 +7,7 @@ import {
   recipeCreateInputSchema,
   recipeUpdateInputSchema,
   type Recipe,
+  type RecipeActualSales,
   type RecipeCategory,
   type RecipeCategoryKind,
   type RecipeCostLine,
@@ -495,7 +496,11 @@ async function listRecipeCategories(syncFromRecipes: boolean) {
 }
 
 export const recipesService = {
-  async list(): Promise<RecipesPayload> {
+  async list(options?: { withSalesLookbackDays?: number | null }): Promise<RecipesPayload> {
+    const lookbackDays = options?.withSalesLookbackDays && options.withSalesLookbackDays > 0
+      ? Math.min(Math.floor(options.withSalesLookbackDays), 365)
+      : null;
+
     const [recipes, recipeCategories] = await Promise.all([
       prisma.recipe.findMany({
         include: { _count: { select: { lines: true } } },
@@ -509,8 +514,87 @@ export const recipesService = {
         ...recipes.map((r) => r.category).filter((c): c is string => Boolean(c))
       ])
     ).sort((a, b) => a.localeCompare(b));
+
+    // Join actual Square sales when the caller asks for them. Aggregates
+    // SalesItemActualEntry rows over the lookback window by recipeId.
+    // Mappings live in SquareMenuRecipeMapping — we surface whether a
+    // recipe has at least one CONFIRMED mapping so the UI can flag
+    // "no Square data because no mapping yet" vs "mapped but zero sales".
+    let salesByRecipeId: Map<string, RecipeActualSales> = new Map();
+    if (lookbackDays !== null) {
+      const toDate = new Date();
+      toDate.setUTCHours(23, 59, 59, 999);
+      const fromDate = new Date(toDate);
+      fromDate.setUTCDate(fromDate.getUTCDate() - lookbackDays);
+      fromDate.setUTCHours(0, 0, 0, 0);
+
+      const [salesAgg, mappedRecipeRows] = await Promise.all([
+        prisma.salesItemActualEntry.groupBy({
+          by: ['recipeId'],
+          where: {
+            recipeId: { not: null },
+            serviceDate: { gte: fromDate, lte: toDate }
+          },
+          _sum: {
+            quantity: true,
+            netSalesCents: true,
+            grossSalesCents: true,
+            orderCount: true,
+            lineCount: true
+          }
+        }),
+        prisma.squareMenuRecipeMapping.findMany({
+          where: { almaRecipeId: { not: null }, status: { in: ['CONFIRMED', 'MAPPED'] } },
+          select: { almaRecipeId: true },
+          distinct: ['almaRecipeId']
+        })
+      ]);
+
+      const mappedIds = new Set(mappedRecipeRows.map((row) => row.almaRecipeId!).filter(Boolean));
+      const fromIso = fromDate.toISOString().slice(0, 10);
+      const toIso = toDate.toISOString().slice(0, 10);
+      for (const row of salesAgg) {
+        if (!row.recipeId) continue;
+        salesByRecipeId.set(row.recipeId, {
+          lookbackDays,
+          fromDate: fromIso,
+          toDate: toIso,
+          quantitySold: row._sum.quantity ?? 0,
+          netSalesCents: row._sum.netSalesCents ?? 0,
+          grossSalesCents: row._sum.grossSalesCents ?? 0,
+          orderCount: row._sum.orderCount ?? 0,
+          lineCount: row._sum.lineCount ?? 0,
+          hasMapping: mappedIds.has(row.recipeId)
+        });
+      }
+      // Recipes with mappings but zero sales: still surface the mapping
+      // so the UI doesn't say "unmapped" when it's just a slow seller.
+      for (const id of mappedIds) {
+        if (!salesByRecipeId.has(id)) {
+          salesByRecipeId.set(id, {
+            lookbackDays,
+            fromDate: fromIso,
+            toDate: toIso,
+            quantitySold: 0,
+            netSalesCents: 0,
+            grossSalesCents: 0,
+            orderCount: 0,
+            lineCount: 0,
+            hasMapping: true
+          });
+        }
+      }
+    }
+
+    const recipesPayload = recipes.map((row) => {
+      const base = toRecipePayload(row);
+      return lookbackDays !== null
+        ? { ...base, actualSales: salesByRecipeId.get(row.id) ?? null }
+        : base;
+    });
+
     return {
-      recipes: recipes.map(toRecipePayload),
+      recipes: recipesPayload,
       categories,
       recipeCategories
     };

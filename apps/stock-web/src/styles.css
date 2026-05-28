@@ -1383,7 +1383,7 @@ tbody tr.row-detail:hover {
 
 .dish-margin-filters {
   display: grid;
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 0.9fr);
   gap: 12px;
   margin-bottom: 16px;
   padding: 12px 14px;
@@ -1397,17 +1397,27 @@ tbody tr.row-detail:hover {
   gap: 0;
   border: 1px solid var(--color-border);
   border-radius: 12px;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .dish-margin-row {
   display: grid;
-  grid-template-columns: minmax(180px, 2.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr) minmax(110px, 1.1fr) minmax(80px, 0.8fr) minmax(110px, 1fr);
+  /* Dish / Venue / Cost / Sell / Margin / Sold / Revenue / Contribution / Status */
+  grid-template-columns:
+    minmax(180px, 2.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr)
+    minmax(110px, 1.1fr) minmax(80px, 0.8fr) minmax(100px, 1fr) minmax(100px, 1fr)
+    minmax(110px, 1fr);
   gap: 12px;
   align-items: center;
   padding: 11px 14px;
   border-bottom: 1px solid var(--color-border);
   font-size: 13px;
+}
+
+.dish-margin-no-mapping {
+  color: var(--color-text-muted);
+  font-style: italic;
+  font-size: 11px;
 }
 
 .dish-margin-row:last-child {
