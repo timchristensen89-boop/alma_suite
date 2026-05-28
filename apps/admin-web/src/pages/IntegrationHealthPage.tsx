@@ -48,6 +48,7 @@ type Tile = {
   account?: string | null;
   canResync: boolean;
   resyncAction?: () => Promise<void>;
+  backfillAction?: () => Promise<void>;
 };
 
 export function IntegrationHealthPage() {
@@ -89,6 +90,86 @@ export function IntegrationHealthPage() {
       await load();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not refresh Square');
+      setTone('error');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [load]);
+
+  const backfillSquare = useCallback(async (account?: string) => {
+    const key = `square-${account ?? 'primary'}`;
+    setBusyKey(key);
+    setMessage(null);
+    try {
+      const result = await api<{
+        chunks: number;
+        paymentsRead: number;
+        salesRows: number;
+        itemRows: number;
+        totalSalesCents: number;
+        warnings: string[];
+      }>(`/api/integrations/square/backfill${account ? `?account=${encodeURIComponent(account)}` : ''}`, {
+        method: 'POST',
+        body: JSON.stringify({ days: 90 })
+      });
+      const dollars = (result.totalSalesCents / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+      setMessage(
+        `Square backfill done — ${result.chunks} weekly chunks, ${result.paymentsRead} payments, ${result.salesRows} day-rows, ${result.itemRows} item-sales rows, ${dollars}.${result.warnings.length > 0 ? ` ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.` : ''}`
+      );
+      setTone(result.warnings.length > 0 ? 'error' : 'success');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not backfill Square');
+      setTone('error');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [load]);
+
+  const backfillXero = useCallback(async () => {
+    setBusyKey('xero');
+    setMessage(null);
+    try {
+      const result = await api<{
+        tenantCount: number;
+        billCandidates: number;
+        billsImported: number;
+        warnings: string[];
+      }>('/api/integrations/xero/backfill', {
+        method: 'POST',
+        body: JSON.stringify({ days: 90 })
+      });
+      setMessage(
+        `Xero backfill done — ${result.tenantCount} tenant${result.tenantCount === 1 ? '' : 's'}, ${result.billCandidates} candidate bills, ${result.billsImported} imported.${result.warnings.length > 0 ? ` ${result.warnings.length} warning${result.warnings.length === 1 ? '' : 's'}.` : ''}`
+      );
+      setTone(result.warnings.length > 0 ? 'error' : 'success');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not backfill Xero');
+      setTone('error');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [load]);
+
+  const backfillDeputy = useCallback(async () => {
+    setBusyKey('deputy');
+    setMessage(null);
+    try {
+      const result = await api<{
+        roster?: { shiftsCreated: number };
+        employees?: { created: number; updated: number };
+        documents?: { complianceCreated: number; reviewsCreated: number };
+      }>('/api/integrations/deputy/backfill', { method: 'POST' });
+      const parts: string[] = [];
+      if (result.roster) parts.push(`${result.roster.shiftsCreated} shifts`);
+      if (result.employees) parts.push(`${result.employees.created} new staff, ${result.employees.updated} updated`);
+      if (result.documents) parts.push(`${result.documents.complianceCreated + result.documents.reviewsCreated} docs`);
+      setMessage(`Deputy backfill done — ${parts.join(', ')}.`);
+      setTone('success');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not backfill Deputy');
       setTone('error');
     } finally {
       setBusyKey(null);
@@ -144,7 +225,8 @@ export function IntegrationHealthPage() {
           detail: status.providerAccountName ?? null,
           account: accountKey,
           canResync: connected,
-          resyncAction: connected ? () => resyncSquare(accountKey) : undefined
+          resyncAction: connected ? () => resyncSquare(accountKey) : undefined,
+          backfillAction: connected ? () => backfillSquare(accountKey) : undefined
         });
       }
     } else if (data.square) {
@@ -161,7 +243,8 @@ export function IntegrationHealthPage() {
         lastError: status.lastError,
         detail: status.providerAccountName ?? null,
         canResync: connected,
-        resyncAction: connected ? () => resyncSquare() : undefined
+        resyncAction: connected ? () => resyncSquare() : undefined,
+        backfillAction: connected ? () => backfillSquare() : undefined
       });
     }
 
@@ -188,7 +271,8 @@ export function IntegrationHealthPage() {
         lastSyncAt: status.lastSyncAt,
         lastError: status.lastError,
         detail,
-        canResync: false
+        canResync: false,
+        backfillAction: connected ? backfillXero : undefined
       });
     }
 
@@ -208,7 +292,8 @@ export function IntegrationHealthPage() {
         lastError: status.lastError,
         detail: status.providerAccountName ?? null,
         canResync: connected || (status.configured && !connected),
-        resyncAction: connected ? syncDeputy : status.configured ? async () => connectDeputy() : undefined
+        resyncAction: connected ? syncDeputy : status.configured ? async () => connectDeputy() : undefined,
+        backfillAction: connected ? backfillDeputy : undefined
       });
     }
 
@@ -291,7 +376,7 @@ export function IntegrationHealthPage() {
     }
 
     return out;
-  }, [data, resyncSquare, syncDeputy, connectDeputy]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy, backfillSquare, backfillXero, backfillDeputy]);
 
   const counts = useMemo(() => {
     const total = tiles.length;
@@ -350,17 +435,31 @@ export function IntegrationHealthPage() {
                     <div className="integration-health-error">{tile.lastError}</div>
                   ) : null}
                 </div>
-                {tile.canResync && tile.resyncAction ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="secondary"
-                    onClick={() => void tile.resyncAction!()}
-                    disabled={busyKey === tile.id}
-                  >
-                    {busyKey === tile.id ? 'Refreshing...' : 'Re-sync'}
-                  </Button>
-                ) : null}
+                <div className="integration-health-tile-actions">
+                  {tile.canResync && tile.resyncAction ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="secondary"
+                      onClick={() => void tile.resyncAction!()}
+                      disabled={busyKey === tile.id}
+                    >
+                      {busyKey === tile.id ? 'Working...' : 'Re-sync'}
+                    </Button>
+                  ) : null}
+                  {tile.backfillAction ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void tile.backfillAction!()}
+                      disabled={busyKey === tile.id}
+                      title="Pull 90 days of history (sales for Square, supplier bills for Xero, roster + staff for Deputy)"
+                    >
+                      {busyKey === tile.id ? 'Backfilling...' : 'Backfill 90d'}
+                    </Button>
+                  ) : null}
+                </div>
               </div>
             ))}
           </div>

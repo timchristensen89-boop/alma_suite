@@ -36,6 +36,7 @@ import {
   safeCompareBase64
 } from '../lib/integration-crypto.js';
 import { HttpError } from '../lib/http.js';
+import { deputyService } from './deputy.service.js';
 
 type Provider = 'SQUARE' | 'XERO' | 'DEPUTY';
 type SquareAccountKey = 'primary' | 'secondary';
@@ -5292,5 +5293,109 @@ export const integrationService = {
       throw new HttpError(401, 'Invalid Deputy webhook signature.');
     }
     return recordWebhook('DEPUTY', rawBody);
+  },
+
+  /**
+   * Pull a longer historical window than the scheduled jobs do.
+   *
+   * Square sales: chunked by 7-day windows so each call stays under the
+   *   1000-payment cap. Item-level sales are pulled per chunk too so
+   *   Reports can do menu engineering. Auto-match runs on every line.
+   *
+   * Xero bills: single call with lookbackDays clamped to 180. Auto-match
+   *   runs on every line during import.
+   *
+   * Deputy: triggers syncAllNow which already pulls roster +14d / -7d
+   *   plus a full employee + document sync. Deputy's API does not expose
+   *   arbitrary historical roster windows.
+   */
+  async backfillSquareSales(input: { days?: number; account?: string | null } = {}, actor: AuthUser) {
+    const days = clampLimit(input.days, 90, 90);
+    const chunkDays = 7;
+    const accountKey = input.account ?? 'primary';
+    const end = new Date();
+    end.setUTCHours(23, 59, 59, 999);
+    const start = new Date(end);
+    start.setUTCDate(start.getUTCDate() - days);
+    start.setUTCHours(0, 0, 0, 0);
+
+    let chunks = 0;
+    let paymentsRead = 0;
+    let salesRows = 0;
+    let itemRows = 0;
+    let totalSalesCents = 0;
+    const warnings: string[] = [];
+
+    let windowStart = new Date(start);
+    while (windowStart < end) {
+      const windowEnd = new Date(windowStart);
+      windowEnd.setUTCDate(windowEnd.getUTCDate() + chunkDays);
+      if (windowEnd > end) windowEnd.setTime(end.getTime());
+
+      const startIso = windowStart.toISOString().slice(0, 10);
+      const endIso = windowEnd.toISOString().slice(0, 10);
+      try {
+        const sales = await integrationService.importSquareSales(
+          { account: accountKey, startDate: startIso, endDate: endIso, limit: 1000 },
+          actor,
+          { syncType: 'MANUAL', eventType: 'admin.backfill' }
+        );
+        paymentsRead += sales.paymentsRead ?? 0;
+        salesRows += sales.salesRowsUpserted ?? 0;
+        itemRows += sales.itemSalesRowsUpserted ?? 0;
+        totalSalesCents += sales.totalSalesCents ?? 0;
+        if (Array.isArray(sales.warnings)) {
+          warnings.push(...sales.warnings.map((w: string) => `${startIso}: ${w}`));
+        }
+      } catch (error) {
+        warnings.push(`${startIso}..${endIso}: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      chunks += 1;
+      windowStart = windowEnd;
+    }
+
+    return {
+      provider: 'square' as const,
+      account: accountKey,
+      days,
+      chunks,
+      paymentsRead,
+      salesRows,
+      itemRows,
+      totalSalesCents,
+      warnings
+    };
+  },
+
+  async backfillXeroBills(input: { days?: number } = {}, _actor: AuthUser) {
+    const days = clampLimit(input.days, 90, 180);
+    const result = await integrationService.runScheduledXeroImport({
+      lookbackDays: days,
+      allowCreateSuppliers: false
+    });
+    const billsImported = result.tenants.reduce(
+      (total, tenant) => total + (tenant.billIdsImported ?? 0),
+      0
+    );
+    const billCandidates = result.tenants.reduce(
+      (total, tenant) => total + (tenant.billCandidates ?? 0),
+      0
+    );
+    return {
+      provider: 'xero' as const,
+      days,
+      tenantCount: result.tenantCount,
+      billCandidates,
+      billsImported,
+      warnings: result.warnings
+    };
+  },
+
+  async backfillDeputy(actor: AuthUser) {
+    const result = await deputyService.syncAllNow(actor);
+    return {
+      provider: 'deputy' as const,
+      ...result
+    };
   }
 };
