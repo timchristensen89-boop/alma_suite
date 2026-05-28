@@ -1,4 +1,4 @@
-# Scheduled Square and Xero Imports
+# Scheduled Square, Xero, and Deputy Imports
 
 Alma can run regular guarded import jobs from Cloud Scheduler. These endpoints are not user-authenticated; they require the `INTEGRATION_SCHEDULER_SECRET` bearer token and should only be called by the scheduler.
 
@@ -9,6 +9,7 @@ Required API env:
 - `INTEGRATION_SCHEDULER_SECRET`
 - Xero OAuth/env: `XERO_CLIENT_ID`, `XERO_CLIENT_SECRET`, `XERO_REDIRECT_URL`, `INTEGRATION_TOKEN_ENCRYPTION_KEY`
 - Square OAuth/env: `SQUARE_PRIMARY_*`, `SQUARE_SECONDARY_*`, `SQUARE_REDIRECT_URI`, `SQUARE_WEBHOOK_URL`, `SQUARE_ENVIRONMENT`, `SQUARE_API_VERSION`
+- Deputy OAuth/env: `DEPUTY_CLIENT_ID`, `DEPUTY_CLIENT_SECRET`, `DEPUTY_REDIRECT_URL`, `DEPUTY_WEBHOOK_SECRET` (optional, for webhook subscription)
 
 Do not place the real scheduler secret in source control or shell history.
 
@@ -25,6 +26,7 @@ Scheduled endpoints:
 ```text
 POST /api/integration-jobs/xero/import
 POST /api/integration-jobs/square/sync
+POST /api/integration-jobs/deputy/sync
 POST /api/integration-jobs/run
 ```
 
@@ -89,6 +91,16 @@ Example body:
 
 Omit `account` to sync both accounts.
 
+## Deputy Job
+
+The Deputy scheduled job runs employee, document, and roster sync in that order — so document sync can match newly-imported employees, and the roster sync (which can also create placeholder profiles for unallocated shifts) runs last.
+
+- Roster window: 7 days lookback + 14 days lookforward. Existing Deputy-tagged shifts in that window are deleted before recreation (idempotent).
+- Employees: upsert by email / name+venue; locally-edited fields are preserved.
+- Documents: classified as RSA, RSG, Food Safety, or routed to `staffDocumentReview` for manual review. SHA256-deduped so re-runs are safe.
+
+No body is required; `POST /api/integration-jobs/deputy/sync` with the scheduler bearer is enough.
+
 ## Cloud Scheduler Commands
 
 Create these from a secure shell where the secret is already available in an environment variable. Do not paste the real value into shared notes.
@@ -116,6 +128,24 @@ gcloud scheduler jobs create http alma-square-location-sync \
   --headers "Authorization=Bearer ${INTEGRATION_SCHEDULER_SECRET},Content-Type=application/json" \
   --message-body '{"salesLookbackDays":7,"salesLimit":1000}'
 ```
+
+### Daily 9am — all integrations together
+
+One job, hits `/jobs/run`, which orchestrates Square + Xero + Deputy in a single request. Use this *or* the per-provider jobs above, not both.
+
+```bash
+gcloud scheduler jobs create http alma-integrations-daily-9am \
+  --project alma-compliance \
+  --location australia-southeast1 \
+  --schedule "0 9 * * *" \
+  --time-zone "Australia/Sydney" \
+  --uri "${API_URL}/api/integration-jobs/run" \
+  --http-method POST \
+  --headers "Authorization=Bearer ${INTEGRATION_SCHEDULER_SECRET},Content-Type=application/json" \
+  --message-body '{"includeSquare":true,"includeXero":true,"includeDeputy":true}'
+```
+
+If you already have the early-morning Xero + Square jobs above, either delete those (`gcloud scheduler jobs delete alma-xero-supplier-import --location australia-southeast1`) or leave them — `runScheduledIntegrationImports` is idempotent and safe to call twice.
 
 ## Manual Smoke Test
 

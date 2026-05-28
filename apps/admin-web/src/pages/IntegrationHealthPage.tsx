@@ -95,6 +95,34 @@ export function IntegrationHealthPage() {
     }
   }, [load]);
 
+  const syncDeputy = useCallback(async () => {
+    setBusyKey('deputy');
+    setMessage(null);
+    try {
+      const result = await api<{
+        roster?: { shiftsCreated: number };
+        employees?: { created: number; updated: number };
+        documents?: { complianceCreated: number; reviewsCreated: number };
+      }>('/api/integrations/deputy/sync-all', { method: 'POST' });
+      const parts: string[] = [];
+      if (result.roster) parts.push(`${result.roster.shiftsCreated} shifts`);
+      if (result.employees) parts.push(`${result.employees.created} new staff, ${result.employees.updated} updated`);
+      if (result.documents) parts.push(`${result.documents.complianceCreated + result.documents.reviewsCreated} docs`);
+      setMessage(`Deputy sync complete — ${parts.join(', ')}.`);
+      setTone('success');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not sync Deputy');
+      setTone('error');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [load]);
+
+  const connectDeputy = useCallback(() => {
+    window.location.href = '/api/integrations/deputy/connect';
+  }, []);
+
   const tiles = useMemo<Tile[]>(() => {
     if (!data) return [];
     const out: Tile[] = [];
@@ -161,6 +189,26 @@ export function IntegrationHealthPage() {
         lastError: status.lastError,
         detail,
         canResync: false
+      });
+    }
+
+    // Deputy — roster + employees + documents from the Deputy API.
+    // Re-sync runs all three handlers; connect kicks off OAuth if not connected.
+    {
+      const status = data.deputy;
+      const connected = !!status.connected;
+      const hasError = !!status.lastError;
+      out.push({
+        id: 'deputy',
+        name: 'Deputy',
+        provider: 'Roster, employees, compliance documents',
+        status: statusLabel(connected, hasError, status.configured),
+        tone: statusTone(connected, hasError, status.configured),
+        lastSyncAt: status.lastSyncAt,
+        lastError: status.lastError,
+        detail: status.providerAccountName ?? null,
+        canResync: connected || (status.configured && !connected),
+        resyncAction: connected ? syncDeputy : status.configured ? async () => connectDeputy() : undefined
       });
     }
 
@@ -237,7 +285,7 @@ export function IntegrationHealthPage() {
     });
 
     return out;
-  }, [data, resyncSquare]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy]);
 
   const counts = useMemo(() => {
     const total = tiles.length;

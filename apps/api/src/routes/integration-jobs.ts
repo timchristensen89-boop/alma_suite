@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
+import { deputyService } from '../services/deputy.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
@@ -44,6 +45,16 @@ integrationJobsRouter.post('/square/sync', async (req, res, next) => {
 integrationJobsRouter.post('/xero/import', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledXeroImport(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Deputy sync — invoked by Cloud Scheduler. Runs employee, document, and
+// roster sync in order so document sync can match newly-imported employees.
+integrationJobsRouter.post('/deputy/sync', async (_req, res, next) => {
+  try {
+    res.json(await deputyService.runScheduledSync());
   } catch (error) {
     next(error);
   }

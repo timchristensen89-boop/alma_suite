@@ -37,7 +37,7 @@ import {
 } from '../lib/integration-crypto.js';
 import { HttpError } from '../lib/http.js';
 
-type Provider = 'SQUARE' | 'XERO';
+type Provider = 'SQUARE' | 'XERO' | 'DEPUTY';
 type SquareAccountKey = 'primary' | 'secondary';
 type ImportRunMode = 'MANUAL' | 'SCHEDULED';
 
@@ -100,6 +100,12 @@ const PROVIDER_COPY: Record<Provider, {
     label: 'Xero',
     powers: ['Invoices', 'bills', 'supplier spend', 'accounting status'],
     requiredSetup: ['Client ID', 'client secret', 'redirect URL', 'webhook key']
+  },
+  DEPUTY: {
+    key: 'deputy',
+    label: 'Deputy',
+    powers: ['Roster shifts', 'employee records', 'compliance documents'],
+    requiredSetup: ['Client ID', 'client secret', 'redirect URL']
   }
 };
 
@@ -175,7 +181,7 @@ function verifyMetaState(state: string) {
 
 function normaliseProvider(provider: string): Provider {
   const value = provider.trim().toUpperCase();
-  if (value === 'SQUARE' || value === 'XERO') return value;
+  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY') return value;
   throw new HttpError(404, 'Integration provider not found.');
 }
 
@@ -245,6 +251,31 @@ function squareMissingEnvVars(accountKey: SquareAccountKey, missing: SquareConfi
 }
 
 function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'primary') {
+  if (provider === 'DEPUTY') {
+    const configured = Boolean(
+      env.integrations.deputy.clientId &&
+        env.integrations.deputy.clientSecret &&
+        env.integrations.deputy.redirectUrl
+    );
+    return {
+      configured,
+      oauthConfigured: configured,
+      missingConfig: null,
+      missingLabels: [],
+      missingEnvVars: [
+        env.integrations.deputy.clientId ? null : 'DEPUTY_CLIENT_ID',
+        env.integrations.deputy.clientSecret ? null : 'DEPUTY_CLIENT_SECRET',
+        env.integrations.deputy.redirectUrl ? null : 'DEPUTY_REDIRECT_URL'
+      ].filter((value): value is string => Boolean(value)),
+      environment: null,
+      oauthBaseUrl: env.integrations.deputy.authorizeUrl,
+      apiBaseUrl: null,
+      apiVersion: null,
+      redirectUri: env.integrations.deputy.redirectUrl,
+      webhookUrl: null,
+      webhookConfigured: false
+    };
+  }
   if (provider === 'SQUARE') {
     const isProduction = env.integrations.square.environment === 'production';
     const missing = squareMissingConfig(accountKey);
@@ -778,6 +809,41 @@ async function xeroScheduledImportStatus(): Promise<XeroScheduledImportStatus> {
       'Unmatched or duplicate bills'
     ]
   };
+}
+
+type DeputyTokenResponse = {
+  access_token: string;
+  refresh_token: string;
+  expires_in?: number;
+  scope?: string;
+  endpoint?: string;
+};
+
+async function exchangeDeputyToken(code: string): Promise<DeputyTokenResponse> {
+  // Deputy's token endpoint expects x-www-form-urlencoded and returns the
+  // per-tenant API host in the `endpoint` field — we stash that on the
+  // connection metadata so every subsequent API call goes there.
+  const body = new URLSearchParams({
+    grant_type: 'authorization_code',
+    client_id: env.integrations.deputy.clientId,
+    client_secret: env.integrations.deputy.clientSecret,
+    redirect_uri: env.integrations.deputy.redirectUrl,
+    code,
+    scope: env.integrations.deputy.scope
+  });
+  const response = await fetch(env.integrations.deputy.tokenUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/x-www-form-urlencoded',
+      accept: 'application/json'
+    },
+    body
+  });
+  const json = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Deputy token exchange failed.', json);
+  }
+  return json as DeputyTokenResponse;
 }
 
 async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
@@ -2138,6 +2204,18 @@ function verifyXeroSignature(req: Request, rawBody: string) {
   return safeCompareBase64(signature, generated);
 }
 
+function verifyDeputySignature(req: Request) {
+  // Deputy posts an `Authorization` header with the secret we registered
+  // on the subscription. Constant-time compare against env config.
+  const provided = req.header('authorization') ?? req.header('x-deputy-signature') ?? '';
+  const expected = env.integrations.deputy.webhookSecret;
+  if (!expected) throw new HttpError(503, 'Deputy webhook verification is not configured.');
+  const bearer = /^Bearer\s+(.+)$/i.exec(provided);
+  const value = bearer?.[1] ?? provided;
+  if (!value || value.length !== expected.length) return false;
+  return crypto.timingSafeEqual(Buffer.from(value), Buffer.from(expected));
+}
+
 function rawBodyFromRequest(req: Request) {
   if (Buffer.isBuffer(req.body)) return req.body.toString('utf8');
   if (typeof req.body === 'string') return req.body;
@@ -2292,10 +2370,11 @@ export const integrationService = {
   },
 
   async status(): Promise<IntegrationStatusPayload> {
-    const [primarySquare, secondarySquare, xero, xeroScheduledImport, syncRuns] = await Promise.all([
+    const [primarySquare, secondarySquare, xero, deputy, xeroScheduledImport, syncRuns] = await Promise.all([
       providerStatus('SQUARE', 'primary'),
       providerStatus('SQUARE', 'secondary'),
       providerStatus('XERO'),
+      providerStatus('DEPUTY'),
       xeroScheduledImportStatus(),
       latestSyncRuns()
     ]);
@@ -2308,6 +2387,7 @@ export const integrationService = {
         secondary: secondarySquare
       },
       xero,
+      deputy,
       xeroScheduledImport,
       meta: metaStatus(),
       latestSyncRuns: syncRuns,
@@ -4688,14 +4768,30 @@ export const integrationService = {
   async runScheduledIntegrationImports(input: Record<string, unknown> = {}) {
     const includeSquare = input.includeSquare !== false;
     const includeXero = input.includeXero !== false;
-    const results: { square: unknown | null; xero: unknown | null } = { square: null, xero: null };
+    const includeDeputy = input.includeDeputy !== false;
+    const results: { square: unknown | null; xero: unknown | null; deputy: unknown | null } = {
+      square: null,
+      xero: null,
+      deputy: null
+    };
     if (includeSquare) results.square = await integrationService.runScheduledSquareSync(input.square && typeof input.square === 'object' && !Array.isArray(input.square) ? input.square as Record<string, unknown> : input);
     if (includeXero) results.xero = await integrationService.runScheduledXeroImport(input.xero && typeof input.xero === 'object' && !Array.isArray(input.xero) ? input.xero as Record<string, unknown> : input);
+    if (includeDeputy) {
+      // Lazy import keeps integration.service.ts free of any dependency
+      // on the Deputy sync handlers; the connection plumbing here just
+      // dispatches to deputy.service.ts which owns the actual sync work.
+      const { deputyService } = await import('./deputy.service.js');
+      results.deputy = await deputyService.runScheduledSync().catch((error) => ({
+        ok: false,
+        error: error instanceof Error ? error.message : 'Deputy sync failed'
+      }));
+    }
     return {
       generatedAt: new Date().toISOString(),
       mode: 'scheduled',
       includeSquare,
       includeXero,
+      includeDeputy,
       ...results
     };
   },
@@ -4739,6 +4835,18 @@ export const integrationService = {
       url.searchParams.set('state', rawState);
       url.searchParams.set('redirect_uri', env.integrations.square.redirectUrl);
       return { provider: 'square', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
+    }
+
+    if (provider === 'DEPUTY') {
+      // Deputy's OAuth handshake lives on the shared once.deputy.com host;
+      // the token response gives us the per-tenant subdomain to use after.
+      const url = new URL(env.integrations.deputy.authorizeUrl);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('client_id', env.integrations.deputy.clientId);
+      url.searchParams.set('redirect_uri', env.integrations.deputy.redirectUrl);
+      url.searchParams.set('scope', env.integrations.deputy.scope);
+      url.searchParams.set('state', rawState);
+      return { provider: 'deputy', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
     }
 
     const url = new URL('https://login.xero.com/identity/connect/authorize');
@@ -4862,6 +4970,53 @@ export const integrationService = {
             environment: providerConfig('SQUARE', squareAccountKey).environment,
             locationCount: locationResponse.locations?.length ?? 0
           }
+        });
+      } else if (provider === 'DEPUTY') {
+        const config = providerConfig('DEPUTY');
+        if (!config.oauthConfigured) throw new HttpError(503, 'Deputy OAuth configuration is missing.');
+        const token = await exchangeDeputyToken(code);
+        if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Deputy did not return OAuth tokens.');
+        if (!token.endpoint) throw new HttpError(502, 'Deputy did not return a per-tenant endpoint host.');
+        const existing = await connectionSelect('DEPUTY');
+        const connection = await prisma.integrationConnection.upsert({
+          where: { id: existing?.id ?? '__new_deputy_connection__' },
+          update: {
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            disconnectedAt: null,
+            lastError: null,
+            providerAccountName: token.endpoint,
+            providerAccountId: token.endpoint,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [env.integrations.deputy.scope],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { endpoint: token.endpoint },
+            updatedByUserId: stateRow.createdByUserId
+          },
+          create: {
+            provider: 'DEPUTY',
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            providerAccountName: token.endpoint,
+            providerAccountId: token.endpoint,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [env.integrations.deputy.scope],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { endpoint: token.endpoint },
+            updatedByUserId: stateRow.createdByUserId
+          }
+        });
+        await prisma.integrationSyncRun.create({
+          data: { provider, connectionId: connection.id, syncType: 'OAUTH_CALLBACK', status: 'SUCCESS', finishedAt: new Date() }
+        });
+        await recordEvent({
+          provider,
+          connectionId: connection.id,
+          eventType: 'CONNECTED',
+          summary: `Deputy connected — tenant endpoint ${token.endpoint}.`,
+          metadata: { endpoint: token.endpoint }
         });
       } else {
         const token = await exchangeXeroToken(code);
@@ -5129,5 +5284,13 @@ export const integrationService = {
       throw new HttpError(401, 'Invalid Xero webhook signature.');
     }
     return recordWebhook('XERO', rawBody);
+  },
+
+  async handleDeputyWebhook(req: Request) {
+    const rawBody = rawBodyFromRequest(req);
+    if (!verifyDeputySignature(req)) {
+      throw new HttpError(401, 'Invalid Deputy webhook signature.');
+    }
+    return recordWebhook('DEPUTY', rawBody);
   }
 };
