@@ -1653,23 +1653,51 @@ export const reserveService = {
     const cappedCovers = Math.min(reservation.covers, 9);
     const amountCents = data.amountCents ?? cappedCovers * DEFAULT_NO_SHOW_FEE_PER_COVER_CENTS;
 
+    // Concurrent-charge guard: claim the reservation by atomically
+    // stamping noShowFeePaymentIntentId with a placeholder. A second
+    // request hitting this endpoint at the same time will get
+    // RecordNotFound on the conditional update and bail before any
+    // Stripe call. The Stripe call itself also gets a reservation-
+    // scoped idempotency key so a retry can't double-charge even if
+    // the first call's response was lost.
+    const claimToken = `noshow-pending:${reservation.id}:${Date.now()}`;
     try {
-      const intent = await stripe.paymentIntents.create({
-        amount: amountCents,
-        currency: 'aud',
-        customer: reservation.stripeCustomerId,
-        payment_method: reservation.stripePaymentMethodId,
-        off_session: true,
-        confirm: true,
-        description: `Alma Reserve no-show fee · ${reservation.venue} · ${reservation.startsAt.toISOString()}`,
-        metadata: {
-          reservationId: reservation.id,
-          venue: reservation.venue,
-          covers: String(reservation.covers),
-          actorId: actor.id ?? '',
-          reason: data.reason?.trim() ?? ''
-        }
+      await prisma.reserveReservation.update({
+        where: {
+          id: reservation.id,
+          noShowFeePaymentIntentId: null
+        } as Prisma.ReserveReservationWhereUniqueInput,
+        data: { noShowFeePaymentIntentId: claimToken }
       });
+    } catch (claimError) {
+      if (claimError instanceof Prisma.PrismaClientKnownRequestError && claimError.code === 'P2025') {
+        throw new HttpError(409, 'No-show charge already in flight for this reservation.');
+      }
+      throw claimError;
+    }
+
+    try {
+      const intent = await stripe.paymentIntents.create(
+        {
+          amount: amountCents,
+          currency: 'aud',
+          customer: reservation.stripeCustomerId,
+          payment_method: reservation.stripePaymentMethodId,
+          off_session: true,
+          confirm: true,
+          description: `Alma Reserve no-show fee · ${reservation.venue} · ${reservation.startsAt.toISOString()}`,
+          metadata: {
+            reservationId: reservation.id,
+            venue: reservation.venue,
+            covers: String(reservation.covers),
+            actorId: actor.id ?? '',
+            reason: data.reason?.trim() ?? ''
+          }
+        },
+        {
+          idempotencyKey: `reserve-noshow:${reservation.id}`
+        }
+      );
       const status = intent.status === 'succeeded'
         ? 'succeeded'
         : intent.status === 'requires_action' || intent.status === 'requires_confirmation'
@@ -1685,6 +1713,11 @@ export const reserveService = {
           noShowFeeError: status === 'failed' ? intent.last_payment_error?.message ?? 'Charge failed.' : null
         }
       });
+      // Refresh derived guest insights (noShowCount, no-show-risk
+      // auto tags) so the marketing / CRM views reflect the new
+      // status without waiting for the next reservation update.
+      await prisma.$transaction((tx) => refreshGuestInsights(tx, reservation.guestId)).catch(() => undefined);
+      await recalculateAutoTagsForGuest(reservation.guestId).catch(() => undefined);
       return {
         reservationId: reservation.id,
         amountCents,
@@ -1699,9 +1732,11 @@ export const reserveService = {
         : error instanceof Error
           ? error.message
           : 'Stripe charge failed.';
+      // Release the claim so a retry from the manager works.
       await prisma.reserveReservation.update({
         where: { id: reservation.id },
         data: {
+          noShowFeePaymentIntentId: null,
           noShowFeeAmountCents: amountCents,
           noShowFeeError: message.slice(0, 500)
         }
