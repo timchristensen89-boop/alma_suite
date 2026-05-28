@@ -6827,8 +6827,12 @@
     gap: 16px;
   }
 
+  /* Keep .staff-settings-stats single-column on phones — the 640px
+     block above already collapses it to 1fr, and forcing it back to
+     2 columns at 480px reintroduced the cramped layout this pass is
+     meant to avoid. */
   .staff-settings-stats {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .staff-settings-grid-primary,
