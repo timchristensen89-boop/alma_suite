@@ -700,9 +700,11 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     locationCount: squareStatus?.locationCount ?? null,
     locations: squareStatus?.locations ?? undefined,
     lastLocationSyncAt: squareStatus?.lastLocationSyncAt ?? null,
+    // Tenant IDs match the masking treatment of providerAccountId on
+    // Xero. The raw id stays server-side — admin UI only needs the
+    // masked id + name to render the multi-tenant list.
     tenants: provider === 'XERO'
       ? xeroTenantsFromConnection(connection).map((tenant) => ({
-          id: tenant.id,
           idMasked: maskIdentifier(tenant.id),
           name: tenant.name,
           isPrimary: tenant.id === connection?.providerAccountId

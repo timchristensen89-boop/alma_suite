@@ -1915,9 +1915,10 @@ export type IntegrationProviderStatus = {
   lastLocationSyncAt?: string | null;
   // For multi-tenant providers (Xero) — every org/tenant on this single
   // OAuth connection. Empty array for single-tenant providers. Tenant
-  // IDs are masked the same way providerAccountId is masked.
+  // IDs are masked the same way providerAccountId is masked; the raw
+  // id stays server-side because the admin UI only needs the masked
+  // value to render the multi-tenant list.
   tenants?: Array<{
-    id: string;
     idMasked: string | null;
     name: string | null;
     isPrimary: boolean;
