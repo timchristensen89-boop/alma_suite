@@ -97,6 +97,30 @@ function Wordmark({ children, color, size = 80 }: { children: React.ReactNode; c
   );
 }
 
+/**
+ * Renders the Alma Group brand logo (alma-group-logo.png) on a card front.
+ * `tone="dark"` flips the logo to white via CSS filter so it reads on
+ * dark-background cards (Forest, Avalon, etc). `tone="light"` keeps the
+ * original black-on-transparent logo for light cards (Shell).
+ *
+ * `height` is in px and scales the logo while preserving aspect ratio
+ * (the PNG is ~2.1:1, 1063×507 — so width ≈ height × 2.1).
+ */
+function LogoMark({ height, tone }: { height: number; tone: 'dark' | 'light' }) {
+  return (
+    <img
+      src="/images/alma-group-logo.png"
+      alt="Alma Group"
+      style={{
+        height,
+        width: 'auto',
+        display: 'block',
+        filter: tone === 'dark' ? 'brightness(0) invert(1)' : 'none'
+      }}
+    />
+  );
+}
+
 function AmountPill({ amount, dark }: { amount: string; dark?: boolean }) {
   return (
     <span style={{
@@ -145,7 +169,7 @@ function ForestFront({ amount }: { amount: string }) {
           <AmountPill amount={amount} />
         </div>
         <div>
-          <Wordmark color={SHELL} size={50}>alma <span style={{ opacity: 0.7 }}>group</span></Wordmark>
+          <LogoMark height={48} tone="dark" />
           <div style={{ marginTop: 12, fontFamily: serifFont, fontStyle: 'italic', fontSize: '4%', color: 'rgba(245,220,206,0.78)', lineHeight: 1.35, maxWidth: '26ch' }}>
             &ldquo;Slow afternoons, a long table, somebody else&rsquo;s cooking.&rdquo;
           </div>
@@ -191,7 +215,7 @@ function ShellFront({ amount }: { amount: string }) {
           <Eyebrow color="rgba(61,42,42,0.55)" size={10}>For dinner, on us</Eyebrow>
           <AmountPill amount={amount} dark />
         </div>
-        <Wordmark color={COCOA_DEEP} size={64}>alma <span style={{ opacity: 0.7 }}>group</span></Wordmark>
+        <LogoMark height={56} tone="light" />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <Eyebrow color="rgba(61,42,42,0.55)" size={9} tracking="0.30em">Restaurant &amp; bar</Eyebrow>
           <Eyebrow color="rgba(61,42,42,0.4)" size={9} tracking="0.30em">Avalon · Newport</Eyebrow>
@@ -231,8 +255,8 @@ function AvalonFront({ amount }: { amount: string }) {
       <div style={{ position: 'relative', padding: '8% 9%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
         <Eyebrow color={SHELL} size={10}>Restaurant &amp; Bar · Avalon</Eyebrow>
         <div>
-          <Wordmark color={SHELL} size={84}>alma</Wordmark>
-          <div style={{ marginTop: 6, fontFamily: sansFont, fontWeight: 700, fontSize: 10, letterSpacing: '0.40em', color: 'rgba(245,220,206,0.78)', textTransform: 'uppercase' }}>
+          <LogoMark height={64} tone="dark" />
+          <div style={{ marginTop: 8, fontFamily: sansFont, fontWeight: 700, fontSize: 10, letterSpacing: '0.40em', color: 'rgba(245,220,206,0.78)', textTransform: 'uppercase' }}>
             Gift card · for the corner
           </div>
         </div>
