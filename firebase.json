@@ -428,7 +428,7 @@
       ]
     },
     {
-      "site": "alma-venue-ipad",
+      "site": "alma-ipad",
       "public": "apps/venue-ipad-dashboard/dist",
       "ignore": [
         "firebase.json",
