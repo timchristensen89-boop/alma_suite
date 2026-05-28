@@ -344,6 +344,37 @@
   align-items: center;
 }
 
+.staff-quick-clock {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.staff-quick-clock-status {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.staff-quick-clock-status strong {
+  font-size: clamp(20px, 3vw, 28px);
+  line-height: 1.15;
+}
+
+.staff-quick-clock-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.staff-quick-clock-actions .btn {
+  min-height: 52px;
+  padding-inline: 26px;
+  font-size: 16px;
+}
+
 .staff-clock-card > span,
 .staff-mobile-shift-card > span:first-child,
 .staff-mobile-comms-list > div {
