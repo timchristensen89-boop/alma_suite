@@ -2661,3 +2661,110 @@
   .alma-giftcards-quickinfo__sep { display: none; }
   .alma-giftcards-footer__row { grid-template-columns: 1fr 1fr; }
 }
+
+/* =========================================================
+   A4 print stylesheet for the printable gift card
+   (apps/giftcards-web /print?code=...). Task #6 from the
+   follow-up list. The screen layout already centres a single
+   card; print mode locks page size, hides everything except
+   the card section, and centres at A4 portrait with sensible
+   margins so the result prints/save-as-PDFs cleanly.
+
+   The chosen artwork (PR #10 — GiftCardArt renderer) is what
+   prints at the top of the card section. Without PR #10 the
+   page still prints cleanly; just with the legacy artwork.
+   ========================================================= */
+@page {
+  size: A4 portrait;
+  margin: 16mm;
+}
+
+@media print {
+  /* Hide everything except the print page so 'Save as PDF' is
+     exactly the card. Use a body-level reset because the
+     giftcards app shares a body with the suite chrome. */
+  body {
+    background: #FFFFFF !important;
+    color: #000000;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* Hide the in-page action buttons + nav + any banner. */
+  .giftcards-print-actions,
+  .giftcards-print-page > .error-text,
+  .alma-giftcards-nav,
+  .alma-giftcards-quickinfo,
+  .alma-giftcards-paid__actions,
+  .alma-giftcards-staff-link {
+    display: none !important;
+  }
+
+  /* The page wrapper becomes a simple centred frame so the
+     card sits on the A4 sheet with the @page margins. */
+  .giftcards-print-page {
+    min-height: 0;
+    padding: 0;
+    background: #FFFFFF;
+    align-content: start;
+    gap: 0;
+  }
+
+  .giftcards-print-card {
+    width: 100%;
+    max-width: 178mm;
+    aspect-ratio: auto;
+    padding: 24mm 18mm;
+    border: 1px solid #d4d4d4;
+    border-radius: 0;
+    background: #FFFFFF;
+    box-shadow: none;
+    color: #111827;
+    page-break-inside: avoid;
+  }
+
+  /* The chosen artwork sits at the top — give it a sane
+     printed width so it doesn't dominate the page. */
+  .giftcards-print-card > div[style*="aspect-ratio"] {
+    max-width: 120mm !important;
+    margin: 0 auto 14mm !important;
+  }
+
+  .giftcards-print-card h1 {
+    text-align: center;
+    font-size: 36pt;
+  }
+
+  .giftcards-print-card p,
+  .giftcards-print-card blockquote {
+    text-align: center;
+  }
+
+  .giftcards-print-code {
+    margin: 8mm auto;
+    font-size: 18pt;
+  }
+
+  .giftcards-print-qr {
+    width: 36mm;
+    height: 36mm;
+    margin: 4mm auto;
+  }
+
+  .giftcards-print-card footer {
+    justify-content: center;
+    border-top: 1px solid #d4d4d4;
+    padding-top: 6mm;
+    margin-top: 8mm;
+    color: #4b5563;
+  }
+
+  /* Stop background images / gradients from being washed out
+     when the OS print dialog defaults to 'no backgrounds'. */
+  .giftcards-print-card,
+  .giftcards-print-code,
+  .giftcards-print-qr {
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+}
