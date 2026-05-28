@@ -699,7 +699,17 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     actionDisabled: Boolean(reason),
     locationCount: squareStatus?.locationCount ?? null,
     locations: squareStatus?.locations ?? undefined,
-    lastLocationSyncAt: squareStatus?.lastLocationSyncAt ?? null
+    lastLocationSyncAt: squareStatus?.lastLocationSyncAt ?? null,
+    // Tenant IDs match the masking treatment of providerAccountId on
+    // Xero. The raw id stays server-side — admin UI only needs the
+    // masked id + name to render the multi-tenant list.
+    tenants: provider === 'XERO'
+      ? xeroTenantsFromConnection(connection).map((tenant) => ({
+          idMasked: maskIdentifier(tenant.id),
+          name: tenant.name,
+          isPrimary: tenant.id === connection?.providerAccountId
+        }))
+      : undefined
   };
 }
 
@@ -1751,11 +1761,16 @@ async function xeroGetJson<T>(
     connection: IntegrationConnection;
     requireTenant?: boolean;
     retryAfterUnauthorized?: boolean;
+    // When set, overrides the connection's default tenant for this call.
+    // Used by the scheduler to iterate across all tenants on a single
+    // OAuth connection (Xero lets one auth grant access to multiple orgs).
+    tenantId?: string;
   }
 ): Promise<{ data: T; connection: IntegrationConnection; tokenStatus: 'healthy' | 'refreshed' }> {
   const { accessToken, connection, tokenStatus } = await validXeroToken(input.connection);
   const requireTenant = input.requireTenant ?? true;
-  if (requireTenant && !connection.providerAccountId) {
+  const tenantId = input.tenantId ?? connection.providerAccountId ?? '';
+  if (requireTenant && !tenantId) {
     throw new HttpError(409, 'Xero tenant is not selected.');
   }
 
@@ -1764,7 +1779,7 @@ async function xeroGetJson<T>(
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json',
-      ...(requireTenant ? { 'xero-tenant-id': connection.providerAccountId ?? '' } : {})
+      ...(requireTenant ? { 'xero-tenant-id': tenantId } : {})
     }
   });
 
@@ -1773,7 +1788,8 @@ async function xeroGetJson<T>(
     return xeroGetJson<T>(path, {
       connection: refreshed,
       requireTenant,
-      retryAfterUnauthorized: false
+      retryAfterUnauthorized: false,
+      tenantId: input.tenantId
     });
   }
 
@@ -1811,11 +1827,11 @@ function clampLimit(value: unknown, fallback: number, max: number) {
   return Math.max(1, Math.min(max, Math.floor(parsed)));
 }
 
-async function xeroContacts(limit: number) {
+async function xeroContacts(limit: number, tenantId?: string) {
   const connection = await connectedXeroConnection();
   const response = await xeroGetJson<{ Contacts?: XeroContact[] }>(
     '/api.xro/2.0/Contacts?includeArchived=false&page=1',
-    { connection }
+    { connection, tenantId }
   );
   return {
     connection: response.connection,
@@ -1833,12 +1849,12 @@ function defaultBillDates(query: Record<string, unknown>) {
   };
 }
 
-async function xeroBills(query: Record<string, unknown>, limit: number) {
+async function xeroBills(query: Record<string, unknown>, limit: number, tenantId?: string) {
   const connection = await connectedXeroConnection();
   const where = encodeURIComponent('Type=="ACCPAY"');
   const response = await xeroGetJson<{ Invoices?: XeroInvoice[] }>(
     `/api.xro/2.0/Invoices?where=${where}&order=Date%20DESC&page=1`,
-    { connection }
+    { connection, tenantId }
   );
   const { start, end } = defaultBillDates(query);
   const statuses = optionalText(query.statuses)
@@ -1953,21 +1969,55 @@ function billPreview(
   };
 }
 
-async function fetchXeroTenant(accessToken: string) {
+async function fetchXeroTenants(accessToken: string): Promise<Array<{ id: string; name: string | null }>> {
   const response = await fetch('https://api.xero.com/connections', {
     headers: {
       'Authorization': `Bearer ${accessToken}`,
       'Accept': 'application/json'
     }
   });
+  if (!response.ok) return [];
+  const payload = await response.json().catch(() => []);
+  if (!Array.isArray(payload)) return [];
+  return payload
+    .map((entry) => {
+      if (!entry || typeof entry !== 'object') return null;
+      const id = typeof (entry as { tenantId?: unknown }).tenantId === 'string'
+        ? (entry as { tenantId: string }).tenantId
+        : null;
+      if (!id) return null;
+      const name = typeof (entry as { tenantName?: unknown }).tenantName === 'string'
+        ? (entry as { tenantName: string }).tenantName
+        : null;
+      return { id, name };
+    })
+    .filter((entry): entry is { id: string; name: string | null } => Boolean(entry));
+}
 
-  if (!response.ok) return null;
-  const tenants = await response.json().catch(() => []);
-  const tenant = Array.isArray(tenants) ? tenants[0] : null;
-  if (!tenant || typeof tenant !== 'object') return null;
+function xeroTenantsFromConnection(connection: IntegrationConnection | null | undefined): Array<{ id: string; name: string | null }> {
+  const raw = metadataRecord(connection?.metadata).xeroTenants;
+  if (!Array.isArray(raw)) return [];
+  const result: Array<{ id: string; name: string | null }> = [];
+  for (const entry of raw) {
+    const record = metadataRecord(entry);
+    const id = typeof record.id === 'string' ? record.id : null;
+    if (!id) continue;
+    const name = typeof record.name === 'string' ? record.name : null;
+    result.push({ id, name });
+  }
+  return result;
+}
+
+function xeroMetadata(input: {
+  tenants: Array<{ id: string; name: string | null }>;
+  existing?: unknown;
+  syncedAt?: Date;
+}): Prisma.InputJsonObject {
   return {
-    id: typeof tenant.tenantId === 'string' ? tenant.tenantId : null,
-    name: typeof tenant.tenantName === 'string' ? tenant.tenantName : null
+    ...metadataRecord(input.existing),
+    xeroTenants: input.tenants.map((tenant) => ({ id: tenant.id, name: tenant.name })),
+    xeroTenantCount: input.tenants.length,
+    ...(input.syncedAt ? { xeroTenantsSyncedAt: input.syncedAt.toISOString() } : {})
   };
 }
 
@@ -3485,8 +3535,9 @@ export const integrationService = {
 
   async previewXeroSupplierContacts(query: Record<string, unknown>): Promise<XeroSupplierContactsPreviewPayload> {
     const limit = clampLimit(query.limit, 100, 500);
+    const tenantId = optionalText(query.tenantId) ?? undefined;
     const [{ contacts, connection }, suppliers] = await Promise.all([
-      xeroContacts(limit),
+      xeroContacts(limit, tenantId),
       prisma.supplier.findMany({
         where: { status: 'ACTIVE' },
         select: { id: true, name: true, email: true },
@@ -3514,11 +3565,11 @@ export const integrationService = {
   async importXeroSupplierContacts(
     input: unknown,
     actor: AuthUser,
-    options?: { syncType?: ImportRunMode; eventType?: string }
+    options?: { syncType?: ImportRunMode; eventType?: string; tenantId?: string }
   ): Promise<XeroSupplierContactsImportResult> {
     const data = xeroSupplierContactsImportInputSchema.parse(input);
     const limit = data.limit ?? 500;
-    const { contacts, connection } = await xeroContacts(limit);
+    const { contacts, connection } = await xeroContacts(limit, options?.tenantId);
     const suppliers = await prisma.supplier.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, name: true, email: true },
@@ -3646,8 +3697,9 @@ export const integrationService = {
 
   async previewXeroSupplierBills(query: Record<string, unknown>): Promise<XeroSupplierBillsPreviewPayload> {
     const limit = clampLimit(query.limit, 30, 100);
+    const tenantId = optionalText(query.tenantId) ?? undefined;
     const [{ bills, connection, start, end }, suppliers, existingInvoices] = await Promise.all([
-      xeroBills(query, limit),
+      xeroBills(query, limit, tenantId),
       prisma.supplier.findMany({
         where: { status: 'ACTIVE' },
         select: { id: true, name: true, email: true },
@@ -3696,7 +3748,7 @@ export const integrationService = {
   async importXeroSupplierBills(
     input: unknown,
     actor: AuthUser,
-    options?: { syncType?: ImportRunMode; eventType?: string }
+    options?: { syncType?: ImportRunMode; eventType?: string; tenantId?: string }
   ): Promise<XeroSupplierBillsImportResult> {
     const data = xeroSupplierBillsImportInputSchema.parse(input);
     const limit = data.limit ?? 100;
@@ -3704,7 +3756,7 @@ export const integrationService = {
       startDate: data.startDate,
       endDate: data.endDate,
       limit
-    }, limit);
+    }, limit, options?.tenantId);
     const suppliers = await prisma.supplier.findMany({
       where: { status: 'ACTIVE' },
       select: { id: true, name: true, email: true },
@@ -4352,155 +4404,152 @@ export const integrationService = {
     const contactsLimit = clampLimit(input.contactsLimit, DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT, 500);
     const includeContacts = input.includeContacts !== false;
     const includeBills = input.includeBills !== false;
-    const warnings: string[] = [];
 
-    let contacts: XeroSupplierContactsImportResult | null = null;
-    try {
-      if (includeContacts) {
-        contacts = await integrationService.importXeroSupplierContacts(
-          { importAllCandidates: true, limit: contactsLimit },
-          integrationSchedulerActor,
-          { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_CONTACTS_IMPORTED' }
-        );
-      }
-    } catch (error) {
-      const connection = await connectionSelect('XERO').catch(() => null);
-      if (connection) {
-        await prisma.integrationSyncRun.create({
-          data: {
-            provider: 'XERO',
-            connectionId: connection.id,
-            syncType: 'SCHEDULED',
-            status: 'ERROR',
-            finishedAt: new Date(),
-            errorSummary: safeErrorMessage(error).slice(0, 500)
-          }
-        });
-        await prisma.integrationConnection.update({
-          where: { id: connection.id },
-          data: {
-            lastSyncAt: new Date(),
-            lastSyncStatus: 'ERROR',
-            lastError: safeErrorMessage(error).slice(0, 500)
-          }
-        });
-      }
-      throw error;
+    // Multi-tenant: a Xero OAuth grant can cover multiple orgs (e.g.
+    // both "Alma Avalon" and "St Alma" on a single connection). Iterate
+    // every tenant on the connection. Fall back to the primary tenant
+    // for older connections that pre-date the metadata.xeroTenants
+    // capture (i.e. connections authorised before this rollout).
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const targets = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+
+    if (targets.length === 0) {
+      throw new HttpError(409, 'No Xero tenants are connected.');
     }
 
-    let bills: XeroSupplierBillsImportResult | null = null;
-    let billCandidates = 0;
-    let billIds: string[] = [];
-    try {
-      if (includeBills) {
-        const end = generatedAt;
-        const start = new Date(end);
-        start.setDate(start.getDate() - lookbackDays);
-        const startDate = isoDateOnly(start);
-        const endDate = isoDateOnly(end);
-        const preview = await integrationService.previewXeroSupplierBills({
-          startDate,
-          endDate,
-          limit: billsLimit,
-          statuses: 'AUTHORISED,PAID'
-        });
-        const importableBills = preview.bills.filter((bill) =>
-          bill.duplicateStatus === 'new' &&
-          bill.supplierMatchStatus === 'matched' &&
-          bill.lineCount > 0
-        );
-        billCandidates = preview.bills.length;
-        billIds = importableBills.map((bill) => bill.xeroInvoiceId);
+    const perTenant: Array<{
+      tenantId: string;
+      tenantName: string | null;
+      contacts: XeroSupplierContactsImportResult | null;
+      bills: XeroSupplierBillsImportResult | null;
+      billCandidates: number;
+      billIdsImported: number;
+      warnings: string[];
+      error: string | null;
+    }> = [];
 
-        const skippedForReview = preview.bills.length - importableBills.length;
-        if (skippedForReview > 0) {
-          warnings.push(`${skippedForReview} Xero bills were left for manual review because they were duplicates, missing supplier matches, or had no lines.`);
-        }
+    for (const tenant of targets) {
+      const tenantWarnings: string[] = [];
+      let contactsResult: XeroSupplierContactsImportResult | null = null;
+      let billsResult: XeroSupplierBillsImportResult | null = null;
+      let billCandidates = 0;
+      let billIds: string[] = [];
+      let tenantError: string | null = null;
 
-        if (billIds.length > 0) {
-          bills = await integrationService.importXeroSupplierBills(
-            {
-              billIds,
-              startDate,
-              endDate,
-              limit: billsLimit,
-              allowCreateSuppliers: false,
-              confirmationText: 'IMPORT XERO BILLS'
-            },
+      try {
+        if (includeContacts) {
+          contactsResult = await integrationService.importXeroSupplierContacts(
+            { importAllCandidates: true, limit: contactsLimit },
             integrationSchedulerActor,
-            { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_BILLS_IMPORTED' }
+            { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_CONTACTS_IMPORTED', tenantId: tenant.id }
           );
-        } else {
-          const connection = await connectedXeroConnection();
-          const now = new Date();
-          const errorSummary = warnings.length ? warnings.slice(0, 5).join(' | ') : 'No new matched Xero supplier bills to import.';
-          await prisma.integrationSyncRun.create({
-            data: {
-              provider: 'XERO',
-              connectionId: connection.id,
-              syncType: 'SCHEDULED',
-              status: 'SUCCESS',
-              finishedAt: now,
-              recordsImported: 0,
-              recordsUpdated: 0,
-              errorSummary
-            }
-          });
-          await prisma.integrationConnection.update({
-            where: { id: connection.id },
-            data: {
-              lastSyncAt: now,
-              lastSyncStatus: 'SUCCESS',
-              lastError: errorSummary
-            }
-          });
-          await recordEvent({
-            provider: 'XERO',
-            connectionId: connection.id,
-            eventType: 'SCHEDULED_SUPPLIER_BILLS_SKIPPED',
-            summary: 'Scheduled Xero supplier bill import found no new matched bills to import.',
-            actor: integrationSchedulerActor,
-            metadata: {
-              lookbackDays,
-              billsLimit,
-              billsPreviewed: preview.bills.length,
-              skippedForReview
-            }
-          });
-          bills = {
-            generatedAt: new Date().toISOString(),
-            importedCount: 0,
-            skippedCount: skippedForReview,
-            duplicateCount: preview.bills.filter((bill) => bill.duplicateStatus !== 'new').length,
-            supplierCreatedCount: 0,
-            lineCount: 0,
-            warnings
-          };
         }
-      }
-    } catch (error) {
-      const connection = await connectionSelect('XERO').catch(() => null);
-      if (connection) {
-        await prisma.integrationSyncRun.create({
-          data: {
-            provider: 'XERO',
-            connectionId: connection.id,
-            syncType: 'SCHEDULED',
-            status: 'ERROR',
-            finishedAt: new Date(),
-            errorSummary: safeErrorMessage(error).slice(0, 500)
+        if (includeBills) {
+          const end = generatedAt;
+          const start = new Date(end);
+          start.setDate(start.getDate() - lookbackDays);
+          const startDate = isoDateOnly(start);
+          const endDate = isoDateOnly(end);
+          const preview = await integrationService.previewXeroSupplierBills({
+            startDate,
+            endDate,
+            limit: billsLimit,
+            statuses: 'AUTHORISED,PAID',
+            tenantId: tenant.id
+          });
+          const importableBills = preview.bills.filter((bill) =>
+            bill.duplicateStatus === 'new' &&
+            bill.supplierMatchStatus === 'matched' &&
+            bill.lineCount > 0
+          );
+          billCandidates = preview.bills.length;
+          billIds = importableBills.map((bill) => bill.xeroInvoiceId);
+          const skippedForReview = preview.bills.length - importableBills.length;
+          if (skippedForReview > 0) {
+            tenantWarnings.push(`${skippedForReview} ${tenant.name ?? tenant.id} bills were left for manual review (duplicate, no supplier match, or no line items).`);
           }
-        });
-        await prisma.integrationConnection.update({
-          where: { id: connection.id },
-          data: {
-            lastSyncAt: new Date(),
-            lastSyncStatus: 'ERROR',
-            lastError: safeErrorMessage(error).slice(0, 500)
+          if (billIds.length > 0) {
+            billsResult = await integrationService.importXeroSupplierBills(
+              {
+                billIds,
+                startDate,
+                endDate,
+                limit: billsLimit,
+                allowCreateSuppliers: false,
+                confirmationText: 'IMPORT XERO BILLS'
+              },
+              integrationSchedulerActor,
+              { syncType: 'SCHEDULED', eventType: 'SCHEDULED_SUPPLIER_BILLS_IMPORTED', tenantId: tenant.id }
+            );
+          } else {
+            billsResult = {
+              generatedAt: new Date().toISOString(),
+              importedCount: 0,
+              skippedCount: skippedForReview,
+              duplicateCount: preview.bills.filter((bill) => bill.duplicateStatus !== 'new').length,
+              supplierCreatedCount: 0,
+              lineCount: 0,
+              warnings: tenantWarnings
+            };
           }
-        });
+        }
+      } catch (error) {
+        tenantError = safeErrorMessage(error);
       }
-      throw error;
+
+      perTenant.push({
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        contacts: contactsResult,
+        bills: billsResult,
+        billCandidates,
+        billIdsImported: billIds.length,
+        warnings: tenantWarnings,
+        error: tenantError
+      });
+    }
+
+    // Record one combined sync run row + update connection state. Per-
+    // tenant detail is in the metadata so admin UI can show it.
+    const completedAt = new Date();
+    const errorMessages = perTenant.filter((entry) => entry.error).map((entry) => `${entry.tenantName ?? entry.tenantId}: ${entry.error}`);
+    const allWarnings = perTenant.flatMap((entry) => entry.warnings);
+    const totalImported = perTenant.reduce((sum, entry) => sum + (entry.bills?.importedCount ?? 0), 0);
+    const totalContactsCreated = perTenant.reduce((sum, entry) => sum + (entry.contacts?.createdCount ?? 0), 0);
+    const status = errorMessages.length > 0 && perTenant.every((entry) => entry.error) ? 'ERROR' : 'SUCCESS';
+
+    await prisma.integrationSyncRun.create({
+      data: {
+        provider: 'XERO',
+        connectionId: connection.id,
+        syncType: 'SCHEDULED',
+        status,
+        finishedAt: completedAt,
+        recordsImported: totalImported,
+        recordsUpdated: totalContactsCreated,
+        errorSummary: [...errorMessages, ...allWarnings].slice(0, 5).join(' | ').slice(0, 500) || null
+      }
+    });
+    await prisma.integrationConnection.update({
+      where: { id: connection.id },
+      data: {
+        lastSyncAt: completedAt,
+        lastSyncStatus: status,
+        lastError: errorMessages.length > 0 ? errorMessages.join(' | ').slice(0, 500) : null
+      }
+    });
+
+    // If every single tenant failed, surface the first error to the
+    // caller — scheduled jobs treat a thrown error as a retryable
+    // outage. Partial success returns normally and the UI / warnings
+    // expose which tenants didn't complete.
+    if (status === 'ERROR') {
+      throw new HttpError(502, `Xero scheduled import failed for all tenants: ${errorMessages.join(' | ')}`);
     }
 
     return {
@@ -4512,11 +4561,9 @@ export const integrationService = {
       billsLimit,
       includeContacts,
       includeBills,
-      contacts,
-      bills,
-      billCandidates,
-      billIdsImported: billIds.length,
-      warnings
+      tenants: perTenant,
+      tenantCount: perTenant.length,
+      warnings: allWarnings
     };
   },
 
@@ -4819,32 +4866,46 @@ export const integrationService = {
       } else {
         const token = await exchangeXeroToken(code);
         if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Xero did not return OAuth tokens.');
-        const tenant = await fetchXeroTenant(token.access_token);
+        // Xero lets a single OAuth grant cover multiple tenants when the
+        // user picks more than one org on the consent screen. Store ALL
+        // of them on metadata so the scheduler can iterate; the primary
+        // (first) tenant keeps the providerAccountId slot for back-compat
+        // with all the existing single-tenant call sites.
+        const tenants = await fetchXeroTenants(token.access_token);
+        const primaryTenant = tenants[0] ?? null;
+        const existingConnection = await connectionSelect('XERO');
+        const metadataPayload = xeroMetadata({
+          tenants,
+          existing: existingConnection?.metadata,
+          syncedAt: new Date()
+        });
         const connection = await prisma.integrationConnection.upsert({
-          where: { id: (await connectionSelect('XERO'))?.id ?? '__new_xero_connection__' },
+          where: { id: existingConnection?.id ?? '__new_xero_connection__' },
           update: {
             status: 'CONNECTED',
             connectedAt: new Date(),
             disconnectedAt: null,
             lastError: null,
-            providerAccountId: tenant?.id ?? null,
-            providerAccountName: tenant?.name ?? null,
+            providerAccountId: primaryTenant?.id ?? null,
+            providerAccountName: primaryTenant?.name ?? null,
             scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : XERO_SCOPES,
             tokenEncrypted: encryptIntegrationSecret(token.access_token),
             refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
             tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: metadataPayload,
             updatedByUserId: stateRow.createdByUserId
           },
           create: {
             provider: 'XERO',
             status: 'CONNECTED',
             connectedAt: new Date(),
-            providerAccountId: tenant?.id ?? null,
-            providerAccountName: tenant?.name ?? null,
+            providerAccountId: primaryTenant?.id ?? null,
+            providerAccountName: primaryTenant?.name ?? null,
             scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : XERO_SCOPES,
             tokenEncrypted: encryptIntegrationSecret(token.access_token),
             refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
             tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: metadataPayload,
             updatedByUserId: stateRow.createdByUserId
           }
         });
