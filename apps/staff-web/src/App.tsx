@@ -635,6 +635,18 @@ function canAccessSettings(user: ReturnType<typeof useAuth>['user']) {
   );
 }
 
+function canManageRosterAreas(user: ReturnType<typeof useAuth>['user']) {
+  const permissions = staffPermissions(user);
+  return Boolean(
+    user &&
+    (user.isAdmin ||
+      user.role === 'ADMIN' ||
+      user.role === 'MANAGER' ||
+      permissions.admin ||
+      permissions.rosterAreaManage)
+  );
+}
+
 function canAccessStaffHr(user: ReturnType<typeof useAuth>['user']) {
   const permissions = staffPermissions(user);
   return Boolean(
@@ -6507,8 +6519,8 @@ function AdminPage({
 
   function addAdminRosterArea() {
     setMessageTarget('roster-area-add');
-    if (!user?.isAdmin) {
-      setMessage('Only admin users can add roster areas.');
+    if (!canManageRosterAreas(user)) {
+      setMessage('You need manager or admin access to add roster areas.');
       return;
     }
 
@@ -6536,9 +6548,9 @@ function AdminPage({
 
   function toggleAdminRosterAreaHidden(areaName: string) {
     const target = `roster-area:${areaName}`;
-    if (!user?.isAdmin) {
+    if (!canManageRosterAreas(user)) {
       setMessageTarget(target);
-      setMessage('Only admin users can update roster areas.');
+      setMessage('You need manager or admin access to update roster areas.');
       return;
     }
 
@@ -6558,9 +6570,9 @@ function AdminPage({
 
   function moveAdminRosterArea(areaName: string, direction: -1 | 1) {
     const target = `roster-area:${areaName}`;
-    if (!user?.isAdmin) {
+    if (!canManageRosterAreas(user)) {
       setMessageTarget(target);
-      setMessage('Only admin users can reorder roster areas.');
+      setMessage('You need manager or admin access to reorder roster areas.');
       return;
     }
 
@@ -6579,9 +6591,9 @@ function AdminPage({
 
   function deleteAdminRosterArea(areaName: string) {
     const target = `roster-area:${areaName}`;
-    if (!user?.isAdmin) {
+    if (!canManageRosterAreas(user)) {
       setMessageTarget(target);
-      setMessage('Only admin users can delete roster areas.');
+      setMessage('You need manager or admin access to delete roster areas.');
       return;
     }
 
@@ -6969,7 +6981,7 @@ function AdminPage({
               onChange={(event) => setNewRosterAreaName(event.currentTarget.value)}
               placeholder="Example: Host, Pass, Prep"
             />
-            <Button type="button" variant="secondary" disabled={!user?.isAdmin} onClick={addAdminRosterArea}>
+            <Button type="button" variant="secondary" disabled={!canManageRosterAreas(user)} onClick={addAdminRosterArea}>
               Add area
             </Button>
             <ActionFeedback
@@ -6990,16 +7002,16 @@ function AdminPage({
                     <small>{shiftCount} shifts</small>
                   </span>
                   <span className="roster-area-manager-actions">
-                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin || index === 0} onClick={() => moveAdminRosterArea(areaName, -1)}>
+                    <Button type="button" size="sm" variant="ghost" disabled={!canManageRosterAreas(user) || index === 0} onClick={() => moveAdminRosterArea(areaName, -1)}>
                       Up
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin || index === adminRosterAreas.length - 1} onClick={() => moveAdminRosterArea(areaName, 1)}>
+                    <Button type="button" size="sm" variant="ghost" disabled={!canManageRosterAreas(user) || index === adminRosterAreas.length - 1} onClick={() => moveAdminRosterArea(areaName, 1)}>
                       Down
                     </Button>
-                    <Button type="button" size="sm" variant="secondary" disabled={!user?.isAdmin} onClick={() => toggleAdminRosterAreaHidden(areaName)}>
+                    <Button type="button" size="sm" variant="secondary" disabled={!canManageRosterAreas(user)} onClick={() => toggleAdminRosterAreaHidden(areaName)}>
                       {isHidden ? 'Show' : 'Hide'}
                     </Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={!user?.isAdmin} onClick={() => deleteAdminRosterArea(areaName)}>
+                    <Button type="button" size="sm" variant="ghost" disabled={!canManageRosterAreas(user)} onClick={() => deleteAdminRosterArea(areaName)}>
                       Delete
                     </Button>
                     <ActionFeedback

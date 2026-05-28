@@ -147,7 +147,7 @@ export function IntegrationHealthPage() {
           resyncAction: connected ? () => resyncSquare(accountKey) : undefined
         });
       }
-    } else {
+    } else if (data.square) {
       const status = data.square;
       const connected = !!status.connected;
       const hasError = !!status.lastError;
@@ -166,7 +166,7 @@ export function IntegrationHealthPage() {
     }
 
     // Xero
-    {
+    if (data.xero) {
       const status = data.xero;
       const connected = !!status.connected;
       const hasError = !!status.lastError;
@@ -185,7 +185,7 @@ export function IntegrationHealthPage() {
 
     // Deputy — roster + employees + documents from the Deputy API.
     // Re-sync runs all three handlers; connect kicks off OAuth if not connected.
-    {
+    if (data.deputy) {
       const status = data.deputy;
       const connected = !!status.connected;
       const hasError = !!status.lastError;
@@ -225,6 +225,7 @@ export function IntegrationHealthPage() {
     // Govee — real lastSyncedAt from temperatureIntegration row.
     // If the API key is set but no sync has run yet, the tile shows
     // "Connected" with "Never" until Cloud Scheduler or a manual sync fires.
+    if (data.govee) {
     const goveeHasError = Boolean(data.govee.lastError);
     out.push({
       id: 'govee',
@@ -248,32 +249,37 @@ export function IntegrationHealthPage() {
       ].filter(Boolean).join(' · ') || null,
       canResync: false
     });
+    }
 
     // Email service — push-only, no sync timestamp applies.
-    out.push({
-      id: 'email',
-      name: 'Email service',
-      provider: 'Notifications, gift cards, comms',
-      status: data.email.status === 'CONFIGURED' ? 'Connected' : 'Not configured',
-      tone: data.email.status === 'CONFIGURED' ? 'positive' : 'danger',
-      lastSyncAt: 'n/a',
-      lastError: null,
-      detail: data.email.provider !== 'none' ? `Provider: ${data.email.provider} · push-only` : null,
-      canResync: false
-    });
+    if (data.email) {
+      out.push({
+        id: 'email',
+        name: 'Email service',
+        provider: 'Notifications, gift cards, comms',
+        status: data.email.status === 'CONFIGURED' ? 'Connected' : 'Not configured',
+        tone: data.email.status === 'CONFIGURED' ? 'positive' : 'danger',
+        lastSyncAt: 'n/a',
+        lastError: null,
+        detail: data.email.provider !== 'none' ? `Provider: ${data.email.provider} · push-only` : null,
+        canResync: false
+      });
+    }
 
     // Token storage (encryption key) — stateless secret, nothing to sync.
-    out.push({
-      id: 'token-storage',
-      name: 'Token storage',
-      provider: 'Encryption key for connected integrations',
-      status: data.tokenStorage.configured ? 'Configured' : 'Not configured',
-      tone: data.tokenStorage.configured ? 'positive' : 'danger',
-      lastSyncAt: 'n/a',
-      lastError: null,
-      detail: `Required env var: ${data.tokenStorage.requiredEnvVar} · stateless`,
-      canResync: false
-    });
+    if (data.tokenStorage) {
+      out.push({
+        id: 'token-storage',
+        name: 'Token storage',
+        provider: 'Encryption key for connected integrations',
+        status: data.tokenStorage.configured ? 'Configured' : 'Not configured',
+        tone: data.tokenStorage.configured ? 'positive' : 'danger',
+        lastSyncAt: 'n/a',
+        lastError: null,
+        detail: `Required env var: ${data.tokenStorage.requiredEnvVar} · stateless`,
+        canResync: false
+      });
+    }
 
     return out;
   }, [data, resyncSquare, syncDeputy, connectDeputy]);
