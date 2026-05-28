@@ -181,7 +181,7 @@ function verifyMetaState(state: string) {
 
 function normaliseProvider(provider: string): Provider {
   const value = provider.trim().toUpperCase();
-  if (value === 'SQUARE' || value === 'XERO') return value;
+  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY') return value;
   throw new HttpError(404, 'Integration provider not found.');
 }
 
