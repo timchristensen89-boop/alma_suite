@@ -43,7 +43,20 @@ const configuredCorsOrigins = unique([
   ...parseCorsOrigins(process.env.MARKETING_WEB_URL),
   ...parseCorsOrigins(process.env.GIFTCARDS_WEB_URL),
   ...parseCorsOrigins(process.env.GIFT_CARDS_WEB_URL),
-  ...parseCorsOrigins(process.env.COMMS_WEB_URL)
+  ...parseCorsOrigins(process.env.COMMS_WEB_URL),
+  // Admin app (alma-suite-admin.web.app) — was missing from the CORS
+  // allowlist, which meant the API never sent
+  // Access-Control-Allow-Origin in response to admin-web. Most calls
+  // worked because Firebase rewrites make admin-web same-origin
+  // to the API, but the suite handoff cookie set on admin's domain
+  // could silently fail when the API saw the Origin header but
+  // refused credentials. Home + ipad added at the same time for
+  // parity.
+  ...parseCorsOrigins(process.env.ADMIN_WEB_URL),
+  ...parseCorsOrigins(process.env.SETTINGS_WEB_URL),
+  ...parseCorsOrigins(process.env.HOME_WEB_URL),
+  ...parseCorsOrigins(process.env.VENUE_IPAD_URL),
+  ...parseCorsOrigins(process.env.IPAD_WEB_URL)
 ]);
 
 if (isProduction) {
