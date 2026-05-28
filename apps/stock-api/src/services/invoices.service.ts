@@ -2,12 +2,18 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  stockInvoiceDeleteInputSchema,
   stockInvoiceImportInputSchema,
   stockInvoiceLineRematchInputSchema,
+  stockInvoiceMarkNeedsReviewInputSchema,
+  stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
+  type StockInvoiceAssignee,
+  type StockInvoiceAssigneesPayload,
   type StockInvoiceImportResult,
   type StockInvoiceMatchingStatus,
   type StockInvoiceRipResult,
+  type StockInvoiceTriageStatus,
   type StockInvoicesPayload,
   type StockInvoicesSummary,
   type StockSupplierInvoice,
@@ -34,9 +40,22 @@ type MatchItemRow = Prisma.StockItemGetPayload<{ select: typeof matchItemSelect 
 type InvoiceLineRow = Prisma.SupplierInvoiceLineGetPayload<{
   include: { item: { select: typeof lineItemSelect } };
 }>;
-type InvoiceRow = Prisma.SupplierInvoiceGetPayload<{
-  include: { lines: { include: { item: { select: typeof lineItemSelect } } } };
-}>;
+const assigneeSelect = {
+  id: true,
+  firstName: true,
+  lastName: true,
+  email: true,
+  roleTitle: true
+} satisfies Prisma.StaffProfileSelect;
+
+const invoiceInclude = {
+  lines: { include: { item: { select: lineItemSelect } } },
+  triagedBy: { select: assigneeSelect },
+  assignedTo: { select: assigneeSelect }
+} satisfies Prisma.SupplierInvoiceInclude;
+
+type InvoiceRow = Prisma.SupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
+type AssigneeRow = Prisma.StaffProfileGetPayload<{ select: typeof assigneeSelect }>;
 
 type NormalisedLine = {
   lineNumber: number;
@@ -163,6 +182,24 @@ function matchingStatus(value: string): StockInvoiceMatchingStatus {
     return value;
   }
   return 'NEEDS_REVIEW';
+}
+
+function triageStatusValue(value: string): StockInvoiceTriageStatus {
+  if (value === 'NO_ITEM' || value === 'NEEDS_REVIEW' || value === 'PENDING') {
+    return value;
+  }
+  return 'PENDING';
+}
+
+function toAssigneePayload(row: AssigneeRow | null): StockInvoiceAssignee | null {
+  if (!row) return null;
+  return {
+    id: row.id,
+    firstName: row.firstName,
+    lastName: row.lastName,
+    email: row.email,
+    roleTitle: row.roleTitle
+  };
 }
 
 function normaliseImportBody(input: unknown): unknown {
@@ -398,6 +435,11 @@ function toInvoicePayload(row: InvoiceRow): StockSupplierInvoice {
     lineCount: lines.length,
     matchedLineCount,
     needsReviewLineCount,
+    triageStatus: triageStatusValue(row.triageStatus),
+    triagedAt: row.triagedAt?.toISOString() ?? null,
+    triagedBy: toAssigneePayload(row.triagedBy ?? null),
+    assignedTo: toAssigneePayload(row.assignedTo ?? null),
+    triageNotes: row.triageNotes,
     lines
   };
 }
@@ -406,6 +448,7 @@ async function getInvoicePayload(id: string) {
   const invoice = await prisma.supplierInvoice.findUnique({
     where: { id },
     include: {
+      ...invoiceInclude,
       lines: {
         include: { item: { select: lineItemSelect } },
         orderBy: [{ lineNumber: 'asc' }, { createdAt: 'asc' }]
@@ -427,9 +470,12 @@ function extractTextLineValue(lines: string[], patterns: RegExp[]) {
 }
 
 export const invoicesService = {
-  async list(): Promise<StockInvoicesPayload> {
+  async list(options?: { includeNoItem?: boolean }): Promise<StockInvoicesPayload> {
+    const includeNoItem = options?.includeNoItem === true;
     const invoices = await prisma.supplierInvoice.findMany({
+      where: includeNoItem ? undefined : { triageStatus: { not: 'NO_ITEM' } },
       include: {
+        ...invoiceInclude,
         lines: {
           include: { item: { select: lineItemSelect } },
           orderBy: [{ lineNumber: 'asc' }, { createdAt: 'asc' }]
@@ -445,11 +491,22 @@ export const invoicesService = {
     const weekAgo = new Date();
     weekAgo.setDate(weekAgo.getDate() - 7);
 
-    const [totalInvoices, needsReviewLines, matchedLines, importedThisWeek] = await Promise.all([
+    const [
+      totalInvoices,
+      needsReviewLines,
+      matchedLines,
+      importedThisWeek,
+      pendingTriageInvoices,
+      needsReviewTriageInvoices,
+      noItemInvoices
+    ] = await Promise.all([
       prisma.supplierInvoice.count(),
       prisma.supplierInvoiceLine.count({ where: { matchingStatus: 'NEEDS_REVIEW' } }),
       prisma.supplierInvoiceLine.count({ where: { itemId: { not: null } } }),
-      prisma.supplierInvoice.count({ where: { importedAt: { gte: weekAgo } } })
+      prisma.supplierInvoice.count({ where: { importedAt: { gte: weekAgo } } }),
+      prisma.supplierInvoice.count({ where: { triageStatus: 'PENDING' } }),
+      prisma.supplierInvoice.count({ where: { triageStatus: 'NEEDS_REVIEW' } }),
+      prisma.supplierInvoice.count({ where: { triageStatus: 'NO_ITEM' } })
     ]);
 
     const needsReviewInvoiceRows = await prisma.supplierInvoice.findMany({
@@ -462,8 +519,122 @@ export const invoicesService = {
       needsReviewInvoices: needsReviewInvoiceRows.length,
       needsReviewLines,
       matchedLines,
-      importedThisWeek
+      importedThisWeek,
+      pendingTriageInvoices,
+      needsReviewTriageInvoices,
+      noItemInvoices
     };
+  },
+
+  async listAssignees(): Promise<StockInvoiceAssigneesPayload> {
+    const assignees = await prisma.staffProfile.findMany({
+      where: {
+        accountType: 'HUMAN',
+        employmentStatus: 'ACTIVE',
+        appAccess: {
+          some: {
+            appId: 'STOCK',
+            status: 'ENABLED',
+            role: { in: ['ADMIN', 'MANAGER'] }
+          }
+        }
+      },
+      select: assigneeSelect,
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }]
+    });
+    return { assignees: assignees.map((row) => toAssigneePayload(row)).filter((row): row is StockInvoiceAssignee => row !== null) };
+  },
+
+  async markNoItem(
+    id: string,
+    triagedByStaffProfileId: string,
+    input: unknown
+  ): Promise<StockSupplierInvoice> {
+    const data = stockInvoiceMarkNoItemInputSchema.parse(input ?? {});
+    const existing = await prisma.supplierInvoice.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Invoice not found');
+
+    await prisma.supplierInvoice.update({
+      where: { id },
+      data: {
+        triageStatus: 'NO_ITEM',
+        triagedAt: new Date(),
+        triagedByStaffProfileId,
+        assignedToStaffProfileId: null,
+        triageNotes: optionalText(data.notes) ?? existing.triageNotes
+      }
+    });
+    return getInvoicePayload(id);
+  },
+
+  async markNeedsReview(
+    id: string,
+    triagedByStaffProfileId: string,
+    input: unknown
+  ): Promise<StockSupplierInvoice> {
+    const data = stockInvoiceMarkNeedsReviewInputSchema.parse(input);
+    const existing = await prisma.supplierInvoice.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Invoice not found');
+
+    const assignee = await prisma.staffProfile.findUnique({
+      where: { id: data.assigneeStaffProfileId },
+      select: { id: true, employmentStatus: true, accountType: true }
+    });
+    if (!assignee || assignee.accountType !== 'HUMAN' || assignee.employmentStatus !== 'ACTIVE') {
+      throw new HttpError(400, 'Pick an active manager to review this invoice');
+    }
+
+    await prisma.supplierInvoice.update({
+      where: { id },
+      data: {
+        triageStatus: 'NEEDS_REVIEW',
+        triagedAt: new Date(),
+        triagedByStaffProfileId,
+        assignedToStaffProfileId: assignee.id,
+        triageNotes: optionalText(data.notes) ?? existing.triageNotes
+      }
+    });
+    return getInvoicePayload(id);
+  },
+
+  async resetTriage(id: string): Promise<StockSupplierInvoice> {
+    const existing = await prisma.supplierInvoice.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Invoice not found');
+
+    await prisma.supplierInvoice.update({
+      where: { id },
+      data: {
+        triageStatus: 'PENDING',
+        triagedAt: null,
+        triagedByStaffProfileId: null,
+        assignedToStaffProfileId: null
+      }
+    });
+    return getInvoicePayload(id);
+  },
+
+  async deleteInvoice(id: string, input: unknown): Promise<{ id: string }> {
+    stockInvoiceDeleteInputSchema.parse(input);
+    const existing = await prisma.supplierInvoice.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Invoice not found');
+    if (existing.triageStatus !== 'NO_ITEM') {
+      throw new HttpError(
+        400,
+        'Mark this invoice as "no item" before deleting it'
+      );
+    }
+    const matchedLine = await prisma.supplierInvoiceLine.findFirst({
+      where: { supplierInvoiceId: id, costAppliedAt: { not: null } },
+      select: { id: true }
+    });
+    if (matchedLine) {
+      throw new HttpError(
+        400,
+        'Cannot delete: a line on this invoice has already applied its cost to a stock item'
+      );
+    }
+    await prisma.supplierInvoice.delete({ where: { id } });
+    return { id };
   },
 
   ripInvoiceText(input: unknown): StockInvoiceRipResult {
@@ -677,6 +848,7 @@ export const invoicesService = {
     const invoices = await prisma.supplierInvoice.findMany({
       where: { id: { in: importedInvoiceIds } },
       include: {
+        ...invoiceInclude,
         lines: {
           include: { item: { select: lineItemSelect } },
           orderBy: [{ lineNumber: 'asc' }, { createdAt: 'asc' }]

@@ -5,9 +5,10 @@ import { invoicesService } from '../services/invoices.service.js';
 
 export const invoicesRouter = Router();
 
-invoicesRouter.get('/', async (_req, res, next) => {
+invoicesRouter.get('/', async (req, res, next) => {
   try {
-    res.json(await invoicesService.list());
+    const includeNoItem = req.query.includeNoItem === '1' || req.query.includeNoItem === 'true';
+    res.json(await invoicesService.list({ includeNoItem }));
   } catch (error) {
     next(error);
   }
@@ -16,6 +17,14 @@ invoicesRouter.get('/', async (_req, res, next) => {
 invoicesRouter.get('/summary', async (_req, res, next) => {
   try {
     res.json(await invoicesService.summary());
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.get('/assignees', async (_req, res, next) => {
+  try {
+    res.json(await invoicesService.listAssignees());
   } catch (error) {
     next(error);
   }
@@ -41,6 +50,46 @@ invoicesRouter.post('/import', async (req, res, next) => {
 invoicesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await invoicesService.get(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/:id/mark-no-item', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    const user = req.user;
+    if (!user) throw new HttpError(401, 'Sign in to triage invoices');
+    res.json(await invoicesService.markNoItem(String(req.params.id), user.id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/:id/mark-needs-review', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    const user = req.user;
+    if (!user) throw new HttpError(401, 'Sign in to triage invoices');
+    res.json(await invoicesService.markNeedsReview(String(req.params.id), user.id, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/:id/reset-triage', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.resetTriage(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.delete('/:id', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.deleteInvoice(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }

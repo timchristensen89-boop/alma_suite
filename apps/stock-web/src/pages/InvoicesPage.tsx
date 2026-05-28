@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
+  StockInvoiceAssignee,
+  StockInvoiceAssigneesPayload,
   StockInvoiceImportResult,
   StockInvoiceRipResult,
+  StockInvoiceTriageStatus,
   StockInvoicesPayload,
   StockInvoicesSummary,
   StockItem,
@@ -85,6 +88,24 @@ function replaceLine(
   };
 }
 
+function assigneeName(assignee: StockInvoiceAssignee | null | undefined) {
+  if (!assignee) return null;
+  const name = `${assignee.firstName} ${assignee.lastName}`.trim();
+  return name || assignee.email || 'Unnamed';
+}
+
+const TRIAGE_LABEL: Record<StockInvoiceTriageStatus, string> = {
+  PENDING: 'Awaiting triage',
+  NEEDS_REVIEW: 'Needs review',
+  NO_ITEM: 'No item'
+};
+
+function triageBadgeTone(status: StockInvoiceTriageStatus): 'positive' | 'warning' | 'neutral' {
+  if (status === 'NEEDS_REVIEW') return 'warning';
+  if (status === 'NO_ITEM') return 'neutral';
+  return 'neutral';
+}
+
 export function InvoicesPage() {
   useDocumentTitle('Invoices');
   const { user } = useAuth();
@@ -92,6 +113,7 @@ export function InvoicesPage() {
   const [payload, setPayload] = useState<StockInvoicesPayload | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
   const [summary, setSummary] = useState<StockInvoicesSummary | null>(null);
+  const [assignees, setAssignees] = useState<StockInvoiceAssignee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
@@ -103,19 +125,29 @@ export function InvoicesPage() {
   const [feedbackMessage, setFeedbackMessage] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<FeedbackTone>('success');
   const [lineDrafts, setLineDrafts] = useState<Record<string, string>>({});
+  const [assigneeDraft, setAssigneeDraft] = useState<string>('');
+  const [includeNoItem, setIncludeNoItem] = useState(false);
 
-  async function loadInvoices() {
+  async function loadInvoices(options?: { showNoItem?: boolean }) {
+    const showNoItem = options?.showNoItem ?? includeNoItem;
     try {
-      const [invoicePayload, itemPayload, invoiceSummary] = await Promise.all([
-        api<StockInvoicesPayload>('/api/invoices'),
+      const [invoicePayload, itemPayload, invoiceSummary, assigneePayload] = await Promise.all([
+        api<StockInvoicesPayload>(`/api/invoices${showNoItem ? '?includeNoItem=1' : ''}`),
         api<StockItemsPayload>('/api/items'),
-        api<StockInvoicesSummary>('/api/invoices/summary')
+        api<StockInvoicesSummary>('/api/invoices/summary'),
+        api<StockInvoiceAssigneesPayload>('/api/invoices/assignees')
       ]);
       setPayload(invoicePayload);
       setItems(itemPayload.items.filter((item) => item.status === 'ACTIVE'));
       setSummary(invoiceSummary);
+      setAssignees(assigneePayload.assignees);
       setError(null);
-      setSelectedInvoiceId((current) => current ?? invoicePayload.invoices[0]?.id ?? null);
+      setSelectedInvoiceId((current) => {
+        if (current && invoicePayload.invoices.some((invoice) => invoice.id === current)) {
+          return current;
+        }
+        return invoicePayload.invoices[0]?.id ?? null;
+      });
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load invoices');
     } finally {
@@ -124,13 +156,29 @@ export function InvoicesPage() {
   }
 
   useEffect(() => {
-    void loadInvoices();
-  }, []);
+    void loadInvoices({ showNoItem: includeNoItem });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [includeNoItem]);
 
   const selectedInvoice = useMemo(
     () => payload?.invoices.find((invoice) => invoice.id === selectedInvoiceId) ?? null,
     [payload, selectedInvoiceId]
   );
+
+  const assigneeOptions = useMemo(
+    () => [
+      { label: 'Pick a manager...', value: '' },
+      ...assignees.map((assignee) => ({
+        label: `${assignee.firstName} ${assignee.lastName}${assignee.roleTitle ? ` - ${assignee.roleTitle}` : ''}`,
+        value: assignee.id
+      }))
+    ],
+    [assignees]
+  );
+
+  useEffect(() => {
+    setAssigneeDraft(selectedInvoice?.assignedTo?.id ?? '');
+  }, [selectedInvoice?.id, selectedInvoice?.assignedTo?.id]);
 
   const itemOptions = useMemo(
     () => [
@@ -144,9 +192,12 @@ export function InvoicesPage() {
     const invoices = payload?.invoices ?? [];
     return {
       total: summary?.totalInvoices ?? invoices.length,
-      reviewLines:
-        summary?.needsReviewLines ??
-        invoices.reduce((total, invoice) => total + invoice.needsReviewLineCount, 0),
+      pendingTriage:
+        summary?.pendingTriageInvoices ??
+        invoices.filter((invoice) => invoice.triageStatus === 'PENDING').length,
+      needsReview:
+        summary?.needsReviewTriageInvoices ??
+        invoices.filter((invoice) => invoice.triageStatus === 'NEEDS_REVIEW').length,
       matched:
         summary?.matchedLines ??
         invoices.reduce((total, invoice) => total + invoice.matchedLineCount, 0),
@@ -289,6 +340,169 @@ export function InvoicesPage() {
     }
   }
 
+  function applyInvoiceUpdate(updated: StockSupplierInvoice) {
+    setPayload((current) => {
+      const existing = current?.invoices ?? [];
+      const exists = existing.some((invoice) => invoice.id === updated.id);
+      const visible = includeNoItem || updated.triageStatus !== 'NO_ITEM';
+      const next = visible
+        ? exists
+          ? existing.map((invoice) => (invoice.id === updated.id ? updated : invoice))
+          : [updated, ...existing]
+        : existing.filter((invoice) => invoice.id !== updated.id);
+      return { invoices: next };
+    });
+    if (!includeNoItem && updated.triageStatus === 'NO_ITEM' && selectedInvoiceId === updated.id) {
+      setSelectedInvoiceId(null);
+    }
+  }
+
+  async function markNoItem(invoice: StockSupplierInvoice) {
+    const target = `triage:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to triage invoices.', 'error');
+      return;
+    }
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const updated = await api<StockSupplierInvoice>(
+        `/api/invoices/${invoice.id}/mark-no-item`,
+        {
+          method: 'POST',
+          body: JSON.stringify({})
+        }
+      );
+      applyInvoiceUpdate(updated);
+      void refreshSummary();
+      showFeedback(target, 'Marked as no item. Hidden from the workstation.');
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError ? err.message : 'Could not mark as no item',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
+  async function markNeedsReview(invoice: StockSupplierInvoice, assigneeStaffProfileId: string) {
+    const target = `triage:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to assign invoices.', 'error');
+      return;
+    }
+    if (!assigneeStaffProfileId) {
+      showFeedback(target, 'Pick a manager to review this invoice.', 'error');
+      return;
+    }
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const updated = await api<StockSupplierInvoice>(
+        `/api/invoices/${invoice.id}/mark-needs-review`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ assigneeStaffProfileId })
+        }
+      );
+      applyInvoiceUpdate(updated);
+      void refreshSummary();
+      showFeedback(
+        target,
+        `Assigned to ${assigneeName(updated.assignedTo) ?? 'manager'} for review.`
+      );
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError ? err.message : 'Could not assign for review',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
+  async function resetTriage(invoice: StockSupplierInvoice) {
+    const target = `triage:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to reset triage.', 'error');
+      return;
+    }
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const updated = await api<StockSupplierInvoice>(
+        `/api/invoices/${invoice.id}/reset-triage`,
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      applyInvoiceUpdate(updated);
+      void refreshSummary();
+      showFeedback(target, 'Triage decision cleared.');
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError ? err.message : 'Could not reset triage',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
+  async function deleteInvoice(invoice: StockSupplierInvoice) {
+    const target = `triage:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to delete invoices.', 'error');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Delete invoice ${invoice.invoiceNumber ?? ''}?`.trim(),
+      message:
+        'This permanently removes the supplier invoice and its lines from the workstation. Only allowed for invoices marked "no item".',
+      confirmationText: 'DELETE INVOICE'
+    });
+    if (!confirmed) return;
+
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      await api<{ id: string }>(`/api/invoices/${invoice.id}`, {
+        method: 'DELETE',
+        body: JSON.stringify({ confirmationText: 'DELETE INVOICE' })
+      });
+      setPayload((current) => {
+        if (!current) return current;
+        return { invoices: current.invoices.filter((row) => row.id !== invoice.id) };
+      });
+      if (selectedInvoiceId === invoice.id) setSelectedInvoiceId(null);
+      void refreshSummary();
+      showFeedback(target, 'Invoice deleted.');
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError ? err.message : 'Could not delete invoice',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
+  async function refreshSummary() {
+    try {
+      const next = await api<StockInvoicesSummary>('/api/invoices/summary');
+      setSummary(next);
+    } catch {
+      // Stat refresh is best-effort.
+    }
+  }
+
   async function applyCost(line: StockSupplierInvoiceLine) {
     const target = `cost:${line.id}`;
     if (!canManage) {
@@ -348,16 +562,16 @@ export function InvoicesPage() {
           hint="Imported supplier bills"
         />
         <StatCard
-          label="Needs review"
-          value={loading ? '-' : String(invoiceStats.reviewLines)}
-          hint="Unmatched invoice lines"
-          tone={invoiceStats.reviewLines > 0 ? 'warning' : 'positive'}
+          label="Awaiting triage"
+          value={loading ? '-' : String(invoiceStats.pendingTriage)}
+          hint="Mark each as needs review or no item"
+          tone={invoiceStats.pendingTriage > 0 ? 'warning' : 'positive'}
         />
         <StatCard
-          label="Matched lines"
-          value={loading ? '-' : String(invoiceStats.matched)}
-          hint="Ready for item costing"
-          tone="positive"
+          label="Needs review"
+          value={loading ? '-' : String(invoiceStats.needsReview)}
+          hint="Assigned to a manager"
+          tone={invoiceStats.needsReview > 0 ? 'warning' : 'positive'}
         />
         <StatCard
           label="This week"
@@ -418,7 +632,20 @@ export function InvoicesPage() {
       </Card>
 
       <div className="stock-invoice-layout">
-        <Card title="Imported invoices" subtitle="Xero bills and ripped supplier invoices.">
+        <Card
+          title="Imported invoices"
+          subtitle="Xero bills and ripped supplier invoices."
+          action={
+            <label className="stock-invoice-filter-toggle">
+              <input
+                type="checkbox"
+                checked={includeNoItem}
+                onChange={(event) => setIncludeNoItem(event.currentTarget.checked)}
+              />
+              Show no-item invoices
+            </label>
+          }
+        >
           {loading ? (
             <Spinner label="Loading invoices" />
           ) : error ? (
@@ -436,40 +663,52 @@ export function InvoicesPage() {
                     <th>Supplier</th>
                     <th>Date</th>
                     <th>Total</th>
-                    <th>Match</th>
+                    <th>Triage</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {payload.invoices.map((invoice) => (
-                    <tr
-                      key={invoice.id}
-                      className={`row-interactive ${invoice.id === selectedInvoiceId ? 'stock-selected-row' : ''}`}
-                      onClick={() => setSelectedInvoiceId(invoice.id)}
-                    >
-                      <td>
-                        <span className="cell-stack">
-                          <strong>{invoice.invoiceNumber ?? invoice.invoiceKey.slice(0, 8)}</strong>
-                          <span className="subtle">{invoice.sourceFileName ?? invoice.source}</span>
-                        </span>
-                      </td>
-                      <td>{invoice.supplierName}</td>
-                      <td>{formatDate(invoice.invoiceDate)}</td>
-                      <td>{formatCurrency(invoice.totalCents, invoice.currencyCode)}</td>
-                      <td>
-                        <Badge tone={invoice.needsReviewLineCount > 0 ? 'warning' : 'positive'} dot>
-                          {invoice.matchedLineCount}/{invoice.lineCount}
-                        </Badge>
-                      </td>
-                    </tr>
-                  ))}
+                  {payload.invoices.map((invoice) => {
+                    const assignee = assigneeName(invoice.assignedTo);
+                    return (
+                      <tr
+                        key={invoice.id}
+                        className={`row-interactive ${invoice.id === selectedInvoiceId ? 'stock-selected-row' : ''}`}
+                        onClick={() => setSelectedInvoiceId(invoice.id)}
+                      >
+                        <td>
+                          <span className="cell-stack">
+                            <strong>{invoice.invoiceNumber ?? invoice.invoiceKey.slice(0, 8)}</strong>
+                            <span className="subtle">{invoice.sourceFileName ?? invoice.source}</span>
+                          </span>
+                        </td>
+                        <td>{invoice.supplierName}</td>
+                        <td>{formatDate(invoice.invoiceDate)}</td>
+                        <td>{formatCurrency(invoice.totalCents, invoice.currencyCode)}</td>
+                        <td>
+                          <span className="cell-stack">
+                            <Badge tone={triageBadgeTone(invoice.triageStatus)} dot>
+                              {TRIAGE_LABEL[invoice.triageStatus]}
+                            </Badge>
+                            {assignee ? (
+                              <span className="subtle">Assigned: {assignee}</span>
+                            ) : null}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>
           ) : (
             <EmptyState
               icon={<IconInvoices size={24} />}
-              title="No invoices imported yet"
-              description="Paste a Xero export or invoice text to start matching supplier bills to stock items."
+              title={includeNoItem ? 'No invoices found' : 'No active invoices'}
+              description={
+                includeNoItem
+                  ? 'Paste a Xero export or invoice text to start matching supplier bills to stock items.'
+                  : 'Everything imported has been triaged as "no item". Toggle "Show no-item invoices" to see them.'
+              }
             />
           )}
         </Card>
@@ -483,21 +722,38 @@ export function InvoicesPage() {
           }
         >
           {selectedInvoice ? (
-            <InvoiceLineReview
-              invoice={selectedInvoice}
-              itemOptions={itemOptions}
-              lineDrafts={lineDrafts}
-              feedbackTarget={feedbackTarget}
-              feedbackMessage={feedbackMessage}
-              feedbackTone={feedbackTone}
-              busyTarget={busyTarget}
-              onDraftChange={(lineId, itemId) =>
-                setLineDrafts((current) => ({ ...current, [lineId]: itemId }))
-              }
-              onSaveMatch={saveLineMatch}
-              onApplyCost={applyCost}
-              canManage={canManage}
-            />
+            <>
+              <InvoiceTriagePanel
+                invoice={selectedInvoice}
+                assigneeOptions={assigneeOptions}
+                assigneeDraft={assigneeDraft}
+                onAssigneeChange={setAssigneeDraft}
+                onMarkNoItem={() => void markNoItem(selectedInvoice)}
+                onMarkNeedsReview={() => void markNeedsReview(selectedInvoice, assigneeDraft)}
+                onResetTriage={() => void resetTriage(selectedInvoice)}
+                onDelete={() => void deleteInvoice(selectedInvoice)}
+                feedbackTarget={feedbackTarget}
+                feedbackMessage={feedbackMessage}
+                feedbackTone={feedbackTone}
+                busyTarget={busyTarget}
+                canManage={canManage}
+              />
+              <InvoiceLineReview
+                invoice={selectedInvoice}
+                itemOptions={itemOptions}
+                lineDrafts={lineDrafts}
+                feedbackTarget={feedbackTarget}
+                feedbackMessage={feedbackMessage}
+                feedbackTone={feedbackTone}
+                busyTarget={busyTarget}
+                onDraftChange={(lineId, itemId) =>
+                  setLineDrafts((current) => ({ ...current, [lineId]: itemId }))
+                }
+                onSaveMatch={saveLineMatch}
+                onApplyCost={applyCost}
+                canManage={canManage}
+              />
+            </>
           ) : (
             <EmptyState
               icon={<IconInvoices size={24} />}
@@ -508,6 +764,131 @@ export function InvoicesPage() {
         </Card>
       </div>
     </div>
+  );
+}
+
+type InvoiceTriagePanelProps = {
+  invoice: StockSupplierInvoice;
+  assigneeOptions: Array<{ label: string; value: string }>;
+  assigneeDraft: string;
+  onAssigneeChange: (next: string) => void;
+  onMarkNoItem: () => void;
+  onMarkNeedsReview: () => void;
+  onResetTriage: () => void;
+  onDelete: () => void;
+  feedbackTarget: string | null;
+  feedbackMessage: string | null;
+  feedbackTone: FeedbackTone;
+  busyTarget: string | null;
+  canManage: boolean;
+};
+
+function InvoiceTriagePanel({
+  invoice,
+  assigneeOptions,
+  assigneeDraft,
+  onAssigneeChange,
+  onMarkNoItem,
+  onMarkNeedsReview,
+  onResetTriage,
+  onDelete,
+  feedbackTarget,
+  feedbackMessage,
+  feedbackTone,
+  busyTarget,
+  canManage
+}: InvoiceTriagePanelProps) {
+  const target = `triage:${invoice.id}`;
+  const busy = busyTarget === target;
+  const assignee = assigneeName(invoice.assignedTo);
+  const triagedBy = assigneeName(invoice.triagedBy);
+  const showAssignee = invoice.triageStatus !== 'NO_ITEM';
+
+  return (
+    <section className="stock-invoice-triage">
+      <div className="stock-invoice-triage__header">
+        <div>
+          <Badge tone={triageBadgeTone(invoice.triageStatus)} dot>
+            {TRIAGE_LABEL[invoice.triageStatus]}
+          </Badge>
+          {showAssignee && assignee ? (
+            <p className="subtle">Assigned to {assignee}</p>
+          ) : null}
+          {triagedBy ? (
+            <p className="subtle">Triaged by {triagedBy}</p>
+          ) : null}
+        </div>
+      </div>
+      <div className="stock-invoice-triage__actions">
+        {showAssignee ? (
+          <Select
+            label="Assign manager"
+            value={assigneeDraft}
+            onChange={(event) => onAssigneeChange(event.currentTarget.value)}
+            options={assigneeOptions}
+            disabled={!canManage}
+          />
+        ) : null}
+        <div className="stock-invoice-triage__buttons">
+          {invoice.triageStatus !== 'NEEDS_REVIEW' ? (
+            <Button
+              type="button"
+              size="sm"
+              onClick={onMarkNeedsReview}
+              disabled={busy || !canManage || !assigneeDraft}
+              title={
+                !canManage
+                  ? 'Manager access required'
+                  : !assigneeDraft
+                    ? 'Pick a manager first'
+                    : undefined
+              }
+            >
+              {busy ? 'Saving...' : 'Needs review'}
+            </Button>
+          ) : null}
+          {invoice.triageStatus !== 'NO_ITEM' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onMarkNoItem}
+              disabled={busy || !canManage}
+              title={canManage ? undefined : 'Manager access required'}
+            >
+              {busy ? 'Saving...' : 'No item'}
+            </Button>
+          ) : null}
+          {invoice.triageStatus !== 'PENDING' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onResetTriage}
+              disabled={busy || !canManage}
+            >
+              Reset triage
+            </Button>
+          ) : null}
+          {invoice.triageStatus === 'NO_ITEM' ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              onClick={onDelete}
+              disabled={busy || !canManage}
+              title={canManage ? undefined : 'Manager access required'}
+            >
+              Delete invoice
+            </Button>
+          ) : null}
+        </div>
+        <ActionFeedback
+          message={feedbackTarget === target ? feedbackMessage : null}
+          tone={feedbackTone}
+        />
+      </div>
+    </section>
   );
 }
 
