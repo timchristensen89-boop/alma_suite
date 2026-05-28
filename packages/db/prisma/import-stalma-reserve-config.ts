@@ -17,7 +17,8 @@
  *     so they sit at the bottom of the admin floor plan list — first-class
  *     combination conflict-checking is a follow-up, but the rows make
  *     the cover ranges discoverable to the host)
- *   - 3 availability rules: Day Fr-Su, Tuesday, Wed-Thu
+ *   - 5 availability rules: Lunch (all days), Day Fri-Sun, Tuesday,
+ *     Wed-Thu, Groups Dinner (Wed-Sun, 8-20 party)
  *
  * Known mappings / lossy bits:
  *   - SevenRooms' per-party-size durations collapse to a single
@@ -116,6 +117,27 @@ const RULES: RuleSeed[] = [
   // every rule's endTime is set to SevenRooms-last-start +
   // defaultDurationMinutes — keeps all SevenRooms seating times
   // available without changing the duration default.
+  //
+  // SevenRooms splits service into separate "Lunch Main", "Lunch
+  // Kitchen Top", "Dinner Main", "Dinner BAR", "Dinner Kitchen Top",
+  // "Tuesday-Dinner Main", "Groups - Dinner Main" rules so each can
+  // route to a specific seating area. Alma Reserve has no per-area
+  // scope on availability rules yet, so we collapse the per-area
+  // variants into one rule per service slot and the host picks the
+  // right table at seating time. Channel-specific Google Reserve
+  // variants collapse the same way — both flags on a single rule.
+  {
+    name: 'Lunch · all days',
+    daysOfWeek: [0, 1, 2, 3, 4, 5, 6],
+    startTime: '12:00',
+    endTime: '16:00',
+    defaultDurationMinutes: 90,
+    minPartySize: 1,
+    maxPartySize: 7,
+    intervalMinutes: 15,
+    capacity: 40,
+    servicePeriod: 'LUNCH'
+  },
   {
     name: 'Day · Fri–Sun',
     daysOfWeek: [0, 5, 6], // Sun, Fri, Sat
@@ -150,6 +172,21 @@ const RULES: RuleSeed[] = [
     maxPartySize: 18,
     intervalMinutes: 15,
     capacity: 40,
+    servicePeriod: 'DINNER'
+  },
+  {
+    name: 'Groups dinner · Wed–Sun',
+    // SevenRooms "Groups - Dinner Main" rule: 8–20 party size,
+    // Wed–Sun 4:15–8:30 PM last-start window. Lower capacity per
+    // interval since each booking takes a much larger table block.
+    daysOfWeek: [0, 3, 4, 5, 6],
+    startTime: '16:15',
+    endTime: '22:30',
+    defaultDurationMinutes: 150,
+    minPartySize: 8,
+    maxPartySize: 20,
+    intervalMinutes: 15,
+    capacity: 20,
     servicePeriod: 'DINNER'
   }
 ];
