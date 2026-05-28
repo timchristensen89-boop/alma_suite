@@ -9,17 +9,21 @@ import {
   reserveGuestUpdateInputSchema,
   reservePublicAvailabilityInputSchema,
   reservePublicBookingInputSchema,
+  reservePublicWaitlistInputSchema,
   reserveReservationInputSchema,
   reserveReservationUpdateInputSchema,
   reserveTableInputSchema,
+  reserveWaitlistUpdateInputSchema,
   googleReserveIntegrationSettingInputSchema,
   type AuthUser,
   type ReserveGuest,
   type ReservePublicBookingConfirmation,
+  type ReservePublicWaitlistConfirmation,
   type ReserveReservation,
   type ReserveReservationStatus,
   type ReserveServicePeriod,
   type ReservePublicAvailabilitySlot,
+  type ReserveWaitlistEntry,
   type MarketingSegmentDefinition
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -1325,5 +1329,107 @@ export const reserveService = {
     };
 
     return confirmation;
+  },
+
+  // Booking waitlist — captures the guest's name + phone when their
+  // desired date is fully booked. The host follows up manually (SMS
+  // notification is a future task; v1 is capture-only).
+  async recordPublicWaitlist(input: unknown): Promise<ReservePublicWaitlistConfirmation> {
+    const data = reservePublicWaitlistInputSchema.parse(input);
+    const windowStartsAt = new Date(data.windowStartsAt);
+    const windowEndsAt = new Date(data.windowEndsAt);
+    if (Number.isNaN(windowStartsAt.getTime()) || Number.isNaN(windowEndsAt.getTime())) {
+      throw new HttpError(400, 'Enter a valid waitlist window.');
+    }
+    if (windowEndsAt < windowStartsAt) {
+      throw new HttpError(400, 'Waitlist window end must be after the start.');
+    }
+    const entry = await prisma.reserveWaitlistEntry.create({
+      data: {
+        venue: data.venue.trim(),
+        guestName: data.guestName.trim(),
+        guestPhone: data.guestPhone.trim(),
+        guestEmail: data.guestEmail?.trim().toLowerCase() || null,
+        partySize: data.partySize,
+        windowStartsAt,
+        windowEndsAt,
+        notes: data.notes?.trim() || null,
+        source: 'public-widget'
+      }
+    });
+    return {
+      id: entry.id,
+      venue: entry.venue,
+      guestName: entry.guestName,
+      partySize: entry.partySize,
+      windowStartsAt: entry.windowStartsAt.toISOString(),
+      windowEndsAt: entry.windowEndsAt.toISOString(),
+      status: entry.status,
+      createdAt: entry.createdAt.toISOString()
+    };
+  },
+
+  async listWaitlist(actor: AuthUser, query: { venue?: string; status?: string }): Promise<ReserveWaitlistEntry[]> {
+    void actor;
+    const where: Prisma.ReserveWaitlistEntryWhereInput = {};
+    if (query.venue) where.venue = query.venue;
+    if (query.status) where.status = query.status as Prisma.EnumReserveWaitlistStatusFilter;
+    const entries = await prisma.reserveWaitlistEntry.findMany({
+      where,
+      orderBy: [{ status: 'asc' }, { createdAt: 'desc' }],
+      take: 200
+    });
+    return entries.map((entry) => ({
+      id: entry.id,
+      venue: entry.venue,
+      guestName: entry.guestName,
+      guestPhone: entry.guestPhone,
+      guestEmail: entry.guestEmail,
+      partySize: entry.partySize,
+      windowStartsAt: entry.windowStartsAt.toISOString(),
+      windowEndsAt: entry.windowEndsAt.toISOString(),
+      notes: entry.notes,
+      status: entry.status,
+      source: entry.source,
+      notifiedAt: entry.notifiedAt?.toISOString() ?? null,
+      notifiedByName: entry.notifiedByName,
+      matchedReservationId: entry.matchedReservationId,
+      createdAt: entry.createdAt.toISOString(),
+      updatedAt: entry.updatedAt.toISOString()
+    }));
+  },
+
+  async updateWaitlistEntry(actor: AuthUser, id: string, input: unknown): Promise<ReserveWaitlistEntry> {
+    const data = reserveWaitlistUpdateInputSchema.parse(input);
+    const patch: Prisma.ReserveWaitlistEntryUpdateInput = {};
+    if (data.status) {
+      patch.status = data.status;
+      if (data.status === 'NOTIFIED') {
+        patch.notifiedAt = new Date();
+        patch.notifiedById = actor.id;
+        patch.notifiedByName = `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || actor.email;
+      }
+    }
+    if (data.notes !== undefined) patch.notes = data.notes?.trim() || null;
+    if (data.matchedReservationId !== undefined) patch.matchedReservationId = data.matchedReservationId || null;
+    const entry = await prisma.reserveWaitlistEntry.update({ where: { id }, data: patch });
+    return {
+      id: entry.id,
+      venue: entry.venue,
+      guestName: entry.guestName,
+      guestPhone: entry.guestPhone,
+      guestEmail: entry.guestEmail,
+      partySize: entry.partySize,
+      windowStartsAt: entry.windowStartsAt.toISOString(),
+      windowEndsAt: entry.windowEndsAt.toISOString(),
+      notes: entry.notes,
+      status: entry.status,
+      source: entry.source,
+      notifiedAt: entry.notifiedAt?.toISOString() ?? null,
+      notifiedByName: entry.notifiedByName,
+      matchedReservationId: entry.matchedReservationId,
+      createdAt: entry.createdAt.toISOString(),
+      updatedAt: entry.updatedAt.toISOString()
+    };
   }
 };

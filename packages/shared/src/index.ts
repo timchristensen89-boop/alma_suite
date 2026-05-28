@@ -1151,6 +1151,56 @@ export const reservePublicBookingInputSchema = z.object({
   marketingOptIn: z.boolean().default(false)
 });
 
+export const reservePublicWaitlistInputSchema = z.object({
+  venue: z.string().min(1),
+  guestName: z.string().min(1).max(80),
+  guestPhone: z.string().min(6).max(40),
+  guestEmail: z.string().email().optional().or(z.literal('')),
+  partySize: z.coerce.number().int().min(1).max(20),
+  windowStartsAt: z.string().min(4),
+  windowEndsAt: z.string().min(4),
+  notes: z.string().max(500).optional().or(z.literal(''))
+});
+
+export const RESERVE_WAITLIST_STATUSES = ['WAITING', 'NOTIFIED', 'BOOKED', 'EXPIRED', 'CANCELLED'] as const;
+export type ReserveWaitlistStatus = (typeof RESERVE_WAITLIST_STATUSES)[number];
+
+export const reserveWaitlistUpdateInputSchema = z.object({
+  status: z.enum(RESERVE_WAITLIST_STATUSES).optional(),
+  notes: z.string().max(500).optional().or(z.literal('')),
+  matchedReservationId: z.string().optional().or(z.literal(''))
+});
+
+export type ReserveWaitlistEntry = {
+  id: string;
+  venue: string;
+  guestName: string;
+  guestPhone: string;
+  guestEmail: string | null;
+  partySize: number;
+  windowStartsAt: string;
+  windowEndsAt: string;
+  notes: string | null;
+  status: ReserveWaitlistStatus;
+  source: string;
+  notifiedAt: string | null;
+  notifiedByName: string | null;
+  matchedReservationId: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ReservePublicWaitlistConfirmation = {
+  id: string;
+  venue: string;
+  guestName: string;
+  partySize: number;
+  windowStartsAt: string;
+  windowEndsAt: string;
+  status: ReserveWaitlistStatus;
+  createdAt: string;
+};
+
 export const marketingSegmentDefinitionSchema = z.object({
   search: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),

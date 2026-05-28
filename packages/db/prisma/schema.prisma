@@ -1316,6 +1316,37 @@ model ReserveBlackout {
   @@index([venue, startAt, endAt])
 }
 
+enum ReserveWaitlistStatus {
+  WAITING
+  NOTIFIED
+  BOOKED
+  EXPIRED
+  CANCELLED
+}
+
+model ReserveWaitlistEntry {
+  id                  String                @id @default(cuid())
+  venue               String
+  guestName           String
+  guestPhone          String
+  guestEmail          String?
+  partySize           Int                   @default(2)
+  windowStartsAt      DateTime
+  windowEndsAt        DateTime
+  notes               String?
+  status              ReserveWaitlistStatus @default(WAITING)
+  source              String                @default("public-widget")
+  notifiedAt          DateTime?
+  notifiedById        String?
+  notifiedByName      String?
+  matchedReservationId String?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@index([venue, status, windowStartsAt])
+  @@index([status, createdAt])
+}
+
 model GoogleReserveIntegrationSetting {
   id                String                        @id @default(cuid())
   venue             String                        @unique
