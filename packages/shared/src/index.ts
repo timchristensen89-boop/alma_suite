@@ -1148,7 +1148,14 @@ export const reservePublicBookingInputSchema = z.object({
   outdoorSeating: z.boolean().default(false),
   barSeating: z.boolean().default(false),
   specialRequests: z.string().optional().or(z.literal('')),
-  marketingOptIn: z.boolean().default(false)
+  marketingOptIn: z.boolean().default(false),
+  // Card-on-file for no-show protection (task #2). All three come
+  // from a SetupIntent the client confirmed against Stripe Elements
+  // before submitting the booking. We don't charge until the manager
+  // marks no-show.
+  stripeSetupIntentId: z.string().optional().or(z.literal('')),
+  stripePaymentMethodId: z.string().optional().or(z.literal('')),
+  stripeCustomerId: z.string().optional().or(z.literal(''))
 });
 
 export const reservePublicWaitlistInputSchema = z.object({
@@ -1199,6 +1206,33 @@ export type ReservePublicWaitlistConfirmation = {
   windowEndsAt: string;
   status: ReserveWaitlistStatus;
   createdAt: string;
+};
+
+export const reservePublicSetupIntentInputSchema = z.object({
+  venue: z.string().min(1),
+  guestEmail: z.string().email().optional().or(z.literal('')),
+  partySize: z.coerce.number().int().min(1).max(50).optional()
+});
+
+export type ReservePublicSetupIntentResponse = {
+  clientSecret: string;
+  customerId: string;
+  setupIntentId: string;
+  publishableKey: string | null;
+};
+
+export const reserveNoShowChargeInputSchema = z.object({
+  amountCents: z.coerce.number().int().min(500).max(50000).optional(),
+  reason: z.string().max(200).optional().or(z.literal(''))
+});
+
+export type ReserveNoShowChargeResult = {
+  reservationId: string;
+  amountCents: number;
+  paymentIntentId: string;
+  chargedAt: string;
+  status: 'succeeded' | 'requires_action' | 'failed';
+  errorMessage: string | null;
 };
 
 export const marketingSegmentDefinitionSchema = z.object({

@@ -300,3 +300,26 @@ reserveRouter.post('/public/manage/:token/cancel', async (req, res, next) => {
     next(error);
   }
 });
+
+// Public — issue a SetupIntent the widget can confirm with Stripe
+// Elements before submitting the booking. Saves a card-on-file for
+// no-show protection without charging.
+reserveRouter.post('/public-widget/setup-intent', async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.createPublicSetupIntent(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager — charge the saved card-on-file for a no-show. Body shape:
+// { amountCents?: number; reason?: string }. Defaults to $50/cover
+// (capped at 9 covers).
+reserveRouter.post('/reservations/:id/charge-no-show', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.chargeReservationNoShow(req.user, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});

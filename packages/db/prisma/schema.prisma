@@ -1265,6 +1265,18 @@ model ReserveReservation {
   createdById      String?
   cancelledAt      DateTime?
   completedAt      DateTime?
+  // Card-on-file for no-show protection (task #2). SetupIntent
+  // captures the payment method at booking time; PaymentIntent off
+  // the saved method runs when the manager marks no-show.
+  stripeCustomerId          String?
+  stripeSetupIntentId       String?
+  stripePaymentMethodId     String?
+  stripePaymentMethodBrand  String?
+  stripePaymentMethodLast4  String?
+  noShowFeeAmountCents      Int?
+  noShowFeeChargedAt        DateTime?
+  noShowFeePaymentIntentId  String?
+  noShowFeeError            String?
   createdAt        DateTime                 @default(now())
   updatedAt        DateTime                 @updatedAt
   guest            ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
