@@ -110,11 +110,17 @@ type RuleSeed = {
 };
 
 const RULES: RuleSeed[] = [
+  // SevenRooms `endTime` is the LAST seating-start time; Alma Reserve
+  // treats `endTime` as when bookings must FINISH (the slot generator
+  // skips a slot when start + defaultDurationMinutes > endTime). So
+  // every rule's endTime is set to SevenRooms-last-start +
+  // defaultDurationMinutes — keeps all SevenRooms seating times
+  // available without changing the duration default.
   {
     name: 'Day · Fri–Sun',
     daysOfWeek: [0, 5, 6], // Sun, Fri, Sat
     startTime: '12:00',
-    endTime: '20:45',
+    endTime: '22:45', // SevenRooms last start 20:45 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
     maxPartySize: 18,
@@ -126,7 +132,7 @@ const RULES: RuleSeed[] = [
     name: 'Tuesday · dinner',
     daysOfWeek: [2], // Tue
     startTime: '17:00',
-    endTime: '20:30',
+    endTime: '22:30', // SevenRooms last start 20:30 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
     maxPartySize: 18,
@@ -138,7 +144,7 @@ const RULES: RuleSeed[] = [
     name: 'Wed–Thu · dinner',
     daysOfWeek: [3, 4], // Wed, Thu
     startTime: '17:00',
-    endTime: '20:15',
+    endTime: '22:15', // SevenRooms last start 20:15 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
     maxPartySize: 18,
