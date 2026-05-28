@@ -636,6 +636,13 @@
   line-height: 1.45;
 }
 
+.integration-health-tile-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
 .integration-health-runs {
   display: grid;
   gap: 8px;

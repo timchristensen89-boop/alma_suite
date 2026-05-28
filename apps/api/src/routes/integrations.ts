@@ -248,6 +248,38 @@ integrationsRouter.post('/xero/supplier-bills/import', async (req, res, next) =>
   }
 });
 
+// Admin "backfill 90 days" trigger per provider — pulls a longer history
+// than the scheduled jobs do. Square chunks by 7-day windows server-side
+// so the per-call 1000-payment cap doesn't truncate. Xero passes through
+// to runScheduledXeroImport with lookbackDays clamped to 180. Deputy
+// runs syncAllNow (Deputy's API only exposes a rolling roster window).
+integrationsRouter.post('/square/backfill', async (req, res, next) => {
+  try {
+    const days = typeof req.body?.days === 'number' ? req.body.days : undefined;
+    const account = req.query.account ?? req.body?.account ?? null;
+    res.json(await integrationService.backfillSquareSales({ days, account: typeof account === 'string' ? account : null }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/xero/backfill', async (req, res, next) => {
+  try {
+    const days = typeof req.body?.days === 'number' ? req.body.days : undefined;
+    res.json(await integrationService.backfillXeroBills({ days }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/deputy/backfill', async (req, res, next) => {
+  try {
+    res.json(await integrationService.backfillDeputy(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/:provider/connect', async (req, res, next) => {
   try {
     res.json(await integrationService.startConnect(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));
