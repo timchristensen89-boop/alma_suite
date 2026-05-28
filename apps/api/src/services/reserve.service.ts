@@ -9,7 +9,9 @@ import {
   reserveGuestUpdateInputSchema,
   reservePublicAvailabilityInputSchema,
   reservePublicBookingInputSchema,
+  reservePublicSetupIntentInputSchema,
   reservePublicWaitlistInputSchema,
+  reserveNoShowChargeInputSchema,
   reserveReservationInputSchema,
   reserveReservationUpdateInputSchema,
   reserveTableInputSchema,
@@ -17,8 +19,10 @@ import {
   googleReserveIntegrationSettingInputSchema,
   type AuthUser,
   type ReserveGuest,
+  type ReserveNoShowChargeResult,
   type ReservePublicBookingConfirmation,
   type ReservePublicManageView,
+  type ReservePublicSetupIntentResponse,
   type ReservePublicWaitlistConfirmation,
   type ReserveReservation,
   type ReserveReservationStatus,
@@ -27,10 +31,66 @@ import {
   type ReserveWaitlistEntry,
   type MarketingSegmentDefinition
 } from '@alma/shared';
+import Stripe from 'stripe';
+import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { createReservationManageToken, reservationManageUrl, verifyReservationManageToken } from '../lib/reservation-manage-token.js';
 import { mailService } from './mail.service.js';
 import { buildGuestTimeline, recalculateAutoTagsForGuest } from './marketing.service.js';
+
+const stripe = env.stripe.secretKey
+  ? new Stripe(env.stripe.secretKey, {
+      apiVersion: env.stripe.apiVersion,
+      ...(env.stripe.context && { stripeContext: env.stripe.context })
+    })
+  : null;
+
+// Default no-show fee per cover ($50). Manager call can override per
+// reservation. Stripe currency stays AUD inherited from the platform.
+const DEFAULT_NO_SHOW_FEE_PER_COVER_CENTS = 5000;
+
+async function resolveCardOnFileFromSetupIntent(input: {
+  setupIntentId: string | null;
+  paymentMethodId: string | null;
+  customerId: string | null;
+}): Promise<{
+  setupIntentId: string;
+  paymentMethodId: string;
+  customerId: string;
+  brand: string | null;
+  last4: string | null;
+} | null> {
+  if (!input.setupIntentId || !stripe) return null;
+  try {
+    const setupIntent = await stripe.setupIntents.retrieve(input.setupIntentId, {
+      expand: ['payment_method']
+    });
+    if (setupIntent.status !== 'succeeded') return null;
+    const customerId = typeof setupIntent.customer === 'string'
+      ? setupIntent.customer
+      : setupIntent.customer?.id ?? input.customerId ?? null;
+    const paymentMethodId = typeof setupIntent.payment_method === 'string'
+      ? setupIntent.payment_method
+      : setupIntent.payment_method?.id ?? input.paymentMethodId ?? null;
+    if (!customerId || !paymentMethodId) return null;
+    const card = typeof setupIntent.payment_method === 'object'
+      ? setupIntent.payment_method?.card ?? null
+      : null;
+    return {
+      setupIntentId: setupIntent.id,
+      paymentMethodId,
+      customerId,
+      brand: card?.brand ?? null,
+      last4: card?.last4 ?? null
+    };
+  } catch (error) {
+    console.error('[reserve] resolveCardOnFileFromSetupIntent failed', {
+      setupIntentId: input.setupIntentId,
+      reason: error instanceof Error ? error.message : 'unknown'
+    });
+    return null;
+  }
+}
 
 const ACTIVE_BOOKING_STATUSES = new Set<ReserveReservationStatus>(['PENDING', 'CONFIRMED', 'SEATED']);
 const VISIT_STATUSES = new Set<ReserveReservationStatus>(['SEATED', 'COMPLETED']);
@@ -1279,6 +1339,16 @@ export const reserveService = {
       })
     );
 
+    // Resolve the card-on-file details from the SetupIntent (if the
+    // client confirmed one). We fetch the SetupIntent rather than
+    // trusting the client because the brand/last4 we store are shown
+    // to the manager, and a forged client payload could mislead them.
+    const cardOnFile = await resolveCardOnFileFromSetupIntent({
+      setupIntentId: cleanText(data.stripeSetupIntentId),
+      paymentMethodId: cleanText(data.stripePaymentMethodId),
+      customerId: cleanText(data.stripeCustomerId)
+    });
+
     const reservation = await prisma.$transaction(async (tx) => {
       const created = await tx.reserveReservation.create({
         data: {
@@ -1297,7 +1367,12 @@ export const reserveService = {
           guestPhone: guest.phone,
           occasion: cleanText(data.occasion),
           specialRequests: requestLines.length ? requestLines.join('\n') : null,
-          marketingOptIn: data.marketingOptIn
+          marketingOptIn: data.marketingOptIn,
+          stripeCustomerId: cardOnFile?.customerId ?? null,
+          stripeSetupIntentId: cardOnFile?.setupIntentId ?? null,
+          stripePaymentMethodId: cardOnFile?.paymentMethodId ?? null,
+          stripePaymentMethodBrand: cardOnFile?.brand ?? null,
+          stripePaymentMethodLast4: cardOnFile?.last4 ?? null
         },
         include: reserveReservationWithRelationsArgs.include
       });
@@ -1520,5 +1595,118 @@ export const reserveService = {
       data: { status: 'CANCELLED', cancelledAt: new Date() }
     });
     return this.getPublicManageView(token);
+  },
+
+  // Public — issue a SetupIntent that the Stripe Elements client
+  // confirms with the guest's card. Used by the booking widget to
+  // capture a card-on-file for no-show protection without charging.
+  async createPublicSetupIntent(input: unknown): Promise<ReservePublicSetupIntentResponse> {
+    const data = reservePublicSetupIntentInputSchema.parse(input);
+    if (!stripe) throw new HttpError(503, 'Card-on-file is not configured.');
+    const customer = await stripe.customers.create({
+      email: data.guestEmail?.trim() || undefined,
+      metadata: {
+        venue: data.venue.trim(),
+        source: 'reserve-public-widget',
+        partySize: data.partySize ? String(data.partySize) : ''
+      }
+    });
+    const setupIntent = await stripe.setupIntents.create({
+      customer: customer.id,
+      payment_method_types: ['card'],
+      usage: 'off_session',
+      metadata: {
+        venue: data.venue.trim(),
+        source: 'reserve-public-widget'
+      }
+    });
+    if (!setupIntent.client_secret) {
+      throw new HttpError(502, 'Stripe did not return a SetupIntent client secret.');
+    }
+    return {
+      clientSecret: setupIntent.client_secret,
+      customerId: customer.id,
+      setupIntentId: setupIntent.id,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null
+    };
+  },
+
+  // Manager — charge the saved card-on-file for a no-show. Default fee
+  // is $50 per cover (capped at 9 covers = $450) which mirrors the
+  // industry norm for casual dining; manager call can override per
+  // reservation. Off-session payment intent fires without the guest
+  // present; success / failure / requires_action are all stored on
+  // the reservation so the manager UI can react.
+  async chargeReservationNoShow(actor: AuthUser, id: string, input: unknown): Promise<ReserveNoShowChargeResult> {
+    const data = reserveNoShowChargeInputSchema.parse(input ?? {});
+    if (!stripe) throw new HttpError(503, 'Card-on-file is not configured.');
+    const reservation = await prisma.reserveReservation.findFirst({
+      where: { id, ...reservationScope(actor, null) }
+    });
+    if (!reservation) throw new HttpError(404, 'Reservation not found.');
+    if (!reservation.stripeCustomerId || !reservation.stripePaymentMethodId) {
+      throw new HttpError(409, 'This reservation has no card on file.');
+    }
+    if (reservation.noShowFeeChargedAt) {
+      throw new HttpError(409, 'No-show fee has already been charged for this reservation.');
+    }
+    const cappedCovers = Math.min(reservation.covers, 9);
+    const amountCents = data.amountCents ?? cappedCovers * DEFAULT_NO_SHOW_FEE_PER_COVER_CENTS;
+
+    try {
+      const intent = await stripe.paymentIntents.create({
+        amount: amountCents,
+        currency: 'aud',
+        customer: reservation.stripeCustomerId,
+        payment_method: reservation.stripePaymentMethodId,
+        off_session: true,
+        confirm: true,
+        description: `Alma Reserve no-show fee · ${reservation.venue} · ${reservation.startsAt.toISOString()}`,
+        metadata: {
+          reservationId: reservation.id,
+          venue: reservation.venue,
+          covers: String(reservation.covers),
+          actorId: actor.id ?? '',
+          reason: data.reason?.trim() ?? ''
+        }
+      });
+      const status = intent.status === 'succeeded'
+        ? 'succeeded'
+        : intent.status === 'requires_action' || intent.status === 'requires_confirmation'
+          ? 'requires_action'
+          : 'failed';
+      await prisma.reserveReservation.update({
+        where: { id: reservation.id },
+        data: {
+          status: 'NO_SHOW',
+          noShowFeeAmountCents: amountCents,
+          noShowFeeChargedAt: status === 'succeeded' ? new Date() : null,
+          noShowFeePaymentIntentId: intent.id,
+          noShowFeeError: status === 'failed' ? intent.last_payment_error?.message ?? 'Charge failed.' : null
+        }
+      });
+      return {
+        reservationId: reservation.id,
+        amountCents,
+        paymentIntentId: intent.id,
+        chargedAt: new Date().toISOString(),
+        status,
+        errorMessage: status === 'failed' ? intent.last_payment_error?.message ?? null : null
+      };
+    } catch (error) {
+      const message = error instanceof Stripe.errors.StripeError
+        ? error.message
+        : error instanceof Error
+          ? error.message
+          : 'Stripe charge failed.';
+      await prisma.reserveReservation.update({
+        where: { id: reservation.id },
+        data: {
+          noShowFeeAmountCents: amountCents,
+          noShowFeeError: message.slice(0, 500)
+        }
+      });
+      throw new HttpError(502, `Could not charge the no-show fee: ${message}`);
+    }
   }
 };
