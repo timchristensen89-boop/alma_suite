@@ -838,13 +838,21 @@ function PublicBookingWidget() {
     return () => { cancelled = true; };
   }, []);
 
+  // 90-day rolling release. The pill row scrolls horizontally; the
+  // native date picker above lets guests jump straight to a date.
+  const BOOKING_WINDOW_DAYS = 90;
   const calendar = useMemo(() => {
-    return Array.from({ length: 14 }, (_, offset) => {
+    return Array.from({ length: BOOKING_WINDOW_DAYS }, (_, offset) => {
       const date = new Date(today);
       date.setDate(date.getDate() + offset);
       return date;
     });
   }, [today]);
+  const calendarMinIso = useMemo(() => calendar[0]!.toISOString().slice(0, 10), [calendar]);
+  const calendarMaxIso = useMemo(
+    () => calendar[calendar.length - 1]!.toISOString().slice(0, 10),
+    [calendar]
+  );
 
   const selectedDate = calendar[dateIdx] ?? calendar[0]!;
   const venueAccent = venueAccentFor(venue);
@@ -1011,11 +1019,11 @@ function PublicBookingWidget() {
             <em>for tonight.</em>
           </h1>
           <p className="alma-booking-hero__tag">
-            Coastal dining at {venue}. Bookings open 30 days ahead.
+            Coastal dining at {venue}. Bookings open 3 months ahead.
             Walk-ins welcome on the bar &amp; terrace from 5pm.
           </p>
           <div className="alma-booking-hero__policy" aria-label="House policy">
-            <span className="alma-booking-hero__policy-pill">30-day rolling release</span>
+            <span className="alma-booking-hero__policy-pill">3-month rolling release</span>
             <span className="alma-booking-hero__policy-pill">2-hour seating</span>
             <span className="alma-booking-hero__policy-pill">24-hour cancellation</span>
           </div>
@@ -1087,7 +1095,26 @@ function PublicBookingWidget() {
               </div>
 
               <div className="alma-booking-field">
-                <div className="alma-booking-field__eyebrow">Day</div>
+                <div className="alma-booking-field__eyebrow alma-booking-field__eyebrow--row">
+                  <span>Day</span>
+                  <label className="alma-booking-date-jump">
+                    <span className="visually-hidden">Pick a date</span>
+                    <input
+                      type="date"
+                      value={selectedDate.toISOString().slice(0, 10)}
+                      min={calendarMinIso}
+                      max={calendarMaxIso}
+                      onChange={(event) => {
+                        const next = event.currentTarget.value;
+                        if (!next) return;
+                        const idx = calendar.findIndex(
+                          (date) => date.toISOString().slice(0, 10) === next
+                        );
+                        if (idx >= 0) setDateIdx(idx);
+                      }}
+                    />
+                  </label>
+                </div>
                 <div className="alma-booking-calendar">
                   {calendar.map((date, index) => {
                     const isToday = index === 0;

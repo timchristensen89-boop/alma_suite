@@ -2000,6 +2000,42 @@
   text-transform: uppercase;
   color: var(--abk-ink-55);
 }
+.alma-booking-field__eyebrow--row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.alma-booking-date-jump {
+  display: inline-flex;
+  align-items: center;
+}
+.alma-booking-date-jump input[type="date"] {
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  border: 1px solid var(--abk-hair);
+  border-radius: 8px;
+  padding: 4px 8px;
+  font: inherit;
+  color: var(--abk-ink);
+  cursor: pointer;
+}
+.alma-booking-date-jump input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+  opacity: 0.6;
+}
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
 
 /* ── Venue toggle ── */
 .alma-booking-venues {
@@ -2050,11 +2086,29 @@
 .alma-booking-venue--active .alma-booking-venue__tagline { color: var(--abk-venue-accent, var(--abk-forest)); }
 
 /* ── Calendar strip ── */
+/* 90-day window: switch from a 7-col grid to a horizontal scroll so the
+   pill row stays compact and the operator's eye still sees the next
+   week or two at a glance. The native date input above does direct
+   jumps further out. */
 .alma-booking-calendar {
   margin-top: 8px;
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(48px, 1fr);
   gap: 6px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+  padding-bottom: 6px;
+}
+.alma-booking-calendar::-webkit-scrollbar { height: 6px; }
+.alma-booking-calendar::-webkit-scrollbar-thumb {
+  background: var(--abk-hair);
+  border-radius: 9999px;
+}
+.alma-booking-calendar .alma-booking-day {
+  scroll-snap-align: start;
+  min-width: 48px;
 }
 .alma-booking-day {
   padding: 10px 4px 8px;
