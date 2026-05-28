@@ -1662,6 +1662,54 @@ function StaffMemberHome({
         actions={<Button type="button" variant="secondary" disabled={loadingHome || loadingShiftTasks} onClick={() => void Promise.all([loadHome(), loadShiftTasks()])}>{loadingHome || loadingShiftTasks ? 'Refreshing…' : 'Refresh'}</Button>}
       />
 
+      <Card>
+        <div className="staff-quick-clock">
+          <div className="staff-quick-clock-status">
+            <strong>
+              {activeSession
+                ? isOnBreak
+                  ? `On break since ${timeOf(activeSession.currentBreakStartedAt ?? activeSession.clockInAt)}`
+                  : `Clocked in at ${timeOf(activeSession.clockInAt)}`
+                : 'Not clocked in'}
+            </strong>
+            <span className="subtle">
+              {todayShift
+                ? `Today ${timeOf(todayShift.startsAt)}-${timeOf(todayShift.endsAt)} · ${todayShift.area || todayShift.roleTitle || 'Shift'}`
+                : 'No shift rostered today'}
+            </span>
+          </div>
+          <div className="staff-quick-clock-actions">
+            {!activeSession ? (
+              <Button type="button" disabled={saving} onClick={() => void runClockAction('clock-in')}>
+                {saving ? 'Saving…' : 'Clock in'}
+              </Button>
+            ) : isOnBreak ? (
+              <>
+                <Button type="button" disabled={saving} onClick={() => void runClockAction('break-end')}>
+                  {saving ? 'Saving…' : 'End break'}
+                </Button>
+                <Button type="button" variant="secondary" disabled={saving} onClick={() => void runClockAction('clock-out')}>
+                  Clock out
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button type="button" disabled={saving} onClick={() => void runClockAction('clock-out')}>
+                  {saving ? 'Saving…' : 'Clock out'}
+                </Button>
+                <Button type="button" variant="secondary" disabled={saving} onClick={() => void runClockAction('break-start')}>
+                  Start break
+                </Button>
+              </>
+            )}
+          </div>
+        </div>
+        <ActionFeedback
+          message={messageTarget === 'clock' ? message : null}
+          tone={message?.includes('Could') || message?.includes('No active') || message?.includes('already') ? 'error' : 'success'}
+        />
+      </Card>
+
       <div className="stats-grid">
         <StatCard label="Today" value={todayShift ? timeOf(todayShift.startsAt) : 'Off'} hint={todayShift ? `${todayShift.area || todayShift.roleTitle || 'Shift'} · ${todayShift.venue || displayMember?.venue || 'No venue'}` : 'No shift rostered'} loading={loadingHome} />
         <StatCard label="Next shift" value={nextShift ? new Date(nextShift.startsAt).toLocaleDateString(undefined, { weekday: 'short' }) : 'None'} hint={nextShift ? `${timeOf(nextShift.startsAt)}-${timeOf(nextShift.endsAt)}` : 'No upcoming shift'} loading={loadingHome} />
