@@ -2690,13 +2690,17 @@
     -webkit-print-color-adjust: exact;
   }
 
-  /* Hide the in-page action buttons + nav + any banner. */
+  /* Hide the in-page action buttons + nav + any banner. The wallet
+     buttons (Apple/Google Wallet) inside the printable card are
+     interactive-only and would otherwise consume extra space in the
+     PDF, so hide them too. */
   .giftcards-print-actions,
   .giftcards-print-page > .error-text,
   .alma-giftcards-nav,
   .alma-giftcards-quickinfo,
   .alma-giftcards-paid__actions,
-  .alma-giftcards-staff-link {
+  .alma-giftcards-staff-link,
+  .giftcards-wallet-actions {
     display: none !important;
   }
 
