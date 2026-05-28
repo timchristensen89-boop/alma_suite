@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
+import { HttpError } from '../lib/http.js';
 import { reserveService } from '../services/reserve.service.js';
 
 export const reserveRouter = Router();
@@ -244,6 +245,38 @@ reserveRouter.post('/public/book', async (req, res, next) => {
 reserveRouter.post('/public/function-enquiry', async (req, res, next) => {
   try {
     res.status(201).json(await reserveService.recordFunctionEnquiry(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public — guest joins the waitlist when their desired date is fully booked.
+reserveRouter.post('/public-widget/waitlist', async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.recordPublicWaitlist(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager — list current waitlist entries (filterable by venue + status).
+reserveRouter.get('/waitlist', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    const venue = typeof req.query.venue === 'string' ? req.query.venue : undefined;
+    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    res.json(await reserveService.listWaitlist(req.user, { venue, status }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager — update a waitlist entry (mark notified, attach a created
+// reservation, archive, etc.).
+reserveRouter.patch('/waitlist/:id', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await reserveService.updateWaitlistEntry(req.user, String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }

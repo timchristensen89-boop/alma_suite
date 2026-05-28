@@ -808,6 +808,15 @@ function PublicBookingWidget() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReservePublicBookingConfirmation | null>(null);
 
+  // Waitlist (fully-booked alternate state) — guest leaves name + phone
+  // and the host follows up when a table opens. Same panel as step 2;
+  // the form swaps in when slotsForDay is empty.
+  const [waitlistName, setWaitlistName] = useState('');
+  const [waitlistPhone, setWaitlistPhone] = useState('');
+  const [waitlistSubmitting, setWaitlistSubmitting] = useState(false);
+  const [waitlistSubmittedAt, setWaitlistSubmittedAt] = useState<string | null>(null);
+  const [waitlistError, setWaitlistError] = useState<string | null>(null);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -926,6 +935,41 @@ function PublicBookingWidget() {
       setSubmitError(error instanceof Error ? error.message : 'Could not confirm booking');
     } finally {
       setSubmitting(false);
+    }
+  }
+
+  async function submitWaitlist() {
+    if (!waitlistName.trim() || waitlistPhone.trim().length < 6) {
+      setWaitlistError('Add a name and a phone number we can reach you on.');
+      return;
+    }
+    setWaitlistSubmitting(true);
+    setWaitlistError(null);
+    try {
+      // Window is the whole selected day — start at the venue's
+      // service-start time (we don't know exact slots, so use the
+      // calendar date 00:00 → 23:59). The host filters by venue +
+      // date on the manager waitlist view.
+      const startsAt = new Date(selectedDate);
+      startsAt.setHours(0, 0, 0, 0);
+      const endsAt = new Date(selectedDate);
+      endsAt.setHours(23, 59, 59, 999);
+      await api('/api/reserve/public-widget/waitlist', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue,
+          guestName: waitlistName.trim(),
+          guestPhone: waitlistPhone.trim(),
+          partySize,
+          windowStartsAt: startsAt.toISOString(),
+          windowEndsAt: endsAt.toISOString()
+        })
+      });
+      setWaitlistSubmittedAt(new Date().toISOString());
+    } catch (error) {
+      setWaitlistError(error instanceof Error ? error.message : 'Could not join the waitlist.');
+    } finally {
+      setWaitlistSubmitting(false);
     }
   }
 
@@ -1140,8 +1184,56 @@ function PublicBookingWidget() {
                     <br />for {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}.
                   </h2>
                   <div className="alma-booking-step__context">
-                    Try another day below — or leave us your number and we'll text the moment a table opens.
+                    {waitlistSubmittedAt
+                      ? "You're on the list — we'll text the moment a table opens."
+                      : "Leave your name and number and we'll text the moment a table opens."}
                   </div>
+                  {!waitlistSubmittedAt ? (
+                    <form
+                      className="alma-booking-grid"
+                      style={{ marginTop: 16 }}
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        void submitWaitlist();
+                      }}
+                    >
+                      <label>
+                        <span className="alma-booking-field__eyebrow">Your name</span>
+                        <input
+                          className="alma-booking-input"
+                          required
+                          value={waitlistName}
+                          onChange={(event) => setWaitlistName(event.currentTarget.value)}
+                          placeholder="First name"
+                        />
+                      </label>
+                      <label>
+                        <span className="alma-booking-field__eyebrow">Phone</span>
+                        <input
+                          className="alma-booking-input"
+                          required
+                          type="tel"
+                          value={waitlistPhone}
+                          onChange={(event) => setWaitlistPhone(event.currentTarget.value)}
+                          placeholder="04xx xxx xxx"
+                        />
+                      </label>
+                      {waitlistError ? (
+                        <div className="alma-booking-error" style={{ gridColumn: '1 / -1' }}>{waitlistError}</div>
+                      ) : null}
+                      <div className="alma-booking-actions" style={{ gridColumn: '1 / -1' }}>
+                        <span />
+                        <button
+                          type="submit"
+                          className="alma-booking-btn"
+                          disabled={waitlistSubmitting}
+                        >
+                          {waitlistSubmitting ? 'Sending…' : 'Join the waitlist'}
+                          <AlmaBookingArrow />
+                        </button>
+                      </div>
+                    </form>
+                  ) : null}
                   <div className="alma-booking-waitlist-banner">
                     <span className="alma-booking-waitlist-banner__dot" aria-hidden="true" />
                     <div className="alma-booking-waitlist-banner__body">
