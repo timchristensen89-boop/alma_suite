@@ -3382,6 +3382,28 @@ export type ReservePublicBookingConfirmation = {
   occasion: string | null;
   specialRequests: string | null;
   createdAt: string;
+  // Signed URL the guest can use to view + cancel without an account.
+  // The token expires after a TTL (default 60d) and the cancel call
+  // verifies the signature so a leaked link only works for the booked
+  // reservation, not for browsing other bookings.
+  manageUrl: string;
+  manageToken: string;
+};
+
+export type ReservePublicManageView = {
+  id: string;
+  venue: string;
+  serviceDate: string;
+  startsAt: string;
+  endsAt: string;
+  covers: number;
+  guestName: string;
+  status: ReserveReservationStatus;
+  occasion: string | null;
+  specialRequests: string | null;
+  cancellable: boolean;
+  cancellationDeadline: string | null;
+  cancellationNotice: string | null;
 };
 
 export type ReservePublicWidgetConfig = {

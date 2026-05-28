@@ -2461,10 +2461,12 @@
 }
 .alma-booking-ticket__footer {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-auto-columns: 1fr;
+  grid-auto-flow: column;
   border-top: 1px solid var(--abk-hair);
 }
-.alma-booking-ticket__footer button {
+.alma-booking-ticket__footer button,
+.alma-booking-ticket__footer a {
   padding: 14px 12px;
   background: transparent;
   border: 0;
@@ -2476,8 +2478,10 @@
   letter-spacing: 0.20em;
   text-transform: uppercase;
   color: var(--abk-ink);
+  text-align: center;
+  text-decoration: none;
 }
-.alma-booking-ticket__footer button:first-child { border-left: 0; }
+.alma-booking-ticket__footer > *:first-child { border-left: 0; }
 
 /* ── Spinner / empty / error ── */
 .alma-booking-loading,

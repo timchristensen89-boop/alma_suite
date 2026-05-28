@@ -468,6 +468,52 @@ export const mailService = {
     ].join('\n');
 
     return deliverEmail({ to: input.to, subject: safeSubject, text, html });
+  },
+
+  // Reservation confirmation with a signed manage/cancel deep link.
+  // Plain HTML to play nicely with every mail client; manage link uses
+  // a single CTA button so the guest can re-find it later.
+  async sendReservationConfirmation(input: {
+    to: string;
+    guestFirstName: string;
+    venue: string;
+    startsAt: Date;
+    covers: number;
+    manageUrl: string;
+  }): Promise<EmailDeliveryResult> {
+    const whenLabel = input.startsAt.toLocaleString('en-AU', {
+      weekday: 'long', day: 'numeric', month: 'long',
+      hour: 'numeric', minute: '2-digit'
+    });
+    const subject = `Booking confirmed — ${input.venue}, ${whenLabel}`;
+    const text = `Hi ${input.guestFirstName || 'there'},
+
+Your booking at ${input.venue} is confirmed for ${whenLabel}, ${input.covers} ${input.covers === 1 ? 'guest' : 'guests'}.
+
+Need to change or cancel?
+${input.manageUrl}
+
+(You can cancel online up to 24 hours before. Inside 24 hours please call the venue directly.)
+
+See you soon,
+Alma Group`;
+    // Public widget accepts arbitrary text for guest first name + the
+    // venue label comes from a public payload, so escape every
+    // user-controlled value before dropping it into HTML. Otherwise a
+    // booking could inject markup or a misleading link into the
+    // confirmation email (which may also be addressed to a third party).
+    const safeFirstName = escapeHtml(input.guestFirstName || 'there');
+    const safeVenue = escapeHtml(input.venue);
+    const safeWhen = escapeHtml(whenLabel);
+    const safeManageUrl = escapeHtml(input.manageUrl);
+    const html = `<!doctype html><html><body style="font-family:-apple-system,Segoe UI,sans-serif;max-width:560px;margin:32px auto;padding:0 16px;color:#14241A">
+<p>Hi ${safeFirstName},</p>
+<p>Your booking at <strong>${safeVenue}</strong> is confirmed for <strong>${safeWhen}</strong>, ${input.covers} ${input.covers === 1 ? 'guest' : 'guests'}.</p>
+<p style="margin:32px 0"><a href="${safeManageUrl}" style="display:inline-block;padding:14px 22px;background:#14241A;color:#FAF6EE;border-radius:9999px;text-decoration:none;font-weight:700;letter-spacing:0.18em;font-size:11px;text-transform:uppercase">View or cancel booking</a></p>
+<p style="font-size:13px;color:rgba(20,36,26,0.65)">You can cancel online up to 24 hours before. Inside 24 hours please call the venue directly.</p>
+<p>See you soon,<br>Alma Group</p>
+</body></html>`;
+    return deliverEmail({ to: input.to, subject, text, html });
   }
 };
 
