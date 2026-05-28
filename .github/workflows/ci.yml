@@ -1,0 +1,52 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+# Cancel duplicate runs for the same PR / push (saves Actions minutes).
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: Typecheck workspace
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.32.1
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'pnpm'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # @prisma/client types are generated, not committed. The API package's
+      # typecheck depends on them, so run this before `pnpm typecheck`.
+      - name: Generate Prisma client
+        run: pnpm db:generate
+
+      # @alma/shared and @alma/db publish their type declarations from
+      # `dist/` (see their package.json `main` + `types` fields), and
+      # `dist/` is gitignored. Build them so downstream packages can
+      # resolve `@alma/shared` / `@alma/db` during typecheck.
+      - name: Build internal type declarations
+        run: pnpm --filter @alma/shared --filter @alma/db build
+
+      - name: Typecheck all packages
+        run: pnpm typecheck
+
+  # Vite production builds need real-looking https URLs in VITE_* env vars
+  # (apps/web/.env.production etc.) — those are deploy-time concerns, not
+  # CI concerns, so we don't run `pnpm build` here. Re-add as a job once
+  # the env values are mirrored as GitHub Actions secrets.
