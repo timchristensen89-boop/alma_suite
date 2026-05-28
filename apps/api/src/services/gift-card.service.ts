@@ -430,6 +430,26 @@ export const giftCardService = {
     const expiresAt = new Date();
     expiresAt.setFullYear(expiresAt.getFullYear() + 3);
 
+    // Optional scheduled delivery. Cap at 1 year out so a bad client
+    // can't park a card in the queue forever.
+    let scheduledDeliveryAt: Date | null = null;
+    if (data.scheduledDeliveryAt && data.scheduledDeliveryAt.trim()) {
+      const parsed = new Date(data.scheduledDeliveryAt);
+      if (Number.isNaN(parsed.getTime())) {
+        throw new HttpError(400, 'Scheduled delivery date is invalid.');
+      }
+      const maxDate = new Date();
+      maxDate.setFullYear(maxDate.getFullYear() + 1);
+      if (parsed.getTime() > maxDate.getTime()) {
+        throw new HttpError(400, 'Schedule a delivery date within the next 12 months.');
+      }
+      // Anything in the past is treated as "send now" — the create
+      // path falls through to the existing immediate-send branch.
+      if (parsed.getTime() > Date.now()) {
+        scheduledDeliveryAt = parsed;
+      }
+    }
+
     if (settings.testCheckoutEnabled) {
       const testSessionId = `TEST-${randomBytes(8).toString('hex').toUpperCase()}`;
       const card = await prisma.giftCard.create({
@@ -452,11 +472,14 @@ export const giftCardService = {
           testMode: true,
           stripeCheckoutSessionId: testSessionId,
           paidAt: new Date(),
-          expiresAt
+          expiresAt,
+          scheduledDeliveryAt
         },
         include: { redemptions: true }
       });
-      await this.sendGiftCardEmail(card, settings);
+      if (!scheduledDeliveryAt) {
+        await this.sendGiftCardEmail(card, settings);
+      }
       return {
         giftCardId: card.id,
         checkoutUrl: successUrl(testSessionId),
@@ -485,7 +508,8 @@ export const giftCardService = {
         design: data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
-        expiresAt
+        expiresAt,
+        scheduledDeliveryAt
       },
       include: { redemptions: true }
     });
@@ -830,8 +854,48 @@ export const giftCardService = {
     });
     const payload = toGiftCardPayload(card);
     if (card.emailedAt) return payload;
+    // Scheduled delivery (e.g. for a birthday) — defer the send. The
+    // /jobs/gift-cards/drain Cloud Scheduler endpoint picks it up
+    // when scheduledDeliveryAt arrives.
+    if (card.scheduledDeliveryAt && card.scheduledDeliveryAt.getTime() > Date.now()) {
+      return payload;
+    }
     await this.sendGiftCardEmail(card, await getGiftCardSettings());
     return payload;
+  },
+
+  // Cloud Scheduler entry — finds gift cards with a scheduledDeliveryAt
+  // in the past + emailedAt null + status ACTIVE, sends each one.
+  // Returns counts so the scheduler logs are useful. Designed to be
+  // safely re-runnable: if a send fails the card stays in the queue
+  // (emailedAt stays null + emailError is set by sendGiftCardEmail).
+  async drainScheduledGiftCardSends() {
+    const settings = await getGiftCardSettings();
+    const due = await prisma.giftCard.findMany({
+      where: {
+        status: 'ACTIVE',
+        emailedAt: null,
+        scheduledDeliveryAt: { lte: new Date(), not: null }
+      },
+      include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } },
+      take: 200
+    });
+    let sent = 0;
+    let failed = 0;
+    for (const card of due) {
+      try {
+        await this.sendGiftCardEmail(card, settings);
+        sent += 1;
+      } catch (error) {
+        failed += 1;
+        console.error('[gift-cards] scheduled send failed', {
+          giftCardId: card.id,
+          scheduledFor: card.scheduledDeliveryAt?.toISOString(),
+          reason: error instanceof Error ? error.message : 'unknown'
+        });
+      }
+    }
+    return { eligible: due.length, sent, failed, generatedAt: new Date().toISOString() };
   },
 
   async sendGiftCardEmail(card: Parameters<typeof toGiftCardPayload>[0], settings: GiftCardSettings) {

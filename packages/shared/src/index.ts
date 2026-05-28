@@ -1392,6 +1392,10 @@ export const giftCardCheckoutInputSchema = z.object({
   recipientEmail: z.string().email().optional().or(z.literal('')),
   message: z.string().max(500).optional().or(z.literal('')),
   design: giftCardDesignSchema.optional(),
+  // ISO date-time. When provided + in the future, the card is created
+  // immediately on Stripe completion but the delivery email is deferred
+  // until the /jobs/gift-cards/drain scheduler reaches it.
+  scheduledDeliveryAt: z.string().optional().or(z.literal('')),
   promoCode: z.string().max(40).optional().or(z.literal('')),
   successUrl: z.string().url().optional().or(z.literal('')),
   cancelUrl: z.string().url().optional().or(z.literal(''))

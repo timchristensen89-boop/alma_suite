@@ -4,6 +4,7 @@ import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
 import { deputyService } from '../services/deputy.service.js';
+import { giftCardService } from '../services/gift-card.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
@@ -63,6 +64,17 @@ integrationJobsRouter.post('/deputy/sync', async (_req, res, next) => {
 integrationJobsRouter.post('/run', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledIntegrationImports(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Drains gift cards whose scheduledDeliveryAt has arrived (e.g.
+// birthday-scheduled cards). Designed to be called every few minutes
+// by Cloud Scheduler.
+integrationJobsRouter.post('/gift-cards/drain', async (_req, res, next) => {
+  try {
+    res.json(await giftCardService.drainScheduledGiftCardSends());
   } catch (error) {
     next(error);
   }
