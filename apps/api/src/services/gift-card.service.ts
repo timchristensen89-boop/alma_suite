@@ -46,6 +46,7 @@ function toGiftCardPayload(card: {
   recipientName: string | null;
   recipientEmail: string | null;
   message: string | null;
+  design: string | null;
   promoCodeId: string | null;
   promoCodeSnapshot: string | null;
   testMode: boolean;
@@ -100,6 +101,7 @@ function publicGiftCard(card: ReturnType<typeof toGiftCardPayload>) {
     currency: card.currency,
     recipientName: card.recipientName,
     message: card.message,
+    design: card.design ?? null,
     promoCodeSnapshot: card.promoCodeSnapshot,
     testMode: card.testMode,
     emailedAt: card.emailedAt,
@@ -444,6 +446,7 @@ export const giftCardService = {
           recipientName: data.recipientName?.trim() || null,
           recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
           message: data.message?.trim() || null,
+          design: data.design ?? null,
           promoCodeId: promoResult?.promo.id ?? null,
           promoCodeSnapshot: promoResult?.promo.code ?? null,
           testMode: true,
@@ -479,6 +482,7 @@ export const giftCardService = {
         recipientName: data.recipientName?.trim() || null,
         recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
         message: data.message?.trim() || null,
+        design: data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
         expiresAt

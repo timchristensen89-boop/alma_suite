@@ -1,10 +1,12 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
+  GIFT_CARD_DESIGNS,
   type AuthUser,
   type GiftCard,
   type GiftCardAdminSettingsResponse,
   type GiftCardCheckoutResult,
+  type GiftCardDesign,
   type GiftCardOverview,
   type GiftCardPromoCode,
   type GiftCardPromoQuote,
@@ -12,6 +14,7 @@ import {
   type GiftCardPublic,
   type GiftCardSettings
 } from '@alma/shared';
+import { GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign } from './giftCardArt';
 import {
   AppShell,
   ActionFeedback,
@@ -208,21 +211,9 @@ function useGiftCardAuth() {
   return { user, loading, login, logout };
 }
 
-type GiftDesign = 'forest' | 'cocoa' | 'shell' | 'bone';
-
-const DESIGN_LABEL: Record<GiftDesign, string> = {
-  forest: 'Avalon green',
-  cocoa: 'St. Alma cocoa',
-  shell: 'Shell pink',
-  bone: 'Bone neutral'
-};
-
-const DESIGN_META: Record<GiftDesign, { who: string; mark: string; markItalic: string }> = {
-  forest: { who: 'House design', mark: 'alma', markItalic: 'group' },
-  cocoa: { who: 'Newport', mark: 'st·alma', markItalic: 'Newport' },
-  shell: { who: 'Limited print', mark: 'alma', markItalic: 'group' },
-  bone: { who: 'Plain & calm', mark: 'alma', markItalic: 'group' }
-};
+// Six gift card designs are sourced from the Alma design bundle
+// (project/gift-card-art.jsx). Catalogue + React renderers live in
+// ./giftCardArt. Picker swatches use design.swatchBg.
 
 const QUICK_MESSAGES = [
   { short: 'Have the best night…', long: "Have the best night. Order the scallops. Don't drive." },
@@ -245,9 +236,11 @@ function PublicGiftCardShop() {
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
-  const [design, setDesign] = useState<GiftDesign>('forest');
+  const [design, setDesign] = useState<GiftCardDesign>('forest');
+  // Scheduled delivery is locked to 'now' until the backend supports a
+  // deliverAt field + scheduler drain (task #5). The toggle shows
+  // "Schedule it" as Coming soon.
   const [deliverMode, setDeliverMode] = useState<'now' | 'later'>('now');
-  const [deliverDate, setDeliverDate] = useState('');
   const [previewSide, setPreviewSide] = useState<'front' | 'back'>('front');
   const [promoCode, setPromoCode] = useState('');
   const [promoQuote, setPromoQuote] = useState<GiftCardPromoQuote | null>(null);
@@ -322,6 +315,7 @@ function PublicGiftCardShop() {
           recipientName,
           recipientEmail,
           message,
+          design,
           successUrl: `${window.location.origin}/success?session_id={CHECKOUT_SESSION_ID}`,
           cancelUrl: window.location.origin
         })
@@ -381,11 +375,8 @@ function PublicGiftCardShop() {
     : '— FROM TOM';
   const recipientDisplay = (recipientName || '').trim() || '—';
   const deliveryLabel = deliverMode === 'now'
-    ? 'By email · sent now'
-    : deliverDate
-      ? `By email · ${new Date(`${deliverDate}T07:00`).toLocaleDateString('en-AU', { weekday: 'long', day: 'numeric', month: 'long' })}, 7am`
-      : 'By email · pick a date';
-  const designMeta = DESIGN_META[design];
+    ? 'By email · sent right after payment'
+    : 'By email · scheduled (coming soon)';
 
   return (
     <main className="alma-giftcards-page" style={themeStyle(settings)}>
@@ -413,6 +404,14 @@ function PublicGiftCardShop() {
             <h2 className="alma-giftcards-paid__title">
               Your card <em>is ready.</em>
             </h2>
+            <div style={{ maxWidth: 480, margin: '8px 0', position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
+              <GiftCardArt
+                design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                amount={Math.round(paidCard.initialValueCents / 100)}
+                code={paidCard.code}
+                recipient={paidCard.recipientName ?? undefined}
+              />
+            </div>
             <div className="alma-giftcards-paid__details">
               <div>
                 <span className="alma-giftcards-paid__label">Reference</span>
@@ -469,13 +468,9 @@ function PublicGiftCardShop() {
             <div className="alma-giftcards-cardstack">
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--back" aria-hidden="true" />
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--mid" aria-hidden="true" />
-              <GiftCardPreview
-                design="forest"
-                amount={120}
-                recipient="Caro"
-                reference="ALMA-7C92F0"
-                showcase
-              />
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
+                <GiftCardArt design="forest" amount={120} code="ALMA-7C92F0" />
+              </div>
             </div>
           </div>
         </div>
@@ -555,13 +550,15 @@ function PublicGiftCardShop() {
                 </div>
               </div>
 
-              <GiftCardPreview
-                design={design}
-                amount={amountWhole}
-                recipient={recipientDisplay}
-                reference="ALMA-7C92F0"
-                side={previewSide}
-              />
+              <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
+                <GiftCardArt
+                  design={design}
+                  amount={amountWhole}
+                  recipient={recipientDisplay !== '—' ? recipientDisplay : undefined}
+                  code="ALMA-7C92F0"
+                  side={previewSide}
+                />
+              </div>
 
               <div className="alma-giftcards-preview__message">
                 <span className="alma-giftcards-preview__quote" aria-hidden="true">&ldquo;</span>
@@ -627,25 +624,28 @@ function PublicGiftCardShop() {
                   <span className="alma-giftcards-step__num">2</span>
                   <div>
                     <h3 className="alma-giftcards-h3">Pick <em>a design.</em></h3>
-                    <div className="alma-giftcards-step__hint">Either venue, or the group lockup if they know both.</div>
+                    <div className="alma-giftcards-step__hint">Six artworks from the Alma group. The chosen design ships with the email and the printable card.</div>
                   </div>
                 </div>
                 <div className="alma-giftcards-designs">
-                  {(['forest', 'cocoa', 'shell', 'bone'] as GiftDesign[]).map((d) => (
-                    <button
-                      key={d}
-                      type="button"
-                      className={`alma-giftcards-design ${design === d ? 'is-on' : ''}`}
-                      onClick={() => setDesign(d)}
-                      aria-pressed={design === d}
-                    >
-                      <span className={`alma-giftcards-design__swatch alma-giftcards-design__swatch--${d}`}>
-                        <span className="alma-giftcards-design__mark">{DESIGN_META[d].mark}</span>
-                      </span>
-                      <span className="alma-giftcards-design__name">{DESIGN_LABEL[d]}</span>
-                      <span className="alma-giftcards-design__who">{DESIGN_META[d].who}</span>
-                    </button>
-                  ))}
+                  {GIFT_CARD_DESIGNS.map((d) => {
+                    const meta = GIFT_CARD_DESIGN_META[d];
+                    return (
+                      <button
+                        key={d}
+                        type="button"
+                        className={`alma-giftcards-design ${design === d ? 'is-on' : ''}`}
+                        onClick={() => setDesign(d)}
+                        aria-pressed={design === d}
+                      >
+                        <span className="alma-giftcards-design__swatch" style={{ background: meta.swatchBg, color: meta.swatchFg }}>
+                          <span className="alma-giftcards-design__mark">alma</span>
+                        </span>
+                        <span className="alma-giftcards-design__name">{meta.label}</span>
+                        <span className="alma-giftcards-design__who">{meta.tagline}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -661,34 +661,24 @@ function PublicGiftCardShop() {
                 <div className="alma-giftcards-deliver">
                   <button
                     type="button"
-                    className={`alma-giftcards-toggle ${deliverMode === 'now' ? 'is-on' : ''}`}
+                    className="alma-giftcards-toggle is-on"
                     onClick={() => setDeliverMode('now')}
-                    aria-pressed={deliverMode === 'now'}
+                    aria-pressed={true}
                   >
                     <span className="alma-giftcards-toggle__title">Send now</span>
                     <span className="alma-giftcards-toggle__sub">In their inbox within 5 minutes</span>
                   </button>
                   <button
                     type="button"
-                    className={`alma-giftcards-toggle ${deliverMode === 'later' ? 'is-on' : ''}`}
-                    onClick={() => setDeliverMode('later')}
-                    aria-pressed={deliverMode === 'later'}
+                    className="alma-giftcards-toggle"
+                    disabled
+                    aria-disabled={true}
+                    title="Scheduled delivery is coming soon"
                   >
                     <span className="alma-giftcards-toggle__title">Schedule it</span>
-                    <span className="alma-giftcards-toggle__sub">Pick a date — birthdays, anniversaries</span>
+                    <span className="alma-giftcards-toggle__sub">Coming soon — for now we send right after payment</span>
                   </button>
                 </div>
-                {deliverMode === 'later' ? (
-                  <label className="alma-giftcards-field">
-                    <span className="alma-giftcards-field__label">Deliver on</span>
-                    <input
-                      type="date"
-                      value={deliverDate}
-                      onChange={(event) => setDeliverDate(event.currentTarget.value)}
-                    />
-                    <span className="alma-giftcards-field__hint">We'll send at 7am AEST on the date you pick.</span>
-                  </label>
-                ) : null}
               </div>
 
               {/* 4 — RECIPIENT */}
@@ -811,7 +801,7 @@ function PublicGiftCardShop() {
               <div className="alma-giftcards-summary" aria-label="Order summary">
                 <div className="alma-giftcards-summary__line">
                   <span>Gift card</span>
-                  <strong>{DESIGN_LABEL[design]} · for {recipientDisplay}</strong>
+                  <strong>{GIFT_CARD_DESIGN_META[design].label} · for {recipientDisplay}</strong>
                 </div>
                 <div className="alma-giftcards-summary__line">
                   <span>Delivery</span>
@@ -1017,63 +1007,7 @@ function PublicGiftCardShop() {
           <a className="alma-giftcards-staff-link" href="/redeem">Staff redeem</a>
         </div>
       </footer>
-
-      {/* Hidden reference data — keeps designMeta in the bundle even if unused by the renderer
-          (avoids dead-code elimination warnings) */}
-      <span style={{ display: 'none' }} aria-hidden="true">{designMeta.markItalic}</span>
     </main>
-  );
-}
-
-function GiftCardPreview({
-  design,
-  amount,
-  recipient,
-  reference,
-  side = 'front',
-  showcase = false
-}: {
-  design: GiftDesign;
-  amount: number;
-  recipient: string;
-  reference: string;
-  side?: 'front' | 'back';
-  showcase?: boolean;
-}) {
-  const meta = DESIGN_META[design];
-  return (
-    <div className={`alma-giftcards-card alma-giftcards-card--${design} ${showcase ? 'is-showcase' : ''}`}>
-      <span className="alma-giftcards-card__shine" aria-hidden="true" />
-      <span className="alma-giftcards-card__watermark" aria-hidden="true" />
-      <div className="alma-giftcards-card__top">
-        <div className="alma-giftcards-card__mark">
-          {meta.mark} <em>{meta.markItalic}</em>
-        </div>
-        <div className="alma-giftcards-card__eyebrow">A gift card</div>
-      </div>
-      {side === 'front' ? (
-        <>
-          <div className="alma-giftcards-card__amount">
-            <span className="alma-giftcards-card__currency">$</span>
-            <span className="alma-giftcards-card__value">{amount}</span>
-          </div>
-          <div className="alma-giftcards-card__bottom">
-            <div>
-              <span className="alma-giftcards-card__label">For</span>
-              <span className="alma-giftcards-card__recipient">{recipient}</span>
-            </div>
-            <div>
-              <span className="alma-giftcards-card__label">Reference</span>
-              <span className="alma-giftcards-card__ref">{reference}</span>
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="alma-giftcards-card__back">
-          Redeem at the table at Alma Avalon or St. Alma. Show the reference on your phone, or hand the printed card to your server. Balance carries.
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -1114,7 +1048,14 @@ function PrintableGiftCardPage() {
       {card ? (
         <section className="giftcards-print-card">
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
-          {settings.artworkUrl ? <img className="giftcards-print-artwork" src={settings.artworkUrl} alt="" /> : null}
+          <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
+            <GiftCardArt
+              design={isGiftCardDesign(card.design) ? card.design : 'forest'}
+              amount={Math.round(card.balanceCents / 100)}
+              code={card.code}
+              recipient={card.recipientName ?? undefined}
+            />
+          </div>
           <h1>{formatCents(card.balanceCents)}</h1>
           <p>Redeemable at ALMA venues</p>
           <div className="giftcards-print-code">{card.code}</div>

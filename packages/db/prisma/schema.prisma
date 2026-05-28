@@ -1663,6 +1663,7 @@ model GiftCard {
   recipientName           String?
   recipientEmail          String?
   message                 String?
+  design                  String?
   promoCodeId             String?
   promoCodeSnapshot       String?
   testMode                Boolean                @default(false)
