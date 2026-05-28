@@ -1668,6 +1668,7 @@ model GiftCard {
   promoCodeId             String?
   promoCodeSnapshot       String?
   testMode                Boolean                @default(false)
+  scheduledDeliveryAt     DateTime?
   stripeCheckoutSessionId String?                @unique
   stripePaymentIntentId   String?
   emailedAt               DateTime?
