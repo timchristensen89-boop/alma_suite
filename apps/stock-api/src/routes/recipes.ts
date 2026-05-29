@@ -4,9 +4,15 @@ import { recipesService } from '../services/recipes.service.js';
 
 export const recipesRouter = Router();
 
-recipesRouter.get('/', async (_req, res, next) => {
+recipesRouter.get('/', async (req, res, next) => {
   try {
-    res.json(await recipesService.list());
+    const raw = req.query.withSales;
+    const parsed = typeof raw === 'string' && raw.trim() !== ''
+      ? Number.parseInt(raw, 10)
+      : null;
+    res.json(await recipesService.list({
+      withSalesLookbackDays: Number.isFinite(parsed) ? parsed : null
+    }));
   } catch (error) {
     next(error);
   }

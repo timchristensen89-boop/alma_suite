@@ -5183,6 +5183,27 @@ export type RecipeLine = {
   updatedAt: string;
 };
 
+export type RecipeActualSales = {
+  /** Lookback window in days used to aggregate sales. */
+  lookbackDays: number;
+  /** Inclusive ISO date (YYYY-MM-DD) of the start of the window. */
+  fromDate: string;
+  /** Inclusive ISO date (YYYY-MM-DD) of the end of the window. */
+  toDate: string;
+  /** Total units sold across all locations in the window. */
+  quantitySold: number;
+  /** Net sales (after refunds/discounts) in cents. */
+  netSalesCents: number;
+  /** Gross sales (pre-discount) in cents. */
+  grossSalesCents: number;
+  /** Number of orders that included this dish. */
+  orderCount: number;
+  /** Number of distinct line items (one order can have multiple). */
+  lineCount: number;
+  /** Has any Square→Recipe menu mapping been confirmed for this recipe? */
+  hasMapping: boolean;
+};
+
 export type Recipe = {
   id: string;
   legacyId: string | null;
@@ -5203,6 +5224,8 @@ export type Recipe = {
   lineCount: number;
   createdAt: string;
   updatedAt: string;
+  /** Present only when /api/recipes?withSales=<N> is requested. */
+  actualSales?: RecipeActualSales | null;
 };
 
 export type RecipeWithLines = Recipe & { lines: RecipeLine[] };

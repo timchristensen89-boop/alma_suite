@@ -27,7 +27,15 @@ type EnrichedRecipe = Recipe & {
   marginCents: number | null;
   marginPercent: number | null;
   foodCostPercent: number | null;
+  /** quantitySold × marginCents — total margin contribution in the window. */
+  contributionCents: number | null;
 };
+
+const LOOKBACK_OPTIONS: Array<{ label: string; value: number }> = [
+  { label: 'Last 7 days', value: 7 },
+  { label: 'Last 30 days', value: 30 },
+  { label: 'Last 90 days', value: 90 }
+];
 
 export function DishMarginPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -36,8 +44,10 @@ export function DishMarginPage() {
   const [venueFilter, setVenueFilter] = useState('all');
   const [tone, setTone] = useState<'all' | MarginTone>('all');
   const [search, setSearch] = useState('');
+  const [lookbackDays, setLookbackDays] = useState<number>(30);
 
   useEffect(() => {
+    let cancelled = false;
     void (async () => {
       try {
         setLoading(true);
@@ -45,16 +55,17 @@ export function DishMarginPage() {
         // recipeCategories }) — not a flat Recipe[] — so we have to pluck
         // the recipes array before filtering. Previously this blew up as
         // "j.filter is not a function" in the minified prod build.
-        const payload = await api<RecipesPayload>('/api/recipes');
+        const payload = await api<RecipesPayload>(`/api/recipes?withSales=${lookbackDays}`);
         const list = Array.isArray(payload) ? payload : payload?.recipes ?? [];
-        setRecipes(list.filter((r) => !r.isPrepRecipe));
+        if (!cancelled) setRecipes(list.filter((r) => !r.isPrepRecipe));
       } catch (err) {
-        setError(err instanceof Error ? err.message : 'Could not load recipes');
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load recipes');
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     })();
-  }, []);
+    return () => { cancelled = true; };
+  }, [lookbackDays]);
 
   const enriched = useMemo<EnrichedRecipe[]>(() => {
     return recipes.map((r) => {
@@ -71,7 +82,11 @@ export function DishMarginPage() {
         marginPercent = (marginCents / sellCents) * 100;
         foodCostPercent = (costCents / sellCents) * 100;
       }
-      return { ...r, costCents, sellCents, marginCents, marginPercent, foodCostPercent };
+      const quantitySold = r.actualSales?.quantitySold ?? 0;
+      const contributionCents = marginCents != null && quantitySold > 0
+        ? Math.round(marginCents * quantitySold)
+        : null;
+      return { ...r, costCents, sellCents, marginCents, marginPercent, foodCostPercent, contributionCents };
     });
   }, [recipes]);
 
@@ -177,6 +192,12 @@ export function DishMarginPage() {
               { label: 'Missing data', value: 'muted' }
             ]}
           />
+          <Select
+            label="Sales window"
+            value={String(lookbackDays)}
+            onChange={(event) => setLookbackDays(Number(event.currentTarget.value))}
+            options={LOOKBACK_OPTIONS.map((opt) => ({ label: opt.label, value: String(opt.value) }))}
+          />
         </div>
 
         {filtered.length === 0 ? (
@@ -192,11 +213,19 @@ export function DishMarginPage() {
               <span>Cost</span>
               <span>Sell price</span>
               <span>Margin</span>
-              <span>Food cost %</span>
+              <span>Sold ({lookbackDays}d)</span>
+              <span>Revenue ({lookbackDays}d)</span>
+              <span>Contribution</span>
               <span>Status</span>
             </div>
             {filtered.map((r) => {
               const meta = classifyMargin(r.marginPercent);
+              const sales = r.actualSales;
+              const soldDisplay = sales
+                ? sales.quantitySold > 0
+                  ? sales.quantitySold.toLocaleString()
+                  : sales.hasMapping ? '0' : <small className="dish-margin-no-mapping">Not mapped to Square</small>
+                : '—';
               return (
                 <div key={r.id} className={`dish-margin-row is-${meta.tone}`}>
                   <span className="dish-margin-title">
@@ -214,7 +243,9 @@ export function DishMarginPage() {
                       </>
                     ) : '—'}
                   </span>
-                  <span>{r.foodCostPercent != null ? `${r.foodCostPercent.toFixed(0)}%` : '—'}</span>
+                  <span>{soldDisplay}</span>
+                  <span>{sales && sales.quantitySold > 0 ? formatMoney(sales.netSalesCents) : '—'}</span>
+                  <span>{formatMoney(r.contributionCents)}</span>
                   <span><Badge tone={meta.tone}>{meta.label}</Badge></span>
                 </div>
               );
