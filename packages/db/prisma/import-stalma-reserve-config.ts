@@ -138,6 +138,12 @@ const RULES: RuleSeed[] = [
     capacity: 40,
     servicePeriod: 'LUNCH'
   },
+  // Standard dinner rules cap at party 7 so they don't overlap the
+  // separate "Groups dinner" rule below. listPublicSlots scopes its
+  // capacity check to the rule being evaluated, so an 8+ booking
+  // held against Groups would NOT consume capacity in the regular
+  // dinner rule and the widget could offer the same physical
+  // capacity twice. Non-overlapping party ranges fix that cleanly.
   {
     name: 'Day · Fri–Sun',
     daysOfWeek: [0, 5, 6], // Sun, Fri, Sat
@@ -145,7 +151,7 @@ const RULES: RuleSeed[] = [
     endTime: '22:45', // SevenRooms last start 20:45 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
-    maxPartySize: 18,
+    maxPartySize: 7,
     intervalMinutes: 15,
     capacity: 40,
     servicePeriod: 'DINNER' // SevenRooms 'Day' meal period spans lunch + dinner; tagging DINNER as the dominant tail.
@@ -157,7 +163,7 @@ const RULES: RuleSeed[] = [
     endTime: '22:30', // SevenRooms last start 20:30 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
-    maxPartySize: 18,
+    maxPartySize: 7,
     intervalMinutes: 15,
     capacity: 40,
     servicePeriod: 'DINNER'
@@ -169,7 +175,7 @@ const RULES: RuleSeed[] = [
     endTime: '22:15', // SevenRooms last start 20:15 + 120m duration
     defaultDurationMinutes: 120,
     minPartySize: 1,
-    maxPartySize: 18,
+    maxPartySize: 7,
     intervalMinutes: 15,
     capacity: 40,
     servicePeriod: 'DINNER'
@@ -179,9 +185,16 @@ const RULES: RuleSeed[] = [
     // SevenRooms "Groups - Dinner Main" rule: 8–20 party size,
     // Wed–Sun 4:15–8:30 PM last-start window. Lower capacity per
     // interval since each booking takes a much larger table block.
+    //
+    // endTime is SevenRooms-last-start (20:30) + 150m duration =
+    // 23:00. If you drop this below 23:00 the slot generator will
+    // skip the 20:15 and 20:30 starts because start+duration would
+    // exceed the cutoff. minPartySize 8 keeps the range disjoint
+    // from the standard dinner rules above so capacity isn't
+    // double-counted across rules.
     daysOfWeek: [0, 3, 4, 5, 6],
     startTime: '16:15',
-    endTime: '22:30',
+    endTime: '23:00',
     defaultDurationMinutes: 150,
     minPartySize: 8,
     maxPartySize: 20,
