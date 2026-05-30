@@ -23,7 +23,10 @@ import { HttpError } from '../lib/http.js';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
 
 type RecipeRow = Prisma.RecipeGetPayload<{
-  include: { _count: { select: { lines: true } } };
+  include: {
+    _count: { select: { lines: true } };
+    venuePrices: { select: { venue: true; salePriceCents: true } };
+  };
 }>;
 
 type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
@@ -34,6 +37,7 @@ type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
         subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true; isPrepRecipe: true } };
       };
     };
+    venuePrices: { select: { venue: true; salePriceCents: true } };
   };
 }>;
 
@@ -143,6 +147,7 @@ function toRecipePayload(row: RecipeRow): Recipe {
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row._count.lines,
+    venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString()
   };
@@ -187,6 +192,7 @@ function toRecipeWithLinesPayload(row: RecipeWithLinesRow): RecipeWithLines {
     estimatedCost: row.estimatedCost,
     notes: row.notes,
     lineCount: row.lines.length,
+    venuePrices: row.venuePrices?.map((p) => ({ venue: p.venue, salePriceCents: p.salePriceCents })) ?? [],
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     lines: row.lines
@@ -362,7 +368,8 @@ async function findRecipeWithLines(id: string) {
           item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
-      }
+      },
+      venuePrices: { select: { venue: true, salePriceCents: true } }
     }
   });
   if (!row) throw new HttpError(404, 'Recipe not found');
@@ -382,7 +389,8 @@ async function refreshRecipeEstimatedCost(id: string) {
           item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
-      }
+      },
+      venuePrices: { select: { venue: true, salePriceCents: true } }
     }
   });
 }
@@ -503,7 +511,10 @@ export const recipesService = {
 
     const [recipes, recipeCategories] = await Promise.all([
       prisma.recipe.findMany({
-        include: { _count: { select: { lines: true } } },
+        include: {
+          _count: { select: { lines: true } },
+          venuePrices: { select: { venue: true, salePriceCents: true } }
+        },
         orderBy: [{ category: 'asc' }, { title: 'asc' }]
       }),
       listRecipeCategories(false)
@@ -803,7 +814,17 @@ export const recipesService = {
                 subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
               }))
             }
-          : undefined
+          : undefined,
+        // Per-venue sale price overrides are independent rows; they do not
+        // change the default Recipe.salePriceCents.
+        venuePrices:
+          data.venuePrices && data.venuePrices.length
+            ? {
+                create: data.venuePrices
+                  .filter((vp) => vp.venue.trim() !== '' && vp.salePriceCents >= 0)
+                  .map((vp) => ({ venue: vp.venue.trim(), salePriceCents: vp.salePriceCents }))
+              }
+            : undefined
       },
       include: {
         lines: {
@@ -811,7 +832,8 @@ export const recipesService = {
             item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
-        }
+        },
+        venuePrices: { select: { venue: true, salePriceCents: true } }
       }
     });
     const refreshed = await refreshRecipeEstimatedCost(row.id);
@@ -837,6 +859,13 @@ export const recipesService = {
     // edits live in a follow-up if/when the UI needs them.
     if (data.lines !== undefined) {
       await prisma.recipeLine.deleteMany({ where: { recipeId: id } });
+    }
+
+    // Per-venue price overrides use the same replace-all semantics as lines.
+    // A provided (possibly empty) array clears the old overrides and writes the
+    // new set; these rows are independent of the default Recipe.salePriceCents.
+    if (data.venuePrices !== undefined) {
+      await prisma.recipeVenuePrice.deleteMany({ where: { recipeId: id } });
     }
 
     const row = await prisma.recipe.update({
@@ -903,6 +932,13 @@ export const recipesService = {
               subRecipeId: normaliseOptionalText(line.subRecipeId) ?? null
             }))
           }
+        }),
+        ...(data.venuePrices !== undefined && {
+          venuePrices: {
+            create: data.venuePrices
+              .filter((vp) => vp.venue.trim() !== '' && vp.salePriceCents >= 0)
+              .map((vp) => ({ venue: vp.venue.trim(), salePriceCents: vp.salePriceCents }))
+          }
         })
       },
       include: {
@@ -911,7 +947,8 @@ export const recipesService = {
             item: { select: { id: true, name: true, unit: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
-        }
+        },
+        venuePrices: { select: { venue: true, salePriceCents: true } }
       }
     });
     return toRecipeWithLinesPayload(await refreshRecipeEstimatedCost(row.id));

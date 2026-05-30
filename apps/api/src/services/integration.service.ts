@@ -3011,6 +3011,7 @@ export const integrationService = {
     let candidatesUpserted = 0;
     let mappingsCreated = 0;
     let mappingsPreserved = 0;
+    let recipePricesUpdated = 0;
 
     // Process each catalog candidate individually — no wrapping transaction because:
     // 1. Each upsert is already atomic on its own unique key.
@@ -3110,6 +3111,50 @@ export const integrationService = {
       }
     }
 
+    // Push confirmed Square prices onto the recipes the Stock dish-margin page
+    // reads. DishMarginPage and recipesService.list only look at
+    // Recipe.salePriceCents, which the catalogue sync never populated before —
+    // so margins rendered "No data" for every dish. Only MAPPED mappings with a
+    // linked recipe and a known price are propagated, so unverified suggestions
+    // never overwrite a recipe's sale price.
+    const confirmedMappings = await prisma.squareMenuRecipeMapping.findMany({
+      where: {
+        accountKey,
+        status: 'MAPPED',
+        almaRecipeId: { not: null },
+        priceMoneyAmount: { not: null }
+      },
+      select: { almaRecipeId: true, priceMoneyAmount: true, venue: true }
+    });
+    for (const mapping of confirmedMappings) {
+      if (!mapping.almaRecipeId || mapping.priceMoneyAmount === null) continue;
+      const recipeId = mapping.almaRecipeId;
+      const price = mapping.priceMoneyAmount;
+      const venue = mapping.venue?.trim();
+      if (venue) {
+        // Per-venue override: upsert the venue price, and only seed the default
+        // when it has never been set (so venues don't clobber each other's default).
+        await prisma.recipeVenuePrice.upsert({
+          where: { recipeId_venue: { recipeId, venue } },
+          create: { recipeId, venue, salePriceCents: price },
+          update: { salePriceCents: price }
+        });
+        recipePricesUpdated += 1;
+        const seeded = await prisma.recipe.updateMany({
+          where: { id: recipeId, salePriceCents: null },
+          data: { salePriceCents: price }
+        });
+        recipePricesUpdated += seeded.count;
+      } else {
+        // No venue on the mapping: maintain the default price as before.
+        const updated = await prisma.recipe.updateMany({
+          where: { id: recipeId, salePriceCents: { not: price } },
+          data: { salePriceCents: price }
+        });
+        recipePricesUpdated += updated.count;
+      }
+    }
+
     await prisma.integrationSyncRun.create({
       data: {
         provider: 'SQUARE',
@@ -3128,7 +3173,7 @@ export const integrationService = {
       eventType: 'SQUARE_CATALOG_SYNCED',
       summary: `${squareAccountConfig(accountKey).label} Square catalogue sync finished: ${candidates.length} menu candidates.`,
       actor,
-      metadata: { accountKey, candidates: candidates.length, mappingsCreated, mappingsPreserved }
+      metadata: { accountKey, candidates: candidates.length, mappingsCreated, mappingsPreserved, recipePricesUpdated }
     });
 
     return {
@@ -3140,6 +3185,7 @@ export const integrationService = {
       candidatesUpserted,
       mappingsCreated,
       mappingsPreserved,
+      recipePricesUpdated,
       deletedMarked: candidates.filter((candidate) => candidate.isDeleted).length,
       warnings: candidates.length ? [] : ['No Square catalogue item variations were returned for this account.']
     };
@@ -3372,6 +3418,32 @@ export const integrationService = {
         });
         if (status === 'MAPPED') mapped += 1;
         else needsReview += 1;
+
+        // Mirror the confirmed price onto the recipe so dish margins reflect it
+        // immediately — same as the manual-map and catalogue-sync paths.
+        if (status === 'MAPPED' && best.type === 'recipe' && mapping.priceMoneyAmount !== null) {
+          const recipeId = best.id;
+          const price = mapping.priceMoneyAmount;
+          const venue = mapping.venue?.trim();
+          if (venue) {
+            // Per-venue override: upsert the venue price, seed default only when unset.
+            await prisma.recipeVenuePrice.upsert({
+              where: { recipeId_venue: { recipeId, venue } },
+              create: { recipeId, venue, salePriceCents: price },
+              update: { salePriceCents: price }
+            });
+            await prisma.recipe.updateMany({
+              where: { id: recipeId, salePriceCents: null },
+              data: { salePriceCents: price }
+            });
+          } else {
+            await prisma.recipe.update({
+              where: { id: recipeId },
+              data: { salePriceCents: price }
+            });
+          }
+        }
+
         matches.push({
           id: mapping.id,
           squareItemName: mapping.squareItemName,
@@ -3446,6 +3518,32 @@ export const integrationService = {
         mappedById: status === 'MAPPED' ? actor.id : status === 'UNMAPPED' ? null : existing.mappedById
       }
     });
+    // Once a Square item is confirmed against a recipe, push its POS price onto
+    // Recipe.salePriceCents immediately so the Stock dish-margin page reflects it
+    // without waiting for the next catalogue sync.
+    if (updated.status === 'MAPPED' && updated.almaRecipeId && updated.priceMoneyAmount !== null) {
+      const recipeId = updated.almaRecipeId;
+      const price = updated.priceMoneyAmount;
+      const venue = updated.venue?.trim();
+      if (venue) {
+        // Per-venue override: upsert the venue price, seed default only when unset.
+        await prisma.recipeVenuePrice.upsert({
+          where: { recipeId_venue: { recipeId, venue } },
+          create: { recipeId, venue, salePriceCents: price },
+          update: { salePriceCents: price }
+        });
+        await prisma.recipe.updateMany({
+          where: { id: recipeId, salePriceCents: null },
+          data: { salePriceCents: price }
+        });
+      } else {
+        await prisma.recipe.update({
+          where: { id: recipeId },
+          data: { salePriceCents: price }
+        });
+      }
+    }
+
     await recordEvent({
       provider: 'SQUARE',
       eventType: 'SQUARE_MENU_MAPPING_UPDATED',

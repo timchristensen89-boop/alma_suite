@@ -463,6 +463,92 @@ tbody tr.row-interactive {
   margin: 0;
 }
 
+/*
+ * Searchable stock-item combobox for invoice line review. The dropdown panel
+ * is absolutely positioned, so the wrapper (.item-search) must anchor it.
+ */
+.item-search {
+  position: relative;
+}
+
+.item-search-input {
+  width: 100%;
+}
+
+.item-search-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  z-index: 30;
+  margin: 4px 0 0;
+  padding: 4px;
+  list-style: none;
+  max-height: 260px;
+  overflow-y: auto;
+  background: var(--color-surface, #fff);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.16);
+}
+
+.item-search-option {
+  padding: 8px 10px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: var(--color-text);
+}
+
+.item-search-option:hover,
+.item-search-option[aria-selected='true'] {
+  background: var(--color-accent-soft);
+}
+
+.item-search-option.is-action {
+  font-weight: 600;
+  color: var(--color-accent-text);
+}
+
+.item-search-empty {
+  padding: 8px 10px;
+  font-size: 0.85rem;
+  color: var(--color-text-muted);
+}
+
+.invoice-create-item-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 4px;
+  padding: 14px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-accent-soft);
+}
+
+.invoice-create-item-form p {
+  margin: 0;
+}
+
+.invoice-create-item-fields {
+  display: grid;
+  gap: 12px;
+}
+
+@media (min-width: 720px) {
+  .invoice-create-item-fields {
+    grid-template-columns: minmax(0, 1.6fr) minmax(0, 0.8fr) minmax(0, 0.8fr) minmax(0, 1fr);
+    align-items: end;
+  }
+}
+
+.invoice-create-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 /* Stock operations — wastage, delivery checks, and reorder notices. */
 .stock-operations-grid {
   display: grid;
@@ -1906,4 +1992,43 @@ tbody tr.row-detail:hover {
 }
 .stocktake-variance-table tr.is-new {
   background: rgba(60, 110, 70, 0.04);
+}
+
+.dish-margin-venue-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  color: #1d4ed8;
+  background: #dbeafe;
+  vertical-align: middle;
+}
+
+.recipe-venue-prices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.recipe-venue-price-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recipe-venue-price-row .recipe-venue-price-venue {
+  flex: 2 1 0;
+  min-width: 0;
+}
+
+.recipe-venue-price-row .recipe-venue-price-amount {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.recipe-venue-price-remove {
+  flex: 0 0 auto;
+  line-height: 1;
 }

@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
+  StockCategory,
   StockInvoiceAssignee,
   StockInvoiceAssigneesPayload,
   StockInvoiceImportResult,
@@ -21,6 +22,13 @@ import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 
 type FeedbackTone = 'success' | 'error' | 'info';
+
+type CreateItemFields = {
+  name: string;
+  unit: string;
+  cost: string;
+  categoryId: string;
+};
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -112,6 +120,7 @@ export function InvoicesPage() {
   const canManage = canManageStock(user);
   const [payload, setPayload] = useState<StockInvoicesPayload | null>(null);
   const [items, setItems] = useState<StockItem[]>([]);
+  const [categories, setCategories] = useState<StockCategory[]>([]);
   const [summary, setSummary] = useState<StockInvoicesSummary | null>(null);
   const [assignees, setAssignees] = useState<StockInvoiceAssignee[]>([]);
   const [loading, setLoading] = useState(true);
@@ -127,6 +136,7 @@ export function InvoicesPage() {
   const [lineDrafts, setLineDrafts] = useState<Record<string, string>>({});
   const [assigneeDraft, setAssigneeDraft] = useState<string>('');
   const [includeNoItem, setIncludeNoItem] = useState(false);
+  const [creatingLineId, setCreatingLineId] = useState<string | null>(null);
 
   async function loadInvoices(options?: { showNoItem?: boolean }) {
     const showNoItem = options?.showNoItem ?? includeNoItem;
@@ -139,6 +149,7 @@ export function InvoicesPage() {
       ]);
       setPayload(invoicePayload);
       setItems(itemPayload.items.filter((item) => item.status === 'ACTIVE'));
+      setCategories(itemPayload.categories ?? []);
       setSummary(invoiceSummary);
       setAssignees(assigneePayload.assignees);
       setError(null);
@@ -180,14 +191,6 @@ export function InvoicesPage() {
     setAssigneeDraft(selectedInvoice?.assignedTo?.id ?? '');
   }, [selectedInvoice?.id, selectedInvoice?.assignedTo?.id]);
 
-  const itemOptions = useMemo(
-    () => [
-      { label: 'Needs review / no item', value: '' },
-      ...items.map((item) => ({ label: itemLabel(item), value: item.id }))
-    ],
-    [items]
-  );
-
   const invoiceStats = useMemo(() => {
     const invoices = payload?.invoices ?? [];
     return {
@@ -209,6 +212,21 @@ export function InvoicesPage() {
     setFeedbackTarget(target);
     setFeedbackMessage(message);
     setFeedbackTone(tone);
+  }
+
+  function updateLineDraft(lineId: string, itemId: string) {
+    setLineDrafts((current) => ({ ...current, [lineId]: itemId }));
+  }
+
+  function applyRematchedLine(updated: StockSupplierInvoiceLine) {
+    setPayload((current) => {
+      if (!current) return current;
+      return {
+        invoices: current.invoices.map((invoice) =>
+          invoice.id === updated.supplierInvoiceId ? replaceLine(invoice, updated) : invoice
+        )
+      };
+    });
   }
 
   async function importPaste() {
@@ -315,14 +333,7 @@ export function InvoicesPage() {
         method: 'POST',
         body: JSON.stringify({ itemId })
       });
-      setPayload((current) => {
-        if (!current) return current;
-        return {
-          invoices: current.invoices.map((invoice) =>
-            invoice.id === updated.supplierInvoiceId ? replaceLine(invoice, updated) : invoice
-          )
-        };
-      });
+      applyRematchedLine(updated);
       setLineDrafts((current) => {
         const next = { ...current };
         delete next[line.id];
@@ -552,6 +563,79 @@ export function InvoicesPage() {
     }
   }
 
+  function startCreateFromLine(lineId: string) {
+    setCreatingLineId(lineId);
+  }
+
+  function cancelCreateFromLine() {
+    setCreatingLineId(null);
+  }
+
+  async function createItemFromLine(line: StockSupplierInvoiceLine, fields: CreateItemFields) {
+    const target = `match:${line.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to create stock items.', 'error');
+      return;
+    }
+    const name = fields.name.trim();
+    const unit = fields.unit.trim();
+    const costDollars = Number(fields.cost);
+    if (name.length < 2) {
+      showFeedback(target, 'Item name must be at least 2 characters.', 'error');
+      return;
+    }
+    if (!unit) {
+      showFeedback(target, 'Unit is required.', 'error');
+      return;
+    }
+    if (!Number.isFinite(costDollars) || costDollars < 0) {
+      showFeedback(target, 'Cost must be a number of zero or more.', 'error');
+      return;
+    }
+
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const created = await api<StockItem>('/api/items', {
+        method: 'POST',
+        body: JSON.stringify({
+          name,
+          unit,
+          avgCostCents: Math.round(costDollars * 100),
+          categoryId: fields.categoryId || undefined
+        })
+      });
+      setItems((current) =>
+        [created, ...current.filter((item) => item.id !== created.id)].sort((a, b) =>
+          a.name.localeCompare(b.name)
+        )
+      );
+      updateLineDraft(line.id, created.id);
+
+      const updated = await api<StockSupplierInvoiceLine>(`/api/invoices/lines/${line.id}/rematch`, {
+        method: 'POST',
+        body: JSON.stringify({ itemId: created.id })
+      });
+      applyRematchedLine(updated);
+      setLineDrafts((current) => {
+        const next = { ...current };
+        delete next[line.id];
+        return next;
+      });
+      setCreatingLineId(null);
+      showFeedback(target, 'Item created and matched.');
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError ? err.message : 'Could not create item',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
   return (
     <div className="page-stack">
       <div className="stat-grid">
@@ -740,17 +824,20 @@ export function InvoicesPage() {
               />
               <InvoiceLineReview
                 invoice={selectedInvoice}
-                itemOptions={itemOptions}
+                items={items}
+                categories={categories}
                 lineDrafts={lineDrafts}
+                creatingLineId={creatingLineId}
                 feedbackTarget={feedbackTarget}
                 feedbackMessage={feedbackMessage}
                 feedbackTone={feedbackTone}
                 busyTarget={busyTarget}
-                onDraftChange={(lineId, itemId) =>
-                  setLineDrafts((current) => ({ ...current, [lineId]: itemId }))
-                }
+                onDraftChange={updateLineDraft}
                 onSaveMatch={saveLineMatch}
                 onApplyCost={applyCost}
+                onStartCreate={startCreateFromLine}
+                onCancelCreate={cancelCreateFromLine}
+                onSubmitCreate={createItemFromLine}
                 canManage={canManage}
               />
             </>
@@ -892,10 +979,214 @@ function InvoiceTriagePanel({
   );
 }
 
+type ItemSearchSelectProps = {
+  items: StockItem[];
+  value: string;
+  onChange: (itemId: string) => void;
+  onCreateNew: () => void;
+  disabled?: boolean;
+};
+
+function ItemSearchSelect({ items, value, onChange, onCreateNew, disabled }: ItemSearchSelectProps) {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const containerRef = useRef<HTMLDivElement | null>(null);
+
+  const selectedItem = useMemo(
+    () => items.find((item) => item.id === value) ?? null,
+    [items, value]
+  );
+
+  const filtered = useMemo(() => {
+    const term = query.trim().toLowerCase();
+    const matches = term
+      ? items.filter((item) => {
+          const name = item.name.toLowerCase();
+          const sku = (item.sku ?? '').toLowerCase();
+          return name.includes(term) || sku.includes(term);
+        })
+      : items;
+    return matches.slice(0, 50);
+  }, [items, query]);
+
+  useEffect(() => {
+    if (!open) return;
+    function handlePointer(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handlePointer);
+    return () => document.removeEventListener('mousedown', handlePointer);
+  }, [open]);
+
+  function close() {
+    setOpen(false);
+    setQuery('');
+  }
+
+  function handleSelect(itemId: string) {
+    onChange(itemId);
+    close();
+  }
+
+  // When closed, show the matched item's label; when open, show what the user types.
+  const inputValue = open ? query : selectedItem ? itemLabel(selectedItem) : '';
+
+  return (
+    <div className="item-search field" ref={containerRef}>
+      <span className="field-label">Stock item</span>
+      <input
+        className="field-control item-search-input"
+        type="text"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        autoComplete="off"
+        disabled={disabled}
+        placeholder={selectedItem ? undefined : 'Search stock items...'}
+        value={inputValue}
+        onFocus={() => {
+          if (disabled) return;
+          setQuery('');
+          setOpen(true);
+        }}
+        onChange={(event) => {
+          if (disabled) return;
+          setQuery(event.currentTarget.value);
+          if (!open) setOpen(true);
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') {
+            close();
+          }
+        }}
+      />
+      {open ? (
+        <ul className="item-search-panel" role="listbox">
+          <li
+            className="item-search-option is-action"
+            role="option"
+            aria-selected={value === ''}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              handleSelect('');
+            }}
+          >
+            No item / needs review
+          </li>
+          {filtered.length > 0 ? (
+            filtered.map((item) => (
+              <li
+                key={item.id}
+                className="item-search-option"
+                role="option"
+                aria-selected={item.id === value}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  handleSelect(item.id);
+                }}
+              >
+                {itemLabel(item)}
+              </li>
+            ))
+          ) : (
+            <li className="item-search-empty" role="presentation">
+              No matching items
+            </li>
+          )}
+          <li
+            className="item-search-option is-action"
+            role="option"
+            aria-selected={false}
+            onMouseDown={(event) => {
+              event.preventDefault();
+              onCreateNew();
+              close();
+            }}
+          >
+            + Create new item from this line
+          </li>
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+type CreateItemFormProps = {
+  line: StockSupplierInvoiceLine;
+  categories: StockCategory[];
+  busy: boolean;
+  onCancel: () => void;
+  onSubmit: (fields: CreateItemFields) => void;
+};
+
+function CreateItemForm({ line, categories, busy, onCancel, onSubmit }: CreateItemFormProps) {
+  const [name, setName] = useState(line.description);
+  const [unit, setUnit] = useState(line.unit ?? '');
+  const [cost, setCost] = useState(String((line.unitAmountCents ?? 0) / 100));
+  const [categoryId, setCategoryId] = useState('');
+
+  const categoryOptions = useMemo(
+    () => [
+      { label: 'Uncategorised', value: '' },
+      ...categories.map((category) => ({ label: category.name, value: category.id }))
+    ],
+    [categories]
+  );
+
+  return (
+    <div className="invoice-create-item-form">
+      <p className="subtle">Create a new stock item from this line, match it, and set its average cost.</p>
+      <div className="invoice-create-item-fields">
+        <Input
+          label="Item name"
+          value={name}
+          onChange={(event) => setName(event.currentTarget.value)}
+        />
+        <Input
+          label="Unit"
+          value={unit}
+          onChange={(event) => setUnit(event.currentTarget.value)}
+        />
+        <Input
+          label="Cost (each)"
+          type="number"
+          min="0"
+          step="0.01"
+          value={cost}
+          onChange={(event) => setCost(event.currentTarget.value)}
+        />
+        <Select
+          label="Category"
+          value={categoryId}
+          onChange={(event) => setCategoryId(event.currentTarget.value)}
+          options={categoryOptions}
+        />
+      </div>
+      <div className="invoice-create-item-actions">
+        <Button
+          type="button"
+          size="sm"
+          onClick={() => onSubmit({ name, unit, cost, categoryId })}
+          disabled={busy}
+        >
+          {busy ? 'Creating...' : 'Create & match'}
+        </Button>
+        <Button type="button" size="sm" variant="ghost" onClick={onCancel} disabled={busy}>
+          Cancel
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 type InvoiceLineReviewProps = {
   invoice: StockSupplierInvoice;
-  itemOptions: Array<{ label: string; value: string }>;
+  items: StockItem[];
+  categories: StockCategory[];
   lineDrafts: Record<string, string>;
+  creatingLineId: string | null;
   feedbackTarget: string | null;
   feedbackMessage: string | null;
   feedbackTone: FeedbackTone;
@@ -903,13 +1194,18 @@ type InvoiceLineReviewProps = {
   onDraftChange: (lineId: string, itemId: string) => void;
   onSaveMatch: (line: StockSupplierInvoiceLine) => Promise<void>;
   onApplyCost: (line: StockSupplierInvoiceLine) => Promise<void>;
+  onStartCreate: (lineId: string) => void;
+  onCancelCreate: () => void;
+  onSubmitCreate: (line: StockSupplierInvoiceLine, fields: CreateItemFields) => Promise<void>;
   canManage: boolean;
 };
 
 function InvoiceLineReview({
   invoice,
-  itemOptions,
+  items,
+  categories,
   lineDrafts,
+  creatingLineId,
   feedbackTarget,
   feedbackMessage,
   feedbackTone,
@@ -917,6 +1213,9 @@ function InvoiceLineReview({
   onDraftChange,
   onSaveMatch,
   onApplyCost,
+  onStartCreate,
+  onCancelCreate,
+  onSubmitCreate,
   canManage
 }: InvoiceLineReviewProps) {
   const lines = invoice.lines ?? [];
@@ -952,11 +1251,11 @@ function InvoiceLineReview({
               </Badge>
             </div>
             <div className="stock-invoice-line-actions">
-              <Select
-                label="Stock item"
+              <ItemSearchSelect
+                items={items}
                 value={draftValue}
-                onChange={(event) => onDraftChange(line.id, event.currentTarget.value)}
-                options={itemOptions}
+                onChange={(itemId) => onDraftChange(line.id, itemId)}
+                onCreateNew={() => onStartCreate(line.id)}
                 disabled={!canManage}
               />
               <div className="stock-invoice-button-stack">
@@ -1005,6 +1304,15 @@ function InvoiceLineReview({
                 />
               </div>
             </div>
+            {canManage && creatingLineId === line.id ? (
+              <CreateItemForm
+                line={line}
+                categories={categories}
+                busy={busyTarget === matchTarget}
+                onCancel={onCancelCreate}
+                onSubmit={(fields) => onSubmitCreate(line, fields)}
+              />
+            ) : null}
           </section>
         );
       })}

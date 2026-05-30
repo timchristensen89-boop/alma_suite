@@ -49,6 +49,7 @@ type RecipeDraft = {
   estimatedCost: string;
   notes: string;
   lines: RecipeLineDraft[];
+  venuePrices: Array<{ venue: string; salePrice: string }>;
 };
 
 type RecipeKindFilter = '' | 'FOOD' | 'BEVERAGE';
@@ -933,7 +934,8 @@ function emptyRecipeDraft(): RecipeDraft {
     status: 'ACTIVE',
     estimatedCost: '0',
     notes: '',
-    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }]
+    lines: [{ ingredientName: '', quantity: '', unit: '', cost: '', wastePercent: '', itemId: '', subRecipeId: '' }],
+    venuePrices: []
   };
 }
 
@@ -955,6 +957,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
     subcategory: recipe.subcategory ?? '',
     venue: recipe.venue ?? '',
     salePrice: recipe.salePriceCents === null ? '' : String(recipe.salePriceCents / 100),
+    venuePrices: (recipe.venuePrices ?? []).map((p) => ({ venue: p.venue, salePrice: String(p.salePriceCents / 100) })),
     portionSize: recipe.portionSize === null ? '' : String(recipe.portionSize),
     portionUnit: recipe.portionUnit ?? '',
     yieldQuantity: recipe.yieldQuantity === null ? '' : String(recipe.yieldQuantity),
@@ -1096,6 +1099,9 @@ function RecipeForm({
       subcategory: pageMode === 'production' ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
       venue: draft.venue.trim(),
       salePriceCents: draft.salePrice === '' ? undefined : Math.round(Number(draft.salePrice) * 100),
+        venuePrices: draft.venuePrices
+          .filter((vp) => vp.venue.trim() !== '' && vp.salePrice !== '')
+          .map((vp) => ({ venue: vp.venue.trim(), salePriceCents: Math.round(Number(vp.salePrice) * 100) })),
       portionSize: draft.portionSize === '' ? undefined : Number(draft.portionSize),
       portionUnit: draft.portionUnit.trim(),
       yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
@@ -1154,6 +1160,64 @@ function RecipeForm({
           <Input label="Sale price" type="number" step="0.01" value={draft.salePrice} onChange={(event) => update('salePrice', event.currentTarget.value)} />
         )}
       </div>
+      {pageMode === 'production' ? null : (
+        <div className="recipe-venue-prices">
+          <span className="recipe-venue-prices-label">Per-venue prices (optional)</span>
+          {draft.venuePrices.map((vp, index) => (
+            <div className="recipe-venue-price-row" key={index}>
+              <input
+                className="recipe-venue-price-venue"
+                value={vp.venue}
+                placeholder="Venue (matches Dish Margins filter)"
+                onChange={(event) =>
+                  update(
+                    'venuePrices',
+                    draft.venuePrices.map((row, rowIndex) =>
+                      rowIndex === index ? { ...row, venue: event.currentTarget.value } : row
+                    )
+                  )
+                }
+              />
+              <input
+                className="recipe-venue-price-amount"
+                type="number"
+                step="0.01"
+                value={vp.salePrice}
+                placeholder="Price ($)"
+                onChange={(event) =>
+                  update(
+                    'venuePrices',
+                    draft.venuePrices.map((row, rowIndex) =>
+                      rowIndex === index ? { ...row, salePrice: event.currentTarget.value } : row
+                    )
+                  )
+                }
+              />
+              <button
+                type="button"
+                className="recipe-venue-price-remove"
+                aria-label="Remove venue price"
+                onClick={() =>
+                  update(
+                    'venuePrices',
+                    draft.venuePrices.filter((_, rowIndex) => rowIndex !== index)
+                  )
+                }
+              >
+                &times;
+              </button>
+            </div>
+          ))}
+          <Button
+            type="button"
+            size="sm"
+            variant="secondary"
+            onClick={() => update('venuePrices', [...draft.venuePrices, { venue: '', salePrice: '' }])}
+          >
+            + Add venue price
+          </Button>
+        </div>
+      )}
       {pageMode === 'production' ? (
         <p className="recipe-costing-note">
           Production recipes are reusable prep or batch items. Add them to item recipes as production recipe ingredient lines once the batch is saved.

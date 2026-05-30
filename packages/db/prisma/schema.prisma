@@ -2460,11 +2460,26 @@ model Recipe {
   usedByLines   RecipeLine[] @relation("SubRecipeLines")
   itemSales     SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
+  venuePrices  RecipeVenuePrice[]
 
   @@index([title])
   @@index([category])
   @@index([isPrepRecipe])
   @@index([status])
+}
+
+model RecipeVenuePrice {
+  id             String   @id @default(cuid())
+  recipeId       String
+  venue          String
+  salePriceCents Int
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  recipe         Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+
+  @@unique([recipeId, venue])
+  @@index([recipeId])
+  @@index([venue])
 }
 
 model SquareCatalogItem {

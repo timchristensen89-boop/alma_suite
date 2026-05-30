@@ -5204,6 +5204,11 @@ export type RecipeActualSales = {
   hasMapping: boolean;
 };
 
+export interface RecipeVenuePrice {
+  venue: string;
+  salePriceCents: number;
+}
+
 export type Recipe = {
   id: string;
   legacyId: string | null;
@@ -5226,6 +5231,7 @@ export type Recipe = {
   updatedAt: string;
   /** Present only when /api/recipes?withSales=<N> is requested. */
   actualSales?: RecipeActualSales | null;
+  venuePrices?: RecipeVenuePrice[];
 };
 
 export type RecipeWithLines = Recipe & { lines: RecipeLine[] };
@@ -5308,6 +5314,11 @@ export const recipeCategoryCreateInputSchema = z.object({
 export const recipeCategoryUpdateInputSchema =
   recipeCategoryCreateInputSchema.partial();
 
+export const recipeVenuePriceInputSchema = z.object({
+  venue: z.string().min(1, 'Venue is required'),
+  salePriceCents: z.coerce.number().int().nonnegative()
+});
+
 export const recipeCreateInputSchema = z.object({
   title: z.string().min(2, 'Title is required'),
   kind: z.string().optional().or(z.literal('')),
@@ -5323,7 +5334,8 @@ export const recipeCreateInputSchema = z.object({
   status: recipeStatusSchema.optional(),
   estimatedCost: z.coerce.number().optional(),
   notes: z.string().optional().or(z.literal('')),
-  lines: z.array(recipeLineInputSchema).optional()
+  lines: z.array(recipeLineInputSchema).optional(),
+  venuePrices: z.array(recipeVenuePriceInputSchema).optional()
 });
 
 export const recipeUpdateInputSchema = recipeCreateInputSchema.partial();
@@ -5343,6 +5355,7 @@ export type RecipeCategoryUpdateInput = z.infer<
 >;
 export type RecipeCreateInput = z.infer<typeof recipeCreateInputSchema>;
 export type RecipeUpdateInput = z.infer<typeof recipeUpdateInputSchema>;
+export type RecipeVenuePriceInput = z.infer<typeof recipeVenuePriceInputSchema>;
 export type RecipeBulkDeleteInput = z.infer<typeof recipeBulkDeleteInputSchema>;
 
 /* ------------------------------------------------------------------------- */
