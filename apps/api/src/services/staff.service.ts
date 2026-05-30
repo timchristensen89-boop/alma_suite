@@ -1638,10 +1638,10 @@ export const staffService = {
     return toStaffRoleTemplatePayload(template);
   },
 
-  async list(actor?: AuthUser) {
+  async list(actor?: AuthUser, status: StaffProfileStatusFilter = 'all') {
     const staffDefaults = await getStaffDefaults();
     const profiles = await prisma.staffProfile.findMany({
-      where: staffProfileScope(actor),
+      where: staffProfileScope(actor, status),
       orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
       include: {
         payProfile: true,

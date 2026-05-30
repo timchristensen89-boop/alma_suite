@@ -739,10 +739,6 @@ export const devicePinLoginInputSchema = z.object({
   pin: pinSchema
 });
 
-export const staffHomePinLoginInputSchema = z.object({
-  pin: pinSchema
-});
-
 export const staffPinChangeInputSchema = z.object({
   currentPin: pinSchema.optional(),
   newPin: pinSchema
@@ -1917,43 +1913,10 @@ export type DeviceStaffOption = {
   hasPin: boolean;
 };
 
-export type DeviceClockedInStaff = {
-  sessionId: string;
-  staffProfileId: string;
-  name: string;
-  roleTitle: string | null;
-  venue: string | null;
-  clockInAt: string;
-};
-
 export type DeviceStaffListResponse = {
   venue: string | null;
   activeUser: AuthUser | null;
   staff: DeviceStaffOption[];
-  clockedIn: DeviceClockedInStaff[];
-};
-
-export type HomeOperationalSummary = {
-  generatedAt: string;
-  bookings: {
-    today: number;
-    upcoming: number;
-    coversToday: number;
-    next: {
-      startsAt: string;
-      venue: string | null;
-      covers: number;
-    } | null;
-  };
-  staff: {
-    clockedInNow: number;
-    rosteredToday: number;
-  };
-  marketing: {
-    optedInContacts: number;
-    scheduledCampaigns: number;
-    scheduledPosts: number;
-  };
 };
 
 export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';

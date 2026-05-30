@@ -3,7 +3,7 @@ import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { HttpError } from '../lib/http.js';
 import { integrationService } from '../services/integration.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
-import { staffService } from '../services/staff.service.js';
+import { staffService, type StaffProfileStatusFilter } from '../services/staff.service.js';
 
 export const staffRouter = Router();
 
@@ -151,7 +151,13 @@ staffRouter.get('/profiles', async (_req, res, next) => {
       res.json([redactManagerOnlyPay(await staffService.getById(_req.user.id))]);
       return;
     }
-    res.json(await staffService.list(_req.user));
+    // Optional employment-status tab filter (active | terminated | all).
+    // Defaults to 'active' so the staff register hides terminated /
+    // Deputy-imported leavers unless the caller asks for them.
+    const requested = String(_req.query.status ?? '').toLowerCase();
+    const status: StaffProfileStatusFilter =
+      requested === 'terminated' ? 'terminated' : requested === 'all' ? 'all' : 'active';
+    res.json(await staffService.list(_req.user, status));
   } catch (error) {
     next(error);
   }

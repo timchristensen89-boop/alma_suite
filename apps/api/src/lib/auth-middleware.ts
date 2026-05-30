@@ -30,12 +30,8 @@ const PUBLIC_PATHS = new Set<string>([
   '/api/gift-cards/public/orders',
   '/api/gift-cards/settings/public',
   '/api/gift-cards/promo/quote',
-  '/api/device/home-summary',
-  '/api/device/pin-staff',
-  '/api/device/staff-pin-login',
   '/api/integrations/square/callback',
   '/api/integrations/xero/callback',
-  '/api/integrations/deputy/callback',
   '/api/integrations/meta/callback'
 ]);
 

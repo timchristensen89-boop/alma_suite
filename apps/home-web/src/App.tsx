@@ -1,12 +1,4 @@
-import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
-import type {
-  AuthUser,
-  DeviceClockedInStaff,
-  DeviceStaffListResponse,
-  DeviceStaffOption,
-  HomeOperationalSummary,
-  StaffClockStatusPayload
-} from '@alma/shared';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlmaAppIcon,
   SUITE_APPS,
@@ -14,66 +6,103 @@ import {
 } from '@alma/ui';
 
 /*
- * Alma Home - venue device clock-in kiosk + suite launcher.
+ * Alma Home — staff clock-in kiosk + suite launcher.
  *
- * This page must not carry sample staff or local-only clock state. Staff names,
- * PIN checks, and clock sessions come from the venue-device API, which is
- * scoped to the signed-in venue iPad account.
+ * Ported from the Claude Design handoff bundle (alma-home.html). Visual
+ * vocabulary follows the design exactly: forest-deep left panel for the
+ * brand/clock/on-shift list, paper right panel for the PIN pad. After
+ * successful clock-in the confirm overlay surfaces a "Jump to" row of
+ * suite apps so the screen functions as a real home base for the suite
+ * — staff clock in and immediately get to their tool.
+ *
+ * Clock state is localStorage-only for now (matches the design's
+ * prototype behaviour). Real /api/staff/me/clock-in wiring is a
+ * follow-up — needs the device-PIN session flow set up on Cloud Run
+ * first.
  */
 
-function normalisePath(path: string) {
-  return path.startsWith('/') ? path : `/${path}`;
+type Person = {
+  id: string;
+  name: string;
+  role: string;
+  pin: string | null;
+  photo?: string;
+};
+
+const PEOPLE: Person[] = [
+  { id: 'sofi',   name: 'Sofi Nipper',     role: 'Floor manager',         pin: '1234' },
+  { id: 'maximo', name: 'Maximo Martinez', role: 'Chef de cuisine',       pin: '2468' },
+  { id: 'steven', name: 'Steven Payne',    role: 'Beverage mgr',          pin: '4321' },
+  { id: 'kristy', name: 'Kristy Berry',    role: 'Front of house',        pin: '5678' },
+  { id: 'lewis',  name: 'Lewis Holt',      role: 'Sous chef',             pin: '1357' },
+  { id: 'jack',   name: 'Jack Leary',      role: 'Owner',                 pin: '1111' },
+  { id: 'bea',    name: 'Bea Tran',        role: 'New starter · floor',   pin: null }
+];
+
+type ClockState = {
+  day: string;
+  /** Per-staff PIN overrides set via the setup flow. */
+  pins: Record<string, string>;
+  /** Currently clocked-in staff and the instant they clocked in (ms). */
+  shifts: Record<string, { inAt: number }>;
+};
+
+const STORAGE_KEY = 'alma-clock-state-v1';
+
+function todayKey() {
+  return new Date().toISOString().slice(0, 10);
 }
 
-class ApiRequestError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-    this.name = 'ApiRequestError';
-  }
-}
-
-function messageForError(error: unknown, fallback: string) {
-  if (error instanceof ApiRequestError && error.status >= 500) return fallback;
-  if (error instanceof Error && error.message) return error.message;
-  return fallback;
-}
-
-async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
-  const headers = new Headers(init.headers);
-  if (init.body && !headers.has('Content-Type')) {
-    headers.set('Content-Type', 'application/json');
-  }
-
-  const response = await fetch(normalisePath(path), {
-    credentials: 'include',
-    ...init,
-    headers
-  });
-
-  if (!response.ok) {
-    let message = response.statusText || 'Request failed';
-    try {
-      const data = await response.json();
-      if (typeof data?.message === 'string') message = data.message;
-      if (typeof data?.error === 'string') message = data.error;
-    } catch {
-      // Keep the HTTP status text if the API did not return JSON.
+function seedState(): ClockState {
+  // Two people pre-clocked-in so the list isn't empty on first load.
+  const now = Date.now();
+  return {
+    day: todayKey(),
+    pins: {},
+    shifts: {
+      maximo: { inAt: now - 2.5 * 3600e3 },
+      kristy: { inAt: now - 1.2 * 3600e3 }
     }
-    throw new ApiRequestError(message, response.status);
-  }
+  };
+}
 
-  if (response.status === 204) return undefined as T;
-  return response.json() as Promise<T>;
+function loadState(): ClockState {
+  if (typeof window === 'undefined') return seedState();
+  try {
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) return seedState();
+    const parsed = JSON.parse(raw) as ClockState;
+    if (parsed.day !== todayKey()) return seedState();
+    return parsed;
+  } catch {
+    return seedState();
+  }
+}
+
+function persistState(state: ClockState) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  } catch {
+    // Storage disabled (Safari Private mode etc.); silently ignore so
+    // the kiosk still renders even if it can't remember between loads.
+  }
+}
+
+function pinFor(state: ClockState, person: Person): string | null {
+  return state.pins[person.id] ?? person.pin;
+}
+
+function findByPin(state: ClockState, code: string): Person | null {
+  return PEOPLE.find((p) => pinFor(state, p) === code) ?? null;
 }
 
 function initials(name: string): string {
   return name
-    .split(/\s+/)
-    .filter(Boolean)
+    .split(' ')
     .map((word) => word.charAt(0))
     .slice(0, 2)
-    .join('')
-    .toUpperCase();
+    .join('');
 }
 
 function greetingFor(d: Date): string {
@@ -92,13 +121,13 @@ function fmtTime(d: Date): { h: number; m: string; ap: string } {
   return { h, m: m < 10 ? `0${m}` : `${m}`, ap };
 }
 
-function clockStr(value: string | number | Date): string {
-  const { h, m, ap } = fmtTime(new Date(value));
+function clockStr(ts: number): string {
+  const { h, m, ap } = fmtTime(new Date(ts));
   return `${h}:${m} ${ap}`;
 }
 
-function durSince(value: string | number | Date): string {
-  const ms = Date.now() - new Date(value).getTime();
+function durSince(ts: number): string {
+  const ms = Date.now() - ts;
   const mins = Math.max(0, Math.round(ms / 60000));
   const h = Math.floor(mins / 60);
   const m = mins % 60;
@@ -106,15 +135,9 @@ function durSince(value: string | number | Date): string {
   return `${h}h ${m < 10 ? `0${m}` : m}m`;
 }
 
-function displayName(user: Pick<AuthUser, 'firstName' | 'lastName' | 'email'> | null | undefined) {
-  if (!user) return '';
-  return `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || '';
-}
-
-function isVenueDeviceUser(user: AuthUser | null) {
-  return Boolean(user && (user.accountType === 'VENUE_DEVICE' || user.deviceAccount));
-}
-
+// Suite apps to surface as quick-launch tiles. Filters to apps that are
+// currently live; settings/admin is dropped so the kiosk never tempts a
+// random staff member into admin land.
 function quickLaunchApps(): SuiteAppIdentity[] {
   return SUITE_APPS.filter((app) =>
     app.status === 'active' &&
@@ -123,158 +146,39 @@ function quickLaunchApps(): SuiteAppIdentity[] {
   );
 }
 
-function staffPinHref() {
-  const staffHref = SUITE_APPS.find((app) => app.id === 'staff')?.href || 'https://alma-staff.web.app';
-  return `${staffHref.replace(/\/+$/, '')}/pin`;
-}
-
-function routeFromLocation(pathname = window.location.pathname) {
-  const path = pathname.replace(/\/+$/, '');
-  return path || '/';
-}
-
-function staffOptionFromUser(user: AuthUser): DeviceStaffOption {
-  return {
-    id: user.id,
-    name: displayName(user),
-    roleTitle: user.roleTitle || 'Staff',
-    venue: user.venue,
-    email: null,
-    hasPin: true
-  };
-}
-
-type ConfirmInfo = {
-  staffName: string;
-  dir: 'in' | 'out' | 'login';
-  worked?: string;
-  at: number;
-};
-
-type AppOpenHandler = (event: MouseEvent<HTMLAnchorElement>, app: SuiteAppIdentity) => void;
+type ConfirmInfo = { person: Person; dir: 'in' | 'out'; worked?: string };
 
 export function App() {
-  const [routePath, setRoutePath] = useState(() => routeFromLocation());
-  const isVenueDeviceRoute = routePath === '/ipad' || routePath === '/venue';
-  const isPinSetupRoute = !isVenueDeviceRoute && routePath === '/set-pin';
+  const [state, setState] = useState<ClockState>(() => loadState());
   const [now, setNow] = useState<Date>(() => new Date());
-  const [user, setUser] = useState<AuthUser | null>(null);
-  const [payload, setPayload] = useState<DeviceStaffListResponse | null>(null);
-  const [homeSummary, setHomeSummary] = useState<HomeOperationalSummary | null>(null);
-  const [summaryLoading, setSummaryLoading] = useState(true);
-  const [humanClock, setHumanClock] = useState<StaffClockStatusPayload | null>(null);
-  const [selected, setSelected] = useState<DeviceStaffOption | null>(null);
+
+  // Active PIN entry — applies to whichever pad is currently visible.
   const [entry, setEntry] = useState('');
   const [entryStatus, setEntryStatus] = useState<'idle' | 'err' | 'ok'>('idle');
   const [entryMsg, setEntryMsg] = useState('');
   const [locked, setLocked] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [busy, setBusy] = useState(false);
-  const [signInEmail, setSignInEmail] = useState('');
-  const [signInPassword, setSignInPassword] = useState('');
-  const [setupEmail, setSetupEmail] = useState('');
-  const [setupPassword, setSetupPassword] = useState('');
-  const [setupPin, setSetupPin] = useState('');
-  const [setupConfirm, setSetupConfirm] = useState('');
-  const [setupStatus, setSetupStatus] = useState<'idle' | 'err' | 'ok'>('idle');
-  const [setupMsg, setSetupMsg] = useState('');
+
+  // Modal overlays.
   const [confirm, setConfirm] = useState<ConfirmInfo | null>(null);
+  const [setupOpen, setSetupOpen] = useState(false);
+  const [setupStage, setSetupStage] = useState<'name' | 'choose' | 'confirm' | 'done'>('name');
+  const [setupPerson, setSetupPerson] = useState<Person | null>(null);
+  const [setupFirstPin, setSetupFirstPin] = useState('');
 
-  const apps = useMemo(() => quickLaunchApps(), []);
-  const pinSetupHref = useMemo(() => staffPinHref(), []);
-  const deviceReady = isVenueDeviceRoute && isVenueDeviceUser(user);
+  // Where to send keypad input. The clock pad and the setup pad share
+  // the same `entry` state but different completion handlers.
+  const onCompleteRef = useRef<(code: string) => void>(() => undefined);
 
-  const navigateHome = useCallback((path: string) => {
-    const next = path.replace(/\/+$/, '') || '/';
-    window.history.pushState(null, '', next);
-    setRoutePath(next);
-    window.scrollTo({ top: 0 });
-  }, []);
-
-  const handleLocalNav = useCallback((event: MouseEvent<HTMLAnchorElement>, path: string) => {
-    event.preventDefault();
-    navigateHome(path);
-  }, [navigateHome]);
-
-  useEffect(() => {
-    const onPopState = () => setRoutePath(routeFromLocation());
-    window.addEventListener('popstate', onPopState);
-    return () => window.removeEventListener('popstate', onPopState);
-  }, []);
-
-  const loadHomeSummary = useCallback(async () => {
-    setSummaryLoading(true);
-    try {
-      setHomeSummary(await api<HomeOperationalSummary>('/api/device/home-summary'));
-    } catch {
-      setHomeSummary(null);
-    } finally {
-      setSummaryLoading(false);
-    }
-  }, []);
-
-  const loadHomeState = useCallback(async () => {
-    setLoading(true);
-    try {
-      const auth = await api<{ user: AuthUser | null }>('/api/auth/me');
-      const authUser = auth.user ?? null;
-      setUser(authUser);
-      if (isVenueDeviceRoute && isVenueDeviceUser(authUser)) {
-        setHumanClock(null);
-        const data = await api<DeviceStaffListResponse>('/api/device/staff');
-        setPayload(data);
-        setSelected((current) => {
-          if (!current) return null;
-          return data.staff.some((staff) => staff.id === current.id) ? current : null;
-        });
-      } else {
-        setPayload(null);
-        if (authUser?.accountType === 'HUMAN' && !isPinSetupRoute) {
-          const staff = staffOptionFromUser(authUser);
-          const clock = await api<StaffClockStatusPayload>('/api/staff/me/clock');
-          setSelected(staff);
-          setHumanClock(clock);
-        } else if (isVenueDeviceRoute) {
-          setHumanClock(null);
-          setSelected(null);
-        } else {
-          setHumanClock(null);
-          setSelected(null);
-        }
-      }
-    } catch (error) {
-      setPayload(null);
-      setHumanClock(null);
-      if (!isVenueDeviceRoute) setSelected(null);
-      if (error instanceof ApiRequestError && error.status === 401) {
-        setEntryStatus('idle');
-        setEntryMsg('');
-      } else {
-        setEntryStatus('err');
-        setEntryMsg(messageForError(error, 'Could not reach Alma device API.'));
-      }
-    } finally {
-      setLoading(false);
-    }
-  }, [isPinSetupRoute, isVenueDeviceRoute]);
-
+  // ── Ticking clock ─────────────────────────────────────────────────
   useEffect(() => {
     const id = window.setInterval(() => setNow(new Date()), 1000);
     return () => window.clearInterval(id);
   }, []);
 
-  useEffect(() => {
-    void loadHomeState();
-  }, [loadHomeState]);
+  // ── Persist state whenever it changes ────────────────────────────
+  useEffect(() => { persistState(state); }, [state]);
 
-  useEffect(() => {
-    void loadHomeSummary();
-    const id = window.setInterval(() => {
-      void loadHomeSummary();
-    }, 60000);
-    return () => window.clearInterval(id);
-  }, [loadHomeSummary]);
-
+  // ── Confirm overlay auto-dismiss after 4.2s ─────────────────────
   useEffect(() => {
     if (!confirm) return;
     const id = window.setTimeout(() => setConfirm(null), 4200);
@@ -288,306 +192,185 @@ export function App() {
     setEntryMsg('');
   }, []);
 
-  async function signInDevice(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setEntryStatus('idle');
-    setEntryMsg('');
-    try {
-      const result = await api<{ user: AuthUser }>('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: signInEmail, password: signInPassword })
-      });
-      if (result.user.accountType !== 'VENUE_DEVICE') {
-        await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
-        throw new Error('Sign in with a venue device account for Alma Home.');
-      }
-      setSignInPassword('');
-      await loadHomeState();
-    } catch (error) {
+  // ── Clock pad PIN handler ────────────────────────────────────────
+  const handleClockPin = useCallback((code: string) => {
+    const person = findByPin(state, code);
+    if (!person) {
       setEntryStatus('err');
-      setEntryMsg(messageForError(error, 'Could not sign in this device.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function submitPinSetup(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
-    setSetupStatus('idle');
-    setSetupMsg('');
-
-    if (!/^\d{4,6}$/.test(setupPin)) {
-      setBusy(false);
-      setSetupStatus('err');
-      setSetupMsg('PIN must be 4 to 6 digits.');
+      setEntryMsg('PIN not recognised — try again, or set up your PIN.');
+      window.setTimeout(() => { resetEntry(); }, 1100);
       return;
     }
-    if (setupPin !== setupConfirm) {
-      setBusy(false);
-      setSetupStatus('err');
-      setSetupMsg('PIN confirmation does not match.');
-      return;
-    }
-
-    let loggedIn = false;
-    try {
-      const result = await api<{ user: AuthUser }>('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email: setupEmail, password: setupPassword })
+    setEntryStatus('ok');
+    const onShift = Boolean(state.shifts[person.id]);
+    window.setTimeout(() => {
+      setState((prev) => {
+        const next: ClockState = {
+          ...prev,
+          shifts: { ...prev.shifts }
+        };
+        if (onShift) {
+          const inAt = prev.shifts[person.id]!.inAt;
+          const worked = durSince(inAt);
+          delete next.shifts[person.id];
+          setConfirm({ person, dir: 'out', worked });
+        } else {
+          next.shifts[person.id] = { inAt: Date.now() };
+          setConfirm({ person, dir: 'in' });
+        }
+        return next;
       });
-      loggedIn = true;
-
-      if (result.user.accountType === 'VENUE_DEVICE') {
-        throw new Error('Use your own staff email and password to set a personal PIN.');
-      }
-
-      await api('/api/staff/me/pin', {
-        method: 'POST',
-        body: JSON.stringify({ newPin: setupPin })
-      });
-
-      await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
-      loggedIn = false;
-
-      setSetupEmail('');
-      setSetupPassword('');
-      setSetupPin('');
-      setSetupConfirm('');
-      setSetupStatus('ok');
-      setSetupMsg('');
-      setEntryStatus('idle');
-      setEntryMsg('PIN set. Enter it to sign in.');
-      navigateHome('/');
-    } catch (error) {
-      if (loggedIn) {
-        await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);
-      }
-      setSetupStatus('err');
-      setSetupMsg(messageForError(error, 'Could not set this PIN.'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function signOutSession() {
-    setBusy(true);
-    try {
-      await api('/api/device/pin-logout', { method: 'POST' }).catch(() => undefined);
-      await api('/api/auth/logout', { method: 'POST' });
-      setUser(null);
-      setPayload(null);
-      setHumanClock(null);
-      setSelected(null);
       resetEntry();
-    } finally {
-      setBusy(false);
-    }
-  }
+    }, 420);
+  }, [state, resetEntry]);
 
-  const selectedOpenSession = useMemo(() => {
-    if (!selected) return null;
-    if (isVenueDeviceRoute) {
-      return payload?.clockedIn.find((row) => row.staffProfileId === selected.id) ?? null;
-    }
-    return humanClock?.activeSession?.staffProfileId === selected.id ? humanClock.activeSession : null;
-  }, [humanClock?.activeSession, isVenueDeviceRoute, payload?.clockedIn, selected]);
-  const selectedCanUsePin = Boolean(selected?.hasPin);
+  // Default keypad completion is the clock handler; the setup flow
+  // swaps it in via onCompleteRef when its pad mounts.
+  useEffect(() => {
+    if (!setupOpen) onCompleteRef.current = handleClockPin;
+  }, [handleClockPin, setupOpen]);
 
-  const submitPin = useCallback(async () => {
-    if (entry.length < 4 || entry.length > 6 || busy) return;
-    if (isVenueDeviceRoute && !selected) {
-      setEntryStatus('err');
-      setEntryMsg('Select a staff profile first.');
-      return;
-    }
-    if (isVenueDeviceRoute && !selected?.hasPin) {
-      setEntryStatus('err');
-      setEntryMsg('Set your Device PIN in Alma Staff on your phone first.');
-      return;
-    }
-
-    setBusy(true);
-    setLocked(true);
-    setEntryStatus('idle');
-    setEntryMsg('');
-
-    try {
-      if (isVenueDeviceRoute) {
-        const selectedStaff = selected;
-        if (!selectedStaff) throw new Error('Select a staff profile first.');
-        await api<{ user: AuthUser }>('/api/device/pin-login', {
-          method: 'POST',
-          body: JSON.stringify({ staffProfileId: selectedStaff.id, pin: entry })
-        });
-
-        const clock = await api<StaffClockStatusPayload>('/api/staff/me/clock');
-        if (clock.activeSession) {
-          const worked = durSince(clock.activeSession.clockInAt);
-          await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: selectedStaff.name, dir: 'out', worked, at: Date.now() });
-        } else {
-          await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: selectedStaff.name, dir: 'in', at: Date.now() });
-        }
-      } else {
-        const result = await api<{ user: AuthUser; token?: string }>('/api/device/staff-pin-login', {
-          method: 'POST',
-          body: JSON.stringify({ pin: entry })
-        });
-        const staff = staffOptionFromUser(result.user);
-        const clock = await api<StaffClockStatusPayload>('/api/staff/me/clock');
-        setUser(result.user);
-        setSelected(staff);
-
-        if (clock.activeSession) {
-          const worked = durSince(clock.activeSession.clockInAt);
-          await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: staff.name, dir: 'out', worked, at: Date.now() });
-        } else {
-          await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: staff.name, dir: 'in', at: Date.now() });
-        }
-        setHumanClock(await api<StaffClockStatusPayload>('/api/staff/me/clock'));
-      }
-
-      setEntryStatus('ok');
-    } catch (error) {
-      setEntryStatus('err');
-      setEntryMsg(messageForError(error, 'PIN login failed.'));
-    } finally {
-      if (isVenueDeviceRoute) {
-        await api('/api/device/pin-logout', { method: 'POST' }).catch(() => undefined);
-      }
-      await loadHomeState();
-      await loadHomeSummary();
-      setBusy(false);
-      window.setTimeout(resetEntry, 700);
-    }
-  }, [busy, entry, isVenueDeviceRoute, loadHomeState, loadHomeSummary, resetEntry, selected]);
-
-  const toggleSignedInClock = useCallback(async () => {
-    if (!user || user.accountType !== 'HUMAN' || busy) return;
-    setBusy(true);
-    setEntryStatus('idle');
-    setEntryMsg('');
-    try {
-      const clock = humanClock ?? await api<StaffClockStatusPayload>('/api/staff/me/clock');
-      const staffName = displayName(user);
-      if (clock.activeSession) {
-        const worked = durSince(clock.activeSession.clockInAt);
-        await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
-        setConfirm({ staffName, dir: 'out', worked, at: Date.now() });
-      } else {
-        await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({}) });
-        setConfirm({ staffName, dir: 'in', at: Date.now() });
-      }
-      setHumanClock(await api<StaffClockStatusPayload>('/api/staff/me/clock'));
-      await loadHomeSummary();
-    } catch (error) {
-      setEntryStatus('err');
-      setEntryMsg(messageForError(error, 'Could not update your clock status.'));
-    } finally {
-      setBusy(false);
-    }
-  }, [busy, humanClock, loadHomeSummary, user]);
-
+  // ── Keypress ─────────────────────────────────────────────────────
   const press = useCallback((key: string) => {
-    if (locked || busy) return;
+    if (locked) return;
     if (key === 'del') {
       setEntry((prev) => prev.slice(0, -1));
       return;
     }
     if (key === 'clear') {
       setEntry('');
-      setEntryStatus('idle');
-      setEntryMsg('');
       return;
     }
-    if (!/^\d$/.test(key)) return;
-    setEntry((prev) => (prev.length >= 6 ? prev : `${prev}${key}`));
-  }, [busy, locked]);
+    setEntry((prev) => {
+      if (prev.length >= 4) return prev;
+      const next = prev + key;
+      if (next.length === 4) {
+        setLocked(true);
+        window.setTimeout(() => onCompleteRef.current(next), 160);
+      }
+      return next;
+    });
+  }, [locked]);
 
-  const openSuiteApp = useCallback<AppOpenHandler>(async (event, app) => {
-    if (!user || !app.href) return;
-    event.preventDefault();
-    try {
-      const data = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
-      const url = new URL(app.href, window.location.origin);
-      url.searchParams.set('suite_token', data.token);
-      url.searchParams.set('suite_from', window.location.origin);
-      window.location.href = url.toString();
-    } catch {
-      window.location.href = app.href;
-    }
-  }, [user]);
-
+  // Physical keyboard support — clock pad only (setup pad listens too).
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute;
-      if (!pinEntryReady) return;
-      if (event.key >= '0' && event.key <= '9') press(event.key);
-      else if (event.key === 'Backspace') press('del');
-      else if (event.key === 'Escape') press('clear');
-      else if (event.key === 'Enter') void submitPin();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key >= '0' && e.key <= '9') press(e.key);
+      else if (e.key === 'Backspace') press('del');
+      else if (e.key === 'Escape') press('clear');
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [deviceReady, isPinSetupRoute, isVenueDeviceRoute, press, submitPin]);
+  }, [press]);
+
+  // ── Setup flow PIN handler ──────────────────────────────────────
+  const handleSetupPin = useCallback((code: string) => {
+    if (!setupPerson) return;
+    if (setupStage === 'choose') {
+      setSetupFirstPin(code);
+      setSetupStage('confirm');
+      resetEntry();
+      return;
+    }
+    if (code !== setupFirstPin) {
+      setEntryStatus('err');
+      setEntryMsg("Didn't match — let's try again.");
+      window.setTimeout(() => {
+        setSetupStage('choose');
+        setSetupFirstPin('');
+        resetEntry();
+      }, 1200);
+      return;
+    }
+    const clash = PEOPLE.some(
+      (p) => p.id !== setupPerson.id && pinFor(state, p) === code
+    );
+    if (clash) {
+      setEntryStatus('err');
+      setEntryMsg('That PIN is taken — pick another.');
+      window.setTimeout(() => {
+        setSetupStage('choose');
+        setSetupFirstPin('');
+        resetEntry();
+      }, 1200);
+      return;
+    }
+    setEntryStatus('ok');
+    setState((prev) => ({ ...prev, pins: { ...prev.pins, [setupPerson.id]: code } }));
+    window.setTimeout(() => {
+      setSetupStage('done');
+      resetEntry();
+    }, 480);
+  }, [setupPerson, setupStage, setupFirstPin, state, resetEntry]);
 
   useEffect(() => {
-    const pinEntryReady = isVenueDeviceRoute ? deviceReady : !isPinSetupRoute;
-    const canSubmitPin = isVenueDeviceRoute ? selectedCanUsePin : true;
-    if (!pinEntryReady || !canSubmitPin || busy || locked || entry.length < 4 || entry.length > 6) return;
-    const id = window.setTimeout(() => {
-      void submitPin();
-    }, entry.length === 6 ? 120 : 850);
-    return () => window.clearTimeout(id);
-  }, [
-    busy,
-    deviceReady,
-    entry,
-    isPinSetupRoute,
-    isVenueDeviceRoute,
-    locked,
-    selectedCanUsePin,
-    submitPin
-  ]);
+    if (setupOpen && (setupStage === 'choose' || setupStage === 'confirm')) {
+      onCompleteRef.current = handleSetupPin;
+    } else if (!setupOpen) {
+      onCompleteRef.current = handleClockPin;
+    }
+  }, [setupOpen, setupStage, handleSetupPin, handleClockPin]);
 
+  const openSetup = useCallback(() => {
+    setSetupOpen(true);
+    setSetupStage('name');
+    setSetupPerson(null);
+    setSetupFirstPin('');
+    resetEntry();
+  }, [resetEntry]);
+
+  const closeSetup = useCallback(() => {
+    setSetupOpen(false);
+    setSetupStage('name');
+    setSetupPerson(null);
+    setSetupFirstPin('');
+    resetEntry();
+  }, [resetEntry]);
+
+  const setupBack = useCallback(() => {
+    if (setupStage === 'name') return closeSetup();
+    if (setupStage === 'choose') return setSetupStage('name');
+    if (setupStage === 'confirm') {
+      setSetupFirstPin('');
+      resetEntry();
+      return setSetupStage('choose');
+    }
+    closeSetup();
+  }, [setupStage, closeSetup, resetEntry]);
+
+  // ── Derived values ──────────────────────────────────────────────
   const time = fmtTime(now);
   const dateLabel = now.toLocaleDateString('en-AU', {
     weekday: 'long',
     day: 'numeric',
     month: 'long'
   });
-  const shiftRows = payload?.clockedIn ?? [];
-  const venueLabel = payload?.venue ?? user?.venue ?? 'Venue';
-  const actionLabel = selectedOpenSession ? 'Clock out' : 'Clock in';
-  const staffRows = isVenueDeviceRoute ? payload?.staff ?? [] : [];
-  const signedInHuman = !isVenueDeviceRoute && user?.accountType === 'HUMAN' ? user : null;
-  const keypadEnabled = isVenueDeviceRoute ? selectedCanUsePin : true;
-  const statusMessage =
-    entryMsg ||
-    (selected
-      ? isVenueDeviceRoute
-        ? `${actionLabel} for ${selected.name}`
-        : 'Enter your staff PIN.'
-      : isVenueDeviceRoute
-        ? 'Select a staff profile first.'
-        : 'Enter your staff PIN.');
+  const shiftRows = useMemo(() => {
+    const ids = Object.keys(state.shifts).sort(
+      (a, b) => state.shifts[a]!.inAt - state.shifts[b]!.inAt
+    );
+    return ids
+      .map((id) => {
+        const p = PEOPLE.find((person) => person.id === id);
+        if (!p) return null;
+        return { person: p, inAt: state.shifts[id]!.inAt };
+      })
+      .filter((row): row is { person: Person; inAt: number } => row !== null);
+  }, [state.shifts]);
+
+  const apps = useMemo(() => quickLaunchApps(), []);
 
   return (
     <div className="kiosk">
+      {/* ── LEFT: brand + clock + on-shift ── */}
       <div className="kiosk__left">
         <div className="kiosk-brandbar">
-          <div className="kiosk-wordmark" aria-label="Alma Group Home">
-            <img src="/images/alma-group-logo.png" alt="Alma Group" className="kiosk-wordmark__logo" />
-            <span>home</span>
+          <div className="kiosk-wordmark">
+            alma <em>home</em>
           </div>
           <div className="kiosk-venue-pill">
             <span className="kiosk-pulse" />
-            {isVenueDeviceRoute ? (deviceReady ? `${venueLabel} · Clock` : 'Venue device') : 'Staff PIN'}
+            Avalon · Clock
           </div>
         </div>
 
@@ -600,580 +383,139 @@ export function App() {
           <div className="kiosk-datestr">{dateLabel}</div>
         </div>
 
-        {isVenueDeviceRoute ? (
-          <div className="kiosk-onshift">
-            <h4>
-              On shift now · <span className="kiosk-onshift__count">{shiftRows.length}</span>
-            </h4>
-            <div className="kiosk-shift-list">
-              {loading ? (
-                <div className="kiosk-shift-empty">Loading current clock sessions...</div>
-              ) : shiftRows.length === 0 ? (
-                <div className="kiosk-shift-empty">No open clock sessions for this venue.</div>
-              ) : (
-                shiftRows.map((row) => (
-                  <ShiftRow key={row.sessionId} row={row} />
-                ))
-              )}
-            </div>
+        <div className="kiosk-onshift">
+          <h4>
+            On shift now · <span className="kiosk-onshift__count">{shiftRows.length}</span>
+          </h4>
+          <div className="kiosk-shift-list">
+            {shiftRows.length === 0 ? (
+              <div className="kiosk-shift-empty">Nobody clocked in yet. Be the first.</div>
+            ) : (
+              shiftRows.map(({ person, inAt }) => (
+                <div key={person.id} className="kiosk-shift-row">
+                  <span className="kiosk-avatar">{initials(person.name)}</span>
+                  <div className="kiosk-shift-row__who">
+                    <div className="kiosk-shift-row__nm">{person.name}</div>
+                    <div className="kiosk-shift-row__role">{person.role}</div>
+                  </div>
+                  <div className="kiosk-shift-row__since">
+                    in at<b>{clockStr(inAt)}</b>
+                  </div>
+                </div>
+              ))
+            )}
           </div>
-        ) : (
-          <div className="kiosk-summary-desktop">
-            <HomeSummaryPanel summary={homeSummary} loading={summaryLoading} />
-          </div>
-        )}
+        </div>
+
+        <div className="kiosk-hint">
+          Demo — try PIN <b>1234</b> (Sofi) or <b>2468</b> (Maximo).{' '}
+          New starter: <b>Bea</b> via Set up.
+        </div>
       </div>
 
+      {/* ── RIGHT: PIN pad + quick-launch apps ── */}
       <div className="kiosk__right">
-        {isVenueDeviceRoute && !deviceReady ? (
-          <DeviceSignInPanel
-            email={signInEmail}
-            password={signInPassword}
-            busy={busy}
-            error={entryStatus === 'err' ? entryMsg : ''}
-            onEmail={setSignInEmail}
-            onPassword={setSignInPassword}
-            onSubmit={signInDevice}
-            apps={apps}
-            pinSetupHref={pinSetupHref}
-            onOpenApp={openSuiteApp}
-          />
-        ) : isPinSetupRoute ? (
-          <PinSetupPanel
-            email={setupEmail}
-            password={setupPassword}
-            pin={setupPin}
-            confirmPin={setupConfirm}
-            busy={busy}
-            status={setupStatus}
-            message={setupMsg}
-            onEmail={setSetupEmail}
-            onPassword={setSetupPassword}
-            onPin={setSetupPin}
-            onConfirmPin={setSetupConfirm}
-            onSubmit={submitPinSetup}
-            onBack={() => navigateHome('/')}
-          />
-        ) : signedInHuman ? (
-          <HumanWelcomePanel
-            user={signedInHuman}
-            clock={humanClock}
-            apps={apps}
-            busy={busy}
-            error={entryStatus === 'err' ? entryMsg : ''}
-            onClockToggle={toggleSignedInClock}
-            onOpenApp={openSuiteApp}
-            onRefresh={() => {
-              void loadHomeState();
-              void loadHomeSummary();
-            }}
-            onSwitchStaff={() => {
-              void signOutSession().then(() => navigateHome('/'));
-            }}
-            onSignOut={() => void signOutSession()}
-          />
-        ) : (
-          <>
-            <div className="kiosk-right-head">
-              <div className="kiosk-eyebrow">{isVenueDeviceRoute ? 'Clock in & out' : 'Staff PIN login'}</div>
-              <h2>
-                {isVenueDeviceRoute ? 'Select staff, then enter ' : 'Enter your '}
-                <span className="kiosk-it">PIN.</span>
-              </h2>
-              <p>
-                {isVenueDeviceRoute
-                  ? user?.deviceAccount
-                    ? `Using ${displayName(user)} on ${user.deviceAccount.name}.`
-                    : `${venueLabel} device signed in.`
-                  : 'Your PIN identifies your staff profile, then clocks you in or out automatically.'}
-              </p>
-            </div>
+        <div className="kiosk-right-head">
+          <div className="kiosk-eyebrow">Clock in &amp; out</div>
+          <h2>
+            Enter your <span className="kiosk-it">PIN.</span>
+          </h2>
+          <p>Four digits — same to clock in or out.</p>
+        </div>
 
-            {signedInHuman ? (
-              <div className="kiosk-session-strip">
-                Signed in as <b>{displayName(signedInHuman)}</b>
-              </div>
-            ) : null}
+        <PinDots entry={entry} status={entryStatus} />
+        <div className={`kiosk-msg${entryStatus === 'err' ? ' is-error' : ''}`}>
+          {entryMsg || ' '}
+        </div>
 
-            {isVenueDeviceRoute ? (
-              <StaffPicker
-                staff={staffRows}
-                selected={selected}
-                onSelect={(staff) => {
-                  setSelected(staff);
-                  setEntry('');
-                  setLocked(false);
-                  if (staff.hasPin) {
-                    setEntryStatus('idle');
-                    setEntryMsg('');
-                  } else {
-                    setEntryStatus('err');
-                    setEntryMsg('Set your Device PIN in Alma Staff on your phone first.');
-                  }
-                }}
-                loading={loading}
-              />
-            ) : null}
+        <Keypad onPress={press} />
 
-            <PinDots entry={entry} status={entryStatus} />
-            <div className={`kiosk-msg${entryStatus === 'err' ? ' is-error' : ''}`}>
-              {statusMessage}
-            </div>
-            {!isVenueDeviceRoute ? (
-              <a className="kiosk-phone-code" href="/set-pin" onClick={(event) => handleLocalNav(event, '/set-pin')}>
-                Don't have your PIN yet? Click here
-              </a>
-            ) : null}
+        <div className="kiosk-right-foot">
+          <button type="button" className="kiosk-linkbtn" onClick={openSetup}>
+            First shift here? Set up your PIN
+            <svg viewBox="0 0 14 6" fill="none" className="kiosk-linkbtn__arr">
+              <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
 
-            <Keypad onPress={press} disabled={!keypadEnabled || busy} />
-            <div className="kiosk-auto-submit-note">
-              {keypadEnabled ? 'PIN submits automatically.' : 'Choose a staff profile with a PIN.'}
-            </div>
-
-            {!isVenueDeviceRoute ? (
-              <div className="kiosk-summary-mobile">
-                <HomeSummaryPanel summary={homeSummary} loading={summaryLoading} />
-              </div>
-            ) : null}
-
-            <div className="kiosk-right-foot">
-              <button
-                type="button"
-                className="kiosk-linkbtn"
-                onClick={() => {
-                  void loadHomeState();
-                  void loadHomeSummary();
-                }}
-                disabled={busy}
-              >
-                {isVenueDeviceRoute ? 'Refresh staff' : 'Refresh'}
-              </button>
-              {!isVenueDeviceRoute ? (
-                <a className="kiosk-linkbtn kiosk-linkbtn--anchor" href="/ipad">
-                  Login venue device
-                </a>
-              ) : null}
-              {user ? (
-                <button type="button" className="kiosk-linkbtn" onClick={() => void signOutSession()} disabled={busy}>
-                  {isVenueDeviceRoute ? 'Sign out device' : 'Sign out'}
-                </button>
-              ) : null}
-            </div>
-
-            {(isVenueDeviceRoute || signedInHuman) ? <SuiteAppGrid apps={apps} onOpenApp={user ? openSuiteApp : undefined} /> : null}
-          </>
-        )}
+        {/* Suite-app launcher — present at all times so the kiosk is a
+            real home base, not just a clock. Tapping a tile opens that
+            app in the same tab; if the user is signed in elsewhere the
+            suite handoff token will carry their session over. */}
+        <SuiteAppGrid apps={apps} />
       </div>
 
-      {confirm ? (
+      {/* ── Confirm overlay ── */}
+      {confirm && (
         <ConfirmOverlay
           info={confirm}
           apps={apps}
-          onOpenApp={user ? openSuiteApp : undefined}
           onDone={() => setConfirm(null)}
         />
-      ) : null}
-    </div>
-  );
-}
+      )}
 
-function ShiftRow({ row }: { row: DeviceClockedInStaff }) {
-  return (
-    <div className="kiosk-shift-row">
-      <span className="kiosk-avatar">{initials(row.name)}</span>
-      <div className="kiosk-shift-row__who">
-        <div className="kiosk-shift-row__nm">{row.name}</div>
-        <div className="kiosk-shift-row__role">{row.roleTitle || row.venue || 'Staff'}</div>
-      </div>
-      <div className="kiosk-shift-row__since">
-        in at<b>{clockStr(row.clockInAt)}</b>
-      </div>
-    </div>
-  );
-}
-
-function compactCount(value: number) {
-  if (value < 1000) return `${value}`;
-  return new Intl.NumberFormat('en-AU', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
-}
-
-function HomeSummaryPanel({
-  summary,
-  loading
-}: {
-  summary: HomeOperationalSummary | null;
-  loading: boolean;
-}) {
-  const next = summary?.bookings.next ?? null;
-  const scheduledMarketing = (summary?.marketing.scheduledCampaigns ?? 0) + (summary?.marketing.scheduledPosts ?? 0);
-
-  return (
-    <div className="kiosk-ops">
-      <h4>Today at Alma</h4>
-      {loading ? (
-        <div className="kiosk-shift-empty">Loading live venue context...</div>
-      ) : summary ? (
-        <>
-          <div className="kiosk-ops__grid">
-            <div className="kiosk-ops__stat">
-              <span>Bookings</span>
-              <strong>{summary.bookings.today}</strong>
-              <em>{summary.bookings.coversToday} covers today</em>
-            </div>
-            <div className="kiosk-ops__stat">
-              <span>Upcoming</span>
-              <strong>{summary.bookings.upcoming}</strong>
-              <em>{next ? `${clockStr(next.startsAt)} · ${next.venue ?? 'Venue'}` : 'No next booking'}</em>
-            </div>
-            <div className="kiosk-ops__stat">
-              <span>Team</span>
-              <strong>{summary.staff.clockedInNow}</strong>
-              <em>{summary.staff.rosteredToday} rostered today</em>
-            </div>
-            <div className="kiosk-ops__stat">
-              <span>Marketing</span>
-              <strong>{compactCount(summary.marketing.optedInContacts)}</strong>
-              <em>{scheduledMarketing} scheduled</em>
-            </div>
-          </div>
-          {next ? (
-            <div className="kiosk-ops__next">
-              Next booking is {next.covers} cover{next.covers === 1 ? '' : 's'} at <b>{clockStr(next.startsAt)}</b>.
-            </div>
-          ) : null}
-        </>
-      ) : (
-        <div className="kiosk-shift-empty">Live venue context will appear here once the summary API is available.</div>
+      {/* ── Setup overlay ── */}
+      {setupOpen && (
+        <SetupOverlay
+          stage={setupStage}
+          person={setupPerson}
+          entry={entry}
+          entryStatus={entryStatus}
+          entryMsg={entryMsg}
+          onBack={setupBack}
+          onPickPerson={(p) => {
+            setSetupPerson(p);
+            setSetupStage('choose');
+            setSetupFirstPin('');
+            resetEntry();
+          }}
+          onPress={press}
+          onDone={closeSetup}
+          isPersonNew={(p) => !(state.pins[p.id] || p.pin)}
+        />
       )}
     </div>
   );
 }
 
-function HumanWelcomePanel({
-  user,
-  clock,
-  apps,
-  busy,
-  error,
-  onClockToggle,
-  onOpenApp,
-  onRefresh,
-  onSwitchStaff,
-  onSignOut
-}: {
-  user: AuthUser;
-  clock: StaffClockStatusPayload | null;
-  apps: SuiteAppIdentity[];
-  busy: boolean;
-  error: string;
-  onClockToggle: () => void;
-  onOpenApp: AppOpenHandler;
-  onRefresh: () => void;
-  onSwitchStaff: () => void;
-  onSignOut: () => void;
-}) {
-  const name = displayName(user);
-  const first = user.firstName || name.split(' ')[0] || 'there';
-  const activeSession = clock?.activeSession ?? null;
-  const nextShift = clock?.currentShift ?? clock?.nextShift ?? null;
-  const clockLabel = activeSession ? 'Clock out' : 'Clock in';
-  const status = activeSession
-    ? `Clocked in at ${clockStr(activeSession.clockInAt)}${activeSession.venue ? ` · ${activeSession.venue}` : ''}`
-    : nextShift
-      ? `Next shift ${clockStr(nextShift.startsAt)}${nextShift.area ? ` · ${nextShift.area}` : ''}`
-      : 'Ready when you are.';
-
-  return (
-    <>
-      <div className="kiosk-right-head">
-        <div className="kiosk-eyebrow">Alma Home</div>
-        <h2>
-          Welcome, <span className="kiosk-it">{first}.</span>
-        </h2>
-        <p>Clock in for your shift, then open the suite app you need.</p>
-      </div>
-
-      <div className={`kiosk-welcome-card${activeSession ? ' is-clocked-in' : ''}`}>
-        <div className="kiosk-welcome-card__top">
-          <span className="kiosk-avatar kiosk-avatar--welcome">{initials(name)}</span>
-          <div className="kiosk-welcome-card__text">
-            <div className="kiosk-welcome-card__label">{activeSession ? 'On shift' : 'Signed in'}</div>
-            <strong>{name}</strong>
-            <span>{user.roleTitle || user.venue || 'Staff'}</span>
-          </div>
-        </div>
-        <div className="kiosk-clock-status">
-          <span>{status}</span>
-          {activeSession ? <b>{durSince(activeSession.clockInAt)} on shift</b> : null}
-        </div>
-        {error ? <div className="kiosk-msg is-error">{error}</div> : null}
-        <button type="button" className="kiosk-clock-btn kiosk-clock-btn--wide" onClick={onClockToggle} disabled={busy}>
-          {busy ? 'Updating...' : clockLabel}
-        </button>
-      </div>
-
-      <SuiteAppGrid apps={apps} onOpenApp={onOpenApp} />
-
-      <div className="kiosk-right-foot">
-        <button type="button" className="kiosk-linkbtn" onClick={onRefresh} disabled={busy}>
-          Refresh
-        </button>
-        <button type="button" className="kiosk-linkbtn" onClick={onSwitchStaff} disabled={busy}>
-          Use another PIN
-        </button>
-        <button type="button" className="kiosk-linkbtn" onClick={onSignOut} disabled={busy}>
-          Sign out
-        </button>
-      </div>
-    </>
-  );
-}
-
-function DeviceSignInPanel({
-  email,
-  password,
-  busy,
-  error,
-  onEmail,
-  onPassword,
-  onSubmit,
-  apps,
-  pinSetupHref,
-  onOpenApp
-}: {
-  email: string;
-  password: string;
-  busy: boolean;
-  error: string;
-  onEmail: (value: string) => void;
-  onPassword: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  apps: SuiteAppIdentity[];
-  pinSetupHref: string;
-  onOpenApp?: AppOpenHandler;
-}) {
-  return (
-    <>
-      <div className="kiosk-right-head">
-        <div className="kiosk-eyebrow">Venue device sign in</div>
-        <h2>
-          Use a real <span className="kiosk-it">device account.</span>
-        </h2>
-        <p>Sign in this device once. Staff then use their own PIN from Alma Staff on their phone.</p>
-      </div>
-
-      <form className="kiosk-auth-form" onSubmit={onSubmit}>
-        <label className="kiosk-auth-field">
-          <span>Email</span>
-          <input
-            value={email}
-            onChange={(event) => onEmail(event.currentTarget.value)}
-            type="email"
-            autoComplete="username"
-            required
-          />
-        </label>
-        <label className="kiosk-auth-field">
-          <span>Password</span>
-          <input
-            value={password}
-            onChange={(event) => onPassword(event.currentTarget.value)}
-            type="password"
-            autoComplete="current-password"
-            required
-          />
-        </label>
-        {error ? <div className="kiosk-msg is-error">{error}</div> : null}
-        <button type="submit" className="kiosk-clock-btn" disabled={busy}>
-          {busy ? 'Signing in...' : 'Sign in device'}
-        </button>
-      </form>
-      <a className="kiosk-phone-code" href={pinSetupHref}>
-        Staff PIN setup opens in Alma Staff
-      </a>
-
-      <SuiteAppGrid apps={apps} onOpenApp={onOpenApp} />
-    </>
-  );
-}
-
-function PinSetupPanel({
-  email,
-  password,
-  pin,
-  confirmPin,
-  busy,
-  status,
-  message,
-  onEmail,
-  onPassword,
-  onPin,
-  onConfirmPin,
-  onSubmit,
-  onBack
-}: {
-  email: string;
-  password: string;
-  pin: string;
-  confirmPin: string;
-  busy: boolean;
-  status: 'idle' | 'err' | 'ok';
-  message: string;
-  onEmail: (value: string) => void;
-  onPassword: (value: string) => void;
-  onPin: (value: string) => void;
-  onConfirmPin: (value: string) => void;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onBack: () => void;
-}) {
-  return (
-    <>
-      <div className="kiosk-setup__top">
-        <button type="button" className="kiosk-setup__back" onClick={onBack}>
-          Back to PIN
-        </button>
-        <div className="kiosk-setup__step">PIN setup</div>
-      </div>
-      <div className="kiosk-right-head kiosk-right-head--spaced">
-        <div className="kiosk-eyebrow">Don't have your PIN?</div>
-        <h2>
-          Set it with your <span className="kiosk-it">password.</span>
-        </h2>
-        <p>Use your staff email and password once. This browser signs you out again after the PIN is saved.</p>
-      </div>
-
-      <form className="kiosk-auth-form" onSubmit={onSubmit}>
-        <label className="kiosk-auth-field">
-          <span>Email</span>
-          <input
-            value={email}
-            onChange={(event) => onEmail(event.currentTarget.value)}
-            type="email"
-            autoComplete="username"
-            required
-          />
-        </label>
-        <label className="kiosk-auth-field">
-          <span>Password</span>
-          <input
-            value={password}
-            onChange={(event) => onPassword(event.currentTarget.value)}
-            type="password"
-            autoComplete="current-password"
-            required
-          />
-        </label>
-        <label className="kiosk-auth-field">
-          <span>New PIN</span>
-          <input
-            value={pin}
-            onChange={(event) => onPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric"
-            type="password"
-            autoComplete="new-password"
-            placeholder="4 to 6 digits"
-            required
-          />
-        </label>
-        <label className="kiosk-auth-field">
-          <span>Confirm PIN</span>
-          <input
-            value={confirmPin}
-            onChange={(event) => onConfirmPin(event.currentTarget.value.replace(/\D/g, '').slice(0, 6))}
-            inputMode="numeric"
-            type="password"
-            autoComplete="new-password"
-            placeholder="Repeat PIN"
-            required
-          />
-        </label>
-        {message ? <div className={`kiosk-msg${status === 'err' ? ' is-error' : ''}`}>{message}</div> : null}
-        <button type="submit" className="kiosk-clock-btn" disabled={busy || pin.length < 4 || confirmPin.length < 4}>
-          {busy ? 'Setting PIN...' : 'Set PIN'}
-        </button>
-      </form>
-    </>
-  );
-}
-
-function StaffPicker({
-  staff,
-  selected,
-  onSelect,
-  loading,
-  loadingLabel = 'Loading venue staff...',
-  emptyLabel = 'No active staff assigned to this venue device.',
-  ariaLabel = 'Venue staff'
-}: {
-  staff: DeviceStaffOption[];
-  selected: DeviceStaffOption | null;
-  onSelect: (staff: DeviceStaffOption) => void;
-  loading: boolean;
-  loadingLabel?: string;
-  emptyLabel?: string;
-  ariaLabel?: string;
-}) {
-  if (loading) {
-    return <div className="kiosk-staff-empty">{loadingLabel}</div>;
-  }
-  if (staff.length === 0) {
-    return <div className="kiosk-staff-empty">{emptyLabel}</div>;
-  }
-  return (
-    <div className="kiosk-people" aria-label={ariaLabel}>
-      {staff.map((member) => (
-        <button
-          key={member.id}
-          type="button"
-          className={`kiosk-person${selected?.id === member.id ? ' is-selected' : ''}${!member.hasPin ? ' is-pin-missing' : ''}`}
-          onClick={() => onSelect(member)}
-        >
-          <span className="kiosk-avatar kiosk-avatar--md">{initials(member.name)}</span>
-          <div className="kiosk-person__text">
-            <div className="kiosk-person__nm">{member.name}</div>
-            <div className="kiosk-person__role">{member.roleTitle || member.venue || 'Staff'}</div>
-          </div>
-          {!member.hasPin ? <span className="kiosk-person__new">No PIN</span> : null}
-        </button>
-      ))}
-    </div>
-  );
-}
+// ──────────────────────────────────────────────────────────────────
+//                          Subcomponents
+// ──────────────────────────────────────────────────────────────────
 
 function PinDots({ entry, status }: { entry: string; status: 'idle' | 'err' | 'ok' }) {
   return (
     <div className={`kiosk-dots${status === 'err' ? ' is-err' : ''}${status === 'ok' ? ' is-ok' : ''}`}>
-      {[0, 1, 2, 3, 4, 5].map((index) => (
-        <span key={index} className={`kiosk-dot${index < entry.length ? ' is-on' : ''}`} />
+      {[0, 1, 2, 3].map((i) => (
+        <span key={i} className={`kiosk-dot${i < entry.length ? ' is-on' : ''}`} />
       ))}
     </div>
   );
 }
 
-function Keypad({ onPress, disabled = false }: { onPress: (key: string) => void; disabled?: boolean }) {
+function Keypad({ onPress }: { onPress: (key: string) => void }) {
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'clear', '0', 'del'];
   return (
     <div className="kiosk-pad">
-      {keys.map((key) => {
-        const isUtil = key === 'clear' || key === 'del';
+      {keys.map((k) => {
+        const isUtil = k === 'clear' || k === 'del';
         return (
           <button
-            key={key}
+            key={k}
             type="button"
             className={`kiosk-key${isUtil ? ' is-util' : ''}`}
-            onClick={() => onPress(key)}
-            aria-label={key === 'del' ? 'Delete' : key === 'clear' ? 'Clear' : `Number ${key}`}
-            disabled={disabled}
+            onClick={() => onPress(k)}
+            aria-label={k === 'del' ? 'Delete' : k === 'clear' ? 'Clear' : `Number ${k}`}
           >
-            {key === 'del' ? (
+            {k === 'del' ? (
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 5 H8 L2 12 L8 19 H21 V5 Z" />
                 <path d="M18 9 L12 15 M12 9 L18 15" />
               </svg>
-            ) : key === 'clear' ? (
+            ) : k === 'clear' ? (
               'Clear'
             ) : (
-              key
+              k
             )}
           </button>
         );
@@ -1182,7 +524,7 @@ function Keypad({ onPress, disabled = false }: { onPress: (key: string) => void;
   );
 }
 
-function SuiteAppGrid({ apps, onOpenApp }: { apps: SuiteAppIdentity[]; onOpenApp?: AppOpenHandler }) {
+function SuiteAppGrid({ apps }: { apps: SuiteAppIdentity[] }) {
   if (apps.length === 0) return null;
   return (
     <div className="kiosk-suitegrid">
@@ -1191,8 +533,7 @@ function SuiteAppGrid({ apps, onOpenApp }: { apps: SuiteAppIdentity[]; onOpenApp
         {apps.map((app) => (
           <a
             key={app.id}
-            href={app.href ?? '#'}
-            onClick={onOpenApp ? (event) => onOpenApp(event, app) : undefined}
+            href={app.href}
             className="kiosk-suitegrid__tile"
             aria-label={`Open ${app.label}`}
           >
@@ -1219,52 +560,49 @@ function SuiteAppGrid({ apps, onOpenApp }: { apps: SuiteAppIdentity[]; onOpenApp
 function ConfirmOverlay({
   info,
   apps,
-  onOpenApp,
   onDone
 }: {
   info: ConfirmInfo;
   apps: SuiteAppIdentity[];
-  onOpenApp?: AppOpenHandler;
   onDone: () => void;
 }) {
   const isIn = info.dir === 'in';
-  const isLogin = info.dir === 'login';
-  const first = info.staffName.split(' ')[0] || 'there';
+  const first = info.person.name.split(' ')[0];
+  // Show app launcher tiles when clocking IN so a manager can jump
+  // straight to Staff / Reports / etc. without an extra screen.
+  const showLauncher = isIn && apps.length > 0;
   return (
-    <div className={`kiosk-overlay show ${isIn || isLogin ? 'tint-in' : 'tint-out'}`}>
+    <div className={`kiosk-overlay show ${isIn ? 'tint-in' : 'tint-out'}`}>
       <div className="kiosk-confirm">
-        <span className="kiosk-confirm__ava">{initials(info.staffName)}</span>
+        <span className="kiosk-confirm__ava">{initials(info.person.name)}</span>
         <div className="kiosk-confirm__status">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" className="kiosk-confirm__tick">
             <polyline points="20 6 9 17 4 12" />
           </svg>
-          {isLogin ? 'Signed in' : isIn ? 'Clocked in' : 'Clocked out'}
+          {isIn ? 'Clocked in' : 'Clocked out'}
         </div>
         <h1>
-          {isLogin || isIn ? 'Welcome, ' : 'See you, '}
+          {isIn ? 'Welcome, ' : 'See you, '}
           <span className="kiosk-it">{first}.</span>
         </h1>
         <div className="kiosk-confirm__detail">
-          {isLogin ? (
-            <>Signed in with your <b>Device PIN</b>.</>
-          ) : isIn ? (
-            <>Clocked <b>in</b> at <b>{clockStr(info.at)}</b>.</>
+          {isIn ? (
+            <>Clocked <b>in</b> at <b>{clockStr(Date.now())}</b>. Have a good one.</>
           ) : (
             <>
-              Clocked <b>out</b> at <b>{clockStr(info.at)}</b> · <b>{info.worked}</b> on shift today.
+              Clocked <b>out</b> at <b>{clockStr(Date.now())}</b> · <b>{info.worked}</b> on shift today.
             </>
           )}
         </div>
 
-        {(isIn || isLogin) && apps.length > 0 ? (
+        {showLauncher ? (
           <div className="kiosk-confirm__launcher">
             <div className="kiosk-confirm__launcher-head">Open a suite app</div>
             <div className="kiosk-confirm__launcher-row">
               {apps.slice(0, 6).map((app) => (
                 <a
                   key={app.id}
-                  href={app.href ?? '#'}
-                  onClick={onOpenApp ? (event) => onOpenApp(event, app) : undefined}
+                  href={app.href}
                   className="kiosk-confirm__launcher-tile"
                   aria-label={`Open ${app.label}`}
                 >
@@ -1288,7 +626,120 @@ function ConfirmOverlay({
         <button type="button" className="kiosk-done-btn" onClick={onDone}>
           Done
         </button>
-        <div className="kiosk-confirm__auto">Returning to the clock...</div>
+        <div className="kiosk-confirm__auto">Returning to the clock…</div>
+      </div>
+    </div>
+  );
+}
+
+type SetupOverlayProps = {
+  stage: 'name' | 'choose' | 'confirm' | 'done';
+  person: Person | null;
+  entry: string;
+  entryStatus: 'idle' | 'err' | 'ok';
+  entryMsg: string;
+  onBack: () => void;
+  onPickPerson: (person: Person) => void;
+  onPress: (key: string) => void;
+  onDone: () => void;
+  isPersonNew: (person: Person) => boolean;
+};
+
+function SetupOverlay(props: SetupOverlayProps) {
+  const { stage, person, entry, entryStatus, entryMsg, onBack, onPickPerson, onPress, onDone, isPersonNew } = props;
+
+  let step: string;
+  let body: JSX.Element;
+
+  if (stage === 'name') {
+    step = 'Step 1 of 3 · Who are you?';
+    body = (
+      <>
+        <div className="kiosk-eyebrow">Set up</div>
+        <h2>
+          Find <span className="kiosk-it">your name.</span>
+        </h2>
+        <p>Tap your name to set a 4-digit PIN for clocking in.</p>
+        <div className="kiosk-people">
+          {PEOPLE.map((p) => (
+            <button
+              key={p.id}
+              type="button"
+              className="kiosk-person"
+              onClick={() => onPickPerson(p)}
+            >
+              <span className="kiosk-avatar kiosk-avatar--md">{initials(p.name)}</span>
+              <div className="kiosk-person__text">
+                <div className="kiosk-person__nm">{p.name}</div>
+                <div className="kiosk-person__role">{p.role}</div>
+              </div>
+              {isPersonNew(p) ? <span className="kiosk-person__new">New</span> : null}
+            </button>
+          ))}
+        </div>
+      </>
+    );
+  } else if (stage === 'choose' || stage === 'confirm') {
+    const choosing = stage === 'choose';
+    step = `${choosing ? 'Step 2 of 3' : 'Step 3 of 3'} · ${person?.name ?? ''}`;
+    body = (
+      <>
+        <div className="kiosk-eyebrow">{choosing ? 'Choose a PIN' : 'Confirm it'}</div>
+        <h2>
+          {choosing ? (
+            <>
+              <span className="kiosk-it">New</span> 4-digit PIN.
+            </>
+          ) : (
+            <>
+              Type it <span className="kiosk-it">again.</span>
+            </>
+          )}
+        </h2>
+        <p>
+          {choosing
+            ? "Pick something memorable — you'll use it every shift."
+            : "Just to be sure it's right."}
+        </p>
+        <PinDots entry={entry} status={entryStatus} />
+        <div className={`kiosk-msg${entryStatus === 'err' ? ' is-error' : ''}`}>
+          {entryMsg || ' '}
+        </div>
+        <Keypad onPress={onPress} />
+      </>
+    );
+  } else {
+    step = 'All set';
+    body = (
+      <>
+        <span className="kiosk-avatar kiosk-avatar--lg">{person ? initials(person.name) : '?'}</span>
+        <div className="kiosk-eyebrow" style={{ marginTop: 22 }}>You’re set</div>
+        <h2>
+          Welcome aboard,
+          <br />
+          <span className="kiosk-it">{person?.name.split(' ')[0]}.</span>
+        </h2>
+        <p>Your PIN is ready. Tap below, then clock in whenever your shift starts.</p>
+        <button type="button" className="kiosk-done-btn kiosk-done-btn--forest" onClick={onDone}>
+          Go to the clock
+        </button>
+      </>
+    );
+  }
+
+  return (
+    <div className="kiosk-overlay show">
+      <div className="kiosk-setup">
+        <div className="kiosk-setup__top">
+          <button type="button" className="kiosk-setup__back" onClick={onBack}>
+            <svg width="14" height="10" viewBox="0 0 14 10" fill="none">
+              <path d="M14 5 H1 M4 1 L1 5 L4 9" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            Back
+          </button>
+          <span className="kiosk-setup__step">{step}</span>
+        </div>
+        <div className="kiosk-setup__body">{body}</div>
       </div>
     </div>
   );
