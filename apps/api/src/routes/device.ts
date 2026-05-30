@@ -1,6 +1,12 @@
 import { Router } from 'express';
 import type { Request } from 'express';
-import { clearDevicePinSessionCookie, createDevicePinSessionToken, setDevicePinSessionCookie } from '../lib/session.js';
+import {
+  clearDevicePinSessionCookie,
+  createDevicePinSessionToken,
+  createSessionToken,
+  setDevicePinSessionCookie,
+  setSessionCookie
+} from '../lib/session.js';
 import { HttpError } from '../lib/http.js';
 import { deviceService } from '../services/device.service.js';
 
@@ -15,6 +21,34 @@ deviceRouter.get('/staff', async (req, res, next) => {
     const deviceUser = currentDeviceUser(req);
     if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
     res.json(await deviceService.listDeviceStaff(deviceUser, req.pinUser ?? null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+deviceRouter.get('/pin-staff', async (_req, res, next) => {
+  try {
+    res.json(await deviceService.listPinStaff());
+  } catch (error) {
+    next(error);
+  }
+});
+
+deviceRouter.get('/home-summary', async (_req, res, next) => {
+  try {
+    res.json(await deviceService.homeSummary());
+  } catch (error) {
+    next(error);
+  }
+});
+
+deviceRouter.post('/staff-pin-login', async (req, res, next) => {
+  try {
+    const user = await deviceService.staffPinLogin(req.body);
+    const token = createSessionToken(user.id);
+    clearDevicePinSessionCookie(res);
+    setSessionCookie(res, token);
+    res.json({ user, token });
   } catch (error) {
     next(error);
   }
