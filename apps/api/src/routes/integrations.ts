@@ -61,6 +61,15 @@ integrationsRouter.post('/deputy/sync-documents', requireManager, async (req, re
   }
 });
 
+integrationsRouter.post('/deputy/sync-timesheets', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await deputyService.syncTimesheetsNow(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/deputy/sync-all', requireManager, async (req, res, next) => {
   try {
     if (!req.user) throw new Error('Not authenticated');
