@@ -1332,6 +1332,36 @@ function StaffHome({
   );
 }
 
+type StaffProfileStatusFilter = 'current' | 'active' | 'pending' | 'terminated' | 'all';
+
+const STAFF_PROFILE_STATUS_FILTERS: Array<{ id: StaffProfileStatusFilter; label: string }> = [
+  { id: 'current', label: 'Current' },
+  { id: 'active', label: 'Active' },
+  { id: 'pending', label: 'Pending' },
+  { id: 'terminated', label: 'Terminated' },
+  { id: 'all', label: 'All' }
+];
+
+function normaliseEmploymentStatus(member: Pick<StaffProfile, 'employmentStatus'>) {
+  return member.employmentStatus.trim().toUpperCase();
+}
+
+function isTerminatedStaffProfile(member: Pick<StaffProfile, 'employmentStatus'>) {
+  const status = normaliseEmploymentStatus(member);
+  return status !== 'ACTIVE' && status !== 'PENDING';
+}
+
+function staffProfileStatusRank(member: Pick<StaffProfile, 'employmentStatus'>) {
+  const status = normaliseEmploymentStatus(member);
+  if (status === 'ACTIVE') return 0;
+  if (status === 'PENDING') return 1;
+  return 2;
+}
+
+function staffProfileSortLabel(member: Pick<StaffProfile, 'firstName' | 'lastName' | 'venue'>) {
+  return `${member.venue ?? ''} ${member.firstName} ${member.lastName}`.trim().toLowerCase();
+}
+
 function StaffProfilesPage({
   staff,
   roleTemplates,
@@ -1350,6 +1380,38 @@ function StaffProfilesPage({
   const [reonboardingId, setReonboardingId] = useState<string | null>(null);
   const [reonboardMessage, setReonboardMessage] = useState<string | null>(null);
   const [reonboardError, setReonboardError] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StaffProfileStatusFilter>('current');
+
+  const statusCounts = useMemo(() => {
+    const active = staff.filter((member) => normaliseEmploymentStatus(member) === 'ACTIVE').length;
+    const pending = staff.filter((member) => normaliseEmploymentStatus(member) === 'PENDING').length;
+    const terminated = staff.filter(isTerminatedStaffProfile).length;
+    return {
+      active,
+      pending,
+      terminated,
+      current: active + pending,
+      all: staff.length
+    };
+  }, [staff]);
+
+  const visibleStaff = useMemo(() => {
+    return staff
+      .filter((member) => {
+        const status = normaliseEmploymentStatus(member);
+        if (statusFilter === 'active') return status === 'ACTIVE';
+        if (statusFilter === 'pending') return status === 'PENDING';
+        if (statusFilter === 'terminated') return isTerminatedStaffProfile(member);
+        if (statusFilter === 'current') return !isTerminatedStaffProfile(member);
+        return true;
+      })
+      .slice()
+      .sort((a, b) => {
+        const statusDelta = statusFilter === 'terminated' ? 0 : staffProfileStatusRank(a) - staffProfileStatusRank(b);
+        if (statusDelta !== 0) return statusDelta;
+        return staffProfileSortLabel(a).localeCompare(staffProfileSortLabel(b));
+      });
+  }, [staff, statusFilter]);
 
   function openProfile(id: string, section = 'personal') {
     onSelect(id);
@@ -1429,8 +1491,35 @@ function StaffProfilesPage({
             action={<Button type="button" onClick={() => setForm({ mode: 'create' })}>Create first staff profile</Button>}
           />
         ) : null}
+        {!loading && staff.length > 0 ? (
+          <div className="staff-status-toolbar" aria-label="Staff status filters">
+            <div className="staff-status-filter-group" role="group" aria-label="Filter staff profiles by status">
+              {STAFF_PROFILE_STATUS_FILTERS.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`staff-status-filter ${statusFilter === item.id ? 'is-active' : ''}`}
+                  onClick={() => setStatusFilter(item.id)}
+                  aria-pressed={statusFilter === item.id}
+                >
+                  <span>{item.label}</span>
+                  <strong>{statusCounts[item.id]}</strong>
+                </button>
+              ))}
+            </div>
+            <span className="staff-status-toolbar__summary">
+              Showing {visibleStaff.length} of {staff.length} profiles
+            </span>
+          </div>
+        ) : null}
         <div className="staff-list" style={{ padding: 12 }}>
-          {staff.map((member) => {
+          {!loading && staff.length > 0 && visibleStaff.length === 0 ? (
+            <EmptyState
+              title="No staff match this status"
+              description="Choose another status filter to see more profiles."
+            />
+          ) : null}
+          {visibleStaff.map((member) => {
             const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
             const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
             const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
