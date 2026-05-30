@@ -29,6 +29,7 @@ type EnrichedRecipe = Recipe & {
   foodCostPercent: number | null;
   /** quantitySold × marginCents — total margin contribution in the window. */
   contributionCents: number | null;
+  hasVenueOverride: boolean;
 };
 
 const LOOKBACK_OPTIONS: Array<{ label: string; value: number }> = [
@@ -36,6 +37,17 @@ const LOOKBACK_OPTIONS: Array<{ label: string; value: number }> = [
   { label: 'Last 30 days', value: 30 },
   { label: 'Last 90 days', value: 90 }
 ];
+
+// Effective sell price for a recipe given the selected venue filter: when a
+// specific venue is selected and that recipe has a per-venue override, use it;
+// otherwise fall back to the recipe's default sale price.
+function effectiveSellCents(recipe: Recipe, venueFilter: string): number | null {
+  const override =
+    venueFilter !== 'all'
+      ? recipe.venuePrices?.find((p) => p.venue === venueFilter)?.salePriceCents ?? null
+      : null;
+  return override ?? recipe.salePriceCents ?? null;
+}
 
 export function DishMarginPage() {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -73,7 +85,10 @@ export function DishMarginPage() {
       const costCents = typeof r.estimatedCost === 'number' && r.estimatedCost > 0
         ? Math.round(r.estimatedCost * 100)
         : null;
-      const sellCents = r.salePriceCents ?? null;
+      const sellCents = effectiveSellCents(r, venueFilter);
+      const hasVenueOverride =
+        venueFilter !== 'all' &&
+        (r.venuePrices?.some((p) => p.venue === venueFilter) ?? false);
       let marginCents: number | null = null;
       let marginPercent: number | null = null;
       let foodCostPercent: number | null = null;
@@ -86,9 +101,9 @@ export function DishMarginPage() {
       const contributionCents = marginCents != null && quantitySold > 0
         ? Math.round(marginCents * quantitySold)
         : null;
-      return { ...r, costCents, sellCents, marginCents, marginPercent, foodCostPercent, contributionCents };
+      return { ...r, costCents, sellCents, marginCents, marginPercent, foodCostPercent, contributionCents, hasVenueOverride };
     });
-  }, [recipes]);
+  }, [recipes, venueFilter]);
 
   const venues = useMemo(() => Array.from(new Set(enriched.map((r) => r.venue).filter(Boolean))) as string[], [enriched]);
 
@@ -234,7 +249,10 @@ export function DishMarginPage() {
                   </span>
                   <span>{r.venue || '—'}</span>
                   <span>{formatMoney(r.costCents)}</span>
-                  <span>{formatMoney(r.sellCents)}</span>
+                  <span>
+                    {formatMoney(r.sellCents)}
+                    {r.hasVenueOverride ? <small className="dish-margin-venue-tag"> per-venue</small> : null}
+                  </span>
                   <span>
                     {r.marginCents != null ? (
                       <>

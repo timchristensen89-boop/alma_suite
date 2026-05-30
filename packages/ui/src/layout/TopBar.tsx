@@ -21,15 +21,15 @@ export function TopBar({ title, subtitle, right, showHomeLink = true, homeUrl = 
         <div className="topbar-right">
           {showHomeLink ? (
             <a
-              className="app-shell-topbar-home"
+              className="app-shell-topbar-home app-shell-topbar-home--icon"
               href={homeUrl}
-              aria-label="Back to Alma Home"
+              aria-label="Alma Home"
+              title="Alma Home"
             >
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
                 <path d="M3 12 L12 3 L21 12" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M5 10 V20 H19 V10" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
-              <span>Alma Home</span>
             </a>
           ) : null}
           {right}
