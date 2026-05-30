@@ -6,11 +6,12 @@
 // per-tenant API client and the three resource sync handlers that replaced
 // the old CSV import scripts (packages/db/prisma/import-deputy-*).
 //
-// Three sync handlers:
+// Four sync handlers:
 //   - syncRoster     → /resource/Roster        → RosterShift rows
 //   - syncEmployees  → /resource/Employee      → StaffProfile rows
 //   - syncDocuments  → /resource/EmployeeDocument → StaffComplianceRecord
 //                                                  + StaffDocumentReview rows
+//   - syncTimesheets → /resource/Timesheet     → Timesheet rows (actuals)
 // Each handler is idempotent — re-running the same sync converges to the
 // same Prisma state, so the scheduled job can fire as often as needed.
 
@@ -261,10 +262,16 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
   const path = `/resource/Roster/QUERY?search=${search}&join%5B%5D=EmployeeInfo&join%5B%5D=OperationalUnitInfo`;
   const shifts = await apiGet<DeputyRosterShift[]>(connection, path);
 
+  // Clear previously-imported shifts in this window before re-creating them.
+  // Match on startsAt only — the Deputy query filters by StartTime, so every
+  // shift we re-create has its START in [start, end]. The old predicate also
+  // required endsAt <= end, which missed shifts ending after the window edge
+  // (e.g. an overnight shift): they were never deleted yet re-created each run,
+  // so duplicates piled up. Anchoring the delete to the same field the create
+  // is keyed on keeps the two in sync.
   const deleted = await prisma.rosterShift.deleteMany({
     where: {
-      startsAt: { gte: start },
-      endsAt: { lte: end },
+      startsAt: { gte: start, lte: end },
       notes: { contains: ROSTER_MARKER }
     }
   });
@@ -716,11 +723,152 @@ export async function syncDocuments(connection: IntegrationConnection) {
   };
 }
 
+// ── Timesheet sync ───────────────────────────────────────────────────────
+// Pulls actual worked hours from Deputy's /resource/Timesheet into the
+// Timesheet table. Unlike roster (planned shifts), these are actuals used for
+// labour-cost reporting. Idempotent via the @unique deputyTimesheetId: each
+// run upserts, so overlapping windows or retries converge to one row.
+
+type DeputyTimesheet = {
+  Id: number;
+  Employee?: number;
+  StartTime?: number;
+  EndTime?: number;
+  Mealbreak?: number | string;
+  TotalTime?: number;
+  Cost?: number;
+  OperationalUnit?: number;
+  IsInProgress?: boolean;
+  Discarded?: boolean;
+  TimeApproved?: boolean | number;
+  _DPMetaData?: {
+    EmployeeInfo?: { FirstName?: string; LastName?: string; Email?: string };
+    OperationalUnitInfo?: { OperationalUnitName?: string; CompanyName?: string };
+  };
+};
+
+type TimesheetSyncOptions = {
+  lookbackDays?: number;
+  lookforwardDays?: number;
+};
+
+// Deputy reports Mealbreak in seconds on the Timesheet resource.
+function coerceBreakMinutes(value: number | string | undefined): number {
+  const seconds = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(seconds) ? Math.max(0, Math.round(seconds / 60)) : 0;
+}
+
+export async function syncTimesheets(
+  connection: IntegrationConnection,
+  options: TimesheetSyncOptions = {}
+) {
+  const lookbackDays = options.lookbackDays ?? 14;
+  const lookforwardDays = options.lookforwardDays ?? 1;
+  const start = new Date(Date.now() - lookbackDays * 86_400_000);
+  const end = new Date(Date.now() + lookforwardDays * 86_400_000);
+
+  const search = encodeURIComponent(JSON.stringify({
+    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+  }));
+  const path = `/resource/Timesheet/QUERY?search=${search}&join%5B%5D=EmployeeInfo&join%5B%5D=OperationalUnitInfo`;
+  const sheets = await apiGet<DeputyTimesheet[]>(connection, path);
+
+  let created = 0;
+  let updated = 0;
+  const skipped: Array<{ id: number; reason: string }> = [];
+
+  for (const ts of Array.isArray(sheets) ? sheets : []) {
+    if (ts.Discarded) {
+      skipped.push({ id: ts.Id, reason: 'Discarded in Deputy' });
+      continue;
+    }
+    if (ts.IsInProgress) {
+      skipped.push({ id: ts.Id, reason: 'Shift still in progress' });
+      continue;
+    }
+    if (!ts.StartTime || !ts.EndTime) {
+      skipped.push({ id: ts.Id, reason: 'Missing start/end' });
+      continue;
+    }
+    const clockInAt = new Date(ts.StartTime * 1000);
+    const clockOutAt = new Date(ts.EndTime * 1000);
+    if (!Number.isFinite(clockInAt.getTime()) || !Number.isFinite(clockOutAt.getTime())) {
+      skipped.push({ id: ts.Id, reason: 'Invalid time' });
+      continue;
+    }
+    if (clockOutAt <= clockInAt) {
+      skipped.push({ id: ts.Id, reason: 'End not after start' });
+      continue;
+    }
+
+    const employeeInfo = ts._DPMetaData?.EmployeeInfo ?? {};
+    const opUnitInfo = ts._DPMetaData?.OperationalUnitInfo ?? {};
+    const firstName = employeeInfo.FirstName?.trim() ?? '';
+    const lastName = employeeInfo.LastName?.trim() ?? '';
+    const email = normaliseEmail(employeeInfo.Email);
+    const area = normaliseArea(opUnitInfo.OperationalUnitName);
+    const venue = normaliseVenue(opUnitInfo.CompanyName);
+
+    // Actuals must attach to a real person — never create placeholder staff.
+    let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
+    if (!profile && firstName && lastName) {
+      profile = await prisma.staffProfile.findFirst({ where: { firstName, lastName, venue } });
+    }
+    if (!profile) {
+      skipped.push({ id: ts.Id, reason: 'No matching staff profile' });
+      continue;
+    }
+
+    const deputyTimesheetId = `deputy-${ts.Id}`;
+    const breakMinutes = coerceBreakMinutes(ts.Mealbreak);
+    const approved = Boolean(ts.TimeApproved);
+    const noteParts = [
+      'Deputy sync: timesheet',
+      `Deputy timesheet id: ${ts.Id}`,
+      typeof ts.TotalTime === 'number' ? `Deputy hours: ${ts.TotalTime}` : null,
+      typeof ts.Cost === 'number' && ts.Cost > 0 ? `Deputy cost: ${ts.Cost}` : null
+    ].filter(Boolean);
+
+    const data = {
+      staffProfileId: profile.id,
+      venue: venue || null,
+      area: area || null,
+      roleTitle: area || profile.roleTitle,
+      workDate: clockInAt,
+      clockInAt,
+      clockOutAt,
+      breakMinutes,
+      status: (approved ? 'APPROVED' : 'SUBMITTED') as 'APPROVED' | 'SUBMITTED',
+      notes: noteParts.join(' | ')
+    };
+
+    const existing = await prisma.timesheet.findUnique({
+      where: { deputyTimesheetId },
+      select: { id: true }
+    });
+    await prisma.timesheet.upsert({
+      where: { deputyTimesheetId },
+      create: { deputyTimesheetId, ...data },
+      update: data
+    });
+    if (existing) updated += 1;
+    else created += 1;
+  }
+
+  return {
+    rowsRead: Array.isArray(sheets) ? sheets.length : 0,
+    created,
+    updated,
+    skipped
+  };
+}
+
 // ── Service surface used by routes + scheduler ───────────────────────────
 
 type SyncTrigger = 'MANUAL' | 'SCHEDULED';
 
-async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'roster' | 'employees' | 'documents' | 'all') {
+async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'roster' | 'employees' | 'documents' | 'timesheets' | 'all') {
   const connection = await connectedDeputyConnection();
   try {
     if (task === 'roster') {
@@ -746,17 +894,32 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
       });
       return { ok: true, trigger, actorId: actor.id, documents: result };
     }
-    // 'all' — run in employee → documents → roster order so document
-    // sync can match newly-imported employees, and so the roster sync
-    // (which can also create unallocated placeholders) runs last.
+    if (task === 'timesheets') {
+      const result = await syncTimesheets(connection);
+      await markSyncRun(connection, trigger, 'SUCCESS', {
+        recordsImported: result.created,
+        recordsUpdated: result.updated
+      });
+      return { ok: true, trigger, actorId: actor.id, timesheets: result };
+    }
+    // 'all' — run in employee → documents → roster → timesheets order so the
+    // document/roster/timesheet syncs can match newly-imported employees, and
+    // so the roster sync (which can also create unallocated placeholders) runs
+    // before timesheets attach actuals.
     const employees = await syncEmployees(connection);
     const documents = await syncDocuments(connection);
     const roster = await syncRoster(connection);
+    const timesheets = await syncTimesheets(connection);
     await markSyncRun(connection, trigger, 'SUCCESS', {
-      recordsImported: employees.created + documents.complianceCreated + documents.reviewsCreated + roster.shiftsCreated,
-      recordsUpdated: employees.updated + roster.staffMatched
+      recordsImported:
+        employees.created +
+        documents.complianceCreated +
+        documents.reviewsCreated +
+        roster.shiftsCreated +
+        timesheets.created,
+      recordsUpdated: employees.updated + roster.staffMatched + timesheets.updated
     });
-    return { ok: true, trigger, actorId: actor.id, employees, documents, roster };
+    return { ok: true, trigger, actorId: actor.id, employees, documents, roster, timesheets };
   } catch (error) {
     const errorSummary = error instanceof Error ? error.message : 'Deputy sync failed';
     await markSyncRun(connection, trigger, 'ERROR', { errorSummary });
@@ -793,6 +956,9 @@ export const deputyService = {
   async syncDocumentsNow(actor: AuthUser) {
     return runSyncForRoute(actor, 'MANUAL', 'documents');
   },
+  async syncTimesheetsNow(actor: AuthUser) {
+    return runSyncForRoute(actor, 'MANUAL', 'timesheets');
+  },
   async syncAllNow(actor: AuthUser) {
     return runSyncForRoute(actor, 'MANUAL', 'all');
   },
@@ -823,6 +989,7 @@ export const deputyService = {
     syncRoster,
     syncEmployees,
     syncDocuments,
+    syncTimesheets,
     connectedDeputyConnection
   }
 };
