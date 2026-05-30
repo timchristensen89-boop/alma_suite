@@ -2591,3 +2591,38 @@
   .alma-booking-party { grid-template-columns: repeat(7, minmax(0, 1fr)); }
   .alma-booking-ticket__details { grid-template-columns: 1fr 1fr; }
 }
+
+/* ==========================================================================
+   Mobile pass (≤480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .reserve-layout,
+  .reserve-section-grid,
+  .reserve-public-hero,
+  .reserve-public-venue-picker {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .reserve-command-filter-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .reserve-widget-page .reserve-widget-shell {
+    padding: 20px 14px 40px;
+    gap: 18px;
+  }
+
+  .reserve-public-booking-panel,
+  .reserve-public-section {
+    padding: 20px 14px;
+  }
+
+  .reserve-public-venue-picker {
+    padding: 20px 0;
+  }
+
+  .reserve-guest-match-stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
