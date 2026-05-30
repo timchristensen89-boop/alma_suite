@@ -795,6 +795,62 @@
   gap: 8px;
 }
 
+.staff-status-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 12px 0;
+}
+
+.staff-status-filter-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.staff-status-filter {
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.staff-status-filter strong {
+  min-width: 22px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: var(--color-accent-soft);
+  color: var(--color-text);
+  font-size: 12px;
+  text-align: center;
+}
+
+.staff-status-filter:hover,
+.staff-status-filter.is-active {
+  border-color: rgba(36, 76, 159, 0.34);
+  background: var(--color-accent-soft);
+}
+
+.staff-status-filter.is-active strong {
+  background: var(--color-accent);
+  color: #fff;
+}
+
+.staff-status-toolbar__summary {
+  flex: none;
+  color: var(--color-text-subtle);
+  font-size: 13px;
+}
+
 .staff-list-button {
   width: 100%;
   display: flex;
@@ -5690,6 +5746,25 @@
   .staff-row-actions .btn,
   .invite-row-actions .btn,
   .staff-document-confirm-actions .btn {
+    flex: 1 1 auto;
+  }
+
+  .staff-status-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .staff-status-filter-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .staff-status-filter {
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .staff-status-toolbar__summary {
     flex: 1 1 auto;
   }
 
