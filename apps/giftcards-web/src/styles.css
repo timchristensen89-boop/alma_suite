@@ -986,6 +986,12 @@
   letter-spacing: 0.08em;
 }
 
+.giftcards-print-balance {
+  font-size: 16px;
+  color: #6f6553;
+  margin: 6px 0 0;
+}
+
 .giftcards-print-qr {
   width: 150px;
   height: 150px;
