@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import type { Recipe, RecipesPayload } from '@alma/shared';
+import type { Recipe, RecipeCostPayload, RecipeWithLines, RecipesPayload } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
 import { api } from '../lib/api';
 
@@ -57,16 +57,31 @@ export function DishMarginPage() {
   const [tone, setTone] = useState<'all' | MarginTone>('all');
   const [search, setSearch] = useState('');
   const [lookbackDays, setLookbackDays] = useState<number>(30);
+  // Quick view/edit popup — holds the id of the recipe being inspected.
+  const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
+
+  async function loadRecipes() {
+    try {
+      setLoading(true);
+      // /api/recipes returns a RecipesPayload ({ recipes, categories,
+      // recipeCategories }) — not a flat Recipe[] — so we have to pluck
+      // the recipes array before filtering. Previously this blew up as
+      // "j.filter is not a function" in the minified prod build.
+      const payload = await api<RecipesPayload>(`/api/recipes?withSales=${lookbackDays}`);
+      const list = Array.isArray(payload) ? payload : payload?.recipes ?? [];
+      setRecipes(list.filter((r) => !r.isPrepRecipe));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load recipes');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         setLoading(true);
-        // /api/recipes returns a RecipesPayload ({ recipes, categories,
-        // recipeCategories }) — not a flat Recipe[] — so we have to pluck
-        // the recipes array before filtering. Previously this blew up as
-        // "j.filter is not a function" in the minified prod build.
         const payload = await api<RecipesPayload>(`/api/recipes?withSales=${lookbackDays}`);
         const list = Array.isArray(payload) ? payload : payload?.recipes ?? [];
         if (!cancelled) setRecipes(list.filter((r) => !r.isPrepRecipe));
@@ -242,7 +257,19 @@ export function DishMarginPage() {
                   : sales.hasMapping ? '0' : <small className="dish-margin-no-mapping">Not mapped to Square</small>
                 : '—';
               return (
-                <div key={r.id} className={`dish-margin-row is-${meta.tone}`}>
+                <div
+                  key={r.id}
+                  className={`dish-margin-row dish-margin-row--clickable is-${meta.tone}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setActiveRecipeId(r.id)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault();
+                      setActiveRecipeId(r.id);
+                    }
+                  }}
+                >
                   <span className="dish-margin-title">
                     <strong>{r.title}</strong>
                     {r.category ? <small>{r.category}</small> : null}
@@ -271,6 +298,152 @@ export function DishMarginPage() {
           </div>
         )}
       </Card>
+
+      {activeRecipeId ? (
+        <DishDetailModal
+          recipeId={activeRecipeId}
+          onClose={() => setActiveRecipeId(null)}
+          onSaved={() => {
+            setActiveRecipeId(null);
+            void loadRecipes();
+          }}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ── Quick view / edit popup ─────────────────────────────────────────────
+// Loads the full recipe (with ingredient lines) + its cost breakdown, lets a
+// manager set the sell price / estimated cost inline, and lists ingredient
+// lines so they can sanity-check what's driving the cost. Saves via
+// PATCH /api/recipes/:id, then asks the page to refresh.
+
+function DishDetailModal({
+  recipeId,
+  onClose,
+  onSaved
+}: {
+  recipeId: string;
+  onClose: () => void;
+  onSaved: () => void;
+}) {
+  const [recipe, setRecipe] = useState<RecipeWithLines | null>(null);
+  const [cost, setCost] = useState<RecipeCostPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [salePrice, setSalePrice] = useState('');
+  const [estimatedCost, setEstimatedCost] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        setLoading(true);
+        const [r, c] = await Promise.all([
+          api<RecipeWithLines>(`/api/recipes/${recipeId}`),
+          api<RecipeCostPayload>(`/api/recipes/${recipeId}/cost`).catch(() => null)
+        ]);
+        if (cancelled) return;
+        setRecipe(r);
+        setCost(c);
+        setSalePrice(r.salePriceCents == null ? '' : String(r.salePriceCents / 100));
+        setEstimatedCost(r.estimatedCost ? String(r.estimatedCost) : '');
+      } catch (err) {
+        if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load dish');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [recipeId]);
+
+  async function save() {
+    setSaving(true);
+    setError(null);
+    try {
+      await api<RecipeWithLines>(`/api/recipes/${recipeId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          salePriceCents: salePrice === '' ? undefined : Math.round(Number(salePrice) * 100),
+          estimatedCost: estimatedCost === '' ? undefined : Number(estimatedCost)
+        })
+      });
+      onSaved();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save');
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="dish-modal-backdrop" role="dialog" aria-modal="true" onClick={onClose}>
+      <div className="dish-modal" onClick={(event) => event.stopPropagation()}>
+        <div className="dish-modal-head">
+          <h3>{recipe?.title ?? 'Dish'}</h3>
+          <button type="button" className="dish-modal-close" onClick={onClose} aria-label="Close">×</button>
+        </div>
+
+        {loading ? (
+          <Spinner label="Loading dish…" />
+        ) : (
+          <>
+            {error ? <p className="error-text">{error}</p> : null}
+            <div className="dish-modal-meta">
+              {recipe?.venue ? <span>{recipe.venue}</span> : null}
+              {recipe?.category ? <span>{recipe.category}</span> : null}
+            </div>
+
+            <div className="dish-modal-fields">
+              <Input
+                label="Sell price ($)"
+                type="number"
+                value={salePrice}
+                onChange={(event) => setSalePrice(event.currentTarget.value)}
+                placeholder="e.g. 24.00"
+              />
+              <Input
+                label="Estimated cost ($)"
+                type="number"
+                value={estimatedCost}
+                onChange={(event) => setEstimatedCost(event.currentTarget.value)}
+                placeholder="e.g. 8.50"
+              />
+            </div>
+
+            {cost ? (
+              <div className="dish-modal-cost">
+                <span>Batch cost: {formatMoney(cost.batchCostCents)}</span>
+                <span>Per portion: {formatMoney(cost.costPerPortionCents)}</span>
+                {cost.foodCostPercent != null ? <span>Food cost: {cost.foodCostPercent}%</span> : null}
+              </div>
+            ) : null}
+
+            {recipe && recipe.lines.length > 0 ? (
+              <div className="dish-modal-lines">
+                <span className="dish-modal-lines-label">Ingredients</span>
+                {recipe.lines.map((line) => (
+                  <div key={line.id} className="dish-modal-line">
+                    <span>{line.ingredientName}</span>
+                    <span>{line.quantity ?? '—'} {line.unit ?? ''}</span>
+                    <span>{formatMoney(line.cost != null ? Math.round(line.cost * 100) : null)}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="dish-modal-empty">No ingredient lines yet. Add them in Recipes to drive the cost automatically.</p>
+            )}
+
+            <div className="dish-modal-actions">
+              <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+              <Button type="button" onClick={() => void save()} disabled={saving}>
+                {saving ? 'Saving…' : 'Save'}
+              </Button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   );
 }
