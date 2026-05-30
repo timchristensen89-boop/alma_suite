@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import QRCode from 'qrcode';
 
 type InviteEmailInput = {
   to: string;
@@ -20,8 +21,10 @@ type GiftCardEmailInput = {
   message?: string | null;
   printableUrl: string;
   qrCodeUrl?: string | null;
+  redeemUrl?: string | null;
   appleWalletUrl?: string | null;
   googleWalletUrl?: string | null;
+  design?: string | null;
   expiresAt?: Date | null;
   settings?: {
     emailSubject?: string;
@@ -44,6 +47,12 @@ type EmailDeliveryResult =
   | { status: 'sent'; to: string; provider: 'resend' | 'smtp' }
   | { status: 'skipped'; reason: string }
   | { status: 'failed'; reason: string };
+
+type EmailAttachment = {
+  filename: string;
+  content: Buffer | string;
+  contentType: string;
+};
 
 const resendApiKey = process.env.RESEND_API_KEY;
 const resendFrom = process.env.RESEND_FROM ?? process.env.MAIL_FROM;
@@ -94,14 +103,72 @@ function formatMoney(cents: number) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
 }
 
+function normaliseGiftCardDesign(value: string | null | undefined) {
+  return ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'].includes(value ?? '') ? value! : 'forest';
+}
+
+function giftCardPalette(design: string | null | undefined, primaryColor: string, accentColor: string) {
+  switch (normaliseGiftCardDesign(design)) {
+    case 'shell':
+      return { background: '#f5dcce', foreground: '#3d2a2a', accent: '#684a4a', label: 'Coastal shell' };
+    case 'avalon':
+      return { background: '#244f2a', foreground: '#fff1e6', accent: '#d6e0cd', label: 'Alma Avalon' };
+    case 'stalma':
+      return { background: '#3d2a2a', foreground: '#fff1e6', accent: '#f5dcce', label: 'St Alma' };
+    case 'thanks':
+      return { background: '#efe8dc', foreground: '#14241a', accent: '#796042', label: 'Thank you' };
+    case 'summer':
+      return { background: '#a85432', foreground: '#fff1e6', accent: '#ffd0b2', label: 'Long afternoons' };
+    default:
+      return { background: primaryColor || '#1f3524', foreground: '#fff1e6', accent: accentColor || '#b98216', label: 'Forest classic' };
+  }
+}
+
+function giftCardArtworkSvg(input: GiftCardEmailInput, amount: string, balance: string, expiry: string | null) {
+  const palette = giftCardPalette(input.design, input.settings?.primaryColor ?? '#1f3524', input.settings?.accentColor ?? '#b98216');
+  const recipient = input.recipientName?.trim() || input.purchaserName;
+  const safeRecipient = escapeHtml(recipient);
+  const safeCode = escapeHtml(input.code);
+  const safeAmount = escapeHtml(amount);
+  const safeBalance = escapeHtml(balance);
+  const safeExpiry = expiry ? escapeHtml(expiry) : '3 years from issue';
+  const safeLabel = escapeHtml(palette.label);
+  return `
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="756" viewBox="0 0 1200 756">
+  <rect width="1200" height="756" rx="34" fill="${palette.background}"/>
+  <rect x="30" y="30" width="1140" height="696" rx="22" fill="none" stroke="${palette.accent}" stroke-opacity="0.35" stroke-width="2"/>
+  <circle cx="1020" cy="620" r="280" fill="${palette.accent}" opacity="0.08"/>
+  <text x="94" y="110" fill="${palette.foreground}" opacity="0.7" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700" letter-spacing="9">ALMA GROUP GIFT CARD</text>
+  <text x="94" y="272" fill="${palette.foreground}" font-family="Arial Black, Arial, Helvetica, sans-serif" font-size="118" font-weight="900" letter-spacing="-5">alma</text>
+  <text x="104" y="330" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="30" font-weight="700" letter-spacing="26">GROUP</text>
+  <text x="94" y="438" fill="${palette.foreground}" opacity="0.8" font-family="Georgia, serif" font-size="34" font-style="italic">For ${safeRecipient}</text>
+  <text x="94" y="510" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="26" font-weight="700" letter-spacing="8">${safeLabel}</text>
+  <rect x="812" y="84" width="260" height="88" rx="44" fill="${palette.foreground}" opacity="0.14"/>
+  <text x="942" y="140" text-anchor="middle" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="800">${safeAmount}</text>
+  <rect x="94" y="584" width="450" height="76" rx="18" fill="${palette.foreground}" opacity="0.12" stroke="${palette.accent}" stroke-opacity="0.4"/>
+  <text x="122" y="633" fill="${palette.foreground}" font-family="Courier New, monospace" font-size="31" font-weight="700" letter-spacing="8">${safeCode}</text>
+  <text x="812" y="618" fill="${palette.foreground}" opacity="0.7" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700" letter-spacing="7">BALANCE</text>
+  <text x="812" y="666" fill="${palette.foreground}" font-family="Arial, Helvetica, sans-serif" font-size="42" font-weight="800">${safeBalance}</text>
+  <text x="94" y="704" fill="${palette.foreground}" opacity="0.62" font-family="Arial, Helvetica, sans-serif" font-size="20">Redeem at Alma Avalon and St Alma Freshwater. Expires ${safeExpiry}.</text>
+</svg>`.trim();
+}
+
 async function deliverEmail(input: {
   to: string;
   subject: string;
   text: string;
   html: string;
+  attachments?: EmailAttachment[];
 }): Promise<EmailDeliveryResult> {
   if (resendApiKey && resendFrom) {
     try {
+      const attachments = input.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        content: Buffer.isBuffer(attachment.content)
+          ? attachment.content.toString('base64')
+          : Buffer.from(attachment.content).toString('base64'),
+        content_type: attachment.contentType
+      }));
       const response = await fetch(resendApiUrl, {
         method: 'POST',
         headers: {
@@ -114,7 +181,8 @@ async function deliverEmail(input: {
           reply_to: replyTo || undefined,
           subject: input.subject,
           text: input.text,
-          html: input.html
+          html: input.html,
+          attachments
         })
       });
 
@@ -156,7 +224,12 @@ async function deliverEmail(input: {
       to: input.to,
       subject: input.subject,
       text: input.text,
-      html: input.html
+      html: input.html,
+      attachments: input.attachments?.map((attachment) => ({
+        filename: attachment.filename,
+        content: attachment.content,
+        contentType: attachment.contentType
+      }))
     });
 
     return { status: 'sent', to: input.to, provider: 'smtp' };
@@ -293,10 +366,10 @@ export const mailService = {
     const safeRecipient = escapeHtml(recipient);
     const safeCode = escapeHtml(input.code);
     const safePrintableUrl = escapeHtml(input.printableUrl);
+    const safeRedeemUrl = input.redeemUrl ? escapeHtml(input.redeemUrl) : '';
     const safeQrCodeUrl = input.qrCodeUrl ? escapeHtml(input.qrCodeUrl) : '';
     const safeAppleWalletUrl = input.appleWalletUrl ? escapeHtml(input.appleWalletUrl) : '';
     const safeGoogleWalletUrl = input.googleWalletUrl ? escapeHtml(input.googleWalletUrl) : '';
-    const safeArtworkUrl = input.settings?.artworkUrl ? escapeHtml(input.settings.artworkUrl) : '';
     const safeMessage = input.message?.trim() ? escapeHtml(input.message.trim()) : '';
     const amount = formatMoney(input.amountCents);
     const balance = formatMoney(input.balanceCents);
@@ -320,42 +393,78 @@ export const mailService = {
       'Open or print your gift card:',
       input.printableUrl,
       input.qrCodeUrl ? `Redemption QR: ${input.qrCodeUrl}` : '',
+      input.redeemUrl ? `Redeem/check balance: ${input.redeemUrl}` : '',
       input.appleWalletUrl ? `Add to Apple Wallet: ${input.appleWalletUrl}` : '',
       input.googleWalletUrl ? `Add to Google Wallet: ${input.googleWalletUrl}` : ''
     ]
       .filter(Boolean)
       .join('\n');
+
+    const attachments: EmailAttachment[] = [
+      {
+        filename: `alma-gift-card-${input.code}.svg`,
+        content: giftCardArtworkSvg(input, amount, balance, expiry),
+        contentType: 'image/svg+xml'
+      }
+    ];
+    if (input.redeemUrl) {
+      try {
+        attachments.push({
+          filename: `alma-gift-card-${input.code}-qr.svg`,
+          content: await QRCode.toString(input.redeemUrl, {
+            type: 'svg',
+            margin: 1,
+            width: 360,
+            color: {
+              dark: primaryColor,
+              light: '#ffffff'
+            }
+          }),
+          contentType: 'image/svg+xml'
+        });
+      } catch (error) {
+        console.warn('[mail] Gift card QR attachment generation failed', {
+          code: input.code,
+          reason: error instanceof Error ? error.message : 'unknown'
+        });
+      }
+    }
+
     const html = `
-      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:600px;margin:0 auto;padding:24px">
-        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
-          ALMA Gift Cards
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#1f3524;max-width:680px;margin:0 auto;padding:0;background:#faf8f3">
+        <div style="background:${primaryColor};color:#fff1e6;padding:28px 30px 24px;border-radius:18px 18px 0 0">
+          <div style="font-size:11px;letter-spacing:0.28em;text-transform:uppercase;opacity:0.72;margin-bottom:18px">ALMA GROUP</div>
+          <div style="font-size:34px;font-weight:900;letter-spacing:-0.04em;line-height:0.95">alma</div>
+          <div style="font-size:13px;font-weight:800;letter-spacing:0.52em;margin-left:3px;margin-top:8px">GROUP</div>
         </div>
-        <p style="font-size:16px;margin:0 0 12px">Hi ${safeRecipient},</p>
-        <p style="font-size:14px;margin:0 0 18px">${escapeHtml(intro)}</p>
-        <div style="border:1px solid #e2d3ad;background:#fff8e7;border-radius:14px;padding:22px;margin:0 0 22px">
-          ${safeArtworkUrl ? `<img src="${safeArtworkUrl}" alt="" style="display:block;width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin:0 0 18px" />` : ''}
-          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:${accentColor};margin-bottom:8px">Gift card code</div>
-          <div style="font-size:28px;font-weight:900;letter-spacing:0.08em;color:#111827;margin-bottom:12px">${safeCode}</div>
-          <div style="font-size:16px;font-weight:800;color:${accentColor}">${escapeHtml(balance)} available</div>
-          <div style="font-size:13px;color:#64748b">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
-          ${safeMessage ? `<p style="font-size:14px;color:#334155;border-top:1px solid #eadcb8;padding-top:14px;margin:16px 0 0">${safeMessage}</p>` : ''}
-          ${safeQrCodeUrl ? `<div style="border-top:1px solid #eadcb8;margin-top:18px;padding-top:18px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="150" height="150" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /><p style="font-size:12px;color:#64748b;margin:8px 0 0">Staff can scan this QR code to open redemption.</p></div>` : ''}
+        <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
+          <p style="font-size:17px;margin:0 0 10px">Hi ${safeRecipient},</p>
+          <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">${escapeHtml(intro)}</p>
+          <div style="border:1px solid #e0d3bf;background:#fffaf0;border-radius:16px;padding:24px;margin:0 0 22px">
+            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.22em;color:${accentColor};margin-bottom:10px">Gift card code</div>
+            <div style="font-size:31px;font-weight:900;letter-spacing:0.08em;color:${primaryColor};margin-bottom:14px">${safeCode}</div>
+            <div style="font-size:18px;font-weight:800;color:${accentColor}">${escapeHtml(balance)} available</div>
+            <div style="font-size:13px;color:#64705f">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
+            ${safeMessage ? `<p style="font-size:15px;color:#314235;border-top:1px solid #eadfcf;padding-top:16px;margin:18px 0 0">${safeMessage}</p>` : ''}
+            ${safeQrCodeUrl ? `<div style="border-top:1px solid #eadfcf;margin-top:20px;padding-top:20px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="154" height="154" style="display:block;background:#ffffff;border-radius:12px;padding:10px;border:1px solid #e6ded0" /><p style="font-size:12px;color:#64705f;margin:9px 0 0">The QR code and gift card artwork are attached to this email.</p></div>` : ''}
+          </div>
+          <p style="margin:0 0 22px">
+            <a href="${safePrintableUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:8px;font-size:14px;margin:0 8px 8px 0">
+              Open printable gift card
+            </a>
+            ${safeAppleWalletUrl ? `<a href="${safeAppleWalletUrl}" style="display:inline-block;background:${primaryColor};color:#ffffff;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:8px;font-size:14px;margin:0 8px 8px 0">Add to Apple Wallet</a>` : ''}
+            ${safeGoogleWalletUrl ? `<a href="${safeGoogleWalletUrl}" style="display:inline-block;background:#ffffff;color:${primaryColor};border:1px solid #d5d0c7;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px;margin:0 8px 8px 0">Add to Google Wallet</a>` : ''}
+          </p>
+          ${safeRedeemUrl ? `<p style="font-size:12px;color:#64705f;margin:0 0 10px">Staff redemption link: <span style="word-break:break-all">${safeRedeemUrl}</span></p>` : ''}
+          <p style="font-size:12px;color:#8d968a;margin:18px 0 0;border-top:1px solid #e6ded0;padding-top:14px">
+            If the button doesn't work, paste this link into your browser:<br>
+            <span style="word-break:break-all;color:#64705f">${safePrintableUrl}</span>
+          </p>
         </div>
-        <p style="margin:0 0 22px">
-          <a href="${safePrintableUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
-            Open printable gift card
-          </a>
-          ${safeAppleWalletUrl ? `<a href="${safeAppleWalletUrl}" style="display:inline-block;background:${primaryColor};color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Apple Wallet</a>` : ''}
-          ${safeGoogleWalletUrl ? `<a href="${safeGoogleWalletUrl}" style="display:inline-block;background:#ffffff;color:${primaryColor};border:1px solid #d5d0c7;text-decoration:none;font-weight:800;padding:11px 18px;border-radius:8px;font-size:14px;margin-left:8px">Add to Google Wallet</a>` : ''}
-        </p>
-        <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
-          If the button doesn't work, paste this link into your browser:<br>
-          <span style="word-break:break-all;color:#475569">${safePrintableUrl}</span>
-        </p>
       </div>
     `;
 
-    return deliverEmail({ to: input.to, subject, text, html });
+    return deliverEmail({ to: input.to, subject, text, html, attachments });
   },
 
   /**

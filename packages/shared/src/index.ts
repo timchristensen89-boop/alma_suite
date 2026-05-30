@@ -1440,6 +1440,7 @@ export const giftCardCheckoutInputSchema = z.object({
   // until the /jobs/gift-cards/drain scheduler reaches it.
   scheduledDeliveryAt: z.string().optional().or(z.literal('')),
   promoCode: z.string().max(40).optional().or(z.literal('')),
+  checkoutUiMode: z.enum(['hosted', 'embedded']).optional(),
   successUrl: z.string().url().optional().or(z.literal('')),
   cancelUrl: z.string().url().optional().or(z.literal(''))
 });
@@ -1521,6 +1522,10 @@ export type GiftCardPublicConfig = {
   settings: GiftCardSettings;
   checkoutMode: 'live' | 'test' | 'setup_required';
   checkoutNotice: string | null;
+  wallet: {
+    appleConfigured: boolean;
+    googleConfigured: boolean;
+  };
 };
 
 export const DEFAULT_GIFT_CARD_SETTINGS: GiftCardSettings = {
@@ -3874,6 +3879,9 @@ export type GiftCardCheckoutResult = {
   giftCardId: string;
   checkoutUrl: string;
   checkoutSessionId: string;
+  embedded?: boolean;
+  checkoutClientSecret?: string;
+  stripePublishableKey?: string;
   testMode?: boolean;
   discountCents?: number;
   amountPaidCents?: number;

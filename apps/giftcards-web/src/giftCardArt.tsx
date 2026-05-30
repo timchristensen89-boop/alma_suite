@@ -176,7 +176,7 @@ function ForestFront({ amount }: { amount: string }) {
         </div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <Eyebrow color="rgba(245,220,206,0.55)" size={9} tracking="0.30em">Redeem at any Alma venue</Eyebrow>
-          <Eyebrow color="rgba(245,220,206,0.4)" size={9} tracking="0.30em">est. 2018</Eyebrow>
+          <Eyebrow color="rgba(245,220,206,0.4)" size={9} tracking="0.30em">est. 2017</Eyebrow>
         </div>
       </div>
     </Frame>

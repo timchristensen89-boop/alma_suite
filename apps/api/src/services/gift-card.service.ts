@@ -154,6 +154,23 @@ function qrCodeUrl(code: string) {
   return apiUrl(`/api/gift-cards/qr/${encodeURIComponent(code)}.svg`);
 }
 
+function walletConfigStatus() {
+  return {
+    appleConfigured: Boolean(
+      env.giftCards.appleWallet.passTypeIdentifier &&
+        env.giftCards.appleWallet.teamIdentifier &&
+        env.giftCards.appleWallet.signerCert &&
+        env.giftCards.appleWallet.signerKey &&
+        env.giftCards.appleWallet.wwdr
+    ),
+    googleConfigured: Boolean(
+      env.giftCards.googleWallet.issuerId &&
+        env.giftCards.googleWallet.serviceAccountEmail &&
+        env.giftCards.googleWallet.privateKey
+    )
+  };
+}
+
 function isStripePaymentConfirmed(session: Stripe.Checkout.Session) {
   return session.mode === 'payment' && session.status === 'complete' && session.payment_status === 'paid';
 }
@@ -308,7 +325,8 @@ export const giftCardService = {
       return {
         settings,
         checkoutMode: 'test',
-        checkoutNotice: 'Test checkout is enabled. No real payment will be taken.'
+        checkoutNotice: 'Test checkout is enabled. No real payment will be taken.',
+        wallet: walletConfigStatus()
       };
     }
 
@@ -316,14 +334,16 @@ export const giftCardService = {
       return {
         settings,
         checkoutMode: 'setup_required',
-        checkoutNotice: 'Payment setup is required before gift card checkout can go live.'
+        checkoutNotice: 'Payment setup is required before gift card checkout can go live.',
+        wallet: walletConfigStatus()
       };
     }
 
     return {
       settings,
       checkoutMode: 'live',
-      checkoutNotice: null
+      checkoutNotice: null,
+      wallet: walletConfigStatus()
     };
   },
 
@@ -484,6 +504,7 @@ export const giftCardService = {
         giftCardId: card.id,
         checkoutUrl: successUrl(testSessionId),
         checkoutSessionId: testSessionId,
+        embedded: false,
         testMode: true,
         discountCents,
         amountPaidCents: 0
@@ -514,11 +535,9 @@ export const giftCardService = {
       include: { redemptions: true }
     });
 
-    const session = await stripe.checkout.sessions.create({
+    const commonSession: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
       customer_email: data.purchaserEmail.trim().toLowerCase(),
-      success_url: data.successUrl?.trim() || successUrl(),
-      cancel_url: data.cancelUrl?.trim() || cancelUrl(),
       client_reference_id: card.id,
       metadata: {
         giftCardId: card.id,
@@ -542,18 +561,48 @@ export const giftCardService = {
           }
         }
       ]
-    });
+    };
+
+    const wantsEmbedded = data.checkoutUiMode === 'embedded' && Boolean(env.stripe.publishableKey);
+    const session = await stripe.checkout.sessions.create(
+      wantsEmbedded
+        ? {
+            ...commonSession,
+            ui_mode: 'embedded_page',
+            return_url: data.successUrl?.trim() || successUrl()
+          }
+        : {
+            ...commonSession,
+            success_url: data.successUrl?.trim() || successUrl(),
+            cancel_url: data.cancelUrl?.trim() || cancelUrl()
+          }
+    );
 
     await prisma.giftCard.update({
       where: { id: card.id },
       data: { stripeCheckoutSessionId: session.id }
     });
 
+    if (wantsEmbedded) {
+      if (!session.client_secret) throw new HttpError(502, 'Stripe did not return an embedded checkout client secret');
+      return {
+        giftCardId: card.id,
+        checkoutUrl: data.successUrl?.trim() || successUrl(session.id),
+        checkoutSessionId: session.id,
+        embedded: true,
+        checkoutClientSecret: session.client_secret,
+        stripePublishableKey: env.stripe.publishableKey,
+        discountCents,
+        amountPaidCents: amountDueCents
+      };
+    }
+
     if (!session.url) throw new HttpError(502, 'Stripe did not return a checkout URL');
     return {
       giftCardId: card.id,
       checkoutUrl: session.url,
       checkoutSessionId: session.id,
+      embedded: false,
       discountCents,
       amountPaidCents: amountDueCents
     };
@@ -915,8 +964,10 @@ export const giftCardService = {
           message: card.message,
           printableUrl: printableUrl(card.code),
           qrCodeUrl: qrCodeUrl(card.code),
+          redeemUrl: redeemUrl(card.code),
           appleWalletUrl: appleWalletUrl(card.code),
           googleWalletUrl: googleWalletUrl(card.code),
+          design: card.design,
           expiresAt: card.expiresAt,
           settings
         })

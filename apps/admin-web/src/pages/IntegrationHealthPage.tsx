@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import type { AdminIntegrationsStatusPayload, IntegrationProviderStatus } from '@alma/shared';
+import type { AdminIntegrationsStatusPayload, IntegrationConnectResponse, IntegrationProviderStatus } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Spinner } from '@alma/ui';
 import { api } from '../../../web/src/lib/api';
 
@@ -47,6 +47,7 @@ type Tile = {
   detail: string | null;
   account?: string | null;
   canResync: boolean;
+  actionLabel?: string;
   resyncAction?: () => Promise<void>;
   backfillAction?: () => Promise<void>;
 };
@@ -200,9 +201,21 @@ export function IntegrationHealthPage() {
     }
   }, [load]);
 
-  const connectDeputy = useCallback(() => {
-    window.location.href = '/api/integrations/deputy/connect';
+  const connectProvider = useCallback(async (provider: 'deputy' | 'xero') => {
+    setBusyKey(provider);
+    setMessage(null);
+    try {
+      const payload = await api<IntegrationConnectResponse>(`/api/integrations/${provider}/connect`, { method: 'POST' });
+      window.location.assign(payload.authorizationUrl);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `Could not start ${provider} connection`);
+      setTone('error');
+      setBusyKey(null);
+    }
   }, []);
+
+  const connectDeputy = useCallback(() => connectProvider('deputy'), [connectProvider]);
+  const connectXero = useCallback(() => connectProvider('xero'), [connectProvider]);
 
   const tiles = useMemo<Tile[]>(() => {
     if (!data) return [];
@@ -258,7 +271,7 @@ export function IntegrationHealthPage() {
       const hasError = !!status.lastError;
       const tenantCount = status.tenants?.length ?? 0;
       const detail = tenantCount > 1
-        ? `${tenantCount} tenants: ${status.tenants!.map((tenant) => tenant.name ?? tenant.idMasked ?? 'tenant').join(' · ')}`
+        ? `${tenantCount} tenants: ${status.tenants!.map((tenant) => `${tenant.name ?? tenant.idMasked ?? 'tenant'}${tenant.isPrimary ? ' (primary)' : ''}`).join(' · ')}`
         : status.providerAccountName ?? null;
       out.push({
         id: 'xero',
@@ -271,7 +284,9 @@ export function IntegrationHealthPage() {
         lastSyncAt: status.lastSyncAt,
         lastError: status.lastError,
         detail,
-        canResync: false,
+        canResync: status.configured,
+        actionLabel: connected ? 'Reconnect' : 'Connect',
+        resyncAction: status.configured ? connectXero : undefined,
         backfillAction: connected ? backfillXero : undefined
       });
     }
@@ -292,6 +307,7 @@ export function IntegrationHealthPage() {
         lastError: status.lastError,
         detail: status.providerAccountName ?? null,
         canResync: connected || (status.configured && !connected),
+        actionLabel: connected ? 'Re-sync' : 'Connect',
         resyncAction: connected ? syncDeputy : status.configured ? async () => connectDeputy() : undefined,
         backfillAction: connected ? backfillDeputy : undefined
       });
@@ -376,7 +392,7 @@ export function IntegrationHealthPage() {
     }
 
     return out;
-  }, [data, resyncSquare, syncDeputy, connectDeputy, backfillSquare, backfillXero, backfillDeputy]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, backfillSquare, backfillXero, backfillDeputy]);
 
   const counts = useMemo(() => {
     const total = tiles.length;
@@ -444,7 +460,7 @@ export function IntegrationHealthPage() {
                       onClick={() => void tile.resyncAction!()}
                       disabled={busyKey === tile.id}
                     >
-                      {busyKey === tile.id ? 'Working...' : 'Re-sync'}
+                      {busyKey === tile.id ? 'Working...' : tile.actionLabel ?? 'Re-sync'}
                     </Button>
                   ) : null}
                   {tile.backfillAction ? (

@@ -12,11 +12,12 @@
   "dependencies": {
     "@alma/shared": "workspace:*",
     "@alma/ui": "workspace:*",
+    "@stripe/stripe-js": "^9.7.0",
     "@vitejs/plugin-react": "^4.3.4",
-    "typescript": "^5.8.3",
-    "vite": "^6.2.2",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "typescript": "^5.8.3",
+    "vite": "^6.2.2"
   },
   "devDependencies": {
     "@types/react": "^18.3.20",

@@ -1,4 +1,5 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
   GIFT_CARD_DESIGNS,
@@ -142,27 +143,45 @@ function giftCardGoogleWalletUrl(code: string) {
   return `${API_BASE_URL}${apiPath(`/api/gift-cards/wallet/google/${encodeURIComponent(code)}`)}`;
 }
 
-function WalletButtons({ card, onMessage }: { card: GiftCardPublic; onMessage?: (message: string | null) => void }) {
+function WalletButtons({ card, wallet, onMessage }: { card: GiftCardPublic; wallet?: WalletConfig | null; onMessage?: (message: string | null) => void }) {
   const canAddToWallet = card.status === 'ACTIVE' && card.balanceCents > 0;
 
   if (!canAddToWallet) return null;
+  const appleReady = wallet?.appleConfigured ?? true;
+  const googleReady = wallet?.googleConfigured ?? true;
 
   return (
     <div className="giftcards-wallet-actions" aria-label="Add gift card to wallet">
-      <a
+      <button
+        type="button"
         className="giftcards-wallet-button giftcards-wallet-button-apple"
-        href={giftCardAppleWalletUrl(card.code)}
-        onClick={() => onMessage?.(null)}
+        disabled={!appleReady}
+        onClick={() => {
+          if (!appleReady) {
+            onMessage?.('Apple Wallet is not configured yet.');
+            return;
+          }
+          onMessage?.(null);
+          window.location.assign(giftCardAppleWalletUrl(card.code));
+        }}
       >
         Add to Apple Wallet
-      </a>
-      <a
+      </button>
+      <button
+        type="button"
         className="giftcards-wallet-button giftcards-wallet-button-google"
-        href={giftCardGoogleWalletUrl(card.code)}
-        onClick={() => onMessage?.(null)}
+        disabled={!googleReady}
+        onClick={() => {
+          if (!googleReady) {
+            onMessage?.('Google Wallet is not configured yet.');
+            return;
+          }
+          onMessage?.(null);
+          window.location.assign(giftCardGoogleWalletUrl(card.code));
+        }}
       >
         Add to Google Wallet
-      </a>
+      </button>
     </div>
   );
 }
@@ -230,10 +249,25 @@ const AMOUNT_PILLS: Array<{ amountCents: number; label: string }> = [
   { amountCents: 25000, label: 'Long dinner' }
 ];
 
+type CheckoutOverlayState = 'closed' | 'loading' | 'checkout' | 'processing' | 'complete';
+
+type EmbeddedCheckoutRequest = {
+  publishableKey: string;
+  clientSecret: string;
+  sessionId: string;
+};
+
+type WalletConfig = GiftCardPublicConfig['wallet'];
+
+function wait(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function PublicGiftCardShop() {
   const [settings, setSettings] = useState<GiftCardSettings>(DEFAULT_GIFT_CARD_SETTINGS);
   const [checkoutMode, setCheckoutMode] = useState<'live' | 'test' | 'setup_required'>('setup_required');
   const [checkoutNotice, setCheckoutNotice] = useState<string | null>(null);
+  const [walletConfig, setWalletConfig] = useState<WalletConfig | null>(null);
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
   const [design, setDesign] = useState<GiftCardDesign>('forest');
@@ -258,6 +292,12 @@ function PublicGiftCardShop() {
   const [navSolid, setNavSolid] = useState(false);
   const sessionId = typeof window !== 'undefined' ? new URLSearchParams(window.location.search).get('session_id') : null;
   const [paidCard, setPaidCard] = useState<GiftCardPublic | null>(null);
+  const [checkoutOverlay, setCheckoutOverlay] = useState<CheckoutOverlayState>('closed');
+  const [checkoutOverlayMessage, setCheckoutOverlayMessage] = useState<string | null>(null);
+  const [embeddedCheckoutRequest, setEmbeddedCheckoutRequest] = useState<EmbeddedCheckoutRequest | null>(null);
+  const stripePromiseRef = useRef<{ key: string; promise: Promise<Stripe | null> } | null>(null);
+  const embeddedCheckoutRef = useRef<StripeEmbeddedCheckout | null>(null);
+  const embeddedCheckoutHostRef = useRef<HTMLDivElement | null>(null);
 
   const amountDueCents = promoQuote ? promoQuote.amountDueCents : amountCents;
   const amountError = amountCents < 2500 || amountCents > 200000
@@ -272,16 +312,46 @@ function PublicGiftCardShop() {
         setSettings(config.settings);
         setCheckoutMode(config.checkoutMode);
         setCheckoutNotice(config.checkoutNotice);
+        setWalletConfig(config.wallet);
       })
       .catch(() => undefined);
   }, []);
 
+  const destroyEmbeddedCheckout = useCallback(() => {
+    embeddedCheckoutRef.current?.destroy();
+    embeddedCheckoutRef.current = null;
+  }, []);
+
+  const finaliseCheckoutSession = useCallback(async (checkoutSessionId: string) => {
+    destroyEmbeddedCheckout();
+    setCheckoutOverlay('processing');
+    setCheckoutOverlayMessage('Confirming payment and preparing the gift card email.');
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        const card = await api<GiftCardPublic>(`/api/gift-cards/session/${encodeURIComponent(checkoutSessionId)}`);
+        setPaidCard(card);
+        setCheckoutOverlay('complete');
+        setCheckoutOverlayMessage(card.emailError ? 'Payment is confirmed. The email needs manual attention.' : 'Payment is confirmed and the confirmation email has been queued.');
+        if (window.location.search.includes('session_id=')) {
+          window.history.replaceState(null, '', window.location.pathname);
+        }
+        return;
+      } catch (error) {
+        if (attempt === 7) {
+          const message = error instanceof Error ? error.message : 'Could not confirm gift card payment.';
+          setFeedback(message);
+          setCheckoutOverlayMessage(message);
+          return;
+        }
+        await wait(1500);
+      }
+    }
+  }, [destroyEmbeddedCheckout]);
+
   useEffect(() => {
     if (!sessionId) return;
-    api<GiftCardPublic>(`/api/gift-cards/session/${encodeURIComponent(sessionId)}`)
-      .then(setPaidCard)
-      .catch((error) => setFeedback(error instanceof Error ? error.message : 'Could not load gift card payment.'));
-  }, [sessionId]);
+    void finaliseCheckoutSession(sessionId);
+  }, [sessionId, finaliseCheckoutSession]);
 
   useEffect(() => {
     const onScroll = () => setNavSolid(window.scrollY > 80);
@@ -289,6 +359,53 @@ function PublicGiftCardShop() {
     window.addEventListener('scroll', onScroll, { passive: true });
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
+
+  useEffect(() => {
+    if (checkoutOverlay !== 'checkout' || !embeddedCheckoutRequest || !embeddedCheckoutHostRef.current) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        destroyEmbeddedCheckout();
+        if (!stripePromiseRef.current || stripePromiseRef.current.key !== embeddedCheckoutRequest.publishableKey) {
+          stripePromiseRef.current = {
+            key: embeddedCheckoutRequest.publishableKey,
+            promise: loadStripe(embeddedCheckoutRequest.publishableKey)
+          };
+        }
+        const stripe = await stripePromiseRef.current.promise;
+        if (!stripe) throw new Error('Stripe checkout could not load.');
+        const embeddedCheckout = await stripe.createEmbeddedCheckoutPage({
+          clientSecret: embeddedCheckoutRequest.clientSecret,
+          onComplete: () => void finaliseCheckoutSession(embeddedCheckoutRequest.sessionId)
+        });
+        if (cancelled) {
+          embeddedCheckout.destroy();
+          return;
+        }
+        embeddedCheckoutRef.current = embeddedCheckout;
+        embeddedCheckout.mount(embeddedCheckoutHostRef.current!);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Could not load secure checkout.';
+        setFeedback(message);
+        setCheckoutOverlayMessage(message);
+        setCheckoutOverlay('closed');
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+      destroyEmbeddedCheckout();
+    };
+  }, [checkoutOverlay, embeddedCheckoutRequest, destroyEmbeddedCheckout, finaliseCheckoutSession]);
+
+  useEffect(() => () => destroyEmbeddedCheckout(), [destroyEmbeddedCheckout]);
+
+  function closeCheckoutOverlay() {
+    destroyEmbeddedCheckout();
+    setEmbeddedCheckoutRequest(null);
+    setCheckoutOverlay('closed');
+    setCheckoutOverlayMessage(null);
+  }
 
   async function checkout(event?: FormEvent) {
     event?.preventDefault();
@@ -306,6 +423,8 @@ function PublicGiftCardShop() {
     }
     setSubmitting(true);
     setFeedback(null);
+    setCheckoutOverlay('loading');
+    setCheckoutOverlayMessage('Setting up secure checkout.');
     try {
       const result = await api<GiftCardCheckoutResult>('/api/gift-cards/public/orders', {
         method: 'POST',
@@ -318,6 +437,7 @@ function PublicGiftCardShop() {
           recipientEmail,
           message,
           design,
+          checkoutUiMode: 'embedded',
           scheduledDeliveryAt: deliverMode === 'later' && deliverDate
             ? new Date(`${deliverDate}T07:00`).toISOString()
             : undefined,
@@ -325,9 +445,24 @@ function PublicGiftCardShop() {
           cancelUrl: window.location.origin
         })
       });
+      if (result.testMode) {
+        await finaliseCheckoutSession(result.checkoutSessionId);
+        return;
+      }
+      if (result.embedded && result.checkoutClientSecret && result.stripePublishableKey) {
+        setEmbeddedCheckoutRequest({
+          publishableKey: result.stripePublishableKey,
+          clientSecret: result.checkoutClientSecret,
+          sessionId: result.checkoutSessionId
+        });
+        setCheckoutOverlay('checkout');
+        setCheckoutOverlayMessage(null);
+        return;
+      }
       window.location.assign(result.checkoutUrl);
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : 'Could not start gift card checkout.');
+      setCheckoutOverlay('closed');
     } finally {
       setSubmitting(false);
     }
@@ -402,6 +537,89 @@ function PublicGiftCardShop() {
         <a href="#configure" className="alma-giftcards-nav__cta">Buy a card →</a>
       </nav>
 
+      {checkoutOverlay !== 'closed' ? (
+        <div className="alma-giftcards-checkout" role="dialog" aria-modal="true" aria-labelledby="alma-giftcards-checkout-title">
+          <div className="alma-giftcards-checkout__panel">
+            <div className="alma-giftcards-checkout__head">
+              <div>
+                <span className="alma-giftcards-eyebrow">Secure payment</span>
+                <h2 id="alma-giftcards-checkout-title">
+                  {checkoutOverlay === 'complete'
+                    ? 'Your gift card is ready.'
+                    : checkoutOverlay === 'processing'
+                      ? 'Processing payment.'
+                      : checkoutOverlay === 'checkout'
+                        ? 'Complete your checkout.'
+                        : 'Opening checkout.'}
+                </h2>
+              </div>
+              <button
+                type="button"
+                className="alma-giftcards-checkout__close"
+                onClick={closeCheckoutOverlay}
+                aria-label="Close checkout"
+                disabled={checkoutOverlay === 'processing'}
+              >
+                ×
+              </button>
+            </div>
+
+            {checkoutOverlay === 'loading' ? (
+              <div className="alma-giftcards-checkout__state">
+                <Spinner label="Setting up checkout..." />
+                <p>{checkoutOverlayMessage ?? 'Setting up secure checkout.'}</p>
+              </div>
+            ) : null}
+
+            {checkoutOverlay === 'checkout' ? (
+              <>
+                <p className="alma-giftcards-checkout__copy">Payment stays inside this window and is processed by Stripe.</p>
+                <div className="alma-giftcards-checkout__stripe" ref={embeddedCheckoutHostRef} />
+              </>
+            ) : null}
+
+            {checkoutOverlay === 'processing' ? (
+              <div className="alma-giftcards-checkout__state">
+                <Spinner label="Processing payment..." />
+                <p>{checkoutOverlayMessage ?? 'Confirming payment and preparing your confirmation.'}</p>
+              </div>
+            ) : null}
+
+            {checkoutOverlay === 'complete' && paidCard ? (
+              <div className="alma-giftcards-checkout__complete">
+                <div className="alma-giftcards-checkout__art">
+                  <GiftCardArt
+                    design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                    amount={Math.round(paidCard.initialValueCents / 100)}
+                    code={paidCard.code}
+                    recipient={paidCard.recipientName ?? undefined}
+                  />
+                </div>
+                <div className="alma-giftcards-checkout__details">
+                  <div>
+                    <span>Reference</span>
+                    <strong>{paidCard.code}</strong>
+                  </div>
+                  <div>
+                    <span>Balance</span>
+                    <strong>{formatCents(paidCard.balanceCents)}</strong>
+                  </div>
+                  <img src={paidCard.qrCodeUrl} alt="Gift card redemption QR code" />
+                </div>
+                <p>{checkoutOverlayMessage}</p>
+                <div className="alma-giftcards-paid__actions">
+                  <button type="button" className="alma-giftcards-btn alma-giftcards-btn--primary" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>
+                    Print gift card
+                  </button>
+                  <WalletButtons card={paidCard} wallet={walletConfig} onMessage={setFeedback} />
+                </div>
+                {paidCard.emailError ? <p className="alma-giftcards-error">Email needs attention: {paidCard.emailError}</p> : null}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
       {paidCard ? (
         <section className="alma-giftcards-paid" aria-label="Gift card payment received">
           <div className="alma-giftcards-paid__inner">
@@ -438,7 +656,7 @@ function PublicGiftCardShop() {
               <button type="button" className="alma-giftcards-btn alma-giftcards-btn--ghost" onClick={() => window.location.assign(giftCardPrintUrl(paidCard.code))}>
                 Print gift card
               </button>
-              <WalletButtons card={paidCard} onMessage={setFeedback} />
+              <WalletButtons card={paidCard} wallet={walletConfig} onMessage={setFeedback} />
             </div>
             {paidCard.emailError ? <p className="alma-giftcards-error">Email needs attention: {paidCard.emailError}</p> : null}
           </div>
@@ -858,7 +1076,7 @@ function PublicGiftCardShop() {
                         ? (checkoutMode === 'test' ? 'Creating test card…' : 'Opening checkout…')
                         : checkoutMode === 'test'
                           ? `Create test card (${formatCents(amountDueCents)})`
-                          : 'Continue to payment'}
+                          : 'Open secure checkout'}
                     <svg className="alma-giftcards-arrow" viewBox="0 0 14 6" fill="none" aria-hidden="true">
                       <path d="M0 3 H13 M10 0 L13 3 L10 6" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                     </svg>
@@ -990,7 +1208,7 @@ function PublicGiftCardShop() {
       <footer className="alma-giftcards-footer">
         <div className="alma-giftcards-footer__row">
           <div>
-            <div className="alma-giftcards-footer__word">alma <em>group</em></div>
+            <img className="alma-giftcards-footer__logo" src="/images/alma-group-logo.png" alt="Alma Group" />
             <p className="alma-giftcards-footer__tagline">Coastal kitchens and bars on Sydney's Northern Beaches.</p>
           </div>
           <div>

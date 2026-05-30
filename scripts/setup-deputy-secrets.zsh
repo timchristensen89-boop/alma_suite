@@ -20,7 +20,7 @@ REGION="${REGION:-australia-southeast1}"
 SERVICE_NAME="${SERVICE_NAME:-alma-compliance-api}"
 RUNTIME_SERVICE_ACCOUNT="${RUNTIME_SERVICE_ACCOUNT:-433873385316-compute@developer.gserviceaccount.com}"
 
-DEPUTY_REDIRECT_URL_DEFAULT="https://alma-compliance-api-433873385316.australia-southeast1.run.app/api/integrations/deputy/callback"
+DEPUTY_REDIRECT_URL_DEFAULT="https://alma-compliance.web.app/api/integrations/deputy/callback"
 
 restore_tty() {
   stty echo 2>/dev/null || true
