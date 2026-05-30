@@ -1,11 +1,14 @@
 import { prisma } from '@alma/db';
+import type { ReserveReservationStatus } from '@prisma/client';
 import {
   adminVenueDeviceCreateInputSchema,
   adminVenueDeviceUpdateInputSchema,
   devicePinLoginInputSchema,
+  staffHomePinLoginInputSchema,
   type AdminVenueDevicesPayload,
   type AuthUser,
-  type DeviceStaffListResponse
+  type DeviceStaffListResponse,
+  type HomeOperationalSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { authService } from './auth.service.js';
@@ -33,6 +36,14 @@ function nameParts(value: string) {
 
 function normaliseVenue(value: string | null | undefined) {
   return (value ?? '').trim().toLowerCase();
+}
+
+function dayWindow(now = new Date()) {
+  const start = new Date(now);
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setDate(end.getDate() + 1);
+  return { start, end };
 }
 
 async function recordPinFailure(profile: { id: string; pinFailedAttempts: number }) {
@@ -225,14 +236,71 @@ export const deviceService = {
 
   async listDeviceStaff(deviceUser: AuthUser, activeUser?: AuthUser | null): Promise<DeviceStaffListResponse> {
     const device = requireDeviceAccount(deviceUser);
+    const staffWhere = {
+      accountType: 'HUMAN' as const,
+      employmentStatus: 'ACTIVE' as const,
+      mergedIntoStaffProfileId: null,
+      venue: device.venue
+    };
+    const [staff, clockedIn] = await Promise.all([
+      prisma.staffProfile.findMany({
+        where: staffWhere,
+        orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          email: true,
+          roleTitle: true,
+          venue: true,
+          pinHash: true
+        }
+      }),
+      prisma.staffClockSession.findMany({
+        where: {
+          status: 'OPEN',
+          clockOutAt: null,
+          venue: device.venue,
+          staffProfile: staffWhere
+        },
+        orderBy: [{ clockInAt: 'asc' }],
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              email: true,
+              roleTitle: true,
+              venue: true
+            }
+          }
+        }
+      })
+    ]);
+    return {
+      venue: device.venue,
+      activeUser: activeUser ?? null,
+      staff: staff.map(staffOption),
+      clockedIn: clockedIn.map((session) => ({
+        sessionId: session.id,
+        staffProfileId: session.staffProfileId,
+        name: displayName(session.staffProfile),
+        roleTitle: session.roleTitle ?? session.staffProfile.roleTitle,
+        venue: session.venue ?? session.staffProfile.venue,
+        clockInAt: session.clockInAt.toISOString()
+      }))
+    };
+  },
+
+  async listPinStaff() {
     const staff = await prisma.staffProfile.findMany({
       where: {
         accountType: 'HUMAN',
         employmentStatus: 'ACTIVE',
-        mergedIntoStaffProfileId: null,
-        venue: device.venue
+        mergedIntoStaffProfileId: null
       },
-      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }],
+      orderBy: [{ venue: 'asc' }, { firstName: 'asc' }, { lastName: 'asc' }],
       select: {
         id: true,
         firstName: true,
@@ -243,10 +311,116 @@ export const deviceService = {
         pinHash: true
       }
     });
+
     return {
-      venue: device.venue,
-      activeUser: activeUser ?? null,
-      staff: staff.map(staffOption)
+      generatedAt: new Date().toISOString(),
+      staff: staff.map((profile) => ({
+        ...staffOption(profile),
+        email: null
+      }))
+    };
+  },
+
+  async homeSummary(): Promise<HomeOperationalSummary> {
+    const now = new Date();
+    const { start, end } = dayWindow(now);
+    const weekAhead = new Date(now);
+    weekAhead.setDate(weekAhead.getDate() + 7);
+    const inactiveReservationStatuses: ReserveReservationStatus[] = ['CANCELLED', 'NO_SHOW'];
+    const activeReservationStatus = { notIn: inactiveReservationStatuses };
+
+    const [
+      bookingsToday,
+      coversToday,
+      upcomingBookings,
+      nextBooking,
+      clockedInNow,
+      rosteredToday,
+      optedInContacts,
+      scheduledCampaigns,
+      scheduledPosts
+    ] = await Promise.all([
+      prisma.reserveReservation.count({
+        where: {
+          startsAt: { gte: start, lt: end },
+          status: activeReservationStatus
+        }
+      }),
+      prisma.reserveReservation.aggregate({
+        _sum: { covers: true },
+        where: {
+          startsAt: { gte: start, lt: end },
+          status: activeReservationStatus
+        }
+      }),
+      prisma.reserveReservation.count({
+        where: {
+          startsAt: { gte: now, lt: weekAhead },
+          status: activeReservationStatus
+        }
+      }),
+      prisma.reserveReservation.findFirst({
+        where: {
+          startsAt: { gte: now },
+          status: activeReservationStatus
+        },
+        orderBy: [{ startsAt: 'asc' }],
+        select: { startsAt: true, venue: true, covers: true }
+      }),
+      prisma.staffClockSession.count({
+        where: {
+          status: 'OPEN',
+          clockOutAt: null
+        }
+      }),
+      prisma.rosterShift.count({
+        where: {
+          startsAt: { gte: start, lt: end },
+          status: { not: 'CANCELLED' }
+        }
+      }),
+      prisma.marketingContact.count({
+        where: {
+          OR: [{ consentEmail: true }, { consentSms: true }]
+        }
+      }),
+      prisma.marketingCampaign.count({
+        where: {
+          status: 'SCHEDULED',
+          scheduledFor: { gte: now }
+        }
+      }),
+      prisma.marketingContentPost.count({
+        where: {
+          status: 'SCHEDULED',
+          scheduledAt: { gte: now }
+        }
+      })
+    ]);
+
+    return {
+      generatedAt: now.toISOString(),
+      bookings: {
+        today: bookingsToday,
+        upcoming: upcomingBookings,
+        coversToday: coversToday._sum?.covers ?? 0,
+        next: nextBooking
+          ? {
+              startsAt: nextBooking.startsAt.toISOString(),
+              venue: nextBooking.venue,
+              covers: nextBooking.covers
+            }
+          : null
+      },
+      staff: {
+        clockedInNow,
+        rosteredToday
+      },
+      marketing: {
+        optedInContacts,
+        scheduledCampaigns,
+        scheduledPosts
+      }
     };
   },
 
@@ -283,5 +457,49 @@ export const deviceService = {
     if (!staffUser) throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
     await resetPinFailures(profile.id);
     return authService.effectiveDeviceUser(device, staffUser);
+  },
+
+  async staffPinLogin(input: unknown) {
+    const data = staffHomePinLoginInputSchema.parse(input);
+    const profiles = await prisma.staffProfile.findMany({
+      where: {
+        accountType: 'HUMAN',
+        employmentStatus: 'ACTIVE',
+        mergedIntoStaffProfileId: null,
+        pinHash: { not: null }
+      },
+      select: {
+        id: true,
+        pinHash: true,
+        pinFailedAttempts: true,
+        pinLockedUntil: true
+      }
+    });
+
+    const matches = [];
+    for (const profile of profiles) {
+      if (profile.pinHash && await authService.comparePin(data.pin, profile.pinHash)) {
+        matches.push(profile);
+      }
+    }
+
+    if (matches.length === 0) {
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    }
+    if (matches.length > 1) {
+      throw new HttpError(409, 'That PIN is linked to more than one staff profile. Ask a manager to reset one PIN.');
+    }
+    const profile = matches[0]!;
+    if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) {
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    }
+    const staffUser = await authService.getActiveHumanById(profile.id);
+    if (!staffUser) throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    await resetPinFailures(profile.id);
+    await prisma.staffProfile.update({
+      where: { id: profile.id },
+      data: { lastLoginAt: new Date() }
+    });
+    return staffUser;
   }
 };
