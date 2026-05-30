@@ -1073,9 +1073,8 @@ function PrintableGiftCardPage() {
               recipient={card.recipientName ?? undefined}
             />
           </div>
-          <h1>{formatCents(card.balanceCents)}</h1>
-          <p>Redeemable at ALMA venues</p>
           <div className="giftcards-print-code">{card.code}</div>
+          <p className="giftcards-print-balance">{formatCents(card.balanceCents)} · redeemable at ALMA venues</p>
           <img className="giftcards-print-qr" src={card.qrCodeUrl} alt="Gift card redemption QR code" />
           {card.recipientName ? <p>For {card.recipientName}</p> : null}
           {card.message ? <blockquote>{card.message}</blockquote> : null}

@@ -296,7 +296,6 @@ export const mailService = {
     const safeQrCodeUrl = input.qrCodeUrl ? escapeHtml(input.qrCodeUrl) : '';
     const safeAppleWalletUrl = input.appleWalletUrl ? escapeHtml(input.appleWalletUrl) : '';
     const safeGoogleWalletUrl = input.googleWalletUrl ? escapeHtml(input.googleWalletUrl) : '';
-    const safeArtworkUrl = input.settings?.artworkUrl ? escapeHtml(input.settings.artworkUrl) : '';
     const safeMessage = input.message?.trim() ? escapeHtml(input.message.trim()) : '';
     const amount = formatMoney(input.amountCents);
     const balance = formatMoney(input.balanceCents);
@@ -332,14 +331,21 @@ export const mailService = {
         </div>
         <p style="font-size:16px;margin:0 0 12px">Hi ${safeRecipient},</p>
         <p style="font-size:14px;margin:0 0 18px">${escapeHtml(intro)}</p>
-        <div style="border:1px solid #e2d3ad;background:#fff8e7;border-radius:14px;padding:22px;margin:0 0 22px">
-          ${safeArtworkUrl ? `<img src="${safeArtworkUrl}" alt="" style="display:block;width:100%;max-height:220px;object-fit:cover;border-radius:10px;margin:0 0 18px" />` : ''}
-          <div style="font-size:12px;text-transform:uppercase;letter-spacing:0.14em;color:${accentColor};margin-bottom:8px">Gift card code</div>
-          <div style="font-size:28px;font-weight:900;letter-spacing:0.08em;color:#111827;margin-bottom:12px">${safeCode}</div>
-          <div style="font-size:16px;font-weight:800;color:${accentColor}">${escapeHtml(balance)} available</div>
-          <div style="font-size:13px;color:#64748b">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
-          ${safeMessage ? `<p style="font-size:14px;color:#334155;border-top:1px solid #eadcb8;padding-top:14px;margin:16px 0 0">${safeMessage}</p>` : ''}
-          ${safeQrCodeUrl ? `<div style="border-top:1px solid #eadcb8;margin-top:18px;padding-top:18px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="150" height="150" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /><p style="font-size:12px;color:#64748b;margin:8px 0 0">Staff can scan this QR code to open redemption.</p></div>` : ''}
+        <div style="background:${primaryColor};background-image:linear-gradient(160deg,#233628 0%,#14241A 100%);border-radius:16px;padding:26px 28px;margin:0 0 22px;color:#F5DCCE">
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+            <tr>
+              <td style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Alma Group · Gift Card</td>
+              <td align="right">
+                <span style="display:inline-block;border:1px solid rgba(245,220,206,0.4);border-radius:999px;padding:5px 14px;font-size:14px;font-weight:700;color:#F5DCCE">${escapeHtml(amount)}</span>
+              </td>
+            </tr>
+          </table>
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6);margin:24px 0 8px">Card code</div>
+          <div style="font-family:'Courier New',monospace;font-size:26px;font-weight:700;letter-spacing:0.12em;color:#F5DCCE;background:rgba(245,220,206,0.08);border:1px solid rgba(245,220,206,0.18);border-radius:10px;padding:14px 16px;text-align:center">${safeCode}</div>
+          <div style="margin-top:16px;font-size:15px;font-weight:700;color:#F5DCCE">${escapeHtml(balance)} balance</div>
+          <div style="font-size:12px;color:rgba(245,220,206,0.6);margin-top:2px">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
+          ${safeMessage ? `<p style="font-size:14px;font-style:italic;color:rgba(245,220,206,0.85);border-top:1px solid rgba(245,220,206,0.18);padding-top:16px;margin:18px 0 0">${safeMessage}</p>` : ''}
+          ${safeQrCodeUrl ? `<div style="border-top:1px solid rgba(245,220,206,0.18);margin-top:18px;padding-top:18px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="140" height="140" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /><p style="font-size:11px;color:rgba(245,220,206,0.6);margin:8px 0 0">Staff can scan this QR code to redeem.</p></div>` : ''}
         </div>
         <p style="margin:0 0 22px">
           <a href="${safePrintableUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;font-weight:800;padding:12px 18px;border-radius:8px;font-size:14px">
