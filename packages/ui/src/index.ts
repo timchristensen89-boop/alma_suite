@@ -4,6 +4,8 @@ export { TopBar } from './layout/TopBar';
 export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { SuiteFeedbackWidget } from './feedback/SuiteFeedbackWidget';
 export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidget';
+export { SuiteSearchWidget } from './search/SuiteSearchWidget';
+export type { SuiteSearchItem } from './search/SuiteSearchWidget';
 export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';
 export { Card } from './primitives/Card';
 export { CollapsibleCard } from './primitives/CollapsibleCard';

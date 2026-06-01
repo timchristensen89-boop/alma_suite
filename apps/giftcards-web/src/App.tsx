@@ -39,11 +39,12 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -1557,14 +1558,14 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
             <span>Test checkout mode. Stripe is disabled and cards are created as test cards.</span>
           </label>
           <div className="form-grid two">
-            <Input label="Public headline" value={settings.publicHeadline} onChange={(event) => setSettings((current) => ({ ...current, publicHeadline: event.currentTarget.value }))} disabled={!canEdit} />
-            <Input label="Email subject" value={settings.emailSubject} onChange={(event) => setSettings((current) => ({ ...current, emailSubject: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Public headline" value={settings.publicHeadline} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, publicHeadline: el.value })); }} disabled={!canEdit} />
+            <Input label="Email subject" value={settings.emailSubject} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, emailSubject: el.value })); }} disabled={!canEdit} />
           </div>
-          <Textarea label="Public subheading" rows={2} value={settings.publicSubheading} onChange={(event) => setSettings((current) => ({ ...current, publicSubheading: event.currentTarget.value }))} disabled={!canEdit} />
-          <Textarea label="Email intro" rows={2} value={settings.emailIntro} onChange={(event) => setSettings((current) => ({ ...current, emailIntro: event.currentTarget.value }))} disabled={!canEdit} />
+          <Textarea label="Public subheading" rows={2} value={settings.publicSubheading} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, publicSubheading: el.value })); }} disabled={!canEdit} />
+          <Textarea label="Email intro" rows={2} value={settings.emailIntro} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, emailIntro: el.value })); }} disabled={!canEdit} />
           <div className="form-grid two">
-            <Input label="Primary colour" type="color" value={settings.primaryColor} onChange={(event) => setSettings((current) => ({ ...current, primaryColor: event.currentTarget.value }))} disabled={!canEdit} />
-            <Input label="Accent colour" type="color" value={settings.accentColor} onChange={(event) => setSettings((current) => ({ ...current, accentColor: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Primary colour" type="color" value={settings.primaryColor} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, primaryColor: el.value })); }} disabled={!canEdit} />
+            <Input label="Accent colour" type="color" value={settings.accentColor} onChange={(event) => { const el = event.currentTarget; setSettings((current) => ({ ...current, accentColor: el.value })); }} disabled={!canEdit} />
           </div>
           <div className="giftcards-artwork-grid">
             <label>
@@ -1592,14 +1593,14 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Only') ? 'error-text' : 'subtle'}>{message}</p> : null}
         <form className="giftcards-form" onSubmit={(event) => void createPromoCode(event)}>
           <div className="form-grid two">
-            <Input label="Code" required value={promoDraft.code} onChange={(event) => setPromoDraft((current) => ({ ...current, code: event.currentTarget.value.toUpperCase() }))} placeholder="ALMA10" disabled={!canEdit} />
-            <Input label="Description" value={promoDraft.description} onChange={(event) => setPromoDraft((current) => ({ ...current, description: event.currentTarget.value }))} placeholder="Opening week offer" disabled={!canEdit} />
+            <Input label="Code" required value={promoDraft.code} onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, code: el.value.toUpperCase() })); }} placeholder="ALMA10" disabled={!canEdit} />
+            <Input label="Description" value={promoDraft.description} onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, description: el.value })); }} placeholder="Opening week offer" disabled={!canEdit} />
           </div>
           <div className="form-grid two">
             <Select
               label="Discount"
               value={promoDraft.discountType}
-              onChange={(event) => setPromoDraft((current) => ({ ...current, discountType: event.currentTarget.value as 'PERCENT' | 'FIXED_AMOUNT' }))}
+              onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, discountType: el.value as 'PERCENT' | 'FIXED_AMOUNT' })); }}
               options={[
                 { label: 'Percent off', value: 'PERCENT' },
                 { label: 'Fixed amount off', value: 'FIXED_AMOUNT' }
@@ -1607,14 +1608,14 @@ function GiftCardAdminSettings({ user }: { user: AuthUser }) {
               disabled={!canEdit}
             />
             {promoDraft.discountType === 'PERCENT' ? (
-              <Input label="Percent off" type="number" min="1" max="95" value={promoDraft.percentOff} onChange={(event) => setPromoDraft((current) => ({ ...current, percentOff: Number(event.currentTarget.value) }))} disabled={!canEdit} />
+              <Input label="Percent off" type="number" min="1" max="95" value={promoDraft.percentOff} onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, percentOff: Number(el.value) })); }} disabled={!canEdit} />
             ) : (
               <Input label="Amount off" type="number" min="1" step="1" value={promoAmount} onChange={(event) => setPromoAmount(event.currentTarget.value)} disabled={!canEdit} />
             )}
           </div>
           <div className="form-grid two">
-            <Input label="Expiry" type="date" value={promoDraft.expiresAt} onChange={(event) => setPromoDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} disabled={!canEdit} />
-            <Input label="Max redemptions" type="number" min="1" value={promoDraft.maxRedemptions} onChange={(event) => setPromoDraft((current) => ({ ...current, maxRedemptions: event.currentTarget.value }))} disabled={!canEdit} />
+            <Input label="Expiry" type="date" value={promoDraft.expiresAt} onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, expiresAt: el.value })); }} disabled={!canEdit} />
+            <Input label="Max redemptions" type="number" min="1" value={promoDraft.maxRedemptions} onChange={(event) => { const el = event.currentTarget; setPromoDraft((current) => ({ ...current, maxRedemptions: el.value })); }} disabled={!canEdit} />
           </div>
           <div className="toolbar-right">
             <ActionFeedback
@@ -1815,6 +1816,20 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           right={
             <>
               <SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="topbar" />
+              <SuiteSearchWidget
+                api={api}
+                currentApp="giftcards"
+                items={GIFTCARD_NAV_ITEMS.map((item) => ({
+                  id: item.href,
+                  label: item.label,
+                  description: item.description,
+                  href: item.href,
+                  type: 'Gift Cards'
+                }))}
+                placeholder="Search gift card orders and setup..."
+                remoteSearch
+                remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+              />
               <SuiteCommsWidget
                 appId="GIFTCARDS"
                 api={api}

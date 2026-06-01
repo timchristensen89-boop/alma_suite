@@ -19,6 +19,7 @@ import {
   SuiteAppSwitcher,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   TopBar
 } from '@alma/ui';
 import {
@@ -32,7 +33,7 @@ import {
   IconStore,
   IconUpload
 } from '../../web/src/lib/icons';
-import { withSuiteAppLinks } from './config/suiteLinks';
+import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import '../../web/src/styles.css';
 import './styles.css';
 
@@ -1264,6 +1265,12 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   const location = useLocation();
   const active = currentCommsPage(location.pathname);
   const adminUrl = 'https://alma-suite-admin.web.app';
+  const searchItems = navItems.map((item) => ({
+    id: item.to,
+    label: item.label,
+    href: item.to,
+    type: 'Comms'
+  }));
 
   useEffect(() => {
     document.title = `${active.label} · Alma Comms`;
@@ -1293,6 +1300,14 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
       subtitle={active.description}
       right={
         <div className="topbar-action-group">
+          <SuiteSearchWidget
+            api={api}
+            currentApp="comms"
+            items={searchItems}
+            placeholder="Search messages, handovers, tasks..."
+            remoteSearch
+            remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+          />
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="comms" />
           <SuiteFeedbackWidget appId="COMMS" api={api} userName={user?.name ?? undefined} />

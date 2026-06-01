@@ -20,6 +20,7 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -475,6 +476,13 @@ function AdminTopBar() {
   const { user } = useAuth();
   const active = pageFor(location.pathname);
   useDocumentTitle(active.label);
+  const searchItems = NAV_ITEMS.map((item) => ({
+    id: item.to,
+    label: item.label,
+    description: item.description,
+    href: item.to,
+    type: 'Admin'
+  }));
 
   return (
     <TopBar
@@ -482,6 +490,14 @@ function AdminTopBar() {
       subtitle={active.description}
       right={
         <>
+          <SuiteSearchWidget
+            api={api}
+            currentApp="settings"
+            items={searchItems}
+            placeholder="Search settings, staff setup, integrations..."
+            remoteSearch
+            remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+          />
           <SuiteCommsWidget
             appId="settings"
             api={api}

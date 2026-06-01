@@ -80,6 +80,7 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
@@ -740,6 +741,13 @@ function TopBarWithContext() {
   const navItems = navItemsForUser(user);
   const active = currentPage(location.pathname, navItems);
   useDocumentTitle(active.label);
+  const searchItems = navItems.map((item) => ({
+    id: item.to,
+    label: item.label,
+    description: item.description,
+    href: item.to,
+    type: 'Staff'
+  }));
 
   // Casual staff get a simpler topbar — they don't switch apps (they only
   // have access to Staff anyway) and they don't post announcements.
@@ -771,7 +779,17 @@ function TopBarWithContext() {
               </div>
             ) : null}
             {!isCasualStaff ? (
-              <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
+              <>
+                <SuiteSearchWidget
+                  api={api}
+                  currentApp="staff"
+                  items={searchItems}
+                  placeholder="Search staff profiles, roster, leave..."
+                  remoteSearch
+                  remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+                />
+                <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
+              </>
             ) : null}
             <SuiteCommsWidget
               appId="STAFF"
@@ -3631,12 +3649,12 @@ function StaffProfileWorkspacePage({
         <summary>Upload or request a document</summary>
         <form className="staff-profile-form" onSubmit={(event) => { event.preventDefault(); void addDocument(); }}>
           <div className="form-grid three">
-            <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
-            <Input label="Document name" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-            <Input label="Expiry" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
-            <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
-            <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
-            <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
+            <Select label="Type" value={documentDraft.recordType} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, recordType: el.value as StaffRecordType })); }} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+            <Input label="Document name" value={documentDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, title: el.value })); }} />
+            <Input label="Expiry" type="date" value={documentDraft.expiryDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, expiryDate: el.value })); }} />
+            <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issuer: el.value })); }} />
+            <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, certificateNumber: el.value })); }} />
+            <Select label="Status" value={documentDraft.status} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, status: el.value })); }} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
           </div>
           <div className="invite-row staff-profile-upload-row">
             <span>
@@ -3651,7 +3669,7 @@ function StaffProfileWorkspacePage({
               {documentDraft.documentUrl ? <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => setDocumentDraft((current) => ({ ...current, documentName: '', documentUrl: '' }))}>Remove attachment</Button> : null}
             </span>
           </div>
-          <Textarea label="Notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <Textarea label="Notes" rows={2} value={documentDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, notes: el.value })); }} />
           <div className="toolbar-right">
             <Button type="submit" disabled={saving}>{saving ? 'Saving...' : documentDraft.documentUrl ? 'Upload document' : 'Request document'}</Button>
             <ActionFeedback message={messageTarget === 'document' ? message : null} tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'} />
@@ -3693,12 +3711,12 @@ function StaffProfileWorkspacePage({
                 }}
                 options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
               />
-              <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-              <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+              <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, title: el.value })); }} />
+              <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, dueAt: el.value })); }} />
               <Select
                 label="Priority"
                 value={documentRequestDraft.priority}
-                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, priority: el.value as StaffDocumentRequestDraft['priority'] })); }}
                 options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
               />
             </div>
@@ -3706,11 +3724,11 @@ function StaffProfileWorkspacePage({
               <input
                 type="checkbox"
                 checked={documentRequestDraft.expiryRequired}
-                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+                onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, expiryRequired: el.checked })); }}
               />
               Expiry date required where applicable
             </label>
-            <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+            <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, notes: el.value })); }} />
           </section>
           <div className="staff-modal-footer">
             <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
@@ -5281,12 +5299,12 @@ function AccessPage({
                         }}
                         options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
                       />
-                      <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                      <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+                      <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, title: el.value })); }} />
+                      <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, dueAt: el.value })); }} />
                       <Select
                         label="Priority"
                         value={documentRequestDraft.priority}
-                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                        onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, priority: el.value as StaffDocumentRequestDraft['priority'] })); }}
                         options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
                       />
                     </div>
@@ -5294,11 +5312,11 @@ function AccessPage({
                       <input
                         type="checkbox"
                         checked={documentRequestDraft.expiryRequired}
-                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+                        onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, expiryRequired: el.checked })); }}
                       />
                       Expiry date required where applicable
                     </label>
-                    <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                    <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, notes: el.value })); }} />
                   </section>
                   <div className="staff-modal-footer">
                     <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
@@ -5388,18 +5406,18 @@ function AccessPage({
                 }}
               >
                 <div className="form-grid three">
-                  <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
-                  <Input label="Title" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                  <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
-                  <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
-                  <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, issueDate: event.currentTarget.value }))} />
-                  <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
-                  <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED'].map((value) => ({ label: value.replaceAll('_', ' '), value }))} />
-                  <Input label="Document name" value={documentDraft.documentName} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentName: event.currentTarget.value }))} />
+                  <Select label="Type" value={documentDraft.recordType} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, recordType: el.value as StaffRecordType })); }} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+                  <Input label="Title" value={documentDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, title: el.value })); }} />
+                  <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issuer: el.value })); }} />
+                  <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, certificateNumber: el.value })); }} />
+                  <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issueDate: el.value })); }} />
+                  <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, expiryDate: el.value })); }} />
+                  <Select label="Status" value={documentDraft.status} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, status: el.value })); }} options={['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED'].map((value) => ({ label: value.replaceAll('_', ' '), value }))} />
+                  <Input label="Document name" value={documentDraft.documentName} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, documentName: el.value })); }} />
                   {documentDraft.documentUrl.startsWith('data:') ? (
                     <Input label="Document attachment" value={documentDraft.documentName || 'Attached file'} disabled />
                   ) : (
-                    <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentUrl: event.currentTarget.value }))} />
+                    <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, documentUrl: el.value })); }} />
                   )}
                 </div>
                 <div className="invite-row">
@@ -5436,7 +5454,7 @@ function AccessPage({
                     ) : null}
                   </span>
                 </div>
-                <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, notes: el.value })); }} />
                 <div className="toolbar-right">
                   <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add document'}</Button>
                   <ActionFeedback
@@ -6078,13 +6096,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               }}
             >
               <div className="form-grid two">
-                <Input label="Title" value={announcementDraft.title} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                <Select label="Venue" value={announcementDraft.venue} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
+                <Input label="Title" value={announcementDraft.title} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, title: el.value })); }} />
+                <Select label="Venue" value={announcementDraft.venue} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, venue: el.value })); }} options={VENUE_OPTIONS} />
               </div>
-              <Textarea label="Announcement" rows={3} value={announcementDraft.body} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, body: event.currentTarget.value }))} />
+              <Textarea label="Announcement" rows={3} value={announcementDraft.body} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, body: el.value })); }} />
               <div className="form-grid two">
-                <Input label="Audience" value={announcementDraft.audience} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.currentTarget.value }))} />
-                <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} />
+                <Input label="Audience" value={announcementDraft.audience} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, audience: el.value })); }} />
+                <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, expiresAt: el.value })); }} />
               </div>
               <label className="check-row">
                 <input type="checkbox" checked={announcementDraft.pinned} onChange={(event) => { const checked = event.currentTarget.checked; setAnnouncementDraft((current) => ({ ...current, pinned: checked })); }} />
@@ -6133,13 +6151,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               }}
             >
               <div className="form-grid two">
-                <Input label="Group name" value={channelDraft.name} onChange={(event) => setChannelDraft((current) => ({ ...current, name: event.currentTarget.value }))} placeholder="Kitchen" />
-                <Select label="Type" value={channelDraft.type} onChange={(event) => setChannelDraft((current) => ({ ...current, type: event.currentTarget.value as SuiteChatChannel['type'] }))} options={['GENERAL', 'VENUE', 'AREA', 'GROUP'].map((value) => ({ label: value, value }))} />
-                <Select label="Venue" value={channelDraft.venue} onChange={(event) => setChannelDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
-                <Input label="Group key" value={channelDraft.groupKey} onChange={(event) => setChannelDraft((current) => ({ ...current, groupKey: event.currentTarget.value }))} placeholder="kitchen" />
+                <Input label="Group name" value={channelDraft.name} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, name: el.value })); }} placeholder="Kitchen" />
+                <Select label="Type" value={channelDraft.type} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, type: el.value as SuiteChatChannel['type'] })); }} options={['GENERAL', 'VENUE', 'AREA', 'GROUP'].map((value) => ({ label: value, value }))} />
+                <Select label="Venue" value={channelDraft.venue} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, venue: el.value })); }} options={VENUE_OPTIONS} />
+                <Input label="Group key" value={channelDraft.groupKey} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, groupKey: el.value })); }} placeholder="kitchen" />
               </div>
-              <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => setChannelDraft((current) => ({ ...current, description: event.currentTarget.value }))} />
-              <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => setChannelDraft((current) => ({ ...current, postPermission: event.currentTarget.value }))} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
+              <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, description: el.value })); }} />
+              <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, postPermission: el.value })); }} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
               <label className="check-row">
                 <input type="checkbox" checked={channelDraft.directMessagesAllowed} onChange={(event) => { const checked = event.currentTarget.checked; setChannelDraft((current) => ({ ...current, directMessagesAllowed: checked })); }} />
                 Allow this group to use direct messaging
@@ -12044,7 +12062,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <Select
                       label="Attach to staff"
                       value={selectedStaffId}
-                      onChange={(event) => setReviewStaffSelection((current) => ({ ...current, [item.id]: event.currentTarget.value }))}
+                      onChange={(event) => { const el = event.currentTarget; setReviewStaffSelection((current) => ({ ...current, [item.id]: el.value })); }}
                       options={[
                         { label: 'Choose staff', value: '' },
                         ...documentReviewStaff.map((member) => ({
@@ -13899,8 +13917,66 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   );
 }
 
+type TimesheetGroup = {
+  id: string;
+  member: StaffProfile | undefined;
+  name: string;
+  venue: string;
+  roleTitle: string;
+  entries: Timesheet[];
+  totalHours: number;
+  submittedIds: string[];
+  approvedCount: number;
+};
+
+// Group timesheets by staff member. Each group exposes the member's display
+// name, derived venue/role, total hours, the ids that still need approval
+// (SUBMITTED or REJECTED) and how many are already approved. Entries are sorted
+// newest-first; groups are sorted alphabetically by name.
+function groupTimesheetsByStaff(entries: Timesheet[], staff: StaffProfile[]): TimesheetGroup[] {
+  const map = new Map<string, { id: string; member: StaffProfile | undefined; name: string; entries: Timesheet[] }>();
+  for (const entry of entries) {
+    const id = entry.staffProfileId;
+    let group = map.get(id);
+    if (!group) {
+      const member = staff.find((candidate) => candidate.id === id);
+      const name = entry.staffProfile
+        ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}`.trim()
+        : member
+          ? `${member.firstName} ${member.lastName}`.trim()
+          : 'Staff member';
+      group = { id, member, name, entries: [] };
+      map.set(id, group);
+    }
+    group.entries.push(entry);
+  }
+  return Array.from(map.values())
+    .map((group) => {
+      const entries = [...group.entries].sort(
+        (a, b) => new Date(b.workDate).getTime() - new Date(a.workDate).getTime()
+      );
+      return {
+        ...group,
+        entries,
+        venue: group.member?.venue ?? entries[0]?.staffProfile?.venue ?? entries[0]?.venue ?? '',
+        roleTitle: group.member?.roleTitle ?? entries[0]?.staffProfile?.roleTitle ?? '',
+        totalHours: entries.reduce((sum, entry) => sum + timesheetHours(entry), 0),
+        submittedIds: entries
+          .filter((entry) => entry.status === 'SUBMITTED' || entry.status === 'REJECTED')
+          .map((entry) => entry.id),
+        approvedCount: entries.filter((entry) => entry.status === 'APPROVED').length
+      };
+    })
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// Which slice of the explorer the manager is currently focused on.
+type TimesheetSelection = { type: 'all' } | { type: 'venue'; venue: string } | { type: 'staff'; id: string };
+
 function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?: RosterShift[] }) {
   const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  // Range mode: 'week' uses the week navigator; '30'/'90' look back N days.
+  const [rangeMode, setRangeMode] = useState<'week' | '30' | '90'>('week');
   const [statusFilter, setStatusFilter] = useState<'all' | Timesheet['status']>('all');
   const [venueFilter, setVenueFilter] = useState('all');
   const [timesheets, setTimesheets] = useState<Timesheet[]>([]);
@@ -13920,7 +13996,21 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [clockSessions, setClockSessions] = useState<StaffClockSession[]>([]);
+  // Submit-new-timesheet modal visibility.
+  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  // Explorer rail selection (all / a venue / a staff member).
+  const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
+
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
+  // Effective query window: the navigated week, or a rolling N-day lookback.
+  const rangeStart = useMemo(
+    () => (rangeMode === 'week' ? weekStart : addDays(new Date(), -Number(rangeMode))),
+    [rangeMode, weekStart]
+  );
+  const rangeEnd = useMemo(
+    () => (rangeMode === 'week' ? weekEnd : addDays(new Date(), 1)),
+    [rangeMode, weekEnd]
+  );
   const selectedMember = staff.find((member) => member.id === staffProfileId);
   const venueOptions = useMemo(
     () => [
@@ -13945,13 +14035,57 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     [roster, staffProfileId]
   );
 
+  // All loaded timesheets grouped by staff member (powers the staff rail).
+  const allGroups = useMemo(() => groupTimesheetsByStaff(timesheets, staff), [timesheets, staff]);
+
+  // Per-venue counts for the explorer rail's "Locations" section.
+  const venueSummaries = useMemo(() => {
+    const map = new Map<string, { venue: string; count: number; submitted: number; approved: number }>();
+    for (const entry of timesheets) {
+      const venue = entry.venue || entry.staffProfile?.venue || 'No venue';
+      const summary = map.get(venue) ?? { venue, count: 0, submitted: 0, approved: 0 };
+      summary.count += 1;
+      if (entry.status === 'SUBMITTED' || entry.status === 'REJECTED') summary.submitted += 1;
+      if (entry.status === 'APPROVED') summary.approved += 1;
+      map.set(venue, summary);
+    }
+    return Array.from(map.values()).sort((a, b) => a.venue.localeCompare(b.venue));
+  }, [timesheets]);
+
+  // Overall counts shown against the "All timesheets" rail item.
+  const overallCounts = useMemo(
+    () => ({
+      count: timesheets.length,
+      submitted: timesheets.filter((entry) => entry.status === 'SUBMITTED' || entry.status === 'REJECTED').length,
+      approved: timesheets.filter((entry) => entry.status === 'APPROVED').length
+    }),
+    [timesheets]
+  );
+
+  // Groups filtered to the current explorer selection (shown in the detail pane).
+  const visibleGroups = useMemo(() => {
+    const filtered = timesheets.filter((entry) => {
+      if (selection.type === 'all') return true;
+      if (selection.type === 'staff') return entry.staffProfileId === selection.id;
+      return (entry.venue || entry.staffProfile?.venue || 'No venue') === selection.venue;
+    });
+    return groupTimesheetsByStaff(filtered, staff);
+  }, [timesheets, staff, selection]);
+
+  const detailTitle =
+    selection.type === 'all'
+      ? 'All timesheets'
+      : selection.type === 'venue'
+        ? selection.venue
+        : allGroups.find((group) => group.id === selection.id)?.name ?? 'Employee';
+
   const loadTimesheets = useCallback(async () => {
     setLoading(true);
     setMessage(null);
     try {
       const query = new URLSearchParams({
-        start: weekStart.toISOString(),
-        end: weekEnd.toISOString(),
+        start: rangeStart.toISOString(),
+        end: rangeEnd.toISOString(),
         status: statusFilter,
         venue: venueFilter
       });
@@ -13961,8 +14095,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       // reconciliation. Gracefully no-op if the endpoint isn't deployed.
       try {
         const clockQuery = new URLSearchParams({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString(),
+          start: rangeStart.toISOString(),
+          end: rangeEnd.toISOString(),
           venue: venueFilter
         });
         const sessions = await api<StaffClockSession[]>(`/api/staff/clock-sessions?${clockQuery.toString()}`);
@@ -13975,7 +14109,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, venueFilter, weekEnd, weekStart]);
+  }, [statusFilter, venueFilter, rangeEnd, rangeStart]);
 
   useEffect(() => {
     if (!staffProfileId && staff[0]) setStaffProfileId(staff[0].id);
@@ -14022,6 +14156,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       setMessage('Timesheet submitted.');
       setNotes('');
       setSelectedRosterShiftId('');
+      setShowSubmitModal(false);
       await loadTimesheets();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not submit timesheet.');
@@ -14031,14 +14166,14 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   }
 
   async function markCashPaid(id: string) {
-    const notes = window.prompt('Cash payment notes (optional)') ?? '';
+    const cashNotes = window.prompt('Cash payment notes (optional)') ?? '';
     setSaving(true);
     setMessage(null);
     setMessageTarget(`cash:${id}`);
     try {
       await api(`/api/staff/timesheets/${id}/cash-paid`, {
         method: 'POST',
-        body: JSON.stringify({ notes })
+        body: JSON.stringify({ notes: cashNotes })
       });
       setMessage('Cash payment recorded.');
       await loadTimesheets();
@@ -14077,6 +14212,25 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  // Bulk-approve a whole group's outstanding timesheets in parallel.
+  async function approveGroup(ids: string[]) {
+    if (ids.length === 0) return;
+    setMessageTarget('approve-group');
+    setSaving(true);
+    setMessage(null);
+    try {
+      await Promise.all(
+        ids.map((id) => api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }))
+      );
+      setMessage(`Approved ${ids.length} timesheet${ids.length === 1 ? '' : 's'}.`);
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not approve timesheets.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function reject(id: string) {
     const reason = window.prompt('Reason for rejection?') ?? '';
     setSaving(true);
@@ -14091,6 +14245,47 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       await loadTimesheets();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not reject timesheet.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  // Push approved Xero timesheets straight into Xero as draft timesheets.
+  async function pushToXero() {
+    if (
+      !window.confirm(
+        'Push approved Xero timesheets for this period straight into Xero as draft timesheets? Review them in Xero before the pay run.'
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('push');
+    try {
+      const result = await api<{
+        pushed: number;
+        failed: number;
+        results: { employee: string; status: string; message: string }[];
+      }>('/api/staff/timesheets/push/xero', {
+        method: 'POST',
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue: venueFilter
+        })
+      });
+      const failures = result.results
+        .filter((entry) => entry.status === 'failed')
+        .map((entry) => `${entry.employee}: ${entry.message}`);
+      setMessage(
+        `Pushed ${result.pushed} employee timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts${
+          result.failed ? `. ${result.failed} failed — ${failures.join('; ')}` : '.'
+        }`
+      );
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not push timesheets to Xero.');
     } finally {
       setSaving(false);
     }
@@ -14123,12 +14318,169 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  function renderSubmitFields() {
+    return (
+      <>
+        {rosterShiftsForSelected.length ? (
+          <div className="timesheet-shift-picklist">
+            {rosterShiftsForSelected.slice(0, 8).map((shift) => (
+              <button
+                key={shift.id}
+                type="button"
+                className={selectedRosterShiftId === shift.id ? 'is-selected' : ''}
+                onClick={() => prefillFromShift(shift)}
+              >
+                <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
+                <span>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || 'Shift'}</span>
+                <ActionFeedback
+                  message={messageTarget === `prefill:${shift.id}` ? message : null}
+                  tone="success"
+                />
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className="form-grid">
+          <Select
+            label="Staff member"
+            value={staffProfileId}
+            onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+            options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
+          />
+          <Input label="Date" type="date" value={workDate} onChange={(event) => setWorkDate(event.currentTarget.value)} />
+          <Input label="Clock in" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
+          <Input label="Clock out" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
+          <Input label="Break minutes" type="number" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
+          <Select
+            label="Area"
+            value={area}
+            onChange={(event) => setArea(event.currentTarget.value)}
+            options={['Floor', 'Bar', 'Kitchen', 'Management', 'Events'].map((value) => ({ label: value, value }))}
+          />
+          <Select
+            label="Pay method"
+            value={paymentMethod}
+            onChange={(event) => setPaymentMethod(event.currentTarget.value as 'XERO' | 'CASH')}
+            options={[
+              { label: 'Xero payroll', value: 'XERO' },
+              { label: 'Cash pay', value: 'CASH' }
+            ]}
+          />
+          <Input label="Xero employee ID" value={xeroEmployeeId} onChange={(event) => setXeroEmployeeId(event.currentTarget.value)} />
+          <Input label="Xero earnings rate ID" value={xeroEarningsRateId} onChange={(event) => setXeroEarningsRateId(event.currentTarget.value)} />
+        </div>
+        {paymentMethod === 'CASH' ? (
+          <p className="subtle">Cash-pay timesheets can be approved and marked cash paid, but they are excluded from the Xero CSV export.</p>
+        ) : null}
+        <Textarea label="Notes" rows={3} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
+        <div className="toolbar-right">
+          <Button type="button" disabled={saving} onClick={() => void submitTimesheet()}>
+            {saving ? 'Saving…' : 'Submit timesheet'}
+          </Button>
+          <ActionFeedback
+            message={messageTarget === 'submit' ? message : null}
+            tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+          />
+        </div>
+      </>
+    );
+  }
+
+  function renderGroup(group: TimesheetGroup) {
+    return (
+      <section key={group.id} className="timesheet-group">
+        <header className="timesheet-group-head">
+          <span className="timesheet-group-avatar">
+            {group.member ? staffInitials(group.member) : (group.name[0] ?? 'A').toUpperCase()}
+          </span>
+          <div className="timesheet-group-meta">
+            <strong>{group.name}</strong>
+            <span className="subtle">{[group.roleTitle, group.venue].filter(Boolean).join(' · ') || 'No venue set'}</span>
+          </div>
+          <div className="timesheet-group-stats">
+            <span>
+              <strong>{group.entries.length}</strong> shift{group.entries.length === 1 ? '' : 's'}
+            </span>
+            <span>
+              <strong>{roundHours(group.totalHours)}</strong>h
+            </span>
+            {group.submittedIds.length ? (
+              <Badge tone="info" dot>{group.submittedIds.length} to approve</Badge>
+            ) : null}
+            {group.approvedCount ? <Badge tone="positive">{group.approvedCount} approved</Badge> : null}
+          </div>
+          {group.submittedIds.length ? (
+            <Button type="button" size="sm" disabled={saving} onClick={() => void approveGroup(group.submittedIds)}>
+              Approve all
+            </Button>
+          ) : null}
+        </header>
+        <div className="timesheet-group-rows">
+          {group.entries.map((entry) => {
+            const member = group.member;
+            const awardCheck = checkAwardCompliance(member);
+            const clockDrift = computeClockDrift(entry, clockSessions);
+            return (
+              <div key={entry.id} className="timesheet-row">
+                <div className="timesheet-row-when">
+                  <strong>{new Date(entry.workDate).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
+                  <span>{timeOf(entry.clockInAt)}–{timeOf(entry.clockOutAt)}</span>
+                </div>
+                <span className="timesheet-row-hours">{roundHours(timesheetHours(entry))}h</span>
+                <span className="timesheet-row-area subtle">{entry.area || '—'}</span>
+                <div className="timesheet-row-badges">
+                  <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
+                  <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>
+                    {entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash') : 'Xero'}
+                  </Badge>
+                  {awardCheck.status === 'below' ? (
+                    <Badge tone="danger" dot>Award ⚠</Badge>
+                  ) : null}
+                  {clockDrift ? (
+                    <span title={`Clock ${clockDrift.clockHours.toFixed(2)}h vs timesheet ${timesheetHours(entry).toFixed(2)}h`}>
+                      <Badge tone={clockDrift.severity === 'danger' ? 'danger' : 'warning'} dot>
+                        Drift {clockDrift.driftHours >= 0 ? '+' : ''}{clockDrift.driftHours.toFixed(1)}h
+                      </Badge>
+                    </span>
+                  ) : null}
+                </div>
+                <div className="timesheet-row-actions">
+                  {entry.status === 'SUBMITTED' || entry.status === 'REJECTED' ? (
+                    <Button type="button" size="sm" disabled={saving} onClick={() => void approve(entry.id)}>
+                      Approve
+                    </Button>
+                  ) : null}
+                  {entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
+                    <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>
+                      Cash paid
+                    </Button>
+                  ) : null}
+                  {entry.status !== 'EXPORTED' ? (
+                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void reject(entry.id)}>
+                      Reject
+                    </Button>
+                  ) : null}
+                </div>
+                {awardCheck.status === 'below' ? (
+                  <span className="timesheet-row-note award-compliance-warning" role="alert">
+                    ⚠ Pay rate ${(member?.payRateCents ?? 0) / 100}/hr below{' '}
+                    {awardCheck.employmentType === 'CASUAL' ? 'casual loaded' : 'ordinary'} minimum ${awardCheck.minimumCents / 100}/hr ({awardCheck.classificationLabel})
+                  </span>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      </section>
+    );
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
         eyebrow="Payroll"
         title="Timesheets"
-        description="Staff submit worked hours, managers approve them, then approved hours export into a Xero-ready CSV."
+        description="Staff submit worked hours, managers approve them, then approved hours push straight into Xero as draft timesheets (or export a Xero-ready CSV)."
       />
 
       <div className="stats-grid">
@@ -14137,97 +14489,77 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         <StatCard label="Approved hours" value={roundHours(approvedHours)} hint={formatRange(weekStart, addDays(weekEnd, -1))} loading={loading} />
       </div>
 
-      <div className="staff-board">
-        <Card title="Submit timesheet" subtitle="Enter actual worked hours from the shift">
-          {rosterShiftsForSelected.length ? (
-            <div className="timesheet-shift-picklist">
-              {rosterShiftsForSelected.slice(0, 8).map((shift) => (
-                <button
-                  key={shift.id}
-                  type="button"
-                  className={selectedRosterShiftId === shift.id ? 'is-selected' : ''}
-                  onClick={() => prefillFromShift(shift)}
-                >
-                  <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short' })}</strong>
-                  <span>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || 'Shift'}</span>
-                  <ActionFeedback
-                    message={messageTarget === `prefill:${shift.id}` ? message : null}
-                    tone="success"
-                  />
-                </button>
-              ))}
-            </div>
-          ) : null}
-          <div className="form-grid">
+      <div className="timesheet-page-toolbar">
+        <Button
+          type="button"
+          onClick={() => {
+            setMessage(null);
+            setMessageTarget(null);
+            setShowSubmitModal(true);
+          }}
+        >
+          + Submit new timesheet
+        </Button>
+        <div className="toolbar-right">
+          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
+            Preview CSV
+          </Button>
+          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(true)}>
+            Export CSV
+          </Button>
+          <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
+            Push to Xero
+          </Button>
+        </div>
+      </div>
+
+      {(messageTarget === 'preview' || messageTarget === 'export' || messageTarget === 'push') && message ? (
+        <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
+      ) : null}
+
+      {showSubmitModal ? (
+        <div className="timesheet-modal-overlay" role="dialog" aria-modal="true" onClick={() => setShowSubmitModal(false)}>
+          <div className="timesheet-modal" onClick={(event) => event.stopPropagation()}>
+            <header className="timesheet-modal-head">
+              <strong>Submit new timesheet</strong>
+              <button type="button" className="timesheet-modal-close" aria-label="Close" onClick={() => setShowSubmitModal(false)}>
+                ×
+              </button>
+            </header>
+            <div className="timesheet-modal-body">{renderSubmitFields()}</div>
+          </div>
+        </div>
+      ) : null}
+
+      <div className="timesheet-board">
+        <Card title="Approval queue" subtitle="Review and approve submitted hours by employee or location">
+          <div className="roster-week-controls" aria-label="Timesheet week controls">
             <Select
-              label="Staff member"
-              value={staffProfileId}
-              onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-              options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
-            />
-            <Input label="Date" type="date" value={workDate} onChange={(event) => setWorkDate(event.currentTarget.value)} />
-            <Input label="Clock in" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
-            <Input label="Clock out" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
-            <Input label="Break minutes" type="number" value={breakMinutes} onChange={(event) => setBreakMinutes(event.currentTarget.value)} />
-            <Select
-              label="Area"
-              value={area}
-              onChange={(event) => setArea(event.currentTarget.value)}
-              options={['Floor', 'Bar', 'Kitchen', 'Management', 'Events'].map((value) => ({ label: value, value }))}
-            />
-            <Select
-              label="Pay method"
-              value={paymentMethod}
-              onChange={(event) => setPaymentMethod(event.currentTarget.value as 'XERO' | 'CASH')}
+              label="Range"
+              value={rangeMode}
+              onChange={(event) => {
+                const value = event.currentTarget.value as 'week' | '30' | '90';
+                setRangeMode(value);
+              }}
               options={[
-                { label: 'Xero payroll', value: 'XERO' },
-                { label: 'Cash pay', value: 'CASH' }
+                { label: 'By week', value: 'week' },
+                { label: 'Last 30 days', value: '30' },
+                { label: 'Last 90 days', value: '90' }
               ]}
             />
-            <Input label="Xero employee ID" value={xeroEmployeeId} onChange={(event) => setXeroEmployeeId(event.currentTarget.value)} />
-            <Input label="Xero earnings rate ID" value={xeroEarningsRateId} onChange={(event) => setXeroEarningsRateId(event.currentTarget.value)} />
-          </div>
-          {paymentMethod === 'CASH' ? (
-            <p className="subtle">Cash-pay timesheets can be approved and marked cash paid, but they are excluded from the Xero CSV export.</p>
-          ) : null}
-          <Textarea label="Notes" rows={3} value={notes} onChange={(event) => setNotes(event.currentTarget.value)} />
-          <div className="toolbar-right">
-            <Button type="button" disabled={saving} onClick={() => void submitTimesheet()}>
-              {saving ? 'Saving…' : 'Submit timesheet'}
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'submit' ? message : null}
-              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
-            />
-          </div>
-        </Card>
-
-        <Card
-          title="Approval queue"
-          subtitle="Review submitted hours before exporting"
-          action={
-            <div className="toolbar-right">
-              <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
-                Preview CSV
-              </Button>
-              <ActionFeedback
-                message={messageTarget === 'preview' ? message : null}
-                tone={message?.includes('Could') ? 'error' : 'success'}
-              />
-              <Button type="button" size="sm" disabled={saving} onClick={() => void exportXero(true)}>
-                Export to Xero
-              </Button>
-              <ActionFeedback
-                message={messageTarget === 'export' ? message : null}
-                tone={message?.includes('Could') ? 'error' : 'success'}
-              />
-            </div>
-          }
-        >
-          <div className="roster-week-controls" aria-label="Timesheet week controls">
-              <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, -7))}>Previous</Button>
-              <strong>{formatRange(weekStart, addDays(weekEnd, -1))}</strong>
-              <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>Next</Button>
+            {rangeMode === 'week' ? (
+              <>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, -7))}>
+                  Previous
+                </Button>
+                <strong>{formatRange(weekStart, addDays(weekEnd, -1))}</strong>
+                <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>
+                  Next
+                </Button>
+              </>
+            ) : (
+              <strong>{formatRange(rangeStart, addDays(rangeEnd, -1))}</strong>
+            )}
             <Select
               label="Venue"
               value={venueFilter}
@@ -14241,77 +14573,86 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               options={['all', 'DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED', 'EXPORTED'].map((value) => ({ label: value, value }))}
             />
           </div>
-          {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+          {message && (messageTarget === null || messageTarget === 'approve-group' || /^(approve|reject|cash):/.test(messageTarget)) ? (
+            <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p>
+          ) : null}
+
           {loading ? <Spinner label="Loading timesheets…" /> : null}
           {!loading && timesheets.length === 0 ? (
-            <EmptyState title="No timesheets yet" description="Submitted timesheets for this week will appear here." />
+            <EmptyState title="No timesheets yet" description="Submitted timesheets for this period will appear here." />
           ) : null}
-          <div className="staff-list">
-            {timesheets.map((entry) => {
-              const member = staff.find((s) => s.id === entry.staffProfileId);
-              const awardCheck = checkAwardCompliance(member);
-              const clockDrift = computeClockDrift(entry, clockSessions);
-              return (
-              <article key={entry.id} className="staff-list-button" style={{ display: 'grid', gap: 8 }}>
-                <span>
-                  <strong>{entry.staffProfile ? `${entry.staffProfile.firstName} ${entry.staffProfile.lastName}` : 'Staff member'}</strong>
-                  <span className="subtle" style={{ display: 'block' }}>
-                    {new Date(entry.workDate).toLocaleDateString()} · {timeOf(entry.clockInAt)}-{timeOf(entry.clockOutAt)} · {roundHours(timesheetHours(entry))}
+
+          {!loading && timesheets.length > 0 ? (
+            <div className="timesheet-explorer">
+              <aside className="timesheet-explorer-rail" aria-label="Timesheet filters">
+                <button
+                  type="button"
+                  className={`ts-rail-item ${selection.type === 'all' ? 'is-active' : ''}`}
+                  onClick={() => setSelection({ type: 'all' })}
+                >
+                  <span className="ts-rail-name">All timesheets</span>
+                  <span className="ts-rail-counts">
+                    {overallCounts.approved} Approved · {overallCounts.submitted} Submitted
                   </span>
-                  {awardCheck.status === 'below' ? (
-                    <span className="award-compliance-warning" role="alert">
-                      ⚠ Pay rate ${(member?.payRateCents ?? 0) / 100}/hr below {awardCheck.employmentType === 'CASUAL' ? 'casual loaded' : 'ordinary'} minimum
-                      ${awardCheck.minimumCents / 100}/hr ({awardCheck.classificationLabel})
-                    </span>
+                </button>
+                {venueSummaries.length > 1 ? (
+                  <div className="ts-rail-section">
+                    <span className="ts-rail-heading">Locations</span>
+                    {venueSummaries.map((summary) => (
+                      <button
+                        key={summary.venue}
+                        type="button"
+                        className={`ts-rail-item ${selection.type === 'venue' && selection.venue === summary.venue ? 'is-active' : ''}`}
+                        onClick={() => setSelection({ type: 'venue', venue: summary.venue })}
+                      >
+                        <span className="ts-rail-name">{summary.venue}</span>
+                        <span className="ts-rail-counts">
+                          {summary.approved} Approved · {summary.submitted} Submitted
+                        </span>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="ts-rail-section">
+                  <span className="ts-rail-heading">Staff</span>
+                  {allGroups.map((group) => (
+                    <button
+                      key={group.id}
+                      type="button"
+                      className={`ts-rail-item ts-rail-staff ${selection.type === 'staff' && selection.id === group.id ? 'is-active' : ''}`}
+                      onClick={() => setSelection({ type: 'staff', id: group.id })}
+                    >
+                      <span className="ts-rail-avatar">
+                        {group.member ? staffInitials(group.member) : (group.name[0] ?? 'A').toUpperCase()}
+                      </span>
+                      <span className="ts-rail-staff-meta">
+                        <span className="ts-rail-name">{group.name}</span>
+                        <span className="ts-rail-counts">
+                          {group.approvedCount} Approved · {group.submittedIds.length} Submitted
+                        </span>
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </aside>
+
+              <div className="timesheet-explorer-detail">
+                <div className="timesheet-explorer-detail-head">
+                  <strong>{detailTitle}</strong>
+                  {selection.type !== 'all' ? (
+                    <Button type="button" size="sm" variant="ghost" onClick={() => setSelection({ type: 'all' })}>
+                      View all
+                    </Button>
                   ) : null}
-                  {clockDrift ? (
-                    <span className={`clock-drift-note is-${clockDrift.severity}`}>
-                      ⏱ Clock: {clockDrift.clockHours.toFixed(2)}h ({timeOf(clockDrift.clockInAt)}-{clockDrift.clockOutAt ? timeOf(clockDrift.clockOutAt) : 'open'}) ·
-                      Timesheet: {timesheetHours(entry).toFixed(2)}h ·
-                      Drift {clockDrift.driftHours >= 0 ? '+' : ''}{clockDrift.driftHours.toFixed(2)}h
-                    </span>
-                  ) : null}
-                </span>
-                <span className="toolbar-right">
-                  <Badge tone={timesheetTone(entry.status)} dot>{entry.status}</Badge>
-                  {awardCheck.status === 'below' ? (
-                    <Badge tone="danger" dot>AWARD ⚠</Badge>
-                  ) : awardCheck.status === 'unknown' ? (
-                    <Badge tone="warning">No award set</Badge>
-                  ) : null}
-                  <Badge tone={entry.paymentMethod === 'CASH' ? 'warning' : 'muted'}>{entry.paymentMethod === 'CASH' ? (entry.cashPaidAt ? 'Cash paid' : 'Cash pay') : 'Xero'}</Badge>
-                  {entry.status === 'SUBMITTED' || entry.status === 'REJECTED' ? (
-                    <>
-                      <Button type="button" size="sm" disabled={saving} onClick={() => void approve(entry.id)}>Approve</Button>
-                      <ActionFeedback
-                        message={messageTarget === `approve:${entry.id}` ? message : null}
-                        tone={message?.includes('Could') ? 'error' : 'success'}
-                      />
-                    </>
-                  ) : null}
-                  {entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
-                    <>
-                      <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>Mark cash paid</Button>
-                      <ActionFeedback
-                        message={messageTarget === `cash:${entry.id}` ? message : null}
-                        tone={message?.includes('Could') ? 'error' : 'success'}
-                      />
-                    </>
-                  ) : null}
-                  {entry.status !== 'EXPORTED' ? (
-                    <>
-                      <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void reject(entry.id)}>Reject</Button>
-                      <ActionFeedback
-                        message={messageTarget === `reject:${entry.id}` ? message : null}
-                        tone={message?.includes('Could') ? 'error' : 'success'}
-                      />
-                    </>
-                  ) : null}
-                </span>
-              </article>
-              );
-            })}
-          </div>
+                </div>
+                {visibleGroups.length === 0 ? (
+                  <EmptyState title="No timesheets" description="Nothing matches this selection for the chosen period." />
+                ) : null}
+                <div className="timesheet-groups">{visibleGroups.map((group) => renderGroup(group))}</div>
+              </div>
+            </div>
+          ) : null}
         </Card>
       </div>
     </div>

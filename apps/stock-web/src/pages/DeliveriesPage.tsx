@@ -314,18 +314,19 @@ export function DeliveriesPage() {
                 label="Supplier"
                 value={draft.supplierId}
                 onChange={(event) => {
-                  const supplier = data?.suppliers.find((candidate) => candidate.id === event.currentTarget.value);
-                  setDraft((current) => ({ ...current, supplierId: event.currentTarget.value, supplierName: supplier?.name ?? current.supplierName }));
+                  const el = event.currentTarget;
+                  const supplier = data?.suppliers.find((candidate) => candidate.id === el.value);
+                  setDraft((current) => ({ ...current, supplierId: el.value, supplierName: supplier?.name ?? current.supplierName }));
                 }}
                 options={supplierOptions}
               />
-              <Input label="Supplier name" value={draft.supplierName} onChange={(event) => setDraft((current) => ({ ...current, supplierName: event.currentTarget.value }))} />
+              <Input label="Supplier name" value={draft.supplierName} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, supplierName: el.value })); }} />
             </div>
             <div className="stock-filter-toolbar">
-              <Input label="Invoice number" value={draft.invoiceNumber} onChange={(event) => setDraft((current) => ({ ...current, invoiceNumber: event.currentTarget.value }))} />
-              <Input label="Delivery date" type="date" value={draft.deliveryDate} onChange={(event) => setDraft((current) => ({ ...current, deliveryDate: event.currentTarget.value }))} />
+              <Input label="Invoice number" value={draft.invoiceNumber} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, invoiceNumber: el.value })); }} />
+              <Input label="Delivery date" type="date" value={draft.deliveryDate} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, deliveryDate: el.value })); }} />
             </div>
-            <Input label="Invoice reference" value={draft.invoiceReference} onChange={(event) => setDraft((current) => ({ ...current, invoiceReference: event.currentTarget.value }))} placeholder="Upload/reference URL if already stored elsewhere" />
+            <Input label="Invoice reference" value={draft.invoiceReference} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, invoiceReference: el.value })); }} placeholder="Upload/reference URL if already stored elsewhere" />
             <div className="stock-delivery-lines">
               {draft.items.map((line, index) => (
                 <div key={index} className="stock-delivery-line">
@@ -349,7 +350,7 @@ export function DeliveriesPage() {
               ))}
             </div>
             <Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyLine()] }))}>Add line</Button>
-            <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => setDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+            <Textarea label="Notes" rows={2} value={draft.notes} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, notes: el.value })); }} />
             {error ? <p className="error-text">{error}</p> : null}
             <Button type="submit" disabled={saving || !activeVenue}>{saving ? 'Saving...' : 'Create delivery check'}</Button>
           </form>

@@ -39,6 +39,7 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  SuiteSearchWidget,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -282,6 +283,65 @@ function addDays(date: Date, days: number) {
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+// Period presets for the top-of-report week control. Each preset resolves to a
+// concrete { start, end } range. Financial year is Australian (FY starts 1 July),
+// so months 6..11 (Jul–Dec) belong to FY <currentYear>, Jan–Jun to FY <currentYear - 1>.
+type PeriodPresetKey =
+  | 'this-week'
+  | 'last-week'
+  | 'this-month'
+  | 'last-month'
+  | 'ytd-fy'
+  | 'last-fy';
+
+const PERIOD_PRESETS: Array<{ key: PeriodPresetKey; label: string }> = [
+  { key: 'this-week', label: 'This week' },
+  { key: 'last-week', label: 'Last week' },
+  { key: 'this-month', label: 'This month' },
+  { key: 'last-month', label: 'Last month' },
+  { key: 'ytd-fy', label: 'Year to date (FY)' },
+  { key: 'last-fy', label: 'Last financial year' }
+];
+
+function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start: Date; end: Date; label: string } {
+  const label = PERIOD_PRESETS.find((preset) => preset.key === key)?.label ?? 'This week';
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const day = now.getDate();
+  switch (key) {
+    case 'last-week': {
+      const start = addDays(startOfWeek(now), -7);
+      return { start, end: addDays(start, 7), label };
+    }
+    case 'this-month':
+      return { start: new Date(year, month, 1), end: new Date(year, month + 1, 1), label };
+    case 'last-month':
+      return { start: new Date(year, month - 1, 1), end: new Date(year, month, 1), label };
+    case 'ytd-fy': {
+      const fyYear = month >= 6 ? year : year - 1;
+      return { start: new Date(fyYear, 6, 1), end: new Date(year, month, day + 1), label };
+    }
+    case 'last-fy': {
+      const fyYear = month >= 6 ? year - 1 : year - 2;
+      return { start: new Date(fyYear, 6, 1), end: new Date(fyYear + 1, 6, 1), label };
+    }
+    case 'this-week':
+    default: {
+      const start = startOfWeek(now);
+      return { start, end: addDays(start, 7), label: 'This week' };
+    }
+  }
+}
+
+// Map a period span (in days) to the closest overview-range bucket the API
+// accepts ('7' | '30' | '90'), so the overview widens to match the chosen period.
+function overviewRangeForSpan(start: Date, end: Date): '7' | '30' | '90' {
+  const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000);
+  if (spanDays <= 7) return '7';
+  if (spanDays <= 31) return '30';
+  return '90';
 }
 
 function formatCurrency(cents: number) {
@@ -632,6 +692,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
+  // Top-of-report period preset (drives the date-range state below).
+  const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
+  const periodLabel = useMemo(
+    () => PERIOD_PRESETS.find((preset) => preset.key === periodPreset)?.label ?? 'This week',
+    [periodPreset]
+  );
   const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>('all');
   const [menuVenue, setMenuVenue] = useState('');
   const [menuCategory, setMenuCategory] = useState('');
@@ -665,6 +731,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // 8-week forecast vs actual history for the sales section chart.
   const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
+  const searchItems = REPORT_NAV_ITEMS.map((item) => ({
+    id: item.id,
+    label: item.label,
+    description: item.description,
+    href: reportHash(item.id),
+    type: 'Reports'
+  }));
   const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
 
@@ -1407,6 +1480,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setSelectedWeekStart(isoDate(addDays(weekStart, days)));
   }
 
+  // Apply a top-of-report period preset. Aligns the week-shaped reports to the
+  // week containing the preset's start, and widens the overview range to match
+  // the preset span so the existing data-loading effect refetches accordingly.
+  function applyPeriodPreset(key: PeriodPresetKey) {
+    const period = periodFromPreset(key);
+    const alignedWeekStart = isoDate(startOfWeek(period.start));
+    const nextOverviewRange = overviewRangeForSpan(period.start, period.end);
+    setPeriodPreset(key);
+    setSelectedWeekStart(alignedWeekStart);
+    setOverviewRange(nextOverviewRange);
+  }
+
   function selectReportSection(section: ReportSectionId) {
     const nextHash = reportHash(section);
     setActiveSection(section);
@@ -1437,6 +1522,71 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     );
   }
 
+  // Top-of-report week control: prev/next period steppers either side of a
+  // preset dropdown (This/Last week, This/Last month, Year to date (FY), Last
+  // financial year). Sits in each section's Card header action slot, matching
+  // the roster page's week navigator.
+  function ReportsWeekNav() {
+    const [menuOpen, setMenuOpen] = useState(false);
+    return (
+      <div className="alma-roster-weeknav reports-weeknav">
+        <button
+          type="button"
+          className="alma-roster-weeknav-btn"
+          aria-label="Previous period"
+          onClick={() => moveWeek(-7)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+            <polyline points="15 6 9 12 15 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+        <div className="reports-weeknav-preset" onClick={(event) => event.stopPropagation()}>
+          <button
+            type="button"
+            className="reports-weeknav-label-btn"
+            aria-haspopup="menu"
+            aria-expanded={menuOpen}
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            <strong>{periodLabel}</strong>
+            <span>{weekWindowLabel}</span>
+            <svg width="12" height="12" viewBox="0 0 20 20" aria-hidden="true">
+              <path d="M5 7.5 10 12.5 15 7.5" />
+            </svg>
+          </button>
+          {menuOpen ? (
+            <div className="reports-weeknav-menu" role="menu">
+              {PERIOD_PRESETS.map((preset) => (
+                <button
+                  key={preset.key}
+                  type="button"
+                  role="menuitem"
+                  className={`reports-weeknav-menu-item${periodPreset === preset.key ? ' is-active' : ''}`}
+                  onClick={() => {
+                    applyPeriodPreset(preset.key);
+                    setMenuOpen(false);
+                  }}
+                >
+                  {preset.label}
+                </button>
+              ))}
+            </div>
+          ) : null}
+        </div>
+        <button
+          type="button"
+          className="alma-roster-weeknav-btn"
+          aria-label="Next period"
+          onClick={() => moveWeek(7)}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+            <polyline points="9 6 15 12 9 18" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      </div>
+    );
+  }
+
   function SectionShell({
     id,
     title,
@@ -1455,6 +1605,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       ? action
       : (
         <div className="reports-section-actions">
+          <ReportsWeekNav />
           {action}
           {sectionButton('overview', 'Back to reports overview')}
         </div>
@@ -3026,6 +3177,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           subtitle="Read-only operating reports"
           right={
             <>
+              <SuiteSearchWidget
+                api={staffApi}
+                currentApp="reports"
+                items={searchItems}
+                placeholder="Search reports and suite records..."
+                remoteSearch
+                remoteResultBaseUrl={COMPLIANCE_WEB_URL}
+              />
               <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
               <SuiteCommsWidget
                 appId="REPORTS"
