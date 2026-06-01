@@ -3291,6 +3291,22 @@ function StaffProfileWorkspacePage({
     if (saved.id !== member.id) navigate(`/staff/${saved.id}/${activeSection}`);
   }
 
+  async function archiveStaff() {
+    if (!canManageProfileAccess || member.isAdmin) return;
+    if (!window.confirm(`Archive ${staffFullName(member)}? They will be removed from active staff lists. You can bring them back later with Re-onboard.`)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('profile');
+    try {
+      await api(`/api/staff/${member.id}`, { method: 'DELETE' });
+      await reload();
+      navigate('/profiles');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not archive staff profile.');
+      setSaving(false);
+    }
+  }
+
   function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
     setProfileDraft((current) => ({ ...current, [key]: value }));
   }
@@ -4108,11 +4124,16 @@ function StaffProfileWorkspacePage({
             title={staffFullName(member)}
             description="A profile-first workspace for personal details, employment information, documents, roster context, and restricted HR sections."
             actions={
-              activeSection === 'payroll' && canManageProfileAccess ? (
-                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit payroll</Button>
-              ) : (
-                <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
-              )
+              <>
+                {activeSection === 'payroll' && canManageProfileAccess ? (
+                  <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit payroll</Button>
+                ) : (
+                  <Button type="button" onClick={() => setProfileModalOpen(true)}>Edit profile</Button>
+                )}
+                {canManageProfileAccess && !member.isAdmin ? (
+                  <Button type="button" variant="danger" disabled={saving} onClick={() => void archiveStaff()}>Archive staff</Button>
+                ) : null}
+              </>
             }
           />
           <div className="stats-grid staff-profile-stats">

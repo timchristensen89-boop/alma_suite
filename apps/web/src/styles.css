@@ -11016,92 +11016,10 @@ a.suite-app-tile:hover {
 }
 
 @media (max-width: 900px) {
-  .app-shell-sidebar {
-    grid-template-columns: auto minmax(0, 1fr);
-  }
-
-  .app-shell-nav {
-    min-width: 0;
-    overflow-x: auto;
-    overflow-y: hidden;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .app-shell-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .mobile-nav-toggle {
-    display: none;
-  }
-
-  .app-shell-nav .sidebar-nav,
-  .app-shell-nav .sidebar-nav.mobile-open {
-    position: static;
-    z-index: auto;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 6px;
-    width: 100%;
-    max-height: none;
-    overflow-x: auto;
-    overflow-y: hidden;
-    padding: 0;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    box-shadow: none;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .app-shell-nav .sidebar-nav::-webkit-scrollbar {
-    display: none;
-  }
-
-  .app-shell-nav .sidebar-nav li {
-    flex: 0 0 auto;
-  }
-
-  .app-shell-nav .sidebar-nav-section {
-    display: none;
-  }
-
-  .app-shell-nav .sidebar-nav a {
-    justify-content: center;
-    width: 40px;
-    min-width: 40px;
-    height: 40px;
-    min-height: 40px;
-    padding: 0;
-    margin: 0;
-    border: 1px solid rgba(31, 53, 36, 0.08);
-    border-radius: 13px;
-    background: rgba(31, 53, 36, 0.03);
-    gap: 0;
-  }
-
-  .app-shell-nav .sidebar-nav a:hover,
-  .app-shell-nav .sidebar-nav a.active {
-    background: rgba(31, 53, 36, 0.08);
-    border-color: rgba(31, 53, 36, 0.16);
-  }
-
-  .app-shell-nav .sidebar-nav a.active::before {
-    display: none;
-  }
-
-  .app-shell-nav .sidebar-nav a > span:not(.sidebar-nav-icon):not(.sidebar-nav-count) {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    overflow: hidden;
-    clip: rect(0 0 0 0);
-    clip-path: inset(50%);
-    white-space: nowrap;
-  }
+  /* Shell page-nav stays a labelled dropdown on mobile (see the .mobile-nav-toggle
+     + .sidebar-nav.mobile-open rules in the earlier max-width:900px block). The
+     prior "icon-only row" override was removed so the page list is readable.
+     Topbar action triggers below remain icon buttons. */
 
   .topbar {
     gap: 10px;
