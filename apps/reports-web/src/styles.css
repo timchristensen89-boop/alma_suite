@@ -1192,3 +1192,135 @@
     padding: 18px 16px;
   }
 }
+
+/* ==========================================================================
+   Top-of-report period control + larger editorial section heading
+   (preset week navigator, matching the roster page's week control)
+   ========================================================================== */
+
+/* Larger Cormorant editorial heading for the active report section, matching
+   the roster page page-title. Scoped to report section cards so it does not
+   affect other (e.g. nested) card titles. */
+.report-active-section > .card > .card-header > .card-title {
+  font-family: var(--font-serif, 'Cormorant Garamond', Georgia, serif);
+  font-size: 30px;
+  font-weight: 500;
+  line-height: 1.05;
+  letter-spacing: -0.005em;
+}
+
+/* Prev/next period steppers (roster-style round icon buttons). */
+.alma-roster-weeknav {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.alma-roster-weeknav-btn {
+  width: 32px;
+  height: 32px;
+  border-radius: 9999px;
+  background: transparent;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  color: #1f3524;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.alma-roster-weeknav-btn:hover {
+  background: rgba(31, 53, 36, 0.04);
+  border-color: rgba(31, 53, 36, 0.3);
+}
+
+.alma-roster-weeknav-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* Preset dropdown trigger + menu. */
+.reports-weeknav-preset {
+  position: relative;
+}
+
+.reports-weeknav-label-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 12px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-radius: 9999px;
+  background: transparent;
+  cursor: pointer;
+  color: #1f3524;
+  transition: border-color 0.14s ease, background 0.14s ease;
+}
+
+.reports-weeknav-label-btn:hover {
+  background: rgba(31, 53, 36, 0.04);
+  border-color: rgba(31, 53, 36, 0.3);
+}
+
+.reports-weeknav-label-btn strong {
+  font-family: 'Avenir LT Std', Manrope, sans-serif;
+  font-weight: 700;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.reports-weeknav-label-btn span {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 11px;
+  color: rgba(31, 53, 36, 0.55);
+  white-space: nowrap;
+}
+
+.reports-weeknav-label-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  opacity: 0.6;
+}
+
+.reports-weeknav-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 60;
+  min-width: 200px;
+  padding: 6px;
+  display: grid;
+  gap: 2px;
+  border: 1px solid rgba(31, 53, 36, 0.14);
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
+}
+
+.reports-weeknav-menu-item {
+  text-align: left;
+  padding: 9px 12px;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  cursor: pointer;
+  font-family: 'Avenir LT Std', Manrope, sans-serif;
+  font-size: 13px;
+  color: #1f3524;
+}
+
+.reports-weeknav-menu-item:hover {
+  background: rgba(31, 53, 36, 0.06);
+}
+
+.reports-weeknav-menu-item.is-active {
+  background: rgba(31, 53, 36, 0.1);
+  font-weight: 700;
+}
