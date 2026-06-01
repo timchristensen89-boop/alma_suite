@@ -2808,6 +2808,22 @@ export function AdminPage({
           // glance what's just shipped. Add new entries at the top.
           const releaseNotes: Array<{ date: string; items: string[] }> = [
             {
+              date: '31 May 2026',
+              items: [
+                "Clock-in/out now records location: the Alma Home kiosk shows each punch's distance to the venue (e.g. \"10 m from Alma Avalon\") and flags any clock-in/out made beyond the venue radius (default 250 m) as \"flagged for manual review\" on the clock session. Location is best-effort — a denied or unavailable GPS never blocks the punch. Set each venue's coordinates in the new Admin → Venue locations page (\"use my current location\", or paste from Google Maps).",
+                "Stock invoice import can now skip invoices by rule — e.g. title contains \"Square\" AND body contains \"Sales\" — so Square sales payouts and other non-supplier documents stop landing as supplier bills. All conditions in a rule must match; any matching rule excludes the invoice. Managed in Stock → Settings → Invoice exclusion rules; the import summary reports how many were skipped.",
+                "Dish Margins rows are clickable — open any dish to see its recipe, ingredient lines and cost breakdown, and edit the sell price / estimated cost inline.",
+                "Suite restyle: a warm sand page background with lighter cream cards/bubbles, and larger Cormorant page headings sitting over the background — applied across every app for a calmer, more editorial feel.",
+                "Suite-wide top nav rebuilt and unified: Switch-apps + page heading on the left; Home, Messages, Alerts, Feedback as equal-size icons + the login/logout circle on the right — consistent across every app. Fixed the app switcher opening off-screen.",
+                "Deputy timesheet + roster import fixed and live: was failing entirely (wrong API method, invalid query joins, and a connection that self-locked on the first error). Now runs daily at 5:40am — last sync imported 199 roster shifts and 123 timesheets. Wage reporting now has real labour data.",
+                "Square sales now import for BOTH accounts (St Alma + Alma Avalon) on backfill and manual import — previously these defaulted to the primary account only, so Avalon never populated.",
+                "Xero supplier bills are now mapped to the correct venue per organisation (were all saving as \"Unassigned\"), and re-authorising one Xero org no longer drops the other location.",
+                "Stock dashboard: new Cost of Goods panel — Theoretical COGS (sold qty × recipe cost) vs Actual COGS (stocktake method, or supplier purchases) with the variance, plus dish-margin and supplier price-movement summaries. Dish Margins now explains when no Square sales are mapped instead of showing blank dashes.",
+                "Reports: Staff Costing detail moved from Admin into Reports and opened up to managers (no more \"please sign in again\"). The week control moved to the top of every report with a preset menu — this/last week, this/last month, year-to-date (FY) and last financial year — and a larger editorial heading matching the roster page.",
+                "Alma Home: forest-green backdrop behind the kiosk; a \"sign in with email & password\" fallback when a PIN won't work; and a Bearer-token auth fix so PIN sign-in and shared-iPad clock-in hold the session through Firebase Hosting."
+              ]
+            },
+            {
               date: '27 May 2026',
               items: [
                 'Pay-change approval workflow: managers submit, a different admin approves. Audit trail on every step.',
