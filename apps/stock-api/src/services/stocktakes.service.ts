@@ -20,6 +20,48 @@ import {
   type StocktakesSummary
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { convertQuantityToCostUnit } from './units.js';
+
+type LineCostItem = {
+  unit: string;
+  countUnit: string | null;
+  conversionFactor: number | null;
+  avgCostCents: number | null;
+};
+
+// Value a stocktake line server-side: counted quantity (converted into the
+// item's cost unit) × the item's average cost. Client-supplied values are NOT
+// trusted. Lines with no linked item or no cost basis are left unvalued (null).
+function stocktakeLineValueCents(
+  countedQty: number | null | undefined,
+  unit: string | null | undefined,
+  item: LineCostItem | undefined
+): number | null {
+  if (!item || item.avgCostCents === null || countedQty === null || countedQty === undefined) {
+    return null;
+  }
+  const { quantity } = convertQuantityToCostUnit(countedQty, unit ?? null, item);
+  return Math.round(item.avgCostCents * quantity);
+}
+
+async function loadLineCostItems(
+  client: Prisma.TransactionClient,
+  lines: { itemId?: string | null }[] | undefined
+): Promise<Map<string, LineCostItem>> {
+  const ids = [
+    ...new Set(
+      (lines ?? [])
+        .map((line) => (line.itemId ? line.itemId.trim() : ''))
+        .filter((value): value is string => value.length > 0)
+    )
+  ];
+  if (!ids.length) return new Map();
+  const items = await client.stockItem.findMany({
+    where: { id: { in: ids } },
+    select: { id: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true }
+  });
+  return new Map(items.map((item) => [item.id, item]));
+}
 
 type StocktakeRow = Prisma.StocktakeGetPayload<{
   include: {
@@ -477,6 +519,7 @@ export const stocktakesService = {
     const submittedAt = data.status === 'SUBMITTED' ? new Date() : null;
 
     const row = await prisma.$transaction(async (tx) => {
+      const costById = await loadLineCostItems(tx, data.lines);
       const created = await tx.stocktake.create({
         data: {
           name: data.name.trim(),
@@ -496,8 +539,11 @@ export const stocktakesService = {
                   countedQty: line.countedQty,
                   unit: normaliseOptionalText(line.unit) ?? null,
                   location: normaliseOptionalText(line.location) ?? null,
-                  stockValueCents:
-                    line.stockValueCents !== undefined ? line.stockValueCents : null,
+                  stockValueCents: stocktakeLineValueCents(
+                    line.countedQty,
+                    line.unit,
+                    costById.get(normaliseOptionalText(line.itemId) ?? '')
+                  ),
                   notes: normaliseOptionalText(line.notes) ?? null
                 }))
               }
@@ -556,6 +602,7 @@ export const stocktakesService = {
       if (data.lines !== undefined) {
         await tx.stocktakeLine.deleteMany({ where: { stocktakeId: id } });
       }
+      const costById = await loadLineCostItems(tx, data.lines);
 
       const updated = await tx.stocktake.update({
         where: { id },
@@ -591,8 +638,11 @@ export const stocktakesService = {
                 countedQty: line.countedQty,
                 unit: normaliseOptionalText(line.unit) ?? null,
                 location: normaliseOptionalText(line.location) ?? null,
-                stockValueCents:
-                  line.stockValueCents !== undefined ? line.stockValueCents : null,
+                stockValueCents: stocktakeLineValueCents(
+                  line.countedQty,
+                  line.unit,
+                  costById.get(normaliseOptionalText(line.itemId) ?? '')
+                ),
                 notes: normaliseOptionalText(line.notes) ?? null
               }))
             }

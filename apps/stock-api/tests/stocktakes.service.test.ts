@@ -77,6 +77,37 @@ test('submitted stocktakes do not affect balances until applied', async () => {
   }
 });
 
+test('stocktake line value is computed server-side from item cost, ignoring the client value', async () => {
+  const suffix = `value-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const item = await prisma.stockItem.create({
+    data: { name: `Olive oil ${suffix}`, unit: 'bottle', onHand: 0, parLevel: 0, avgCostCents: 150, status: 'ACTIVE' }
+  });
+  const stocktakeIds: string[] = [];
+  try {
+    const stocktake = await stocktakesService.createStocktake({
+      name: `Value count ${suffix}`,
+      countedAt: new Date().toISOString(),
+      status: 'IN_PROGRESS',
+      lines: [
+        // Client sends a bogus value — the server must ignore it and recompute.
+        { itemId: item.id, label: item.name, countedQty: 4, unit: 'bottle', stockValueCents: 999999 },
+        // Free-text line with no linked item → cannot be valued.
+        { label: `Misc ${suffix}`, countedQty: 3, unit: 'each' }
+      ]
+    });
+    stocktakeIds.push(stocktake.id);
+
+    const valued = stocktake.lines.find((line) => line.itemId === item.id);
+    const free = stocktake.lines.find((line) => line.itemId === null);
+    assert.equal(valued?.stockValueCents, 600); // 150c × 4 bottles, not the client's 999999
+    assert.equal(free?.stockValueCents, null);
+    const total = stocktake.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
+    assert.equal(total, 600);
+  } finally {
+    await cleanup({ stocktakeIds, itemIds: [item.id] });
+  }
+});
+
 test('applying submitted stocktakes creates movement deltas and updates balances once', async () => {
   const suffix = `ledger-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const itemA = await createItem(`Applied balance A ${suffix}`, 10, 'bottle');
