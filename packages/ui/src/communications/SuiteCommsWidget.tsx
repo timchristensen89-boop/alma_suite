@@ -171,11 +171,19 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
     <div ref={layerRef} className="suite-msg-anchor">
       <button
         type="button"
-        className="btn btn-secondary"
+        className="btn btn-secondary suite-msg-trigger"
         onClick={() => setOpen((value) => !value)}
+        aria-label="Messages"
         aria-expanded={open}
+        title="Messages"
       >
-        Messages
+        <span className="suite-msg-trigger-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M4.5 6.5h15v10h-15z" />
+            <path d="m5 7 7 6 7-6" />
+          </svg>
+        </span>
+        <span className="suite-msg-trigger-label">Messages</span>
       </button>
       {open ? (
         <div className="suite-msg-panel" role="dialog" aria-label="Messages">

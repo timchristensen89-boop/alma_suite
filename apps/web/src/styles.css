@@ -759,6 +759,7 @@ p {
 .topbar-text {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
   line-height: 1.15;
   min-width: 0;
 }
@@ -10890,6 +10891,246 @@ a.suite-app-tile:hover {
     width: calc(100vw - 24px);
     right: 50%;
     transform: translateX(50%);
+  }
+}
+
+/* ==========================================================================
+   Shell navigation icon pass
+   ========================================================================== */
+.suite-msg-trigger-icon,
+.suite-alert-trigger-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+}
+
+.suite-msg-trigger-icon svg,
+.suite-alert-trigger-icon svg {
+  width: 18px;
+  height: 18px;
+}
+
+.suite-alert-trigger {
+  position: relative;
+}
+
+.suite-alert-trigger-count {
+  display: inline-grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #A0463A;
+  color: #FFFFFF;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.app-shell-topbar .suite-msg-trigger,
+.app-shell-topbar .suite-alert-trigger,
+.app-shell-topbar .suite-feedback-trigger,
+.app-shell-topbar .staff-topbar-signout,
+.app-shell-topbar .suite-switch-apps-button,
+.app-shell-topbar .app-shell-topbar-home {
+  display: inline-grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  height: 40px;
+  min-height: 40px;
+  padding: 0;
+  border-radius: 13px;
+  gap: 0;
+  letter-spacing: 0;
+  flex: 0 0 auto;
+}
+
+.app-shell-topbar .suite-msg-trigger,
+.app-shell-topbar .suite-alert-trigger,
+.app-shell-topbar .suite-feedback-trigger,
+.app-shell-topbar .staff-topbar-signout,
+.app-shell-topbar .app-shell-topbar-home {
+  background: rgba(31, 53, 36, 0.03);
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  color: #1F3524;
+}
+
+.app-shell-topbar .suite-msg-trigger:hover,
+.app-shell-topbar .suite-alert-trigger:hover,
+.app-shell-topbar .suite-feedback-trigger:hover,
+.app-shell-topbar .staff-topbar-signout:hover,
+.app-shell-topbar .app-shell-topbar-home:hover {
+  background: rgba(31, 53, 36, 0.07);
+  border-color: rgba(31, 53, 36, 0.26);
+  color: #1F3524;
+}
+
+.app-shell-topbar .suite-msg-trigger-label,
+.app-shell-topbar .suite-alert-trigger-label,
+.app-shell-topbar .suite-feedback-trigger-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.app-shell-topbar .suite-alert-trigger-count {
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  border: 2px solid #F8F6F1;
+  font-size: 9px;
+}
+
+.app-shell-topbar .staff-topbar-signout > span {
+  display: grid;
+  place-items: center;
+}
+
+.app-shell-topbar .staff-topbar-signout svg,
+.app-shell-topbar .app-shell-topbar-home svg {
+  width: 17px;
+  height: 17px;
+}
+
+.app-shell-topbar .suite-switcher-current-copy,
+.app-shell-topbar .suite-switcher-chevron {
+  display: none;
+}
+
+.app-shell-topbar .suite-switcher-current-mark,
+.app-shell-topbar .suite-switcher-current-mark > .alma-app-icon {
+  width: 28px !important;
+  min-height: 28px;
+  height: 28px !important;
+}
+
+@media (max-width: 900px) {
+  .app-shell-sidebar {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .app-shell-nav {
+    min-width: 0;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .mobile-nav-toggle {
+    display: none;
+  }
+
+  .app-shell-nav .sidebar-nav,
+  .app-shell-nav .sidebar-nav.mobile-open {
+    position: static;
+    z-index: auto;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    max-height: none;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .app-shell-nav .sidebar-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .app-shell-nav .sidebar-nav li {
+    flex: 0 0 auto;
+  }
+
+  .app-shell-nav .sidebar-nav-section {
+    display: none;
+  }
+
+  .app-shell-nav .sidebar-nav a {
+    justify-content: center;
+    width: 40px;
+    min-width: 40px;
+    height: 40px;
+    min-height: 40px;
+    padding: 0;
+    margin: 0;
+    border: 1px solid rgba(31, 53, 36, 0.08);
+    border-radius: 13px;
+    background: rgba(31, 53, 36, 0.03);
+    gap: 0;
+  }
+
+  .app-shell-nav .sidebar-nav a:hover,
+  .app-shell-nav .sidebar-nav a.active {
+    background: rgba(31, 53, 36, 0.08);
+    border-color: rgba(31, 53, 36, 0.16);
+  }
+
+  .app-shell-nav .sidebar-nav a.active::before {
+    display: none;
+  }
+
+  .app-shell-nav .sidebar-nav a > span:not(.sidebar-nav-icon):not(.sidebar-nav-count) {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .topbar {
+    gap: 10px;
+    flex-wrap: nowrap;
+  }
+
+  .topbar-title,
+  .topbar-subtitle {
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .topbar-right {
+    width: auto;
+    max-width: 64vw;
+    margin-left: auto;
+    justify-content: flex-end;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .topbar-right::-webkit-scrollbar {
+    display: none;
   }
 }
 

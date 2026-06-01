@@ -109,6 +109,7 @@ export function SuiteFeedbackWidget({ appId, api, userName }: Props) {
         className="suite-feedback-trigger"
         aria-haspopup="dialog"
         aria-expanded={open}
+        aria-label="Send feedback"
         title="Send feedback"
         onClick={() => setOpen((current) => !current)}
       >

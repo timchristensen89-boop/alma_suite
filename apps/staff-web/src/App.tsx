@@ -102,6 +102,7 @@ import {
   IconFiles,
   IconFileSignature,
   IconFileText,
+  IconLogout,
   IconMail,
   IconTriangle,
   IconUserPlus,
@@ -788,12 +789,15 @@ function TopBarWithContext() {
             <Button
               size="sm"
               variant="secondary"
+              className="staff-topbar-signout"
+              aria-label="Sign out"
+              title="Sign out"
               onClick={async () => {
                 await logout();
                 navigate('/login', { replace: true });
               }}
             >
-              Sign out
+              <IconLogout size={16} />
             </Button>
           </>
         ) : null
@@ -852,12 +856,12 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
         {items.map((item) => (
           <li key={item.to}>
             {item.to.startsWith('http') ? (
-              <a href={item.to} target="_blank" rel="noopener noreferrer">
+              <a href={item.to} target="_blank" rel="noopener noreferrer" aria-label={item.label} title={item.label}>
                 <span className="sidebar-nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
               </a>
             ) : (
-              <NavLink to={item.to} end={item.end}>
+              <NavLink to={item.to} end={item.end} aria-label={item.label} title={item.label}>
                 <span className="sidebar-nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
               </NavLink>

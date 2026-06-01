@@ -657,6 +657,7 @@ function SuiteEditorialSwitcher({
         aria-label="Switch Alma apps"
         aria-expanded={mobileOpen}
         aria-controls={popoverId}
+        title="Switch Alma apps"
         style={current ? appColorStyle(current) : undefined}
         onClick={() => setMobileOpen((open) => !open)}
       >
