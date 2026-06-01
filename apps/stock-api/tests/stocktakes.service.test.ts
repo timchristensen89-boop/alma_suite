@@ -395,9 +395,10 @@ test('recipe costing rolls up stock item and prep recipe costs with missing-cost
     });
     recipeIds.push(pizza.id);
 
+    // Flour line: 400c/kg × 2 kg × 1.02 default wastage = 816c batch; /10 yield = ~82c.
     const doughCost = await recipesService.cost(dough.id);
-    assert.equal(doughCost.batchCostCents, 800);
-    assert.equal(doughCost.costPerPortionCents, 80);
+    assert.equal(doughCost.batchCostCents, 816);
+    assert.equal(doughCost.costPerPortionCents, 82);
     assert.equal(doughCost.missingCostCount, 0);
 
     const pizzaCost = await recipesService.cost(pizza.id);
