@@ -113,6 +113,17 @@ function effectiveItemOnHand(item: StockItem) {
   return item.venueStock?.onHand ?? item.onHand;
 }
 
+function stockCountUnit(item: StockItem) {
+  return item.countUnit ?? item.unit;
+}
+
+function stockUnitCostCents(item: StockItem) {
+  if (item.latestCostCents !== null && item.latestCostCents !== undefined) {
+    return Math.round(item.latestCostCents / Math.max(item.conversionFactor || 1, 1));
+  }
+  return item.avgCostCents;
+}
+
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
   switch (type) {
     case 'STOCKTAKE_CORRECTION':
@@ -157,12 +168,13 @@ function varianceSummary(detail: StocktakeWithLines) {
 
 function emptyLine(item?: StockItem): LineDraft {
   const onHand = item ? effectiveItemOnHand(item) : 0;
-  const value = item?.avgCostCents ? Math.round(item.avgCostCents * onHand) : '';
+  const unitCostCents = item ? stockUnitCostCents(item) : null;
+  const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
   return {
     itemId: item?.id ?? '',
     label: item?.name ?? '',
     countedQty: item ? String(onHand) : '0',
-    unit: item?.unit ?? '',
+    unit: item ? stockCountUnit(item) : '',
     location: item?.category?.name ?? '',
     stockValueCents: value === '' ? '' : String(value),
     notes: ''

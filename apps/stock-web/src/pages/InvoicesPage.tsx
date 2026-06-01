@@ -52,7 +52,8 @@ function formatDate(value: string | null | undefined) {
 }
 
 function itemLabel(item: StockItem) {
-  return `${item.name} (${item.unit})${item.sku ? ` - ${item.sku}` : ''}`;
+  const unit = item.countUnit ?? item.unit;
+  return `${item.name} (${unit})${item.sku ? ` - ${item.sku}` : ''}`;
 }
 
 function extractJsonInvoices(value: unknown): Record<string, unknown>[] {
@@ -547,7 +548,12 @@ export function InvoicesPage() {
       setItems((current) =>
         current.map((item) =>
           updated.itemId && item.id === updated.itemId
-            ? { ...item, avgCostCents: updated.unitAmountCents }
+            ? {
+                ...item,
+                avgCostCents: updated.item?.avgCostCents ?? item.avgCostCents,
+                latestCostCents: updated.item?.latestCostCents ?? updated.unitAmountCents,
+                latestCostAt: updated.item?.latestCostAt ?? new Date().toISOString()
+              }
             : item
         )
       );

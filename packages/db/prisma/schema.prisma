@@ -2209,8 +2209,8 @@ model StockItem {
   name           String
   categoryId     String?
   unit           String                        // purchase unit (e.g. case, bottle, kg)
-  countUnit      String?                       // count unit (e.g. each, ml, g) — defaults to unit when null
-  conversionFactor Float          @default(1) // count units per purchase unit; multiply count qty * factor to get purchase units
+  countUnit      String?                       // sale/count unit (e.g. each, ml, g) — defaults to unit when null
+  conversionFactor Float          @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
   countArea      String?                       // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
   latestCostCents Int?                         // most recent landed cost per purchase unit
   latestCostAt   DateTime?                     // when latestCostCents was last updated — drives staleness warnings

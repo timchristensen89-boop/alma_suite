@@ -3223,7 +3223,7 @@ export const integrationService = {
               salePriceCents: true
             }
           },
-          stockItem: { select: { id: true, name: true, unit: true, avgCostCents: true } }
+          stockItem: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true } }
         },
         take: 500
       }),
@@ -3304,7 +3304,7 @@ export const integrationService = {
       prisma.stockItem.findMany({
         where: { status: 'ACTIVE' },
         orderBy: { name: 'asc' },
-        select: { id: true, name: true, unit: true, avgCostCents: true }
+        select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true }
       })
     ]);
     return {

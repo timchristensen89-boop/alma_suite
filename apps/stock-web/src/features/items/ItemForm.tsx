@@ -26,6 +26,9 @@ type Draft = {
   sku: string;
   categoryId: string;
   unit: string;
+  countUnit: string;
+  conversionFactor: string;
+  latestCostDollars: string;
   parLevel: string;
   reorderPoint: string;
   status: StockItemStatus;
@@ -37,7 +40,21 @@ const STATUS_OPTIONS: Array<{ label: string; value: StockItemStatus }> = [
   { label: 'Archived', value: 'ARCHIVED' }
 ];
 
-const UNIT_SUGGESTIONS = ['ea', 'kg', 'g', 'L', 'mL', 'carton', 'bottle', 'case'];
+const UNIT_SUGGESTIONS = ['ea', 'kg', 'g', 'L', 'mL', 'carton', 'bottle', 'can', 'case'];
+
+function centsToDollars(value: number | null | undefined) {
+  return value === null || value === undefined ? '' : (value / 100).toFixed(2);
+}
+
+function formatCurrency(value: number | null) {
+  if (value === null) return '—';
+  return (value / 100).toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'AUD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
 
 function emptyDraft(): Draft {
   return {
@@ -45,6 +62,9 @@ function emptyDraft(): Draft {
     sku: '',
     categoryId: '',
     unit: 'ea',
+    countUnit: 'ea',
+    conversionFactor: '1',
+    latestCostDollars: '',
     parLevel: '0',
     reorderPoint: '',
     status: 'ACTIVE',
@@ -58,6 +78,9 @@ function draftFromItem(item: StockItem): Draft {
     sku: item.sku ?? '',
     categoryId: item.categoryId ?? '',
     unit: item.unit,
+    countUnit: item.countUnit ?? item.unit,
+    conversionFactor: String(item.conversionFactor ?? 1),
+    latestCostDollars: centsToDollars(item.latestCostCents),
     parLevel: String(item.parLevel),
     reorderPoint: item.reorderPoint === null ? '' : String(item.reorderPoint),
     status: item.status,
@@ -156,8 +179,23 @@ export function ItemForm({
       return;
     }
     const parLevel = Number(draft.parLevel || 0);
+    const conversionFactor = Number(draft.conversionFactor || 1);
+    const latestCostDollars =
+      draft.latestCostDollars.trim() === '' ? undefined : Number(draft.latestCostDollars);
     const reorderPoint =
       draft.reorderPoint === '' ? undefined : Number(draft.reorderPoint);
+    if (!Number.isFinite(conversionFactor) || conversionFactor <= 0) {
+      setError('Units per purchase unit must be greater than zero');
+      setFeedback('Units per purchase unit must be greater than zero');
+      setFeedbackTone('error');
+      return;
+    }
+    if (latestCostDollars !== undefined && (!Number.isFinite(latestCostDollars) || latestCostDollars < 0)) {
+      setError('Latest purchase price cannot be negative');
+      setFeedback('Latest purchase price cannot be negative');
+      setFeedbackTone('error');
+      return;
+    }
     if (!Number.isFinite(parLevel) || parLevel < 0) {
       setError('Par level cannot be negative');
       setFeedback('Par level cannot be negative');
@@ -176,6 +214,10 @@ export function ItemForm({
       sku: draft.sku.trim(),
       categoryId: draft.categoryId,
       unit: draft.unit.trim(),
+      countUnit: draft.countUnit.trim(),
+      conversionFactor,
+      latestCostCents:
+        latestCostDollars === undefined ? undefined : Math.round(latestCostDollars * 100),
       parLevel,
       reorderPoint,
       status: draft.status,
@@ -229,6 +271,15 @@ export function ItemForm({
       ? 'Save changes'
       : 'Create item';
 
+  const purchaseCostCents =
+    draft.latestCostDollars.trim() === '' ? null : Math.round(Number(draft.latestCostDollars) * 100);
+  const conversionFactor = Number(draft.conversionFactor || 1);
+  const calculatedUnitCostCents =
+    purchaseCostCents !== null && Number.isFinite(purchaseCostCents) && Number.isFinite(conversionFactor) && conversionFactor > 0
+      ? Math.round(purchaseCostCents / conversionFactor)
+      : initial?.avgCostCents ?? null;
+  const countUnit = draft.countUnit.trim() || draft.unit.trim() || 'unit';
+
   return (
     <form
       className="new-item-form"
@@ -261,12 +312,12 @@ export function ItemForm({
           options={categoryOptions}
         />
         <Input
-          label="Unit"
+          label="Purchase unit"
           required
           value={draft.unit}
           onChange={(event) => update('unit', event.currentTarget.value)}
           list="stock-unit-suggestions"
-          placeholder="ea, kg, L…"
+          placeholder="case, kg, L..."
         />
         <Select
           label="Status"
@@ -279,6 +330,36 @@ export function ItemForm({
             <option key={unit} value={unit} />
           ))}
         </datalist>
+      </div>
+
+      <div className="form-grid three">
+        <Input
+          label="Sale / recipe unit"
+          value={draft.countUnit}
+          onChange={(event) => update('countUnit', event.currentTarget.value)}
+          list="stock-unit-suggestions"
+          placeholder="bottle, can, g, mL..."
+          hint="The unit recipes and single-sale costs should use."
+        />
+        <Input
+          label="Units per purchase unit"
+          type="number"
+          step="0.0001"
+          min="0.0001"
+          value={draft.conversionFactor}
+          onChange={(event) => update('conversionFactor', event.currentTarget.value)}
+          hint="Example: case of beer = 24 bottles."
+        />
+        <Input
+          label="Latest purchase price"
+          type="number"
+          step="0.01"
+          min="0"
+          value={draft.latestCostDollars}
+          onChange={(event) => update('latestCostDollars', event.currentTarget.value)}
+          placeholder="Optional"
+          hint={`Calculated unit cost: ${formatCurrency(calculatedUnitCostCents)} / ${countUnit}`}
+        />
       </div>
 
       <div className="form-grid two">

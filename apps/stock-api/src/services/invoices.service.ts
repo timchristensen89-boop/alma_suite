@@ -27,6 +27,10 @@ const lineItemSelect = {
   id: true,
   name: true,
   unit: true,
+  countUnit: true,
+  conversionFactor: true,
+  latestCostCents: true,
+  latestCostAt: true,
   avgCostCents: true
 } satisfies Prisma.StockItemSelect;
 
@@ -112,6 +116,10 @@ function normaliseKey(value: string) {
 
 function normaliseMatchText(value: unknown) {
   return trimText(value).toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function unitCostFromPurchaseCost(purchaseCostCents: number, item: Pick<MatchItemRow, 'conversionFactor'>) {
+  return Math.round(purchaseCostCents / Math.max(item.conversionFactor || 1, 1));
 }
 
 function toLookupRecord(value: unknown): JsonRecord {
@@ -396,7 +404,12 @@ function toLinePayload(row: InvoiceLineRow): StockSupplierInvoiceLine {
     lineAmountCents: row.lineAmountCents,
     taxAmountCents: row.taxAmountCents,
     itemId: row.itemId,
-    item: row.item,
+    item: row.item
+      ? {
+          ...row.item,
+          latestCostAt: row.item.latestCostAt?.toISOString() ?? null
+        }
+      : null,
     matchingStatus: matchingStatus(row.matchingStatus),
     notes: row.notes,
     costAppliedAt: row.costAppliedAt?.toISOString() ?? null,
@@ -900,7 +913,9 @@ export const invoicesService = {
     });
     if (!existing) throw new HttpError(404, 'Invoice line not found');
     if (!existing.itemId) throw new HttpError(400, 'Match this line to a stock item first');
+    if (!existing.item) throw new HttpError(400, 'Matched stock item could not be found');
     const matchedItemId = existing.itemId;
+    const matchedItem = existing.item;
     if (existing.unitAmountCents <= 0) {
       throw new HttpError(400, 'This line does not have a unit cost to apply');
     }
@@ -908,7 +923,11 @@ export const invoicesService = {
     const updated = await prisma.$transaction(async (tx) => {
       await tx.stockItem.update({
         where: { id: matchedItemId },
-        data: { avgCostCents: existing.unitAmountCents }
+        data: {
+          latestCostCents: existing.unitAmountCents,
+          latestCostAt: new Date(),
+          avgCostCents: unitCostFromPurchaseCost(existing.unitAmountCents, matchedItem)
+        }
       });
       return tx.supplierInvoiceLine.update({
         where: { id: lineId },

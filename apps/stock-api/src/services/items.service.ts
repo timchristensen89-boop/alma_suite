@@ -53,6 +53,16 @@ function normaliseOptionalNumber(value: number | undefined) {
   return value;
 }
 
+function normaliseConversionFactor(value: number | undefined, fallback = 1) {
+  if (value === undefined || Number.isNaN(value) || value <= 0) return fallback;
+  return value;
+}
+
+function unitCostFromPurchaseCost(latestCostCents: number | null | undefined, conversionFactor: number) {
+  if (latestCostCents === null || latestCostCents === undefined) return undefined;
+  return Math.round(latestCostCents / Math.max(conversionFactor, 1));
+}
+
 function assertNoDirectOnHandMutation(input: unknown) {
   if (input && typeof input === 'object' && 'onHand' in input) {
     throw new HttpError(400, 'Stock on hand can only be changed by inventory movements');
@@ -86,6 +96,11 @@ function toItemPayload(row: StockItemRow): StockItem {
     categoryId: row.categoryId,
     category: row.category,
     unit: row.unit,
+    countUnit: row.countUnit,
+    conversionFactor: row.conversionFactor,
+    countArea: row.countArea,
+    latestCostCents: row.latestCostCents,
+    latestCostAt: row.latestCostAt?.toISOString() ?? null,
     onHand: row.onHand,
     parLevel: row.parLevel,
     reorderPoint: row.reorderPoint,
@@ -114,6 +129,8 @@ function toVenueStockPayload(row: VenueStockItemRow): VenueStockItem {
       sku: row.stockItem.sku,
       name: row.stockItem.name,
       unit: row.stockItem.unit,
+      countUnit: row.stockItem.countUnit,
+      conversionFactor: row.stockItem.conversionFactor,
       category: row.stockItem.category,
       status: row.stockItem.status,
       avgCostCents: row.stockItem.avgCostCents,
@@ -655,6 +672,14 @@ export const itemsService = {
     const data = stockItemCreateInputSchema.parse(input);
     const sku = normaliseOptionalText(data.sku);
     const categoryId = normaliseOptionalText(data.categoryId);
+    const countUnit = normaliseOptionalText(data.countUnit);
+    const countArea = normaliseOptionalText(data.countArea);
+    const conversionFactor = normaliseConversionFactor(data.conversionFactor);
+    const latestCostCents = normaliseOptionalNumber(data.latestCostCents);
+    const avgCostCents =
+      data.avgCostCents !== undefined
+        ? normaliseOptionalNumber(data.avgCostCents) ?? null
+        : unitCostFromPurchaseCost(latestCostCents, conversionFactor) ?? null;
     await assertCategoryExists(categoryId);
 
     if (sku) {
@@ -669,9 +694,14 @@ export const itemsService = {
           name: data.name.trim(),
           categoryId: categoryId ?? null,
           unit: data.unit.trim(),
+          countUnit: countUnit ?? null,
+          conversionFactor,
+          countArea: countArea ?? null,
+          latestCostCents: latestCostCents ?? null,
+          latestCostAt: latestCostCents !== undefined ? new Date() : null,
           parLevel: data.parLevel,
           reorderPoint: normaliseOptionalNumber(data.reorderPoint) ?? null,
-          avgCostCents: normaliseOptionalNumber(data.avgCostCents) ?? null,
+          avgCostCents,
           status: data.status,
           notes: normaliseOptionalText(data.notes) ?? null
         },
@@ -705,6 +735,22 @@ export const itemsService = {
     const sku = data.sku !== undefined ? normaliseOptionalText(data.sku) : undefined;
     const categoryId =
       data.categoryId !== undefined ? normaliseOptionalText(data.categoryId) : undefined;
+    const countUnit = data.countUnit !== undefined ? normaliseOptionalText(data.countUnit) : undefined;
+    const countArea = data.countArea !== undefined ? normaliseOptionalText(data.countArea) : undefined;
+    const nextConversionFactor =
+      data.conversionFactor !== undefined
+        ? normaliseConversionFactor(data.conversionFactor)
+        : existing.conversionFactor;
+    const nextLatestCostCents =
+      data.latestCostCents !== undefined
+        ? normaliseOptionalNumber(data.latestCostCents) ?? null
+        : existing.latestCostCents;
+    const avgCostCents =
+      data.avgCostCents !== undefined
+        ? normaliseOptionalNumber(data.avgCostCents) ?? null
+        : data.latestCostCents !== undefined || data.conversionFactor !== undefined
+          ? unitCostFromPurchaseCost(nextLatestCostCents, nextConversionFactor) ?? null
+          : undefined;
     await assertCategoryExists(categoryId);
 
     if (sku && sku !== existing.sku) {
@@ -719,13 +765,18 @@ export const itemsService = {
         ...(data.name !== undefined && { name: data.name.trim() }),
         ...(data.categoryId !== undefined && { categoryId: categoryId ?? null }),
         ...(data.unit !== undefined && { unit: data.unit.trim() }),
+        ...(data.countUnit !== undefined && { countUnit: countUnit ?? null }),
+        ...(data.conversionFactor !== undefined && { conversionFactor: nextConversionFactor }),
+        ...(data.countArea !== undefined && { countArea: countArea ?? null }),
+        ...(data.latestCostCents !== undefined && {
+          latestCostCents: nextLatestCostCents,
+          latestCostAt: nextLatestCostCents !== null ? new Date() : null
+        }),
         ...(data.parLevel !== undefined && { parLevel: data.parLevel }),
         ...(data.reorderPoint !== undefined && {
           reorderPoint: normaliseOptionalNumber(data.reorderPoint) ?? null
         }),
-        ...(data.avgCostCents !== undefined && {
-          avgCostCents: normaliseOptionalNumber(data.avgCostCents) ?? null
-        }),
+        ...(avgCostCents !== undefined && { avgCostCents }),
         ...(data.status !== undefined && { status: data.status }),
         ...(data.notes !== undefined && { notes: normaliseOptionalText(data.notes) })
       },

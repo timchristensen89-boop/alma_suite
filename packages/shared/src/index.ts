@@ -2161,7 +2161,7 @@ export type SquareMenuRecipeMapping = {
   createdAt: string;
   updatedAt: string;
   almaRecipe: Pick<Recipe, 'id' | 'title' | 'venue' | 'category' | 'estimatedCost' | 'salePriceCents'> | null;
-  stockItem: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
+  stockItem: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   margin: {
     salePriceCents: number | null;
     recipeCostCents: number | null;
@@ -2233,7 +2233,7 @@ export type SquareRecipeOption = {
 export type SquareMenuRecipeOptionsPayload = {
   generatedAt: string;
   recipes: SquareRecipeOption[];
-  stockItems: Array<{ id: string; name: string; unit: string; avgCostCents: number | null }>;
+  stockItems: Array<{ id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null }>;
 };
 
 export type SquareMenuMappingQuery = z.infer<typeof squareMenuMappingQuerySchema>;
@@ -4629,6 +4629,11 @@ export type StockItem = {
   categoryId: string | null;
   category: Pick<StockCategory, 'id' | 'name'> | null;
   unit: string;
+  countUnit: string | null;
+  conversionFactor: number;
+  countArea: string | null;
+  latestCostCents: number | null;
+  latestCostAt: string | null;
   onHand: number;
   parLevel: number;
   reorderPoint: number | null;
@@ -4653,7 +4658,17 @@ export type VenueStockItem = {
   updatedAt: string;
   stockItem?: Pick<
     StockItem,
-    'id' | 'sku' | 'name' | 'unit' | 'category' | 'status' | 'avgCostCents' | 'parLevel' | 'reorderPoint'
+    | 'id'
+    | 'sku'
+    | 'name'
+    | 'unit'
+    | 'countUnit'
+    | 'conversionFactor'
+    | 'category'
+    | 'status'
+    | 'avgCostCents'
+    | 'parLevel'
+    | 'reorderPoint'
   >;
 };
 
@@ -4717,7 +4732,7 @@ export type StockWastageRecord = {
   status: string;
   createdAt: string;
   updatedAt: string;
-  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'avgCostCents' | 'category'> | null;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'countUnit' | 'avgCostCents' | 'category'> | null;
 };
 
 export type StockWastagePayload = {
@@ -4742,7 +4757,7 @@ export type StockDeliveryCheckItem = {
   photoUrl: string | null;
   createdAt: string;
   updatedAt: string;
-  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'avgCostCents'> | null;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'countUnit' | 'avgCostCents'> | null;
 };
 
 export type StockDeliveryCheck = {
@@ -4787,7 +4802,7 @@ export type StockReorderNotice = {
   resolvedAt: string | null;
   dismissedAt: string | null;
   updatedAt: string;
-  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'category'> | null;
+  stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'countUnit' | 'category'> | null;
 };
 
 export type StockReorderNoticesPayload = {
@@ -4946,6 +4961,16 @@ export const stockItemCreateInputSchema = z.object({
   name: z.string().min(2, 'Item name is required'),
   categoryId: z.string().optional().or(z.literal('')),
   unit: z.string().min(1, 'Unit is required'),
+  countUnit: z.string().optional().or(z.literal('')),
+  conversionFactor: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().positive('Units per purchase unit must be greater than zero').optional()
+  ),
+  countArea: z.string().optional().or(z.literal('')),
+  latestCostCents: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().int().nonnegative('Latest purchase price cannot be negative').optional()
+  ),
   parLevel: z.coerce.number().nonnegative('Par level cannot be negative').default(0),
   reorderPoint: z.coerce.number().nonnegative('Reorder point cannot be negative').optional(),
   avgCostCents: z.coerce.number().int().nonnegative().optional(),
@@ -5060,7 +5085,16 @@ export type StockSupplierInvoiceLine = {
   lineAmountCents: number;
   taxAmountCents: number;
   itemId: string | null;
-  item: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
+  item: {
+    id: string;
+    name: string;
+    unit: string;
+    countUnit: string | null;
+    conversionFactor: number;
+    latestCostCents: number | null;
+    latestCostAt: string | null;
+    avgCostCents: number | null;
+  } | null;
   matchingStatus: StockInvoiceMatchingStatus;
   notes: string | null;
   costAppliedAt: string | null;
@@ -5225,7 +5259,7 @@ export type RecipeLine = {
   cost: number | null;
   wastePercent: number | null;
   itemId: string | null;
-  item: { id: string; name: string; unit: string; avgCostCents: number | null } | null;
+  item: { id: string; name: string; unit: string; countUnit: string | null; avgCostCents: number | null } | null;
   subRecipeId: string | null;
   subRecipe: { id: string; title: string; yieldQuantity: number | null; yieldUnit: string | null; estimatedCost: number; isPrepRecipe: boolean } | null;
   createdAt: string;

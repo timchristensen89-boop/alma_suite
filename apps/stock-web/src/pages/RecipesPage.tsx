@@ -124,6 +124,10 @@ function formatCurrencyCents(value: number | null | undefined) {
   return formatCurrency(value / 100);
 }
 
+function stockCostUnit(item: StockItem) {
+  return item.countUnit ?? item.unit;
+}
+
 function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined) return '—';
   return `${value.toFixed(1)}%`;
@@ -1005,7 +1009,7 @@ function RecipeForm({
   const itemOptions = useMemo(
     () => [
       { label: 'Unlinked ingredient', value: '' },
-      ...items.map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
+      ...items.map((item) => ({ label: `${item.name} (${stockCostUnit(item)})`, value: item.id }))
     ],
     [items]
   );
@@ -1372,7 +1376,7 @@ function RecipeLinesTable({
       { label: 'Unlinked', value: '' },
       ...items
         .filter((item) => item.status !== 'ARCHIVED')
-        .map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
+        .map((item) => ({ label: `${item.name} (${stockCostUnit(item)})`, value: item.id }))
     ],
     [items]
   );

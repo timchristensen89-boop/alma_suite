@@ -23,6 +23,16 @@ function formatOptionalQuantity(value: number | null | undefined, unit: string) 
   return formatQuantity(value, unit);
 }
 
+function formatCurrency(value: number | null | undefined) {
+  if (value === null || value === undefined) return '—';
+  return (value / 100).toLocaleString(undefined, {
+    style: 'currency',
+    currency: 'AUD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+}
+
 function effectivePar(item: StockItem) {
   return item.venueStock?.parLevel ?? item.parLevel;
 }
@@ -32,7 +42,15 @@ function effectiveReorder(item: StockItem) {
 }
 
 function effectiveUnit(item: StockItem) {
-  return item.venueStock?.unitOverride ?? item.unit;
+  return item.venueStock?.unitOverride ?? item.countUnit ?? item.unit;
+}
+
+function purchasePackLabel(item: StockItem) {
+  const countUnit = item.countUnit ?? item.unit;
+  const factor = item.conversionFactor ?? 1;
+  if (countUnit === item.unit && factor === 1) return `1 ${item.unit}`;
+  const formattedFactor = Number.isInteger(factor) ? String(factor) : factor.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+  return `1 ${item.unit} = ${formattedFactor} ${countUnit}`;
 }
 
 function isLowStock(item: StockItem) {
@@ -57,6 +75,8 @@ function duplicateItemKey(item: StockItem) {
   return [
     item.name.trim().toLowerCase().replace(/\s+/g, ' '),
     item.unit.trim().toLowerCase(),
+    item.countUnit?.trim().toLowerCase() ?? '',
+    String(item.conversionFactor ?? 1),
     item.category?.name.trim().toLowerCase() ?? ''
   ].join('|');
 }
@@ -516,6 +536,15 @@ export function ItemsPage() {
         <td>{item.category?.name ?? 'Uncategorised'}</td>
         <td>
           <span className="cell-stack">
+            <span>{purchasePackLabel(item)}</span>
+            <span className="subtle">
+              {formatCurrency(item.avgCostCents)} / {effectiveUnit(item)}
+              {item.latestCostCents !== null ? ` from ${formatCurrency(item.latestCostCents)} / ${item.unit}` : ''}
+            </span>
+          </span>
+        </td>
+        <td>
+          <span className="cell-stack">
             <span>{formatOptionalQuantity(item.venueStock?.onHand, effectiveUnit(item))}</span>
             <span className="subtle">
               {item.venueStock
@@ -574,6 +603,7 @@ export function ItemsPage() {
             </th>
             <th>Item</th>
             <th>Category</th>
+            <th>Pack / cost</th>
             <th>On hand</th>
             <th>Par</th>
             <th>Reorder</th>
@@ -586,7 +616,7 @@ export function ItemsPage() {
             renderItemRows(items)
           ) : (
             <tr>
-              <td colSpan={8} className="table-empty-cell">
+              <td colSpan={9} className="table-empty-cell">
                 {emptyMessage}
               </td>
             </tr>

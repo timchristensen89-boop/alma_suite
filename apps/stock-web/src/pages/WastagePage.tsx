@@ -25,7 +25,7 @@ function qty(value: number, unit: string) {
 }
 
 function itemUnit(item: StockItem | undefined) {
-  return item?.venueStock?.unitOverride ?? item?.unit ?? '';
+  return item?.venueStock?.unitOverride ?? item?.countUnit ?? item?.unit ?? '';
 }
 
 export function WastagePage() {
