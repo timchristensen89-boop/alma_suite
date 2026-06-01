@@ -289,7 +289,7 @@ export function SquareMenuMappingPage() {
                 </div>
                 <label className="field">
                   <span>Alma recipe</span>
-                  <select value={selectedRecipes[mapping.id] ?? ''} onChange={(event) => setSelectedRecipes((current) => ({ ...current, [mapping.id]: event.currentTarget.value }))}>
+                  <select value={selectedRecipes[mapping.id] ?? ''} onChange={(event) => { const value = event.currentTarget.value; setSelectedRecipes((current) => ({ ...current, [mapping.id]: value })); }}>
                     <option value="">No recipe selected</option>
                     {recipes.map((recipe) => (
                       <option key={recipe.id} value={recipe.id}>
@@ -300,7 +300,7 @@ export function SquareMenuMappingPage() {
                 </label>
                 <label className="field">
                   <span>Stock item fallback</span>
-                  <select value={selectedStockItems[mapping.id] ?? ''} onChange={(event) => setSelectedStockItems((current) => ({ ...current, [mapping.id]: event.currentTarget.value }))}>
+                  <select value={selectedStockItems[mapping.id] ?? ''} onChange={(event) => { const value = event.currentTarget.value; setSelectedStockItems((current) => ({ ...current, [mapping.id]: value })); }}>
                     <option value="">No stock item selected</option>
                     {stockItems.map((item) => (
                       <option key={item.id} value={item.id}>{item.name} · {item.unit}</option>
