@@ -168,20 +168,21 @@ export function WastagePage() {
               label="Item"
               value={draft.stockItemId}
               onChange={(event) => {
-                const item = data?.items.find((candidate) => candidate.id === event.currentTarget.value);
-                setDraft((current) => ({ ...current, stockItemId: event.currentTarget.value, unit: itemUnit(item) }));
+                const el = event.currentTarget;
+                const item = data?.items.find((candidate) => candidate.id === el.value);
+                setDraft((current) => ({ ...current, stockItemId: el.value, unit: itemUnit(item) }));
               }}
               options={itemOptions}
             />
             <div className="stock-filter-toolbar">
-              <Input label="Quantity" type="number" min="0.01" step="0.01" value={draft.quantity} onChange={(event) => setDraft((current) => ({ ...current, quantity: event.currentTarget.value }))} />
-              <Input label="Unit" value={draft.unit} onChange={(event) => setDraft((current) => ({ ...current, unit: event.currentTarget.value }))} />
+              <Input label="Quantity" type="number" min="0.01" step="0.01" value={draft.quantity} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, quantity: el.value })); }} />
+              <Input label="Unit" value={draft.unit} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, unit: el.value })); }} />
             </div>
             <div className="stock-filter-toolbar">
-              <Select label="Reason" value={draft.reason} onChange={(event) => setDraft((current) => ({ ...current, reason: event.currentTarget.value as StockWastageReason }))} options={REASONS} />
-              <Input label="Date/time" type="datetime-local" value={draft.wastedAt} onChange={(event) => setDraft((current) => ({ ...current, wastedAt: event.currentTarget.value }))} />
+              <Select label="Reason" value={draft.reason} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, reason: el.value as StockWastageReason })); }} options={REASONS} />
+              <Input label="Date/time" type="datetime-local" value={draft.wastedAt} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, wastedAt: el.value })); }} />
             </div>
-            <Textarea label="Note" rows={3} value={draft.note} onChange={(event) => setDraft((current) => ({ ...current, note: event.currentTarget.value }))} />
+            <Textarea label="Note" rows={3} value={draft.note} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, note: el.value })); }} />
             {error ? <p className="error-text">{error}</p> : null}
             <Button type="submit" disabled={saving || !draft.stockItemId || !draft.quantity || !activeVenue}>{saving ? 'Saving...' : 'Record wastage'}</Button>
           </form>

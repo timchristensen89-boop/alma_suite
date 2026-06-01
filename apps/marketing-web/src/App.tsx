@@ -1613,17 +1613,17 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     <Card title="Upload asset" subtitle={contentUploadConfig?.message ?? 'Upload or register images and videos for social posts.'}>
                       <form className="marketing-form" onSubmit={(event) => void saveContentAsset(event)}>
                         <div className="form-grid two">
-                          <Select label="Venue" value={contentAssetForm.venue} onChange={(event) => setContentAssetForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                          <Select label="Type" value={contentAssetForm.assetType} onChange={(event) => setContentAssetForm((current) => ({ ...current, assetType: event.currentTarget.value as MarketingContentAssetType }))} options={CONTENT_ASSET_TYPES.map((value) => ({ label: value, value }))} />
-                          <Input label="Title" required value={contentAssetForm.title} onChange={(event) => setContentAssetForm((current) => ({ ...current, title: event.currentTarget.value }))} />
-                          <Input label="File name" required value={contentAssetForm.fileName} onChange={(event) => setContentAssetForm((current) => ({ ...current, fileName: event.currentTarget.value }))} />
-                          <Input label="MIME type" required value={contentAssetForm.mimeType} onChange={(event) => setContentAssetForm((current) => ({ ...current, mimeType: event.currentTarget.value }))} />
-                          <Input label="File size bytes" type="number" min="0" required value={contentAssetForm.fileSizeBytes} onChange={(event) => setContentAssetForm((current) => ({ ...current, fileSizeBytes: event.currentTarget.value }))} />
+                          <Select label="Venue" value={contentAssetForm.venue} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                          <Select label="Type" value={contentAssetForm.assetType} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, assetType: el.value as MarketingContentAssetType })); }} options={CONTENT_ASSET_TYPES.map((value) => ({ label: value, value }))} />
+                          <Input label="Title" required value={contentAssetForm.title} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, title: el.value })); }} />
+                          <Input label="File name" required value={contentAssetForm.fileName} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, fileName: el.value })); }} />
+                          <Input label="MIME type" required value={contentAssetForm.mimeType} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, mimeType: el.value })); }} />
+                          <Input label="File size bytes" type="number" min="0" required value={contentAssetForm.fileSizeBytes} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, fileSizeBytes: el.value })); }} />
                         </div>
-                        <Input label="Public media URL" type="url" required value={contentAssetForm.publicUrl} onChange={(event) => setContentAssetForm((current) => ({ ...current, publicUrl: event.currentTarget.value }))} placeholder="https://..." />
-                        <Input label="Thumbnail URL" type="url" value={contentAssetForm.thumbnailUrl} onChange={(event) => setContentAssetForm((current) => ({ ...current, thumbnailUrl: event.currentTarget.value }))} placeholder="Optional" />
-                        <Input label="Tags" value={contentAssetForm.tags} onChange={(event) => setContentAssetForm((current) => ({ ...current, tags: event.currentTarget.value }))} placeholder="food, event, margarita" />
-                        <Textarea label="Description" rows={2} value={contentAssetForm.description} onChange={(event) => setContentAssetForm((current) => ({ ...current, description: event.currentTarget.value }))} />
+                        <Input label="Public media URL" type="url" required value={contentAssetForm.publicUrl} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, publicUrl: el.value })); }} placeholder="https://..." />
+                        <Input label="Thumbnail URL" type="url" value={contentAssetForm.thumbnailUrl} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, thumbnailUrl: el.value })); }} placeholder="Optional" />
+                        <Input label="Tags" value={contentAssetForm.tags} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, tags: el.value })); }} placeholder="food, event, margarita" />
+                        <Textarea label="Description" rows={2} value={contentAssetForm.description} onChange={(event) => { const el = event.currentTarget; setContentAssetForm((current) => ({ ...current, description: el.value })); }} />
                         <div className="toolbar-right">
                           <ActionFeedback message={feedback.target === 'content-asset' ? feedback.message : null} tone={feedback.tone} />
                           <Button type="submit">Upload asset</Button>
@@ -1693,13 +1693,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       </div>
                       <form className="marketing-form" onSubmit={(event) => void saveContentPost(event)}>
                         <div className="form-grid two">
-                          <Select label="Venue" value={contentPostForm.venue} onChange={(event) => setContentPostForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                          <Select label="Pillar" value={contentPostForm.contentPillar} onChange={(event) => setContentPostForm((current) => ({ ...current, contentPillar: event.currentTarget.value }))} options={CONTENT_PILLARS.map((value) => ({ label: prettyLabel(value), value }))} />
-                          <Input label="Title" required value={contentPostForm.title} onChange={(event) => setContentPostForm((current) => ({ ...current, title: event.currentTarget.value }))} />
-                          <Input label="Schedule" type="datetime-local" value={contentPostForm.scheduledAt} onChange={(event) => setContentPostForm((current) => ({ ...current, scheduledAt: event.currentTarget.value }))} />
+                          <Select label="Venue" value={contentPostForm.venue} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                          <Select label="Pillar" value={contentPostForm.contentPillar} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, contentPillar: el.value })); }} options={CONTENT_PILLARS.map((value) => ({ label: prettyLabel(value), value }))} />
+                          <Input label="Title" required value={contentPostForm.title} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, title: el.value })); }} />
+                          <Input label="Schedule" type="datetime-local" value={contentPostForm.scheduledAt} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, scheduledAt: el.value })); }} />
                         </div>
-                        <Textarea label="Caption" rows={5} required value={contentPostForm.caption} onChange={(event) => setContentPostForm((current) => ({ ...current, caption: event.currentTarget.value }))} />
-                        <Select label="Attach asset" value={contentPostForm.assetId} onChange={(event) => setContentPostForm((current) => ({ ...current, assetId: event.currentTarget.value }))} options={[{ label: 'No asset attached', value: '' }, ...contentAssets.map((asset) => ({ label: `${asset.title} · ${asset.assetType}`, value: asset.id }))]} />
+                        <Textarea label="Caption" rows={5} required value={contentPostForm.caption} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, caption: el.value })); }} />
+                        <Select label="Attach asset" value={contentPostForm.assetId} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, assetId: el.value })); }} options={[{ label: 'No asset attached', value: '' }, ...contentAssets.map((asset) => ({ label: `${asset.title} · ${asset.assetType}`, value: asset.id }))]} />
                         <div className="marketing-consent-row">
                           {SOCIAL_PLATFORMS.map((platform) => (
                             <label key={platform}>
@@ -1982,12 +1982,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   <Card title="Create tag" subtitle="Manual tags stay separate from automatic recalculation">
                     <form className="marketing-form" onSubmit={(event) => void saveTag(event)}>
                       <div className="form-grid two">
-                        <Select label="Venue" value={tagForm.venue} onChange={(event) => setTagForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                        <Select label="Type" value={tagForm.type} onChange={(event) => setTagForm((current) => ({ ...current, type: event.currentTarget.value as GuestTagType }))} options={TAG_TYPES.map((value) => ({ label: value, value }))} />
-                        <Input label="Tag name" required value={tagForm.name} onChange={(event) => setTagForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-                        <Input label="Colour" value={tagForm.color} onChange={(event) => setTagForm((current) => ({ ...current, color: event.currentTarget.value }))} />
+                        <Select label="Venue" value={tagForm.venue} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                        <Select label="Type" value={tagForm.type} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, type: el.value as GuestTagType })); }} options={TAG_TYPES.map((value) => ({ label: value, value }))} />
+                        <Input label="Tag name" required value={tagForm.name} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, name: el.value })); }} />
+                        <Input label="Colour" value={tagForm.color} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, color: el.value })); }} />
                       </div>
-                      <Textarea label="Description" rows={2} value={tagForm.description} onChange={(event) => setTagForm((current) => ({ ...current, description: event.currentTarget.value }))} />
+                      <Textarea label="Description" rows={2} value={tagForm.description} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, description: el.value })); }} />
                       <div className="toolbar-right">
                         <ActionFeedback message={feedback.target === 'tag' ? feedback.message : null} tone={feedback.tone} />
                         <Button type="submit">Save tag</Button>
@@ -2016,17 +2016,17 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                   <Card title="Segment preview" subtitle="No external send. Preview who qualifies and who gets skipped.">
                     <form className="marketing-form" onSubmit={(event) => void previewSegment(event)}>
                       <div className="form-grid two">
-                        <Select label="Venue" value={segmentForm.venue} onChange={(event) => setSegmentForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={options.filter((option) => option.value !== ALL_VENUES)} />
-                        <Select label="Channel" value={segmentForm.channel} onChange={(event) => setSegmentForm((current) => ({ ...current, channel: event.currentTarget.value as MarketingChannel }))} options={CAMPAIGN_CHANNELS.map((value) => ({ label: value, value }))} />
-                        <Input label="Search filter" value={segmentForm.search} onChange={(event) => setSegmentForm((current) => ({ ...current, search: event.currentTarget.value }))} />
-                        <Select label="Must have tag" value={segmentForm.tagId} onChange={(event) => setSegmentForm((current) => ({ ...current, tagId: event.currentTarget.value }))} options={[{ label: 'Any tag state', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
-                        <Select label="Exclude tag" value={segmentForm.excludedTagId} onChange={(event) => setSegmentForm((current) => ({ ...current, excludedTagId: event.currentTarget.value }))} options={[{ label: 'No excluded tag', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
-                        <Input label="Minimum visits" type="number" min="0" value={segmentForm.minVisits} onChange={(event) => setSegmentForm((current) => ({ ...current, minVisits: event.currentTarget.value }))} />
-                        <Input label="Maximum visits" type="number" min="0" value={segmentForm.maxVisits} onChange={(event) => setSegmentForm((current) => ({ ...current, maxVisits: event.currentTarget.value }))} />
-                        <Input label="Last visit older than days" type="number" min="0" value={segmentForm.maxDaysSinceVisit} onChange={(event) => setSegmentForm((current) => ({ ...current, maxDaysSinceVisit: event.currentTarget.value }))} />
-                        <Input label="Last visit within days" type="number" min="0" value={segmentForm.lastVisitWithinDays} onChange={(event) => setSegmentForm((current) => ({ ...current, lastVisitWithinDays: event.currentTarget.value }))} />
-                        <Input label="Birthday within days" type="number" min="1" value={segmentForm.birthdaysWithinDays} onChange={(event) => setSegmentForm((current) => ({ ...current, birthdaysWithinDays: event.currentTarget.value }))} />
-                        <Input label="Minimum spend cents" type="number" min="0" value={segmentForm.minSpendCents} onChange={(event) => setSegmentForm((current) => ({ ...current, minSpendCents: event.currentTarget.value }))} />
+                        <Select label="Venue" value={segmentForm.venue} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, venue: el.value })); }} options={options.filter((option) => option.value !== ALL_VENUES)} />
+                        <Select label="Channel" value={segmentForm.channel} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, channel: el.value as MarketingChannel })); }} options={CAMPAIGN_CHANNELS.map((value) => ({ label: value, value }))} />
+                        <Input label="Search filter" value={segmentForm.search} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, search: el.value })); }} />
+                        <Select label="Must have tag" value={segmentForm.tagId} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, tagId: el.value })); }} options={[{ label: 'Any tag state', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
+                        <Select label="Exclude tag" value={segmentForm.excludedTagId} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, excludedTagId: el.value })); }} options={[{ label: 'No excluded tag', value: '' }, ...tags.map((tag) => ({ label: tag.name, value: tag.id }))]} />
+                        <Input label="Minimum visits" type="number" min="0" value={segmentForm.minVisits} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, minVisits: el.value })); }} />
+                        <Input label="Maximum visits" type="number" min="0" value={segmentForm.maxVisits} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, maxVisits: el.value })); }} />
+                        <Input label="Last visit older than days" type="number" min="0" value={segmentForm.maxDaysSinceVisit} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, maxDaysSinceVisit: el.value })); }} />
+                        <Input label="Last visit within days" type="number" min="0" value={segmentForm.lastVisitWithinDays} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, lastVisitWithinDays: el.value })); }} />
+                        <Input label="Birthday within days" type="number" min="1" value={segmentForm.birthdaysWithinDays} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, birthdaysWithinDays: el.value })); }} />
+                        <Input label="Minimum spend cents" type="number" min="0" value={segmentForm.minSpendCents} onChange={(event) => { const el = event.currentTarget; setSegmentForm((current) => ({ ...current, minSpendCents: el.value })); }} />
                       </div>
                       <div className="marketing-consent-row">
                         <label><input type="checkbox" checked={segmentForm.marketingOptInOnly} onChange={(event) => { const checked = event.currentTarget.checked; setSegmentForm((current) => ({ ...current, marketingOptInOnly: checked })); }} /> Consent required</label>
@@ -2094,14 +2094,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               <Card title="Templates" subtitle="HTML accepted. Preview rendered inside a sandboxed iframe.">
               <form className="marketing-form" onSubmit={(event) => void saveTemplate(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={templateForm.venue} onChange={(event) => setTemplateForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                  <Select label="Status" value={templateForm.status} onChange={(event) => setTemplateForm((current) => ({ ...current, status: event.currentTarget.value as TemplateForm['status'] }))} options={TEMPLATE_STATUSES.map((value) => ({ label: value, value }))} />
-                  <Input label="Template name" required value={templateForm.name} onChange={(event) => setTemplateForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-                  <Input label="Subject" required value={templateForm.subject} onChange={(event) => setTemplateForm((current) => ({ ...current, subject: event.currentTarget.value }))} />
+                  <Select label="Venue" value={templateForm.venue} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Status" value={templateForm.status} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, status: el.value as TemplateForm['status'] })); }} options={TEMPLATE_STATUSES.map((value) => ({ label: value, value }))} />
+                  <Input label="Template name" required value={templateForm.name} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, name: el.value })); }} />
+                  <Input label="Subject" required value={templateForm.subject} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, subject: el.value })); }} />
                 </div>
-                <Input label="Preview text" value={templateForm.previewText} onChange={(event) => setTemplateForm((current) => ({ ...current, previewText: event.currentTarget.value }))} />
-                <Textarea label="HTML body" rows={8} value={templateForm.htmlBody} onChange={(event) => setTemplateForm((current) => ({ ...current, htmlBody: event.currentTarget.value }))} />
-                <Textarea label="Text body" rows={4} value={templateForm.textBody} onChange={(event) => setTemplateForm((current) => ({ ...current, textBody: event.currentTarget.value }))} />
+                <Input label="Preview text" value={templateForm.previewText} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, previewText: el.value })); }} />
+                <Textarea label="HTML body" rows={8} value={templateForm.htmlBody} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, htmlBody: el.value })); }} />
+                <Textarea label="Text body" rows={4} value={templateForm.textBody} onChange={(event) => { const el = event.currentTarget; setTemplateForm((current) => ({ ...current, textBody: el.value })); }} />
                 <div className="toolbar-right">
                   <ActionFeedback message={feedback.target === 'template' ? feedback.message : null} tone={feedback.tone} />
                   <Button type="submit">Save template</Button>
@@ -2127,15 +2127,15 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               <Card title="Campaigns" subtitle="Recipient preview and simulation only. No external send.">
               <form className="marketing-form" onSubmit={(event) => void saveCampaign(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={campaignForm.venue} onChange={(event) => setCampaignForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                  <Select label="Channel" value={campaignForm.channel} onChange={(event) => setCampaignForm((current) => ({ ...current, channel: event.currentTarget.value as MarketingChannel }))} options={CAMPAIGN_CHANNELS.map((value) => ({ label: value, value }))} />
-                  <Input label="Campaign name" required value={campaignForm.name} onChange={(event) => setCampaignForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-                  <Input label="Audience name" value={campaignForm.audienceName} onChange={(event) => setCampaignForm((current) => ({ ...current, audienceName: event.currentTarget.value }))} />
-                  <Input label="Subject" value={campaignForm.subject} onChange={(event) => setCampaignForm((current) => ({ ...current, subject: event.currentTarget.value }))} />
-                  <Input label="Preview text" value={campaignForm.previewText} onChange={(event) => setCampaignForm((current) => ({ ...current, previewText: event.currentTarget.value }))} />
+                  <Select label="Venue" value={campaignForm.venue} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Channel" value={campaignForm.channel} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, channel: el.value as MarketingChannel })); }} options={CAMPAIGN_CHANNELS.map((value) => ({ label: value, value }))} />
+                  <Input label="Campaign name" required value={campaignForm.name} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, name: el.value })); }} />
+                  <Input label="Audience name" value={campaignForm.audienceName} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, audienceName: el.value })); }} />
+                  <Input label="Subject" value={campaignForm.subject} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, subject: el.value })); }} />
+                  <Input label="Preview text" value={campaignForm.previewText} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, previewText: el.value })); }} />
                 </div>
-                <Textarea label="HTML body" rows={6} value={campaignForm.body} onChange={(event) => setCampaignForm((current) => ({ ...current, body: event.currentTarget.value }))} />
-                <Textarea label="Text body" rows={3} value={campaignForm.textBody} onChange={(event) => setCampaignForm((current) => ({ ...current, textBody: event.currentTarget.value }))} />
+                <Textarea label="HTML body" rows={6} value={campaignForm.body} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, body: el.value })); }} />
+                <Textarea label="Text body" rows={3} value={campaignForm.textBody} onChange={(event) => { const el = event.currentTarget; setCampaignForm((current) => ({ ...current, textBody: el.value })); }} />
                 <p className="subtle">{selectedGuestIds.length} manually selected guests will be merged with the current segment rules.</p>
                 <div className="toolbar-right">
                   <ActionFeedback message={feedback.target === 'campaign' ? feedback.message : null} tone={feedback.tone} />
@@ -2200,11 +2200,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={automationForm.venue} onChange={(event) => setAutomationForm((current) => ({ ...current, venue: event.currentTarget.value }))} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                  <Select label="Trigger" value={automationForm.triggerType} onChange={(event) => setAutomationForm((current) => ({ ...current, triggerType: event.currentTarget.value as MarketingAutomationTriggerType }))} options={AUTOMATION_TRIGGERS.map((value) => ({ label: value.replace(/_/g, ' '), value }))} />
-                  <Input label="Automation name" required value={automationForm.name} onChange={(event) => setAutomationForm((current) => ({ ...current, name: event.currentTarget.value }))} />
-                  <Select label="Email template" value={automationForm.emailTemplateId} onChange={(event) => setAutomationForm((current) => ({ ...current, emailTemplateId: event.currentTarget.value }))} options={[{ label: 'No template yet', value: '' }, ...templates.map((template) => ({ label: `${template.name} · ${template.venue || 'Global'}`, value: template.id }))]} />
-                  <Input label="Delay hours" type="number" min="0" value={automationForm.delayHours} onChange={(event) => setAutomationForm((current) => ({ ...current, delayHours: event.currentTarget.value }))} />
+                  <Select label="Venue" value={automationForm.venue} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Trigger" value={automationForm.triggerType} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, triggerType: el.value as MarketingAutomationTriggerType })); }} options={AUTOMATION_TRIGGERS.map((value) => ({ label: value.replace(/_/g, ' '), value }))} />
+                  <Input label="Automation name" required value={automationForm.name} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, name: el.value })); }} />
+                  <Select label="Email template" value={automationForm.emailTemplateId} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, emailTemplateId: el.value })); }} options={[{ label: 'No template yet', value: '' }, ...templates.map((template) => ({ label: `${template.name} · ${template.venue || 'Global'}`, value: template.id }))]} />
+                  <Input label="Delay hours" type="number" min="0" value={automationForm.delayHours} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, delayHours: el.value })); }} />
                 </div>
                 <label className="marketing-consent-row">
                   <label><input type="checkbox" checked={automationForm.active} onChange={(event) => { const checked = event.currentTarget.checked; setAutomationForm((current) => ({ ...current, active: checked })); }} /> Active after review</label>

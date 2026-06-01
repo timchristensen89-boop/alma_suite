@@ -3649,12 +3649,12 @@ function StaffProfileWorkspacePage({
         <summary>Upload or request a document</summary>
         <form className="staff-profile-form" onSubmit={(event) => { event.preventDefault(); void addDocument(); }}>
           <div className="form-grid three">
-            <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
-            <Input label="Document name" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-            <Input label="Expiry" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
-            <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
-            <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
-            <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
+            <Select label="Type" value={documentDraft.recordType} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, recordType: el.value as StaffRecordType })); }} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+            <Input label="Document name" value={documentDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, title: el.value })); }} />
+            <Input label="Expiry" type="date" value={documentDraft.expiryDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, expiryDate: el.value })); }} />
+            <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issuer: el.value })); }} />
+            <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, certificateNumber: el.value })); }} />
+            <Select label="Status" value={documentDraft.status} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, status: el.value })); }} options={['PENDING', 'APPROVED', 'EXPIRED'].map((value) => ({ label: value, value }))} />
           </div>
           <div className="invite-row staff-profile-upload-row">
             <span>
@@ -3669,7 +3669,7 @@ function StaffProfileWorkspacePage({
               {documentDraft.documentUrl ? <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => setDocumentDraft((current) => ({ ...current, documentName: '', documentUrl: '' }))}>Remove attachment</Button> : null}
             </span>
           </div>
-          <Textarea label="Notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+          <Textarea label="Notes" rows={2} value={documentDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, notes: el.value })); }} />
           <div className="toolbar-right">
             <Button type="submit" disabled={saving}>{saving ? 'Saving...' : documentDraft.documentUrl ? 'Upload document' : 'Request document'}</Button>
             <ActionFeedback message={messageTarget === 'document' ? message : null} tone={message?.includes('Could') || message?.includes('required') ? 'error' : 'success'} />
@@ -3711,12 +3711,12 @@ function StaffProfileWorkspacePage({
                 }}
                 options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
               />
-              <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-              <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+              <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, title: el.value })); }} />
+              <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, dueAt: el.value })); }} />
               <Select
                 label="Priority"
                 value={documentRequestDraft.priority}
-                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, priority: el.value as StaffDocumentRequestDraft['priority'] })); }}
                 options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
               />
             </div>
@@ -3724,11 +3724,11 @@ function StaffProfileWorkspacePage({
               <input
                 type="checkbox"
                 checked={documentRequestDraft.expiryRequired}
-                onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+                onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, expiryRequired: el.checked })); }}
               />
               Expiry date required where applicable
             </label>
-            <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+            <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, notes: el.value })); }} />
           </section>
           <div className="staff-modal-footer">
             <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
@@ -5299,12 +5299,12 @@ function AccessPage({
                         }}
                         options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replaceAll('_', ' '), value }))}
                       />
-                      <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                      <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, dueAt: event.currentTarget.value }))} />
+                      <Input label="Request title" value={documentRequestDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, title: el.value })); }} />
+                      <Input label="Due date" type="date" value={documentRequestDraft.dueAt} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, dueAt: el.value })); }} />
                       <Select
                         label="Priority"
                         value={documentRequestDraft.priority}
-                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, priority: event.currentTarget.value as StaffDocumentRequestDraft['priority'] }))}
+                        onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, priority: el.value as StaffDocumentRequestDraft['priority'] })); }}
                         options={['LOW', 'NORMAL', 'HIGH', 'URGENT'].map((value) => ({ label: value.charAt(0) + value.slice(1).toLowerCase(), value }))}
                       />
                     </div>
@@ -5312,11 +5312,11 @@ function AccessPage({
                       <input
                         type="checkbox"
                         checked={documentRequestDraft.expiryRequired}
-                        onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, expiryRequired: event.currentTarget.checked }))}
+                        onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, expiryRequired: el.checked })); }}
                       />
                       Expiry date required where applicable
                     </label>
-                    <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => setDocumentRequestDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                    <Textarea label="Optional note" rows={3} value={documentRequestDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentRequestDraft((current) => ({ ...current, notes: el.value })); }} />
                   </section>
                   <div className="staff-modal-footer">
                     <Button type="button" variant="ghost" disabled={saving} onClick={() => setDocumentRequestOpen(false)}>Cancel</Button>
@@ -5406,18 +5406,18 @@ function AccessPage({
                 }}
               >
                 <div className="form-grid three">
-                  <Select label="Type" value={documentDraft.recordType} onChange={(event) => setDocumentDraft((current) => ({ ...current, recordType: event.currentTarget.value as StaffRecordType }))} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
-                  <Input label="Title" value={documentDraft.title} onChange={(event) => setDocumentDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                  <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => setDocumentDraft((current) => ({ ...current, issuer: event.currentTarget.value }))} />
-                  <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => setDocumentDraft((current) => ({ ...current, certificateNumber: event.currentTarget.value }))} />
-                  <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, issueDate: event.currentTarget.value }))} />
-                  <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => setDocumentDraft((current) => ({ ...current, expiryDate: event.currentTarget.value }))} />
-                  <Select label="Status" value={documentDraft.status} onChange={(event) => setDocumentDraft((current) => ({ ...current, status: event.currentTarget.value }))} options={['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED'].map((value) => ({ label: value.replaceAll('_', ' '), value }))} />
-                  <Input label="Document name" value={documentDraft.documentName} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentName: event.currentTarget.value }))} />
+                  <Select label="Type" value={documentDraft.recordType} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, recordType: el.value as StaffRecordType })); }} options={['RSA', 'RSG', 'FSS', 'FIRST_AID', 'FOOD_SAFETY', 'ALLERGEN', 'TRAINING', 'OTHER'].map((value) => ({ label: value.replace('_', ' '), value }))} />
+                  <Input label="Title" value={documentDraft.title} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, title: el.value })); }} />
+                  <Input label="Issuer" value={documentDraft.issuer} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issuer: el.value })); }} />
+                  <Input label="Certificate number" value={documentDraft.certificateNumber} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, certificateNumber: el.value })); }} />
+                  <Input label="Issue date" type="date" value={documentDraft.issueDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, issueDate: el.value })); }} />
+                  <Input label="Expiry date" type="date" value={documentDraft.expiryDate} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, expiryDate: el.value })); }} />
+                  <Select label="Status" value={documentDraft.status} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, status: el.value })); }} options={['REQUESTED', 'PENDING', 'UPLOADED', 'APPROVED', 'REJECTED', 'EXPIRED'].map((value) => ({ label: value.replaceAll('_', ' '), value }))} />
+                  <Input label="Document name" value={documentDraft.documentName} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, documentName: el.value })); }} />
                   {documentDraft.documentUrl.startsWith('data:') ? (
                     <Input label="Document attachment" value={documentDraft.documentName || 'Attached file'} disabled />
                   ) : (
-                    <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => setDocumentDraft((current) => ({ ...current, documentUrl: event.currentTarget.value }))} />
+                    <Input label="Document URL" value={documentDraft.documentUrl} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, documentUrl: el.value })); }} />
                   )}
                 </div>
                 <div className="invite-row">
@@ -5454,7 +5454,7 @@ function AccessPage({
                     ) : null}
                   </span>
                 </div>
-                <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => setDocumentDraft((current) => ({ ...current, notes: event.currentTarget.value }))} />
+                <Textarea label="Document notes" rows={2} value={documentDraft.notes} onChange={(event) => { const el = event.currentTarget; setDocumentDraft((current) => ({ ...current, notes: el.value })); }} />
                 <div className="toolbar-right">
                   <Button type="submit" disabled={saving}>{saving ? 'Adding…' : 'Add document'}</Button>
                   <ActionFeedback
@@ -6096,13 +6096,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               }}
             >
               <div className="form-grid two">
-                <Input label="Title" value={announcementDraft.title} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, title: event.currentTarget.value }))} />
-                <Select label="Venue" value={announcementDraft.venue} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
+                <Input label="Title" value={announcementDraft.title} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, title: el.value })); }} />
+                <Select label="Venue" value={announcementDraft.venue} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, venue: el.value })); }} options={VENUE_OPTIONS} />
               </div>
-              <Textarea label="Announcement" rows={3} value={announcementDraft.body} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, body: event.currentTarget.value }))} />
+              <Textarea label="Announcement" rows={3} value={announcementDraft.body} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, body: el.value })); }} />
               <div className="form-grid two">
-                <Input label="Audience" value={announcementDraft.audience} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, audience: event.currentTarget.value }))} />
-                <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => setAnnouncementDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))} />
+                <Input label="Audience" value={announcementDraft.audience} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, audience: el.value })); }} />
+                <Input label="Expires" type="date" value={announcementDraft.expiresAt} onChange={(event) => { const el = event.currentTarget; setAnnouncementDraft((current) => ({ ...current, expiresAt: el.value })); }} />
               </div>
               <label className="check-row">
                 <input type="checkbox" checked={announcementDraft.pinned} onChange={(event) => { const checked = event.currentTarget.checked; setAnnouncementDraft((current) => ({ ...current, pinned: checked })); }} />
@@ -6151,13 +6151,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
               }}
             >
               <div className="form-grid two">
-                <Input label="Group name" value={channelDraft.name} onChange={(event) => setChannelDraft((current) => ({ ...current, name: event.currentTarget.value }))} placeholder="Kitchen" />
-                <Select label="Type" value={channelDraft.type} onChange={(event) => setChannelDraft((current) => ({ ...current, type: event.currentTarget.value as SuiteChatChannel['type'] }))} options={['GENERAL', 'VENUE', 'AREA', 'GROUP'].map((value) => ({ label: value, value }))} />
-                <Select label="Venue" value={channelDraft.venue} onChange={(event) => setChannelDraft((current) => ({ ...current, venue: event.currentTarget.value }))} options={VENUE_OPTIONS} />
-                <Input label="Group key" value={channelDraft.groupKey} onChange={(event) => setChannelDraft((current) => ({ ...current, groupKey: event.currentTarget.value }))} placeholder="kitchen" />
+                <Input label="Group name" value={channelDraft.name} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, name: el.value })); }} placeholder="Kitchen" />
+                <Select label="Type" value={channelDraft.type} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, type: el.value as SuiteChatChannel['type'] })); }} options={['GENERAL', 'VENUE', 'AREA', 'GROUP'].map((value) => ({ label: value, value }))} />
+                <Select label="Venue" value={channelDraft.venue} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, venue: el.value })); }} options={VENUE_OPTIONS} />
+                <Input label="Group key" value={channelDraft.groupKey} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, groupKey: el.value })); }} placeholder="kitchen" />
               </div>
-              <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => setChannelDraft((current) => ({ ...current, description: event.currentTarget.value }))} />
-              <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => setChannelDraft((current) => ({ ...current, postPermission: event.currentTarget.value }))} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
+              <Textarea label="Description" rows={2} value={channelDraft.description} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, description: el.value })); }} />
+              <Select label="Post permission" value={channelDraft.postPermission} onChange={(event) => { const el = event.currentTarget; setChannelDraft((current) => ({ ...current, postPermission: el.value })); }} options={[{ label: 'Anyone with Staff access', value: '' }, ...COMMUNICATION_PERMISSION_KEYS.map((item) => ({ label: item.label, value: item.key }))]} />
               <label className="check-row">
                 <input type="checkbox" checked={channelDraft.directMessagesAllowed} onChange={(event) => { const checked = event.currentTarget.checked; setChannelDraft((current) => ({ ...current, directMessagesAllowed: checked })); }} />
                 Allow this group to use direct messaging
@@ -12062,7 +12062,7 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
                     <Select
                       label="Attach to staff"
                       value={selectedStaffId}
-                      onChange={(event) => setReviewStaffSelection((current) => ({ ...current, [item.id]: event.currentTarget.value }))}
+                      onChange={(event) => { const el = event.currentTarget; setReviewStaffSelection((current) => ({ ...current, [item.id]: el.value })); }}
                       options={[
                         { label: 'Choose staff', value: '' },
                         ...documentReviewStaff.map((member) => ({

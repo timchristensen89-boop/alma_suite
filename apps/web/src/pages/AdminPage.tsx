@@ -3781,46 +3781,46 @@ export function AdminPage({
                     label="Venue"
                     value={socialForm.venue}
                     options={venueOptions.length ? venueOptions : [{ label: socialForm.venue, value: socialForm.venue }]}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, venue: event.currentTarget.value }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, venue: el.value })); }}
                   />
                   <Select
                     label="Platform"
                     value={socialForm.platform}
                     options={SOCIAL_PLATFORMS.map((platform) => ({ label: platform, value: platform }))}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, platform: event.currentTarget.value as SocialPlatform }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, platform: el.value as SocialPlatform })); }}
                   />
                   <Select
                     label="Status"
                     value={socialForm.status}
                     options={SOCIAL_STATUSES.map((status) => ({ label: status.replace(/_/g, ' '), value: status }))}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, status: event.currentTarget.value as MarketingSocialAccountStatus }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, status: el.value as MarketingSocialAccountStatus })); }}
                   />
                 </div>
                 <div className="admin-form-grid">
                   <Input
                     label="Display name"
                     value={socialForm.displayName}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, displayName: event.currentTarget.value }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, displayName: el.value })); }}
                     placeholder="Alma Avalon Facebook"
                     required
                   />
                   <Input
                     label="Handle"
                     value={socialForm.handle}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, handle: event.currentTarget.value }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, handle: el.value })); }}
                     placeholder="@almaavalon"
                   />
                   <Input
                     label="External account id"
                     value={socialForm.externalAccountId}
-                    onChange={(event) => setSocialForm((current) => ({ ...current, externalAccountId: event.currentTarget.value }))}
+                    onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, externalAccountId: el.value })); }}
                     placeholder="Page or business account id"
                   />
                 </div>
                 <Input
                   label="Token secret reference"
                   value={socialForm.tokenSecretRef}
-                  onChange={(event) => setSocialForm((current) => ({ ...current, tokenSecretRef: event.currentTarget.value }))}
+                  onChange={(event) => { const el = event.currentTarget; setSocialForm((current) => ({ ...current, tokenSecretRef: el.value })); }}
                   placeholder="Secret Manager name or env:VARIABLE_NAME"
                   hint="Store only a reference here. Never paste an access token into the browser."
                 />

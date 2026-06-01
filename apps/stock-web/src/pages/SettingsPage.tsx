@@ -347,24 +347,26 @@ export function SettingsPage() {
                 id="new-stock-category-name"
                 label="New category"
                 value={newStockCategory.name}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const el = event.currentTarget;
                   setNewStockCategory((current) => ({
                     ...current,
-                    name: event.currentTarget.value
-                  }))
-                }
+                    name: el.value
+                  }));
+                }}
                 placeholder="e.g. Spirits"
               />
               <Input
                 id="new-stock-category-description"
                 label="Description"
                 value={newStockCategory.description}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const el = event.currentTarget;
                   setNewStockCategory((current) => ({
                     ...current,
-                    description: event.currentTarget.value
-                  }))
-                }
+                    description: el.value
+                  }));
+                }}
                 placeholder="Optional"
               />
               <span className="settings-category-count">New</span>
@@ -466,36 +468,39 @@ export function SettingsPage() {
                 id="new-recipe-category-name"
                 label="New category"
                 value={newRecipeCategory.name}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const el = event.currentTarget;
                   setNewRecipeCategory((current) => ({
                     ...current,
-                    name: event.currentTarget.value
-                  }))
-                }
+                    name: el.value
+                  }));
+                }}
                 placeholder="e.g. Cocktails"
               />
               <Select
                 id="new-recipe-category-kind"
                 label="Type"
                 value={newRecipeCategory.kind}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const el = event.currentTarget;
                   setNewRecipeCategory((current) => ({
                     ...current,
-                    kind: event.currentTarget.value as RecipeCategoryKind
-                  }))
-                }
+                    kind: el.value as RecipeCategoryKind
+                  }));
+                }}
                 options={RECIPE_CATEGORY_KIND_OPTIONS}
               />
               <Input
                 id="new-recipe-category-description"
                 label="Description"
                 value={newRecipeCategory.description}
-                onChange={(event) =>
+                onChange={(event) => {
+                  const el = event.currentTarget;
                   setNewRecipeCategory((current) => ({
                     ...current,
-                    description: event.currentTarget.value
-                  }))
-                }
+                    description: el.value
+                  }));
+                }}
                 placeholder="Optional"
               />
               <span className="settings-category-count">New</span>
