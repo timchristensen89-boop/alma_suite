@@ -12390,6 +12390,10 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       setMessage('Choose a venue before exporting tips.');
       return;
     }
+    if (!hasPaidRun) {
+      setMessage('Approve and pay this tip run before exporting CSV.');
+      return;
+    }
     setSaving(true);
     setMessage(null);
     try {
@@ -12401,6 +12405,32 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       setMessage('Tips CSV exported.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not export tips.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function exportTipsAba() {
+    setMessageTarget('aba');
+    if (!venue) {
+      setMessage('Choose a venue before exporting an ABA file.');
+      return;
+    }
+    if (!hasPaidRun) {
+      setMessage('Approve and pay this tip run before exporting an ABA file.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await api<{ aba: string; filename: string; count: number; totalCents: number }>('/api/staff/tips/export/aba', {
+        method: 'POST',
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay })
+      });
+      downloadTextFile(result.filename || `alma-tips-${venue}-${toDateInput(weekStart)}.aba`, result.aba, 'text/plain');
+      setMessage(`ABA exported for ${result.count} staff · ${formatCents(result.totalCents)}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not export ABA file.');
     } finally {
       setSaving(false);
     }
@@ -12426,7 +12456,7 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         method: 'POST',
         body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue, breakageCentsPerDay, notes: payoutNotes, adjustments: adjustmentPayload })
       });
-      setMessage('Tips marked paid. Reports payroll export will now use this approved tip run.');
+      setMessage('Tips approved and paid. You can now export ABA or CSV.');
       setPayoutNotes('');
       await loadTips();
     } catch (err) {
@@ -12462,14 +12492,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         actions={
           <>
             <Button type="button" variant="secondary" onClick={() => void loadTips()} disabled={loading}>Refresh</Button>
-            <Button type="button" variant="secondary" onClick={() => void exportTips()} disabled={saving || !summary?.entitlements.length}>Export CSV</Button>
-            <span className="inline-actions">
-              <Button type="button" onClick={() => void markPaid()} disabled={saving || !summary?.entitlements.length || payoutVarianceCents !== 0}>Mark paid</Button>
-              <ActionFeedback
-                message={messageTarget === 'paid' ? message : null}
-                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('variance') ? 'error' : 'success'}
-              />
-            </span>
           </>
         }
       />
@@ -12516,306 +12538,321 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       </div>
 
       {/* Venue + breakage controls live just below the week selector. */}
-      <Card padding="tight">
-        <div className="tips-controls-row">
-          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
-          <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
-        </div>
-      </Card>
+      <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
+        <Card padding="tight">
+          <div className="tips-controls-row">
+            <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+            <Input label="Breakage/day ($)" type="number" min="0" step="1" value={breakagePerDay} onChange={(event) => setBreakagePerDay(event.currentTarget.value)} style={{ width: 130 }} />
+          </div>
+        </Card>
+      </TipsSection>
 
       {/* Summary stats */}
-      <div className="stats-grid">
-        <StatCard label="Gross tips" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card · ${summary?.tradingDays ?? 0} trading day${summary?.tradingDays === 1 ? '' : 's'}`} loading={loading} />
-        <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
-        <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
-        <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
-        <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
-        <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Open'} hint={hasPaidRun ? 'Reports payroll ready' : 'Mark paid to lock'} loading={loading} />
-      </div>
+      <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
+        <div className="stats-grid">
+          <StatCard label="Gross tips" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card · ${summary?.tradingDays ?? 0} trading day${summary?.tradingDays === 1 ? '' : 's'}`} loading={loading} />
+          <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
+          <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
+          <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
+          <StatCard label="Approved hours" value={roundHours(summary?.approvedHours ?? 0)} hint="Used for allocation" loading={loading} />
+          <StatCard label="Run status" value={hasPaidRun ? 'Locked' : 'Waiting'} hint={hasPaidRun ? 'Payroll export ready' : 'Approve at the bottom'} loading={loading} />
+        </div>
+      </TipsSection>
 
       {loading ? <Spinner label="Loading tips..." /> : null}
       {message && !messageTarget ? <p className={message.includes('Could') || message.includes('Choose') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
       {/* Per-day breakdown */}
       {(summary?.cardEntries.length || summary?.cashEntries.length) ? (
-        <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
-          <div className="table-scroll">
-            <table className="report-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Day</th>
-                  <th>Square tips</th>
-                  <th>Cash tips</th>
-                  <th>− Breakage</th>
-                  <th>= Allocatable</th>
-                </tr>
-              </thead>
-              <tbody>
-                {(() => {
-                  const byDate = new Map<string, { square: number; cash: number }>();
-                  for (const e of (summary?.cardEntries ?? [])) {
-                    const d = e.serviceDate.slice(0, 10);
-                    const cur = byDate.get(d) ?? { square: 0, cash: 0 };
-                    cur.square += e.amountCents;
-                    byDate.set(d, cur);
-                  }
-                  for (const e of (summary?.cashEntries ?? [])) {
-                    const d = e.serviceDate.slice(0, 10);
-                    const cur = byDate.get(d) ?? { square: 0, cash: 0 };
-                    cur.cash += e.amountCents;
-                    byDate.set(d, cur);
-                  }
-                  return Array.from(byDate.entries())
-                    .sort(([a], [b]) => a.localeCompare(b))
-                    .map(([date, row]) => {
-                      const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
-                      const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
-                      return (
-                        <tr key={date}>
-                          <td>{date}</td>
-                          <td>{dayName}</td>
-                          <td>{formatCents(row.square)}</td>
-                          <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
-                          <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
-                          <td><strong>{formatCents(allocatable)}</strong></td>
-                        </tr>
-                      );
-                    });
-                })()}
-              </tbody>
-              <tfoot>
-                <tr>
-                  <td colSpan={2}><strong>Total</strong></td>
-                  <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
-                  <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
-                  <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
-                  <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </Card>
+        <TipsSection title="Daily breakdown" summary={`Square + cash less $${breakagePerDay}/day breakage`}>
+          <Card title="Daily breakdown" subtitle={`Square + cash tips minus $${breakagePerDay} breakage per trading day.`}>
+            <div className="table-scroll">
+              <table className="report-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>Day</th>
+                    <th>Square tips</th>
+                    <th>Cash tips</th>
+                    <th>− Breakage</th>
+                    <th>= Allocatable</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(() => {
+                    const byDate = new Map<string, { square: number; cash: number }>();
+                    for (const e of (summary?.cardEntries ?? [])) {
+                      const d = e.serviceDate.slice(0, 10);
+                      const cur = byDate.get(d) ?? { square: 0, cash: 0 };
+                      cur.square += e.amountCents;
+                      byDate.set(d, cur);
+                    }
+                    for (const e of (summary?.cashEntries ?? [])) {
+                      const d = e.serviceDate.slice(0, 10);
+                      const cur = byDate.get(d) ?? { square: 0, cash: 0 };
+                      cur.cash += e.amountCents;
+                      byDate.set(d, cur);
+                    }
+                    return Array.from(byDate.entries())
+                      .sort(([a], [b]) => a.localeCompare(b))
+                      .map(([date, row]) => {
+                        const dayName = new Date(`${date}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short' });
+                        const allocatable = Math.max(0, row.square + row.cash - breakageCentsPerDay);
+                        return (
+                          <tr key={date}>
+                            <td>{date}</td>
+                            <td>{dayName}</td>
+                            <td>{formatCents(row.square)}</td>
+                            <td>{row.cash ? formatCents(row.cash) : <span className="subtle">—</span>}</td>
+                            <td className="subtle">−{formatCents(breakageCentsPerDay)}</td>
+                            <td><strong>{formatCents(allocatable)}</strong></td>
+                          </tr>
+                        );
+                      });
+                  })()}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={2}><strong>Total</strong></td>
+                    <td><strong>{formatCents(summary?.squareTipsCents ?? 0)}</strong></td>
+                    <td><strong>{formatCents(summary?.cashTipsCents ?? 0)}</strong></td>
+                    <td className="subtle">−{formatCents(summary?.breakageCents ?? 0)}</td>
+                    <td><strong>{formatCents(summary?.allocatablePoolCents ?? 0)}</strong></td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </Card>
+        </TipsSection>
       ) : null}
 
       {/* Import card tips — one-click per venue */}
-      <Card title="Import card tips" subtitle="One-click Square import for each venue, or paste a CSV manually.">
-        <div className="tips-import-row">
-          <div className="tips-import-venue-group">
-            <strong>Alma Avalon</strong>
-            <div className="toolbar">
-              <Button
-                type="button"
-                onClick={() => void importSquareTips('Alma Avalon')}
-                disabled={saving}
-              >
-                {saving && messageTarget === 'square-import' && venue === 'Alma Avalon' ? 'Importing…' : 'Import from Square'}
-              </Button>
+      <TipsSection title="Import card tips" summary="Square import or manual CSV">
+        <Card title="Import card tips" subtitle="One-click Square import for each venue, or paste a CSV manually.">
+          <div className="tips-import-row">
+            <div className="tips-import-venue-group">
+              <strong>Alma Avalon</strong>
+              <div className="toolbar">
+                <Button
+                  type="button"
+                  onClick={() => void importSquareTips('Alma Avalon')}
+                  disabled={saving}
+                >
+                  {saving && messageTarget === 'square-import' && venue === 'Alma Avalon' ? 'Importing…' : 'Import from Square'}
+                </Button>
+              </div>
+            </div>
+            <div className="tips-import-venue-group">
+              <strong>St Alma</strong>
+              <div className="toolbar">
+                <Button
+                  type="button"
+                  onClick={() => void importSquareTips('St Alma')}
+                  disabled={saving}
+                >
+                  {saving && messageTarget === 'square-import' && venue === 'St Alma' ? 'Importing…' : 'Import from Square'}
+                </Button>
+              </div>
             </div>
           </div>
-          <div className="tips-import-venue-group">
-            <strong>St Alma</strong>
-            <div className="toolbar">
-              <Button
-                type="button"
-                onClick={() => void importSquareTips('St Alma')}
-                disabled={saving}
-              >
-                {saving && messageTarget === 'square-import' && venue === 'St Alma' ? 'Importing…' : 'Import from Square'}
-              </Button>
-            </div>
-          </div>
-        </div>
-        <ActionFeedback
-          message={messageTarget === 'square-import' ? message : null}
-          tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
-        />
-        <details className="staff-profile-collapsible">
-          <summary>Manual CSV import</summary>
-          <div className="form-grid two">
-            <Select
-              label="Source"
-              value={cardImportSource}
-              onChange={(event) => setCardImportSource(event.currentTarget.value)}
-              options={[
-                { label: 'Alma Control', value: 'control' },
-                { label: 'Square', value: 'square' },
-                { label: 'Other', value: 'card' }
-              ]}
-            />
-            <Input label="Default venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} placeholder="Alma Avalon" />
-          </div>
-          <Textarea
-            label="CSV rows"
-            rows={6}
-            value={cardImportText}
-            onChange={(event) => setCardImportText(event.currentTarget.value)}
-            placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
-          />
-          <div className="toolbar-right">
-            <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>Download template</Button>
-            <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>Clear</Button>
-            <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
-              {saving && messageTarget === 'import' ? 'Importing…' : 'Import card tips'}
-            </Button>
-            <ActionFeedback
-              message={messageTarget === 'import' ? message : null}
-              tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
-            />
-          </div>
-        </details>
-      </Card>
-
-      {/* Add cash tips */}
-      <Card title="Add cash tips" subtitle="Enter the cash tip pool for a service date. Enter $0 to clear that date.">
-        <div className="tips-day-picker" aria-label="Cash tip service dates">
-          {weekDays(weekStart).map((day) => (
-            <button
-              key={day.toISOString()}
-              type="button"
-              className={serviceDate === toDateInput(day) ? 'active' : undefined}
-              onClick={() => setServiceDate(toDateInput(day))}
-            >
-              <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
-              <strong>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</strong>
-            </button>
-          ))}
-        </div>
-        <div className="form-grid three">
-          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
-          <Input label="Service date" type="date" value={serviceDate} onChange={(event) => setServiceDate(event.currentTarget.value)} />
-          <Input label="Cash tips ($)" type="number" min="0" step="0.01" value={cashAmount} onChange={(event) => setCashAmount(event.currentTarget.value)} placeholder="0.00" />
-        </div>
-        <Input label="Notes" value={cashNotes} onChange={(event) => setCashNotes(event.currentTarget.value)} placeholder="Optional notes" />
-        <div className="toolbar-right">
-          <Button type="button" disabled={saving || !venue} onClick={() => void saveCashTips()}>
-            {saving && messageTarget === 'cash' ? 'Saving…' : 'Save cash tips'}
-          </Button>
           <ActionFeedback
-            message={messageTarget === 'cash' ? message : null}
+            message={messageTarget === 'square-import' ? message : null}
             tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
           />
-        </div>
-      </Card>
+          <details className="staff-profile-collapsible">
+            <summary>Manual CSV import</summary>
+            <div className="form-grid two">
+              <Select
+                label="Source"
+                value={cardImportSource}
+                onChange={(event) => setCardImportSource(event.currentTarget.value)}
+                options={[
+                  { label: 'Alma Control', value: 'control' },
+                  { label: 'Square', value: 'square' },
+                  { label: 'Other', value: 'card' }
+                ]}
+              />
+              <Input label="Default venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} placeholder="Alma Avalon" />
+            </div>
+            <Textarea
+              label="CSV rows"
+              rows={6}
+              value={cardImportText}
+              onChange={(event) => setCardImportText(event.currentTarget.value)}
+              placeholder="date,venue,tips&#10;2026-05-04,Alma Avalon,125.50"
+            />
+            <div className="toolbar-right">
+              <Button type="button" variant="secondary" onClick={downloadTipsTemplate}>Download template</Button>
+              <Button type="button" variant="secondary" onClick={() => setCardImportText('')} disabled={saving || !cardImportText.trim()}>Clear</Button>
+              <Button type="button" disabled={saving || !cardImportText.trim()} onClick={() => void importCardTips()}>
+                {saving && messageTarget === 'import' ? 'Importing…' : 'Import card tips'}
+              </Button>
+              <ActionFeedback
+                message={messageTarget === 'import' ? message : null}
+                tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('Paste') ? 'error' : 'success'}
+              />
+            </div>
+          </details>
+        </Card>
+      </TipsSection>
+
+      {/* Add cash tips */}
+      <TipsSection title="Add cash tips" summary="Enter cash pool by service date">
+        <Card title="Add cash tips" subtitle="Enter the cash tip pool for a service date. Enter $0 to clear that date.">
+          <div className="tips-day-picker" aria-label="Cash tip service dates">
+            {weekDays(weekStart).map((day) => (
+              <button
+                key={day.toISOString()}
+                type="button"
+                className={serviceDate === toDateInput(day) ? 'active' : undefined}
+                onClick={() => setServiceDate(toDateInput(day))}
+              >
+                <span>{day.toLocaleDateString(undefined, { weekday: 'short' })}</span>
+                <strong>{day.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}</strong>
+              </button>
+            ))}
+          </div>
+          <div className="form-grid three">
+            <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={venueOptions} />
+            <Input label="Service date" type="date" value={serviceDate} onChange={(event) => setServiceDate(event.currentTarget.value)} />
+            <Input label="Cash tips ($)" type="number" min="0" step="0.01" value={cashAmount} onChange={(event) => setCashAmount(event.currentTarget.value)} placeholder="0.00" />
+          </div>
+          <Input label="Notes" value={cashNotes} onChange={(event) => setCashNotes(event.currentTarget.value)} placeholder="Optional notes" />
+          <div className="toolbar-right">
+            <Button type="button" disabled={saving || !venue} onClick={() => void saveCashTips()}>
+              {saving && messageTarget === 'cash' ? 'Saving…' : 'Save cash tips'}
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'cash' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
+          </div>
+        </Card>
+      </TipsSection>
 
       {/* Entries for this week — with delete */}
-      <Card
-        title="This week's entries"
-        subtitle="Cash and card entries for the selected week and venue."
-        action={
-          (summary?.cashEntries.length || summary?.cardEntries.length) ? (
-            <div className="toolbar">
-              <Button type="button" size="sm" variant="ghost" onClick={() => void bulkDeleteEntries('cash')} disabled={bulkDeleting || !summary?.cashEntries.length}>Delete all cash</Button>
-              <Button type="button" size="sm" variant="ghost" onClick={() => void bulkDeleteEntries('card')} disabled={bulkDeleting || !summary?.cardEntries.length}>Delete all card</Button>
-            </div>
-          ) : undefined
-        }
-      >
-        <div className="tips-section-stack">
-          <div>
-            <strong>Cash entries</strong>
-            <div className="staff-list">
-              {(summary?.cashEntries ?? []).map((entry) => (
-                <article key={entry.id} className="staff-list-button tips-row">
-                  <span>
-                    <strong>{new Date(entry.serviceDate).toLocaleDateString()}</strong>
-                    <span className="subtle">{entry.venue}{entry.notes ? ` · ${entry.notes}` : ''}</span>
-                  </span>
-                  <div className="tips-row-right">
-                    <Badge tone="warning">{formatCents(entry.amountCents)}</Badge>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void deleteCashEntry(entry.id)} disabled={saving}>✕</Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {!loading && (summary?.cashEntries.length ?? 0) === 0 ? <p className="subtle">No cash tips entered this week.</p> : null}
-          </div>
-          <div>
-            <strong>Card entries</strong>
-            <div className="staff-list">
-              {(summary?.cardEntries ?? []).map((entry) => (
-                <article key={entry.id} className="staff-list-button tips-row">
-                  <span>
-                    <strong>{new Date(entry.serviceDate).toLocaleDateString()}</strong>
-                    <span className="subtle">{entry.venue} · {entry.source}{entry.notes ? ` · ${entry.notes}` : ''}</span>
-                  </span>
-                  <div className="tips-row-right">
-                    <Badge tone="info">{formatCents(entry.amountCents)}</Badge>
-                    <Button type="button" size="sm" variant="ghost" onClick={() => void deleteCardEntry(entry.id)} disabled={saving}>✕</Button>
-                  </div>
-                </article>
-              ))}
-            </div>
-            {!loading && (summary?.cardEntries.length ?? 0) === 0 ? <p className="subtle">No card tips imported this week.</p> : null}
-          </div>
-          {(summary?.paidRuns.length ?? 0) > 0 ? (
+      <TipsSection title="This week's entries" summary={`${(summary?.cashEntries.length ?? 0) + (summary?.cardEntries.length ?? 0)} entries`}>
+        <Card
+          title="This week's entries"
+          subtitle="Cash and card entries for the selected week and venue."
+          action={
+            (summary?.cashEntries.length || summary?.cardEntries.length) ? (
+              <div className="toolbar">
+                <Button type="button" size="sm" variant="ghost" onClick={() => void bulkDeleteEntries('cash')} disabled={bulkDeleting || !summary?.cashEntries.length}>Delete all cash</Button>
+                <Button type="button" size="sm" variant="ghost" onClick={() => void bulkDeleteEntries('card')} disabled={bulkDeleting || !summary?.cardEntries.length}>Delete all card</Button>
+              </div>
+            ) : undefined
+          }
+        >
+          <div className="tips-section-stack">
             <div>
-              <strong>Paid runs</strong>
+              <strong>Cash entries</strong>
               <div className="staff-list">
-                {(summary?.paidRuns ?? []).map((run) => (
-                  <article key={run.id} className="staff-list-button tips-row">
+                {(summary?.cashEntries ?? []).map((entry) => (
+                  <article key={entry.id} className="staff-list-button tips-row">
                     <span>
-                      <strong>{formatCents(run.tipPoolCents)}</strong>
-                      <span className="subtle">{new Date(run.paidAt).toLocaleString()} · {run.lineCount} staff</span>
+                      <strong>{new Date(entry.serviceDate).toLocaleDateString()}</strong>
+                      <span className="subtle">{entry.venue}{entry.notes ? ` · ${entry.notes}` : ''}</span>
                     </span>
-                    <Badge tone="positive">Paid</Badge>
+                    <div className="tips-row-right">
+                      <Badge tone="warning">{formatCents(entry.amountCents)}</Badge>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => void deleteCashEntry(entry.id)} disabled={saving}>✕</Button>
+                    </div>
                   </article>
                 ))}
               </div>
+              {!loading && (summary?.cashEntries.length ?? 0) === 0 ? <p className="subtle">No cash tips entered this week.</p> : null}
             </div>
-          ) : null}
-        </div>
-      </Card>
+            <div>
+              <strong>Card entries</strong>
+              <div className="staff-list">
+                {(summary?.cardEntries ?? []).map((entry) => (
+                  <article key={entry.id} className="staff-list-button tips-row">
+                    <span>
+                      <strong>{new Date(entry.serviceDate).toLocaleDateString()}</strong>
+                      <span className="subtle">{entry.venue} · {entry.source}{entry.notes ? ` · ${entry.notes}` : ''}</span>
+                    </span>
+                    <div className="tips-row-right">
+                      <Badge tone="info">{formatCents(entry.amountCents)}</Badge>
+                      <Button type="button" size="sm" variant="ghost" onClick={() => void deleteCardEntry(entry.id)} disabled={saving}>✕</Button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {!loading && (summary?.cardEntries.length ?? 0) === 0 ? <p className="subtle">No card tips imported this week.</p> : null}
+            </div>
+            {(summary?.paidRuns.length ?? 0) > 0 ? (
+              <div>
+                <strong>Paid runs</strong>
+                <div className="staff-list">
+                  {(summary?.paidRuns ?? []).map((run) => (
+                    <article key={run.id} className="staff-list-button tips-row">
+                      <span>
+                        <strong>{formatCents(run.tipPoolCents)}</strong>
+                        <span className="subtle">{new Date(run.paidAt).toLocaleString()} · {run.lineCount} staff</span>
+                      </span>
+                      <Badge tone="positive">Paid</Badge>
+                    </article>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+      </TipsSection>
 
       {/* Manual staff hours */}
-      <Card title="Manually add staff hours" subtitle="Add a staff member to the tips allocation pool for this week — useful when they have no approved timesheets.">
-        <div className="form-grid three">
-          <Select
-            label="Staff member"
-            value={manualStaffId}
-            onChange={(event) => setManualStaffId(event.currentTarget.value)}
-            options={[{ value: '', label: 'Choose staff…' }, ...staffOptions]}
-          />
-          <Input label="Hours" type="number" min="0.25" step="0.25" value={manualHours} onChange={(event) => setManualHours(event.currentTarget.value)} placeholder="e.g. 6.5" />
-          <Input label="Notes" value={manualNotes} onChange={(event) => setManualNotes(event.currentTarget.value)} placeholder="Optional notes" />
-        </div>
-        <div className="toolbar-right">
-          <Button type="button" disabled={saving || !manualStaffId || !manualHours} onClick={() => void saveManualHours()}>
-            {saving && messageTarget === 'manual' ? 'Saving…' : 'Add to allocation'}
-          </Button>
-          <ActionFeedback
-            message={messageTarget === 'manual' ? message : null}
-            tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
-          />
-        </div>
-        {(summary?.manualHoursEntries.length ?? 0) > 0 ? (
-          <div className="staff-list" style={{ marginTop: 12 }}>
-            {(summary?.manualHoursEntries ?? []).map((entry) => (
-              <article key={entry.id} className="staff-list-button tips-row">
-                <span>
-                  <strong>{entry.staffName}</strong>
-                  <span className="subtle">{entry.hours}h manual · {entry.venue}{entry.notes ? ` · ${entry.notes}` : ''}</span>
-                </span>
-                <Button type="button" size="sm" variant="ghost" onClick={() => void deleteManualHoursEntry(entry.id)} disabled={saving}>✕</Button>
-              </article>
-            ))}
+      <TipsSection title="Manual staff hours" summary={`${summary?.manualHoursEntries.length ?? 0} manual entries`}>
+        <Card title="Manually add staff hours" subtitle="Add a staff member to the tips allocation pool for this week — useful when they have no approved timesheets.">
+          <div className="form-grid three">
+            <Select
+              label="Staff member"
+              value={manualStaffId}
+              onChange={(event) => setManualStaffId(event.currentTarget.value)}
+              options={[{ value: '', label: 'Choose staff…' }, ...staffOptions]}
+            />
+            <Input label="Hours" type="number" min="0.25" step="0.25" value={manualHours} onChange={(event) => setManualHours(event.currentTarget.value)} placeholder="e.g. 6.5" />
+            <Input label="Notes" value={manualNotes} onChange={(event) => setManualNotes(event.currentTarget.value)} placeholder="Optional notes" />
           </div>
-        ) : null}
-      </Card>
+          <div className="toolbar-right">
+            <Button type="button" disabled={saving || !manualStaffId || !manualHours} onClick={() => void saveManualHours()}>
+              {saving && messageTarget === 'manual' ? 'Saving…' : 'Add to allocation'}
+            </Button>
+            <ActionFeedback
+              message={messageTarget === 'manual' ? message : null}
+              tone={message?.includes('Could') || message?.includes('Choose') ? 'error' : 'success'}
+            />
+          </div>
+          {(summary?.manualHoursEntries.length ?? 0) > 0 ? (
+            <div className="staff-list" style={{ marginTop: 12 }}>
+              {(summary?.manualHoursEntries ?? []).map((entry) => (
+                <article key={entry.id} className="staff-list-button tips-row">
+                  <span>
+                    <strong>{entry.staffName}</strong>
+                    <span className="subtle">{entry.hours}h manual · {entry.venue}{entry.notes ? ` · ${entry.notes}` : ''}</span>
+                  </span>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => void deleteManualHoursEntry(entry.id)} disabled={saving}>✕</Button>
+                </article>
+              ))}
+            </div>
+          ) : null}
+        </Card>
+      </TipsSection>
 
       {/* Payroll status + entitlements */}
-      <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
+      <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
+        <Card title="Staff entitlements" subtitle={`Tip pool after $${breakagePerDay}/day breakage deduction, split by approved hours. Review and adjust before locking.`} padding="none" className="tips-entitlements-card">
         <div className="tips-status-bar">
           <div className={`tips-status-panel ${hasPaidRun ? 'is-locked' : ''}`}>
             <span>
-              <strong>{hasPaidRun ? 'Approved tip run locked' : 'Tip run open'}</strong>
+              <strong>{hasPaidRun ? 'Approved tip run locked' : 'Waiting for review'}</strong>
               <span className="subtle">
                 {hasPaidRun
                   ? 'Reports payroll export will use the latest paid run for this week and venue.'
-                  : 'Review, then mark paid to lock the run for payroll.'}
+                  : 'Review, then approve and pay at the bottom to lock the run for payroll.'}
               </span>
             </span>
-            <Badge tone={hasPaidRun ? 'positive' : 'warning'}>{hasPaidRun ? 'Payroll ready' : 'Needs approval'}</Badge>
+            <Badge tone={hasPaidRun ? 'positive' : 'warning'}>{hasPaidRun ? 'Payroll ready' : 'Waiting for review'}</Badge>
           </div>
           <div style={{ padding: '0 16px 12px' }}>
             <Input label="Paid run notes" value={payoutNotes} onChange={(event) => setPayoutNotes(event.currentTarget.value)} placeholder="Optional notes for payroll" />
@@ -12885,34 +12922,70 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
             </table>
           </div>
         ) : null}
-      </Card>
+        </Card>
+      </TipsSection>
 
       {lockedRows.length ? (
-        <Card title="Approved tip run" subtitle="This locked run is the source Reports uses for payroll tips." padding="none">
-          <div className="table-card tips-table">
-            <table>
-              <thead>
-                <tr>
-                  <th>Staff</th>
-                  <th>Role</th>
-                  <th>Hours</th>
-                  <th>Paid tips</th>
-                </tr>
-              </thead>
-              <tbody>
-                {lockedRows.map((row) => (
-                  <tr key={row.staffProfileId}>
-                    <td><strong>{row.name}</strong></td>
-                    <td>{row.roleTitle ?? 'Team member'}</td>
-                    <td>{row.approvedHours.toFixed(2)}</td>
-                    <td>{formatCents(row.amountCents)}</td>
+        <TipsSection title="Approved tip run" summary={`${lockedRows.length} staff locked for payroll`}>
+          <Card title="Approved tip run" subtitle="This locked run is the source Reports uses for payroll tips." padding="none">
+            <div className="table-card tips-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Staff</th>
+                    <th>Role</th>
+                    <th>Hours</th>
+                    <th>Paid tips</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </Card>
+                </thead>
+                <tbody>
+                  {lockedRows.map((row) => (
+                    <tr key={row.staffProfileId}>
+                      <td><strong>{row.name}</strong></td>
+                      <td>{row.roleTitle ?? 'Team member'}</td>
+                      <td>{row.approvedHours.toFixed(2)}</td>
+                      <td>{formatCents(row.amountCents)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        </TipsSection>
       ) : null}
+
+      <TipsSection title="Approve and pay" summary={hasPaidRun ? 'Export the approved run' : 'Final payroll approval'}>
+        <Card title={hasPaidRun ? 'Approved run exports' : 'Approve and pay'} subtitle={hasPaidRun ? 'Export the locked tip run for bank payment or payroll records.' : 'Approve once the final payout balances to the allocatable pool.'}>
+          <div className="tips-approval-footer">
+            <div>
+              <strong>{hasPaidRun ? 'Ready to export' : 'Waiting for review'}</strong>
+              <p className="subtle">
+                {hasPaidRun
+                  ? `${lockedRows.length} staff · ${formatCents(lockedRows.reduce((sum, row) => sum + row.amountCents, 0))} approved.`
+                  : `${reviewedRows.length} staff · final payout ${formatCents(totalPayoutCents)} · variance ${formatCents(payoutVarianceCents)}.`}
+              </p>
+            </div>
+            {!hasPaidRun ? (
+              <Button type="button" onClick={() => void markPaid()} disabled={saving || !summary?.entitlements.length || payoutVarianceCents !== 0}>
+                {saving && messageTarget === 'paid' ? 'Approving…' : 'Approve and pay'}
+              </Button>
+            ) : (
+              <div className="toolbar">
+                <Button type="button" onClick={() => void exportTipsAba()} disabled={saving || !lockedRows.length}>
+                  {saving && messageTarget === 'aba' ? 'Exporting…' : 'Export ABA'}
+                </Button>
+                <Button type="button" variant="secondary" onClick={() => void exportTips()} disabled={saving || !lockedRows.length}>
+                  {saving && messageTarget === 'export' ? 'Exporting…' : 'Export CSV'}
+                </Button>
+              </div>
+            )}
+          </div>
+          <ActionFeedback
+            message={['paid', 'aba', 'export'].includes(messageTarget ?? '') ? message : null}
+            tone={message?.includes('Could') || message?.includes('Choose') || message?.includes('variance') || message?.includes('Cannot') || message?.includes('Approve') || message?.includes('already') || message?.includes('not configured') || message?.includes('No approved') ? 'error' : 'success'}
+          />
+        </Card>
+      </TipsSection>
     </div>
   );
 }
@@ -14333,6 +14406,34 @@ function downloadTextFile(filename: string, contents: string, type = 'text/csv')
   link.download = filename;
   link.click();
   URL.revokeObjectURL(url);
+}
+
+function TipsSection({
+  title,
+  summary,
+  defaultOpen = true,
+  children
+}: {
+  title: string;
+  summary?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <section className={`tips-collapsible-section ${open ? 'is-open' : ''}`}>
+      <button
+        type="button"
+        className="tips-collapsible-toggle"
+        aria-expanded={open}
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span>{title}</span>
+        {summary ? <small>{summary}</small> : null}
+      </button>
+      {open ? <div className="tips-collapsible-body">{children}</div> : null}
+    </section>
+  );
 }
 
 function parseCsvLine(line: string) {

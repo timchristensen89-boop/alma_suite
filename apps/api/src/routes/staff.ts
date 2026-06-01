@@ -739,7 +739,8 @@ staffRouter.get('/tips', requireManager, async (req, res, next) => {
     res.json(await staffService.getTipsSummary({
       start: typeof req.query.start === 'string' ? req.query.start : '',
       end: typeof req.query.end === 'string' ? req.query.end : '',
-      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+      venue: typeof req.query.venue === 'string' ? req.query.venue : '',
+      breakageCentsPerDay: typeof req.query.breakageCentsPerDay === 'string' ? req.query.breakageCentsPerDay : undefined
     }));
   } catch (error) {
     next(error);
@@ -774,6 +775,14 @@ staffRouter.post('/tips/export/csv', requireManager, async (req, res, next) => {
   try {
     const csv = await staffService.exportTipsCsv(req.body);
     res.json({ csv });
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/tips/export/aba', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.exportTipsAba(req.body));
   } catch (error) {
     next(error);
   }

@@ -981,6 +981,10 @@ export const tipsMarkPaidInputSchema = tipsQuerySchema.extend({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const tipsExportInputSchema = tipsQuerySchema.extend({
+  paidRunId: z.string().optional().or(z.literal(''))
+});
+
 export const tipsBulkDeleteSchema = z.object({
   venue: z.string().min(1),
   start: z.string().min(4),

@@ -47,6 +47,7 @@ import {
   tipsBulkDeleteSchema,
   tipsCashEntryInputSchema,
   tipsCardImportInputSchema,
+  tipsExportInputSchema,
   tipsManualHoursSchema,
   tipsMarkPaidInputSchema,
   tipsPayoutInputSchema,
@@ -1444,12 +1445,21 @@ function toXeroCsv(rows: Array<Record<string, unknown>>) {
 
 function toTipsCsv(rows: Array<Record<string, unknown>>) {
   const headers = [
+    'Run ID',
+    'Paid At',
     'Staff Name',
     'Venue',
     'Role',
     'Approved Hours',
+    'Base Tips',
+    'Adjustment',
     'Tips Amount',
+    'Excluded',
     'Payment Method',
+    'Bank Account Name',
+    'BSB',
+    'Account Number',
+    'Notes',
     'Staff Profile ID'
   ];
   return [headers, ...rows.map((row) => headers.map((header) => row[header]))]
@@ -1459,6 +1469,81 @@ function toTipsCsv(rows: Array<Record<string, unknown>>) {
 
 function centsToMoney(cents: number) {
   return (cents / 100).toFixed(2);
+}
+
+function normaliseDigits(value: string | null | undefined) {
+  return (value ?? '').replace(/\D/g, '');
+}
+
+function abaText(value: string | null | undefined, length: number, align: 'left' | 'right' = 'left') {
+  const clean = (value ?? '')
+    .normalize('NFKD')
+    .replace(/[^\x20-\x7E]/g, '')
+    .replace(/[^A-Za-z0-9 .,&'()+\-/$]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toUpperCase()
+    .slice(0, length);
+  return align === 'right' ? clean.padStart(length, ' ') : clean.padEnd(length, ' ');
+}
+
+function abaNumeric(value: number | string, length: number) {
+  const clean = String(value).replace(/\D/g, '').slice(0, length);
+  return clean.padStart(length, '0');
+}
+
+function abaBsb(value: string | null | undefined, label: string) {
+  const digits = normaliseDigits(value);
+  if (digits.length !== 6) throw new HttpError(400, `${label} must be a 6 digit BSB.`);
+  return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+}
+
+function abaAccount(value: string | null | undefined, label: string) {
+  const digits = normaliseDigits(value);
+  if (!digits || digits.length > 9) throw new HttpError(400, `${label} must be 1 to 9 digits.`);
+  return digits.padStart(9, ' ');
+}
+
+function abaRecord(parts: string[]) {
+  const record = parts.join('');
+  if (record.length !== 120) {
+    throw new Error(`Invalid ABA record length ${record.length}; expected 120.`);
+  }
+  return record;
+}
+
+function tipsAbaConfig() {
+  const config = {
+    financialInstitution: process.env.TIPS_ABA_FINANCIAL_INSTITUTION ?? process.env.ABA_FINANCIAL_INSTITUTION ?? '',
+    userName: process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
+    userId: process.env.TIPS_ABA_USER_ID ?? process.env.ABA_USER_ID ?? '',
+    description: process.env.TIPS_ABA_DESCRIPTION ?? 'ALMA TIPS',
+    remitterName: process.env.TIPS_ABA_REMITTER_NAME ?? process.env.ABA_REMITTER_NAME ?? process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
+    traceBsb: process.env.TIPS_ABA_TRACE_BSB ?? process.env.ABA_TRACE_BSB ?? '',
+    traceAccount: process.env.TIPS_ABA_TRACE_ACCOUNT ?? process.env.ABA_TRACE_ACCOUNT ?? ''
+  };
+  const missing = [
+    ['TIPS_ABA_FINANCIAL_INSTITUTION', config.financialInstitution],
+    ['TIPS_ABA_USER_NAME', config.userName],
+    ['TIPS_ABA_USER_ID', config.userId],
+    ['TIPS_ABA_TRACE_BSB', config.traceBsb],
+    ['TIPS_ABA_TRACE_ACCOUNT', config.traceAccount],
+    ['TIPS_ABA_REMITTER_NAME', config.remitterName]
+  ]
+    .filter(([, value]) => !String(value).trim())
+    .map(([key]) => key);
+  if (missing.length) {
+    throw new HttpError(400, `ABA export is not configured. Add ${missing.join(', ')}.`);
+  }
+  const userId = normaliseDigits(config.userId);
+  if (userId.length !== 6) throw new HttpError(400, 'TIPS_ABA_USER_ID must be 6 digits.');
+  return {
+    ...config,
+    userId,
+    financialInstitution: config.financialInstitution.trim().slice(0, 3),
+    traceBsb: abaBsb(config.traceBsb, 'TIPS_ABA_TRACE_BSB'),
+    traceAccount: abaAccount(config.traceAccount, 'TIPS_ABA_TRACE_ACCOUNT')
+  };
 }
 
 type TipEntitlementRow = {
@@ -1502,6 +1587,129 @@ function tipImportKey(input: {
   const day = input.serviceDate.toISOString().slice(0, 10);
   const external = input.externalId?.trim() || `${day}:${input.amountCents}`;
   return (input.importKey?.trim() || `${source}:${venue}:${external}`).slice(0, 240);
+}
+
+async function getApprovedTipRun(input: unknown) {
+  const data = tipsExportInputSchema.parse(input);
+  if (!data.venue && !data.paidRunId) throw new HttpError(400, 'Choose a venue before exporting approved tips');
+  const startDate = parseDate(data.start, 'Tips start date');
+  const endDate = parseDate(data.end, 'Tips end date');
+  const run = await prisma.staffTipPaymentRun.findFirst({
+    where: data.paidRunId
+      ? { id: data.paidRunId }
+      : {
+          weekStart: startDate,
+          weekEnd: endDate,
+          venue: data.venue
+        },
+    orderBy: [{ paidAt: 'desc' }, { createdAt: 'desc' }],
+    include: {
+      lines: {
+        include: {
+          staffProfile: {
+            select: {
+              id: true,
+              firstName: true,
+              lastName: true,
+              roleTitle: true,
+              venue: true,
+              bankAccountName: true,
+              bankBsb: true,
+              bankAccountNumber: true
+            }
+          }
+        },
+        orderBy: [{ createdAt: 'asc' }]
+      }
+    }
+  });
+  if (!run) throw new HttpError(404, 'No approved tip run found for this week and venue.');
+  return run;
+}
+
+function formatAbaDate(value: Date) {
+  const parts = new Intl.DateTimeFormat('en-AU', {
+    timeZone: 'Australia/Sydney',
+    day: '2-digit',
+    month: '2-digit',
+    year: '2-digit'
+  }).formatToParts(value);
+  const day = parts.find((part) => part.type === 'day')?.value ?? '01';
+  const month = parts.find((part) => part.type === 'month')?.value ?? '01';
+  const year = parts.find((part) => part.type === 'year')?.value ?? '00';
+  return `${day}${month}${year}`;
+}
+
+function tipRunFilenamePart(value: string) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
+}
+
+function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
+  const config = tipsAbaConfig();
+  const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
+  if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
+
+  const missingBankDetails = payableLines.flatMap((line) => {
+    const missing = [
+      line.staffProfile.bankAccountName?.trim() ? null : 'account name',
+      normaliseDigits(line.staffProfile.bankBsb).length === 6 ? null : 'BSB',
+      normaliseDigits(line.staffProfile.bankAccountNumber).length ? null : 'account number'
+    ].filter(Boolean);
+    return missing.length
+      ? [`${line.staffProfile.firstName} ${line.staffProfile.lastName} (${missing.join(', ')})`]
+      : [];
+  });
+  if (missingBankDetails.length) {
+    throw new HttpError(400, `Cannot export ABA until bank details are complete for: ${missingBankDetails.join('; ')}.`);
+  }
+
+  const processingDate = formatAbaDate(new Date());
+  const totalCents = payableLines.reduce((sum, line) => sum + line.amountCents, 0);
+  const lodgementReference = `TIPS ${dateKey(run.weekStart)}`;
+  const header = abaRecord([
+    '0',
+    ' '.repeat(17),
+    '01',
+    abaText(config.financialInstitution, 3),
+    ' '.repeat(7),
+    abaText(config.userName, 26),
+    config.userId,
+    abaText(config.description, 12),
+    processingDate,
+    ' '.repeat(40)
+  ]);
+  const details = payableLines.map((line) => abaRecord([
+    '1',
+    abaBsb(line.staffProfile.bankBsb, `${line.staffProfile.firstName} ${line.staffProfile.lastName} BSB`),
+    abaAccount(line.staffProfile.bankAccountNumber, `${line.staffProfile.firstName} ${line.staffProfile.lastName} account number`),
+    ' ',
+    '53',
+    abaNumeric(line.amountCents, 10),
+    abaText(line.staffProfile.bankAccountName || `${line.staffProfile.firstName} ${line.staffProfile.lastName}`, 32),
+    abaText(lodgementReference, 18),
+    config.traceBsb,
+    config.traceAccount,
+    abaText(config.remitterName, 16),
+    '00000000'
+  ]));
+  const footer = abaRecord([
+    '7',
+    '999-999',
+    ' '.repeat(12),
+    abaNumeric(totalCents, 10),
+    abaNumeric(totalCents, 10),
+    abaNumeric(0, 10),
+    ' '.repeat(24),
+    abaNumeric(payableLines.length, 6),
+    ' '.repeat(40)
+  ]);
+
+  return {
+    aba: [header, ...details, footer].join('\r\n') + '\r\n',
+    count: payableLines.length,
+    totalCents,
+    filename: `alma-tips-${tipRunFilenamePart(run.venue)}-${dateKey(run.weekStart)}.aba`
+  };
 }
 
 export const staffService = {
@@ -4978,8 +5186,31 @@ export const staffService = {
 
   async exportTipsCsv(input: unknown) {
     const summary = await this.getTipsSummary(input);
+    if (summary.paidEntitlements.length) {
+      const run = await getApprovedTipRun(input);
+      return toTipsCsv(run.lines.map((line) => ({
+        'Run ID': run.id,
+        'Paid At': run.paidAt.toISOString(),
+        'Staff Name': `${line.staffProfile.firstName} ${line.staffProfile.lastName}`,
+        Venue: line.staffProfile.venue ?? run.venue,
+        Role: line.staffProfile.roleTitle ?? '',
+        'Approved Hours': line.hours.toFixed(2),
+        'Base Tips': centsToMoney(line.baseAmountCents),
+        Adjustment: centsToMoney(line.adjustmentCents),
+        'Tips Amount': centsToMoney(line.amountCents),
+        Excluded: line.excluded ? 'Yes' : 'No',
+        'Payment Method': line.paymentMethod,
+        'Bank Account Name': line.staffProfile.bankAccountName ?? '',
+        BSB: line.staffProfile.bankBsb ?? '',
+        'Account Number': line.staffProfile.bankAccountNumber ?? '',
+        Notes: line.notes ?? '',
+        'Staff Profile ID': line.staffProfileId
+      })));
+    }
     const rows = applyTipAdjustments(summary.entitlements, input);
     return toTipsCsv(rows.map((row) => ({
+      'Run ID': '',
+      'Paid At': '',
       'Staff Name': row.name,
       Venue: row.venue ?? '',
       Role: row.roleTitle ?? '',
@@ -4989,9 +5220,17 @@ export const staffService = {
       'Tips Amount': centsToMoney(row.finalAmountCents),
       Excluded: row.excluded ? 'Yes' : 'No',
       'Payment Method': row.paymentMethod,
+      'Bank Account Name': '',
+      BSB: '',
+      'Account Number': '',
       Notes: row.notes ?? '',
       'Staff Profile ID': row.staffProfileId
     })));
+  },
+
+  async exportTipsAba(input: unknown) {
+    const run = await getApprovedTipRun(input);
+    return buildTipsAba(run);
   },
 
   async markTipsPaid(input: unknown, paidById?: string) {
@@ -5004,6 +5243,14 @@ export const staffService = {
     }
     const startDate = parseDate(data.start, 'Tips start date');
     const endDate = parseDate(data.end, 'Tips end date');
+    const existing = await prisma.staffTipPaymentRun.findFirst({
+      where: { venue: data.venue, weekStart: startDate, weekEnd: endDate },
+      select: { id: true, paidAt: true },
+      orderBy: [{ paidAt: 'desc' }]
+    });
+    if (existing) {
+      throw new HttpError(409, `Tips are already approved for ${data.venue} this week. Export the existing paid run instead.`);
+    }
     const adjustedRows = applyTipAdjustments(summary.entitlements, data);
     return prisma.staffTipPaymentRun.create({
       data: {
