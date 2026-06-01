@@ -6818,3 +6818,38 @@
   background: var(--color-surface, #F8F6F1);
   border-color: rgba(31, 53, 36, 0.18);
 }
+/* ==========================================================================
+   Mobile pass (≤480px)
+   ========================================================================== */
+@media (max-width: 480px) {
+  .staff-board {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  /* Keep .staff-settings-stats single-column on phones — the 640px
+     block above already collapses it to 1fr, and forcing it back to
+     2 columns at 480px reintroduced the cramped layout this pass is
+     meant to avoid. */
+  .staff-settings-stats {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .staff-settings-grid-primary,
+  .staff-settings-support-grid,
+  .staff-settings-card .admin-social-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .staff-daily-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tips-page .stats-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .tips-entry-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

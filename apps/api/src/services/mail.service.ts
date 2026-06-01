@@ -440,13 +440,21 @@ export const mailService = {
         <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
           <p style="font-size:17px;margin:0 0 10px">Hi ${safeRecipient},</p>
           <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">${escapeHtml(intro)}</p>
-          <div style="border:1px solid #e0d3bf;background:#fffaf0;border-radius:16px;padding:24px;margin:0 0 22px">
-            <div style="font-size:11px;text-transform:uppercase;letter-spacing:0.22em;color:${accentColor};margin-bottom:10px">Gift card code</div>
-            <div style="font-size:31px;font-weight:900;letter-spacing:0.08em;color:${primaryColor};margin-bottom:14px">${safeCode}</div>
-            <div style="font-size:18px;font-weight:800;color:${accentColor}">${escapeHtml(balance)} available</div>
-            <div style="font-size:13px;color:#64705f">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
-            ${safeMessage ? `<p style="font-size:15px;color:#314235;border-top:1px solid #eadfcf;padding-top:16px;margin:18px 0 0">${safeMessage}</p>` : ''}
-            ${safeQrCodeUrl ? `<div style="border-top:1px solid #eadfcf;margin-top:20px;padding-top:20px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="154" height="154" style="display:block;background:#ffffff;border-radius:12px;padding:10px;border:1px solid #e6ded0" /><p style="font-size:12px;color:#64705f;margin:9px 0 0">The QR code and gift card artwork are attached to this email.</p></div>` : ''}
+          <div style="background:${primaryColor};background-image:linear-gradient(160deg,#233628 0%,#14241A 100%);border-radius:16px;padding:26px 28px;margin:0 0 22px;color:#F5DCCE">
+            <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+              <tr>
+                <td style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6)">Alma Group · Gift Card</td>
+                <td align="right">
+                  <span style="display:inline-block;border:1px solid rgba(245,220,206,0.4);border-radius:999px;padding:5px 14px;font-size:14px;font-weight:700;color:#F5DCCE">${escapeHtml(amount)}</span>
+                </td>
+              </tr>
+            </table>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:0.22em;color:rgba(245,220,206,0.6);margin:24px 0 8px">Card code</div>
+            <div style="font-family:'Courier New',monospace;font-size:26px;font-weight:700;letter-spacing:0.12em;color:#F5DCCE;background:rgba(245,220,206,0.08);border:1px solid rgba(245,220,206,0.18);border-radius:10px;padding:14px 16px;text-align:center">${safeCode}</div>
+            <div style="margin-top:16px;font-size:15px;font-weight:700;color:#F5DCCE">${escapeHtml(balance)} balance</div>
+            <div style="font-size:12px;color:rgba(245,220,206,0.6);margin-top:2px">Original value ${escapeHtml(amount)}${expiry ? ` · Expires ${escapeHtml(expiry)}` : ''}</div>
+            ${safeMessage ? `<p style="font-size:14px;font-style:italic;color:rgba(245,220,206,0.85);border-top:1px solid rgba(245,220,206,0.18);padding-top:16px;margin:18px 0 0">${safeMessage}</p>` : ''}
+            ${safeQrCodeUrl ? `<div style="border-top:1px solid rgba(245,220,206,0.18);margin-top:18px;padding-top:18px"><img src="${safeQrCodeUrl}" alt="Gift card redemption QR code" width="140" height="140" style="display:block;background:#ffffff;border-radius:10px;padding:8px" /><p style="font-size:11px;color:rgba(245,220,206,0.6);margin:8px 0 0">The QR code and gift card artwork are attached to this email.</p></div>` : ''}
           </div>
           <p style="margin:0 0 22px">
             <a href="${safePrintableUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;text-decoration:none;font-weight:800;padding:13px 18px;border-radius:8px;font-size:14px;margin:0 8px 8px 0">

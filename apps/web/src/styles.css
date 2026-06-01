@@ -10892,3 +10892,36 @@ a.suite-app-tile:hover {
     transform: translateX(50%);
   }
 }
+
+/* ==========================================================================
+   Mobile pass (≤480px) — generic grids, form grids, and shell padding.
+   App-specific overrides live in each app's own styles.css.
+   ========================================================================== */
+@media (max-width: 480px) {
+  .grid.two,
+  .grid.three,
+  .grid.four,
+  .grid.two-one {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .form-grid.two,
+  .form-grid.three {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .stats-grid,
+  .stat-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .app-shell-main {
+    padding: 18px 14px 36px;
+  }
+
+  .inline-actions,
+  .toolbar-right {
+    flex-wrap: wrap;
+    justify-content: stretch;
+  }
+}
