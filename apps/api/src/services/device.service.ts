@@ -24,6 +24,50 @@ const PIN_FAILURE_LIMIT = 5;
 const PIN_LOCK_MS = 5 * 60 * 1000;
 const PIN_LOGIN_FAILED_MESSAGE = 'PIN login failed';
 
+// Per-IP throttle for the PUBLIC, un-authenticated staff-pin-login endpoint.
+// Without it, anyone could brute-force PINs across all staff. In-memory and
+// therefore per-instance — a meaningful bar on the common single-instance case;
+// a shared store would harden it further across scaled-out instances.
+const PIN_IP_WINDOW_MS = 15 * 60 * 1000;
+const PIN_IP_MAX_FAILURES = 10;
+const pinAttemptsByIp = new Map<string, { failures: number; firstAt: number; lockedUntil: number }>();
+
+function pinRateKey(ip: string | undefined): string {
+  return ip && ip.trim() ? ip.trim() : 'unknown';
+}
+
+function assertPinLoginRateOk(ip: string | undefined): void {
+  const now = Date.now();
+  // Opportunistic cleanup so the map can't grow without bound under attack.
+  if (pinAttemptsByIp.size > 5000) {
+    for (const [key, rec] of pinAttemptsByIp) {
+      if (rec.lockedUntil < now && now - rec.firstAt > PIN_IP_WINDOW_MS) pinAttemptsByIp.delete(key);
+    }
+  }
+  const rec = pinAttemptsByIp.get(pinRateKey(ip));
+  if (rec && rec.lockedUntil > now) {
+    throw new HttpError(429, 'Too many PIN attempts. Wait a few minutes and try again.');
+  }
+}
+
+function recordPinLoginFailure(ip: string | undefined): void {
+  const key = pinRateKey(ip);
+  const now = Date.now();
+  const rec = pinAttemptsByIp.get(key);
+  if (!rec || now - rec.firstAt > PIN_IP_WINDOW_MS) {
+    pinAttemptsByIp.set(key, { failures: 1, firstAt: now, lockedUntil: 0 });
+    return;
+  }
+  rec.failures += 1;
+  if (rec.failures >= PIN_IP_MAX_FAILURES) {
+    rec.lockedUntil = now + PIN_IP_WINDOW_MS;
+  }
+}
+
+function recordPinLoginSuccess(ip: string | undefined): void {
+  pinAttemptsByIp.delete(pinRateKey(ip));
+}
+
 function displayName(profile: { firstName: string; lastName: string; email?: string | null }) {
   return `${profile.firstName ?? ''} ${profile.lastName ?? ''}`.trim() || profile.email || 'Venue device';
 }
@@ -459,8 +503,9 @@ export const deviceService = {
     return authService.effectiveDeviceUser(device, staffUser);
   },
 
-  async staffPinLogin(input: unknown) {
+  async staffPinLogin(input: unknown, clientIp?: string) {
     const data = staffHomePinLoginInputSchema.parse(input);
+    assertPinLoginRateOk(clientIp);
     const profiles = await prisma.staffProfile.findMany({
       where: {
         accountType: 'HUMAN',
@@ -484,17 +529,24 @@ export const deviceService = {
     }
 
     if (matches.length === 0) {
+      recordPinLoginFailure(clientIp);
       throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
     }
     if (matches.length > 1) {
+      recordPinLoginFailure(clientIp);
       throw new HttpError(409, 'That PIN is linked to more than one staff profile. Ask a manager to reset one PIN.');
     }
     const profile = matches[0]!;
     if (profile.pinLockedUntil && profile.pinLockedUntil.getTime() > Date.now()) {
+      recordPinLoginFailure(clientIp);
       throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
     }
     const staffUser = await authService.getActiveHumanById(profile.id);
-    if (!staffUser) throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    if (!staffUser) {
+      recordPinLoginFailure(clientIp);
+      throw new HttpError(401, PIN_LOGIN_FAILED_MESSAGE);
+    }
+    recordPinLoginSuccess(clientIp);
     await resetPinFailures(profile.id);
     await prisma.staffProfile.update({
       where: { id: profile.id },

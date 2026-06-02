@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { HttpError } from '../lib/http.js';
+import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { checklistService } from '../services/checklist.service.js';
 import { shiftTaskService } from '../services/shift-task.service.js';
 
@@ -13,7 +14,7 @@ checklistsRouter.get('/templates', async (_req, res, next) => {
   }
 });
 
-checklistsRouter.post('/templates', async (req, res, next) => {
+checklistsRouter.post('/templates', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await checklistService.createTemplate(req.body));
   } catch (error) {
@@ -29,17 +30,17 @@ checklistsRouter.get('/templates/:id', async (req, res, next) => {
   }
 });
 
-checklistsRouter.put('/templates/:id', async (req, res, next) => {
+checklistsRouter.put('/templates/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await checklistService.updateTemplate(req.params.id, req.body));
+    res.json(await checklistService.updateTemplate(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
 });
 
-checklistsRouter.delete('/templates/:id', async (req, res, next) => {
+checklistsRouter.delete('/templates/:id', requireAdmin, async (req, res, next) => {
   try {
-    res.json(await checklistService.deleteTemplate(req.params.id));
+    res.json(await checklistService.deleteTemplate(String(req.params.id)));
   } catch (error) {
     next(error);
   }
@@ -76,7 +77,7 @@ checklistsRouter.get('/shift-tasks', async (req, res, next) => {
   }
 });
 
-checklistsRouter.post('/runs', async (req, res, next) => {
+checklistsRouter.post('/runs', requireManager, async (req, res, next) => {
   try {
     const run = await checklistService.createRun(req.body);
     res.status(201).json(run);
@@ -85,15 +86,8 @@ checklistsRouter.post('/runs', async (req, res, next) => {
   }
 });
 
-// Cron-callable: generate today's checklist runs from every template.
-// Point Cloud Scheduler at this with a daily morning trigger.
-checklistsRouter.post('/auto-schedule', async (_req, res, next) => {
-  try {
-    res.json(await checklistService.autoScheduleDailyRuns());
-  } catch (error) {
-    next(error);
-  }
-});
+// The daily auto-schedule cron now lives on the secret-guarded integration-jobs
+// router: POST /api/integration-jobs/checklists/auto-schedule.
 
 checklistsRouter.get('/runs/:id', async (req, res, next) => {
   try {

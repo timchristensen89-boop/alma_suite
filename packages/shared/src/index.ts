@@ -1431,8 +1431,13 @@ export const GIFT_CARD_DESIGNS = ['forest', 'shell', 'avalon', 'stalma', 'thanks
 export type GiftCardDesign = (typeof GIFT_CARD_DESIGNS)[number];
 export const giftCardDesignSchema = z.enum(GIFT_CARD_DESIGNS);
 
+// Minimum gift card amount in cents ($25). Keep this in lockstep with the
+// giftcards-web amount validation so a crafted request can't undercut the floor.
+export const GIFT_CARD_MIN_AMOUNT_CENTS = 2500;
+export const GIFT_CARD_MAX_AMOUNT_CENTS = 200000;
+
 export const giftCardCheckoutInputSchema = z.object({
-  amountCents: z.coerce.number().int().min(1000).max(200000),
+  amountCents: z.coerce.number().int().min(GIFT_CARD_MIN_AMOUNT_CENTS).max(GIFT_CARD_MAX_AMOUNT_CENTS),
   purchaserName: z.string().min(2),
   purchaserEmail: z.string().email(),
   recipientName: z.string().optional().or(z.literal('')),
@@ -1483,7 +1488,7 @@ export const giftCardPromoCodeUpdateSchema = giftCardPromoCodeInputSchema.partia
 
 export const giftCardPromoQuoteInputSchema = z.object({
   code: z.string().min(3).max(40),
-  amountCents: z.coerce.number().int().min(1000).max(200000)
+  amountCents: z.coerce.number().int().min(GIFT_CARD_MIN_AMOUNT_CENTS).max(GIFT_CARD_MAX_AMOUNT_CENTS)
 });
 
 const giftCardImageSettingSchema = z

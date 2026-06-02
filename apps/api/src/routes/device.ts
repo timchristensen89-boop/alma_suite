@@ -44,7 +44,7 @@ deviceRouter.get('/home-summary', async (_req, res, next) => {
 
 deviceRouter.post('/staff-pin-login', async (req, res, next) => {
   try {
-    const user = await deviceService.staffPinLogin(req.body);
+    const user = await deviceService.staffPinLogin(req.body, req.ip);
     const token = createSessionToken(user.id);
     clearDevicePinSessionCookie(res);
     setSessionCookie(res, token);

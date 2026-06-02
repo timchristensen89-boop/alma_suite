@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
+import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { integrationService } from '../services/integration.service.js';
@@ -38,6 +39,18 @@ integrationJobsRouter.use((req, _res, next) => {
 integrationJobsRouter.post('/square/sync', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledSquareSync(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Cron entrypoint: generate today's checklist runs from every template.
+// Point Cloud Scheduler at POST /api/integration-jobs/checklists/auto-schedule
+// with the scheduler secret (this router is secret-guarded above and mounted
+// before session auth). Replaces the old session-only checklists/auto-schedule.
+integrationJobsRouter.post('/checklists/auto-schedule', async (_req, res, next) => {
+  try {
+    res.json(await checklistService.autoScheduleDailyRuns());
   } catch (error) {
     next(error);
   }

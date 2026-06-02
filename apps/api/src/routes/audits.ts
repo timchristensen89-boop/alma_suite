@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { auditService } from '../services/audit.service.js';
 import { auditExportService } from '../services/audit-export.service.js';
 
@@ -12,7 +13,7 @@ auditsRouter.get('/templates', async (_req, res, next) => {
   }
 });
 
-auditsRouter.post('/templates', async (req, res, next) => {
+auditsRouter.post('/templates', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await auditService.createTemplate(req.body));
   } catch (error) {
@@ -28,17 +29,17 @@ auditsRouter.get('/templates/:id', async (req, res, next) => {
   }
 });
 
-auditsRouter.put('/templates/:id', async (req, res, next) => {
+auditsRouter.put('/templates/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await auditService.updateTemplate(req.params.id, req.body));
+    res.json(await auditService.updateTemplate(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
 });
 
-auditsRouter.delete('/templates/:id', async (req, res, next) => {
+auditsRouter.delete('/templates/:id', requireAdmin, async (req, res, next) => {
   try {
-    res.json(await auditService.deleteTemplate(req.params.id));
+    res.json(await auditService.deleteTemplate(String(req.params.id)));
   } catch (error) {
     next(error);
   }
@@ -52,7 +53,7 @@ auditsRouter.get('/runs', async (_req, res, next) => {
   }
 });
 
-auditsRouter.post('/runs', async (req, res, next) => {
+auditsRouter.post('/runs', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await auditService.createRun(req.body));
   } catch (error) {
@@ -68,28 +69,28 @@ auditsRouter.get('/runs/:id', async (req, res, next) => {
   }
 });
 
-auditsRouter.patch('/runs/:id', async (req, res, next) => {
+auditsRouter.patch('/runs/:id', requireManager, async (req, res, next) => {
   try {
-    res.json(await auditService.updateRun(req.params.id, req.body));
+    res.json(await auditService.updateRun(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
 });
 
-auditsRouter.post('/runs/:id/findings', async (req, res, next) => {
+auditsRouter.post('/runs/:id/findings', requireManager, async (req, res, next) => {
   try {
-    res.status(201).json(await auditService.addFinding(req.params.id, req.body));
+    res.status(201).json(await auditService.addFinding(String(req.params.id), req.body));
   } catch (error) {
     next(error);
   }
 });
 
-auditsRouter.post('/runs/:runId/findings/:findingId/convert-to-issue', async (req, res, next) => {
+auditsRouter.post('/runs/:runId/findings/:findingId/convert-to-issue', requireManager, async (req, res, next) => {
   try {
     const actor = req.user ? `${req.user.firstName} ${req.user.lastName}` : 'system';
     const issue = await auditService.convertFindingToIssue(
-      req.params.runId,
-      req.params.findingId,
+      String(req.params.runId),
+      String(req.params.findingId),
       actor
     );
     res.status(201).json(issue);

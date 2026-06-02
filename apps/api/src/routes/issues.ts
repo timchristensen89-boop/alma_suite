@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { requireManager } from '../lib/auth-middleware.js';
 import { issueService } from '../services/issue.service.js';
 
 export const issuesRouter = Router();
@@ -70,9 +71,9 @@ issuesRouter.post('/:id/activity', async (req, res, next) => {
   }
 });
 
-issuesRouter.post('/:id/escalate', async (req, res, next) => {
+issuesRouter.post('/:id/escalate', requireManager, async (req, res, next) => {
   try {
-    const issue = await issueService.escalate(req.params.id, req.user);
+    const issue = await issueService.escalate(String(req.params.id), req.user);
     res.json(issue);
   } catch (error) {
     next(error);

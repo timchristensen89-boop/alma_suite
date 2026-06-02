@@ -96,13 +96,13 @@ export const marketingEngagementService = {
     const [connectedAccounts, publishAttempts] = await Promise.all([
       prisma.marketingSocialAccount.count({
         where: {
-          status: 'CONNECTED' as never, // status enum may use different label across forks
+          status: 'CONNECTED',
           ...(venueFilter ? { venue: venueFilter } : {})
         }
       }).catch(() => 0),
       prisma.marketingContentPublishAttempt.findMany({
         where: {
-          status: 'SUCCESS' as never,
+          status: 'PUBLISHED',
           createdAt: { gte: since },
           ...(venueFilter ? { post: { venue: venueFilter } } : {})
         },

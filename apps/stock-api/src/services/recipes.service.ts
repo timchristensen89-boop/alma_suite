@@ -21,6 +21,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
+import { convertQuantityToCostUnit } from './units.js';
 
 type RecipeRow = Prisma.RecipeGetPayload<{
   include: {
@@ -33,7 +34,7 @@ type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
   include: {
     lines: {
       include: {
-        item: { select: { id: true; name: true; unit: true; countUnit: true; avgCostCents: true } };
+        item: { select: { id: true; name: true; unit: true; countUnit: true; conversionFactor: true; avgCostCents: true } };
         subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true; isPrepRecipe: true } };
       };
     };
@@ -224,13 +225,25 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     if (row.item.avgCostCents === null) warnings.push('Stock item average cost is missing');
     if (quantity === null) warnings.push('Ingredient quantity is missing');
     const stockCostUnit = row.item.countUnit ?? row.item.unit;
-    if (row.unit && stockCostUnit && row.unit !== stockCostUnit) {
-      warnings.push(`Unit ${row.unit} differs from stock item cost unit ${stockCostUnit}; no conversion is applied`);
+    // Express the line quantity in the item's cost unit so the per-cost-unit
+    // price (avgCostCents) is applied correctly. Only warn when the units differ
+    // and no conversion can be resolved — otherwise we'd silently mis-cost.
+    const conversion =
+      quantity !== null ? convertQuantityToCostUnit(quantity, row.unit, row.item) : null;
+    if (
+      quantity !== null &&
+      conversion?.via === 'unknown' &&
+      row.unit &&
+      stockCostUnit &&
+      row.unit !== stockCostUnit
+    ) {
+      warnings.push(`Unit ${row.unit} differs from stock item cost unit ${stockCostUnit} and no conversion is known; cost not adjusted`);
     }
+    const costQuantity = conversion?.quantity ?? quantity;
     const unitCostCents = row.item.avgCostCents;
     const lineCostCents =
-      unitCostCents !== null && quantity !== null
-        ? roundCents(unitCostCents * quantity * wasteMultiplier)
+      unitCostCents !== null && costQuantity !== null
+        ? roundCents(unitCostCents * costQuantity * wasteMultiplier)
         : null;
     return {
       lineId: row.id,
@@ -366,7 +379,7 @@ async function findRecipeWithLines(id: string) {
     include: {
       lines: {
         include: {
-          item: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true } },
+          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
       },
@@ -387,7 +400,7 @@ async function refreshRecipeEstimatedCost(id: string) {
     include: {
       lines: {
         include: {
-          item: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true } },
+          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
       },
@@ -830,7 +843,7 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true } },
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         },
@@ -945,7 +958,7 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true, countUnit: true, avgCostCents: true } },
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         },

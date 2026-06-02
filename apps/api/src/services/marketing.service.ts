@@ -2226,6 +2226,17 @@ export const marketingService = {
       );
     }
 
+    // Atomically claim the send: only one caller can flip sentAt from null → now.
+    // This closes the read-then-send race (the earlier sentAt check is advisory)
+    // and means a retry after a mid-loop failure can't re-send to everyone.
+    const claimed = await prisma.marketingCampaign.updateMany({
+      where: { id: campaign.id, sentAt: null },
+      data: { sentAt: new Date() }
+    });
+    if (claimed.count === 0) {
+      throw new HttpError(409, 'This campaign has already been sent live.');
+    }
+
     // Fresh recipient rows for this send — wipe and re-create.
     await prisma.marketingCampaignRecipient.deleteMany({ where: { campaignId: campaign.id } });
 
@@ -2296,8 +2307,8 @@ export const marketingService = {
 
     await prisma.marketingCampaign.update({
       where: { id: campaign.id },
+      // sentAt was already set when the send was claimed above.
       data: {
-        sentAt: new Date(),
         status: 'SENT'
       }
     });

@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
@@ -312,6 +313,31 @@ async function findCardByCode(code: string) {
   return card;
 }
 
+// Create a gift card while atomically reserving a promo-code slot. The quote-time
+// count is only advisory: two concurrent checkouts could both pass it and exceed
+// maxRedemptions. Here we take a row lock on the promo (a Prisma update holds the
+// row lock to the end of the transaction) so concurrent checkouts serialise, then
+// re-count reserved (non-cancelled) cards and create inside the same transaction.
+async function createGiftCardReservingPromo(
+  data: Prisma.GiftCardUncheckedCreateInput,
+  promo: { id: string; maxRedemptions: number | null } | null | undefined
+) {
+  if (!promo || promo.maxRedemptions === null || promo.maxRedemptions === undefined) {
+    return prisma.giftCard.create({ data, include: { redemptions: true } });
+  }
+  const max = promo.maxRedemptions;
+  return prisma.$transaction(async (tx) => {
+    await tx.giftCardPromoCode.update({ where: { id: promo.id }, data: { updatedAt: new Date() } });
+    const reserved = await tx.giftCard.count({
+      where: { promoCodeId: promo.id, testMode: false, status: { not: 'CANCELLED' } }
+    });
+    if (reserved >= max) {
+      throw new HttpError(400, 'Promo code has reached its usage limit.');
+    }
+    return tx.giftCard.create({ data, include: { redemptions: true } });
+  });
+}
+
 export const giftCardService = {
   canManagePromoCodes,
 
@@ -472,8 +498,8 @@ export const giftCardService = {
 
     if (settings.testCheckoutEnabled) {
       const testSessionId = `TEST-${randomBytes(8).toString('hex').toUpperCase()}`;
-      const card = await prisma.giftCard.create({
-        data: {
+      const card = await createGiftCardReservingPromo(
+        {
           code,
           status: 'ACTIVE',
           initialValueCents: data.amountCents,
@@ -495,8 +521,8 @@ export const giftCardService = {
           expiresAt,
           scheduledDeliveryAt
         },
-        include: { redemptions: true }
-      });
+        promoResult?.promo
+      );
       if (!scheduledDeliveryAt) {
         await this.sendGiftCardEmail(card, settings);
       }
@@ -513,8 +539,8 @@ export const giftCardService = {
 
     if (!stripe) throw new HttpError(503, 'Payment setup is required before gift card checkout can go live.');
 
-    const card = await prisma.giftCard.create({
-      data: {
+    const card = await createGiftCardReservingPromo(
+      {
         code,
         status: 'PENDING_PAYMENT',
         initialValueCents: data.amountCents,
@@ -532,8 +558,8 @@ export const giftCardService = {
         expiresAt,
         scheduledDeliveryAt
       },
-      include: { redemptions: true }
-    });
+      promoResult?.promo
+    );
 
     const commonSession: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
@@ -822,11 +848,22 @@ export const giftCardService = {
   async redeem(input: unknown, redeemedById?: string) {
     const data = giftCardRedemptionInputSchema.parse(input);
     const card = await findCardByCode(data.code);
+    // Friendly pre-checks (non-authoritative — the atomic update below is the
+    // real guard against concurrent redemptions).
     if (card.status !== 'ACTIVE') throw new HttpError(400, `Gift card is ${card.status.replace('_', ' ').toLowerCase()}`);
     if (card.balanceCents < data.amountCents) throw new HttpError(400, 'Gift card balance is too low');
 
-    const nextBalance = card.balanceCents - data.amountCents;
     const updated = await prisma.$transaction(async (tx) => {
+      // Atomic, conditional decrement: only succeeds if the card is still ACTIVE
+      // and the balance still covers the amount. Two concurrent redemptions can
+      // never drive the balance negative — the loser matches zero rows.
+      const decrement = await tx.giftCard.updateMany({
+        where: { id: card.id, status: 'ACTIVE', balanceCents: { gte: data.amountCents } },
+        data: { balanceCents: { decrement: data.amountCents } }
+      });
+      if (decrement.count === 0) {
+        throw new HttpError(409, 'Gift card balance changed; please reload and try again');
+      }
       await tx.giftCardRedemption.create({
         data: {
           giftCardId: card.id,
@@ -836,12 +873,13 @@ export const giftCardService = {
           redeemedById: redeemedById ?? null
         }
       });
+      const after = await tx.giftCard.findUniqueOrThrow({
+        where: { id: card.id },
+        select: { balanceCents: true }
+      });
       return tx.giftCard.update({
         where: { id: card.id },
-        data: {
-          balanceCents: nextBalance,
-          status: nextBalance === 0 ? 'REDEEMED' : 'ACTIVE'
-        },
+        data: { status: after.balanceCents === 0 ? 'REDEEMED' : 'ACTIVE' },
         include: { redemptions: { orderBy: [{ redeemedAt: 'desc' }] } }
       });
     });
