@@ -205,6 +205,10 @@ export const authService = {
     return bcrypt.compare(pin, pinHash);
   },
 
+  async comparePassword(password: string, passwordHash: string) {
+    return bcrypt.compare(password, passwordHash);
+  },
+
   effectiveDeviceUser(deviceUser: AuthUser, staffUser: AuthUser): AuthUser {
     return {
       ...staffUser,

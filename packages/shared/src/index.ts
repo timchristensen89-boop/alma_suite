@@ -774,6 +774,10 @@ export const staffHomePinLoginInputSchema = z.object({
 
 export const staffPinChangeInputSchema = z.object({
   currentPin: pinSchema.optional(),
+  // Alternative proof of identity for the kiosk "set your PIN with your
+  // password" flow, where the user has no current PIN to supply. Verified
+  // server-side against the account password.
+  password: z.string().min(1).optional(),
   newPin: pinSchema
 });
 
