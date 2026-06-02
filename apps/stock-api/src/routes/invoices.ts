@@ -47,6 +47,42 @@ invoicesRouter.post('/import', async (req, res, next) => {
   }
 });
 
+// Exclusion rules — defined before "/:id" so the path isn't swallowed.
+invoicesRouter.get('/exclusion-rules', async (_req, res, next) => {
+  try {
+    res.json(await invoicesService.listExclusionRules());
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.post('/exclusion-rules', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.status(201).json(await invoicesService.upsertExclusionRule(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.put('/exclusion-rules/:ruleId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.upsertExclusionRule(req.body, String(req.params.ruleId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+invoicesRouter.delete('/exclusion-rules/:ruleId', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.deleteExclusionRule(String(req.params.ruleId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await invoicesService.get(String(req.params.id)));

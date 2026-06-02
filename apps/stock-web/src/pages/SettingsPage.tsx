@@ -16,6 +16,7 @@ import {
   Spinner
 } from '@alma/ui';
 import { IconItems, IconRecipes, IconSettings } from '../lib/icons';
+import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -605,6 +606,8 @@ export function SettingsPage() {
           description="Category settings above are available now. Venue defaults, preferred units, account preferences and dangerous setup tools stay disabled here so there are no dead setup actions."
         />
       </CollapsibleCard>
+
+      <InvoiceExclusionRulesCard canManage={canManage} />
     </div>
   );
 }

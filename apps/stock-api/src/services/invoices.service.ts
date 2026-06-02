@@ -2,12 +2,14 @@ import { createHash } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  invoiceExclusionRuleInputSchema,
   stockInvoiceDeleteInputSchema,
   stockInvoiceImportInputSchema,
   stockInvoiceLineRematchInputSchema,
   stockInvoiceMarkNeedsReviewInputSchema,
   stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
+  type InvoiceExclusionRule,
   type StockInvoiceAssignee,
   type StockInvoiceAssigneesPayload,
   type StockInvoiceImportResult,
@@ -482,7 +484,114 @@ function extractTextLineValue(lines: string[], patterns: RegExp[]) {
   return null;
 }
 
+// ── Invoice exclusion rules ──────────────────────────────────────────
+// Skip non-supplier documents (e.g. Square sales payouts) on import.
+
+type ExclusionField = 'title' | 'body' | 'supplier' | 'invoiceNumber';
+type ExclusionCondition = { field: ExclusionField; value: string };
+type LoadedExclusionRule = { id: string; name: string; conditions: ExclusionCondition[] };
+
+// Pull every string out of a JSON blob so a "body contains X" condition can
+// match document/email text stored in sourceMetadata.
+function flattenJsonText(value: unknown, depth = 0): string {
+  if (depth > 6 || value == null) return '';
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.map((item) => flattenJsonText(item, depth + 1)).join(' ');
+  if (typeof value === 'object') {
+    return Object.values(value as Record<string, unknown>)
+      .map((item) => flattenJsonText(item, depth + 1))
+      .join(' ');
+  }
+  return '';
+}
+
+// The text an exclusion rule matches against, per field, lower-cased.
+function exclusionMatchFields(invoice: NormalisedInvoice): Record<ExclusionField, string> {
+  const bodyText = [
+    flattenJsonText(invoice.sourceMetadata),
+    ...invoice.lines.map((line) => line.description)
+  ]
+    .join(' ')
+    .toLowerCase();
+  return {
+    title: (invoice.sourceFileName ?? '').toLowerCase(),
+    body: bodyText,
+    supplier: (invoice.supplierName ?? '').toLowerCase(),
+    invoiceNumber: (invoice.invoiceNumber ?? '').toLowerCase()
+  };
+}
+
+function parseExclusionConditions(raw: unknown): ExclusionCondition[] {
+  if (!Array.isArray(raw)) return [];
+  const allowed: ExclusionField[] = ['title', 'body', 'supplier', 'invoiceNumber'];
+  return raw
+    .map((entry) => {
+      if (!isRecord(entry)) return null;
+      const field = trimText(entry.field) as ExclusionField;
+      const value = trimText(entry.value);
+      if (!allowed.includes(field) || !value) return null;
+      return { field, value };
+    })
+    .filter((entry): entry is ExclusionCondition => entry !== null);
+}
+
+// Returns the first enabled rule that fully matches the invoice, or null.
+// ALL conditions in a rule must match (AND); any matching rule excludes.
+function findMatchingExclusionRule(
+  invoice: NormalisedInvoice,
+  rules: LoadedExclusionRule[]
+): LoadedExclusionRule | null {
+  if (rules.length === 0) return null;
+  const fields = exclusionMatchFields(invoice);
+  for (const rule of rules) {
+    if (rule.conditions.length === 0) continue;
+    const matchesAll = rule.conditions.every((condition) =>
+      fields[condition.field].includes(condition.value.toLowerCase())
+    );
+    if (matchesAll) return rule;
+  }
+  return null;
+}
+
 export const invoicesService = {
+  async listExclusionRules(): Promise<InvoiceExclusionRule[]> {
+    const rows = await prisma.invoiceExclusionRule.findMany({ orderBy: { createdAt: 'asc' } });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      enabled: row.enabled,
+      conditions: parseExclusionConditions(row.conditions),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    }));
+  },
+
+  async upsertExclusionRule(input: unknown, id?: string): Promise<InvoiceExclusionRule> {
+    const data = invoiceExclusionRuleInputSchema.parse(input);
+    const payload = {
+      name: data.name,
+      enabled: data.enabled ?? true,
+      conditions: data.conditions as unknown as Prisma.InputJsonValue
+    };
+    const row = id
+      ? await prisma.invoiceExclusionRule.update({ where: { id }, data: payload })
+      : await prisma.invoiceExclusionRule.create({ data: payload });
+    return {
+      id: row.id,
+      name: row.name,
+      enabled: row.enabled,
+      conditions: parseExclusionConditions(row.conditions),
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  },
+
+  async deleteExclusionRule(id: string): Promise<{ deleted: boolean }> {
+    await prisma.invoiceExclusionRule.delete({ where: { id } });
+    return { deleted: true };
+  },
+
   async list(options?: { includeNoItem?: boolean }): Promise<StockInvoicesPayload> {
     const includeNoItem = options?.includeNoItem === true;
     const invoices = await prisma.supplierInvoice.findMany({
@@ -725,16 +834,33 @@ export const invoicesService = {
       select: matchItemSelect,
       orderBy: { name: 'asc' }
     });
+    // Load enabled exclusion rules once; non-supplier documents that match
+    // are skipped before any supplier/invoice rows are written.
+    const exclusionRules: LoadedExclusionRule[] = (
+      await prisma.invoiceExclusionRule.findMany({ where: { enabled: true } })
+    ).map((row) => ({ id: row.id, name: row.name, conditions: parseExclusionConditions(row.conditions) }));
     const warnings: string[] = [];
     let createdCount = 0;
     let updatedCount = 0;
     let lineCount = 0;
     let matchedLineCount = 0;
     let needsReviewLineCount = 0;
+    let skippedCount = 0;
+    const skipped: Array<{ invoice: string; rule: string }> = [];
     const importedInvoiceIds: string[] = [];
 
     await prisma.$transaction(async (tx) => {
       for (const invoiceInput of normalisedInvoices) {
+        const matchedRule = findMatchingExclusionRule(invoiceInput, exclusionRules);
+        if (matchedRule) {
+          skippedCount += 1;
+          skipped.push({
+            invoice:
+              invoiceInput.invoiceNumber ?? invoiceInput.sourceFileName ?? invoiceInput.supplierName,
+            rule: matchedRule.name
+          });
+          continue;
+        }
         const supplierId = await ensureSupplier(
           tx,
           invoiceInput.supplierName,
@@ -870,13 +996,23 @@ export const invoicesService = {
       orderBy: [{ invoiceDate: 'desc' }, { importedAt: 'desc' }]
     });
 
+    if (skippedCount > 0) {
+      warnings.unshift(
+        `${skippedCount} document${skippedCount === 1 ? '' : 's'} skipped by exclusion rule${
+          skippedCount === 1 ? '' : 's'
+        }.`
+      );
+    }
+
     return {
-      importedCount: normalisedInvoices.length,
+      importedCount: normalisedInvoices.length - skippedCount,
       createdCount,
       updatedCount,
       lineCount,
       matchedLineCount,
       needsReviewLineCount,
+      skippedCount,
+      skipped,
       warnings,
       invoices: invoices.map(toInvoicePayload)
     };
