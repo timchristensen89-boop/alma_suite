@@ -37,6 +37,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteClock,
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
@@ -3099,6 +3100,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               />
               <SuiteNotificationsWidget api={staffApi} currentApp="reports" />
               <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
+              <SuiteClock />
               <ReportsUserMenu user={user} onLogout={onLogout} />
             </>
           }

@@ -151,8 +151,39 @@ a {
 .topbar-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 8px;
+}
+
+/* Suite clock — venue time, sized to sit alongside the iPad's large buttons. */
+.suite-clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  white-space: nowrap;
+  user-select: none;
+}
+
+.suite-clock-day {
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.suite-clock-time {
+  font-size: 20px;
+  font-weight: 850;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
 }
 
 .eyebrow {

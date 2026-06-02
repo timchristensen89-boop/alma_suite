@@ -750,8 +750,8 @@ p {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 0 32px;
+  gap: 12px;
+  padding: 0 22px;
   height: var(--topbar-height);
   max-width: 100%;
 }
@@ -791,7 +791,7 @@ p {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -10986,11 +10986,13 @@ a.suite-app-tile:hover {
   height: 18px;
 }
 
-.suite-alert-trigger {
+.suite-alert-trigger,
+.suite-msg-trigger {
   position: relative;
 }
 
-.suite-alert-trigger-count {
+.suite-alert-trigger-count,
+.suite-msg-trigger-count {
   display: inline-grid;
   place-items: center;
   min-width: 18px;
@@ -11004,6 +11006,12 @@ a.suite-app-tile:hover {
   line-height: 1;
 }
 
+/* Messages badge uses the slate-blue suite tone so it reads as distinct
+   from the red alerts badge at a glance. */
+.suite-msg-trigger-count {
+  background: #4F627E;
+}
+
 .app-shell-topbar .suite-msg-trigger,
 .app-shell-topbar .suite-alert-trigger,
 .app-shell-topbar .suite-feedback-trigger,
@@ -11012,12 +11020,12 @@ a.suite-app-tile:hover {
 .app-shell-topbar .app-shell-topbar-home {
   display: inline-grid;
   place-items: center;
-  width: 40px;
-  min-width: 40px;
-  height: 40px;
-  min-height: 40px;
+  width: 36px;
+  min-width: 36px;
+  height: 36px;
+  min-height: 36px;
   padding: 0;
-  border-radius: 13px;
+  border-radius: 11px;
   gap: 0;
   letter-spacing: 0;
   flex: 0 0 auto;
@@ -11055,7 +11063,8 @@ a.suite-app-tile:hover {
   white-space: nowrap;
 }
 
-.app-shell-topbar .suite-alert-trigger-count {
+.app-shell-topbar .suite-alert-trigger-count,
+.app-shell-topbar .suite-msg-trigger-count {
   position: absolute;
   top: -5px;
   right: -5px;
@@ -11064,6 +11073,50 @@ a.suite-app-tile:hover {
   padding: 0 4px;
   border: 2px solid #F8F6F1;
   font-size: 9px;
+}
+
+/* Suite clock — compact live venue time in the top bar. Sits between the
+   action icons and the user menu, matching the icon-button height. */
+.suite-clock {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  height: 36px;
+  padding: 0 11px;
+  border-radius: 11px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  background: rgba(31, 53, 36, 0.03);
+  color: #1F3524;
+  flex: 0 0 auto;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.suite-clock-day {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.suite-clock-time {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* On narrow widths drop the day label, keep the time. */
+@media (max-width: 720px) {
+  .suite-clock-day {
+    display: none;
+  }
+  .suite-clock {
+    padding: 0 9px;
+  }
 }
 
 .app-shell-topbar .staff-topbar-signout > span {

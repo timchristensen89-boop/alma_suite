@@ -38,6 +38,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteClock,
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
@@ -1747,6 +1748,7 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
           />
           <SuiteNotificationsWidget api={api} currentApp="reserve" />
           <SuiteFeedbackWidget appId="RESERVE" api={api} userName={`${user.firstName} ${user.lastName}`} />
+          <SuiteClock />
           <Button size="sm" type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
         </>
       }

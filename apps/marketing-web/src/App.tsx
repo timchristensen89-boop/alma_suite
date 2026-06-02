@@ -43,6 +43,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteClock,
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
@@ -1360,6 +1361,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               />
               <SuiteNotificationsWidget api={api} currentApp="marketing" />
               <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
+              <SuiteClock />
               <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
             </>
           }

@@ -17,6 +17,7 @@ import {
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteClock,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   SuiteSearchWidget,
@@ -1311,6 +1312,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="comms" />
           <SuiteFeedbackWidget appId="COMMS" api={api} userName={user?.name ?? undefined} />
+          <SuiteClock />
           <CommsUserMenu
             user={user}
             adminUrl={adminUrl}

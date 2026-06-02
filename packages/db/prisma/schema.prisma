@@ -2990,6 +2990,22 @@ model NotificationMutePreference {
   @@index([staffProfileId])
 }
 
+// Per-user notification read marker. One row = "this user has read/dismissed
+// this notification". notificationId is the synthetic, stable id the
+// notifications aggregator emits (e.g. "issue-overdue-<id>", "comms-<id>").
+// Server-side so read state syncs across every app in the suite — reading an
+// alert in one app marks it read everywhere. No FK (staffProfileId is the
+// AuthUser id) so staff archival/merge never blocks on it.
+model NotificationRead {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  notificationId String
+  readAt         DateTime @default(now())
+
+  @@unique([staffProfileId, notificationId])
+  @@index([staffProfileId])
+}
+
 // Rules that skip non-supplier documents during stock invoice import
 // (e.g. Square sales payouts arriving as PDFs/emails). Each rule holds a
 // list of conditions; ALL conditions in a rule must match an invoice for

@@ -1,6 +1,7 @@
 export { AppShell } from './layout/AppShell';
 export { PageHeader } from './layout/PageHeader';
 export { TopBar } from './layout/TopBar';
+export { SuiteClock } from './layout/SuiteClock';
 export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { SuiteFeedbackWidget } from './feedback/SuiteFeedbackWidget';
 export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidget';
