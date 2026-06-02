@@ -252,6 +252,7 @@ export function IssueForm({
               label="Category"
               value={form.category}
               onChange={(event) => update('category', event.target.value)}
+              required
               options={[
                 { label: 'Select a category…', value: '' },
                 ...categoryOptions.map((category) => ({ label: category, value: category })),
