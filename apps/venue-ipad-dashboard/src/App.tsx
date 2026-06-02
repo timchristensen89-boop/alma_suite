@@ -11,6 +11,7 @@ import {
   type RequirePin,
   type Venue
 } from './shell';
+import { GiftCardRedeemPage } from './pages/GiftCardRedeemPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { TasksPage } from './pages/TasksPage';
 
@@ -160,11 +161,11 @@ function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null
     {
       id: 'gift-cards',
       title: 'Gift cards',
-      description: 'Redeem, check balance and sell on shared iPad.',
+      description: 'Scan a code, check balance, redeem against a bill.',
       route: `/venue/${venue.id}/gift-cards`,
       permission: 'giftCards.sell',
       tone: 'neutral',
-      status: 'preview'
+      status: 'pilot'
     },
     {
       id: 'stocktake',
@@ -470,7 +471,7 @@ function VenueToolPage({
   onRequestStaffPin,
   onSwitchStaff
 }: {
-  kind: 'checklists' | 'gift-cards' | 'bookings';
+  kind: 'checklists' | 'bookings';
 } & Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
@@ -539,20 +540,6 @@ const toolPageContent = {
       { title: 'Opening floor check', detail: '12 of 16 items complete', status: 'In progress', tone: 'warning' as const },
       { title: 'Kitchen close', detail: 'Assigned to kitchen lead', status: 'Not started', tone: 'neutral' as const },
       { title: 'Bar setup', detail: 'Completed 10:22 AM', status: 'Done', tone: 'positive' as const }
-    ]
-  },
-  'gift-cards': {
-    title: 'Gift cards',
-    description: 'Shared iPad actions for selling, checking and redeeming gift cards.',
-    actions: [
-      { title: 'Sell gift card', detail: 'Create new card sale' },
-      { title: 'Redeem card', detail: 'Enter card code or scan' },
-      { title: 'Check balance', detail: 'Lookup card value' }
-    ],
-    listTitle: 'Recent activity',
-    rows: [
-      { title: 'Gift card sale', detail: '$150 mock sale', status: 'Paid', tone: 'positive' as const },
-      { title: 'Balance check', detail: 'Card ending 4412', status: 'Viewed', tone: 'neutral' as const }
     ]
   },
   bookings: {
@@ -760,6 +747,13 @@ function TasksRoute(props: Omit<PageShellProps, 'requirePin'>) {
   return <TasksPage venue={venue} {...props} />;
 }
 
+function GiftCardRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <GiftCardRedeemPage venue={venue} {...props} />;
+}
+
 export function App() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -821,10 +815,7 @@ export function App() {
           path="/venue/:venueId/checklists"
           element={<VenueToolPage kind="checklists" {...shellProps} />}
         />
-        <Route
-          path="/venue/:venueId/gift-cards"
-          element={<VenueToolPage kind="gift-cards" {...shellProps} />}
-        />
+        <Route path="/venue/:venueId/gift-cards" element={<GiftCardRoute {...shellProps} />} />
         <Route path="/venue/:venueId/tasks" element={<TasksRoute {...shellProps} />} />
         <Route
           path="/venue/:venueId/bookings"
