@@ -2540,16 +2540,33 @@ tbody tr:hover {
   .topbar {
     min-height: var(--topbar-height);
     height: auto;
-    padding: 10px 18px;
+    padding: 10px 14px;
+    gap: 10px;
     align-items: center;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+  }
+
+  /* Let the heading shrink/ellipsize so the action icons stay on the same
+     row, anchored to the right. */
+  .topbar-text {
+    min-width: 0;
+  }
+
+  .topbar-title,
+  .topbar-subtitle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
   }
 
   .topbar-right {
-    margin-left: 0;
-    width: 100%;
-    justify-content: flex-start;
+    margin-left: auto;
+    width: auto;
+    flex: 0 1 auto;
+    justify-content: flex-end;
     flex-wrap: wrap;
+    gap: 6px;
   }
 
   .hero { grid-template-columns: 1fr; }
