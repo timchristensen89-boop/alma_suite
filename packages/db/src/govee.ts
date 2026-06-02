@@ -241,6 +241,27 @@ function toTemperatureStatus(temperatureC: number, minTempC: number, maxTempC: n
   return temperatureC >= minTempC && temperatureC <= maxTempC ? 'IN_RANGE' : 'OUT_OF_RANGE';
 }
 
+// The active Head Chef for a venue, used to auto-assign temperature alerts
+// (any fridge at Alma Avalon → Alma Avalon's Head Chef, etc.). Matches on a
+// role title containing "head chef". Returns the assignee name string the
+// Issue/notification layer matches on, or null if the venue has no Head Chef.
+async function resolveVenueHeadChefName(venue: string | null | undefined): Promise<string | null> {
+  const target = (venue ?? '').trim().toLowerCase();
+  if (!target) return null;
+  const candidates = await prisma.staffProfile.findMany({
+    where: {
+      accountType: 'HUMAN',
+      employmentStatus: 'ACTIVE',
+      roleTitle: { contains: 'head chef', mode: 'insensitive' }
+    },
+    select: { firstName: true, lastName: true, email: true, venue: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  const match = candidates.find((staff) => (staff.venue ?? '').trim().toLowerCase() === target);
+  if (!match) return null;
+  return `${match.firstName} ${match.lastName}`.trim() || match.email || null;
+}
+
 async function maybeCreateTemperatureIssue(asset: {
   id: string;
   name: string;
@@ -248,6 +269,8 @@ async function maybeCreateTemperatureIssue(asset: {
   minTempC: number;
   maxTempC: number;
 }, reading: GoveeReading) {
+  const headChef = await resolveVenueHeadChefName(asset.venue);
+
   const existing = await prisma.issue.findFirst({
     where: {
       category: 'Temperature',
@@ -257,7 +280,24 @@ async function maybeCreateTemperatureIssue(asset: {
     }
   });
 
-  if (existing) return existing.id;
+  if (existing) {
+    if (!existing.assignee && headChef) {
+      await prisma.issue.update({
+        where: { id: existing.id },
+        data: {
+          assignee: headChef,
+          activities: {
+            create: {
+              action: 'assigned',
+              actor: 'system',
+              message: `Auto-assigned to ${headChef} (${asset.venue ?? 'venue'} Head Chef).`
+            }
+          }
+        }
+      });
+    }
+    return existing.id;
+  }
 
   const created = await prisma.issue.create({
     data: {
@@ -265,14 +305,17 @@ async function maybeCreateTemperatureIssue(asset: {
       description: `Auto-created from govee sync. Reading ${reading.temperatureC.toFixed(1)}C is outside ${asset.minTempC.toFixed(1)}C to ${asset.maxTempC.toFixed(1)}C.`,
       severity: 'HIGH',
       category: 'Temperature',
+      area: asset.venue,
       status: 'OPEN',
-      assignee: null,
+      assignee: headChef,
       notes: `temperature-asset:${asset.id}${asset.venue ? ` venue:${asset.venue}` : ''}`,
       activities: {
         create: {
           action: 'created',
           actor: 'system',
-          message: 'Auto-created from out of range govee temperature reading.'
+          message: headChef
+            ? `Auto-created from out of range govee temperature reading. Auto-assigned to ${headChef} (${asset.venue ?? 'venue'} Head Chef).`
+            : 'Auto-created from out of range govee temperature reading. No Head Chef on file for the venue — left unassigned.'
         }
       }
     }
