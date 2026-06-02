@@ -7,6 +7,7 @@
 
 import { Router } from 'express';
 import { almaTaskService } from '../services/alma-tasks.service.js';
+import { taskSyncService } from '../services/task-sync.service.js';
 import { HttpError } from '../lib/http.js';
 
 export const almaTasksRouter = Router();
@@ -16,11 +17,32 @@ function requireUser(req: Parameters<Parameters<typeof almaTasksRouter.get>[1]>[
   return req.user;
 }
 
+// Reconcile derived tasks (critical/overdue issues, pending leave, …)
+// before reading. Throttled in the service so frequent polls don't
+// re-scan, and never blocks the read if a reconciler fails.
+async function syncBeforeRead() {
+  await taskSyncService.reconcile().catch((error) => {
+    console.error('[tasks] pre-read reconcile failed:', error);
+  });
+}
+
+// POST /api/tasks/sync — force an immediate reconcile (e.g. after an
+// action that should surface a task right away).
+almaTasksRouter.post('/sync', async (_req, res, next) => {
+  try {
+    res.json(await taskSyncService.reconcile(true));
+  } catch (err) {
+    next(err);
+  }
+});
+
 // GET /api/tasks/summary  — chrome counts for Home + iPad TopBar
 // Listed before /:id so the path is not swallowed by the id route.
 almaTasksRouter.get('/summary', async (req, res, next) => {
   try {
-    res.json(await almaTaskService.summary(requireUser(req)));
+    const user = requireUser(req);
+    await syncBeforeRead();
+    res.json(await almaTaskService.summary(user));
   } catch (err) {
     next(err);
   }
@@ -31,7 +53,9 @@ almaTasksRouter.get('/summary', async (req, res, next) => {
 //        outstanding=true (shortcut for OPEN | IN_PROGRESS | BLOCKED).
 almaTasksRouter.get('/', async (req, res, next) => {
   try {
-    const result = await almaTaskService.list(req.query, requireUser(req));
+    const user = requireUser(req);
+    await syncBeforeRead();
+    const result = await almaTaskService.list(req.query, user);
     res.json(result);
   } catch (err) {
     next(err);
