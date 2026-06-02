@@ -32,6 +32,8 @@ import type {
   MarketingSocialAccount,
   MarketingSocialAccountStatus,
   ChecklistTemplate,
+  IssueAreaRule,
+  IssueAssigneeOption,
   ShiftTaskAssignmentTarget,
   ShiftTaskDueTiming,
   ShiftTaskRule,
@@ -792,6 +794,146 @@ function shiftTaskRulePayload(form: ShiftTaskRuleForm) {
     dueOffsetMinutes: minutesPayload(form.dueOffsetMinutes),
     assignmentTarget: form.assignmentTarget
   };
+}
+
+function IssueAreaRulesAdminSection() {
+  const [rules, setRules] = useState<IssueAreaRule[]>([]);
+  const [assignees, setAssignees] = useState<IssueAssigneeOption[]>([]);
+  const [area, setArea] = useState('');
+  const [assignee, setAssignee] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadAreaRules() {
+    setLoading(true);
+    setError(null);
+    try {
+      const [rulePayload, assigneePayload] = await Promise.all([
+        api<IssueAreaRule[]>('/api/issues/area-rules'),
+        api<IssueAssigneeOption[]>('/api/issues/assignees')
+      ]);
+      setRules(rulePayload);
+      setAssignees(assigneePayload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load area assignments.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadAreaRules();
+  }, []);
+
+  async function saveRule(event: FormEvent) {
+    event.preventDefault();
+    if (!area.trim() || !assignee.trim()) return;
+    setBusy('create');
+    setError(null);
+    setFeedback(null);
+    try {
+      await api<IssueAreaRule>('/api/issues/area-rules', {
+        method: 'POST',
+        body: JSON.stringify({ area: area.trim(), assignee: assignee.trim() })
+      });
+      setArea('');
+      setAssignee('');
+      setFeedback('Area assignment saved.');
+      await loadAreaRules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save area assignment.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeRule(rule: IssueAreaRule) {
+    setBusy(rule.id);
+    setError(null);
+    try {
+      await api(`/api/issues/area-rules/${rule.id}`, { method: 'DELETE' });
+      await loadAreaRules();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete area assignment.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  const assigneeOptions = [
+    { label: 'Select a person…', value: '' },
+    ...assignees.map((person) => ({ label: person.label, value: person.id }))
+  ];
+
+  return (
+    <div className="admin-grid two">
+      <Card
+        title="Add an area assignment"
+        subtitle="When an issue is logged for this area with no assignee, this person is assigned automatically."
+      >
+        <form className="admin-social-form" onSubmit={(event) => void saveRule(event)}>
+          <div className="admin-form-grid">
+            <Input
+              label="Area"
+              value={area}
+              onChange={(event) => setArea(event.target.value)}
+              placeholder="e.g. Kitchen line, Cellar, Front bar"
+              required
+            />
+            <Select
+              label="Responsible person"
+              value={assignee}
+              onChange={(event) => setAssignee(event.target.value)}
+              options={assigneeOptions}
+            />
+          </div>
+          {error ? <p className="error-text">{error}</p> : null}
+          {feedback ? <p className="form-feedback">{feedback}</p> : null}
+          <div className="toolbar-right">
+            <Button
+              type="submit"
+              size="sm"
+              disabled={busy === 'create' || !area.trim() || !assignee.trim()}
+            >
+              {busy === 'create' ? 'Saving…' : 'Save assignment'}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Area assignments" subtitle={`${rules.length} configured`}>
+        {loading ? (
+          <Spinner label="Loading area assignments…" />
+        ) : rules.length === 0 ? (
+          <EmptyState
+            title="No area assignments yet"
+            description="Add one so issues route to the right person automatically."
+          />
+        ) : (
+          <div className="activity-list">
+            {rules.map((rule) => (
+              <article key={rule.id} className="activity-row">
+                <div>
+                  <strong>{rule.area}</strong>
+                  <p>{rule.assignee}</p>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy === rule.id}
+                  onClick={() => void removeRule(rule)}
+                >
+                  {busy === rule.id ? 'Removing…' : 'Remove'}
+                </Button>
+              </article>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 function ShiftTaskRulesAdminSection({ venueOptions }: { venueOptions: Array<{ label: string; value: string }> }) {
@@ -2638,6 +2780,7 @@ export function AdminPage({
         <a href="#defaults">Apps and defaults</a>
         <a href="#compliance-settings">Compliance setup</a>
         <a href="#shift-task-rules">Shift task rules</a>
+        <a href="#issue-area-rules">Issue area assignments</a>
         <a href="#integrations">Integrations</a>
         <a href="#human-agent-demo">Human Agent Demo</a>
         <a href="#imports">Data imports</a>
@@ -3585,6 +3728,17 @@ export function AdminPage({
         {showShiftTaskRules ? (
           <div className="admin-section" id="shift-task-rules">
             <ShiftTaskRulesAdminSection venueOptions={venueOptions} />
+          </div>
+        ) : null}
+        {showShiftTaskRules ? (
+          <div className="admin-section" id="issue-area-rules">
+            <SectionHeading
+              id="issue-area-rules-heading"
+              eyebrow="Issues"
+              title="Issue area assignments"
+              description="Route issues to the right person automatically when no assignee is set."
+            />
+            <IssueAreaRulesAdminSection />
           </div>
         ) : null}
       </section>

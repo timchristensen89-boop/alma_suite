@@ -1,7 +1,15 @@
 import { Link, useParams } from 'react-router-dom';
-import type { Issue } from '@alma/shared';
+import type { Issue, IssueAssigneeOption } from '@alma/shared';
 import { useState } from 'react';
-import { Button, Card, EmptyState, PageHeader, Spinner, Textarea } from '@alma/ui';
+import {
+  Button,
+  Card,
+  EmptyState,
+  PageHeader,
+  Select,
+  Spinner,
+  Textarea
+} from '@alma/ui';
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
 import { IssueSeverityPill } from '../../features/issues/IssueSeverityPill';
@@ -15,6 +23,13 @@ import {
   IconRefresh
 } from '../../lib/icons';
 
+function escalateAssigneeOptions(assignees: IssueAssigneeOption[]) {
+  return [
+    { label: 'Keep current assignee', value: '' },
+    ...assignees.map((assignee) => ({ label: assignee.label, value: assignee.id }))
+  ];
+}
+
 export function IssueDetailPage() {
   const { id = '' } = useParams();
   const [completionOpen, setCompletionOpen] = useState(false);
@@ -22,9 +37,18 @@ export function IssueDetailPage() {
   const [completing, setCompleting] = useState(false);
   const [completionError, setCompletionError] = useState<string | null>(null);
   const [escalating, setEscalating] = useState(false);
+  const [escalateOpen, setEscalateOpen] = useState(false);
+  const [escalateAssignee, setEscalateAssignee] = useState('');
+  const [escalateMonitor, setEscalateMonitor] = useState(false);
+  const [escalateNote, setEscalateNote] = useState('');
+  const [escalateError, setEscalateError] = useState<string | null>(null);
   const { data, loading, error, reload } = useAsync<Issue>(
     () => api(`/api/issues/${id}`),
     [id]
+  );
+  const assignees = useAsync<IssueAssigneeOption[]>(
+    () => api('/api/issues/assignees'),
+    []
   );
 
   const canComplete = data ? data.status !== 'CLOSED' : false;
@@ -47,14 +71,33 @@ export function IssueDetailPage() {
     }
   }
 
+  function openEscalate() {
+    setEscalateAssignee('');
+    setEscalateMonitor(false);
+    setEscalateNote('');
+    setEscalateError(null);
+    setEscalateOpen(true);
+  }
+
   async function escalate() {
     if (!id) return;
     try {
       setEscalating(true);
-      await api<Issue>(`/api/issues/${id}/escalate`, { method: 'POST' });
+      setEscalateError(null);
+      const body: { assignee?: string; status?: 'MONITORING'; note?: string } = {};
+      if (escalateAssignee.trim()) body.assignee = escalateAssignee.trim();
+      if (escalateMonitor) body.status = 'MONITORING';
+      if (escalateNote.trim()) body.note = escalateNote.trim();
+      await api<Issue>(`/api/issues/${id}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify(body)
+      });
+      setEscalateOpen(false);
       await reload();
     } catch (error) {
-      console.error('Failed to escalate issue', error);
+      setEscalateError(
+        error instanceof Error ? error.message : 'Failed to escalate issue'
+      );
     } finally {
       setEscalating(false);
     }
@@ -116,7 +159,7 @@ export function IssueDetailPage() {
                   size="sm"
                   variant="secondary"
                   disabled={escalating}
-                  onClick={() => void escalate()}
+                  onClick={openEscalate}
                 >
                   {escalating ? 'Escalating…' : `Escalate${escalationCount > 0 ? ` (L${escalationCount + 1})` : ''}`}
                 </Button>
@@ -161,6 +204,65 @@ export function IssueDetailPage() {
         </Card>
       ) : null}
 
+      {escalateOpen ? (
+        <Card
+          title="Escalate or hand off"
+          subtitle="Pick who should pick this up next, and add any context."
+          action={
+            <div className="inline-actions">
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={escalating}
+                onClick={() => setEscalateOpen(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                size="sm"
+                disabled={escalating}
+                onClick={() => void escalate()}
+              >
+                {escalating ? 'Escalating…' : 'Escalate'}
+              </Button>
+            </div>
+          }
+        >
+          <div className="page-stack compact">
+            <Select
+              label="Hand it to"
+              value={escalateAssignee}
+              onChange={(event) => setEscalateAssignee(event.target.value)}
+              options={escalateAssigneeOptions(assignees.data ?? [])}
+              disabled={assignees.loading}
+              hint={
+                assignees.loading
+                  ? 'Loading active staff…'
+                  : assignees.error
+                    ? `Could not load staff: ${assignees.error}`
+                    : 'They’ll be reassigned and notified.'
+              }
+            />
+            <label className="field-checkbox">
+              <input
+                type="checkbox"
+                checked={escalateMonitor}
+                onChange={(event) => setEscalateMonitor(event.target.checked)}
+              />
+              <span>Ask them to monitor (pass back to staff)</span>
+            </label>
+            <Textarea
+              label="Note (optional)"
+              value={escalateNote}
+              onChange={(event) => setEscalateNote(event.target.value)}
+              rows={3}
+              placeholder="Add context for whoever picks this up."
+            />
+            {escalateError ? <p className="error-text">{escalateError}</p> : null}
+          </div>
+        </Card>
+      ) : null}
+
       <div className="grid two-one">
         <Card title="Description">
           <p style={{ color: 'var(--color-text)', lineHeight: 1.6 }}>
@@ -180,6 +282,10 @@ export function IssueDetailPage() {
             <div>
               <span>Category</span>
               <strong>{data.category}</strong>
+            </div>
+            <div>
+              <span>Area</span>
+              <strong>{data.area || 'Not set'}</strong>
             </div>
             <div>
               <span>Assignee</span>
@@ -235,6 +341,9 @@ export function IssueDetailPage() {
                   <IconExternalLink size={14} color="var(--color-text-subtle)" />
                   <strong>{item.name}</strong>
                 </div>
+                {item.note ? (
+                  <span className="evidence-note">{item.note}</span>
+                ) : null}
                 <span>{item.fileType || 'link'}</span>
               </a>
             ))}

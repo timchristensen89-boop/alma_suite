@@ -25,7 +25,9 @@ import {
 const statusOptions = [
   { label: 'All statuses', value: '' },
   { label: 'Open', value: 'OPEN' },
-  { label: 'In progress', value: 'IN_PROGRESS' },
+  { label: 'On it', value: 'IN_PROGRESS' },
+  { label: 'Partial', value: 'PARTIAL' },
+  { label: 'Monitoring', value: 'MONITORING' },
   { label: 'Blocked', value: 'BLOCKED' },
   { label: 'Resolved', value: 'RESOLVED' },
   { label: 'Closed', value: 'CLOSED' }

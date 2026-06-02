@@ -1329,6 +1329,8 @@ p {
 
 .status-open,
 .status-in_progress { background: var(--tone-info-bg);     color: var(--tone-info-fg); }
+.status-partial,
+.status-monitoring  { background: var(--tone-warning-bg);  color: var(--tone-warning-fg); }
 .status-blocked     { background: var(--tone-danger-bg);   color: var(--tone-danger-fg); }
 .status-resolved,
 .status-closed      { background: var(--tone-positive-bg); color: var(--tone-positive-fg); }
@@ -1837,6 +1839,26 @@ tbody tr:hover {
   color: var(--color-text-subtle);
 }
 
+.evidence-card .evidence-note {
+  color: var(--color-text-muted);
+  line-height: 1.4;
+}
+
+.field-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.field-checkbox input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--color-accent, #4f46e5);
+}
+
 .activity-list {
   display: flex;
   flex-direction: column;
@@ -1864,6 +1886,16 @@ tbody tr:hover {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
+}
+
+.evidence-item {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted, transparent);
 }
 
 .evidence-row {
