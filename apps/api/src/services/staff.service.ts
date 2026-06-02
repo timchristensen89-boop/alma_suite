@@ -3582,6 +3582,33 @@ export const staffService = {
 
   async bulkDeleteRosterShifts(input: unknown, actor?: AuthUser) {
     const data = rosterBulkDeleteSchema.parse(input);
+    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
+
+    // reset-all wipes the venue's entire roster regardless of the date
+    // range the board happens to be showing. Date validation is skipped
+    // because the range is irrelevant here.
+    if (data.filter === 'reset-all') {
+      const result = await prisma.rosterShift.deleteMany({
+        where: scopedVenue ? { venue: scopedVenue } : {}
+      });
+      return { deleted: result.count };
+    }
+
+    // ids deletes exactly the shifts the board is currently showing
+    // (still venue-scoped so a manager can't delete another venue's
+    // shift by passing its id). Date range is ignored.
+    if (data.filter === 'ids') {
+      const ids = (data.ids ?? []).filter(Boolean);
+      if (ids.length === 0) return { deleted: 0 };
+      const result = await prisma.rosterShift.deleteMany({
+        where: {
+          id: { in: ids },
+          ...(scopedVenue ? { venue: scopedVenue } : {})
+        }
+      });
+      return { deleted: result.count };
+    }
+
     const startDate = new Date(data.start);
     const endDate = new Date(data.end);
     if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
@@ -3590,7 +3617,6 @@ export const staffService = {
     if (endDate <= startDate) {
       throw new HttpError(400, 'Roster end date must be after the start date');
     }
-    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
     const where: Prisma.RosterShiftWhereInput = {
       startsAt: { lt: endDate },
       endsAt: { gt: startDate },

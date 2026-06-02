@@ -8789,6 +8789,9 @@ function RosterPage({
   const [staffDropTargetShiftId, setStaffDropTargetShiftId] = useState<string | null>(null);
   const [shiftContextMenu, setShiftContextMenu] = useState<RosterShiftContextMenu | null>(null);
   const [publishPreviewOpen, setPublishPreviewOpen] = useState(false);
+  // Roster delete controls: one "Delete" dropdown + a section/area picker.
+  const [deleteMenuOpen, setDeleteMenuOpen] = useState(false);
+  const [sectionMenuOpen, setSectionMenuOpen] = useState(false);
   const [sidePanelMode, setSidePanelMode] = useState<RosterSidePanelMode>('staff');
   const [sidePanelCollapsed, setSidePanelCollapsed] = useState(false);
   const [collapsedRowIds, setCollapsedRowIds] = useState<Set<string>>(new Set());
@@ -8817,7 +8820,16 @@ function RosterPage({
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
-  const activeStaff = useMemo(() => staff.filter((member) => member.employmentStatus !== 'ARCHIVED'), [staff]);
+  // Roster only shows staff who can actually work a shift. Exclude both
+  // ARCHIVED and TERMINATED; keep PENDING (new hires about to start are
+  // commonly rostered ahead of their first shift).
+  const activeStaff = useMemo(
+    () =>
+      staff.filter(
+        (member) => member.employmentStatus !== 'ARCHIVED' && member.employmentStatus !== 'TERMINATED'
+      ),
+    [staff]
+  );
   // O(1) pay-rate lookups — avoids O(N) staff.find() inside every reduce/map
   const staffById = useMemo(() => new Map(staff.map((m) => [m.id, m])), [staff]);
   const venueRoster = useMemo(() => roster
@@ -9426,40 +9438,69 @@ function RosterPage({
     }
   }
 
-  async function bulkDeleteRoster(filter: 'all' | 'unallocated' | 'area', selectedArea?: string) {
+  async function bulkDeleteRoster(
+    scope: 'this-week' | 'next-week' | 'visible' | 'reset-all' | 'unallocated' | 'area',
+    selectedArea?: string
+  ) {
     setShiftContextMenu(null);
+    setDeleteMenuOpen(false);
+    setSectionMenuOpen(false);
     const venueLabel = venueFilter === 'all' ? 'all venues' : venueFilter;
-    let scopeCount = visibleRoster.length;
+    const venueParam = venueFilter === 'all' ? '' : venueFilter;
+    const nextStart = addDays(weekStart, boardDays);
+    const nextEnd = addDays(weekEnd, boardDays);
+
+    // -1 scopeCount means "can't pre-count" (next week / reset-all aren't
+    // loaded into the board) — skip the empty-view short-circuit for those.
+    let scopeCount = 0;
     let confirmMessage = '';
-    if (filter === 'all') {
+    let body: Record<string, unknown>;
+
+    if (scope === 'this-week') {
+      scopeCount = visibleRoster.length;
       confirmMessage = `Delete ALL ${scopeCount} shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
-    } else if (filter === 'unallocated') {
+      body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'all' };
+    } else if (scope === 'next-week') {
+      scopeCount = -1;
+      confirmMessage = `Delete every shift for ${venueLabel} NEXT week? This cannot be undone.`;
+      body = { start: nextStart.toISOString(), end: nextEnd.toISOString(), venue: venueParam, filter: 'all' };
+    } else if (scope === 'visible') {
+      const ids = visibleRoster.map((shift) => shift.id);
+      scopeCount = ids.length;
+      confirmMessage = `Delete the ${scopeCount} shift${scopeCount === 1 ? '' : 's'} currently visible for ${venueLabel}? This respects your active filters and cannot be undone.`;
+      body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'ids', ids };
+    } else if (scope === 'reset-all') {
+      scopeCount = -1;
+      confirmMessage = `RESET ALL ROSTER DATA for ${venueLabel}? This permanently deletes every shift across every week. This cannot be undone.`;
+      body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'reset-all' };
+    } else if (scope === 'unallocated') {
       scopeCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
       confirmMessage = `Delete ${scopeCount} unallocated shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
+      body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'unallocated' };
     } else {
       if (!selectedArea) return;
       scopeCount = visibleRoster.filter((shift) => (shift.area || 'Shift') === selectedArea).length;
-      confirmMessage = `Delete ${scopeCount} shift${scopeCount === 1 ? '' : 's'} in ${selectedArea} for ${venueLabel} this week? This cannot be undone.`;
+      confirmMessage = `Delete ${scopeCount} shift${scopeCount === 1 ? '' : 's'} in the ${selectedArea} section for ${venueLabel} this week? This cannot be undone.`;
+      body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'area', area: selectedArea };
     }
+
     if (scopeCount === 0) {
       setMessage('No shifts to delete in this view.');
       setMessageTarget('shift-delete');
       return;
     }
     if (!window.confirm(confirmMessage)) return;
+    // Reset-all is destructive enough to warrant a second confirm.
+    if (scope === 'reset-all' && !window.confirm('Are you absolutely sure? This wipes the entire roster for every week.')) {
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setMessageTarget('shift-delete');
     try {
       const { deleted } = await api<{ deleted: number }>('/api/staff/roster/bulk-delete', {
         method: 'POST',
-        body: JSON.stringify({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString(),
-          venue: venueFilter === 'all' ? '' : venueFilter,
-          filter,
-          ...(filter === 'area' ? { area: selectedArea } : {})
-        })
+        body: JSON.stringify(body)
       });
       await reload(weekStart, weekEnd);
       setMessage(`Deleted ${deleted} shift${deleted === 1 ? '' : 's'}.`);
@@ -10039,45 +10080,116 @@ function RosterPage({
           <span>Publish roster</span>
           {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
         </button>
-        <div className="alma-roster-bulk-delete" aria-label="Bulk delete roster shifts">
-          <Button
-            type="button"
-            size="sm"
-            variant="danger"
-            disabled={saving || unallocatedShiftCount === 0}
-            onClick={() => void bulkDeleteRoster('unallocated')}
-          >
-            Delete unallocated{unallocatedShiftCount > 0 ? ` (${unallocatedShiftCount})` : ''}
-          </Button>
-          {bulkDeleteAreas.length > 0 ? (
-            <label className="alma-roster-bulk-delete-area">
-              <select
-                aria-label="Delete shifts by location or area"
-                disabled={saving || visibleRoster.length === 0}
-                value=""
-                onChange={(event) => {
-                  const selectedArea = event.currentTarget.value;
-                  if (!selectedArea) return;
-                  event.currentTarget.value = '';
-                  void bulkDeleteRoster('area', selectedArea);
-                }}
-              >
-                <option value="">Delete area…</option>
-                {bulkDeleteAreas.map((areaName) => (
-                  <option key={areaName} value={areaName}>{areaName}</option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <Button
-            type="button"
-            size="sm"
-            variant="danger"
-            disabled={saving || visibleRoster.length === 0}
-            onClick={() => void bulkDeleteRoster('all')}
-          >
-            Delete all (this week)
-          </Button>
+        <div className="alma-roster-delete-controls" aria-label="Delete roster shifts">
+          {/* Small red section button — delete a single area/section */}
+          <div className="alma-roster-delete-wrap">
+            <button
+              type="button"
+              className="alma-roster-section-delete"
+              disabled={saving || bulkDeleteAreas.length === 0}
+              aria-haspopup="menu"
+              aria-expanded={sectionMenuOpen}
+              title="Delete a roster section"
+              onClick={() => {
+                setSectionMenuOpen((open) => !open);
+                setDeleteMenuOpen(false);
+              }}
+            >
+              Section
+            </button>
+            {sectionMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="alma-roster-delete-backdrop"
+                  aria-label="Close section menu"
+                  onClick={() => setSectionMenuOpen(false)}
+                />
+                <div className="alma-roster-delete-menu" role="menu">
+                  <p className="alma-roster-delete-menu-head">Delete a section</p>
+                  {bulkDeleteAreas.length === 0 ? (
+                    <span className="alma-roster-delete-menu-empty">No sections to delete</span>
+                  ) : (
+                    bulkDeleteAreas.map((areaName) => (
+                      <button
+                        key={areaName}
+                        type="button"
+                        role="menuitem"
+                        className="alma-roster-delete-menu-item is-danger"
+                        onClick={() => void bulkDeleteRoster('area', areaName)}
+                      >
+                        {areaName}
+                      </button>
+                    ))
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+
+          {/* Consolidated Delete dropdown — sits next to Publish */}
+          <div className="alma-roster-delete-wrap">
+            <button
+              type="button"
+              className="alma-roster-delete-toggle"
+              disabled={saving}
+              aria-haspopup="menu"
+              aria-expanded={deleteMenuOpen}
+              onClick={() => {
+                setDeleteMenuOpen((open) => !open);
+                setSectionMenuOpen(false);
+              }}
+            >
+              Delete <span aria-hidden="true">▾</span>
+            </button>
+            {deleteMenuOpen ? (
+              <>
+                <button
+                  type="button"
+                  className="alma-roster-delete-backdrop"
+                  aria-label="Close delete menu"
+                  onClick={() => setDeleteMenuOpen(false)}
+                />
+                <div className="alma-roster-delete-menu" role="menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="alma-roster-delete-menu-item"
+                    disabled={visibleRoster.length === 0}
+                    onClick={() => void bulkDeleteRoster('this-week')}
+                  >
+                    This week
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="alma-roster-delete-menu-item"
+                    onClick={() => void bulkDeleteRoster('next-week')}
+                  >
+                    Next week
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="alma-roster-delete-menu-item"
+                    disabled={visibleRoster.length === 0}
+                    onClick={() => void bulkDeleteRoster('visible')}
+                  >
+                    Visible shifts
+                  </button>
+                  <div className="alma-roster-delete-menu-sep" />
+                  <button
+                    type="button"
+                    role="menuitem"
+                    className="alma-roster-delete-menu-item is-danger"
+                    onClick={() => void bulkDeleteRoster('reset-all')}
+                  >
+                    Reset all data
+                  </button>
+                </div>
+              </>
+            ) : null}
+          </div>
         </div>
       </div>
 

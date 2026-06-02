@@ -1015,8 +1015,15 @@ export const rosterBulkDeleteSchema = z.object({
   start: z.string().min(4),
   end: z.string().min(4),
   venue: z.string().optional(),
-  filter: z.enum(['all', 'unallocated', 'area']).default('all'),
-  area: z.string().optional()
+  // all          — every shift in the [start,end) range for the venue
+  // unallocated   — Deputy/import placeholder shifts in the range
+  // area          — shifts in a specific area/section in the range
+  // ids           — exactly these shift ids (used for "visible shifts",
+  //                 which respects the manager's active board filters)
+  // reset-all     — every shift for the venue, ignoring the date range
+  filter: z.enum(['all', 'unallocated', 'area', 'ids', 'reset-all']).default('all'),
+  area: z.string().optional(),
+  ids: z.array(z.string().min(1)).optional()
 });
 export type RosterBulkDeleteInput = z.infer<typeof rosterBulkDeleteSchema>;
 
