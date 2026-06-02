@@ -26,6 +26,20 @@ recipesRouter.get('/summary', async (_req, res, next) => {
   }
 });
 
+recipesRouter.get('/cost-of-goods', async (req, res, next) => {
+  try {
+    const days = Number(req.query.days);
+    res.json(
+      await recipesService.costOfGoods({
+        venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+        days: Number.isFinite(days) ? days : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/categories', async (_req, res, next) => {
   try {
     res.json(await recipesService.listCategories());

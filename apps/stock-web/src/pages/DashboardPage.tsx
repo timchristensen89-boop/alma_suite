@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { StockDashboardPayload } from '@alma/shared';
+import type { StockCostOfGoodsPayload, StockDashboardPayload } from '@alma/shared';
 import { AlmaHomeBubble, Badge, Card, EmptyState, ProduceIcon, Select, Spinner, StatCard } from '@alma/ui';
 import { IconInvoices, IconItems, IconRecipes, IconStocktake, IconSuppliers } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -31,12 +31,22 @@ function statusTone(status: string): 'danger' | 'warning' | 'positive' {
   return 'positive';
 }
 
+function formatMoney(cents: number | null | undefined) {
+  return ((cents ?? 0) / 100).toLocaleString(undefined, { style: 'currency', currency: 'AUD' });
+}
+
+function formatPercent(value: number | null | undefined) {
+  if (value == null || Number.isNaN(value)) return '—';
+  return `${value.toFixed(1)}%`;
+}
+
 export function DashboardPage() {
   useDocumentTitle('Overview');
   const [dashboard, setDashboard] = useState<StockDashboardPayload | null>(null);
   const [selectedVenue, setSelectedVenue] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [cogs, setCogs] = useState<StockCostOfGoodsPayload | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -62,6 +72,24 @@ export function DashboardPage() {
 
     loadDashboard();
 
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedVenue]);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function loadCogs() {
+      try {
+        const params = new URLSearchParams({ days: '30' });
+        if (selectedVenue) params.set('venue', selectedVenue);
+        const payload = await api<StockCostOfGoodsPayload>(`/api/recipes/cost-of-goods?${params.toString()}`);
+        if (!cancelled) setCogs(payload);
+      } catch {
+        if (!cancelled) setCogs(null);
+      }
+    }
+    loadCogs();
     return () => {
       cancelled = true;
     };
@@ -176,6 +204,67 @@ export function DashboardPage() {
           />
         </Link>
       </div>
+
+      <Card
+        title="Cost of Goods"
+        subtitle="Last 30 days. Theoretical (sold × recipe cost) vs Actual (supplier purchases)."
+      >
+        {!cogs ? (
+          <Spinner label="Loading cost of goods" />
+        ) : cogs.dishMargin.mappedRecipes === 0 ? (
+          <EmptyState
+            icon={<IconRecipes size={24} />}
+            title="No Square sales mapped to recipes yet"
+            description="Theoretical COGS needs dishes mapped to Square items. Map recipes to Square sales (Dish Margins) to see theoretical cost and variance. Actual purchases are still shown below."
+          />
+        ) : (
+          <>
+            <div className="stat-grid">
+              <StatCard
+                icon={<IconRecipes size={18} />}
+                label="Theoretical COGS"
+                value={formatMoney(cogs.theoreticalCogsCents)}
+                hint={
+                  cogs.cogsPercentOfSales != null
+                    ? `${formatPercent(cogs.cogsPercentOfSales)} of ${formatMoney(cogs.netSalesCents)} sales`
+                    : `${cogs.dishMargin.mappedRecipes} dishes mapped`
+                }
+              />
+              <StatCard
+                icon={<IconInvoices size={18} />}
+                label="Actual COGS"
+                value={formatMoney(cogs.actualCogsCents)}
+                hint="Supplier purchases in window"
+              />
+              <StatCard
+                icon={<IconSuppliers size={18} />}
+                label="Variance"
+                value={formatMoney(cogs.varianceCents)}
+                hint={cogs.variancePercent != null ? `${formatPercent(cogs.variancePercent)} vs theoretical` : 'Actual − theoretical'}
+                tone={
+                  cogs.variancePercent == null
+                    ? 'neutral'
+                    : Math.abs(cogs.variancePercent) > 15
+                      ? 'warning'
+                      : 'positive'
+                }
+              />
+              <StatCard
+                icon={<IconItems size={18} />}
+                label="Avg dish margin"
+                value={cogs.dishMargin.avgMarginPercent != null ? formatPercent(cogs.dishMargin.avgMarginPercent) : '—'}
+                hint={`${cogs.dishMargin.unmappedRecipes} dishes with no sales`}
+              />
+            </div>
+            <p className="subtle" style={{ marginTop: 12 }}>
+              Supplier price movement (30d): {cogs.priceMovement.increasedItems} item
+              {cogs.priceMovement.increasedItems === 1 ? '' : 's'} up,{' '}
+              {cogs.priceMovement.decreasedItems} down.{' '}
+              <Link to="/price-movement">View price movement →</Link>
+            </p>
+          </>
+        )}
+      </Card>
 
       <div className="stock-dashboard-grid">
         <Card

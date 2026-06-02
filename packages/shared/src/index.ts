@@ -5229,8 +5229,37 @@ export type StockInvoiceImportResult = {
   lineCount: number;
   matchedLineCount: number;
   needsReviewLineCount: number;
+  skippedCount: number;
+  skipped: Array<{ invoice: string; rule: string }>;
   warnings: string[];
   invoices: StockSupplierInvoice[];
+};
+
+// Invoice exclusion rules — skip non-supplier documents on import.
+export const invoiceExclusionFieldSchema = z.enum(['title', 'body', 'supplier', 'invoiceNumber']);
+export type InvoiceExclusionField = z.infer<typeof invoiceExclusionFieldSchema>;
+
+export const invoiceExclusionConditionSchema = z.object({
+  field: invoiceExclusionFieldSchema,
+  // Implicit operator is case-insensitive "contains".
+  value: z.string().trim().min(1).max(200)
+});
+export type InvoiceExclusionCondition = z.infer<typeof invoiceExclusionConditionSchema>;
+
+export const invoiceExclusionRuleInputSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  enabled: z.boolean().optional(),
+  conditions: z.array(invoiceExclusionConditionSchema).min(1).max(10)
+});
+export type InvoiceExclusionRuleInput = z.infer<typeof invoiceExclusionRuleInputSchema>;
+
+export type InvoiceExclusionRule = {
+  id: string;
+  name: string;
+  enabled: boolean;
+  conditions: InvoiceExclusionCondition[];
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type StockInvoiceRipResult = {
@@ -5562,6 +5591,31 @@ export type StocktakeReviewItem = Stocktake & {
   totalVarianceQuantity: number;
   positiveVarianceQuantity: number;
   negativeVarianceQuantity: number;
+};
+
+// Cost of Goods summary — Theoretical (sold qty × recipe cost) vs Actual
+// (supplier purchases in the window) with the variance, plus dish-margin
+// and supplier price-movement summaries.
+export type StockCostOfGoodsPayload = {
+  generatedAt: string;
+  venue: string | null;
+  lookbackDays: number;
+  theoreticalCogsCents: number;
+  actualCogsCents: number;
+  actualMethod: 'supplier_purchases';
+  varianceCents: number;
+  variancePercent: number | null;
+  netSalesCents: number;
+  cogsPercentOfSales: number | null;
+  dishMargin: {
+    mappedRecipes: number;
+    unmappedRecipes: number;
+    avgMarginPercent: number | null;
+  };
+  priceMovement: {
+    increasedItems: number;
+    decreasedItems: number;
+  };
 };
 
 export type StockDashboardPayload = {

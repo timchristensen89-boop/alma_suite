@@ -303,9 +303,12 @@ export function InvoicesPage() {
       const warningText = result.needsReviewLineCount
         ? ` ${result.needsReviewLineCount} line${result.needsReviewLineCount === 1 ? '' : 's'} need review.`
         : '';
+      const skippedText = result.skippedCount
+        ? ` ${result.skippedCount} document${result.skippedCount === 1 ? '' : 's'} skipped by exclusion rules.`
+        : '';
       showFeedback(
         target,
-        `Imported ${result.importedCount} invoice${result.importedCount === 1 ? '' : 's'} with ${result.matchedLineCount} matched line${result.matchedLineCount === 1 ? '' : 's'}.${warningText}`,
+        `Imported ${result.importedCount} invoice${result.importedCount === 1 ? '' : 's'} with ${result.matchedLineCount} matched line${result.matchedLineCount === 1 ? '' : 's'}.${warningText}${skippedText}`,
         result.needsReviewLineCount ? 'info' : 'success'
       );
     } catch (err) {

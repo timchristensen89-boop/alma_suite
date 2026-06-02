@@ -2980,3 +2980,19 @@ model NotificationMutePreference {
   @@unique([staffProfileId, category])
   @@index([staffProfileId])
 }
+
+// Rules that skip non-supplier documents during stock invoice import
+// (e.g. Square sales payouts arriving as PDFs/emails). Each rule holds a
+// list of conditions; ALL conditions in a rule must match an invoice for
+// it to be excluded, and ANY matching rule excludes the invoice.
+// conditions = [{ field: 'title'|'body'|'supplier'|'invoiceNumber', value }]
+model InvoiceExclusionRule {
+  id         String   @id @default(cuid())
+  name       String
+  enabled    Boolean  @default(true)
+  conditions Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([enabled])
+}

@@ -230,6 +230,19 @@ export function DishMarginPage() {
           />
         </div>
 
+        {(() => {
+          const unmapped = recipes.filter((r) => !r.actualSales || !r.actualSales.hasMapping).length;
+          if (unmapped === 0 || recipes.length === 0) return null;
+          return (
+            <p className="dish-margin-unmapped-note subtle">
+              {unmapped} of {recipes.length} dishes have no Square sales mapped, so their sold
+              quantity and contribution read “Not mapped to Square” rather than a number. Map a
+              recipe to its Square item to see sales-weighted margins and feed the dashboard’s
+              theoretical COGS.
+            </p>
+          );
+        })()}
+
         {filtered.length === 0 ? (
           <EmptyState
             title="No recipes match"

@@ -17,7 +17,8 @@ import {
   type RecipeStatus,
   type RecipeWithLines,
   type RecipesPayload,
-  type RecipesSummary
+  type RecipesSummary,
+  type StockCostOfGoodsPayload
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
@@ -518,6 +519,112 @@ async function listRecipeCategories(syncFromRecipes: boolean) {
 }
 
 export const recipesService = {
+  // Cost of Goods summary for the stock dashboard.
+  // Theoretical COGS = Σ (recipe cost × units sold) from Square sales.
+  // Actual COGS     = Σ supplier purchases (invoice totals) in the window.
+  async costOfGoods(options?: { venue?: string | null; days?: number }): Promise<StockCostOfGoodsPayload> {
+    const lookbackDays = Math.min(Math.max(Math.floor(options?.days ?? 30), 1), 365);
+    const venue = options?.venue?.trim() || null;
+    const venueKey = venue ? venue.toLowerCase() : null;
+
+    const { recipes } = await this.list({ withSalesLookbackDays: lookbackDays });
+    const scoped = venueKey
+      ? recipes.filter((recipe) => !recipe.venue || recipe.venue.toLowerCase() === venueKey)
+      : recipes;
+
+    let theoreticalCogsCents = 0;
+    let netSalesCents = 0;
+    let mappedRecipes = 0;
+    let unmappedRecipes = 0;
+    let marginSum = 0;
+    let marginCount = 0;
+    for (const recipe of scoped) {
+      const sales = recipe.actualSales;
+      const qty = sales?.quantitySold ?? 0;
+      const costCents = Math.round((recipe.estimatedCost ?? 0) * 100);
+      if (sales && qty > 0) {
+        mappedRecipes += 1;
+        theoreticalCogsCents += costCents * qty;
+        netSalesCents += sales.netSalesCents;
+        if (recipe.salePriceCents && recipe.salePriceCents > 0) {
+          marginSum += ((recipe.salePriceCents - costCents) / recipe.salePriceCents) * 100;
+          marginCount += 1;
+        }
+      } else {
+        unmappedRecipes += 1;
+      }
+    }
+
+    // Actual COGS = supplier purchases in the window (venue-scoped, excluding
+    // non-stock "no item" triaged documents).
+    const since = new Date();
+    since.setDate(since.getDate() - lookbackDays);
+    const purchaseAgg = await prisma.supplierInvoice.aggregate({
+      // Ex-GST subtotal so it compares apples-to-apples with the ex-GST
+      // recipe cost. Falls back to total when a subtotal wasn't parsed.
+      _sum: { subtotalCents: true, totalCents: true },
+      where: {
+        triageStatus: { not: 'NO_ITEM' },
+        invoiceDate: { gte: since },
+        ...(venue ? { venue } : {})
+      }
+    });
+    const actualCogsCents = purchaseAgg._sum.subtotalCents || purchaseAgg._sum.totalCents || 0;
+
+    const varianceCents = actualCogsCents - theoreticalCogsCents;
+    const variancePercent =
+      theoreticalCogsCents > 0 ? (varianceCents / theoreticalCogsCents) * 100 : null;
+    const cogsPercentOfSales = netSalesCents > 0 ? (theoreticalCogsCents / netSalesCents) * 100 : null;
+
+    // Supplier price movement: per item, compare earliest vs latest unit cost
+    // across invoice lines in the window.
+    const priceLines = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        itemId: { not: null },
+        unitAmountCents: { gt: 0 },
+        invoice: {
+          invoiceDate: { gte: since },
+          triageStatus: { not: 'NO_ITEM' },
+          ...(venue ? { venue } : {})
+        }
+      },
+      select: { itemId: true, unitAmountCents: true, invoice: { select: { invoiceDate: true } } },
+      orderBy: { invoice: { invoiceDate: 'asc' } }
+    });
+    const firstLast = new Map<string, { first: number; last: number }>();
+    for (const line of priceLines) {
+      if (!line.itemId) continue;
+      const existing = firstLast.get(line.itemId);
+      if (existing) existing.last = line.unitAmountCents;
+      else firstLast.set(line.itemId, { first: line.unitAmountCents, last: line.unitAmountCents });
+    }
+    let increasedItems = 0;
+    let decreasedItems = 0;
+    for (const { first, last } of firstLast.values()) {
+      if (last > first) increasedItems += 1;
+      else if (last < first) decreasedItems += 1;
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      venue,
+      lookbackDays,
+      theoreticalCogsCents,
+      actualCogsCents,
+      actualMethod: 'supplier_purchases',
+      varianceCents,
+      variancePercent,
+      netSalesCents,
+      cogsPercentOfSales,
+      dishMargin: {
+        mappedRecipes,
+        unmappedRecipes,
+        avgMarginPercent: marginCount > 0 ? marginSum / marginCount : null
+      },
+      priceMovement: { increasedItems, decreasedItems }
+    };
+  },
+
   async list(options?: { withSalesLookbackDays?: number | null }): Promise<RecipesPayload> {
     const lookbackDays = options?.withSalesLookbackDays && options.withSalesLookbackDays > 0
       ? Math.min(Math.floor(options.withSalesLookbackDays), 365)
