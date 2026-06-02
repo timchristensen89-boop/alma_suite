@@ -3451,6 +3451,42 @@ export const staffService = {
     return options?.includeConfirmations ? rows.map((row) => toRosterShiftPayload(row)) : rows;
   },
 
+  // Read-only published roster for the whole venue team — any authenticated
+  // user (incl. staff) can see the live published shifts, NOT drafts or
+  // cancellations. Venue-scoped to the actor. Powers the staff-facing
+  // "Published roster" view.
+  async listPublishedRoster(start?: string, end?: string, actor?: AuthUser) {
+    const now = new Date();
+    const startDate = start ? new Date(start) : new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const endDate = end
+      ? new Date(end)
+      : new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+
+    const scopedVenue = scopeVenueForActor(undefined, actor);
+
+    return prisma.rosterShift.findMany({
+      where: {
+        startsAt: { lt: endDate },
+        endsAt: { gt: startDate },
+        status: { notIn: ['DRAFT', 'CANCELLED'] },
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+      },
+      orderBy: [{ startsAt: 'asc' }],
+      include: {
+        staffProfile: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            roleTitle: true,
+            venue: true,
+            employmentStatus: true
+          }
+        }
+      }
+    });
+  },
+
   async createRosterShift(input: unknown, actor?: AuthUser) {
     const data = rosterShiftInputSchema.parse(input);
     const profile = actor ? await assertManagerCanAccessStaffProfile(data.staffProfileId, actor) : await this.getById(data.staffProfileId);

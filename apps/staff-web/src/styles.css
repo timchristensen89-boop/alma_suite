@@ -7413,3 +7413,56 @@
     width:100%;
   }
 }
+
+/* Staff-facing read-only published roster — day-grouped list. */
+.published-roster-days {
+  display: flex;
+  flex-direction: column;
+}
+
+.published-roster-day {
+  border-top: 1px solid var(--color-border);
+  padding: 10px 16px 12px;
+}
+
+.published-roster-day:first-child {
+  border-top: 0;
+}
+
+.published-roster-day-head {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted, #607067);
+  margin-bottom: 8px;
+}
+
+.published-roster-shift {
+  display: grid;
+  grid-template-columns: 112px 1fr auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 6px 0;
+}
+
+.published-roster-time {
+  font-variant-numeric: tabular-nums;
+  font-weight: 700;
+  color: var(--color-text, #18221d);
+}
+
+.published-roster-who {
+  font-weight: 600;
+  color: var(--color-text, #18221d);
+}
+
+@media (max-width: 640px) {
+  .published-roster-shift {
+    grid-template-columns: 92px 1fr;
+  }
+  .published-roster-shift .subtle {
+    grid-column: 1 / -1;
+  }
+}

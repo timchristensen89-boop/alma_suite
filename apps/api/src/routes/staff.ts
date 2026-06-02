@@ -577,6 +577,19 @@ staffRouter.get('/roster', async (req, res, next) => {
   }
 });
 
+// Read-only published team roster — visible to every authenticated user
+// (staff included) so they can see a copy of the live roster. Published
+// shifts only, venue-scoped. No manager guard.
+staffRouter.get('/roster/published', async (req, res, next) => {
+  try {
+    const start = typeof req.query.start === 'string' ? req.query.start : undefined;
+    const end = typeof req.query.end === 'string' ? req.query.end : undefined;
+    res.json(await staffService.listPublishedRoster(start, end, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/roster', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await staffService.createRosterShift(req.body, req.user));

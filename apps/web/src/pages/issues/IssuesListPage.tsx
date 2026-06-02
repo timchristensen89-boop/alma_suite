@@ -45,6 +45,7 @@ export function IssuesListPage() {
   const [status, setStatus] = useState('');
   const [severity, setSeverity] = useState('');
   const [search, setSearch] = useState('');
+  const [category, setCategory] = useState('');
 
   const query = useMemo(() => {
     const params = new URLSearchParams();
@@ -59,13 +60,31 @@ export function IssuesListPage() {
     [query]
   );
 
-  const filtersActive = Boolean(status || severity || search);
-  const resultCount = data?.length ?? 0;
+  // Admin-managed category list drives the filter bar, merged with any
+  // categories already present on the loaded issues so legacy values still
+  // appear as filters.
+  const configuredCategories = useAsync<string[]>(() => api('/api/issues/categories'), []);
+  const categoryList = useMemo(() => {
+    const set = new Set<string>();
+    for (const name of configuredCategories.data ?? []) if (name) set.add(name);
+    for (const issue of data ?? []) if (issue.category) set.add(issue.category);
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [configuredCategories.data, data]);
+
+  // Category filtering is applied client-side over the loaded list.
+  const visibleIssues = useMemo(
+    () => (category ? (data ?? []).filter((issue) => issue.category === category) : data ?? []),
+    [category, data]
+  );
+
+  const filtersActive = Boolean(status || severity || search || category);
+  const resultCount = visibleIssues.length;
 
   function clearFilters() {
     setStatus('');
     setSeverity('');
     setSearch('');
+    setCategory('');
   }
 
   return (
@@ -121,6 +140,27 @@ export function IssuesListPage() {
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Title, category, description, assignee"
           />
+        </div>
+        <div className="issue-cat-bar" role="group" aria-label="Filter by category">
+          <button
+            type="button"
+            className={`issue-cat-chip ${category === '' ? 'is-active' : ''}`}
+            aria-pressed={category === ''}
+            onClick={() => setCategory('')}
+          >
+            All
+          </button>
+          {categoryList.map((name) => (
+            <button
+              key={name}
+              type="button"
+              className={`issue-cat-chip ${category === name ? 'is-active' : ''}`}
+              aria-pressed={category === name}
+              onClick={() => setCategory(name)}
+            >
+              {name}
+            </button>
+          ))}
         </div>
       </Card>
 
@@ -200,7 +240,7 @@ export function IssuesListPage() {
               </tr>
             </thead>
             <tbody>
-              {data?.map((issue) => (
+              {visibleIssues.map((issue) => (
                 <tr key={issue.id}>
                   <td>
                     <div className="cell-stack">
