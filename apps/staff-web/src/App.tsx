@@ -6748,6 +6748,62 @@ function AdminPage({
     );
   }
 
+  async function renameAdminRosterArea(areaName: string) {
+    const target = `roster-area:${areaName}`;
+    setMessageTarget(target);
+    if (!canManageRosterAreas(user)) {
+      setMessage('You need manager or admin access to rename roster areas.');
+      return;
+    }
+
+    const input = window.prompt(`Rename the "${areaName}" area to:`, areaName);
+    if (input === null) return; // cancelled
+    const newName = normaliseRosterAreaName(input);
+    if (!newName) {
+      setMessage('Enter a new area name.');
+      return;
+    }
+
+    const oldKey = normaliseRosterAreaKey(areaName);
+    const newKey = normaliseRosterAreaKey(newName);
+    if (oldKey !== newKey && adminRosterAreas.some((item) => normaliseRosterAreaKey(item) === newKey)) {
+      setMessage(`${newName} already exists in roster areas.`);
+      return;
+    }
+    if (areaName === newName) return; // no-op
+
+    // Replace old → new in the per-browser area settings so areas with no
+    // shifts (custom names) rename too, and ordering/hidden state carries.
+    const replaceInList = (list: string[]) =>
+      uniqueRosterAreaNames(list.map((item) => (normaliseRosterAreaKey(item) === oldKey ? newName : item)));
+
+    persistRosterAreaSettings(
+      {
+        order: replaceInList(rosterAreaSettings.order),
+        hidden: replaceInList(rosterAreaSettings.hidden),
+        deleted: replaceInList(rosterAreaSettings.deleted)
+      },
+      target,
+      `${areaName} renamed to ${newName}.`
+    );
+
+    // Rewrite the area on existing shifts server-side so the rename sticks
+    // across devices and survives a refresh (the settings above are
+    // localStorage-only).
+    try {
+      const { renamed } = await api<{ renamed: number }>('/api/staff/roster/rename-area', {
+        method: 'POST',
+        body: JSON.stringify({ from: areaName, to: newName })
+      });
+      await reload();
+      setMessage(
+        `${areaName} renamed to ${newName}${renamed ? ` · ${renamed} shift${renamed === 1 ? '' : 's'} updated` : ''}.`
+      );
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Renamed in this browser, but could not update existing shifts.');
+    }
+  }
+
   async function saveSettings(target: string) {
     setMessageTarget(target);
     if (!user?.isAdmin) {
@@ -7139,6 +7195,9 @@ function AdminPage({
                     </Button>
                     <Button type="button" size="sm" variant="ghost" disabled={!canManageRosterAreas(user) || index === adminRosterAreas.length - 1} onClick={() => moveAdminRosterArea(areaName, 1)}>
                       Down
+                    </Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={!canManageRosterAreas(user)} onClick={() => void renameAdminRosterArea(areaName)}>
+                      Rename
                     </Button>
                     <Button type="button" size="sm" variant="secondary" disabled={!canManageRosterAreas(user)} onClick={() => toggleAdminRosterAreaHidden(areaName)}>
                       {isHidden ? 'Show' : 'Hide'}

@@ -1027,6 +1027,16 @@ export const rosterBulkDeleteSchema = z.object({
 });
 export type RosterBulkDeleteInput = z.infer<typeof rosterBulkDeleteSchema>;
 
+// Rename a roster area/section: rewrites the `area` string on every
+// matching shift so the rename sticks in the data (not just the
+// per-browser area-order settings).
+export const rosterRenameAreaSchema = z.object({
+  from: z.string().min(1, 'Choose the area to rename'),
+  to: z.string().min(1, 'Enter a new area name').max(80),
+  venue: z.string().optional()
+});
+export type RosterRenameAreaInput = z.infer<typeof rosterRenameAreaSchema>;
+
 export const tipsManualHoursSchema = z.object({
   staffProfileId: z.string().min(1),
   venue: z.string().min(1),

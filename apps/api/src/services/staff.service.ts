@@ -46,6 +46,7 @@ import {
   timesheetExportInputSchema,
   tipsBulkDeleteSchema,
   rosterBulkDeleteSchema,
+  rosterRenameAreaSchema,
   tipsCashEntryInputSchema,
   tipsCardImportInputSchema,
   tipsExportInputSchema,
@@ -3634,6 +3635,29 @@ export const staffService = {
     }
     const result = await prisma.rosterShift.deleteMany({ where });
     return { deleted: result.count };
+  },
+
+  async renameRosterArea(input: unknown, actor?: AuthUser) {
+    const data = rosterRenameAreaSchema.parse(input);
+    const from = data.from.trim();
+    const to = data.to.trim();
+    if (!from || !to) {
+      throw new HttpError(400, 'Both the current and new area names are required.');
+    }
+    if (from === to) {
+      return { renamed: 0 };
+    }
+    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
+    // Rewrite the area string on every matching shift. Venue-scoped so a
+    // venue manager only renames their own venue's areas.
+    const result = await prisma.rosterShift.updateMany({
+      where: {
+        area: from,
+        ...(scopedVenue ? { venue: scopedVenue } : {})
+      },
+      data: { area: to }
+    });
+    return { renamed: result.count };
   },
 
   async publishRoster(input: unknown, publishedById?: string, actor?: AuthUser) {
