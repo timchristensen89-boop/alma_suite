@@ -8940,6 +8940,16 @@ function RosterPage({
     () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
     [rosterAreaSettings, visibleRoster]
   );
+  // Distinct area values present in the currently-visible roster — drives
+  // the "Delete by location/area" bulk-delete control.
+  const bulkDeleteAreas = useMemo(
+    () => uniqueValues(visibleRoster.map((shift) => shift.area || 'Shift')),
+    [visibleRoster]
+  );
+  const unallocatedShiftCount = useMemo(
+    () => visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length,
+    [visibleRoster]
+  );
   const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
   const activeAreas = useMemo(
     () => allRosterAreas.filter((areaName) => !hiddenAreaNames.has(normaliseRosterAreaKey(areaName))),
@@ -9411,6 +9421,50 @@ function RosterPage({
       setMessage('Shift deleted.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not delete shift.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function bulkDeleteRoster(filter: 'all' | 'unallocated' | 'area', selectedArea?: string) {
+    setShiftContextMenu(null);
+    const venueLabel = venueFilter === 'all' ? 'all venues' : venueFilter;
+    let scopeCount = visibleRoster.length;
+    let confirmMessage = '';
+    if (filter === 'all') {
+      confirmMessage = `Delete ALL ${scopeCount} shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
+    } else if (filter === 'unallocated') {
+      scopeCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+      confirmMessage = `Delete ${scopeCount} unallocated shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
+    } else {
+      if (!selectedArea) return;
+      scopeCount = visibleRoster.filter((shift) => (shift.area || 'Shift') === selectedArea).length;
+      confirmMessage = `Delete ${scopeCount} shift${scopeCount === 1 ? '' : 's'} in ${selectedArea} for ${venueLabel} this week? This cannot be undone.`;
+    }
+    if (scopeCount === 0) {
+      setMessage('No shifts to delete in this view.');
+      setMessageTarget('shift-delete');
+      return;
+    }
+    if (!window.confirm(confirmMessage)) return;
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('shift-delete');
+    try {
+      const { deleted } = await api<{ deleted: number }>('/api/staff/roster/bulk-delete', {
+        method: 'POST',
+        body: JSON.stringify({
+          start: weekStart.toISOString(),
+          end: weekEnd.toISOString(),
+          venue: venueFilter === 'all' ? '' : venueFilter,
+          filter,
+          ...(filter === 'area' ? { area: selectedArea } : {})
+        })
+      });
+      await reload(weekStart, weekEnd);
+      setMessage(`Deleted ${deleted} shift${deleted === 1 ? '' : 's'}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not delete shifts.');
     } finally {
       setSaving(false);
     }
@@ -9985,6 +10039,46 @@ function RosterPage({
           <span>Publish roster</span>
           {draftCount > 0 ? <span className="alma-roster-publish-sub">{draftCount} {draftCount === 1 ? 'change' : 'changes'}</span> : null}
         </button>
+        <div className="alma-roster-bulk-delete" aria-label="Bulk delete roster shifts">
+          <Button
+            type="button"
+            size="sm"
+            variant="danger"
+            disabled={saving || unallocatedShiftCount === 0}
+            onClick={() => void bulkDeleteRoster('unallocated')}
+          >
+            Delete unallocated{unallocatedShiftCount > 0 ? ` (${unallocatedShiftCount})` : ''}
+          </Button>
+          {bulkDeleteAreas.length > 0 ? (
+            <label className="alma-roster-bulk-delete-area">
+              <select
+                aria-label="Delete shifts by location or area"
+                disabled={saving || visibleRoster.length === 0}
+                value=""
+                onChange={(event) => {
+                  const selectedArea = event.currentTarget.value;
+                  if (!selectedArea) return;
+                  event.currentTarget.value = '';
+                  void bulkDeleteRoster('area', selectedArea);
+                }}
+              >
+                <option value="">Delete area…</option>
+                {bulkDeleteAreas.map((areaName) => (
+                  <option key={areaName} value={areaName}>{areaName}</option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="danger"
+            disabled={saving || visibleRoster.length === 0}
+            onClick={() => void bulkDeleteRoster('all')}
+          >
+            Delete all (this week)
+          </Button>
+        </div>
       </div>
 
       {activeFilterChips.length > 0 ? (

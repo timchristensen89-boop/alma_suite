@@ -3631,6 +3631,35 @@
   border-radius: 14px;
 }
 
+/* Bulk-delete group — danger actions for clearing roster shifts in the
+   current week/venue view. Separated from the constructive actions with a
+   subtle leading divider so destructive controls read as their own cluster. */
+.alma-roster-bulk-delete {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding-left: 10px;
+  margin-left: 2px;
+  border-left: 1px solid var(--color-border);
+}
+
+.alma-roster-bulk-delete-area select {
+  min-height: 32px;
+  padding: 0 10px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface, #F8F6F1);
+  color: var(--color-text, #2A2622);
+  font: inherit;
+  cursor: pointer;
+}
+
+.alma-roster-bulk-delete-area select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 /* Forecast pill — same height as the action buttons, paper-cream
    surface with a tracked label so it reads as "Forecast: $50,000 ·
    28%" rather than two anonymous inputs. */

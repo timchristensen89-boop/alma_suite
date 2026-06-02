@@ -17,7 +17,7 @@ import {
   Select,
   Textarea
 } from '@alma/ui';
-import { emptyIssueForm } from './defaults';
+import { emptyIssueForm, ISSUE_STATUSES, issueStatusLabel } from './defaults';
 import {
   IconArrowLeft,
   IconInbox,
@@ -73,13 +73,7 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 const severities: IssueSeverity[] = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
-const statuses: IssueStatus[] = [
-  'OPEN',
-  'IN_PROGRESS',
-  'BLOCKED',
-  'RESOLVED',
-  'CLOSED'
-];
+const statuses: IssueStatus[] = ISSUE_STATUSES;
 
 function assigneeValue(
   value: string | null | undefined,
@@ -143,6 +137,7 @@ export function IssueForm({
           description: initialValue.description,
           severity: initialValue.severity,
           category: initialValue.category,
+          area: initialValue.area ?? '',
           status: initialValue.status,
           assignee: initialValue.assignee ?? '',
           dueDate: initialValue.dueDate ? initialValue.dueDate.slice(0, 10) : '',
@@ -151,7 +146,8 @@ export function IssueForm({
           evidence: initialValue.evidence.map((item) => ({
             name: item.name,
             url: item.url,
-            fileType: item.fileType ?? ''
+            fileType: item.fileType ?? '',
+            note: item.note ?? ''
           }))
         }
       : emptyIssueForm
@@ -171,13 +167,13 @@ export function IssueForm({
   function addEvidence() {
     update('evidence', [
       ...(form.evidence ?? []),
-      { name: '', url: '', fileType: '' }
+      { name: '', url: '', fileType: '', note: '' }
     ]);
   }
 
   function updateEvidence(
     index: number,
-    key: 'name' | 'url' | 'fileType',
+    key: 'name' | 'url' | 'fileType' | 'note',
     value: string
   ) {
     update(
@@ -206,7 +202,8 @@ export function IssueForm({
         {
           name: file.name,
           url: dataUrl,
-          fileType: file.type || ''
+          fileType: file.type || '',
+          note: ''
         }
       ]);
     } finally {
@@ -266,9 +263,16 @@ export function IssueForm({
             value={form.status}
             onChange={(event) => update('status', event.target.value as IssueStatus)}
             options={statuses.map((value) => ({
-              label: value.replace('_', ' '),
+              label: issueStatusLabel(value),
               value
             }))}
+          />
+          <Input
+            label="Area / location"
+            value={form.area ?? ''}
+            onChange={(event) => update('area', event.target.value)}
+            placeholder="e.g. Kitchen line, Cellar, Front bar"
+            hint="Leave the assignee blank and the area's responsible person is assigned automatically."
           />
           <Select
             label="Assignee"
@@ -362,31 +366,39 @@ export function IssueForm({
             />
           ) : (
             evidence.map((item, index) => (
-              <div key={index} className="evidence-row">
+              <div key={index} className="evidence-item">
+                <div className="evidence-row">
+                  <Input
+                    label="Name"
+                    value={item.name}
+                    onChange={(event) => updateEvidence(index, 'name', event.target.value)}
+                  />
+                  <Input
+                    label="URL or data"
+                    value={item.url}
+                    onChange={(event) => updateEvidence(index, 'url', event.target.value)}
+                  />
+                  <Input
+                    label="Type"
+                    value={item.fileType ?? ''}
+                    onChange={(event) => updateEvidence(index, 'fileType', event.target.value)}
+                  />
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    leftIcon={<IconTrash size={14} />}
+                    onClick={() => removeEvidence(index)}
+                  >
+                    Remove
+                  </Button>
+                </div>
                 <Input
-                  label="Name"
-                  value={item.name}
-                  onChange={(event) => updateEvidence(index, 'name', event.target.value)}
+                  label="Note"
+                  value={item.note ?? ''}
+                  onChange={(event) => updateEvidence(index, 'note', event.target.value)}
+                  placeholder="Add a caption — what this photo shows or what was done."
                 />
-                <Input
-                  label="URL or data"
-                  value={item.url}
-                  onChange={(event) => updateEvidence(index, 'url', event.target.value)}
-                />
-                <Input
-                  label="Type"
-                  value={item.fileType ?? ''}
-                  onChange={(event) => updateEvidence(index, 'fileType', event.target.value)}
-                />
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  leftIcon={<IconTrash size={14} />}
-                  onClick={() => removeEvidence(index)}
-                >
-                  Remove
-                </Button>
               </div>
             ))
           )}
