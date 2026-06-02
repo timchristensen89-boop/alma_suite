@@ -9655,6 +9655,32 @@ function RosterPage({
     });
   }
 
+  // "Import from Deputy" now runs the same full Deputy auto-sync the admin
+  // Integration Health page triggers (roster + employees + documents),
+  // instead of the manual CSV paste flow.
+  async function syncDeputyNow() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('copy-week');
+    try {
+      const result = await api<{
+        roster?: { shiftsCreated: number };
+        employees?: { created: number; updated: number };
+        documents?: { complianceCreated: number; reviewsCreated: number };
+      }>('/api/integrations/deputy/sync-all', { method: 'POST' });
+      const parts: string[] = [];
+      if (result.roster) parts.push(`${result.roster.shiftsCreated} shifts`);
+      if (result.employees) parts.push(`${result.employees.created} new staff, ${result.employees.updated} updated`);
+      if (result.documents) parts.push(`${result.documents.complianceCreated + result.documents.reviewsCreated} docs`);
+      await reload(weekStart, weekEnd);
+      setMessage(`Deputy sync complete${parts.length ? ` — ${parts.join(', ')}` : ''}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not sync Deputy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function copyPreviousWeek() {
     setSaving(true);
     setMessage(null);
@@ -10016,8 +10042,9 @@ function RosterPage({
               <button
                 type="button"
                 className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
-                onClick={() => setDeputyImportOpen(true)}
-                title="Import the latest Deputy roster CSV — stop-gap until Alma roster is fully tested."
+                disabled={saving}
+                onClick={() => void syncDeputyNow()}
+                title="Run a full Deputy sync now — pulls the latest roster, staff, and documents from Deputy."
               >
                 Import from Deputy
               </button>
@@ -10083,6 +10110,9 @@ function RosterPage({
           the actions and the filters they operate on read as one
           control block. */}
       <div className="alma-roster-actions">
+        <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
+          Add shift
+        </Button>
         <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void copyPreviousWeek()}>
           Copy last week
         </Button>
@@ -10094,9 +10124,6 @@ function RosterPage({
           aria-label="Open historical forecast data"
         >
           Historical data{wageBudgetVariancePercent != null ? ` · ${formatVariance(wageBudgetVariancePercent)}` : ''}
-        </Button>
-        <Button type="button" size="sm" variant="secondary" onClick={() => newShift()}>
-          Add shift
         </Button>
         <label className="roster-forecast-inline roster-forecast-inline--utility" title="Forecast sales · target wage %">
           <span className="roster-forecast-inline-label">Forecast</span>
@@ -10128,9 +10155,10 @@ function RosterPage({
         <div className="alma-roster-delete-controls" aria-label="Delete roster shifts">
           {/* Small red section button — delete a single area/section */}
           <div className="alma-roster-delete-wrap">
-            <button
+            <Button
               type="button"
-              className="alma-roster-section-delete"
+              size="sm"
+              variant="secondary"
               disabled={saving || bulkDeleteAreas.length === 0}
               aria-haspopup="menu"
               aria-expanded={sectionMenuOpen}
@@ -10140,8 +10168,8 @@ function RosterPage({
                 setDeleteMenuOpen(false);
               }}
             >
-              Section
-            </button>
+              Sections
+            </Button>
             {sectionMenuOpen ? (
               <>
                 <button
@@ -10174,19 +10202,21 @@ function RosterPage({
 
           {/* Consolidated Delete dropdown — sits next to Publish */}
           <div className="alma-roster-delete-wrap">
-            <button
+            <Button
               type="button"
-              className="alma-roster-delete-toggle"
+              size="sm"
+              variant="secondary"
               disabled={saving}
               aria-haspopup="menu"
               aria-expanded={deleteMenuOpen}
+              rightIcon={<span aria-hidden="true">▾</span>}
               onClick={() => {
                 setDeleteMenuOpen((open) => !open);
                 setSectionMenuOpen(false);
               }}
             >
-              Delete <span aria-hidden="true">▾</span>
-            </button>
+              Delete
+            </Button>
             {deleteMenuOpen ? (
               <>
                 <button
@@ -14785,6 +14815,46 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         </div>
       </div>
 
+      {/* Week selector — same editorial style as the roster board, sitting
+          between the toolbar and the approval queue. */}
+      <div className="alma-roster-header alma-roster-header--tight">
+        <div className="alma-roster-header-titles">
+          <div className="alma-roster-title-row">
+            <span className="alma-roster-title">Week of</span>
+            <span className="alma-roster-title is-italic">{formatRange(weekStart, addDays(weekEnd, -1))}</span>
+            <div className="alma-roster-weeknav">
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Previous week"
+                onClick={() => { setRangeMode('week'); setWeekStart(addDays(weekStart, -7)); }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="15 6 9 12 15 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Next week"
+                onClick={() => { setRangeMode('week'); setWeekStart(addDays(weekStart, 7)); }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                onClick={() => { setRangeMode('week'); setWeekStart(startOfWeek(new Date())); }}
+              >
+                This week
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {(messageTarget === 'preview' || messageTarget === 'export' || messageTarget === 'push') && message ? (
         <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
       ) : null}
@@ -14819,19 +14889,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                 { label: 'Last 90 days', value: '90' }
               ]}
             />
-            {rangeMode === 'week' ? (
-              <>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, -7))}>
-                  Previous
-                </Button>
-                <strong>{formatRange(weekStart, addDays(weekEnd, -1))}</strong>
-                <Button type="button" size="sm" variant="ghost" onClick={() => setWeekStart(addDays(weekStart, 7))}>
-                  Next
-                </Button>
-              </>
-            ) : (
+            {rangeMode !== 'week' ? (
               <strong>{formatRange(rangeStart, addDays(rangeEnd, -1))}</strong>
-            )}
+            ) : null}
             <Select
               label="Venue"
               value={venueFilter}
