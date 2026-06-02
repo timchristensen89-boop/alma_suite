@@ -41,7 +41,6 @@ import { MaintenancePage } from './pages/handbook/MaintenancePage';
 import { IconExportPage } from './pages/IconExportPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
-import { CommandPalette } from './components/CommandPalette';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { NAV_ITEMS, navItemsForRole } from './config/navigation';
@@ -52,7 +51,6 @@ import {
   IconChevronDown,
   IconHandbook,
   IconLogout,
-  IconSearch,
   IconSettings
 } from './lib/icons';
 
@@ -211,22 +209,11 @@ function UserMenu() {
   );
 }
 
-function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
+function TopBarWithContext() {
   const location = useLocation();
   const { user } = useAuth();
   const active = currentPage(location.pathname, navItemsForRole(user));
   useDocumentTitle(active.label);
-
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'k') {
-        event.preventDefault();
-        onOpenPalette();
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [onOpenPalette]);
 
   return (
     <TopBar
@@ -234,16 +221,6 @@ function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
       subtitle={active.description}
       right={
         <>
-          <button
-            type="button"
-            className="topbar-search"
-            onClick={onOpenPalette}
-            aria-label="Open search"
-          >
-            <IconSearch size={14} />
-            <span>Search issues, staff, assets…</span>
-            <kbd>⌘K</kbd>
-          </button>
           <SuiteCommsWidget
             appId="COMPLIANCE"
             api={api}
@@ -263,12 +240,10 @@ function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
 }
 
 function AuthenticatedApp() {
-  const [paletteOpen, setPaletteOpen] = useState(false);
-
   return (
     <AppShell
       sidebar={<SidebarNav />}
-      topBar={<TopBarWithContext onOpenPalette={() => setPaletteOpen(true)} />}
+      topBar={<TopBarWithContext />}
     >
       <ErrorBoundary>
         <Routes>
@@ -310,7 +285,6 @@ function AuthenticatedApp() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ErrorBoundary>
-      <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
     </AppShell>
   );
 }

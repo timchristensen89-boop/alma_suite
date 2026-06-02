@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, SuiteSearchWidget, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
@@ -115,13 +115,6 @@ function TopBarWithContext() {
   const navigate = useNavigate();
   const { logout, user } = useAuth();
   useDocumentTitle(active.label);
-  const searchItems = NAV_ITEMS.map((item) => ({
-    id: item.to,
-    label: item.label,
-    description: item.description,
-    href: item.to,
-    type: 'Stock'
-  }));
 
   return (
     <TopBar
@@ -130,11 +123,6 @@ function TopBarWithContext() {
       right={
         user ? (
           <>
-            <SuiteSearchWidget
-              currentApp="stock"
-              items={searchItems}
-              placeholder="Search stock, stocktakes, recipes..."
-            />
             <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="topbar" />
             <SuiteCommsWidget
               appId="STOCK"
