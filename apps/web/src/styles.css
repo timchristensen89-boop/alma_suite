@@ -6519,6 +6519,48 @@ a.suite-app-tile:hover {
   font-size: 12px;
 }
 
+/* Notification mute settings — silence whole categories */
+.suite-alert-mutes {
+  margin-top: 12px;
+  padding-top: 6px;
+}
+
+.suite-alert-mutes-hint {
+  margin: 2px 6px 10px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 11px;
+  color: rgba(31, 53, 36, 0.55);
+}
+
+.suite-alert-mute-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 6px;
+  border-bottom: 1px solid rgba(31, 53, 36, 0.06);
+}
+
+.suite-alert-mute-row:last-child {
+  border-bottom: 0;
+}
+
+.suite-alert-mute-label {
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 13px;
+  color: #1F3524;
+}
+
+.suite-alert-ghost-btn.is-muted {
+  border-color: rgba(160, 70, 58, 0.4);
+  color: #A0463A;
+}
+
+.suite-alert-ghost-btn.is-muted:hover {
+  border-color: #A0463A;
+  color: #A0463A;
+}
+
 .suite-alert-footer {
   margin-top: 14px;
   padding-top: 14px;

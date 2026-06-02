@@ -38,7 +38,6 @@ pnpm dev
 | Login | Password | Use |
 | --- | --- | --- |
 | `admin@alma.local` | `almaadmin` | Local dev / demo |
-| `tim@almagroup.com.au` | `Tim@lma2017` | Master owner account |
 
 To (re)create only the master user against an existing database without wiping
 data, run:
