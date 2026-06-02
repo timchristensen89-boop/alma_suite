@@ -1,7 +1,16 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
 import { api } from './api';
-import { AuthChip, DeviceSignIn, StaffPinPrompt, useAuth } from './auth';
+import { DeviceSignIn, StaffPinPrompt, useAuth } from './auth';
+import {
+  AppShell,
+  type Auth,
+  type PageShellProps,
+  type PinIntent,
+  type RequirePin,
+  type Venue
+} from './shell';
+import { StocktakePage } from './pages/StocktakePage';
 
 type LiveSnapshot = {
   venue: string | null;
@@ -11,15 +20,6 @@ type LiveSnapshot = {
   temperatures: { outOfRangeSensors: number };
   compliance: { openIssues: number; criticalIssues: number };
 };
-
-type Auth = ReturnType<typeof useAuth>;
-
-type PinIntent = {
-  intent: string;
-  targetRoute?: string;
-} | null;
-
-type RequirePin = (intent: PinIntent) => void;
 
 const VENUE_NAMES: Record<string, string> = {
   'st-alma': 'St Alma',
@@ -53,8 +53,6 @@ function useVenueSnapshot(venueId: string | undefined) {
   return { snapshot, loading };
 }
 
-type VenueId = 'st-alma' | 'alma-avalon';
-
 type PermissionKey =
   | 'checklists.run'
   | 'giftCards.sell'
@@ -68,18 +66,6 @@ type PermissionKey =
 
 type TileStatus = 'live' | 'pilot' | 'preview';
 
-type Venue = {
-  id: VenueId;
-  name: string;
-  subtitle: string;
-  manager: string;
-  serviceStatus: string;
-  openTasks: number;
-  bookingsToday: number;
-  checklistProgress: number;
-  lowStock: number;
-};
-
 type DashboardTool = {
   id: string;
   title: string;
@@ -90,8 +76,6 @@ type DashboardTool = {
   tone?: 'neutral' | 'warning' | 'positive';
   status?: TileStatus;
 };
-
-const ALMA_HOME_URL = '/apps';
 
 // Which permissions need an authenticated staff PIN (vs. just a signed-in
 // device account). Read-only tiles work for any staff at the venue; actions
@@ -151,12 +135,12 @@ function toolsForVenue(venue: Venue): DashboardTool[] {
     {
       id: 'stocktake',
       title: 'Stocktake',
-      description: 'Count by area, save drafts, submit when locked.',
+      description: 'Count by area, save drafts. Manager submits.',
       route: `/venue/${venue.id}/stocktake`,
       permission: 'stocktake.run',
       count: venue.lowStock,
       tone: venue.lowStock > 0 ? 'warning' : 'neutral',
-      status: 'preview'
+      status: 'pilot'
     },
     {
       id: 'bookings',
@@ -233,110 +217,6 @@ function canUseNow(permission: PermissionKey, auth: Auth) {
 function isStaffLocked(permission: PermissionKey, auth: Auth) {
   return Boolean(auth.device) && PERMISSION_REQUIRES_STAFF[permission] && !auth.staff;
 }
-
-function AppShell({
-  venue,
-  auth,
-  onRequestStaffPin,
-  onSwitchStaff,
-  children
-}: {
-  venue?: Venue | null;
-  auth: Auth;
-  onRequestStaffPin: () => void;
-  onSwitchStaff: () => void;
-  children: React.ReactNode;
-}) {
-  const deviceName = auth.device?.deviceAccount?.name ?? auth.device?.firstName ?? 'Venue iPad';
-  const deviceVenue = auth.device?.deviceAccount?.venue ?? auth.venueLabel ?? auth.device?.venue ?? null;
-  return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <Link to="/venue" className="brand-link" aria-label="Venue iPad home">
-          <span className="brand-mark">A</span>
-          <span>
-            <strong>Alma Venue</strong>
-            <small>iPad ops</small>
-          </span>
-        </Link>
-
-        <nav className="side-nav" aria-label="Venue navigation">
-          <Link to={ALMA_HOME_URL}>Alma Home</Link>
-          <Link to="/venue">Venue Home</Link>
-          {venue ? (
-            <>
-              <Link to={`/venue/${venue.id}`}>{venue.name}</Link>
-              <Link to={`/venue/${venue.id}/gift-cards`}>Gift cards</Link>
-              <Link to={`/venue/${venue.id}/stocktake`}>Stocktake</Link>
-              <Link to={`/venue/${venue.id}/bookings`}>Bookings</Link>
-              <Link to={`/venue/${venue.id}/checklists`}>Checklists</Link>
-              <Link to={`/venue/${venue.id}/handover`}>Handover</Link>
-              <Link to={`/venue/${venue.id}/roster`}>Roster</Link>
-              <Link to={`/venue/${venue.id}/tasks`}>Tasks</Link>
-              <Link to={`/venue/${venue.id}/help`}>Help &amp; fallback</Link>
-            </>
-          ) : null}
-        </nav>
-
-        <details className="settings-panel">
-          <summary>Device</summary>
-          <div className="settings-body">
-            <p>
-              <strong>{deviceName}</strong>
-              {deviceVenue ? <small> · {deviceVenue}</small> : null}
-            </p>
-            <p>
-              {auth.staff ? (
-                <>
-                  Signed in as <strong>{auth.staff.name}</strong>
-                </>
-              ) : (
-                <>No staff signed in</>
-              )}
-            </p>
-            <button
-              type="button"
-              className="button secondary settings-signout"
-              onClick={() => void auth.signOutDevice()}
-            >
-              Sign out device
-            </button>
-          </div>
-        </details>
-      </aside>
-
-      <main className="main-shell">
-        <header className="topbar">
-          <div>
-            <p className="eyebrow">Venue iPad</p>
-            <h1>{venue ? venue.name : 'Select venue'}</h1>
-          </div>
-          <div className="topbar-actions">
-            <AuthChip
-              staff={auth.staff}
-              onSignIn={onRequestStaffPin}
-              onSwitch={onSwitchStaff}
-            />
-            <Link className="button secondary" to={ALMA_HOME_URL}>
-              Alma Home
-            </Link>
-            <Link className="button" to={venue ? `/venue/${venue.id}` : '/venue'}>
-              Venue Home
-            </Link>
-          </div>
-        </header>
-        {children}
-      </main>
-    </div>
-  );
-}
-
-type PageShellProps = {
-  auth: Auth;
-  onRequestStaffPin: () => void;
-  onSwitchStaff: () => void;
-  requirePin: RequirePin;
-};
 
 function VenueSelectPage({ auth, onRequestStaffPin, onSwitchStaff }: PageShellProps) {
   return (
@@ -550,7 +430,7 @@ function VenueToolPage({
   onRequestStaffPin,
   onSwitchStaff
 }: {
-  kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings' | 'stocktake';
+  kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings';
 } & Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
@@ -663,21 +543,6 @@ const toolPageContent = {
       { title: '6:00 PM wave', detail: '28 covers', status: 'Ready', tone: 'positive' as const },
       { title: '7:30 PM wave', detail: '42 covers', status: 'Busy', tone: 'warning' as const },
       { title: 'Late tables', detail: '16 covers', status: 'Open', tone: 'neutral' as const }
-    ]
-  },
-  stocktake: {
-    title: 'Stocktake',
-    description: 'Count by area, save drafts, and submit when locked. iPad-first stocktake — the workflow that lets us retire Loaded.',
-    actions: [
-      { title: 'Start new count', detail: 'Pick the count area to begin' },
-      { title: 'Resume draft', detail: 'Pick up an in-progress count' },
-      { title: 'Review variance', detail: 'High-variance items before submit' }
-    ],
-    listTitle: 'Recent stocktakes',
-    rows: [
-      { title: 'Bar — Friday', detail: '83 of 120 items counted', status: 'Draft', tone: 'warning' as const },
-      { title: 'Kitchen — Tuesday', detail: 'Submitted, awaiting review', status: 'Submitted', tone: 'neutral' as const },
-      { title: 'Cellar — last week', detail: 'Locked', status: 'Locked', tone: 'positive' as const }
     ]
   }
 } satisfies Record<string, {
@@ -856,6 +721,13 @@ function HelpFallbackPage({ auth, onRequestStaffPin, onSwitchStaff }: Omit<PageS
   );
 }
 
+function StocktakeRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <StocktakePage venue={venue} {...props} />;
+}
+
 export function App() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -929,10 +801,7 @@ export function App() {
           path="/venue/:venueId/bookings"
           element={<VenueToolPage kind="bookings" {...shellProps} />}
         />
-        <Route
-          path="/venue/:venueId/stocktake"
-          element={<VenueToolPage kind="stocktake" {...shellProps} />}
-        />
+        <Route path="/venue/:venueId/stocktake" element={<StocktakeRoute {...shellProps} />} />
         <Route path="/venue/:venueId/stock" element={<Navigate to="stocktake" replace />} />
         <Route path="/venue/:venueId/handover" element={<HandoverPage {...shellProps} />} />
         <Route path="/venue/:venueId/roster" element={<RosterPage {...shellProps} />} />
