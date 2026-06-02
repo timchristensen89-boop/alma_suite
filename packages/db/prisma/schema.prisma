@@ -114,7 +114,7 @@ enum SupplierStatus {
 }
 
 enum StocktakeStatus {
-  IN_PROGRESS  // legacy name kept for back-compat; alias for DRAFT
+  IN_PROGRESS // legacy name kept for back-compat; alias for DRAFT
   SUBMITTED
   REVIEWED
   LOCKED
@@ -480,16 +480,16 @@ model IssueActivity {
 }
 
 model ChecklistTemplate {
-  id        String                  @id @default(cuid())
-  legacyId  String?                 @unique
-  name      String
-  area      String?
-  items     ChecklistItemTemplate[]
-  runs      ChecklistRun[]
-  shiftTaskRules ShiftTaskRule[]
+  id                   String                  @id @default(cuid())
+  legacyId             String?                 @unique
+  name                 String
+  area                 String?
+  items                ChecklistItemTemplate[]
+  runs                 ChecklistRun[]
+  shiftTaskRules       ShiftTaskRule[]
   shiftTaskAssignments ShiftTaskAssignment[]
-  createdAt DateTime                @default(now())
-  updatedAt DateTime                @updatedAt
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
 }
 
 model ChecklistItemTemplate {
@@ -503,19 +503,19 @@ model ChecklistItemTemplate {
 }
 
 model ChecklistRun {
-  id          String             @id @default(cuid())
-  legacyId    String?            @unique
-  templateId  String
-  runDate     DateTime           @default(now())
-  status      ChecklistRunStatus @default(OPEN)
-  area        String?
-  performedBy String?
-  notes       String?
-  template    ChecklistTemplate  @relation(fields: [templateId], references: [id], onDelete: Cascade)
-  items       ChecklistItem[]
+  id                   String                @id @default(cuid())
+  legacyId             String?               @unique
+  templateId           String
+  runDate              DateTime              @default(now())
+  status               ChecklistRunStatus    @default(OPEN)
+  area                 String?
+  performedBy          String?
+  notes                String?
+  template             ChecklistTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  items                ChecklistItem[]
   shiftTaskAssignments ShiftTaskAssignment[]
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 }
 
 model ChecklistItem {
@@ -580,85 +580,88 @@ model AuditFinding {
 }
 
 model StaffProfile {
-  id               String                  @id @default(cuid())
-  firstName        String
-  lastName         String
-  roleTitle        String
-  email            String?                 @unique
-  phone            String?
-  venue            String?
-  employmentStatus String                  @default("ACTIVE")
-  accountType      StaffAccountType        @default(HUMAN)
-  startDate        DateTime?
-  dateOfBirth      DateTime?
-  addressLine1     String?
-  addressLine2     String?
-  suburb           String?
-  state            String?
-  postcode         String?
+  id                           String                     @id @default(cuid())
+  firstName                    String
+  lastName                     String
+  roleTitle                    String
+  email                        String?                    @unique
+  phone                        String?
+  venue                        String?
+  employmentStatus             String                     @default("ACTIVE")
+  accountType                  StaffAccountType           @default(HUMAN)
+  startDate                    DateTime?
+  dateOfBirth                  DateTime?
+  addressLine1                 String?
+  addressLine2                 String?
+  suburb                       String?
+  state                        String?
+  postcode                     String?
   emergencyContactName         String?
   emergencyContactRelationship String?
   emergencyContactPhone        String?
-  employmentType   String?
-  payType          String?
-  payRateCents     Int?
-  payAward         String?
-  taxFileNumber    String?
-  taxResidencyStatus String?
-  taxFreeThreshold Boolean?
-  hasStudyTrainingLoan Boolean?
-  superFundName    String?
-  superFundAbn     String?
-  superFundUsi     String?
-  superMemberNumber String?
-  bankAccountName  String?
-  bankBsb          String?
-  bankAccountNumber String?
-  visaStatus       String?
-  visaSubclass     String?
-  visaExpiryDate   DateTime?
-  workRightsNotes  String?
-  xeroEmployeeId   String?
-  xeroPayrollCalendarId String?
-  xeroEarningsRateId String?
-  defaultArea      String?
-  trainingLevel    Int                     @default(0)
-  trainingPayRateCents Int?
-  notes            String?
-  mergedIntoStaffProfileId String?
-  mergedAt         DateTime?
-  mergedByUserId   String?
-  passwordHash     String?
-  pinHash          String?
-  pinUpdatedAt     DateTime?
-  pinFailedAttempts Int                    @default(0)
-  pinLockedUntil   DateTime?
-  pinLastFailedAt  DateTime?
-  isAdmin          Boolean                 @default(false)
-  lastLoginAt      DateTime?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-  records          StaffComplianceRecord[]
-  hrRecords        StaffHrRecord[]
-  managerNotes     StaffManagerNote[]
-  payProfile       StaffPayProfile?
-  managementEvents StaffManagementEvent[]
-  leaveRequests    StaffLeaveRequest[]
-  passwordResetTokens StaffPasswordResetToken[]
-  appAccess        StaffAppAccess[]
-  roleTemplateId   String?
-  roleTemplate     StaffRoleTemplate?      @relation(fields: [roleTemplateId], references: [id], onDelete: SetNull)
-  rosterShifts     RosterShift[]
-  shiftTaskAssignments ShiftTaskAssignment[]
-  shiftConfirmations StaffShiftConfirmation[]
-  clockSessions    StaffClockSession[]
-  clockEvents      StaffClockEvent[]
-  timesheets       Timesheet[]
-  trainingRecords  StaffTrainingRecord[]
-  tipPaymentRunLines    StaffTipPaymentRunLine[]
-  tipManualHoursEntries StaffTipManualHoursEntry[]
-  triagedSupplierInvoices    SupplierInvoice[] @relation("SupplierInvoiceTriagedBy")
-  assignedSupplierInvoices   SupplierInvoice[] @relation("SupplierInvoiceAssignedTo")
+  employmentType               String?
+  payType                      String?
+  payRateCents                 Int?
+  payAward                     String?
+  taxFileNumber                String?
+  taxResidencyStatus           String?
+  taxFreeThreshold             Boolean?
+  hasStudyTrainingLoan         Boolean?
+  superFundName                String?
+  superFundAbn                 String?
+  superFundUsi                 String?
+  superMemberNumber            String?
+  bankAccountName              String?
+  bankBsb                      String?
+  bankAccountNumber            String?
+  visaStatus                   String?
+  visaSubclass                 String?
+  visaExpiryDate               DateTime?
+  workRightsNotes              String?
+  xeroEmployeeId               String?
+  xeroPayrollCalendarId        String?
+  xeroEarningsRateId           String?
+  defaultArea                  String?
+  trainingLevel                Int                        @default(0)
+  trainingPayRateCents         Int?
+  notes                        String?
+  mergedIntoStaffProfileId     String?
+  mergedAt                     DateTime?
+  mergedByUserId               String?
+  passwordHash                 String?
+  pinHash                      String?
+  pinUpdatedAt                 DateTime?
+  pinFailedAttempts            Int                        @default(0)
+  pinLockedUntil               DateTime?
+  pinLastFailedAt              DateTime?
+  isAdmin                      Boolean                    @default(false)
+  lastLoginAt                  DateTime?
+  createdAt                    DateTime                   @default(now())
+  updatedAt                    DateTime                   @updatedAt
+  records                      StaffComplianceRecord[]
+  hrRecords                    StaffHrRecord[]
+  managerNotes                 StaffManagerNote[]
+  payProfile                   StaffPayProfile?
+  managementEvents             StaffManagementEvent[]
+  leaveRequests                StaffLeaveRequest[]
+  passwordResetTokens          StaffPasswordResetToken[]
+  appAccess                    StaffAppAccess[]
+  roleTemplateId               String?
+  roleTemplate                 StaffRoleTemplate?         @relation(fields: [roleTemplateId], references: [id], onDelete: SetNull)
+  rosterShifts                 RosterShift[]
+  shiftTaskAssignments         ShiftTaskAssignment[]
+  shiftConfirmations           StaffShiftConfirmation[]
+  clockSessions                StaffClockSession[]
+  clockEvents                  StaffClockEvent[]
+  timesheets                   Timesheet[]
+  trainingRecords              StaffTrainingRecord[]
+  tipPaymentRunLines           StaffTipPaymentRunLine[]
+  tipManualHoursEntries        StaffTipManualHoursEntry[]
+  triagedSupplierInvoices      SupplierInvoice[]          @relation("SupplierInvoiceTriagedBy")
+  assignedSupplierInvoices     SupplierInvoice[]          @relation("SupplierInvoiceAssignedTo")
+  ownedAlmaTasks               AlmaTask[]                 @relation("AlmaTaskOwner")
+  completedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskCompletedBy")
+  dismissedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskDismissedBy")
 
   @@index([venue])
   @@index([accountType, venue])
@@ -713,27 +716,27 @@ model StaffManagerNote {
 }
 
 model StaffPayProfile {
-  id                            String       @id @default(cuid())
-  staffProfileId                String       @unique
-  awardCode                     String
-  awardName                     String
-  awardClassification           String
-  employmentType                String
-  payMode                       String       @default("AWARD")
-  awardRateSource               String
-  awardRateEffectiveFrom        DateTime
-  payGuidePublishedAt           DateTime
-  rateSetVersion                String
-  ordinaryHourlyRateCents       Int
-  casualLoadedHourlyRateCents   Int?
-  manualFullTimePayAmountCents  Int?
-  manualFullTimePayFrequency    String?
-  manualFullTimePayNote         String?
-  payUpdatedAt                  DateTime     @default(now())
-  payUpdatedByUserId            String?
-  createdAt                     DateTime     @default(now())
-  updatedAt                     DateTime     @updatedAt
-  staffProfile                  StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  id                           String       @id @default(cuid())
+  staffProfileId               String       @unique
+  awardCode                    String
+  awardName                    String
+  awardClassification          String
+  employmentType               String
+  payMode                      String       @default("AWARD")
+  awardRateSource              String
+  awardRateEffectiveFrom       DateTime
+  payGuidePublishedAt          DateTime
+  rateSetVersion               String
+  ordinaryHourlyRateCents      Int
+  casualLoadedHourlyRateCents  Int?
+  manualFullTimePayAmountCents Int?
+  manualFullTimePayFrequency   String?
+  manualFullTimePayNote        String?
+  payUpdatedAt                 DateTime     @default(now())
+  payUpdatedByUserId           String?
+  createdAt                    DateTime     @default(now())
+  updatedAt                    DateTime     @updatedAt
+  staffProfile                 StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([awardCode, awardClassification])
   @@index([payUpdatedAt])
@@ -823,18 +826,18 @@ model StaffLeaveRequest {
 }
 
 model StaffPasswordResetToken {
-  id              String       @id @default(cuid())
-  staffProfileId  String
-  tokenHash       String       @unique
-  requestedById   String?
-  requestedByName String?
+  id               String       @id @default(cuid())
+  staffProfileId   String
+  tokenHash        String       @unique
+  requestedById    String?
+  requestedByName  String?
   requestedByEmail String?
-  requestIp       String?
-  userAgent       String?
-  expiresAt       DateTime
-  usedAt          DateTime?
-  createdAt       DateTime     @default(now())
-  staffProfile    StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  requestIp        String?
+  userAgent        String?
+  expiresAt        DateTime
+  usedAt           DateTime?
+  createdAt        DateTime     @default(now())
+  staffProfile     StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([staffProfileId, createdAt])
   @@index([expiresAt])
@@ -881,32 +884,32 @@ model SuiteAnnouncement {
 }
 
 model SuiteChatChannel {
-  id                String               @id @default(cuid())
-  name              String
-  description       String?
-  channelKey        String               @unique
-  type              SuiteChatChannelType @default(GROUP)
-  appId             AlmaAppId?
-  venue             String?
-  groupKey          String?
-  isActive          Boolean              @default(true)
-  readPermission    String?
-  postPermission    String?
-  directMessagesAllowed Boolean          @default(false)
-  createdById       String?
-  createdByName     String?
-  createdAt         DateTime             @default(now())
-  updatedAt         DateTime             @updatedAt
-  messages          SuiteChatMessage[]
+  id                    String               @id @default(cuid())
+  name                  String
+  description           String?
+  channelKey            String               @unique
+  type                  SuiteChatChannelType @default(GROUP)
+  appId                 AlmaAppId?
+  venue                 String?
+  groupKey              String?
+  isActive              Boolean              @default(true)
+  readPermission        String?
+  postPermission        String?
+  directMessagesAllowed Boolean              @default(false)
+  createdById           String?
+  createdByName         String?
+  createdAt             DateTime             @default(now())
+  updatedAt             DateTime             @updatedAt
+  messages              SuiteChatMessage[]
 
   @@index([type, appId, venue, isActive])
   @@index([groupKey])
 }
 
 model SuiteChatMessage {
-  id            String     @id @default(cuid())
+  id            String               @id @default(cuid())
   channelId     String?
-  channel       String     @default("general")
+  channel       String               @default("general")
   channelType   SuiteChatChannelType @default(GENERAL)
   appId         AlmaAppId?
   venue         String?
@@ -915,13 +918,13 @@ model SuiteChatMessage {
   body          String
   createdById   String?
   createdByName String?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   editedAt      DateTime?
   deletedAt     DateTime?
   deletedById   String?
   deletedByName String?
-  channelRef    SuiteChatChannel? @relation(fields: [channelId], references: [id], onDelete: SetNull)
+  channelRef    SuiteChatChannel?    @relation(fields: [channelId], references: [id], onDelete: SetNull)
 
   @@index([channel, appId, venue, createdAt])
   @@index([channelId, createdAt])
@@ -931,15 +934,15 @@ model SuiteChatMessage {
 }
 
 model TrainingModule {
-  id               String               @id @default(cuid())
+  id               String                @id @default(cuid())
   title            String
   description      String?
   category         String?
-  level            Int                  @default(1)
+  level            Int                   @default(1)
   estimatedMinutes Int?
-  status           TrainingModuleStatus @default(ACTIVE)
-  createdAt        DateTime             @default(now())
-  updatedAt        DateTime             @updatedAt
+  status           TrainingModuleStatus  @default(ACTIVE)
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   records          StaffTrainingRecord[]
 
   @@index([status, level])
@@ -980,50 +983,50 @@ model StaffTrainingRecord {
 }
 
 model RosterShift {
-  id             String            @id @default(cuid())
-  staffProfileId String
-  venue          String?
-  area           String?
-  roleTitle      String?
-  startsAt       DateTime
-  endsAt         DateTime
-  breakMinutes   Int               @default(0)
-  status         RosterShiftStatus @default(DRAFT)
-  notes          String?
-  createdAt      DateTime          @default(now())
-  updatedAt      DateTime          @updatedAt
-  staffProfile   StaffProfile      @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
-  shiftConfirmations StaffShiftConfirmation[]
+  id                   String                   @id @default(cuid())
+  staffProfileId       String
+  venue                String?
+  area                 String?
+  roleTitle            String?
+  startsAt             DateTime
+  endsAt               DateTime
+  breakMinutes         Int                      @default(0)
+  status               RosterShiftStatus        @default(DRAFT)
+  notes                String?
+  createdAt            DateTime                 @default(now())
+  updatedAt            DateTime                 @updatedAt
+  staffProfile         StaffProfile             @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  shiftConfirmations   StaffShiftConfirmation[]
   shiftTaskAssignments ShiftTaskAssignment[]
-  clockSessions  StaffClockSession[]
+  clockSessions        StaffClockSession[]
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
 }
 
 model ShiftTaskRule {
-  id                 String                    @id @default(cuid())
-  name               String
-  enabled            Boolean                   @default(true)
-  venue              String?
-  matchRoleTitle     String?
-  matchArea          String?
-  matchShiftLabel    String?
-  startBeforeMinutes Int?
-  startAfterMinutes  Int?
-  endBeforeMinutes   Int?
-  endAfterMinutes    Int?
-  daysOfWeek         Json?
-  taskType           ShiftTaskType
+  id                  String                    @id @default(cuid())
+  name                String
+  enabled             Boolean                   @default(true)
+  venue               String?
+  matchRoleTitle      String?
+  matchArea           String?
+  matchShiftLabel     String?
+  startBeforeMinutes  Int?
+  startAfterMinutes   Int?
+  endBeforeMinutes    Int?
+  endAfterMinutes     Int?
+  daysOfWeek          Json?
+  taskType            ShiftTaskType
   checklistTemplateId String?
-  stocktakeTemplate  String?
-  dueTiming          ShiftTaskDueTiming        @default(DURING_SHIFT)
-  dueOffsetMinutes   Int?
-  assignmentTarget   ShiftTaskAssignmentTarget @default(ASSIGNED_STAFF)
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  checklistTemplate  ChecklistTemplate?        @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
-  assignments        ShiftTaskAssignment[]
+  stocktakeTemplate   String?
+  dueTiming           ShiftTaskDueTiming        @default(DURING_SHIFT)
+  dueOffsetMinutes    Int?
+  assignmentTarget    ShiftTaskAssignmentTarget @default(ASSIGNED_STAFF)
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  checklistTemplate   ChecklistTemplate?        @relation(fields: [checklistTemplateId], references: [id], onDelete: SetNull)
+  assignments         ShiftTaskAssignment[]
 
   @@index([enabled, venue])
   @@index([taskType])
@@ -1064,15 +1067,15 @@ model ShiftTaskAssignment {
 }
 
 model StaffShiftConfirmation {
-  id             String      @id @default(cuid())
+  id             String       @id @default(cuid())
   rosterShiftId  String
   staffProfileId String
   note           String?
-  confirmedAt    DateTime    @default(now())
+  confirmedAt    DateTime     @default(now())
   createdById    String?
-  createdAt      DateTime    @default(now())
-  updatedAt      DateTime    @updatedAt
-  rosterShift    RosterShift @relation(fields: [rosterShiftId], references: [id], onDelete: Cascade)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  rosterShift    RosterShift  @relation(fields: [rosterShiftId], references: [id], onDelete: Cascade)
   staffProfile   StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@unique([rosterShiftId, staffProfileId])
@@ -1081,25 +1084,25 @@ model StaffShiftConfirmation {
 }
 
 model StaffClockSession {
-  id                    String                  @id @default(cuid())
-  staffProfileId        String
-  rosterShiftId         String?
-  venue                 String?
-  area                  String?
-  roleTitle             String?
-  clockInAt             DateTime
-  clockOutAt            DateTime?
-  status                StaffClockSessionStatus @default(OPEN)
-  currentBreakStartedAt DateTime?
-  accumulatedBreakMinutes Int                  @default(0)
-  managerNote           String?
-  reviewedAt            DateTime?
-  reviewedById          String?
-  createdAt             DateTime               @default(now())
-  updatedAt             DateTime               @updatedAt
-  staffProfile          StaffProfile           @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
-  rosterShift           RosterShift?           @relation(fields: [rosterShiftId], references: [id], onDelete: SetNull)
-  events                StaffClockEvent[]
+  id                      String                  @id @default(cuid())
+  staffProfileId          String
+  rosterShiftId           String?
+  venue                   String?
+  area                    String?
+  roleTitle               String?
+  clockInAt               DateTime
+  clockOutAt              DateTime?
+  status                  StaffClockSessionStatus @default(OPEN)
+  currentBreakStartedAt   DateTime?
+  accumulatedBreakMinutes Int                     @default(0)
+  managerNote             String?
+  reviewedAt              DateTime?
+  reviewedById            String?
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+  staffProfile            StaffProfile            @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  rosterShift             RosterShift?            @relation(fields: [rosterShiftId], references: [id], onDelete: SetNull)
+  events                  StaffClockEvent[]
 
   @@index([staffProfileId, clockInAt])
   @@index([status, clockInAt])
@@ -1108,7 +1111,7 @@ model StaffClockSession {
 }
 
 model StaffClockEvent {
-  id             String             @id @default(cuid())
+  id             String              @id @default(cuid())
   sessionId      String
   staffProfileId String
   rosterShiftId  String?
@@ -1116,10 +1119,10 @@ model StaffClockEvent {
   eventType      StaffClockEventType
   occurredAt     DateTime
   createdById    String?
-  metadata       Json               @default("{}")
-  createdAt      DateTime           @default(now())
-  session        StaffClockSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
-  staffProfile   StaffProfile       @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  metadata       Json                @default("{}")
+  createdAt      DateTime            @default(now())
+  session        StaffClockSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  staffProfile   StaffProfile        @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, occurredAt])
   @@index([staffProfileId, occurredAt])
@@ -1169,31 +1172,31 @@ model SalesActualEntry {
 }
 
 model SalesItemActualEntry {
-  id                    String   @id @default(cuid())
-  venue                 String
-  serviceDate           DateTime
-  source                String   @default("manual")
-  externalId            String
-  itemName              String
-  variationName         String?
-  categoryName          String?
-  sku                   String?
-  catalogObjectId       String?
-  catalogVersion        String?
-  locationId            String?
-  locationName          String?
-  quantity              Float    @default(0)
-  grossSalesCents       Int      @default(0)
-  netSalesCents         Int      @default(0)
-  orderCount            Int      @default(0)
-  lineCount             Int      @default(0)
-  recipeId              String?
-  notes                 String?
-  sourceMetadata        Json     @default("{}")
-  importedById          String?
-  createdAt             DateTime @default(now())
-  updatedAt             DateTime @updatedAt
-  recipe                Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
+  id              String   @id @default(cuid())
+  venue           String
+  serviceDate     DateTime
+  source          String   @default("manual")
+  externalId      String
+  itemName        String
+  variationName   String?
+  categoryName    String?
+  sku             String?
+  catalogObjectId String?
+  catalogVersion  String?
+  locationId      String?
+  locationName    String?
+  quantity        Float    @default(0)
+  grossSalesCents Int      @default(0)
+  netSalesCents   Int      @default(0)
+  orderCount      Int      @default(0)
+  lineCount       Int      @default(0)
+  recipeId        String?
+  notes           String?
+  sourceMetadata  Json     @default("{}")
+  importedById    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  recipe          Recipe?  @relation(fields: [recipeId], references: [id], onDelete: SetNull)
 
   @@unique([venue, serviceDate, source, externalId])
   @@index([serviceDate])
@@ -1204,35 +1207,35 @@ model SalesItemActualEntry {
 }
 
 model ReserveGuest {
-  id               String                  @id @default(cuid())
-  venue            String?
-  firstName        String
-  lastName         String
-  email            String?
-  phone            String?
-  birthday         DateTime?
-  tags             String[]                @default([])
-  allergyNotes     String?
-  visitNotes       String?
-  notes            String?
-  preferences      Json                    @default("{}")
-  dietaryNotes     String?
-  marketingOptIn   Boolean                 @default(false)
+  id                  String                       @id @default(cuid())
+  venue               String?
+  firstName           String
+  lastName            String
+  email               String?
+  phone               String?
+  birthday            DateTime?
+  tags                String[]                     @default([])
+  allergyNotes        String?
+  visitNotes          String?
+  notes               String?
+  preferences         Json                         @default("{}")
+  dietaryNotes        String?
+  marketingOptIn      Boolean                      @default(false)
   emailUnsubscribedAt DateTime?
-  smsUnsubscribedAt DateTime?
-  source           String                  @default("staff_created")
-  totalVisits      Int                     @default(0)
-  totalSpendCents  Int                     @default(0)
-  noShowCount      Int                     @default(0)
-  lastVisitAt      DateTime?
-  firstVisitAt     DateTime?
-  createdAt        DateTime                @default(now())
-  updatedAt        DateTime                @updatedAt
-  reservations     ReserveReservation[]
-  marketingContact MarketingContact?
-  tagAssignments   GuestTagAssignment[]
-  automationRuns   MarketingAutomationRun[]
-  campaignRecipients MarketingCampaignRecipient[]
+  smsUnsubscribedAt   DateTime?
+  source              String                       @default("staff_created")
+  totalVisits         Int                          @default(0)
+  totalSpendCents     Int                          @default(0)
+  noShowCount         Int                          @default(0)
+  lastVisitAt         DateTime?
+  firstVisitAt        DateTime?
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
+  reservations        ReserveReservation[]
+  marketingContact    MarketingContact?
+  tagAssignments      GuestTagAssignment[]
+  automationRuns      MarketingAutomationRun[]
+  campaignRecipients  MarketingCampaignRecipient[]
 
   @@index([venue])
   @@index([lastName, firstName])
@@ -1241,17 +1244,17 @@ model ReserveGuest {
 }
 
 model ReserveTable {
-  id             String                @id @default(cuid())
-  venue          String
-  area           String
-  label          String
-  minCovers      Int                   @default(1)
-  maxCovers      Int
-  sortOrder      Int                   @default(0)
-  isActive       Boolean               @default(true)
-  createdAt      DateTime              @default(now())
-  updatedAt      DateTime              @updatedAt
-  reservations   ReserveReservation[]
+  id           String               @id @default(cuid())
+  venue        String
+  area         String
+  label        String
+  minCovers    Int                  @default(1)
+  maxCovers    Int
+  sortOrder    Int                  @default(0)
+  isActive     Boolean              @default(true)
+  createdAt    DateTime             @default(now())
+  updatedAt    DateTime             @updatedAt
+  reservations ReserveReservation[]
 
   @@unique([venue, label])
   @@index([venue, area, sortOrder])
@@ -1259,47 +1262,47 @@ model ReserveTable {
 }
 
 model ReserveReservation {
-  id               String                   @id @default(cuid())
-  venue            String
-  serviceDate      DateTime
-  servicePeriod    ReserveServicePeriod
-  startsAt         DateTime
-  endsAt           DateTime
-  covers           Int
-  status           ReserveReservationStatus @default(PENDING)
-  source           String                   @default("manager")
-  tableId          String?
-  guestId          String
-  availabilityRuleId String?
-  guestName        String?
-  guestEmail       String?
-  guestPhone       String?
-  occasion         String?
-  notes            String?
-  specialRequests  String?
-  internalNotes    String?
-  marketingOptIn   Boolean                  @default(false)
-  createdById      String?
-  cancelledAt      DateTime?
-  completedAt      DateTime?
+  id                       String                   @id @default(cuid())
+  venue                    String
+  serviceDate              DateTime
+  servicePeriod            ReserveServicePeriod
+  startsAt                 DateTime
+  endsAt                   DateTime
+  covers                   Int
+  status                   ReserveReservationStatus @default(PENDING)
+  source                   String                   @default("manager")
+  tableId                  String?
+  guestId                  String
+  availabilityRuleId       String?
+  guestName                String?
+  guestEmail               String?
+  guestPhone               String?
+  occasion                 String?
+  notes                    String?
+  specialRequests          String?
+  internalNotes            String?
+  marketingOptIn           Boolean                  @default(false)
+  createdById              String?
+  cancelledAt              DateTime?
+  completedAt              DateTime?
   // Card-on-file for no-show protection (task #2). SetupIntent
   // captures the payment method at booking time; PaymentIntent off
   // the saved method runs when the manager marks no-show.
-  stripeCustomerId          String?
-  stripeSetupIntentId       String?
-  stripePaymentMethodId     String?
-  stripePaymentMethodBrand  String?
-  stripePaymentMethodLast4  String?
-  noShowFeeAmountCents      Int?
-  noShowFeeChargedAt        DateTime?
-  noShowFeePaymentIntentId  String?
-  noShowFeeError            String?
-  createdAt        DateTime                 @default(now())
-  updatedAt        DateTime                 @updatedAt
-  guest            ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
-  table            ReserveTable?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
-  availabilityRule ReserveAvailabilityRule? @relation(fields: [availabilityRuleId], references: [id], onDelete: SetNull)
-  automationRuns   MarketingAutomationRun[]
+  stripeCustomerId         String?
+  stripeSetupIntentId      String?
+  stripePaymentMethodId    String?
+  stripePaymentMethodBrand String?
+  stripePaymentMethodLast4 String?
+  noShowFeeAmountCents     Int?
+  noShowFeeChargedAt       DateTime?
+  noShowFeePaymentIntentId String?
+  noShowFeeError           String?
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  guest                    ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  table                    ReserveTable?            @relation(fields: [tableId], references: [id], onDelete: SetNull)
+  availabilityRule         ReserveAvailabilityRule? @relation(fields: [availabilityRuleId], references: [id], onDelete: SetNull)
+  automationRuns           MarketingAutomationRun[]
 
   @@index([venue, serviceDate, servicePeriod])
   @@index([startsAt, endsAt])
@@ -1310,23 +1313,23 @@ model ReserveReservation {
 }
 
 model ReserveAvailabilityRule {
-  id                     String                   @id @default(cuid())
+  id                     String                @id @default(cuid())
   venue                  String
   name                   String
   servicePeriod          ReserveServicePeriod?
-  active                 Boolean                  @default(true)
-  defaultDurationMinutes Int                      @default(120)
-  minPartySize           Int                      @default(1)
+  active                 Boolean               @default(true)
+  defaultDurationMinutes Int                   @default(120)
+  minPartySize           Int                   @default(1)
   maxPartySize           Int
   daysOfWeek             Int[]
   startTime              String
   endTime                String
-  intervalMinutes        Int                      @default(30)
+  intervalMinutes        Int                   @default(30)
   capacity               Int
-  onlineEnabled          Boolean                  @default(true)
-  googleReserveEnabled   Boolean                  @default(false)
-  createdAt              DateTime                 @default(now())
-  updatedAt              DateTime                 @updatedAt
+  onlineEnabled          Boolean               @default(true)
+  googleReserveEnabled   Boolean               @default(false)
+  createdAt              DateTime              @default(now())
+  updatedAt              DateTime              @updatedAt
   reservations           ReserveReservation[]
 
   @@index([venue, active])
@@ -1355,52 +1358,52 @@ enum ReserveWaitlistStatus {
 }
 
 model ReserveWaitlistEntry {
-  id                  String                @id @default(cuid())
-  venue               String
-  guestName           String
-  guestPhone          String
-  guestEmail          String?
-  partySize           Int                   @default(2)
-  windowStartsAt      DateTime
-  windowEndsAt        DateTime
-  notes               String?
-  status              ReserveWaitlistStatus @default(WAITING)
-  source              String                @default("public-widget")
-  notifiedAt          DateTime?
-  notifiedById        String?
-  notifiedByName      String?
+  id                   String                @id @default(cuid())
+  venue                String
+  guestName            String
+  guestPhone           String
+  guestEmail           String?
+  partySize            Int                   @default(2)
+  windowStartsAt       DateTime
+  windowEndsAt         DateTime
+  notes                String?
+  status               ReserveWaitlistStatus @default(WAITING)
+  source               String                @default("public-widget")
+  notifiedAt           DateTime?
+  notifiedById         String?
+  notifiedByName       String?
   matchedReservationId String?
-  createdAt           DateTime              @default(now())
-  updatedAt           DateTime              @updatedAt
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
 
   @@index([venue, status, windowStartsAt])
   @@index([status, createdAt])
 }
 
 model GoogleReserveIntegrationSetting {
-  id                String                        @id @default(cuid())
-  venue             String                        @unique
-  enabled           Boolean                       @default(false)
+  id                String                         @id @default(cuid())
+  venue             String                         @unique
+  enabled           Boolean                        @default(false)
   merchantId        String?
   integrationStatus GoogleReserveIntegrationStatus @default(SETUP_REQUIRED)
   lastSyncAt        DateTime?
   lastError         String?
-  createdAt         DateTime                      @default(now())
-  updatedAt         DateTime                      @updatedAt
+  createdAt         DateTime                       @default(now())
+  updatedAt         DateTime                       @updatedAt
 }
 
 model GuestTag {
-  id             String                  @id @default(cuid())
+  id             String               @id @default(cuid())
   venue          String?
   name           String
-  slug           String                  @unique
+  slug           String               @unique
   description    String?
-  type           GuestTagType            @default(MANUAL)
+  type           GuestTagType         @default(MANUAL)
   color          String?
-  ruleDefinition Json                    @default("{}")
-  active         Boolean                 @default(true)
-  createdAt      DateTime                @default(now())
-  updatedAt      DateTime                @updatedAt
+  ruleDefinition Json                 @default("{}")
+  active         Boolean              @default(true)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
   assignments    GuestTagAssignment[]
 
   @@index([venue, active])
@@ -1408,15 +1411,15 @@ model GuestTag {
 }
 
 model GuestTagAssignment {
-  id                String                    @id @default(cuid())
+  id                String                   @id @default(cuid())
   guestId           String
   tagId             String
-  source            GuestTagAssignmentSource  @default(MANUAL)
-  assignedAt        DateTime                  @default(now())
+  source            GuestTagAssignmentSource @default(MANUAL)
+  assignedAt        DateTime                 @default(now())
   assignedByStaffId String?
-  metadata          Json                      @default("{}")
-  guest             ReserveGuest              @relation(fields: [guestId], references: [id], onDelete: Cascade)
-  tag               GuestTag                  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  metadata          Json                     @default("{}")
+  guest             ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  tag               GuestTag                 @relation(fields: [tagId], references: [id], onDelete: Cascade)
 
   @@unique([guestId, tagId])
   @@index([tagId])
@@ -1515,7 +1518,7 @@ model MarketingCampaignRecipient {
 }
 
 model MarketingEmailTemplate {
-  id               String                     @id @default(cuid())
+  id               String                       @id @default(cuid())
   venue            String?
   name             String
   subject          String
@@ -1524,8 +1527,8 @@ model MarketingEmailTemplate {
   textBody         String?
   status           MarketingEmailTemplateStatus @default(DRAFT)
   createdByStaffId String?
-  createdAt        DateTime                   @default(now())
-  updatedAt        DateTime                   @updatedAt
+  createdAt        DateTime                     @default(now())
+  updatedAt        DateTime                     @updatedAt
   automations      MarketingAutomation[]
 
   @@index([venue, status])
@@ -1550,17 +1553,17 @@ model MarketingAutomation {
 }
 
 model MarketingAutomationRun {
-  id            String                     @id @default(cuid())
+  id            String                       @id @default(cuid())
   automationId  String
   guestId       String
   reservationId String?
   status        MarketingAutomationRunStatus @default(PENDING)
   reason        String?
-  createdAt     DateTime                   @default(now())
+  createdAt     DateTime                     @default(now())
   processedAt   DateTime?
-  automation    MarketingAutomation        @relation(fields: [automationId], references: [id], onDelete: Cascade)
-  guest         ReserveGuest               @relation(fields: [guestId], references: [id], onDelete: Cascade)
-  reservation   ReserveReservation?        @relation(fields: [reservationId], references: [id], onDelete: SetNull)
+  automation    MarketingAutomation          @relation(fields: [automationId], references: [id], onDelete: Cascade)
+  guest         ReserveGuest                 @relation(fields: [guestId], references: [id], onDelete: Cascade)
+  reservation   ReserveReservation?          @relation(fields: [reservationId], references: [id], onDelete: SetNull)
 
   @@index([automationId, status])
   @@index([guestId])
@@ -1568,28 +1571,28 @@ model MarketingAutomationRun {
 }
 
 model MarketingContentAsset {
-  id              String                               @id @default(cuid())
-  venue           String
+  id                String                               @id @default(cuid())
+  venue             String
   uploadedByStaffId String?
-  title           String
-  description     String?
-  assetType       MarketingContentAssetType
-  mimeType        String
-  fileName        String
-  fileSizeBytes   Int
-  storageProvider MarketingContentAssetStorageProvider @default(EXTERNAL_URL)
-  storagePath     String?
-  publicUrl       String?
-  thumbnailUrl    String?
-  width           Int?
-  height          Int?
-  durationSeconds Int?
-  status          MarketingContentAssetStatus          @default(DRAFT)
-  tags            Json                                 @default("[]")
-  source          MarketingContentAssetSource          @default(UPLOAD)
-  createdAt       DateTime                             @default(now())
-  updatedAt       DateTime                             @updatedAt
-  postAssets      MarketingContentPostAsset[]
+  title             String
+  description       String?
+  assetType         MarketingContentAssetType
+  mimeType          String
+  fileName          String
+  fileSizeBytes     Int
+  storageProvider   MarketingContentAssetStorageProvider @default(EXTERNAL_URL)
+  storagePath       String?
+  publicUrl         String?
+  thumbnailUrl      String?
+  width             Int?
+  height            Int?
+  durationSeconds   Int?
+  status            MarketingContentAssetStatus          @default(DRAFT)
+  tags              Json                                 @default("[]")
+  source            MarketingContentAssetSource          @default(UPLOAD)
+  createdAt         DateTime                             @default(now())
+  updatedAt         DateTime                             @updatedAt
+  postAssets        MarketingContentPostAsset[]
 
   @@index([venue, status])
   @@index([venue, createdAt])
@@ -1597,23 +1600,23 @@ model MarketingContentAsset {
 }
 
 model MarketingContentPost {
-  id                String                        @id @default(cuid())
+  id                String                           @id @default(cuid())
   venue             String
   createdByStaffId  String?
   title             String
   caption           String
-  status            MarketingContentPostStatus    @default(DRAFT)
+  status            MarketingContentPostStatus       @default(DRAFT)
   scheduledAt       DateTime?
   publishedAt       DateTime?
   campaignId        String?
-  targetChannels    Json                          @default("[]")
+  targetChannels    Json                             @default("[]")
   contentPillar     String?
-  approvalRequired  Boolean                       @default(true)
+  approvalRequired  Boolean                          @default(true)
   approvedByStaffId String?
   approvedAt        DateTime?
   failureReason     String?
-  createdAt         DateTime                      @default(now())
-  updatedAt         DateTime                      @updatedAt
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
   assets            MarketingContentPostAsset[]
   publishAttempts   MarketingContentPublishAttempt[]
 
@@ -1629,8 +1632,8 @@ model MarketingContentPostAsset {
   assetId   String
   sortOrder Int                   @default(0)
   createdAt DateTime              @default(now())
-  post      MarketingContentPost   @relation(fields: [postId], references: [id], onDelete: Cascade)
-  asset     MarketingContentAsset  @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  post      MarketingContentPost  @relation(fields: [postId], references: [id], onDelete: Cascade)
+  asset     MarketingContentAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
 
   @@unique([postId, assetId])
   @@index([postId])
@@ -1638,19 +1641,19 @@ model MarketingContentPostAsset {
 }
 
 model MarketingSocialAccount {
-  id                String                     @id @default(cuid())
+  id                String                           @id @default(cuid())
   venue             String
   platform          MarketingSocialPlatform
   displayName       String
   handle            String?
   externalAccountId String?
-  status            MarketingSocialAccountStatus @default(SETUP_REQUIRED)
-  scopes            Json                       @default("[]")
+  status            MarketingSocialAccountStatus     @default(SETUP_REQUIRED)
+  scopes            Json                             @default("[]")
   tokenSecretRef    String?
   lastConnectedAt   DateTime?
   lastError         String?
-  createdAt         DateTime                   @default(now())
-  updatedAt         DateTime                   @updatedAt
+  createdAt         DateTime                         @default(now())
+  updatedAt         DateTime                         @updatedAt
   publishAttempts   MarketingContentPublishAttempt[]
 
   @@index([venue, platform])
@@ -1659,19 +1662,19 @@ model MarketingSocialAccount {
 }
 
 model MarketingContentPublishAttempt {
-  id              String                         @id @default(cuid())
+  id              String                        @id @default(cuid())
   postId          String
   platform        MarketingSocialPlatform
   socialAccountId String?
-  status          MarketingContentPublishStatus  @default(SIMULATED)
-  mode            MarketingContentPublishMode    @default(SIMULATION)
+  status          MarketingContentPublishStatus @default(SIMULATED)
+  mode            MarketingContentPublishMode   @default(SIMULATION)
   requestPreview  Json?
   responsePreview Json?
   errorMessage    String?
-  createdAt       DateTime                       @default(now())
+  createdAt       DateTime                      @default(now())
   processedAt     DateTime?
-  post            MarketingContentPost           @relation(fields: [postId], references: [id], onDelete: Cascade)
-  socialAccount   MarketingSocialAccount?        @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
+  post            MarketingContentPost          @relation(fields: [postId], references: [id], onDelete: Cascade)
+  socialAccount   MarketingSocialAccount?       @relation(fields: [socialAccountId], references: [id], onDelete: SetNull)
 
   @@index([postId])
   @@index([platform])
@@ -1680,14 +1683,14 @@ model MarketingContentPublishAttempt {
 }
 
 model GiftCard {
-  id                      String                 @id @default(cuid())
-  code                    String                 @unique
-  status                  GiftCardStatus         @default(PENDING_PAYMENT)
+  id                      String               @id @default(cuid())
+  code                    String               @unique
+  status                  GiftCardStatus       @default(PENDING_PAYMENT)
   initialValueCents       Int
   balanceCents            Int
-  discountCents           Int                    @default(0)
+  discountCents           Int                  @default(0)
   amountPaidCents         Int?
-  currency                String                 @default("aud")
+  currency                String               @default("aud")
   purchaserName           String
   purchaserEmail          String
   recipientName           String?
@@ -1696,9 +1699,9 @@ model GiftCard {
   design                  String?
   promoCodeId             String?
   promoCodeSnapshot       String?
-  testMode                Boolean                @default(false)
+  testMode                Boolean              @default(false)
   scheduledDeliveryAt     DateTime?
-  stripeCheckoutSessionId String?                @unique
+  stripeCheckoutSessionId String?              @unique
   stripePaymentIntentId   String?
   emailedAt               DateTime?
   emailError              String?
@@ -1708,9 +1711,9 @@ model GiftCard {
   cancelledById           String?
   paidAt                  DateTime?
   expiresAt               DateTime?
-  createdAt               DateTime               @default(now())
-  updatedAt               DateTime               @updatedAt
-  promoCode               GiftCardPromoCode?     @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
 
   @@index([status])
@@ -1743,16 +1746,16 @@ model GiftCardPromoCode {
 }
 
 model GiftCardRedemption {
-  id             String                   @id @default(cuid())
-  giftCardId     String
-  amountCents    Int
-  venue          String?
-  notes          String?
-  status         GiftCardRedemptionStatus @default(COMPLETED)
-  redeemedById   String?
-  redeemedAt     DateTime                 @default(now())
-  createdAt      DateTime                 @default(now())
-  giftCard       GiftCard                 @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
+  id           String                   @id @default(cuid())
+  giftCardId   String
+  amountCents  Int
+  venue        String?
+  notes        String?
+  status       GiftCardRedemptionStatus @default(COMPLETED)
+  redeemedById String?
+  redeemedAt   DateTime                 @default(now())
+  createdAt    DateTime                 @default(now())
+  giftCard     GiftCard                 @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
 
   @@index([giftCardId])
   @@index([redeemedAt])
@@ -1760,36 +1763,36 @@ model GiftCardRedemption {
 }
 
 model Timesheet {
-  id                String          @id @default(cuid())
-  deputyTimesheetId String?         @unique
-  staffProfileId    String
-  rosterShiftId     String?
-  venue             String?
-  area              String?
-  roleTitle         String?
-  workDate          DateTime
-  clockInAt         DateTime
-  clockOutAt        DateTime
-  breakMinutes      Int             @default(0)
-  notes             String?
-  status            TimesheetStatus @default(DRAFT)
-  submittedAt       DateTime?
-  approvedAt        DateTime?
-  approvedById      String?
-  rejectedAt        DateTime?
-  rejectionReason   String?
-  xeroEmployeeId    String?
+  id                 String          @id @default(cuid())
+  deputyTimesheetId  String?         @unique
+  staffProfileId     String
+  rosterShiftId      String?
+  venue              String?
+  area               String?
+  roleTitle          String?
+  workDate           DateTime
+  clockInAt          DateTime
+  clockOutAt         DateTime
+  breakMinutes       Int             @default(0)
+  notes              String?
+  status             TimesheetStatus @default(DRAFT)
+  submittedAt        DateTime?
+  approvedAt         DateTime?
+  approvedById       String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  xeroEmployeeId     String?
   xeroEarningsRateId String?
-  xeroTimesheetId   String?
-  xeroExportBatchId String?
-  paymentMethod     String          @default("XERO")
-  cashPaidAt        DateTime?
-  cashPaidById      String?
-  cashPaymentNotes  String?
-  exportedAt        DateTime?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  staffProfile      StaffProfile    @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  xeroTimesheetId    String?
+  xeroExportBatchId  String?
+  paymentMethod      String          @default("XERO")
+  cashPaidAt         DateTime?
+  cashPaidById       String?
+  cashPaymentNotes   String?
+  exportedAt         DateTime?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+  staffProfile       StaffProfile    @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([staffProfileId, workDate])
   @@index([status, workDate])
@@ -1844,37 +1847,37 @@ model StaffTipManualHoursEntry {
 }
 
 model StaffTipPaymentRun {
-  id           String   @id @default(cuid())
+  id           String                   @id @default(cuid())
   venue        String
   weekStart    DateTime
   weekEnd      DateTime
   tipPoolCents Int
-  status       String   @default("PAID")
+  status       String                   @default("PAID")
   notes        String?
-  paidAt       DateTime @default(now())
+  paidAt       DateTime                 @default(now())
   paidById     String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
   lines        StaffTipPaymentRunLine[]
 
   @@index([venue, weekStart, weekEnd])
 }
 
 model StaffTipPaymentRunLine {
-  id             String             @id @default(cuid())
-  paymentRunId   String
-  staffProfileId String
-  hours          Float
-  baseAmountCents Int               @default(0)
-  adjustmentCents Int               @default(0)
-  amountCents    Int
-  excluded       Boolean            @default(false)
-  paymentMethod  String             @default("CASH")
-  notes          String?
-  paidAt         DateTime?
-  createdAt      DateTime           @default(now())
-  paymentRun     StaffTipPaymentRun @relation(fields: [paymentRunId], references: [id], onDelete: Cascade)
-  staffProfile   StaffProfile       @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  id              String             @id @default(cuid())
+  paymentRunId    String
+  staffProfileId  String
+  hours           Float
+  baseAmountCents Int                @default(0)
+  adjustmentCents Int                @default(0)
+  amountCents     Int
+  excluded        Boolean            @default(false)
+  paymentMethod   String             @default("CASH")
+  notes           String?
+  paidAt          DateTime?
+  createdAt       DateTime           @default(now())
+  paymentRun      StaffTipPaymentRun @relation(fields: [paymentRunId], references: [id], onDelete: Cascade)
+  staffProfile    StaffProfile       @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
 
   @@index([staffProfileId])
   @@index([paymentRunId])
@@ -2048,31 +2051,31 @@ model TemperatureIntegration {
 }
 
 model IntegrationConnection {
-  id                     String                      @id @default(cuid())
-  provider               IntegrationProvider
-  scopeType              String                      @default("BUSINESS")
-  venueId                String?
-  status                 IntegrationConnectionStatus @default(NOT_CONNECTED)
-  connectedAt            DateTime?
-  disconnectedAt         DateTime?
-  lastSyncAt             DateTime?
-  lastSyncStatus         IntegrationSyncStatus?
-  lastError              String?
-  providerAccountId      String?
-  providerAccountName    String?
-  scopes                 Json                        @default("[]")
-  tokenEncrypted         String?
-  refreshTokenEncrypted  String?
-  tokenSecretRef         String?
-  refreshTokenSecretRef  String?
-  tokenExpiresAt         DateTime?
-  metadata               Json                        @default("{}")
-  createdAt              DateTime                    @default(now())
-  updatedAt              DateTime                    @updatedAt
-  updatedByUserId        String?
-  syncRuns               IntegrationSyncRun[]
-  events                 IntegrationEvent[]
-  webhookEvents          IntegrationWebhookEvent[]
+  id                    String                      @id @default(cuid())
+  provider              IntegrationProvider
+  scopeType             String                      @default("BUSINESS")
+  venueId               String?
+  status                IntegrationConnectionStatus @default(NOT_CONNECTED)
+  connectedAt           DateTime?
+  disconnectedAt        DateTime?
+  lastSyncAt            DateTime?
+  lastSyncStatus        IntegrationSyncStatus?
+  lastError             String?
+  providerAccountId     String?
+  providerAccountName   String?
+  scopes                Json                        @default("[]")
+  tokenEncrypted        String?
+  refreshTokenEncrypted String?
+  tokenSecretRef        String?
+  refreshTokenSecretRef String?
+  tokenExpiresAt        DateTime?
+  metadata              Json                        @default("{}")
+  createdAt             DateTime                    @default(now())
+  updatedAt             DateTime                    @updatedAt
+  updatedByUserId       String?
+  syncRuns              IntegrationSyncRun[]
+  events                IntegrationEvent[]
+  webhookEvents         IntegrationWebhookEvent[]
 
   @@index([provider, status])
   @@index([scopeType, venueId])
@@ -2126,21 +2129,21 @@ model IntegrationEvent {
 }
 
 model IntegrationWebhookEvent {
-  id                    String                        @id @default(cuid())
-  connectionId          String?
-  provider              IntegrationProvider
-  accountKey            String                        @default("default")
-  providerEventId       String
-  merchantId            String?
-  locationId            String?
-  eventType             String?
-  providerCreatedAt     DateTime?
-  status                IntegrationWebhookEventStatus @default(RECEIVED)
-  payload               Json                          @default("{}")
-  receivedAt            DateTime                      @default(now())
-  processedAt           DateTime?
-  errorSummary          String?
-  connection            IntegrationConnection?        @relation(fields: [connectionId], references: [id], onDelete: SetNull)
+  id                String                        @id @default(cuid())
+  connectionId      String?
+  provider          IntegrationProvider
+  accountKey        String                        @default("default")
+  providerEventId   String
+  merchantId        String?
+  locationId        String?
+  eventType         String?
+  providerCreatedAt DateTime?
+  status            IntegrationWebhookEventStatus @default(RECEIVED)
+  payload           Json                          @default("{}")
+  receivedAt        DateTime                      @default(now())
+  processedAt       DateTime?
+  errorSummary      String?
+  connection        IntegrationConnection?        @relation(fields: [connectionId], references: [id], onDelete: SetNull)
 
   @@unique([provider, accountKey, providerEventId])
   @@index([provider, accountKey, receivedAt])
@@ -2218,34 +2221,34 @@ model StockCategory {
 }
 
 model StockItem {
-  id             String          @id @default(cuid())
-  legacyId       String?         @unique
-  sku            String?         @unique
-  name           String
-  categoryId     String?
-  unit           String                        // purchase unit (e.g. case, bottle, kg)
-  countUnit      String?                       // sale/count unit (e.g. each, ml, g) — defaults to unit when null
-  conversionFactor Float          @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
-  countArea      String?                       // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
-  latestCostCents Int?                         // most recent landed cost per purchase unit
-  latestCostAt   DateTime?                     // when latestCostCents was last updated — drives staleness warnings
-  onHand         Float           @default(0)
-  parLevel       Float           @default(0)
-  reorderPoint   Float?
-  avgCostCents   Int?
-  status         StockItemStatus @default(ACTIVE)
-  notes          String?
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
-  category       StockCategory?  @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  venueStock     VenueStockItem[]
-  recipeLines    RecipeLine[]
-  stocktakeLines StocktakeLine[]
-  movements      InventoryMovement[]
-  invoiceLines   SupplierInvoiceLine[]
-  wastageRecords StockWastageRecord[]
+  id                 String                    @id @default(cuid())
+  legacyId           String?                   @unique
+  sku                String?                   @unique
+  name               String
+  categoryId         String?
+  unit               String // purchase unit (e.g. case, bottle, kg)
+  countUnit          String? // sale/count unit (e.g. each, ml, g) — defaults to unit when null
+  conversionFactor   Float                     @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
+  countArea          String? // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
+  latestCostCents    Int? // most recent landed cost per purchase unit
+  latestCostAt       DateTime? // when latestCostCents was last updated — drives staleness warnings
+  onHand             Float                     @default(0)
+  parLevel           Float                     @default(0)
+  reorderPoint       Float?
+  avgCostCents       Int?
+  status             StockItemStatus           @default(ACTIVE)
+  notes              String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  category           StockCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  venueStock         VenueStockItem[]
+  recipeLines        RecipeLine[]
+  stocktakeLines     StocktakeLine[]
+  movements          InventoryMovement[]
+  invoiceLines       SupplierInvoiceLine[]
+  wastageRecords     StockWastageRecord[]
   deliveryCheckItems StockDeliveryCheckItem[]
-  reorderNotices StockReorderNotice[]
+  reorderNotices     StockReorderNotice[]
   squareMenuMappings SquareMenuRecipeMapping[]
 
   @@index([categoryId])
@@ -2276,20 +2279,20 @@ model VenueStockItem {
 }
 
 model StockWastageRecord {
-  id              String   @id @default(cuid())
+  id              String              @id @default(cuid())
   stockItemId     String
   venue           String
   quantity        Float
   unit            String
   reason          String
   note            String?
-  wastedAt        DateTime @default(now())
+  wastedAt        DateTime            @default(now())
   recordedById    String?
   costImpactCents Int?
-  status          String   @default("RECORDED")
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  stockItem       StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+  status          String              @default("RECORDED")
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  stockItem       StockItem           @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
   movements       InventoryMovement[]
 
   @@index([venue, wastedAt])
@@ -2298,22 +2301,22 @@ model StockWastageRecord {
 }
 
 model StockDeliveryCheck {
-  id                String   @id @default(cuid())
-  supplierId        String?
-  supplierName      String
-  venue             String
-  invoiceNumber     String?
-  deliveryDate      DateTime @default(now())
-  invoiceReference  String?
-  status            String   @default("DRAFT")
-  notes             String?
-  createdById       String?
-  completedAt       DateTime?
-  completedById     String?
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  supplier          Supplier? @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  items             StockDeliveryCheckItem[]
+  id               String                   @id @default(cuid())
+  supplierId       String?
+  supplierName     String
+  venue            String
+  invoiceNumber    String?
+  deliveryDate     DateTime                 @default(now())
+  invoiceReference String?
+  status           String                   @default("DRAFT")
+  notes            String?
+  createdById      String?
+  completedAt      DateTime?
+  completedById    String?
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  supplier         Supplier?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  items            StockDeliveryCheckItem[]
 
   @@index([venue, status])
   @@index([supplierId, deliveryDate])
@@ -2321,23 +2324,23 @@ model StockDeliveryCheck {
 }
 
 model StockDeliveryCheckItem {
-  id                  String   @id @default(cuid())
-  deliveryCheckId     String
-  stockItemId         String?
-  description         String
-  expectedQuantity    Float?
-  receivedQuantity    Float?
-  unit                String?
-  checked             Boolean  @default(false)
-  discrepancy         Boolean  @default(false)
-  discrepancyReason   String?
-  notes               String?
-  photoUrl            String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  deliveryCheck       StockDeliveryCheck @relation(fields: [deliveryCheckId], references: [id], onDelete: Cascade)
-  stockItem           StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
-  movements           InventoryMovement[]
+  id                String              @id @default(cuid())
+  deliveryCheckId   String
+  stockItemId       String?
+  description       String
+  expectedQuantity  Float?
+  receivedQuantity  Float?
+  unit              String?
+  checked           Boolean             @default(false)
+  discrepancy       Boolean             @default(false)
+  discrepancyReason String?
+  notes             String?
+  photoUrl          String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  deliveryCheck     StockDeliveryCheck  @relation(fields: [deliveryCheckId], references: [id], onDelete: Cascade)
+  stockItem         StockItem?          @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+  movements         InventoryMovement[]
 
   @@index([deliveryCheckId])
   @@index([stockItemId])
@@ -2345,22 +2348,22 @@ model StockDeliveryCheckItem {
 }
 
 model StockReorderNotice {
-  id              String   @id @default(cuid())
+  id              String    @id @default(cuid())
   stockItemId     String
   venue           String
-  status          String   @default("OPEN")
+  status          String    @default("OPEN")
   currentOnHand   Float?
   parLevel        Float?
   reorderPoint    Float?
   reorderQuantity Float?
   unit            String?
   message         String
-  createdAt       DateTime @default(now())
+  createdAt       DateTime  @default(now())
   resolvedAt      DateTime?
   resolvedById    String?
   dismissedAt     DateTime?
   dismissedById   String?
-  updatedAt       DateTime @updatedAt
+  updatedAt       DateTime  @updatedAt
   stockItem       StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
 
   @@index([venue, status])
@@ -2369,30 +2372,30 @@ model StockReorderNotice {
 }
 
 model Stocktake {
-  id                String          @id @default(cuid())
-  legacyId          String?         @unique
-  name              String
-  venue             String?
-  template          String?
-  countedAt         DateTime
-  status            StocktakeStatus @default(IN_PROGRESS)
-  notes             String?
-  appliedAt         DateTime?
-  submittedAt       DateTime?
-  submittedByUserId String?
-  reviewedAt        DateTime?
-  reviewedByUserId  String?
-  lockedAt          DateTime?       // once locked, reports prefer this stocktake
-  lockedByUserId    String?
-  reopenedAt        DateTime?       // most recent reopen — Stocktake can flip LOCKED → REOPENED
-  reopenedByUserId  String?
-  reopenReason      String?
+  id                   String                @id @default(cuid())
+  legacyId             String?               @unique
+  name                 String
+  venue                String?
+  template             String?
+  countedAt            DateTime
+  status               StocktakeStatus       @default(IN_PROGRESS)
+  notes                String?
+  appliedAt            DateTime?
+  submittedAt          DateTime?
+  submittedByUserId    String?
+  reviewedAt           DateTime?
+  reviewedByUserId     String?
+  lockedAt             DateTime? // once locked, reports prefer this stocktake
+  lockedByUserId       String?
+  reopenedAt           DateTime? // most recent reopen — Stocktake can flip LOCKED → REOPENED
+  reopenedByUserId     String?
+  reopenReason         String?
   // 'Imported from Loaded' source marker for historical records
-  importSource      String?
-  createdAt         DateTime        @default(now())
-  updatedAt         DateTime        @updatedAt
-  lines             StocktakeLine[]
-  movements         InventoryMovement[]
+  importSource         String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  lines                StocktakeLine[]
+  movements            InventoryMovement[]
   shiftTaskAssignments ShiftTaskAssignment[]
 
   @@index([countedAt])
@@ -2404,21 +2407,21 @@ model Stocktake {
 }
 
 model StocktakeLine {
-  id              String     @id @default(cuid())
-  legacyId        String?    @unique
+  id              String              @id @default(cuid())
+  legacyId        String?             @unique
   stocktakeId     String
   itemId          String?
-  position        Int        @default(0)
+  position        Int                 @default(0)
   label           String
   countedQty      Float
   unit            String?
   location        String?
   stockValueCents Int?
   notes           String?
-  createdAt       DateTime   @default(now())
-  updatedAt       DateTime   @updatedAt
-  stocktake       Stocktake  @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
-  item            StockItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  stocktake       Stocktake           @relation(fields: [stocktakeId], references: [id], onDelete: Cascade)
+  item            StockItem?          @relation(fields: [itemId], references: [id], onDelete: SetNull)
   movements       InventoryMovement[]
 
   @@index([stocktakeId])
@@ -2426,24 +2429,24 @@ model StocktakeLine {
 }
 
 model InventoryMovement {
-  id                    String                @id @default(cuid())
-  itemId                String
-  movementType          InventoryMovementType
-  quantityDelta         Float
-  quantityBefore        Float
-  quantityAfter         Float
-  unit                  String?
-  sourceStocktakeId     String?
-  sourceStocktakeLineId String?
-  sourceWastageId       String?
+  id                        String                  @id @default(cuid())
+  itemId                    String
+  movementType              InventoryMovementType
+  quantityDelta             Float
+  quantityBefore            Float
+  quantityAfter             Float
+  unit                      String?
+  sourceStocktakeId         String?
+  sourceStocktakeLineId     String?
+  sourceWastageId           String?
   sourceDeliveryCheckItemId String?
-  notes                 String?
-  createdAt             DateTime              @default(now())
-  item                  StockItem             @relation(fields: [itemId], references: [id], onDelete: Cascade)
-  sourceStocktake       Stocktake?            @relation(fields: [sourceStocktakeId], references: [id], onDelete: SetNull)
-  sourceStocktakeLine   StocktakeLine?        @relation(fields: [sourceStocktakeLineId], references: [id], onDelete: SetNull)
-  sourceWastage         StockWastageRecord?   @relation(fields: [sourceWastageId], references: [id], onDelete: SetNull)
-  sourceDeliveryCheckItem StockDeliveryCheckItem? @relation(fields: [sourceDeliveryCheckItemId], references: [id], onDelete: SetNull)
+  notes                     String?
+  createdAt                 DateTime                @default(now())
+  item                      StockItem               @relation(fields: [itemId], references: [id], onDelete: Cascade)
+  sourceStocktake           Stocktake?              @relation(fields: [sourceStocktakeId], references: [id], onDelete: SetNull)
+  sourceStocktakeLine       StocktakeLine?          @relation(fields: [sourceStocktakeLineId], references: [id], onDelete: SetNull)
+  sourceWastage             StockWastageRecord?     @relation(fields: [sourceWastageId], references: [id], onDelete: SetNull)
+  sourceDeliveryCheckItem   StockDeliveryCheckItem? @relation(fields: [sourceDeliveryCheckItemId], references: [id], onDelete: SetNull)
 
   @@index([itemId, createdAt])
   @@index([movementType])
@@ -2454,29 +2457,29 @@ model InventoryMovement {
 }
 
 model Recipe {
-  id            String       @id @default(cuid())
-  legacyId      String?      @unique
-  title         String
-  kind          String?
-  category      String?
-  subcategory   String?
-  venue         String?
-  salePriceCents Int?
-  portionSize  Float?
-  portionUnit  String?
-  yieldQuantity Float?
-  yieldUnit     String?
-  isPrepRecipe Boolean      @default(false)
-  status        String       @default("ACTIVE")
-  estimatedCost Float        @default(0)
-  notes         String?
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  lines         RecipeLine[] @relation("RecipeLines")
-  usedByLines   RecipeLine[] @relation("SubRecipeLines")
-  itemSales     SalesItemActualEntry[]
+  id                 String                    @id @default(cuid())
+  legacyId           String?                   @unique
+  title              String
+  kind               String?
+  category           String?
+  subcategory        String?
+  venue              String?
+  salePriceCents     Int?
+  portionSize        Float?
+  portionUnit        String?
+  yieldQuantity      Float?
+  yieldUnit          String?
+  isPrepRecipe       Boolean                   @default(false)
+  status             String                    @default("ACTIVE")
+  estimatedCost      Float                     @default(0)
+  notes              String?
+  createdAt          DateTime                  @default(now())
+  updatedAt          DateTime                  @updatedAt
+  lines              RecipeLine[]              @relation("RecipeLines")
+  usedByLines        RecipeLine[]              @relation("SubRecipeLines")
+  itemSales          SalesItemActualEntry[]
   squareMenuMappings SquareMenuRecipeMapping[]
-  venuePrices  RecipeVenuePrice[]
+  venuePrices        RecipeVenuePrice[]
 
   @@index([title])
   @@index([category])
@@ -2524,11 +2527,11 @@ model SquareCatalogItem {
 }
 
 model SquareMenuRecipeMapping {
-  id                  String   @id @default(cuid())
+  id                  String     @id @default(cuid())
   accountKey          String
   venue               String?
   squareItemId        String
-  squareVariationId   String   @default("")
+  squareVariationId   String     @default("")
   squareItemName      String
   squareVariationName String?
   categoryName        String?
@@ -2536,14 +2539,14 @@ model SquareMenuRecipeMapping {
   currency            String?
   almaRecipeId        String?
   stockItemId         String?
-  status              String   @default("UNMAPPED")
+  status              String     @default("UNMAPPED")
   confidence          Float?
   notes               String?
   mappedAt            DateTime?
   mappedById          String?
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  almaRecipe          Recipe?  @relation(fields: [almaRecipeId], references: [id], onDelete: SetNull)
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
+  almaRecipe          Recipe?    @relation(fields: [almaRecipeId], references: [id], onDelete: SetNull)
   stockItem           StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
 
   @@unique([accountKey, squareItemId, squareVariationId])
@@ -2589,21 +2592,21 @@ model RecipeLine {
 }
 
 model Supplier {
-  id            String         @id @default(cuid())
-  legacyId      String?        @unique
-  name          String
-  contactName   String?
-  email         String?
-  phone         String?
-  website       String?
-  address       String?
-  accountNumber String?
-  paymentTerms  String?
-  notes         String?
-  status        SupplierStatus @default(ACTIVE)
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
-  invoices      SupplierInvoice[]
+  id             String               @id @default(cuid())
+  legacyId       String?              @unique
+  name           String
+  contactName    String?
+  email          String?
+  phone          String?
+  website        String?
+  address        String?
+  accountNumber  String?
+  paymentTerms   String?
+  notes          String?
+  status         SupplierStatus       @default(ACTIVE)
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+  invoices       SupplierInvoice[]
   deliveryChecks StockDeliveryCheck[]
 
   @@index([status])
@@ -2653,7 +2656,7 @@ model SupplierInvoice {
 }
 
 model SupplierInvoiceLine {
-  id                String           @id @default(cuid())
+  id                String          @id @default(cuid())
   supplierInvoiceId String
   lineNumber        Int
   lineKey           String
@@ -2661,20 +2664,20 @@ model SupplierInvoiceLine {
   description       String
   itemCode          String?
   accountCode       String?
-  quantity          Float            @default(0)
+  quantity          Float           @default(0)
   unit              String?
-  unitAmountCents   Int              @default(0)
-  lineAmountCents   Int              @default(0)
-  taxAmountCents    Int              @default(0)
+  unitAmountCents   Int             @default(0)
+  lineAmountCents   Int             @default(0)
+  taxAmountCents    Int             @default(0)
   itemId            String?
-  matchingStatus    String           @default("NEEDS_REVIEW")
+  matchingStatus    String          @default("NEEDS_REVIEW")
   notes             String?
   sourceMetadata    Json?
   costAppliedAt     DateTime?
-  createdAt         DateTime         @default(now())
-  updatedAt         DateTime         @updatedAt
-  invoice           SupplierInvoice  @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
-  item              StockItem?       @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+  invoice           SupplierInvoice @relation(fields: [supplierInvoiceId], references: [id], onDelete: Cascade)
+  item              StockItem?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@unique([supplierInvoiceId, lineKey])
   @@index([supplierInvoiceId, lineNumber])
@@ -2692,7 +2695,6 @@ model Venue {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
-
 
 enum CommsThreadCategory {
   INBOX
@@ -2782,7 +2784,7 @@ model CommsRecipient {
   actionRequired Boolean   @default(false)
   dueAt          DateTime?
 
-  thread         CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
   @@index([threadId])
   @@index([staffProfileId, readAt])
@@ -2799,7 +2801,7 @@ model CommsAttachment {
   mimeType     String?
   createdAt    DateTime @default(now())
 
-  message      CommsMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  message CommsMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
 
   @@index([messageId])
 }
@@ -2810,7 +2812,7 @@ model CommsLink {
   entityType String
   entityId   String
 
-  thread     CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  thread CommsThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
 
   @@index([threadId])
   @@index([entityType, entityId])
@@ -2829,19 +2831,19 @@ model CommsAlertRule {
   createdAt       DateTime           @default(now())
   updatedAt       DateTime           @updatedAt
 
-  events          CommsAlertEvent[]
+  events CommsAlertEvent[]
 
   @@index([enabled, alertType])
   @@index([venue])
 }
 
 model CommsAlertEvent {
-  id             String              @id @default(cuid())
+  id             String             @id @default(cuid())
   ruleId         String?
   threadId       String?
   alertType      CommsAlertType
   venue          String?
-  severity       CommsAlertSeverity   @default(WARNING)
+  severity       CommsAlertSeverity @default(WARNING)
   subject        String
   body           String
   sourceType     String?
@@ -2849,12 +2851,113 @@ model CommsAlertEvent {
   value          Float?
   thresholdValue Float?
   emailedAt      DateTime?
-  createdAt      DateTime            @default(now())
+  createdAt      DateTime           @default(now())
 
-  rule           CommsAlertRule?      @relation(fields: [ruleId], references: [id], onDelete: SetNull)
-  thread         CommsThread?         @relation(fields: [threadId], references: [id], onDelete: SetNull)
+  rule   CommsAlertRule? @relation(fields: [ruleId], references: [id], onDelete: SetNull)
+  thread CommsThread?    @relation(fields: [threadId], references: [id], onDelete: SetNull)
 
   @@index([alertType, createdAt])
   @@index([venue, createdAt])
   @@index([severity])
+}
+
+// ===================================================================
+// Phase 5.8: Unified Task model — one row any app can emit, any
+// surface can read. Strategy doc #15.
+//
+// The model is intentionally cross-cutting: any app (Stock, Compliance,
+// Staff, Reports, Reserve, Marketing, Gift Cards, Admin, Comms, Home)
+// can call a small `createTaskFromSource()` helper and append a task
+// the floor sees on Home + the venue iPad. The source app stays the
+// owner of the *thing* that produced the task; this row just lets the
+// suite present "what's outstanding" in one consistent shape.
+//
+// The source link is two plain columns (sourceRefType + sourceRefId)
+// rather than a polymorphic relation because it spans many tables and
+// would have created a thicket of optional FKs. Lookup by source pair
+// is indexed.
+// ===================================================================
+
+enum AlmaTaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  DISMISSED
+}
+
+enum AlmaTaskPriority {
+  CRITICAL
+  TODAY
+  THIS_WEEK
+  LOW
+}
+
+// Independent of AlmaAppId because that enum drives access control on
+// StaffAppAccess and shouldn't grow every time a new task source lands.
+enum AlmaTaskSourceApp {
+  HOME
+  STAFF
+  STOCK
+  COMPLIANCE
+  RESERVE
+  MARKETING
+  GIFTCARDS
+  REPORTS
+  ADMIN
+  COMMS
+}
+
+model AlmaTask {
+  id String @id @default(cuid())
+
+  // Provenance — which app emitted this task and which row in that
+  // app's domain it came from. sourceRefType is a string slug (e.g.
+  // "stocktake", "issue", "shift", "gift_card_order") so this model
+  // doesn't need to know every source schema.
+  sourceApp     AlmaTaskSourceApp
+  sourceRefType String?
+  sourceRefId   String?
+
+  // Scope: venue is a name string to match the rest of the codebase
+  // (no Venue table — Stocktake.venue, Issue area, etc. all do this).
+  venue String?
+
+  // Display content
+  title       String
+  description String?
+
+  // Ownership + scheduling
+  ownerStaffProfileId String?
+  dueAt               DateTime?
+
+  // Status + priority
+  status   AlmaTaskStatus   @default(OPEN)
+  priority AlmaTaskPriority @default(THIS_WEEK)
+
+  // Lifecycle
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  completedAt               DateTime?
+  completedByStaffProfileId String?
+  dismissedAt               DateTime?
+  dismissedByStaffProfileId String?
+
+  owner       StaffProfile? @relation("AlmaTaskOwner", fields: [ownerStaffProfileId], references: [id], onDelete: SetNull)
+  completedBy StaffProfile? @relation("AlmaTaskCompletedBy", fields: [completedByStaffProfileId], references: [id], onDelete: SetNull)
+  dismissedBy StaffProfile? @relation("AlmaTaskDismissedBy", fields: [dismissedByStaffProfileId], references: [id], onDelete: SetNull)
+
+  // Read patterns the API will hit:
+  //   list open tasks for venue X        → (venue, status)
+  //   my open tasks                       → (ownerStaffProfileId, status)
+  //   critical/today backlog              → (priority, status)
+  //   tasks emitted by app Z              → (sourceApp, status)
+  //   the task already linked to source   → (sourceRefType, sourceRefId)
+  //   tasks due in the next 24h           → (dueAt)
+  @@index([venue, status])
+  @@index([ownerStaffProfileId, status])
+  @@index([priority, status])
+  @@index([sourceApp, status])
+  @@index([sourceRefType, sourceRefId])
+  @@index([dueAt])
 }
