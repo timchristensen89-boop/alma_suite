@@ -4,8 +4,10 @@ import {
   type AuthUser,
   type IssueAssigneeOption,
   type IssueAreaRule,
+  type IssueCategoryOption,
   issueActivityInputSchema,
   issueAreaRuleInputSchema,
+  issueCategoryInputSchema,
   issueCompleteInputSchema,
   issueCreateInputSchema,
   issueEscalateInputSchema,
@@ -575,5 +577,46 @@ export const issueService = {
 
   async deleteAreaRule(id: string): Promise<void> {
     await prisma.issueAreaRule.delete({ where: { id } }).catch(() => undefined);
+  },
+
+  // Admin-managed issue categories. Full list for Admin management.
+  async listCategoryOptions(): Promise<IssueCategoryOption[]> {
+    const rows = await prisma.issueCategoryOption.findMany({ orderBy: [{ name: 'asc' }] });
+    return rows.map((row) => ({
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    }));
+  },
+
+  // Just the category names, for the staff-facing issue form dropdown.
+  // Safe for any authenticated user.
+  async listCategoryNames(): Promise<string[]> {
+    const rows = await prisma.issueCategoryOption.findMany({
+      orderBy: [{ name: 'asc' }],
+      select: { name: true }
+    });
+    return rows.map((row) => row.name);
+  },
+
+  async upsertCategoryOption(input: unknown): Promise<IssueCategoryOption> {
+    const data = issueCategoryInputSchema.parse(input);
+    const name = data.name.trim();
+    const row = await prisma.issueCategoryOption.upsert({
+      where: { name },
+      update: { name },
+      create: { name }
+    });
+    return {
+      id: row.id,
+      name: row.name,
+      createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString()
+    };
+  },
+
+  async deleteCategoryOption(id: string): Promise<void> {
+    await prisma.issueCategoryOption.delete({ where: { id } }).catch(() => undefined);
   }
 };

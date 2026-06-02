@@ -31,6 +31,32 @@ issuesRouter.delete('/area-rules/:id', requireAdmin, async (req, res, next) => {
   }
 });
 
+// Issue categories — admin-managed list, picked from a dropdown by staff.
+issuesRouter.get('/category-options', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await issueService.listCategoryOptions());
+  } catch (error) {
+    next(error);
+  }
+});
+
+issuesRouter.post('/category-options', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await issueService.upsertCategoryOption(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+issuesRouter.delete('/category-options/:id', requireAdmin, async (req, res, next) => {
+  try {
+    await issueService.deleteCategoryOption(String(req.params.id));
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
+
 issuesRouter.get('/', async (req, res, next) => {
   try {
     const issues = await issueService.list({
@@ -68,6 +94,16 @@ issuesRouter.get('/assignees', async (_req, res) => {
 issuesRouter.get('/areas', async (_req, res, next) => {
   try {
     res.json(await issueService.listAreaNames());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Configured category names for the issue form dropdown. Available to any
+// authenticated user (no manager guard) — names only.
+issuesRouter.get('/categories', async (_req, res, next) => {
+  try {
+    res.json(await issueService.listCategoryNames());
   } catch (error) {
     next(error);
   }

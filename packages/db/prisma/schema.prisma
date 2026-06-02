@@ -468,6 +468,15 @@ model IssueAreaRule {
   updatedAt DateTime @updatedAt
 }
 
+// Admin-managed list of issue categories. Staff pick from these in the
+// issue form (free-text only when none are configured).
+model IssueCategoryOption {
+  id        String   @id @default(cuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model IssueActivity {
   id        String   @id @default(cuid())
   legacyId  String?  @unique

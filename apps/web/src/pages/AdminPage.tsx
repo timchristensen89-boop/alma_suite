@@ -34,6 +34,7 @@ import type {
   ChecklistTemplate,
   IssueAreaRule,
   IssueAssigneeOption,
+  IssueCategoryOption,
   ShiftTaskAssignmentTarget,
   ShiftTaskDueTiming,
   ShiftTaskRule,
@@ -926,6 +927,123 @@ function IssueAreaRulesAdminSection() {
                   onClick={() => void removeRule(rule)}
                 >
                   {busy === rule.id ? 'Removing…' : 'Remove'}
+                </Button>
+              </article>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
+}
+
+function IssueCategoryAdminSection() {
+  const [categories, setCategories] = useState<IssueCategoryOption[]>([]);
+  const [name, setName] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadCategories() {
+    setLoading(true);
+    setError(null);
+    try {
+      const payload = await api<IssueCategoryOption[]>('/api/issues/category-options');
+      setCategories(payload);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load categories.');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => {
+    void loadCategories();
+  }, []);
+
+  async function saveCategory(event: FormEvent) {
+    event.preventDefault();
+    if (!name.trim()) return;
+    setBusy('create');
+    setError(null);
+    setFeedback(null);
+    try {
+      await api<IssueCategoryOption>('/api/issues/category-options', {
+        method: 'POST',
+        body: JSON.stringify({ name: name.trim() })
+      });
+      setName('');
+      setFeedback('Category saved.');
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save category.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  async function removeCategory(category: IssueCategoryOption) {
+    setBusy(category.id);
+    setError(null);
+    try {
+      await api(`/api/issues/category-options/${category.id}`, { method: 'DELETE' });
+      await loadCategories();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not delete category.');
+    } finally {
+      setBusy(null);
+    }
+  }
+
+  return (
+    <div className="admin-grid two">
+      <Card
+        title="Add a category"
+        subtitle="Categories appear as a dropdown when staff log a compliance issue."
+      >
+        <form className="admin-social-form" onSubmit={(event) => void saveCategory(event)}>
+          <div className="admin-form-grid">
+            <Input
+              label="Category"
+              value={name}
+              onChange={(event) => setName(event.target.value)}
+              placeholder="e.g. Food safety, Maintenance, Cleaning"
+              required
+            />
+          </div>
+          {error ? <p className="error-text">{error}</p> : null}
+          {feedback ? <p className="form-feedback">{feedback}</p> : null}
+          <div className="toolbar-right">
+            <Button type="submit" size="sm" disabled={busy === 'create' || !name.trim()}>
+              {busy === 'create' ? 'Saving…' : 'Save category'}
+            </Button>
+          </div>
+        </form>
+      </Card>
+
+      <Card title="Categories" subtitle={`${categories.length} configured`}>
+        {loading ? (
+          <Spinner label="Loading categories…" />
+        ) : categories.length === 0 ? (
+          <EmptyState
+            title="No categories yet"
+            description="Add one so staff pick from a consistent list when logging issues."
+          />
+        ) : (
+          <div className="activity-list">
+            {categories.map((category) => (
+              <article key={category.id} className="activity-row">
+                <div>
+                  <strong>{category.name}</strong>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  disabled={busy === category.id}
+                  onClick={() => void removeCategory(category)}
+                >
+                  {busy === category.id ? 'Removing…' : 'Remove'}
                 </Button>
               </article>
             ))}
@@ -2781,6 +2899,7 @@ export function AdminPage({
         <a href="#compliance-settings">Compliance setup</a>
         <a href="#shift-task-rules">Shift task rules</a>
         <a href="#issue-area-rules">Issue area assignments</a>
+        <a href="#issue-categories">Issue categories</a>
         <a href="#integrations">Integrations</a>
         <a href="#human-agent-demo">Human Agent Demo</a>
         <a href="#imports">Data imports</a>
@@ -3739,6 +3858,17 @@ export function AdminPage({
               description="Route issues to the right person automatically when no assignee is set."
             />
             <IssueAreaRulesAdminSection />
+          </div>
+        ) : null}
+        {showShiftTaskRules ? (
+          <div className="admin-section" id="issue-categories">
+            <SectionHeading
+              id="issue-categories-heading"
+              eyebrow="Issues"
+              title="Issue categories"
+              description="Manage the category dropdown staff pick from when logging a compliance issue."
+            />
+            <IssueCategoryAdminSection />
           </div>
         ) : null}
       </section>
