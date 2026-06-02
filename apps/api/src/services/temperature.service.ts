@@ -61,7 +61,34 @@ function queryLimit(input: unknown) {
   return Math.min(Math.floor(limit), 500);
 }
 
-async function maybeCreateIssue(asset: { id: string; name: string; minTempC: number; maxTempC: number }, temperatureC: number) {
+// The active Head Chef for a venue, used to auto-assign temperature alerts
+// (e.g. any fridge at Alma Avalon → Alma Avalon's Head Chef). Matches by
+// role title containing "head chef" so variants like "Head Chef (Kitchen)"
+// still resolve. Returns the assignee name string the Issue/notification
+// layer matches on, or null when the venue has no Head Chef on file.
+async function resolveVenueHeadChefName(venue: string | null | undefined): Promise<string | null> {
+  const target = (venue ?? '').trim().toLowerCase();
+  if (!target) return null;
+  const candidates = await prisma.staffProfile.findMany({
+    where: {
+      accountType: 'HUMAN',
+      employmentStatus: 'ACTIVE',
+      roleTitle: { contains: 'head chef', mode: 'insensitive' }
+    },
+    select: { firstName: true, lastName: true, email: true, venue: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  const match = candidates.find((staff) => (staff.venue ?? '').trim().toLowerCase() === target);
+  if (!match) return null;
+  return `${match.firstName} ${match.lastName}`.trim() || match.email || null;
+}
+
+async function maybeCreateIssue(
+  asset: { id: string; name: string; venue: string | null; minTempC: number; maxTempC: number },
+  temperatureC: number
+) {
+  const headChef = await resolveVenueHeadChefName(asset.venue);
+
   const existing = await prisma.issue.findFirst({
     where: {
       category: 'Temperature',
@@ -71,6 +98,23 @@ async function maybeCreateIssue(asset: { id: string; name: string; minTempC: num
   });
 
   if (existing) {
+    // Backfill the assignee on an already-open temp issue that predates this
+    // routing (or was created before a Head Chef existed for the venue).
+    if (!existing.assignee && headChef) {
+      await prisma.issue.update({
+        where: { id: existing.id },
+        data: {
+          assignee: headChef,
+          activities: {
+            create: {
+              action: 'assigned',
+              message: `Auto-assigned to ${headChef} (${asset.venue ?? 'venue'} Head Chef).`,
+              actor: 'system'
+            }
+          }
+        }
+      });
+    }
     return existing.id;
   }
 
@@ -80,13 +124,16 @@ async function maybeCreateIssue(asset: { id: string; name: string; minTempC: num
       description: `Manual log recorded ${temperatureC.toFixed(1)}C outside ${asset.minTempC.toFixed(1)}C to ${asset.maxTempC.toFixed(1)}C.`,
       severity: 'HIGH',
       category: 'Temperature',
+      area: asset.venue,
       status: 'OPEN',
-      assignee: null,
+      assignee: headChef,
       notes: `temperature-asset:${asset.id}`,
       activities: {
         create: {
           action: 'created',
-          message: 'Issue created from out of range temperature log.',
+          message: headChef
+            ? `Issue created from out of range temperature log. Auto-assigned to ${headChef} (${asset.venue ?? 'venue'} Head Chef).`
+            : 'Issue created from out of range temperature log. No Head Chef on file for the venue — left unassigned.',
           actor: 'system'
         }
       }
