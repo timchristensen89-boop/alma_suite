@@ -11,6 +11,8 @@ import {
   type RequirePin,
   type Venue
 } from './shell';
+import { ChecklistsPage } from './pages/ChecklistsPage';
+import { GiftCardRedeemPage } from './pages/GiftCardRedeemPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { TasksPage } from './pages/TasksPage';
 
@@ -160,11 +162,11 @@ function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null
     {
       id: 'gift-cards',
       title: 'Gift cards',
-      description: 'Redeem, check balance and sell on shared iPad.',
+      description: 'Scan a code, check balance, redeem against a bill.',
       route: `/venue/${venue.id}/gift-cards`,
       permission: 'giftCards.sell',
       tone: 'neutral',
-      status: 'preview'
+      status: 'pilot'
     },
     {
       id: 'stocktake',
@@ -179,7 +181,7 @@ function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null
     {
       id: 'bookings',
       title: 'Bookings',
-      description: "Today's diary and upcoming covers.",
+      description: "Today's diary — SevenRooms is still the live source.",
       route: `/venue/${venue.id}/bookings`,
       permission: 'bookings.view',
       count: venue.bookingsToday,
@@ -189,12 +191,12 @@ function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null
     {
       id: 'checklists',
       title: 'Checklists',
-      description: 'Opening, closing, bar, kitchen and service checks.',
+      description: 'Run opening, closing and service checks. Pass/fail each item.',
       route: `/venue/${venue.id}/checklists`,
       permission: 'checklists.run',
       count: venue.checklistProgress,
       tone: venue.checklistProgress >= 75 ? 'positive' : 'warning',
-      status: 'preview'
+      status: 'pilot'
     },
     {
       id: 'handover',
@@ -470,7 +472,7 @@ function VenueToolPage({
   onRequestStaffPin,
   onSwitchStaff
 }: {
-  kind: 'checklists' | 'gift-cards' | 'bookings';
+  kind: 'bookings';
 } & Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
@@ -526,35 +528,6 @@ function VenueToolPage({
 }
 
 const toolPageContent = {
-  checklists: {
-    title: 'Checklists',
-    description: 'Run venue checks with large tap targets. These are mock checklist surfaces ready for Alma Compliance integration.',
-    actions: [
-      { title: 'Start opening check', detail: 'Floor, bar and venue readiness' },
-      { title: 'Start closing check', detail: 'End of service handover' },
-      { title: 'Log failed item', detail: 'Create a manager follow-up' }
-    ],
-    listTitle: 'Today checks',
-    rows: [
-      { title: 'Opening floor check', detail: '12 of 16 items complete', status: 'In progress', tone: 'warning' as const },
-      { title: 'Kitchen close', detail: 'Assigned to kitchen lead', status: 'Not started', tone: 'neutral' as const },
-      { title: 'Bar setup', detail: 'Completed 10:22 AM', status: 'Done', tone: 'positive' as const }
-    ]
-  },
-  'gift-cards': {
-    title: 'Gift cards',
-    description: 'Shared iPad actions for selling, checking and redeeming gift cards.',
-    actions: [
-      { title: 'Sell gift card', detail: 'Create new card sale' },
-      { title: 'Redeem card', detail: 'Enter card code or scan' },
-      { title: 'Check balance', detail: 'Lookup card value' }
-    ],
-    listTitle: 'Recent activity',
-    rows: [
-      { title: 'Gift card sale', detail: '$150 mock sale', status: 'Paid', tone: 'positive' as const },
-      { title: 'Balance check', detail: 'Card ending 4412', status: 'Viewed', tone: 'neutral' as const }
-    ]
-  },
   bookings: {
     title: 'Bookings',
     description: 'Read-only booking flow for service awareness. Live booking integrations can be added later.',
@@ -760,6 +733,20 @@ function TasksRoute(props: Omit<PageShellProps, 'requirePin'>) {
   return <TasksPage venue={venue} {...props} />;
 }
 
+function GiftCardRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <GiftCardRedeemPage venue={venue} {...props} />;
+}
+
+function ChecklistsRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <ChecklistsPage venue={venue} {...props} />;
+}
+
 export function App() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -817,14 +804,8 @@ export function App() {
         <Route path="/" element={<Navigate to="/venue" replace />} />
         <Route path="/venue" element={<VenueSelectPage {...shellProps} />} />
         <Route path="/venue/:venueId" element={<VenueHomePage {...shellProps} />} />
-        <Route
-          path="/venue/:venueId/checklists"
-          element={<VenueToolPage kind="checklists" {...shellProps} />}
-        />
-        <Route
-          path="/venue/:venueId/gift-cards"
-          element={<VenueToolPage kind="gift-cards" {...shellProps} />}
-        />
+        <Route path="/venue/:venueId/checklists" element={<ChecklistsRoute {...shellProps} />} />
+        <Route path="/venue/:venueId/gift-cards" element={<GiftCardRoute {...shellProps} />} />
         <Route path="/venue/:venueId/tasks" element={<TasksRoute {...shellProps} />} />
         <Route
           path="/venue/:venueId/bookings"

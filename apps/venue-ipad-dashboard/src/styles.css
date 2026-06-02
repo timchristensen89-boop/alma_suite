@@ -1332,3 +1332,273 @@ a {
     width: 100%;
   }
 }
+
+/* ===================== Phase 5.5: Gift Card Redeem ===================== */
+
+.gift-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gift-field > span {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.gift-code-row,
+.gift-amount-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.gift-code-input {
+  flex: 1;
+  min-width: 0;
+  height: 60px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: 22px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+
+.gift-code-input:focus,
+.gift-amount-input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.gift-code-row .button {
+  min-height: 60px;
+  min-width: 120px;
+  font-size: 16px;
+}
+
+.gift-card-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.gift-card-balance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.gift-card-balance-eyebrow {
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.gift-card-balance-value {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: clamp(44px, 6vw, 64px);
+  font-weight: 400;
+  line-height: 1;
+  color: var(--color-text);
+}
+
+.gift-card-balance-value.is-redeemed,
+.gift-card-balance-value.is-cancelled,
+.gift-card-balance-value.is-expired {
+  color: var(--color-muted);
+}
+
+.gift-card-meta {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-muted);
+}
+
+.gift-amount-prefix {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--color-muted);
+}
+
+.gift-amount-input {
+  flex: 1;
+  min-width: 0;
+  height: 60px;
+  padding: 0 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-bg);
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.gift-amount-row .button.secondary {
+  min-height: 60px;
+  white-space: nowrap;
+}
+
+.gift-redeem-btn {
+  min-height: 60px;
+  font-size: 18px;
+}
+
+.gift-reset-btn {
+  align-self: flex-start;
+}
+
+.gift-success {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border-radius: var(--radius);
+  background: var(--color-positive-soft);
+  border: 1px solid var(--color-positive);
+}
+
+.gift-success strong {
+  font-size: 20px;
+  font-weight: 850;
+  color: var(--color-positive);
+}
+
+.gift-success span {
+  font-size: 15px;
+  color: var(--color-positive);
+}
+
+.gift-manager-required {
+  border-left: 6px solid var(--color-warning);
+}
+
+.gift-fallback {
+  margin-top: 4px;
+}
+
+@media (max-width: 600px) {
+  .gift-code-row,
+  .gift-amount-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .gift-code-row .button,
+  .gift-amount-row .button {
+    width: 100%;
+  }
+}
+
+/* ===================== Phase 5.7: Checklists ===================== */
+
+.checklist-items {
+  display: grid;
+  gap: 10px;
+}
+
+.checklist-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 16px 18px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface);
+}
+
+.checklist-item.is-pass {
+  border-left: 6px solid var(--color-positive);
+}
+.checklist-item.is-fail {
+  border-left: 6px solid #dc2626;
+}
+.checklist-item.is-na {
+  border-left: 6px solid var(--color-muted);
+}
+
+.checklist-item-text {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.checklist-item-text strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.checklist-item-text p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--color-muted);
+  line-height: 1.45;
+}
+
+.checklist-item-buttons {
+  display: inline-flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.checklist-result-btn {
+  min-width: 64px;
+  min-height: 52px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-muted);
+  cursor: pointer;
+}
+
+.checklist-result-btn.is-pass.is-active {
+  background: var(--color-positive-soft);
+  border-color: var(--color-positive);
+  color: var(--color-positive);
+}
+.checklist-result-btn.is-fail.is-active {
+  background: #fee2e2;
+  border-color: #dc2626;
+  color: #991b1b;
+}
+.checklist-result-btn.is-na.is-active {
+  background: var(--color-surface);
+  border-color: var(--color-muted);
+  color: var(--color-text);
+}
+
+.checklist-result-btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (max-width: 600px) {
+  .checklist-item {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .checklist-item-buttons {
+    justify-content: space-between;
+  }
+
+  .checklist-result-btn {
+    flex: 1;
+  }
+}
