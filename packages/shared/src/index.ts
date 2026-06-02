@@ -5593,6 +5593,31 @@ export type StocktakeReviewItem = Stocktake & {
   negativeVarianceQuantity: number;
 };
 
+// Cost of Goods summary — Theoretical (sold qty × recipe cost) vs Actual
+// (supplier purchases in the window) with the variance, plus dish-margin
+// and supplier price-movement summaries.
+export type StockCostOfGoodsPayload = {
+  generatedAt: string;
+  venue: string | null;
+  lookbackDays: number;
+  theoreticalCogsCents: number;
+  actualCogsCents: number;
+  actualMethod: 'supplier_purchases';
+  varianceCents: number;
+  variancePercent: number | null;
+  netSalesCents: number;
+  cogsPercentOfSales: number | null;
+  dishMargin: {
+    mappedRecipes: number;
+    unmappedRecipes: number;
+    avgMarginPercent: number | null;
+  };
+  priceMovement: {
+    increasedItems: number;
+    decreasedItems: number;
+  };
+};
+
 export type StockDashboardPayload = {
   generatedAt: string;
   scope: {
