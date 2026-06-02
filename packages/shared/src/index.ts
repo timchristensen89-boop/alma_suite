@@ -992,6 +992,17 @@ export const tipsBulkDeleteSchema = z.object({
   type: z.enum(['cash', 'card', 'all']).default('all')
 });
 
+// Bulk-delete roster shifts within a week window. `filter` chooses the subset:
+// all shifts, just unallocated placeholders, or one area/location.
+export const rosterBulkDeleteSchema = z.object({
+  start: z.string().min(4),
+  end: z.string().min(4),
+  venue: z.string().optional(),
+  filter: z.enum(['all', 'unallocated', 'area']).default('all'),
+  area: z.string().optional()
+});
+export type RosterBulkDeleteInput = z.infer<typeof rosterBulkDeleteSchema>;
+
 export const tipsManualHoursSchema = z.object({
   staffProfileId: z.string().min(1),
   venue: z.string().min(1),

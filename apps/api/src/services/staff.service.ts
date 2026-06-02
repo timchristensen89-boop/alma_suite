@@ -45,6 +45,7 @@ import {
   timesheetCreateInputSchema,
   timesheetExportInputSchema,
   tipsBulkDeleteSchema,
+  rosterBulkDeleteSchema,
   tipsCashEntryInputSchema,
   tipsCardImportInputSchema,
   tipsExportInputSchema,
@@ -3577,6 +3578,36 @@ export const staffService = {
     const existing = actor ? await assertActorCanAccessRosterShift(id, actor) : await prisma.rosterShift.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, 'Roster shift not found');
     await prisma.rosterShift.delete({ where: { id } });
+  },
+
+  async bulkDeleteRosterShifts(input: unknown, actor?: AuthUser) {
+    const data = rosterBulkDeleteSchema.parse(input);
+    const startDate = new Date(data.start);
+    const endDate = new Date(data.end);
+    if (Number.isNaN(startDate.getTime()) || Number.isNaN(endDate.getTime())) {
+      throw new HttpError(400, 'Roster dates are invalid');
+    }
+    if (endDate <= startDate) {
+      throw new HttpError(400, 'Roster end date must be after the start date');
+    }
+    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
+    const where: Prisma.RosterShiftWhereInput = {
+      startsAt: { lt: endDate },
+      endsAt: { gt: startDate },
+      ...(scopedVenue ? { venue: scopedVenue } : {})
+    };
+    if (data.filter === 'unallocated') {
+      // Unallocated = the Deputy/import placeholder profile (see isUnallocatedProfile in the UI).
+      where.staffProfile = {
+        OR: [{ firstName: 'Unallocated' }, { notes: { contains: 'Deputy unallocated placeholder' } }]
+      };
+    } else if (data.filter === 'area') {
+      const area = data.area?.trim();
+      if (!area) throw new HttpError(400, 'Choose an area/location to clear.');
+      where.area = area;
+    }
+    const result = await prisma.rosterShift.deleteMany({ where });
+    return { deleted: result.count };
   },
 
   async publishRoster(input: unknown, publishedById?: string, actor?: AuthUser) {
