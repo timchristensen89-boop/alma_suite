@@ -3,6 +3,8 @@ import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/st
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
   GIFT_CARD_DESIGNS,
+  GIFT_CARD_MIN_AMOUNT_CENTS,
+  GIFT_CARD_MAX_AMOUNT_CENTS,
   type AuthUser,
   type GiftCard,
   type GiftCardAdminSettingsResponse,
@@ -301,7 +303,7 @@ function PublicGiftCardShop() {
   const embeddedCheckoutHostRef = useRef<HTMLDivElement | null>(null);
 
   const amountDueCents = promoQuote ? promoQuote.amountDueCents : amountCents;
-  const amountError = amountCents < 2500 || amountCents > 200000
+  const amountError = amountCents < GIFT_CARD_MIN_AMOUNT_CENTS || amountCents > GIFT_CARD_MAX_AMOUNT_CENTS
     ? 'Choose an amount between $25 and $2,000.'
     : null;
   const checkoutBlocked = checkoutMode === 'setup_required';
