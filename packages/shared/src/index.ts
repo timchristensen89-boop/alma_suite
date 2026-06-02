@@ -1015,10 +1015,27 @@ export const rosterBulkDeleteSchema = z.object({
   start: z.string().min(4),
   end: z.string().min(4),
   venue: z.string().optional(),
-  filter: z.enum(['all', 'unallocated', 'area']).default('all'),
-  area: z.string().optional()
+  // all          — every shift in the [start,end) range for the venue
+  // unallocated   — Deputy/import placeholder shifts in the range
+  // area          — shifts in a specific area/section in the range
+  // ids           — exactly these shift ids (used for "visible shifts",
+  //                 which respects the manager's active board filters)
+  // reset-all     — every shift for the venue, ignoring the date range
+  filter: z.enum(['all', 'unallocated', 'area', 'ids', 'reset-all']).default('all'),
+  area: z.string().optional(),
+  ids: z.array(z.string().min(1)).optional()
 });
 export type RosterBulkDeleteInput = z.infer<typeof rosterBulkDeleteSchema>;
+
+// Rename a roster area/section: rewrites the `area` string on every
+// matching shift so the rename sticks in the data (not just the
+// per-browser area-order settings).
+export const rosterRenameAreaSchema = z.object({
+  from: z.string().min(1, 'Choose the area to rename'),
+  to: z.string().min(1, 'Enter a new area name').max(80),
+  venue: z.string().optional()
+});
+export type RosterRenameAreaInput = z.infer<typeof rosterRenameAreaSchema>;
 
 export const tipsManualHoursSchema = z.object({
   staffProfileId: z.string().min(1),

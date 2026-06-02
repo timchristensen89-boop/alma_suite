@@ -3631,33 +3631,144 @@
   border-radius: 14px;
 }
 
-/* Bulk-delete group — danger actions for clearing roster shifts in the
-   current week/venue view. Separated from the constructive actions with a
-   subtle leading divider so destructive controls read as their own cluster. */
-.alma-roster-bulk-delete {
+/* Delete controls — one consolidated "Delete" dropdown (This week / Next
+   week / Visible shifts / Reset all data) plus a small red "Section" button
+   to its left for clearing a single area. Separated from the constructive
+   actions with a subtle leading divider so destructive controls read as
+   their own cluster. */
+.alma-roster-delete-controls {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  flex-wrap: wrap;
   padding-left: 10px;
   margin-left: 2px;
   border-left: 1px solid var(--color-border);
 }
 
-.alma-roster-bulk-delete-area select {
+.alma-roster-delete-wrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* Small red section-delete button */
+.alma-roster-section-delete {
   min-height: 32px;
-  padding: 0 10px;
+  padding: 0 12px;
+  border-radius: 10px;
+  border: 1px solid #f0c4bf;
+  background: #fdecea;
+  color: #b42318;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.alma-roster-section-delete:hover:not(:disabled) {
+  background: #fbdcd8;
+  border-color: #e3a59d;
+}
+
+/* Consolidated Delete dropdown toggle — neutral until opened */
+.alma-roster-delete-toggle {
+  min-height: 32px;
+  padding: 0 14px;
   border-radius: 10px;
   border: 1px solid var(--color-border);
   background: var(--color-surface, #F8F6F1);
   color: var(--color-text, #2A2622);
   font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.alma-roster-delete-toggle:hover:not(:disabled) {
+  border-color: var(--color-accent);
+}
+
+.alma-roster-section-delete:disabled,
+.alma-roster-delete-toggle:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Transparent full-screen backdrop that closes the menu on outside click */
+.alma-roster-delete-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+/* The dropdown menu itself */
+.alma-roster-delete-menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 41;
+  min-width: 200px;
+  padding: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  background: #ffffff;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(26, 34, 56, 0.16);
+}
+
+.alma-roster-delete-menu-head {
+  margin: 4px 8px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted, #6b6e6e);
+}
+
+.alma-roster-delete-menu-item {
+  text-align: left;
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-text, #2A2622);
+  font: inherit;
+  font-weight: 600;
   cursor: pointer;
 }
 
-.alma-roster-bulk-delete-area select:disabled {
-  opacity: 0.5;
+.alma-roster-delete-menu-item:hover:not(:disabled) {
+  background: var(--color-accent-soft, #EAEDF3);
+}
+
+.alma-roster-delete-menu-item:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
+}
+
+.alma-roster-delete-menu-item.is-danger {
+  color: #b42318;
+}
+
+.alma-roster-delete-menu-item.is-danger:hover:not(:disabled) {
+  background: #fdecea;
+}
+
+.alma-roster-delete-menu-sep {
+  height: 1px;
+  margin: 4px 8px;
+  background: var(--color-border);
+}
+
+.alma-roster-delete-menu-empty {
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--color-muted, #6b6e6e);
 }
 
 /* Forecast pill — same height as the action buttons, paper-cream

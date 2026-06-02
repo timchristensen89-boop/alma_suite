@@ -610,6 +610,14 @@ staffRouter.post('/roster/bulk-delete', requireManager, async (req, res, next) =
   }
 });
 
+staffRouter.post('/roster/rename-area', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.renameRosterArea(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.post('/roster/publish', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.publishRoster(req.body, req.user?.id, req.user));
