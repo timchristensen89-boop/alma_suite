@@ -86,15 +86,8 @@ checklistsRouter.post('/runs', requireManager, async (req, res, next) => {
   }
 });
 
-// Cron-callable: generate today's checklist runs from every template.
-// Point Cloud Scheduler at this with a daily morning trigger.
-checklistsRouter.post('/auto-schedule', async (_req, res, next) => {
-  try {
-    res.json(await checklistService.autoScheduleDailyRuns());
-  } catch (error) {
-    next(error);
-  }
-});
+// The daily auto-schedule cron now lives on the secret-guarded integration-jobs
+// router: POST /api/integration-jobs/checklists/auto-schedule.
 
 checklistsRouter.get('/runs/:id', async (req, res, next) => {
   try {
