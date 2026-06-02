@@ -2857,3 +2857,18 @@ model CommsAlertEvent {
   @@index([venue, createdAt])
   @@index([severity])
 }
+
+// Per-user notification mute. One row = "this user has silenced this
+// notification category". Absence = the category is shown. Kept as a
+// standalone table (staffProfileId is the AuthUser id; no FK so staff
+// archival/merge never blocks on it) with a unique pair so a category
+// can't be muted twice for the same user.
+model NotificationMutePreference {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  category       String
+  createdAt      DateTime @default(now())
+
+  @@unique([staffProfileId, category])
+  @@index([staffProfileId])
+}
