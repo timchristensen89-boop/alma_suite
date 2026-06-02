@@ -2156,7 +2156,140 @@ function StaffMemberRosterPage() {
           ))}
         </div>
       </Card>
+
+      <PublishedRosterView />
     </div>
+  );
+}
+
+// Read-only copy of the whole team's published roster for the week, so staff
+// can see who else is on without the editable manager board. Live (published)
+// shifts only. Uses the standard roster-board week selector.
+function PublishedRosterView() {
+  const [weekStart, setWeekStart] = useState(() => startOfWeek(new Date()));
+  const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
+  const [shifts, setShifts] = useState<RosterShift[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      setShifts(
+        await api<RosterShift[]>(
+          `/api/staff/roster/published?start=${encodeURIComponent(weekStart.toISOString())}&end=${encodeURIComponent(weekEnd.toISOString())}`
+        )
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the published roster.');
+    } finally {
+      setLoading(false);
+    }
+  }, [weekStart, weekEnd]);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const days = useMemo(() => Array.from({ length: 7 }, (_, index) => addDays(weekStart, index)), [weekStart]);
+  const byDay = useMemo(() => {
+    const map = new Map<string, RosterShift[]>();
+    for (const shift of shifts) {
+      const key = toDateInput(new Date(shift.startsAt));
+      const list = map.get(key) ?? [];
+      list.push(shift);
+      map.set(key, list);
+    }
+    for (const list of map.values()) {
+      list.sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+    }
+    return map;
+  }, [shifts]);
+
+  return (
+    <>
+      <div className="alma-roster-header alma-roster-header--tight">
+        <div className="alma-roster-header-titles">
+          <span className="alma-roster-eyebrow">Team · Published roster</span>
+          <div className="alma-roster-title-row">
+            <span className="alma-roster-title">Week of</span>
+            <span className="alma-roster-title is-italic">{formatRange(weekStart, addDays(weekEnd, -1))}</span>
+            <div className="alma-roster-weeknav">
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Previous week"
+                onClick={() => setWeekStart(addDays(weekStart, -7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="15 6 9 12 15 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn"
+                aria-label="Next week"
+                onClick={() => setWeekStart(addDays(weekStart, 7))}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true">
+                  <polyline points="9 6 15 12 9 18" />
+                </svg>
+              </button>
+              <button
+                type="button"
+                className="alma-roster-weeknav-btn alma-roster-weeknav-btn--text"
+                onClick={() => setWeekStart(startOfWeek(new Date()))}
+              >
+                This week
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Card title="Published roster" subtitle="The live team roster for this week — read-only." padding="none">
+        {loading ? <Spinner label="Loading published roster…" /> : null}
+        {error ? <p className="error-text" style={{ padding: '12px 16px' }}>{error}</p> : null}
+        {!loading && !error && shifts.length === 0 ? (
+          <EmptyState title="No published shifts this week" description="Shifts appear here once a manager publishes the roster." />
+        ) : null}
+        {!loading && !error && shifts.length > 0 ? (
+          <div className="published-roster-days">
+            {days.map((day) => {
+              const key = toDateInput(day);
+              const dayShifts = byDay.get(key) ?? [];
+              if (dayShifts.length === 0) return null;
+              return (
+                <div key={key} className="published-roster-day">
+                  <div className="published-roster-day-head">
+                    {day.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+                  </div>
+                  {dayShifts.map((shift) => (
+                    <div key={shift.id} className="published-roster-shift">
+                      <span className="published-roster-time">
+                        {timeOf(shift.startsAt)}–{timeOf(shift.endsAt)}
+                      </span>
+                      <span className="published-roster-who">
+                        {shift.staffProfile
+                          ? `${shift.staffProfile.firstName} ${shift.staffProfile.lastName}`.trim()
+                          : 'Open shift'}
+                      </span>
+                      <span className="subtle">
+                        {shift.area || shift.roleTitle || 'Shift'}
+                        {shift.venue || shift.staffProfile?.venue
+                          ? ` · ${shift.venue || shift.staffProfile?.venue}`
+                          : ''}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })}
+          </div>
+        ) : null}
+      </Card>
+    </>
   );
 }
 

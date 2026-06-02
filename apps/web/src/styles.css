@@ -795,6 +795,40 @@ p {
   min-width: 0;
 }
 
+/* Issues category filter bar — a row of pill chips under the search filters.
+   "All" is active by default; clicking a category filters the list to it. */
+.issue-cat-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.issue-cat-chip {
+  appearance: none;
+  border: 1px solid rgba(31, 53, 36, 0.16);
+  background: #ffffff;
+  color: #1f3524;
+  border-radius: 9999px;
+  padding: 6px 14px;
+  font-family: "Avenir LT Std", "Manrope", sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 130ms ease, border-color 130ms ease, color 130ms ease;
+}
+
+.issue-cat-chip:hover {
+  border-color: rgba(31, 53, 36, 0.35);
+  background: rgba(31, 53, 36, 0.04);
+}
+
+.issue-cat-chip.is-active {
+  background: #1f3524;
+  border-color: #1f3524;
+  color: #f8f0e6;
+}
+
 .app-shell-topbar .topbar-user-label,
 .app-shell-topbar .subtle {
   color: rgba(31, 53, 36, 0.6);
