@@ -42,12 +42,11 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
-  SuiteSearchWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { COMPLIANCE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
@@ -1725,20 +1724,6 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
       right={
         <>
           <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
-          <SuiteSearchWidget
-            api={api}
-            currentApp="reserve"
-            items={MANAGER_NAV_ITEMS.map((item) => ({
-              id: item.href,
-              label: item.label,
-              description: item.description,
-              href: item.href,
-              type: 'Reserve'
-            }))}
-            placeholder="Search bookings, guests, availability..."
-            remoteSearch
-            remoteResultBaseUrl={COMPLIANCE_WEB_URL}
-          />
           <SuiteCommsWidget
             appId="RESERVE"
             api={api}

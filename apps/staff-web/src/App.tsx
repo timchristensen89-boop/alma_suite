@@ -81,7 +81,6 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
-  SuiteSearchWidget,
   Textarea,
   TopBar,
   useDismissibleLayer
@@ -742,13 +741,6 @@ function TopBarWithContext() {
   const navItems = navItemsForUser(user);
   const active = currentPage(location.pathname, navItems);
   useDocumentTitle(active.label);
-  const searchItems = navItems.map((item) => ({
-    id: item.to,
-    label: item.label,
-    description: item.description,
-    href: item.to,
-    type: 'Staff'
-  }));
 
   // Casual staff get a simpler topbar — they don't switch apps (they only
   // have access to Staff anyway) and they don't post announcements.
@@ -781,14 +773,6 @@ function TopBarWithContext() {
             ) : null}
             {!isCasualStaff ? (
               <>
-                <SuiteSearchWidget
-                  api={api}
-                  currentApp="staff"
-                  items={searchItems}
-                  placeholder="Search staff profiles, roster, leave..."
-                  remoteSearch
-                  remoteResultBaseUrl={COMPLIANCE_WEB_URL}
-                />
                 <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
               </>
             ) : null}

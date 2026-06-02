@@ -41,7 +41,6 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
-  SuiteSearchWidget,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -733,13 +732,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // 8-week forecast vs actual history for the sales section chart.
   const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
-  const searchItems = REPORT_NAV_ITEMS.map((item) => ({
-    id: item.id,
-    label: item.label,
-    description: item.description,
-    href: reportHash(item.id),
-    type: 'Reports'
-  }));
   const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
 
@@ -3082,14 +3074,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           subtitle="Read-only operating reports"
           right={
             <>
-              <SuiteSearchWidget
-                api={staffApi}
-                currentApp="reports"
-                items={searchItems}
-                placeholder="Search reports and suite records..."
-                remoteSearch
-                remoteResultBaseUrl={COMPLIANCE_WEB_URL}
-              />
               <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
               <SuiteCommsWidget
                 appId="REPORTS"

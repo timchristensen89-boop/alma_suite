@@ -2552,13 +2552,6 @@ tbody tr:hover {
     flex-wrap: wrap;
   }
 
-  /* Search drops to its own full-width line directly under the heading. */
-  .topbar-search {
-    order: -1;
-    flex: 1 1 100%;
-    min-width: 100%;
-  }
-
   .hero { grid-template-columns: 1fr; }
   .hero-actions {
     justify-content: flex-start;
@@ -11137,17 +11130,10 @@ a.suite-app-tile:hover {
   color: #1F3524;
 }
 
-/* On mobile the clock gets its own centered line, slightly larger. */
+/* The clock is desktop-only — hidden on mobile to keep the bar uncluttered. */
 @media (max-width: 720px) {
   .suite-clock {
-    order: 1;
-    flex: 1 1 100%;
-    justify-content: center;
-    height: 42px;
-    margin-top: 2px;
-  }
-  .suite-clock-time {
-    font-size: 22px;
+    display: none;
   }
 }
 
