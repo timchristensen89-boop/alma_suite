@@ -334,32 +334,67 @@ export type CreateTaskFromSourceInput = {
 };
 
 export async function createTaskFromSource(input: CreateTaskFromSourceInput): Promise<AlmaTask> {
-  const existing = await prisma.almaTask.findFirst({
-    where: {
-      sourceApp: input.sourceApp,
-      sourceRefType: input.sourceRefType,
-      sourceRefId: input.sourceRefId,
-      status: { in: [...OUTSTANDING_STATUSES] }
-    },
-    include: taskInclude()
-  });
-  if (existing) return toAlmaTask(existing);
+  const sourceWhere = {
+    sourceApp: input.sourceApp,
+    sourceRefType: input.sourceRefType,
+    sourceRefId: input.sourceRefId
+  };
 
-  const row = await prisma.almaTask.create({
-    data: {
-      sourceApp: input.sourceApp,
-      sourceRefType: input.sourceRefType,
-      sourceRefId: input.sourceRefId,
-      venue: input.venue ?? null,
-      title: input.title,
-      description: input.description ?? null,
-      ownerStaffProfileId: input.ownerStaffProfileId ?? null,
-      dueAt: input.dueAt ?? null,
-      priority: input.priority ?? 'THIS_WEEK'
-    },
-    include: taskInclude()
-  });
-  return toAlmaTask(row);
+  // One row per source object, ever (enforced by a DB unique index on the
+  // source triple). Look up any prior task for this source:
+  //   - already outstanding → return it (the dedupe path the reconciler relies on)
+  //   - previously DONE/DISMISSED but the source qualifies again → resurrect it
+  //   - none → create it
+  const existing = await prisma.almaTask.findFirst({ where: sourceWhere, include: taskInclude() });
+  if (existing) {
+    if ((OUTSTANDING_STATUSES as readonly string[]).includes(existing.status)) {
+      return toAlmaTask(existing);
+    }
+    const revived = await prisma.almaTask.update({
+      where: { id: existing.id },
+      data: {
+        status: 'OPEN',
+        venue: input.venue ?? null,
+        title: input.title,
+        description: input.description ?? null,
+        ownerStaffProfileId: input.ownerStaffProfileId ?? null,
+        dueAt: input.dueAt ?? null,
+        priority: input.priority ?? 'THIS_WEEK',
+        completedAt: null,
+        completedByStaffProfileId: null,
+        dismissedAt: null,
+        dismissedByStaffProfileId: null
+      },
+      include: taskInclude()
+    });
+    return toAlmaTask(revived);
+  }
+
+  try {
+    const row = await prisma.almaTask.create({
+      data: {
+        sourceApp: input.sourceApp,
+        sourceRefType: input.sourceRefType,
+        sourceRefId: input.sourceRefId,
+        venue: input.venue ?? null,
+        title: input.title,
+        description: input.description ?? null,
+        ownerStaffProfileId: input.ownerStaffProfileId ?? null,
+        dueAt: input.dueAt ?? null,
+        priority: input.priority ?? 'THIS_WEEK'
+      },
+      include: taskInclude()
+    });
+    return toAlmaTask(row);
+  } catch (error) {
+    // Lost a create race against another API instance — the unique index
+    // fired. Re-read and return the winning row instead of duplicating.
+    if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
+      const winner = await prisma.almaTask.findFirst({ where: sourceWhere, include: taskInclude() });
+      if (winner) return toAlmaTask(winner);
+    }
+    throw error;
+  }
 }
 
 // Companion: when a source object is resolved (e.g. stocktake locked,
