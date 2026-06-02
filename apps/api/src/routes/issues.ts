@@ -62,6 +62,17 @@ issuesRouter.get('/assignees', async (_req, res) => {
   res.json(await issueService.assignees());
 });
 
+// Configured area names for the issue form dropdown. Available to any
+// authenticated user (no manager guard) — exposes names only, not the
+// area→assignee mapping that /area-rules returns.
+issuesRouter.get('/areas', async (_req, res, next) => {
+  try {
+    res.json(await issueService.listAreaNames());
+  } catch (error) {
+    next(error);
+  }
+});
+
 issuesRouter.get('/:id', async (req, res, next) => {
   try {
     const issue = await issueService.getById(req.params.id);

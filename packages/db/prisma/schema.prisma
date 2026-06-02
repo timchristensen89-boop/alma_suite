@@ -2947,6 +2947,10 @@ model AlmaTask {
   completedBy StaffProfile? @relation("AlmaTaskCompletedBy", fields: [completedByStaffProfileId], references: [id], onDelete: SetNull)
   dismissedBy StaffProfile? @relation("AlmaTaskDismissedBy", fields: [dismissedByStaffProfileId], references: [id], onDelete: SetNull)
 
+  // One outstanding-or-historical task per source object. Backs the
+  // createTaskFromSource dedupe so concurrent reconciles on multiple API
+  // instances can't insert duplicate tasks for the same source.
+  @@unique([sourceApp, sourceRefType, sourceRefId])
   // Read patterns the API will hit:
   //   list open tasks for venue X        → (venue, status)
   //   my open tasks                       → (ownerStaffProfileId, status)
@@ -2960,4 +2964,19 @@ model AlmaTask {
   @@index([sourceApp, status])
   @@index([sourceRefType, sourceRefId])
   @@index([dueAt])
+}
+
+// Per-user notification mute. One row = "this user has silenced this
+// notification category". Absence = the category is shown. Kept as a
+// standalone table (staffProfileId is the AuthUser id; no FK so staff
+// archival/merge never blocks on it) with a unique pair so a category
+// can't be muted twice for the same user.
+model NotificationMutePreference {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  category       String
+  createdAt      DateTime @default(now())
+
+  @@unique([staffProfileId, category])
+  @@index([staffProfileId])
 }

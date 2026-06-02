@@ -4,9 +4,37 @@ import { listCommsInbox } from './comms.service.js';
 
 export type NotificationTone = 'danger' | 'warning' | 'info' | 'positive';
 
+// A notification category is a mutable channel a user can silence. Each
+// generated notification belongs to exactly one.
+export type NotificationCategory =
+  | 'COMMS'
+  | 'ISSUE_CRITICAL'
+  | 'ISSUE_OVERDUE'
+  | 'TEMP_OUT_OF_RANGE'
+  | 'STAFF_EXPIRING'
+  | 'INCIDENT_OPEN';
+
+export const NOTIFICATION_CATEGORIES: Array<{ category: NotificationCategory; label: string }> = [
+  { category: 'COMMS', label: 'Comms messages' },
+  { category: 'ISSUE_CRITICAL', label: 'Critical issues' },
+  { category: 'ISSUE_OVERDUE', label: 'Overdue issues' },
+  { category: 'TEMP_OUT_OF_RANGE', label: 'Temperature alerts' },
+  { category: 'STAFF_EXPIRING', label: 'Expiring staff records' },
+  { category: 'INCIDENT_OPEN', label: 'Open incidents' }
+];
+
+const CATEGORY_LABEL: Record<NotificationCategory, string> = NOTIFICATION_CATEGORIES.reduce(
+  (acc, item) => ({ ...acc, [item.category]: item.label }),
+  {} as Record<NotificationCategory, string>
+);
+
+const VALID_CATEGORIES = new Set<string>(NOTIFICATION_CATEGORIES.map((item) => item.category));
+
 export type SuiteNotification = {
   id: string;
   tone: NotificationTone;
+  category: NotificationCategory;
+  categoryLabel: string;
   title: string;
   description: string;
   to: string;
@@ -35,9 +63,10 @@ function appLink(appId: keyof typeof APP_URLS, path: string) {
   return `${APP_URLS[appId]}${cleanPath}`;
 }
 
-function notification(input: Omit<SuiteNotification, 'href'>): SuiteNotification {
+function notification(input: Omit<SuiteNotification, 'href' | 'categoryLabel'>): SuiteNotification {
   return {
     ...input,
+    categoryLabel: CATEGORY_LABEL[input.category],
     href: appLink(input.appId, input.to)
   };
 }
@@ -63,11 +92,13 @@ export const notificationsService = {
     const manager = isManager(actor);
     const venueWhere = actor.isAdmin ? {} : { venue: actor.venue ?? undefined };
     const notifications: SuiteNotification[] = [];
+    const mutedCategories = await this.mutedCategorySet(actor);
 
     const commsThreads = await listCommsInbox(actor).catch(() => []);
     for (const thread of commsThreads.filter((item) => item.unread || item.actionRequired).slice(0, 12)) {
       notifications.push(notification({
         id: `comms-${thread.id}`,
+        category: 'COMMS',
         tone: thread.priority === 'URGENT' ? 'danger' : thread.actionRequired ? 'warning' : 'info',
         title: thread.actionRequired ? `Action required: ${thread.subject}` : `Unread: ${thread.subject}`,
         description: thread.latestMessage?.slice(0, 140) || `${thread.category.toLowerCase()} message`,
@@ -102,6 +133,7 @@ export const notificationsService = {
     for (const issue of criticalIssues) {
       notifications.push(notification({
         id: `issue-crit-${issue.id}`,
+        category: 'ISSUE_CRITICAL',
         tone: 'danger',
         title: `Critical issue: ${issue.title}`,
         description: issue.description.slice(0, 140),
@@ -115,6 +147,7 @@ export const notificationsService = {
     for (const issue of overdueIssues) {
       notifications.push(notification({
         id: `issue-overdue-${issue.id}`,
+        category: 'ISSUE_OVERDUE',
         tone: 'warning',
         title: `Overdue: ${issue.title}`,
         description: issue.dueDate
@@ -163,6 +196,7 @@ export const notificationsService = {
       for (const log of outOfRangeTemps) {
         notifications.push(notification({
           id: `temp-${log.id}`,
+          category: 'TEMP_OUT_OF_RANGE',
           tone: 'danger',
           title: `Temperature out of range: ${log.asset.name}`,
           description: `${log.temperatureC.toFixed(1)}C at ${log.recordedAt.toISOString().slice(11, 16)}`,
@@ -177,6 +211,7 @@ export const notificationsService = {
         const name = `${record.staffProfile.firstName} ${record.staffProfile.lastName}`.trim();
         notifications.push(notification({
           id: `staff-${record.id}`,
+          category: 'STAFF_EXPIRING',
           tone: 'warning',
           title: `${name} - ${record.title} expiring`,
           description: record.expiryDate
@@ -192,6 +227,7 @@ export const notificationsService = {
       for (const incident of openIncidents) {
         notifications.push(notification({
           id: `incident-${incident.id}`,
+          category: 'INCIDENT_OPEN',
           tone: 'info',
           title: `Open incident: ${incident.title}`,
           description: incident.summary.slice(0, 140),
@@ -203,7 +239,51 @@ export const notificationsService = {
       }
     }
 
-    notifications.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return notifications.slice(0, 30);
+    const visible = mutedCategories.size
+      ? notifications.filter((item) => !mutedCategories.has(item.category))
+      : notifications;
+    visible.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    return visible.slice(0, 30);
+  },
+
+  // Set of categories this user has silenced.
+  async mutedCategorySet(actor: AuthUser): Promise<Set<string>> {
+    const rows = await prisma.notificationMutePreference
+      .findMany({ where: { staffProfileId: actor.id }, select: { category: true } })
+      .catch(() => [] as Array<{ category: string }>);
+    return new Set(rows.map((row) => row.category));
+  },
+
+  // The mute settings payload for the UI: every available category +
+  // which ones the user has currently muted.
+  async mutes(actor: AuthUser): Promise<{
+    available: Array<{ category: NotificationCategory; label: string }>;
+    muted: string[];
+  }> {
+    const muted = await this.mutedCategorySet(actor);
+    return {
+      available: NOTIFICATION_CATEGORIES,
+      muted: [...muted]
+    };
+  },
+
+  // Toggle a category mute for the user. Unknown categories are rejected
+  // so a typo can't silently persist a dead preference.
+  async setMute(actor: AuthUser, category: string, muted: boolean): Promise<{ muted: string[] }> {
+    if (!VALID_CATEGORIES.has(category)) {
+      throw new Error(`Unknown notification category: ${category}`);
+    }
+    if (muted) {
+      await prisma.notificationMutePreference.upsert({
+        where: { staffProfileId_category: { staffProfileId: actor.id, category } },
+        create: { staffProfileId: actor.id, category },
+        update: {}
+      });
+    } else {
+      await prisma.notificationMutePreference.deleteMany({
+        where: { staffProfileId: actor.id, category }
+      });
+    }
+    return { muted: [...(await this.mutedCategorySet(actor))] };
   }
 };

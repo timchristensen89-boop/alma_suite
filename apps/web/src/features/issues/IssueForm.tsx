@@ -117,6 +117,7 @@ type Props = {
   assignees?: IssueAssigneeOption[];
   assigneesLoading?: boolean;
   assigneesError?: string | null;
+  areaOptions?: string[];
   onSubmit: (value: IssueFormInput) => Promise<void>;
 };
 
@@ -128,6 +129,7 @@ export function IssueForm({
   assignees = [],
   assigneesLoading = false,
   assigneesError,
+  areaOptions = [],
   onSubmit
 }: Props) {
   const [form, setForm] = useState<IssueFormInput>(() =>
@@ -267,13 +269,31 @@ export function IssueForm({
               value
             }))}
           />
-          <Input
-            label="Area / location"
-            value={form.area ?? ''}
-            onChange={(event) => update('area', event.target.value)}
-            placeholder="e.g. Kitchen line, Cellar, Front bar"
-            hint="Leave the assignee blank and the area's responsible person is assigned automatically."
-          />
+          {areaOptions.length > 0 ? (
+            <Select
+              label="Area / location"
+              value={form.area ?? ''}
+              onChange={(event) => update('area', event.target.value)}
+              options={[
+                { label: 'No specific area', value: '' },
+                ...areaOptions.map((area) => ({ label: area, value: area })),
+                // Preserve a legacy free-text area on an edited issue that
+                // isn't in the configured list, so it isn't silently dropped.
+                ...(form.area && !areaOptions.includes(form.area)
+                  ? [{ label: `${form.area} (legacy)`, value: form.area }]
+                  : [])
+              ]}
+              hint="Areas are configured in Admin. Leave the assignee blank and the area's responsible person is assigned automatically."
+            />
+          ) : (
+            <Input
+              label="Area / location"
+              value={form.area ?? ''}
+              onChange={(event) => update('area', event.target.value)}
+              placeholder="e.g. Kitchen line, Cellar, Front bar"
+              hint="Add areas in Admin to pick from a list. Leave the assignee blank and the area's responsible person is assigned automatically."
+            />
+          )}
           <Select
             label="Assignee"
             value={assigneeValue(form.assignee, assignees)}

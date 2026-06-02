@@ -6,6 +6,8 @@ type ApiClient = <T>(path: string, init?: RequestInit) => Promise<T>;
 type SuiteNotification = {
   id: string;
   tone: 'danger' | 'warning' | 'info' | 'positive';
+  category?: string;
+  categoryLabel?: string;
   title: string;
   description: string;
   to?: string;
@@ -13,6 +15,11 @@ type SuiteNotification = {
   appId?: string;
   appLabel?: string;
   createdAt: string;
+};
+
+type NotificationMutes = {
+  available: Array<{ category: string; label: string }>;
+  muted: string[];
 };
 
 type Props = {
@@ -139,9 +146,21 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
   const [message, setMessage] = useState('');
   const [readState, setReadState] = useState<ReadState>(() => (typeof window !== 'undefined' ? loadReadState() : {}));
   const [showRead, setShowRead] = useState(false);
+  const [mutes, setMutes] = useState<NotificationMutes | null>(null);
+  const [showMutes, setShowMutes] = useState(false);
+  const [muteBusy, setMuteBusy] = useState(false);
 
   const close = useCallback(() => setOpen(false), []);
   useDismissibleLayer(layerRef, open, close, `${currentApp}-notifications`);
+
+  const loadMutes = useCallback(async () => {
+    try {
+      setMutes(await api<NotificationMutes>('/api/notifications/mutes'));
+    } catch {
+      // Endpoint may be unavailable on older API builds — hide the mute UI.
+      setMutes(null);
+    }
+  }, [api]);
 
   async function load() {
     setLoading(true);
@@ -156,14 +175,40 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     }
   }
 
+  const toggleMute = useCallback(
+    async (category: string | undefined, muted: boolean) => {
+      if (!category || muteBusy) return;
+      setMuteBusy(true);
+      try {
+        await api('/api/notifications/mutes', {
+          method: 'POST',
+          body: JSON.stringify({ category, muted })
+        });
+        await Promise.all([load(), loadMutes()]);
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Could not update notification settings.');
+      } finally {
+        setMuteBusy(false);
+      }
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [api, loadMutes, muteBusy]
+  );
+
   useEffect(() => {
     void load();
+    void loadMutes();
     const intervalId = window.setInterval(() => void load(), 60_000);
     return () => window.clearInterval(intervalId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
-    if (open) void load();
+    if (open) {
+      void load();
+      void loadMutes();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
   const markRead = useCallback((id: string) => {
@@ -319,6 +364,7 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
                     item={item}
                     severity={severity}
                     isRead={!!readState[item.id]}
+                    canMute={!!mutes && !!item.category}
                     onAction={(event) => {
                       const href = targetFor(item);
                       markRead(item.id);
@@ -327,17 +373,60 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
                     }}
                     onSnooze={() => markRead(item.id)}
                     onDismiss={() => markRead(item.id)}
+                    onMute={() => void toggleMute(item.category, true)}
                   />
                 ))}
               </div>
             );
           })}
 
+          {/* Notification settings — silence whole categories */}
+          {mutes && showMutes ? (
+            <div className="suite-alert-mutes">
+              <div className="suite-alert-divider">
+                <span className="suite-alert-eyebrow">Silence notification types</span>
+                <span className="suite-alert-divider-line" />
+              </div>
+              <p className="suite-alert-mutes-hint">
+                Muted types are hidden from your alerts everywhere in the suite.
+              </p>
+              {mutes.available.map((cat) => {
+                const isMuted = mutes.muted.includes(cat.category);
+                return (
+                  <div key={cat.category} className="suite-alert-mute-row">
+                    <span className="suite-alert-mute-label">{cat.label}</span>
+                    <button
+                      type="button"
+                      className={`suite-alert-ghost-btn ${isMuted ? 'is-muted' : ''}`}
+                      disabled={muteBusy}
+                      onClick={() => void toggleMute(cat.category, !isMuted)}
+                    >
+                      {isMuted ? 'Unmute' : 'Mute'}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+          ) : null}
+
           <div className="suite-alert-footer">
             <span className="suite-alert-eyebrow suite-alert-eyebrow--muted">
-              {loading ? 'Refreshing…' : `${unreadCount} unread · ${readItems.length} read`}
+              {loading
+                ? 'Refreshing…'
+                : `${unreadCount} unread · ${readItems.length} read${
+                    mutes && mutes.muted.length ? ` · ${mutes.muted.length} muted` : ''
+                  }`}
             </span>
             <div className="suite-alert-footer-actions">
+              {mutes ? (
+                <button
+                  type="button"
+                  className="suite-alert-ghost-link"
+                  onClick={() => setShowMutes((value) => !value)}
+                >
+                  {showMutes ? 'Hide settings' : 'Notification settings'}
+                </button>
+              ) : null}
               {unreadCount > 0 ? (
                 <button type="button" className="suite-alert-ghost-link" onClick={markAllRead}>
                   Mark all done
@@ -360,12 +449,14 @@ type AlertRowProps = {
   item: SuiteNotification;
   severity: AlertSeverity;
   isRead: boolean;
+  canMute: boolean;
   onAction: (event: MouseEvent<HTMLAnchorElement>) => void;
   onSnooze: () => void;
   onDismiss: () => void;
+  onMute: () => void;
 };
 
-function AlertRow({ item, severity, isRead, onAction, onSnooze, onDismiss }: AlertRowProps) {
+function AlertRow({ item, severity, isRead, canMute, onAction, onSnooze, onDismiss, onMute }: AlertRowProps) {
   const chip = chipFor(item.appId);
   const href = targetFor(item);
   return (
@@ -401,6 +492,16 @@ function AlertRow({ item, severity, isRead, onAction, onSnooze, onDismiss }: Ale
           <button type="button" className="suite-alert-ghost-btn" onClick={onDismiss}>
             Dismiss
           </button>
+          {canMute ? (
+            <button
+              type="button"
+              className="suite-alert-ghost-btn"
+              onClick={onMute}
+              title={`Silence all "${item.categoryLabel ?? 'these'}" alerts`}
+            >
+              Mute type
+            </button>
+          ) : null}
         </div>
       </div>
     </div>
