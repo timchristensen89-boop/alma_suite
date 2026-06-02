@@ -550,6 +550,17 @@ export const issueService = {
     return rows.map(toAreaRulePayload);
   },
 
+  // Just the configured area names, for the staff-facing issue form
+  // dropdown. Unlike listAreaRules this is safe for any authenticated
+  // user — it exposes no assignee mapping.
+  async listAreaNames(): Promise<string[]> {
+    const rows = await prisma.issueAreaRule.findMany({
+      orderBy: [{ area: 'asc' }],
+      select: { area: true }
+    });
+    return rows.map((row) => row.area);
+  },
+
   async upsertAreaRule(input: unknown): Promise<IssueAreaRule> {
     const data = issueAreaRuleInputSchema.parse(input);
     const area = data.area.trim();
