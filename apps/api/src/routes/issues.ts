@@ -1,8 +1,35 @@
 import { Router } from 'express';
-import { requireManager } from '../lib/auth-middleware.js';
+import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { issueService } from '../services/issue.service.js';
 
 export const issuesRouter = Router();
+
+// Area → assignee rules (auto-assign source). Listed before "/:id" so the path
+// is not swallowed by the id route.
+issuesRouter.get('/area-rules', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await issueService.listAreaRules());
+  } catch (error) {
+    next(error);
+  }
+});
+
+issuesRouter.post('/area-rules', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await issueService.upsertAreaRule(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+issuesRouter.delete('/area-rules/:id', requireAdmin, async (req, res, next) => {
+  try {
+    await issueService.deleteAreaRule(String(req.params.id));
+    res.status(204).send();
+  } catch (error) {
+    next(error);
+  }
+});
 
 issuesRouter.get('/', async (req, res, next) => {
   try {
@@ -73,7 +100,7 @@ issuesRouter.post('/:id/activity', async (req, res, next) => {
 
 issuesRouter.post('/:id/escalate', requireManager, async (req, res, next) => {
   try {
-    const issue = await issueService.escalate(String(req.params.id), req.user);
+    const issue = await issueService.escalate(String(req.params.id), req.user, req.body);
     res.json(issue);
   } catch (error) {
     next(error);

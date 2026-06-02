@@ -40,7 +40,7 @@ const passwordSchema = z
   .min(8, 'Password must be at least 8 characters')
   .max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer');
 
-export const issueStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED']);
+export const issueStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'PARTIAL', 'MONITORING', 'BLOCKED', 'RESOLVED', 'CLOSED']);
 export const issueSeveritySchema = z.enum(['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']);
 export const checklistRunStatusSchema = z.enum(['OPEN', 'IN_PROGRESS', 'COMPLETED']);
 export const checklistItemResultSchema = z.enum(['PENDING', 'PASS', 'FAIL', 'NA']);
@@ -154,7 +154,8 @@ export const giftCardRedemptionStatusSchema = z.enum(['COMPLETED', 'VOIDED']);
 export const issueEvidenceInputSchema = z.object({
   name: z.string().min(1),
   url: z.string().url(),
-  fileType: z.string().optional().or(z.literal(''))
+  fileType: z.string().optional().or(z.literal('')),
+  note: z.string().max(500).optional().or(z.literal(''))
 });
 
 export const issueCreateInputSchema = z.object({
@@ -162,6 +163,7 @@ export const issueCreateInputSchema = z.object({
   description: z.string().min(3),
   severity: issueSeveritySchema,
   category: z.string().min(1),
+  area: z.string().max(120).optional().or(z.literal('')),
   status: issueStatusSchema.default('OPEN'),
   assignee: z.string().optional().or(z.literal('')),
   dueDate: z.string().optional().or(z.literal('')),
@@ -171,6 +173,21 @@ export const issueCreateInputSchema = z.object({
 });
 
 export const issueUpdateInputSchema = issueCreateInputSchema;
+
+// Escalate an issue to a chosen person (or pass it back to staff to monitor).
+export const issueEscalateInputSchema = z.object({
+  assignee: z.string().max(160).optional().or(z.literal('')),
+  status: z.enum(['MONITORING', 'IN_PROGRESS', 'BLOCKED']).optional(),
+  note: z.string().max(500).optional().or(z.literal(''))
+});
+export type IssueEscalateInput = z.infer<typeof issueEscalateInputSchema>;
+
+// Area → default responsible person (Admin-managed).
+export const issueAreaRuleInputSchema = z.object({
+  area: z.string().min(1).max(120),
+  assignee: z.string().min(1).max(160)
+});
+export type IssueAreaRuleInput = z.infer<typeof issueAreaRuleInputSchema>;
 
 export const issueActivityInputSchema = z.object({
   action: z.string().min(1),
@@ -2708,7 +2725,16 @@ export type IssueEvidence = {
   name: string;
   url: string;
   fileType: string | null;
+  note: string | null;
   createdAt: string;
+};
+
+export type IssueAreaRule = {
+  id: string;
+  area: string;
+  assignee: string;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type IssueActivity = {
@@ -2726,6 +2752,7 @@ export type Issue = {
   description: string;
   severity: IssueSeverity;
   category: string;
+  area: string | null;
   status: IssueStatus;
   assignee: string | null;
   dueDate: string | null;

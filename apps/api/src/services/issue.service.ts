@@ -3,9 +3,12 @@ import { prisma } from '@alma/db';
 import {
   type AuthUser,
   type IssueAssigneeOption,
+  type IssueAreaRule,
   issueActivityInputSchema,
+  issueAreaRuleInputSchema,
   issueCompleteInputSchema,
   issueCreateInputSchema,
+  issueEscalateInputSchema,
   issueUpdateInputSchema
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -13,6 +16,22 @@ import { mailService } from './mail.service.js';
 
 function formatDateOnly(value: Date | null) {
   return value ? value.toISOString().slice(0, 10) : '';
+}
+
+function toAreaRulePayload(row: {
+  id: string;
+  area: string;
+  assignee: string;
+  createdAt: Date;
+  updatedAt: Date;
+}): IssueAreaRule {
+  return {
+    id: row.id,
+    area: row.area,
+    assignee: row.assignee,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
 }
 
 function issueInclude() {
@@ -187,6 +206,16 @@ async function resolveAssignee(value?: string | null) {
   };
 }
 
+// Resolve the assignee, falling back to the area's default responsible person
+// (IssueAreaRule) when no explicit assignee was provided.
+async function resolveAssigneeWithArea(value: string | null | undefined, area: string | null) {
+  const explicit = await resolveAssignee(value);
+  if (explicit.assignee || !area) return explicit;
+  const rule = await prisma.issueAreaRule.findUnique({ where: { area } });
+  if (!rule) return explicit;
+  return resolveAssignee(rule.assignee);
+}
+
 export const issueService = {
   async list(filters: { status?: string; severity?: string; search?: string }) {
     const where: Prisma.IssueWhereInput = {
@@ -247,7 +276,8 @@ export const issueService = {
 
   async create(input: unknown, actor?: AuthUser | null) {
     const data = issueCreateInputSchema.parse(input);
-    const resolvedAssignee = await resolveAssignee(data.assignee);
+    const area = data.area?.trim() || null;
+    const resolvedAssignee = await resolveAssigneeWithArea(data.assignee, area);
 
     return prisma.$transaction(async (tx) => {
       const issue = await tx.issue.create({
@@ -256,6 +286,7 @@ export const issueService = {
           description: data.description,
           severity: data.severity,
           category: data.category,
+          area,
           status: data.status,
           assignee: resolvedAssignee.assignee,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
@@ -266,7 +297,8 @@ export const issueService = {
                 create: data.evidence.map((item) => ({
                   name: item.name,
                   url: item.url,
-                  fileType: item.fileType || null
+                  fileType: item.fileType || null,
+                  note: item.note || null
                 }))
               }
             : undefined,
@@ -301,7 +333,8 @@ export const issueService = {
   async update(id: string, input: unknown, actor?: AuthUser | null) {
     const data = issueUpdateInputSchema.parse(input);
     const existing = await this.getById(id);
-    const resolvedAssignee = await resolveAssignee(data.assignee);
+    const area = data.area?.trim() || null;
+    const resolvedAssignee = await resolveAssigneeWithArea(data.assignee, area);
     const assigneeChanged = (existing.assignee ?? '') !== (resolvedAssignee.assignee ?? '');
 
     const changes: string[] = [];
@@ -328,6 +361,7 @@ export const issueService = {
           description: data.description,
           severity: data.severity,
           category: data.category,
+          area,
           status: data.status,
           assignee: resolvedAssignee.assignee,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
@@ -338,7 +372,8 @@ export const issueService = {
                 create: data.evidence.map((item) => ({
                   name: item.name,
                   url: item.url,
-                  fileType: item.fileType || null
+                  fileType: item.fileType || null,
+                  note: item.note || null
                 }))
               }
             : undefined,
@@ -418,66 +453,116 @@ export const issueService = {
   // Escalate an overdue issue — sends an email to the configured escalation
   // recipient and logs an "escalated" activity with the level. Subsequent
   // calls increment the level (level 1, 2, 3...) so the trail is preserved.
-  async escalate(issueId: string, actor: AuthUser | undefined) {
+  async escalate(issueId: string, actor: AuthUser | undefined, input?: unknown) {
     const issue = await this.getById(issueId);
     if (issue.status === 'RESOLVED' || issue.status === 'CLOSED') {
       throw new HttpError(400, 'Cannot escalate a resolved or closed issue');
     }
+    const data = input ? issueEscalateInputSchema.parse(input) : {};
+    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'manager' : 'system';
 
-    // Count prior escalations to derive the new level
     const priorEscalations = await prisma.issueActivity.count({
       where: { issueId, action: 'escalated' }
     });
     const nextLevel = priorEscalations + 1;
-    const actorName = actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || 'manager' : 'system';
 
-    // Load app settings to find the escalation recipient.
+    // Target = the chosen person (pass-back-to-staff to monitor, etc.), if any.
+    const target = await resolveAssignee(data.assignee);
     const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
-    const recipient = settings?.notifyEmail?.trim();
+    const fallbackEmail = settings?.notifyEmail?.trim() || null;
+    const recipientEmail = target.staff?.email?.trim() || fallbackEmail;
+    const note = data.note?.trim() || null;
 
-    // Send email (best effort — don't block on failure)
-    let emailStatus: 'sent' | 'skipped' | 'failed' = 'skipped';
-    if (recipient && mailService.isConfigured()) {
+    await prisma.$transaction(async (tx) => {
+      // Reassign to the chosen person and/or set the requested status.
+      if (target.assignee || data.status) {
+        await tx.issue.update({
+          where: { id: issueId },
+          data: {
+            ...(target.assignee ? { assignee: target.assignee } : {}),
+            ...(data.status ? { status: data.status } : {})
+          }
+        });
+      }
+
+      // In-app notification to the chosen staff member.
+      if (target.staff) {
+        await createIssueAssigneeNotification(tx, {
+          issueId,
+          title: issue.title,
+          category: issue.category,
+          severity: issue.severity,
+          dueDate: issue.dueDate ? formatDateOnly(issue.dueDate) : null,
+          assignee: target.staff,
+          actor,
+          action: 'reassigned'
+        });
+      }
+
+      const detail = [
+        `Escalated to level ${nextLevel}`,
+        target.assignee ? `→ ${target.assignee}` : null,
+        data.status ? `status set to ${data.status}` : null,
+        note ? `note: ${note}` : null
+      ].filter(Boolean).join(' · ');
+
+      await tx.issueActivity.create({
+        data: { issueId, action: 'escalated', message: detail, actor: actorName }
+      });
+    });
+
+    // Email alert (best effort, outside the transaction).
+    if (recipientEmail && mailService.isConfigured()) {
       try {
         const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
         await mailService.sendAlert({
-          to: recipient,
+          to: recipientEmail,
           subject: `[Escalation L${nextLevel}] ${issue.title}`,
           title: `Issue escalated to level ${nextLevel}: ${issue.title}`,
           body: [
-            `${actorName} escalated this issue${issue.dueDate ? `, originally due ${new Date(issue.dueDate).toLocaleDateString()}` : ''}.`,
+            `${actorName} escalated this issue${target.assignee ? ` to ${target.assignee}` : ''}${issue.dueDate ? `, originally due ${new Date(issue.dueDate).toLocaleDateString()}` : ''}.`,
+            note ? `\nNote: ${note}` : '',
             '',
-            issue.description,
-            issue.assignee ? `Currently assigned to: ${issue.assignee}` : 'No assignee set.',
-            issue.notes ? `Notes: ${issue.notes}` : ''
+            issue.description
           ].filter(Boolean).join('\n'),
           severity: nextLevel >= 2 ? 'critical' : 'warning',
           ctaUrl: `${complianceUrl}/issues/${issue.id}`,
           ctaLabel: 'Open issue'
         });
-        emailStatus = 'sent';
       } catch (err) {
         console.error('[issue.escalate] email failed', err);
-        emailStatus = 'failed';
       }
     }
-
-    await prisma.issueActivity.create({
-      data: {
-        issueId,
-        action: 'escalated',
-        message: `Escalated to level ${nextLevel}${recipient ? ` (notified ${recipient}, ${emailStatus})` : ' (no recipient configured)'}`,
-        actor: actorName
-      }
-    });
 
     return this.getById(issueId);
   },
 
   async meta() {
     return {
-      statuses: ['OPEN', 'IN_PROGRESS', 'BLOCKED', 'RESOLVED', 'CLOSED'],
+      statuses: ['OPEN', 'IN_PROGRESS', 'PARTIAL', 'MONITORING', 'BLOCKED', 'RESOLVED', 'CLOSED'],
       severities: ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL']
     };
+  },
+
+  // Area → assignee rules (auto-assign source), managed in Admin.
+  async listAreaRules(): Promise<IssueAreaRule[]> {
+    const rows = await prisma.issueAreaRule.findMany({ orderBy: [{ area: 'asc' }] });
+    return rows.map(toAreaRulePayload);
+  },
+
+  async upsertAreaRule(input: unknown): Promise<IssueAreaRule> {
+    const data = issueAreaRuleInputSchema.parse(input);
+    const area = data.area.trim();
+    const assignee = data.assignee.trim();
+    const row = await prisma.issueAreaRule.upsert({
+      where: { area },
+      update: { assignee },
+      create: { area, assignee }
+    });
+    return toAreaRulePayload(row);
+  },
+
+  async deleteAreaRule(id: string): Promise<void> {
+    await prisma.issueAreaRule.delete({ where: { id } }).catch(() => undefined);
   }
 };
