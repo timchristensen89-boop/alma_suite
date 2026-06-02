@@ -1361,6 +1361,23 @@ async function configuredVenueNames() {
     .map((name) => name.trim());
 }
 
+// Map a Xero organisation (tenant) name to a configured venue so imported
+// supplier bills land on the right location instead of "Unassigned".
+// Exact match first, then a contains match either way (the Xero org name is
+// often "St Alma Pty Ltd" while the venue is just "St Alma").
+function resolveVenueFromTenantName(tenantName: string | null, venues: string[]): string | null {
+  if (!tenantName) return null;
+  const target = normaliseMatchText(tenantName);
+  if (!target) return null;
+  const exact = venues.find((venue) => normaliseMatchText(venue) === target);
+  if (exact) return exact;
+  const contained = venues.find((venue) => {
+    const v = normaliseMatchText(venue);
+    return v.length > 0 && (target.includes(v) || v.includes(target));
+  });
+  return contained ?? null;
+}
+
 function squarePaymentVenue(input: {
   accountKey: SquareAccountKey;
   location: ReturnType<typeof squareMetadataStatus>['locations'][number] | null;
@@ -2113,10 +2130,26 @@ function xeroMetadata(input: {
   existing?: unknown;
   syncedAt?: Date;
 }): Prisma.InputJsonObject {
+  const existingRecord = metadataRecord(input.existing);
+  // Merge by tenant id so re-authorising one organisation doesn't drop the
+  // other location already on the connection. Newly-returned tenants refresh
+  // the stored name; previously-known tenants are retained.
+  const byId = new Map<string, { id: string; name: string | null }>();
+  const existingTenants = Array.isArray(existingRecord.xeroTenants) ? existingRecord.xeroTenants : [];
+  for (const entry of existingTenants) {
+    const record = metadataRecord(entry);
+    if (typeof record.id === 'string') {
+      byId.set(record.id, { id: record.id, name: typeof record.name === 'string' ? record.name : null });
+    }
+  }
+  for (const tenant of input.tenants) {
+    byId.set(tenant.id, { id: tenant.id, name: tenant.name });
+  }
+  const merged = [...byId.values()];
   return {
-    ...metadataRecord(input.existing),
-    xeroTenants: input.tenants.map((tenant) => ({ id: tenant.id, name: tenant.name })),
-    xeroTenantCount: input.tenants.length,
+    ...existingRecord,
+    xeroTenants: merged,
+    xeroTenantCount: merged.length,
     ...(input.syncedAt ? { xeroTenantsSyncedAt: input.syncedAt.toISOString() } : {})
   };
 }
@@ -4638,6 +4671,9 @@ export const integrationService = {
       throw new HttpError(409, 'No Xero tenants are connected.');
     }
 
+    // Resolve each Xero org to a venue so bills don't all land as Unassigned.
+    const venueNames = await configuredVenueNames();
+
     const perTenant: Array<{
       tenantId: string;
       tenantName: string | null;
@@ -4690,6 +4726,12 @@ export const integrationService = {
             tenantWarnings.push(`${skippedForReview} ${tenant.name ?? tenant.id} bills were left for manual review (duplicate, no supplier match, or no line items).`);
           }
           if (billIds.length > 0) {
+            const tenantVenue = resolveVenueFromTenantName(tenant.name, venueNames);
+            if (!tenantVenue) {
+              tenantWarnings.push(
+                `${tenant.name ?? tenant.id} did not match a configured venue — bills imported as Unassigned. Rename the venue or org to match.`
+              );
+            }
             billsResult = await integrationService.importXeroSupplierBills(
               {
                 billIds,
@@ -4697,6 +4739,7 @@ export const integrationService = {
                 endDate,
                 limit: billsLimit,
                 allowCreateSuppliers: false,
+                venue: tenantVenue ?? undefined,
                 confirmationText: 'IMPORT XERO BILLS'
               },
               integrationSchedulerActor,
