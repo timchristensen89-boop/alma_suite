@@ -560,14 +560,16 @@ export const recipesService = {
     const since = new Date();
     since.setDate(since.getDate() - lookbackDays);
     const purchaseAgg = await prisma.supplierInvoice.aggregate({
-      _sum: { totalCents: true },
+      // Ex-GST subtotal so it compares apples-to-apples with the ex-GST
+      // recipe cost. Falls back to total when a subtotal wasn't parsed.
+      _sum: { subtotalCents: true, totalCents: true },
       where: {
         triageStatus: { not: 'NO_ITEM' },
         invoiceDate: { gte: since },
         ...(venue ? { venue } : {})
       }
     });
-    const actualCogsCents = purchaseAgg._sum.totalCents ?? 0;
+    const actualCogsCents = purchaseAgg._sum.subtotalCents || purchaseAgg._sum.totalCents || 0;
 
     const varianceCents = actualCogsCents - theoreticalCogsCents;
     const variancePercent =

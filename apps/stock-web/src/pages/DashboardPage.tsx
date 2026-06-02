@@ -37,7 +37,7 @@ function formatMoney(cents: number | null | undefined) {
 
 function formatPercent(value: number | null | undefined) {
   if (value == null || Number.isNaN(value)) return '—';
-  return `${value >= 0 ? '' : ''}${value.toFixed(1)}%`;
+  return `${value.toFixed(1)}%`;
 }
 
 export function DashboardPage() {
