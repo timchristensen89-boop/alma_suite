@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import type { AlmaTasksSummary } from '@alma/shared';
 import { api } from './api';
 import { DeviceSignIn, StaffPinPrompt, useAuth } from './auth';
 import {
@@ -11,6 +12,7 @@ import {
   type Venue
 } from './shell';
 import { StocktakePage } from './pages/StocktakePage';
+import { TasksPage } from './pages/TasksPage';
 
 type LiveSnapshot = {
   venue: string | null;
@@ -25,6 +27,38 @@ const VENUE_NAMES: Record<string, string> = {
   'st-alma': 'St Alma',
   'alma-avalon': 'Alma Avalon'
 };
+
+// Polls /api/tasks/summary so the Tasks tile shows a real outstanding
+// count for any signed-in staff. Returns null silently on 401/403 so
+// device-only sessions (no staff PIN yet) don't error — the tile then
+// falls back to the venue's mock count.
+function useTaskSummary(authed: boolean) {
+  const [summary, setSummary] = useState<AlmaTasksSummary | null>(null);
+
+  useEffect(() => {
+    if (!authed) {
+      setSummary(null);
+      return;
+    }
+    let cancelled = false;
+    const tick = async () => {
+      try {
+        const data = await api<AlmaTasksSummary>('/api/tasks/summary');
+        if (!cancelled) setSummary(data);
+      } catch {
+        if (!cancelled) setSummary(null);
+      }
+    };
+    void tick();
+    const id = window.setInterval(tick, 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(id);
+    };
+  }, [authed]);
+
+  return summary;
+}
 
 function useVenueSnapshot(venueId: string | undefined) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
@@ -121,7 +155,7 @@ function venueById(venueId?: string) {
   return venues.find((venue) => venue.id === venueId) ?? null;
 }
 
-function toolsForVenue(venue: Venue): DashboardTool[] {
+function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null): DashboardTool[] {
   return [
     {
       id: 'gift-cards',
@@ -183,12 +217,17 @@ function toolsForVenue(venue: Venue): DashboardTool[] {
     {
       id: 'tasks',
       title: 'Tasks',
-      description: 'Open venue tasks and manager follow-ups.',
+      description: 'Open jobs across every app — count, fix, follow up.',
       route: `/venue/${venue.id}/tasks`,
       permission: 'tasks.update',
-      count: venue.openTasks,
-      tone: venue.openTasks > 5 ? 'warning' : 'neutral',
-      status: 'preview'
+      count: taskSummary?.outstandingTotal ?? venue.openTasks,
+      tone:
+        (taskSummary?.byPriority.CRITICAL ?? 0) > 0
+          ? 'warning'
+          : (taskSummary?.outstandingTotal ?? venue.openTasks) > 5
+            ? 'warning'
+            : 'neutral',
+      status: 'pilot'
     },
     {
       id: 'help',
@@ -248,9 +287,10 @@ function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: P
   const { venueId } = useParams();
   const venue = venueById(venueId);
   const { snapshot } = useVenueSnapshot(venueId);
+  const taskSummary = useTaskSummary(Boolean(auth.staff));
   if (!venue) return <Navigate to="/venue" replace />;
 
-  const tools = toolsForVenue(venue);
+  const tools = toolsForVenue(venue, taskSummary);
   const liveBookings = snapshot?.bookings.today ?? venue.bookingsToday;
   const liveCovers = snapshot?.bookings.coversToday;
   const liveChecklists = snapshot?.checklists.active;
@@ -430,7 +470,7 @@ function VenueToolPage({
   onRequestStaffPin,
   onSwitchStaff
 }: {
-  kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings';
+  kind: 'checklists' | 'gift-cards' | 'bookings';
 } & Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
@@ -513,21 +553,6 @@ const toolPageContent = {
     rows: [
       { title: 'Gift card sale', detail: '$150 mock sale', status: 'Paid', tone: 'positive' as const },
       { title: 'Balance check', detail: 'Card ending 4412', status: 'Viewed', tone: 'neutral' as const }
-    ]
-  },
-  tasks: {
-    title: 'Tasks',
-    description: 'Venue handover jobs, manager notes and daily follow-up items.',
-    actions: [
-      { title: 'Add task', detail: 'Create a visible venue job' },
-      { title: 'Mark complete', detail: 'Close selected task' },
-      { title: 'Escalate', detail: 'Flag for manager review' }
-    ],
-    listTitle: 'Open tasks',
-    rows: [
-      { title: 'Repair loose table leg', detail: 'Dining room, table 12', status: 'Open', tone: 'warning' as const },
-      { title: 'Print new menus', detail: 'Dinner service', status: 'Due today', tone: 'warning' as const },
-      { title: 'Restock receipt rolls', detail: 'POS station', status: 'Done', tone: 'positive' as const }
     ]
   },
   bookings: {
@@ -728,6 +753,13 @@ function StocktakeRoute(props: Omit<PageShellProps, 'requirePin'>) {
   return <StocktakePage venue={venue} {...props} />;
 }
 
+function TasksRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <TasksPage venue={venue} {...props} />;
+}
+
 export function App() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -793,10 +825,7 @@ export function App() {
           path="/venue/:venueId/gift-cards"
           element={<VenueToolPage kind="gift-cards" {...shellProps} />}
         />
-        <Route
-          path="/venue/:venueId/tasks"
-          element={<VenueToolPage kind="tasks" {...shellProps} />}
-        />
+        <Route path="/venue/:venueId/tasks" element={<TasksRoute {...shellProps} />} />
         <Route
           path="/venue/:venueId/bookings"
           element={<VenueToolPage kind="bookings" {...shellProps} />}
