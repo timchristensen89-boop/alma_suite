@@ -558,3 +558,336 @@ a {
   line-height: 1.5;
   color: var(--color-text);
 }
+
+/* ===================== Phase 5.4: Auth ===================== */
+
+/* Device sign-in — full screen takeover when no VENUE_DEVICE session */
+.device-signin {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--color-surface);
+}
+
+.device-signin-card {
+  width: 100%;
+  max-width: 440px;
+  padding: 32px 32px 28px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.device-signin-card h1 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
+}
+
+.device-signin-blurb {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-muted);
+}
+
+.device-signin-form {
+  display: grid;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.device-signin-form label {
+  display: grid;
+  gap: 6px;
+}
+
+.device-signin-form label span {
+  font-size: 12px;
+  font-weight: 850;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.device-signin-form input {
+  height: 52px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: 17px;
+  color: var(--color-text);
+}
+
+.device-signin-form input:focus {
+  outline: none;
+  border-color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.device-signin-form .button {
+  margin-top: 4px;
+  min-height: 52px;
+  font-size: 16px;
+}
+
+.device-signin-error {
+  margin: 0;
+  padding: 10px 14px;
+  background: #fee2e2;
+  color: #991b1b;
+  border-radius: var(--radius-sm);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.device-signin-foot {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-muted);
+  text-align: center;
+}
+
+/* Settings panel sign-out */
+.settings-signout {
+  margin-top: 8px;
+}
+
+/* AuthChip — TopBar element */
+.auth-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+  min-width: 160px;
+}
+
+.auth-chip:hover {
+  border-color: var(--color-accent);
+}
+
+.auth-chip-signed {
+  background: var(--color-accent-soft);
+  border-color: var(--color-accent);
+}
+
+.auth-chip-eyebrow {
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+.auth-chip strong {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.auth-chip-switch {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-accent);
+}
+
+/* Locked tool card — needs staff PIN */
+.tool-card.is-locked {
+  cursor: pointer;
+  font-family: inherit;
+  text-align: left;
+}
+
+.tool-card-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.status-chip-locked {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+/* PIN modal */
+.pin-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.pin-modal {
+  width: 100%;
+  max-width: 540px;
+  background: var(--color-bg);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(15, 23, 42, 0.2);
+  padding: 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.pin-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.pin-modal-head h2 {
+  margin: 6px 0 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.pin-staff-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.pin-staff-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  cursor: pointer;
+  text-align: left;
+  font-family: inherit;
+  min-height: 76px;
+}
+
+.pin-staff-card:hover {
+  border-color: var(--color-accent);
+  background: var(--color-bg);
+}
+
+.pin-staff-card.disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.pin-staff-card strong {
+  font-size: 16px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.pin-staff-card span {
+  font-size: 13px;
+  color: var(--color-muted);
+}
+
+.pin-staff-hint {
+  font-size: 11px !important;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.pin-empty {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding: 20px;
+  text-align: center;
+  color: var(--color-muted);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-sm);
+}
+
+/* PIN entry */
+.pin-entry {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.pin-dots {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.pin-dot {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid var(--color-border);
+  background: var(--color-surface-muted);
+}
+
+.pin-dot.filled {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+}
+
+.pin-keypad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.pin-key {
+  min-height: 64px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface);
+  font-family: inherit;
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text);
+  cursor: pointer;
+}
+
+.pin-key:hover {
+  background: var(--color-bg);
+  border-color: var(--color-accent);
+}
+
+.pin-key-action {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-muted);
+}
+
+.pin-entry-foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.pin-entry-foot .button {
+  flex: 1;
+}
+
+@media (max-width: 520px) {
+  .pin-staff-grid {
+    grid-template-columns: 1fr;
+  }
+}

@@ -1,12 +1,7 @@
-import { useEffect, useState } from 'react';
-import { Link, Navigate, Route, Routes, useParams } from 'react-router-dom';
-
-// Read-only live snapshot endpoint on the compliance API. Public path —
-// no auth required (shared trusted iPad device).
-const COMPLIANCE_API = (
-  (import.meta as unknown as { env: Record<string, string | undefined> }).env?.VITE_COMPLIANCE_API_URL
-  ?? 'https://alma-compliance.web.app'
-).replace(/\/+$/, '');
+import { useCallback, useEffect, useState } from 'react';
+import { Link, Navigate, Route, Routes, useNavigate, useParams } from 'react-router-dom';
+import { api } from './api';
+import { AuthChip, DeviceSignIn, StaffPinPrompt, useAuth } from './auth';
 
 type LiveSnapshot = {
   venue: string | null;
@@ -16,6 +11,15 @@ type LiveSnapshot = {
   temperatures: { outOfRangeSensors: number };
   compliance: { openIssues: number; criticalIssues: number };
 };
+
+type Auth = ReturnType<typeof useAuth>;
+
+type PinIntent = {
+  intent: string;
+  targetRoute?: string;
+} | null;
+
+type RequirePin = (intent: PinIntent) => void;
 
 const VENUE_NAMES: Record<string, string> = {
   'st-alma': 'St Alma',
@@ -32,11 +36,8 @@ function useVenueSnapshot(venueId: string | undefined) {
     const fetchSnapshot = async () => {
       setLoading(true);
       try {
-        const url = `${COMPLIANCE_API}/api/public/venue-snapshot${venueName ? `?venue=${encodeURIComponent(venueName)}` : ''}`;
-        const response = await fetch(url, { credentials: 'omit' });
-        if (response.ok) {
-          setSnapshot(await response.json());
-        }
+        const path = `/api/public/venue-snapshot${venueName ? `?venue=${encodeURIComponent(venueName)}` : ''}`;
+        setSnapshot(await api<LiveSnapshot>(path));
       } catch {
         /* silent — iPad shows last-known values */
       } finally {
@@ -92,19 +93,19 @@ type DashboardTool = {
 
 const ALMA_HOME_URL = '/apps';
 
-const mockRole = {
-  label: 'Shared venue iPad',
-  permissions: {
-    'checklists.run': true,
-    'giftCards.sell': true,
-    'tasks.update': true,
-    'bookings.view': true,
-    'stocktake.run': true,
-    'handover.post': true,
-    'roster.view': true,
-    'help.view': true,
-    'settings.view': false
-  } satisfies Record<PermissionKey, boolean>
+// Which permissions need an authenticated staff PIN (vs. just a signed-in
+// device account). Read-only tiles work for any staff at the venue; actions
+// need the individual staff identity for audit + ownership.
+const PERMISSION_REQUIRES_STAFF: Record<PermissionKey, boolean> = {
+  'checklists.run': true,
+  'giftCards.sell': true,
+  'tasks.update': true,
+  'handover.post': true,
+  'stocktake.run': true,
+  'bookings.view': false,
+  'roster.view': false,
+  'help.view': false,
+  'settings.view': true
 };
 
 const venues: Venue[] = [
@@ -217,11 +218,37 @@ function toolsForVenue(venue: Venue): DashboardTool[] {
   ];
 }
 
-function canUse(permission: PermissionKey) {
-  return mockRole.permissions[permission];
+// A tile is "usable now" if the device is signed in AND, if the permission
+// needs staff, a staff PIN is active. Settings is always device-only and
+// surfaces via Admin, not the iPad — so it's blocked here.
+function canUseNow(permission: PermissionKey, auth: Auth) {
+  if (!auth.device) return false;
+  if (permission === 'settings.view') return false;
+  if (PERMISSION_REQUIRES_STAFF[permission] && !auth.staff) return false;
+  return true;
 }
 
-function AppShell({ venue, children }: { venue?: Venue | null; children: React.ReactNode }) {
+// A tile is "lockable" — visible but needs staff PIN — when device is in
+// but staff isn't yet. Clicking opens the PIN modal.
+function isStaffLocked(permission: PermissionKey, auth: Auth) {
+  return Boolean(auth.device) && PERMISSION_REQUIRES_STAFF[permission] && !auth.staff;
+}
+
+function AppShell({
+  venue,
+  auth,
+  onRequestStaffPin,
+  onSwitchStaff,
+  children
+}: {
+  venue?: Venue | null;
+  auth: Auth;
+  onRequestStaffPin: () => void;
+  onSwitchStaff: () => void;
+  children: React.ReactNode;
+}) {
+  const deviceName = auth.device?.deviceAccount?.name ?? auth.device?.firstName ?? 'Venue iPad';
+  const deviceVenue = auth.device?.deviceAccount?.venue ?? auth.venueLabel ?? auth.device?.venue ?? null;
   return (
     <div className="app-shell">
       <aside className="sidebar">
@@ -229,7 +256,7 @@ function AppShell({ venue, children }: { venue?: Venue | null; children: React.R
           <span className="brand-mark">A</span>
           <span>
             <strong>Alma Venue</strong>
-            <small>iPad dashboard</small>
+            <small>iPad ops</small>
           </span>
         </Link>
 
@@ -252,10 +279,28 @@ function AppShell({ venue, children }: { venue?: Venue | null; children: React.R
         </nav>
 
         <details className="settings-panel">
-          <summary>Settings</summary>
+          <summary>Device</summary>
           <div className="settings-body">
-            <p>Role: {mockRole.label}</p>
-            <p>Permissions are placeholders for the future Alma auth merge.</p>
+            <p>
+              <strong>{deviceName}</strong>
+              {deviceVenue ? <small> · {deviceVenue}</small> : null}
+            </p>
+            <p>
+              {auth.staff ? (
+                <>
+                  Signed in as <strong>{auth.staff.name}</strong>
+                </>
+              ) : (
+                <>No staff signed in</>
+              )}
+            </p>
+            <button
+              type="button"
+              className="button secondary settings-signout"
+              onClick={() => void auth.signOutDevice()}
+            >
+              Sign out device
+            </button>
           </div>
         </details>
       </aside>
@@ -267,8 +312,17 @@ function AppShell({ venue, children }: { venue?: Venue | null; children: React.R
             <h1>{venue ? venue.name : 'Select venue'}</h1>
           </div>
           <div className="topbar-actions">
-            <Link className="button secondary" to={ALMA_HOME_URL}>Alma Home</Link>
-            <Link className="button" to={venue ? `/venue/${venue.id}` : '/venue'}>Venue Home</Link>
+            <AuthChip
+              staff={auth.staff}
+              onSignIn={onRequestStaffPin}
+              onSwitch={onSwitchStaff}
+            />
+            <Link className="button secondary" to={ALMA_HOME_URL}>
+              Alma Home
+            </Link>
+            <Link className="button" to={venue ? `/venue/${venue.id}` : '/venue'}>
+              Venue Home
+            </Link>
           </div>
         </header>
         {children}
@@ -277,9 +331,16 @@ function AppShell({ venue, children }: { venue?: Venue | null; children: React.R
   );
 }
 
-function VenueSelectPage() {
+type PageShellProps = {
+  auth: Auth;
+  onRequestStaffPin: () => void;
+  onSwitchStaff: () => void;
+  requirePin: RequirePin;
+};
+
+function VenueSelectPage({ auth, onRequestStaffPin, onSwitchStaff }: PageShellProps) {
   return (
-    <AppShell>
+    <AppShell auth={auth} onRequestStaffPin={onRequestStaffPin} onSwitchStaff={onSwitchStaff}>
       <section className="page-stack">
         <div className="hero-panel">
           <p className="eyebrow">Shared operations</p>
@@ -303,7 +364,7 @@ function VenueSelectPage() {
   );
 }
 
-function VenueHomePage() {
+function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: PageShellProps) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   const { snapshot } = useVenueSnapshot(venueId);
@@ -319,7 +380,12 @@ function VenueHomePage() {
   const lastUpdated = snapshot ? new Date(snapshot.generatedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' }) : null;
 
   return (
-    <AppShell venue={venue}>
+    <AppShell
+      venue={venue}
+      auth={auth}
+      onRequestStaffPin={onRequestStaffPin}
+      onSwitchStaff={onSwitchStaff}
+    >
       <section className="page-stack">
         {/* Live operational snapshot — refreshed every 60 seconds */}
         <div className="ipad-live-panels">
@@ -366,7 +432,7 @@ function VenueHomePage() {
 
           <div className="tool-grid">
             {tools.map((tool) => (
-              <ToolCard key={tool.id} tool={tool} />
+              <ToolCard key={tool.id} tool={tool} auth={auth} requirePin={requirePin} />
             ))}
           </div>
         </section>
@@ -375,34 +441,69 @@ function VenueHomePage() {
   );
 }
 
-function ToolCard({ tool }: { tool: DashboardTool }) {
-  const disabled = !canUse(tool.permission);
+function ToolCard({
+  tool,
+  auth,
+  requirePin
+}: {
+  tool: DashboardTool;
+  auth: Auth;
+  requirePin: RequirePin;
+}) {
+  const usable = canUseNow(tool.permission, auth);
+  const locked = isStaffLocked(tool.permission, auth);
+  const tone = tool.tone ?? 'neutral';
+  const statusClass = tool.status === 'preview' ? ' is-preview' : tool.status === 'pilot' ? ' is-pilot' : '';
 
-  if (disabled) {
+  // Permanently disabled (e.g. settings.view, or device not signed in — though
+  // the latter is handled at App level by DeviceSignIn).
+  if (!usable && !locked) {
     return (
       <article className="tool-card disabled">
         <strong>{tool.title}</strong>
         <p>{tool.description}</p>
-        <span className="permission-chip">Permission pending</span>
+        <span className="permission-chip">Not available on iPad</span>
       </article>
     );
   }
 
-  const tone = tool.tone ?? 'neutral';
-  const statusClass = tool.status === 'preview' ? ' is-preview' : tool.status === 'pilot' ? ' is-pilot' : '';
-
-  return (
-    <Link to={tool.route} className={`tool-card ${tone}${statusClass}`}>
-      <span className="tool-card-body">
-        <strong>{tool.title}</strong>
-        <p>{tool.description}</p>
+  const body = (
+    <span className="tool-card-body">
+      <strong>{tool.title}</strong>
+      <p>{tool.description}</p>
+      <span className="tool-card-chips">
         {tool.status && tool.status !== 'live' ? (
           <span className={`status-chip status-chip-${tool.status}`}>
             {tool.status === 'preview' ? 'Preview' : 'Pilot'}
           </span>
         ) : null}
+        {locked ? <span className="status-chip status-chip-locked">PIN required</span> : null}
       </span>
-      {tool.count !== undefined ? <span className="tool-count">{tool.count}</span> : null}
+    </span>
+  );
+
+  const count = tool.count !== undefined ? <span className="tool-count">{tool.count}</span> : null;
+
+  // Locked: no staff PIN. Render as a button that opens the PIN modal; on
+  // success the App-level handler navigates to the tile's route.
+  if (locked) {
+    return (
+      <button
+        type="button"
+        className={`tool-card ${tone} is-locked${statusClass}`}
+        onClick={() => requirePin({ intent: `Open ${tool.title}`, targetRoute: tool.route })}
+      >
+        {body}
+        {count}
+      </button>
+    );
+  }
+
+  // Usable: device + (if needed) staff are signed in. Link navigates.
+  return (
+    <Link to={tool.route} className={`tool-card ${tone}${statusClass}`}>
+      {body}
+      {count}
     </Link>
   );
 }
@@ -443,7 +544,14 @@ function FallbackSteps({ title, steps }: { title: string; steps: string[] }) {
   );
 }
 
-function VenueToolPage({ kind }: { kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings' | 'stocktake' }) {
+function VenueToolPage({
+  kind,
+  auth,
+  onRequestStaffPin,
+  onSwitchStaff
+}: {
+  kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings' | 'stocktake';
+} & Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
@@ -451,7 +559,7 @@ function VenueToolPage({ kind }: { kind: 'checklists' | 'gift-cards' | 'tasks' |
   const page = toolPageContent[kind];
 
   return (
-    <AppShell venue={venue}>
+    <AppShell venue={venue} auth={auth} onRequestStaffPin={onRequestStaffPin} onSwitchStaff={onSwitchStaff}>
       <section className="page-stack">
         <div className="section-block">
           <div className="section-header">
@@ -580,13 +688,13 @@ const toolPageContent = {
   rows: Array<{ title: string; detail: string; status: string; tone: 'neutral' | 'warning' | 'positive' }>;
 }>;
 
-function HandoverPage() {
+function HandoverPage({ auth, onRequestStaffPin, onSwitchStaff }: Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
 
   return (
-    <AppShell venue={venue}>
+    <AppShell venue={venue} auth={auth} onRequestStaffPin={onRequestStaffPin} onSwitchStaff={onSwitchStaff}>
       <section className="page-stack">
         <div className="section-block">
           <div className="section-header">
@@ -617,13 +725,13 @@ function HandoverPage() {
   );
 }
 
-function RosterPage() {
+function RosterPage({ auth, onRequestStaffPin, onSwitchStaff }: Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
 
   return (
-    <AppShell venue={venue}>
+    <AppShell venue={venue} auth={auth} onRequestStaffPin={onRequestStaffPin} onSwitchStaff={onSwitchStaff}>
       <section className="page-stack">
         <div className="section-block">
           <div className="section-header">
@@ -708,13 +816,13 @@ const APP_FALLBACKS: Array<{ app: string; steps: string[] }> = [
   }
 ];
 
-function HelpFallbackPage() {
+function HelpFallbackPage({ auth, onRequestStaffPin, onSwitchStaff }: Omit<PageShellProps, 'requirePin'>) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
 
   return (
-    <AppShell venue={venue}>
+    <AppShell venue={venue} auth={auth} onRequestStaffPin={onRequestStaffPin} onSwitchStaff={onSwitchStaff}>
       <section className="page-stack">
         <div className="section-block">
           <div className="section-header">
@@ -749,21 +857,96 @@ function HelpFallbackPage() {
 }
 
 export function App() {
+  const auth = useAuth();
+  const navigate = useNavigate();
+  const [pinIntent, setPinIntent] = useState<PinIntent>(null);
+
+  const requirePin: RequirePin = useCallback((intent) => {
+    setPinIntent(intent);
+  }, []);
+
+  const onRequestStaffPin = useCallback(() => {
+    setPinIntent({ intent: 'Staff sign-in' });
+  }, []);
+
+  const onSwitchStaff = useCallback(() => {
+    void auth.signOutStaff();
+    setPinIntent({ intent: 'Switch staff' });
+  }, [auth]);
+
+  const handlePinSubmit = useCallback(
+    async (staffProfileId: string, pin: string) => {
+      const targetRoute = pinIntent?.targetRoute;
+      await auth.signInStaffWithPin(staffProfileId, pin);
+      if (targetRoute) {
+        navigate(targetRoute);
+      }
+    },
+    [auth, navigate, pinIntent]
+  );
+
+  if (auth.loading) {
+    return (
+      <div className="device-signin">
+        <div className="device-signin-card">
+          <p className="eyebrow">Alma Venue iPad</p>
+          <h1>Loading…</h1>
+        </div>
+      </div>
+    );
+  }
+
+  if (!auth.device) {
+    return <DeviceSignIn onSignIn={auth.signInDevice} />;
+  }
+
+  const shellProps: PageShellProps = {
+    auth,
+    onRequestStaffPin,
+    onSwitchStaff,
+    requirePin
+  };
+
   return (
-    <Routes>
-      <Route path="/" element={<Navigate to="/venue" replace />} />
-      <Route path="/venue" element={<VenueSelectPage />} />
-      <Route path="/venue/:venueId" element={<VenueHomePage />} />
-      <Route path="/venue/:venueId/checklists" element={<VenueToolPage kind="checklists" />} />
-      <Route path="/venue/:venueId/gift-cards" element={<VenueToolPage kind="gift-cards" />} />
-      <Route path="/venue/:venueId/tasks" element={<VenueToolPage kind="tasks" />} />
-      <Route path="/venue/:venueId/bookings" element={<VenueToolPage kind="bookings" />} />
-      <Route path="/venue/:venueId/stocktake" element={<VenueToolPage kind="stocktake" />} />
-      <Route path="/venue/:venueId/stock" element={<Navigate to="stocktake" replace />} />
-      <Route path="/venue/:venueId/handover" element={<HandoverPage />} />
-      <Route path="/venue/:venueId/roster" element={<RosterPage />} />
-      <Route path="/venue/:venueId/help" element={<HelpFallbackPage />} />
-      <Route path="*" element={<Navigate to="/venue" replace />} />
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<Navigate to="/venue" replace />} />
+        <Route path="/venue" element={<VenueSelectPage {...shellProps} />} />
+        <Route path="/venue/:venueId" element={<VenueHomePage {...shellProps} />} />
+        <Route
+          path="/venue/:venueId/checklists"
+          element={<VenueToolPage kind="checklists" {...shellProps} />}
+        />
+        <Route
+          path="/venue/:venueId/gift-cards"
+          element={<VenueToolPage kind="gift-cards" {...shellProps} />}
+        />
+        <Route
+          path="/venue/:venueId/tasks"
+          element={<VenueToolPage kind="tasks" {...shellProps} />}
+        />
+        <Route
+          path="/venue/:venueId/bookings"
+          element={<VenueToolPage kind="bookings" {...shellProps} />}
+        />
+        <Route
+          path="/venue/:venueId/stocktake"
+          element={<VenueToolPage kind="stocktake" {...shellProps} />}
+        />
+        <Route path="/venue/:venueId/stock" element={<Navigate to="stocktake" replace />} />
+        <Route path="/venue/:venueId/handover" element={<HandoverPage {...shellProps} />} />
+        <Route path="/venue/:venueId/roster" element={<RosterPage {...shellProps} />} />
+        <Route path="/venue/:venueId/help" element={<HelpFallbackPage {...shellProps} />} />
+        <Route path="*" element={<Navigate to="/venue" replace />} />
+      </Routes>
+      {pinIntent ? (
+        <StaffPinPrompt
+          staffList={auth.staffList}
+          intent={pinIntent.intent}
+          onClose={() => setPinIntent(null)}
+          onSubmit={handlePinSubmit}
+        />
+      ) : null}
+    </>
   );
 }
