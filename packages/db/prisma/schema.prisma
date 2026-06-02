@@ -17,6 +17,8 @@ enum IssueSeverity {
 enum IssueStatus {
   OPEN
   IN_PROGRESS
+  PARTIAL
+  MONITORING
   BLOCKED
   RESOLVED
   CLOSED
@@ -428,6 +430,7 @@ model Issue {
   description     String
   severity        IssueSeverity
   category        String
+  area            String?
   status          IssueStatus      @default(OPEN)
   assignee        String?
   dueDate         DateTime?
@@ -449,8 +452,20 @@ model IssueEvidence {
   name      String
   url       String
   fileType  String?
+  note      String?
   createdAt DateTime @default(now())
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
+}
+
+// Area → default responsible person. When an issue is created/assigned to an
+// area, it is auto-assigned to this person (Issue.assignee is free text, so we
+// store the display name to match). Managed in Admin → Compliance settings.
+model IssueAreaRule {
+  id        String   @id @default(cuid())
+  area      String   @unique
+  assignee  String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 }
 
 model IssueActivity {
