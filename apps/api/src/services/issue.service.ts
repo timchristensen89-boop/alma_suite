@@ -314,7 +314,12 @@ export const issueService = {
     if ((existing.resolutionNotes ?? '') !== (data.resolutionNotes ?? '')) changes.push('resolution notes updated');
 
     return prisma.$transaction(async (tx) => {
-      await tx.issueEvidence.deleteMany({ where: { issueId: id } });
+      // Only replace evidence when the field is explicitly present in the payload.
+      // A partial update that omits `evidence` must leave existing rows intact —
+      // previously this deleteMany ran unconditionally and silently wiped evidence.
+      if (data.evidence !== undefined) {
+        await tx.issueEvidence.deleteMany({ where: { issueId: id } });
+      }
 
       const issue = await tx.issue.update({
         where: { id },
