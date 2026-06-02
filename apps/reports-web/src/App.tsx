@@ -1,5 +1,6 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
+import { SortableTable } from './components/SortableTable';
 import type {
   AuthUser,
   RecipesSummary,
@@ -2293,28 +2294,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <h4>Actual/imported sales rows</h4>
             {data.actualSales?.entries.length ? (
               <div className="table-scroll">
-                <table className="report-table">
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Venue</th>
-                      <th>Sales</th>
-                      <th>Source</th>
-                      <th>Notes</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.actualSales.entries.map((entry) => (
-                      <tr key={entry.id}>
-                        <td>{new Date(entry.serviceDate).toLocaleDateString()}</td>
-                        <td>{entry.venue}</td>
-                        <td>{formatCurrency(entry.salesCents)}</td>
-                        <td>{entry.source}</td>
-                        <td>{entry.notes || entry.externalId || 'Imported actual'}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <SortableTable
+                  rows={data.actualSales.entries}
+                  rowKey={(entry) => entry.id}
+                  defaultSortKey="date"
+                  columns={[
+                    { key: 'date', label: 'Date', sortValue: (e) => e.serviceDate, render: (e) => new Date(e.serviceDate).toLocaleDateString() },
+                    { key: 'venue', label: 'Venue', sortValue: (e) => e.venue, render: (e) => e.venue },
+                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (e) => e.salesCents, render: (e) => formatCurrency(e.salesCents) },
+                    { key: 'source', label: 'Source', sortValue: (e) => e.source, render: (e) => e.source },
+                    { key: 'notes', label: 'Notes', sortValue: (e) => e.notes || e.externalId || 'Imported actual', render: (e) => e.notes || e.externalId || 'Imported actual' }
+                  ]}
+                />
               </div>
             ) : (
               <p className="subtle">No actual sales rows are available for the selected week. Import sales actuals before using actual pace projections.</p>
@@ -2417,50 +2408,35 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel">
               <h4>Wage costing — {weekWindowLabel}</h4>
               <div className="table-scroll">
-                <table className="report-table">
-                  <thead>
-                    <tr>
-                      <th>Staff</th>
-                      <th>Venue</th>
-                      <th>Role</th>
-                      <th>Total hrs</th>
-                      <th>Appr. hrs</th>
-                      <th>Rate</th>
-                      <th>Projected wages</th>
-                      <th>Approved wages</th>
-                      <th>Tips</th>
-                      <th>Payroll total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {wageRows.map((row) => (
-                      <tr key={row.staffProfileId}>
-                        <td><strong>{row.name}</strong></td>
-                        <td>{row.venue}</td>
-                        <td>{row.roleTitle}</td>
-                        <td>{row.hours.toFixed(2)}</td>
-                        <td>{row.approvedHours.toFixed(2)}</td>
-                        <td>{row.rateCents ? formatCurrency(row.rateCents) : <span className="subtle">—</span>}</td>
-                        <td>{formatCurrency(row.projectedCostCents)}</td>
-                        <td>{formatCurrency(row.approvedCostCents)}</td>
-                        <td>{row.tipsCents ? formatCurrency(row.tipsCents) : <span className="subtle">—</span>}</td>
-                        <td><strong>{formatCurrency(row.approvedCostCents + row.tipsCents)}</strong></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
+                <SortableTable
+                  rows={wageRows}
+                  rowKey={(row) => row.staffProfileId}
+                  defaultSortKey="payroll"
+                  columns={[
+                    { key: 'staff', label: 'Staff', sortValue: (r) => r.name, render: (r) => <strong>{r.name}</strong> },
+                    { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
+                    { key: 'role', label: 'Role', sortValue: (r) => r.roleTitle, render: (r) => r.roleTitle },
+                    { key: 'hours', label: 'Total hrs', align: 'right', sortValue: (r) => r.hours, render: (r) => r.hours.toFixed(2) },
+                    { key: 'apprHours', label: 'Appr. hrs', align: 'right', sortValue: (r) => r.approvedHours, render: (r) => r.approvedHours.toFixed(2) },
+                    { key: 'rate', label: 'Rate', align: 'right', sortValue: (r) => r.rateCents, render: (r) => (r.rateCents ? formatCurrency(r.rateCents) : <span className="subtle">—</span>) },
+                    { key: 'projected', label: 'Projected wages', align: 'right', sortValue: (r) => r.projectedCostCents, render: (r) => formatCurrency(r.projectedCostCents) },
+                    { key: 'approved', label: 'Approved wages', align: 'right', sortValue: (r) => r.approvedCostCents, render: (r) => formatCurrency(r.approvedCostCents) },
+                    { key: 'tips', label: 'Tips', align: 'right', sortValue: (r) => r.tipsCents, render: (r) => (r.tipsCents ? formatCurrency(r.tipsCents) : <span className="subtle">—</span>) },
+                    { key: 'payroll', label: 'Payroll total', align: 'right', sortValue: (r) => r.approvedCostCents + r.tipsCents, render: (r) => <strong>{formatCurrency(r.approvedCostCents + r.tipsCents)}</strong> }
+                  ]}
+                  footer={
                     <tr>
                       <td colSpan={3}><strong>Total</strong></td>
-                      <td><strong>{wageTotals.hours.toFixed(2)}</strong></td>
-                      <td><strong>{wageTotals.approvedHours.toFixed(2)}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{wageTotals.hours.toFixed(2)}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{wageTotals.approvedHours.toFixed(2)}</strong></td>
                       <td></td>
-                      <td><strong>{formatCurrency(wageTotals.projectedCostCents)}</strong></td>
-                      <td><strong>{formatCurrency(wageTotals.approvedCostCents)}</strong></td>
-                      <td><strong>{formatCurrency(wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
-                      <td><strong>{formatCurrency(wageTotals.approvedCostCents + wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{formatCurrency(wageTotals.projectedCostCents)}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{formatCurrency(wageTotals.approvedCostCents)}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{formatCurrency(wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
+                      <td style={{ textAlign: 'right' }}><strong>{formatCurrency(wageTotals.approvedCostCents + wageRows.reduce((s, r) => s + r.tipsCents, 0))}</strong></td>
                     </tr>
-                  </tfoot>
-                </table>
+                  }
+                />
               </div>
             </div>
           ) : null}
@@ -2469,32 +2445,21 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <h4>Recent staff management events</h4>
             <Metric label="Approved or exported timesheets" value={exportedTimesheets.length} tone="positive" />
             <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>When</th>
-                    <th>Staff</th>
-                    <th>Event</th>
-                    <th>Summary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.overview?.staff.recentManagementEvents.length ? (
-                    data.overview.staff.recentManagementEvents.map((event) => (
-                      <tr key={event.id}>
-                        <td>{formatDateTime(event.createdAt)}</td>
-                        <td>{event.staffProfile ? `${event.staffProfile.firstName} ${event.staffProfile.lastName}` : 'Staff profile'}</td>
-                        <td>{event.eventType}</td>
-                        <td>{event.summary}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={4}>No recent staff management events in this range.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {data.overview?.staff.recentManagementEvents.length ? (
+                <SortableTable
+                  rows={data.overview.staff.recentManagementEvents}
+                  rowKey={(event) => event.id}
+                  defaultSortKey="when"
+                  columns={[
+                    { key: 'when', label: 'When', sortValue: (e) => e.createdAt, render: (e) => formatDateTime(e.createdAt) },
+                    { key: 'staff', label: 'Staff', sortValue: (e) => (e.staffProfile ? `${e.staffProfile.firstName} ${e.staffProfile.lastName}` : 'Staff profile'), render: (e) => (e.staffProfile ? `${e.staffProfile.firstName} ${e.staffProfile.lastName}` : 'Staff profile') },
+                    { key: 'event', label: 'Event', sortValue: (e) => e.eventType, render: (e) => e.eventType },
+                    { key: 'summary', label: 'Summary', sortValue: (e) => e.summary, render: (e) => e.summary }
+                  ]}
+                />
+              ) : (
+                <p className="subtle">No recent staff management events in this range.</p>
+              )}
             </div>
           </div>
 
@@ -2583,42 +2548,26 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="report-panel">
             <h4>Prime cost by venue</h4>
             <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>Venue</th>
-                    <th>Sales</th>
-                    <th>Wages</th>
-                    <th>Wage %</th>
-                    <th>COGS</th>
-                    <th>COGS %</th>
-                    <th>Prime cost</th>
-                    <th>Prime %</th>
-                    <th>Quality</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
-                    (data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').map((row) => (
-                      <tr key={row.venue}>
-                        <td>{row.venue}</td>
-                        <td>{formatCurrency(row.salesCents)}</td>
-                        <td>{formatCurrency(row.wageCents)}</td>
-                        <td>{formatPercent(row.wagePercent)}</td>
-                        <td>{formatCurrency(row.cogsCents)}</td>
-                        <td>{formatPercent(row.cogsPercent)}</td>
-                        <td>{formatCurrency(row.primeCostCents)}</td>
-                        <td>{formatPercent(row.primeCostPercent)}</td>
-                        <td>{qualityLabel(row.sourceQuality)}</td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={9}>No wage, sales, or COGS data found for this week.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
+                <SortableTable
+                  rows={(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both')}
+                  rowKey={(row) => row.venue}
+                  defaultSortKey="prime"
+                  columns={[
+                    { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
+                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
+                    { key: 'wages', label: 'Wages', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
+                    { key: 'wagePct', label: 'Wage %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
+                    { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
+                    { key: 'cogsPct', label: 'COGS %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
+                    { key: 'prime', label: 'Prime cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
+                    { key: 'primePct', label: 'Prime %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
+                    { key: 'quality', label: 'Quality', sortValue: (r) => r.sourceQuality, render: (r) => qualityLabel(r.sourceQuality) }
+                  ]}
+                />
+              ) : (
+                <p className="subtle">No wage, sales, or COGS data found for this week.</p>
+              )}
             </div>
           </div>
 
@@ -2626,32 +2575,21 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel">
               <h4>Stocktake variance attention</h4>
               <div className="table-scroll">
-                <table className="report-table">
-                  <thead>
-                    <tr>
-                      <th>Stocktake</th>
-                      <th>Item</th>
-                      <th>Venue</th>
-                      <th>Variance</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {data.overview?.stock.highestVarianceLines.length ? (
-                      data.overview.stock.highestVarianceLines.map((line, index) => (
-                        <tr key={`${line.stocktakeId}:${line.itemName}:${index}`}>
-                          <td>{line.stocktakeName}</td>
-                          <td>{line.itemName}</td>
-                          <td>{line.venue ?? 'Unassigned'}</td>
-                          <td>{line.variance > 0 ? '+' : ''}{line.variance.toFixed(2)} {line.unit ?? ''}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={4}>No submitted stocktake variances in this range.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+                {data.overview?.stock.highestVarianceLines.length ? (
+                  <SortableTable
+                    rows={data.overview.stock.highestVarianceLines}
+                    rowKey={(line, index) => `${line.stocktakeId}:${line.itemName}:${index}`}
+                    defaultSortKey="variance"
+                    columns={[
+                      { key: 'stocktake', label: 'Stocktake', sortValue: (l) => l.stocktakeName, render: (l) => l.stocktakeName },
+                      { key: 'item', label: 'Item', sortValue: (l) => l.itemName, render: (l) => l.itemName },
+                      { key: 'venue', label: 'Venue', sortValue: (l) => l.venue ?? 'Unassigned', render: (l) => l.venue ?? 'Unassigned' },
+                      { key: 'variance', label: 'Variance', align: 'right', sortValue: (l) => l.variance, render: (l) => `${l.variance > 0 ? '+' : ''}${l.variance.toFixed(2)} ${l.unit ?? ''}` }
+                    ]}
+                  />
+                ) : (
+                  <p className="subtle">No submitted stocktake variances in this range.</p>
+                )}
               </div>
             </div>
           </div>
@@ -2659,31 +2597,21 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="report-panel">
             <h4>Stock value by category</h4>
             <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>Category</th>
-                    <th>{stockCategoryCountLabel}</th>
-                    <th>{stockLowStockLabel}</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {categoryValueRows.map((row) => (
-                    <tr key={row.category}>
-                      <td>{row.category}</td>
-                      <td>{row.itemCount}</td>
-                      <td>{row.lowStock}</td>
-                      <td>{formatCurrency(row.valueCents)}</td>
-                    </tr>
-                  ))}
-                  {!categoryValueRows.length ? (
-                    <tr>
-                      <td colSpan={4}>No stock values are available yet.</td>
-                    </tr>
-                  ) : null}
-                </tbody>
-              </table>
+              {categoryValueRows.length ? (
+                <SortableTable
+                  rows={categoryValueRows}
+                  rowKey={(row) => row.category}
+                  defaultSortKey="value"
+                  columns={[
+                    { key: 'category', label: 'Category', sortValue: (r) => r.category, render: (r) => r.category },
+                    { key: 'count', label: stockCategoryCountLabel, align: 'right', sortValue: (r) => r.itemCount, render: (r) => r.itemCount },
+                    { key: 'low', label: stockLowStockLabel, align: 'right', sortValue: (r) => r.lowStock, render: (r) => r.lowStock },
+                    { key: 'value', label: 'Value', align: 'right', sortValue: (r) => r.valueCents, render: (r) => formatCurrency(r.valueCents) }
+                  ]}
+                />
+              ) : (
+                <p className="subtle">No stock values are available yet.</p>
+              )}
             </div>
           </div>
         </div>
@@ -2847,47 +2775,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               />
             </div>
             <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>Square item</th>
-                    <th>Recipe</th>
-                    <th>Venue</th>
-                    <th>Qty sold</th>
-                    <th>Sales</th>
-                    <th>Recipe cost</th>
-                    <th>COGS</th>
-                    <th>Gross profit</th>
-                    <th>Food cost %</th>
-                    <th>Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {menuRows.length ? (
-                    menuRows.map((row) => (
-                      <tr key={row.key}>
-                        <td>
-                          <strong>{row.squareItem}</strong>
-                          <span className="subtle">{[row.variationName, row.categoryName, row.accountKey].filter(Boolean).join(' · ')}</span>
-                        </td>
-                        <td>{row.almaRecipeTitle ?? 'Not mapped'}</td>
-                        <td>{row.venue}</td>
-                        <td>{row.quantitySold.toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
-                        <td>{formatCurrency(row.netSalesCents)}</td>
-                        <td>{row.recipeCostCents === null ? '—' : formatCurrency(row.recipeCostCents)}</td>
-                        <td>{row.estimatedCogsCents === null ? '—' : formatCurrency(row.estimatedCogsCents)}</td>
-                        <td>{row.grossProfitCents === null ? '—' : formatCurrency(row.grossProfitCents)}</td>
-                        <td>{formatPercent(row.foodCostPercent)}</td>
-                        <td><Badge tone={menuMappingTone(row.mappingStatus)}>{menuMappingLabel(row.mappingStatus)}</Badge></td>
-                      </tr>
-                    ))
-                  ) : (
-                    <tr>
-                      <td colSpan={10}>No Square item-level sales found for this filter. Import Square item sales or widen the date/account filters.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+              {menuRows.length ? (
+                <SortableTable
+                  rows={menuRows}
+                  rowKey={(row) => row.key}
+                  defaultSortKey="qty"
+                  columns={[
+                    { key: 'item', label: 'Square item', sortValue: (r) => r.squareItem, render: (r) => (
+                      <>
+                        <strong>{r.squareItem}</strong>
+                        <span className="subtle">{[r.variationName, r.categoryName, r.accountKey].filter(Boolean).join(' · ')}</span>
+                      </>
+                    ) },
+                    { key: 'recipe', label: 'Recipe', sortValue: (r) => r.almaRecipeTitle ?? 'Not mapped', render: (r) => r.almaRecipeTitle ?? 'Not mapped' },
+                    { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
+                    { key: 'qty', label: 'Qty sold', align: 'right', sortValue: (r) => r.quantitySold, render: (r) => r.quantitySold.toLocaleString(undefined, { maximumFractionDigits: 2 }) },
+                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.netSalesCents, render: (r) => formatCurrency(r.netSalesCents) },
+                    { key: 'recipeCost', label: 'Recipe cost', align: 'right', sortValue: (r) => r.recipeCostCents, render: (r) => (r.recipeCostCents === null ? '—' : formatCurrency(r.recipeCostCents)) },
+                    { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.estimatedCogsCents, render: (r) => (r.estimatedCogsCents === null ? '—' : formatCurrency(r.estimatedCogsCents)) },
+                    { key: 'gp', label: 'Gross profit', align: 'right', sortValue: (r) => r.grossProfitCents, render: (r) => (r.grossProfitCents === null ? '—' : formatCurrency(r.grossProfitCents)) },
+                    { key: 'foodCost', label: 'Food cost %', align: 'right', sortValue: (r) => r.foodCostPercent, render: (r) => formatPercent(r.foodCostPercent) },
+                    { key: 'status', label: 'Status', sortValue: (r) => r.mappingStatus, render: (r) => <Badge tone={menuMappingTone(r.mappingStatus)}>{menuMappingLabel(r.mappingStatus)}</Badge> }
+                  ]}
+                />
+              ) : (
+                <p className="subtle">No Square item-level sales found for this filter. Import Square item sales or widen the date/account filters.</p>
+              )}
             </div>
           </Card>
 
@@ -2941,24 +2854,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <div className="report-panel">
             <h4>Bucket guide</h4>
             <div className="table-scroll">
-              <table className="report-table">
-                <thead>
-                  <tr>
-                    <th>Bucket</th>
-                    <th>Meaning</th>
-                    <th>Usual action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {bucketRows.map((row) => (
-                    <tr key={row.bucket}>
-                      <td>{row.bucket}</td>
-                      <td>{row.meaning}</td>
-                      <td>{row.action}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              <SortableTable
+                rows={bucketRows}
+                rowKey={(row) => row.bucket}
+                columns={[
+                  { key: 'bucket', label: 'Bucket', sortValue: (r) => r.bucket, render: (r) => r.bucket },
+                  { key: 'meaning', label: 'Meaning', sortValue: (r) => r.meaning, render: (r) => r.meaning },
+                  { key: 'action', label: 'Usual action', sortValue: (r) => r.action, render: (r) => r.action }
+                ]}
+              />
             </div>
             <p className="subtle">
               {hasItemSales

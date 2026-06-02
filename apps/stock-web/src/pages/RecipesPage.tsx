@@ -45,6 +45,7 @@ type RecipeDraft = {
   portionUnit: string;
   yieldQuantity: string;
   yieldUnit: string;
+  isProduction: boolean;
   status: 'ACTIVE' | 'ARCHIVED';
   estimatedCost: string;
   notes: string;
@@ -935,6 +936,7 @@ function emptyRecipeDraft(): RecipeDraft {
     portionUnit: '',
     yieldQuantity: '',
     yieldUnit: '',
+    isProduction: false,
     status: 'ACTIVE',
     estimatedCost: '0',
     notes: '',
@@ -949,6 +951,7 @@ function emptyProductionRecipeDraft(): RecipeDraft {
     category: PRODUCTION_RECIPE_CATEGORY,
     subcategory: 'Prep batch',
     yieldUnit: 'portion',
+    isProduction: true,
     notes: 'Production recipe used as an ingredient in item recipes.'
   };
 }
@@ -966,6 +969,7 @@ function draftFromRecipe(recipe: RecipeWithLines): RecipeDraft {
     portionUnit: recipe.portionUnit ?? '',
     yieldQuantity: recipe.yieldQuantity === null ? '' : String(recipe.yieldQuantity),
     yieldUnit: recipe.yieldUnit ?? '',
+    isProduction: recipe.isPrepRecipe,
     status: recipe.status,
     estimatedCost: String(recipe.estimatedCost),
     notes: recipe.notes ?? '',
@@ -1096,11 +1100,14 @@ function RecipeForm({
         itemId: line.itemId,
         subRecipeId: line.subRecipeId
       }));
+    const treatAsProduction = pageMode === 'production' || draft.isProduction;
     const payload: RecipeCreateInput = {
       title: draft.title.trim(),
       kind: draft.kind.trim(),
-      category: pageMode === 'production' ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY) : draft.category.trim(),
-      subcategory: pageMode === 'production' ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
+      // A recipe is a production (prep/batch) recipe when created in the
+      // production view OR explicitly flagged via the toggle in the item editor.
+      category: treatAsProduction ? (draft.category.trim() || PRODUCTION_RECIPE_CATEGORY) : draft.category.trim(),
+      subcategory: treatAsProduction ? (draft.subcategory.trim() || 'Prep batch') : draft.subcategory.trim(),
       venue: draft.venue.trim(),
       salePriceCents: draft.salePrice === '' ? undefined : Math.round(Number(draft.salePrice) * 100),
         venuePrices: draft.venuePrices
@@ -1110,7 +1117,7 @@ function RecipeForm({
       portionUnit: draft.portionUnit.trim(),
       yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
       yieldUnit: draft.yieldUnit.trim(),
-      isPrepRecipe: pageMode === 'production',
+      isPrepRecipe: treatAsProduction,
       status: draft.status,
       estimatedCost: Number(draft.estimatedCost || 0),
       notes: draft.notes.trim(),
@@ -1232,8 +1239,27 @@ function RecipeForm({
         <Input label="Subcategory" value={draft.subcategory} onChange={(event) => update('subcategory', event.currentTarget.value)} />
         <Input label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} />
       </div>
+      {pageMode !== 'production' ? (
+        <label className="recipe-production-toggle">
+          <input
+            type="checkbox"
+            checked={draft.isProduction}
+            onChange={(event) => update('isProduction', event.currentTarget.checked)}
+          />
+          <span>
+            <strong>Production recipe</strong>
+            <small>Batch/prep used as an ingredient in other recipes (sauces, salsas, syrups). Enter the quantity it outputs below.</small>
+          </span>
+        </label>
+      ) : null}
       <div className="form-grid three">
-        <Input label="Yield quantity" type="number" step="0.01" value={draft.yieldQuantity} onChange={(event) => update('yieldQuantity', event.currentTarget.value)} />
+        <Input
+          label={draft.isProduction || pageMode === 'production' ? 'Quantity output' : 'Yield quantity'}
+          type="number"
+          step="0.01"
+          value={draft.yieldQuantity}
+          onChange={(event) => update('yieldQuantity', event.currentTarget.value)}
+        />
         <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
         <Input label="Portion size" type="number" step="0.01" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
         <Input label="Portion unit" placeholder="portion, kg, L" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} />

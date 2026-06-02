@@ -97,6 +97,32 @@
   font-size: 12px;
 }
 
+/* Click-to-sort headers */
+.report-th-sortable {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.report-th-sortable:hover {
+  color: var(--color-text, inherit);
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.report-th-sortable.is-active {
+  font-weight: 700;
+}
+
+.report-sort-caret {
+  margin-left: 6px;
+  font-size: 10px;
+  opacity: 0.55;
+}
+
+.report-th-sortable.is-active .report-sort-caret {
+  opacity: 1;
+}
+
 .report-split {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

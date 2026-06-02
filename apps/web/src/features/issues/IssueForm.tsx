@@ -118,6 +118,7 @@ type Props = {
   assigneesLoading?: boolean;
   assigneesError?: string | null;
   areaOptions?: string[];
+  categoryOptions?: string[];
   onSubmit: (value: IssueFormInput) => Promise<void>;
 };
 
@@ -130,6 +131,7 @@ export function IssueForm({
   assigneesLoading = false,
   assigneesError,
   areaOptions = [],
+  categoryOptions = [],
   onSubmit
 }: Props) {
   const [form, setForm] = useState<IssueFormInput>(() =>
@@ -245,12 +247,29 @@ export function IssueForm({
             onChange={(event) => update('title', event.target.value)}
             required
           />
-          <Input
-            label="Category"
-            value={form.category}
-            onChange={(event) => update('category', event.target.value)}
-            required
-          />
+          {categoryOptions.length > 0 ? (
+            <Select
+              label="Category"
+              value={form.category}
+              onChange={(event) => update('category', event.target.value)}
+              required
+              options={[
+                { label: 'Select a category…', value: '' },
+                ...categoryOptions.map((category) => ({ label: category, value: category })),
+                ...(form.category && !categoryOptions.includes(form.category)
+                  ? [{ label: `${form.category} (legacy)`, value: form.category }]
+                  : [])
+              ]}
+              hint="Categories are configured in Admin."
+            />
+          ) : (
+            <Input
+              label="Category"
+              value={form.category}
+              onChange={(event) => update('category', event.target.value)}
+              required
+            />
+          )}
           <Select
             label="Severity"
             value={form.severity}

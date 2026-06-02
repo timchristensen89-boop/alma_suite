@@ -2032,3 +2032,32 @@ tbody tr.row-detail:hover {
   flex: 0 0 auto;
   line-height: 1;
 }
+
+/* Recipe production-recipe toggle */
+.recipe-production-toggle {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 14px;
+  margin: 4px 0 12px;
+  border: 1px solid var(--color-border, #e2e2dd);
+  border-radius: 10px;
+  background: var(--color-surface, #f8f6f1);
+  cursor: pointer;
+}
+
+.recipe-production-toggle input {
+  margin-top: 3px;
+}
+
+.recipe-production-toggle span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.recipe-production-toggle small {
+  color: var(--color-text-muted, #6b6e6e);
+  font-size: 12px;
+  line-height: 1.4;
+}

@@ -189,6 +189,18 @@ export const issueAreaRuleInputSchema = z.object({
 });
 export type IssueAreaRuleInput = z.infer<typeof issueAreaRuleInputSchema>;
 
+export const issueCategoryInputSchema = z.object({
+  name: z.string().trim().min(1).max(120)
+});
+export type IssueCategoryInput = z.infer<typeof issueCategoryInputSchema>;
+
+export type IssueCategoryOption = {
+  id: string;
+  name: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const issueActivityInputSchema = z.object({
   action: z.string().min(1),
   message: z.string().min(1),

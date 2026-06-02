@@ -14,6 +14,7 @@ export function IssueEditPage() {
   const { data, loading, error } = useAsync<Issue>(() => api(`/api/issues/${id}`), [id]);
   const assignees = useAsync<IssueAssigneeOption[]>(() => api('/api/issues/assignees'), []);
   const areas = useAsync<string[]>(() => api('/api/issues/areas'), []);
+  const categories = useAsync<string[]>(() => api('/api/issues/categories'), []);
 
   async function handleSubmit(value: IssueFormInput) {
     try {
@@ -44,6 +45,7 @@ export function IssueEditPage() {
       assigneesLoading={assignees.loading}
       assigneesError={assignees.error}
       areaOptions={areas.data ?? []}
+      categoryOptions={categories.data ?? []}
       onSubmit={handleSubmit}
     />
   );
