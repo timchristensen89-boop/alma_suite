@@ -659,6 +659,9 @@ model StaffProfile {
   tipManualHoursEntries        StaffTipManualHoursEntry[]
   triagedSupplierInvoices      SupplierInvoice[]          @relation("SupplierInvoiceTriagedBy")
   assignedSupplierInvoices     SupplierInvoice[]          @relation("SupplierInvoiceAssignedTo")
+  ownedAlmaTasks               AlmaTask[]                 @relation("AlmaTaskOwner")
+  completedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskCompletedBy")
+  dismissedAlmaTasks           AlmaTask[]                 @relation("AlmaTaskDismissedBy")
 
   @@index([venue])
   @@index([accountType, venue])
@@ -2856,4 +2859,105 @@ model CommsAlertEvent {
   @@index([alertType, createdAt])
   @@index([venue, createdAt])
   @@index([severity])
+}
+
+// ===================================================================
+// Phase 5.8: Unified Task model — one row any app can emit, any
+// surface can read. Strategy doc #15.
+//
+// The model is intentionally cross-cutting: any app (Stock, Compliance,
+// Staff, Reports, Reserve, Marketing, Gift Cards, Admin, Comms, Home)
+// can call a small `createTaskFromSource()` helper and append a task
+// the floor sees on Home + the venue iPad. The source app stays the
+// owner of the *thing* that produced the task; this row just lets the
+// suite present "what's outstanding" in one consistent shape.
+//
+// The source link is two plain columns (sourceRefType + sourceRefId)
+// rather than a polymorphic relation because it spans many tables and
+// would have created a thicket of optional FKs. Lookup by source pair
+// is indexed.
+// ===================================================================
+
+enum AlmaTaskStatus {
+  OPEN
+  IN_PROGRESS
+  BLOCKED
+  DONE
+  DISMISSED
+}
+
+enum AlmaTaskPriority {
+  CRITICAL
+  TODAY
+  THIS_WEEK
+  LOW
+}
+
+// Independent of AlmaAppId because that enum drives access control on
+// StaffAppAccess and shouldn't grow every time a new task source lands.
+enum AlmaTaskSourceApp {
+  HOME
+  STAFF
+  STOCK
+  COMPLIANCE
+  RESERVE
+  MARKETING
+  GIFTCARDS
+  REPORTS
+  ADMIN
+  COMMS
+}
+
+model AlmaTask {
+  id String @id @default(cuid())
+
+  // Provenance — which app emitted this task and which row in that
+  // app's domain it came from. sourceRefType is a string slug (e.g.
+  // "stocktake", "issue", "shift", "gift_card_order") so this model
+  // doesn't need to know every source schema.
+  sourceApp     AlmaTaskSourceApp
+  sourceRefType String?
+  sourceRefId   String?
+
+  // Scope: venue is a name string to match the rest of the codebase
+  // (no Venue table — Stocktake.venue, Issue area, etc. all do this).
+  venue String?
+
+  // Display content
+  title       String
+  description String?
+
+  // Ownership + scheduling
+  ownerStaffProfileId String?
+  dueAt               DateTime?
+
+  // Status + priority
+  status   AlmaTaskStatus   @default(OPEN)
+  priority AlmaTaskPriority @default(THIS_WEEK)
+
+  // Lifecycle
+  createdAt                 DateTime  @default(now())
+  updatedAt                 DateTime  @updatedAt
+  completedAt               DateTime?
+  completedByStaffProfileId String?
+  dismissedAt               DateTime?
+  dismissedByStaffProfileId String?
+
+  owner       StaffProfile? @relation("AlmaTaskOwner", fields: [ownerStaffProfileId], references: [id], onDelete: SetNull)
+  completedBy StaffProfile? @relation("AlmaTaskCompletedBy", fields: [completedByStaffProfileId], references: [id], onDelete: SetNull)
+  dismissedBy StaffProfile? @relation("AlmaTaskDismissedBy", fields: [dismissedByStaffProfileId], references: [id], onDelete: SetNull)
+
+  // Read patterns the API will hit:
+  //   list open tasks for venue X        → (venue, status)
+  //   my open tasks                       → (ownerStaffProfileId, status)
+  //   critical/today backlog              → (priority, status)
+  //   tasks emitted by app Z              → (sourceApp, status)
+  //   the task already linked to source   → (sourceRefType, sourceRefId)
+  //   tasks due in the next 24h           → (dueAt)
+  @@index([venue, status])
+  @@index([ownerStaffProfileId, status])
+  @@index([priority, status])
+  @@index([sourceApp, status])
+  @@index([sourceRefType, sourceRefId])
+  @@index([dueAt])
 }

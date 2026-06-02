@@ -5772,3 +5772,122 @@ export type StocktakeMovementResult = {
   stocktake: StocktakeWithLines;
   movements: StocktakeMovement[];
 };
+
+// ===================================================================
+// Phase 5.8: Unified Task model (AlmaTask)
+//
+// Schema-side documentation lives in packages/db/prisma/schema.prisma.
+// These Zod schemas and types are what the API + frontends consume.
+// ===================================================================
+
+export const almaTaskStatusSchema = z.enum([
+  'OPEN',
+  'IN_PROGRESS',
+  'BLOCKED',
+  'DONE',
+  'DISMISSED'
+]);
+export type AlmaTaskStatus = z.infer<typeof almaTaskStatusSchema>;
+
+export const almaTaskPrioritySchema = z.enum(['CRITICAL', 'TODAY', 'THIS_WEEK', 'LOW']);
+export type AlmaTaskPriority = z.infer<typeof almaTaskPrioritySchema>;
+
+export const almaTaskSourceAppSchema = z.enum([
+  'HOME',
+  'STAFF',
+  'STOCK',
+  'COMPLIANCE',
+  'RESERVE',
+  'MARKETING',
+  'GIFTCARDS',
+  'REPORTS',
+  'ADMIN',
+  'COMMS'
+]);
+export type AlmaTaskSourceApp = z.infer<typeof almaTaskSourceAppSchema>;
+
+// API input — create a task. Any service can emit via this shape.
+export const almaTaskCreateInputSchema = z.object({
+  sourceApp: almaTaskSourceAppSchema,
+  sourceRefType: z.string().min(1).max(80).optional(),
+  sourceRefId: z.string().min(1).max(120).optional(),
+  venue: z.string().min(1).max(120).optional(),
+  title: z.string().min(2).max(240),
+  description: z.string().max(4000).optional(),
+  ownerStaffProfileId: z.string().min(1).optional(),
+  dueAt: z.string().datetime().optional(),
+  priority: almaTaskPrioritySchema.optional()
+});
+export type AlmaTaskCreateInput = z.infer<typeof almaTaskCreateInputSchema>;
+
+// API input — update a task. Partial; status flows through dedicated
+// /:id/complete and /:id/dismiss endpoints rather than this catch-all
+// so we can stamp completedAt + completedBy consistently.
+export const almaTaskUpdateInputSchema = z.object({
+  title: z.string().min(2).max(240).optional(),
+  description: z.string().max(4000).optional(),
+  ownerStaffProfileId: z.string().min(1).nullable().optional(),
+  dueAt: z.string().datetime().nullable().optional(),
+  priority: almaTaskPrioritySchema.optional(),
+  status: z.enum(['OPEN', 'IN_PROGRESS', 'BLOCKED']).optional()
+});
+export type AlmaTaskUpdateInput = z.infer<typeof almaTaskUpdateInputSchema>;
+
+// API input — list filter. All optional; the API also venue-scopes by
+// the caller's StaffProfile.venue.
+export const almaTaskListQuerySchema = z.object({
+  venue: z.string().min(1).max(120).optional(),
+  status: almaTaskStatusSchema.optional(),
+  priority: almaTaskPrioritySchema.optional(),
+  sourceApp: almaTaskSourceAppSchema.optional(),
+  ownerStaffProfileId: z.string().min(1).optional(),
+  // When true, returns only OPEN | IN_PROGRESS | BLOCKED — the "needs
+  // attention" set the iPad Home and Home pages want by default.
+  outstanding: z.coerce.boolean().optional()
+});
+export type AlmaTaskListQuery = z.infer<typeof almaTaskListQuerySchema>;
+
+// Owner snapshot — embedded in AlmaTask read shape so the iPad doesn't
+// need a second fetch to render "Owned by Jane Doe".
+export type AlmaTaskStaffSnapshot = {
+  id: string;
+  name: string;
+  roleTitle: string;
+  venue: string | null;
+} | null;
+
+export type AlmaTask = {
+  id: string;
+  sourceApp: AlmaTaskSourceApp;
+  sourceRefType: string | null;
+  sourceRefId: string | null;
+  venue: string | null;
+  title: string;
+  description: string | null;
+  ownerStaffProfileId: string | null;
+  owner: AlmaTaskStaffSnapshot;
+  dueAt: string | null;
+  status: AlmaTaskStatus;
+  priority: AlmaTaskPriority;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+  completedByStaffProfileId: string | null;
+  completedBy: AlmaTaskStaffSnapshot;
+  dismissedAt: string | null;
+  dismissedByStaffProfileId: string | null;
+  dismissedBy: AlmaTaskStaffSnapshot;
+};
+
+export type AlmaTasksPayload = {
+  tasks: AlmaTask[];
+};
+
+export type AlmaTasksSummary = {
+  // Grouped counts so Home + iPad chrome can render "3 critical, 8 today"
+  // without re-fetching the full task list.
+  outstandingTotal: number;
+  byPriority: Record<AlmaTaskPriority, number>;
+  byVenue: Array<{ venue: string | null; outstanding: number }>;
+  oldestOpenAt: string | null;
+};
