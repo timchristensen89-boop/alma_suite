@@ -90,6 +90,9 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
   const [announcementTitle, setAnnouncementTitle] = useState('');
   const [announcementBody, setAnnouncementBody] = useState('');
   const [data, setData] = useState<SuiteCommunicationsPayload>({ announcements: [], chat: [] });
+  // Suite-wide unread count from the user's Comms inbox. Server-tracked
+  // (CommsRecipient.readAt) so the badge is identical on every app.
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const query = useMemo(() => {
     const params = new URLSearchParams({ appId, channel: 'general' });
@@ -115,6 +118,32 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
   useEffect(() => {
     if (open) void load();
   }, [open, query]);
+
+  // Poll the user's suite-wide inbox for a real unread badge — same number
+  // on every app, regardless of which app's chat the panel is showing.
+  useEffect(() => {
+    let cancelled = false;
+    const loadUnread = async () => {
+      try {
+        const inbox = await api<Array<{ unread?: boolean; actionRequired?: boolean }>>(apiPath('/comms/inbox'));
+        if (cancelled) return;
+        const count = Array.isArray(inbox)
+          ? inbox.filter((thread) => thread.unread || thread.actionRequired).length
+          : 0;
+        setUnreadCount(count);
+      } catch {
+        // Older API builds may not expose the inbox — hide the badge quietly.
+        if (!cancelled) setUnreadCount(0);
+      }
+    };
+    void loadUnread();
+    const intervalId = window.setInterval(() => void loadUnread(), 60_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api]);
 
   async function submitChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -173,9 +202,9 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
         type="button"
         className="btn btn-secondary suite-msg-trigger"
         onClick={() => setOpen((value) => !value)}
-        aria-label="Messages"
+        aria-label={unreadCount > 0 ? `Messages, ${unreadCount > 9 ? '9 plus' : unreadCount} unread` : 'Messages'}
         aria-expanded={open}
-        title="Messages"
+        title={unreadCount > 0 ? `Messages (${unreadCount > 9 ? '9+' : unreadCount})` : 'Messages'}
       >
         <span className="suite-msg-trigger-icon" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
@@ -184,6 +213,11 @@ export function SuiteCommsWidget({ appId, api, venue, userName, canAnnounce = fa
           </svg>
         </span>
         <span className="suite-msg-trigger-label">Messages</span>
+        {unreadCount > 0 ? (
+          <span className="suite-msg-trigger-count" aria-hidden="true">
+            {unreadCount > 9 ? '9+' : unreadCount}
+          </span>
+        ) : null}
       </button>
       {open ? (
         <div className="suite-msg-panel" role="dialog" aria-label="Messages">

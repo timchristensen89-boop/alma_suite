@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -254,6 +254,7 @@ function TopBarWithContext({ onOpenPalette }: { onOpenPalette: () => void }) {
           <SuiteAppSwitcher currentApp="compliance" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="compliance" />
           <SuiteFeedbackWidget appId="COMPLIANCE" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
+          <SuiteClock />
           <UserMenu />
         </>
       }

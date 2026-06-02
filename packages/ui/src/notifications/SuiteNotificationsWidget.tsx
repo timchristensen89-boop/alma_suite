@@ -15,6 +15,9 @@ type SuiteNotification = {
   appId?: string;
   appLabel?: string;
   createdAt: string;
+  // Server-tracked read marker (ISO string) or null/undefined when unread.
+  // Read state lives on the server so it syncs across every app in the suite.
+  readAt?: string | null;
 };
 
 type NotificationMutes = {
@@ -27,36 +30,11 @@ type Props = {
   currentApp?: string;
 };
 
-const READ_STORAGE_KEY = 'alma.notifications.read.v1';
-const READ_RETENTION_DAYS = 30;
-
-type ReadState = Record<string, number>; // notificationId -> timestamp marked read
-
-function loadReadState(): ReadState {
-  try {
-    const raw = window.localStorage.getItem(READ_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as ReadState;
-    if (!parsed || typeof parsed !== 'object') return {};
-    // Prune entries older than retention
-    const cutoff = Date.now() - READ_RETENTION_DAYS * 24 * 60 * 60 * 1000;
-    const next: ReadState = {};
-    for (const [id, ts] of Object.entries(parsed)) {
-      if (typeof ts === 'number' && ts > cutoff) next[id] = ts;
-    }
-    return next;
-  } catch {
-    return {};
-  }
-}
-
-function persistReadState(state: ReadState) {
-  try {
-    window.localStorage.setItem(READ_STORAGE_KEY, JSON.stringify(state));
-  } catch {
-    /* storage unavailable */
-  }
-}
+// Optimistic read overrides: notificationId -> read?(true)/unread?(false).
+// The server is the source of truth (each notification carries readAt), but
+// we apply overrides immediately on click so the badge updates without
+// waiting for the next poll. Overrides reset on every successful reload.
+type ReadOverrides = Record<string, boolean>;
 
 // Map a notification's tone to the severity bucket from the design. Three
 // urgency tiers, color-coded via earthy palette pulls — no traffic lights.
@@ -144,7 +122,7 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
   const [items, setItems] = useState<SuiteNotification[]>([]);
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
-  const [readState, setReadState] = useState<ReadState>(() => (typeof window !== 'undefined' ? loadReadState() : {}));
+  const [overrides, setOverrides] = useState<ReadOverrides>({});
   const [showRead, setShowRead] = useState(false);
   const [mutes, setMutes] = useState<NotificationMutes | null>(null);
   const [showMutes, setShowMutes] = useState(false);
@@ -168,6 +146,8 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     try {
       const payload = await api<SuiteNotification[]>('/api/notifications');
       setItems(payload);
+      // Server is now the source of truth — drop optimistic overrides.
+      setOverrides({});
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load notifications.');
     } finally {
@@ -211,27 +191,50 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const markRead = useCallback((id: string) => {
-    setReadState((current) => {
-      const next = { ...current, [id]: Date.now() };
-      persistReadState(next);
-      return next;
-    });
-  }, []);
+  const isReadItem = useCallback(
+    (item: SuiteNotification) => {
+      const override = overrides[item.id];
+      if (override !== undefined) return override;
+      return Boolean(item.readAt);
+    },
+    [overrides]
+  );
+
+  const markRead = useCallback(
+    (id: string) => {
+      setOverrides((current) => ({ ...current, [id]: true }));
+      // Persist to the server so the read state syncs across every app.
+      void api('/api/notifications/reads', {
+        method: 'POST',
+        body: JSON.stringify({ ids: [id] })
+      }).catch(() => undefined);
+    },
+    [api]
+  );
 
   const markAllRead = useCallback(() => {
-    setReadState((current) => {
+    setOverrides((current) => {
       const next = { ...current };
-      for (const item of items) next[item.id] = Date.now();
-      persistReadState(next);
+      for (const item of items) next[item.id] = true;
       return next;
     });
-  }, [items]);
+    void api('/api/notifications/reads', {
+      method: 'POST',
+      body: JSON.stringify({ all: true })
+    }).catch(() => undefined);
+  }, [api, items]);
 
   const clearAllRead = useCallback(() => {
-    setReadState({});
-    persistReadState({});
-  }, []);
+    setOverrides((current) => {
+      const next = { ...current };
+      for (const item of items) next[item.id] = false;
+      return next;
+    });
+    void api('/api/notifications/reads', { method: 'DELETE' })
+      .catch(() => undefined)
+      .then(() => void load());
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, items]);
 
   const [filter, setFilter] = useState<'all' | AlertSeverity>('all');
 
@@ -239,11 +242,11 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
     const unread: SuiteNotification[] = [];
     const read: SuiteNotification[] = [];
     for (const item of items) {
-      if (readState[item.id]) read.push(item);
+      if (isReadItem(item)) read.push(item);
       else unread.push(item);
     }
     return { unreadItems: unread, readItems: read };
-  }, [items, readState]);
+  }, [items, isReadItem]);
 
   const displayItems = showRead ? items : unreadItems;
   const unreadCount = unreadItems.length;
@@ -363,7 +366,7 @@ export function SuiteNotificationsWidget({ api, currentApp = 'suite' }: Props) {
                     key={item.id}
                     item={item}
                     severity={severity}
-                    isRead={!!readState[item.id]}
+                    isRead={isReadItem(item)}
                     canMute={!!mutes && !!item.category}
                     onAction={(event) => {
                       const href = targetFor(item);

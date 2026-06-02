@@ -42,6 +42,9 @@ export type SuiteNotification = {
   appId: 'compliance' | 'staff' | 'comms';
   appLabel: string;
   createdAt: string;
+  // ISO timestamp the current user read/dismissed this notification, or null
+  // if still unread. Server-tracked so read state syncs across every app.
+  readAt: string | null;
 };
 
 const APP_URLS = {
@@ -63,11 +66,12 @@ function appLink(appId: keyof typeof APP_URLS, path: string) {
   return `${APP_URLS[appId]}${cleanPath}`;
 }
 
-function notification(input: Omit<SuiteNotification, 'href' | 'categoryLabel'>): SuiteNotification {
+function notification(input: Omit<SuiteNotification, 'href' | 'categoryLabel' | 'readAt'>): SuiteNotification {
   return {
     ...input,
     categoryLabel: CATEGORY_LABEL[input.category],
-    href: appLink(input.appId, input.to)
+    href: appLink(input.appId, input.to),
+    readAt: null
   };
 }
 
@@ -243,7 +247,66 @@ export const notificationsService = {
       ? notifications.filter((item) => !mutedCategories.has(item.category))
       : notifications;
     visible.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-    return visible.slice(0, 30);
+    const top = visible.slice(0, 30);
+
+    // Stamp each notification with the user's server-side read marker so the
+    // unread badge is identical on every app in the suite.
+    const reads = await this.readMap(
+      actor,
+      top.map((item) => item.id)
+    );
+    for (const item of top) {
+      item.readAt = reads.get(item.id) ?? null;
+    }
+    return top;
+  },
+
+  // Map of notificationId -> ISO readAt for this user, limited to the given ids.
+  async readMap(actor: AuthUser, ids: string[]): Promise<Map<string, string>> {
+    if (ids.length === 0) return new Map();
+    const rows = await prisma.notificationRead
+      .findMany({
+        where: { staffProfileId: actor.id, notificationId: { in: ids } },
+        select: { notificationId: true, readAt: true }
+      })
+      .catch(() => [] as Array<{ notificationId: string; readAt: Date }>);
+    return new Map(rows.map((row) => [row.notificationId, row.readAt.toISOString()]));
+  },
+
+  // Mark a set of notifications read for this user (idempotent upsert).
+  async markRead(actor: AuthUser, ids: string[]): Promise<{ marked: number }> {
+    const clean = Array.from(new Set(ids.map((id) => String(id).trim()).filter(Boolean))).slice(0, 200);
+    let marked = 0;
+    for (const notificationId of clean) {
+      await prisma.notificationRead
+        .upsert({
+          where: { staffProfileId_notificationId: { staffProfileId: actor.id, notificationId } },
+          create: { staffProfileId: actor.id, notificationId },
+          update: {}
+        })
+        .then(() => {
+          marked += 1;
+        })
+        .catch(() => undefined);
+    }
+    return { marked };
+  },
+
+  // Mark every currently-visible notification read for this user.
+  async markAllRead(actor: AuthUser): Promise<{ marked: number }> {
+    const current = await this.list(actor);
+    return this.markRead(
+      actor,
+      current.map((item) => item.id)
+    );
+  },
+
+  // Clear all read markers for this user ("restore" everything to unread).
+  async clearReads(actor: AuthUser): Promise<{ cleared: number }> {
+    const result = await prisma.notificationRead
+      .deleteMany({ where: { staffProfileId: actor.id } })
+      .catch(() => ({ count: 0 }));
+    return { cleared: result.count };
   },
 
   // Set of categories this user has silenced.

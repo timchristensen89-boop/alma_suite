@@ -77,6 +77,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  SuiteClock,
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
@@ -804,6 +805,7 @@ function TopBarWithContext() {
               api={api}
               userName={`${user.firstName} ${user.lastName}`}
             />
+            <SuiteClock />
             <Button
               size="sm"
               variant="secondary"

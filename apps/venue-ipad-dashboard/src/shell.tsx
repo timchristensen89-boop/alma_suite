@@ -3,8 +3,42 @@
 // Extracted from App.tsx so page modules under src/pages/ can render the
 // same chrome (sidebar nav, topbar, AuthChip) without re-implementing it.
 
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { AuthChip, useAuth } from './auth';
+
+// Local copy of the suite clock (the iPad app stays @alma/ui-free). Shows
+// venue time as "Tue 19:42", 24h, Australia/Sydney, refreshed every 15s.
+function readVenueClock(): { day: string; time: string } {
+  const now = new Date();
+  return {
+    day: new Intl.DateTimeFormat('en-AU', { weekday: 'short', timeZone: 'Australia/Sydney' }).format(now),
+    time: new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+      timeZone: 'Australia/Sydney'
+    }).format(now)
+  };
+}
+
+function VenueClock() {
+  const [clock, setClock] = useState(() => readVenueClock());
+  useEffect(() => {
+    const tick = () => setClock(readVenueClock());
+    tick();
+    const id = window.setInterval(tick, 15_000);
+    return () => window.clearInterval(id);
+  }, []);
+  return (
+    <div className="suite-clock" title={`${clock.day} ${clock.time} · Sydney`} aria-label={`Current time ${clock.time}, Sydney`}>
+      <span className="suite-clock-day" aria-hidden="true">
+        {clock.day}
+      </span>
+      <span className="suite-clock-time">{clock.time}</span>
+    </div>
+  );
+}
 
 export type Venue = {
   id: 'st-alma' | 'alma-avalon';
@@ -114,6 +148,7 @@ export function AppShell({
             <h1>{venue ? venue.name : 'Select venue'}</h1>
           </div>
           <div className="topbar-actions">
+            <VenueClock />
             <AuthChip
               staff={auth.staff}
               onSignIn={onRequestStaffPin}
