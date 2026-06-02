@@ -59,8 +59,13 @@ type PermissionKey =
   | 'giftCards.sell'
   | 'tasks.update'
   | 'bookings.view'
-  | 'stock.view'
+  | 'stocktake.run'
+  | 'handover.post'
+  | 'roster.view'
+  | 'help.view'
   | 'settings.view';
+
+type TileStatus = 'live' | 'pilot' | 'preview';
 
 type Venue = {
   id: VenueId;
@@ -82,6 +87,7 @@ type DashboardTool = {
   permission: PermissionKey;
   count?: number;
   tone?: 'neutral' | 'warning' | 'positive';
+  status?: TileStatus;
 };
 
 const ALMA_HOME_URL = '/apps';
@@ -93,7 +99,10 @@ const mockRole = {
     'giftCards.sell': true,
     'tasks.update': true,
     'bookings.view': true,
-    'stock.view': true,
+    'stocktake.run': true,
+    'handover.post': true,
+    'roster.view': true,
+    'help.view': true,
     'settings.view': false
   } satisfies Record<PermissionKey, boolean>
 };
@@ -130,48 +139,80 @@ function venueById(venueId?: string) {
 function toolsForVenue(venue: Venue): DashboardTool[] {
   return [
     {
+      id: 'gift-cards',
+      title: 'Gift cards',
+      description: 'Redeem, check balance and sell on shared iPad.',
+      route: `/venue/${venue.id}/gift-cards`,
+      permission: 'giftCards.sell',
+      tone: 'neutral',
+      status: 'preview'
+    },
+    {
+      id: 'stocktake',
+      title: 'Stocktake',
+      description: 'Count by area, save drafts, submit when locked.',
+      route: `/venue/${venue.id}/stocktake`,
+      permission: 'stocktake.run',
+      count: venue.lowStock,
+      tone: venue.lowStock > 0 ? 'warning' : 'neutral',
+      status: 'preview'
+    },
+    {
+      id: 'bookings',
+      title: 'Bookings',
+      description: "Today's diary and upcoming covers.",
+      route: `/venue/${venue.id}/bookings`,
+      permission: 'bookings.view',
+      count: venue.bookingsToday,
+      tone: 'positive',
+      status: 'preview'
+    },
+    {
       id: 'checklists',
       title: 'Checklists',
       description: 'Opening, closing, bar, kitchen and service checks.',
       route: `/venue/${venue.id}/checklists`,
       permission: 'checklists.run',
       count: venue.checklistProgress,
-      tone: venue.checklistProgress >= 75 ? 'positive' : 'warning'
+      tone: venue.checklistProgress >= 75 ? 'positive' : 'warning',
+      status: 'preview'
     },
     {
-      id: 'gift-cards',
-      title: 'Gift cards',
-      description: 'Sell, redeem and check gift card activity.',
-      route: `/venue/${venue.id}/gift-cards`,
-      permission: 'giftCards.sell',
-      tone: 'neutral'
+      id: 'handover',
+      title: 'Handover',
+      description: 'Current shift notes and post a new handover.',
+      route: `/venue/${venue.id}/handover`,
+      permission: 'handover.post',
+      tone: 'neutral',
+      status: 'preview'
+    },
+    {
+      id: 'roster',
+      title: 'Roster',
+      description: "Who's on now and the rest of the day.",
+      route: `/venue/${venue.id}/roster`,
+      permission: 'roster.view',
+      tone: 'neutral',
+      status: 'preview'
     },
     {
       id: 'tasks',
       title: 'Tasks',
-      description: 'Daily venue jobs and manager handover items.',
+      description: 'Open venue tasks and manager follow-ups.',
       route: `/venue/${venue.id}/tasks`,
       permission: 'tasks.update',
       count: venue.openTasks,
-      tone: venue.openTasks > 5 ? 'warning' : 'neutral'
+      tone: venue.openTasks > 5 ? 'warning' : 'neutral',
+      status: 'preview'
     },
     {
-      id: 'bookings',
-      title: 'Bookings',
-      description: 'Today, upcoming covers and service notes.',
-      route: `/venue/${venue.id}/bookings`,
-      permission: 'bookings.view',
-      count: venue.bookingsToday,
-      tone: 'positive'
-    },
-    {
-      id: 'stock',
-      title: 'Stock',
-      description: 'Low stock, quick checks and urgent ordering notes.',
-      route: `/venue/${venue.id}/stock`,
-      permission: 'stock.view',
-      count: venue.lowStock,
-      tone: venue.lowStock > 0 ? 'warning' : 'positive'
+      id: 'help',
+      title: 'Help & fallback',
+      description: 'What to do when an app fails during service.',
+      route: `/venue/${venue.id}/help`,
+      permission: 'help.view',
+      tone: 'neutral',
+      status: 'preview'
     }
   ];
 }
@@ -198,11 +239,14 @@ function AppShell({ venue, children }: { venue?: Venue | null; children: React.R
           {venue ? (
             <>
               <Link to={`/venue/${venue.id}`}>{venue.name}</Link>
-              <Link to={`/venue/${venue.id}/checklists`}>Checklists</Link>
               <Link to={`/venue/${venue.id}/gift-cards`}>Gift cards</Link>
-              <Link to={`/venue/${venue.id}/tasks`}>Tasks</Link>
+              <Link to={`/venue/${venue.id}/stocktake`}>Stocktake</Link>
               <Link to={`/venue/${venue.id}/bookings`}>Bookings</Link>
-              <Link to={`/venue/${venue.id}/stock`}>Stock</Link>
+              <Link to={`/venue/${venue.id}/checklists`}>Checklists</Link>
+              <Link to={`/venue/${venue.id}/handover`}>Handover</Link>
+              <Link to={`/venue/${venue.id}/roster`}>Roster</Link>
+              <Link to={`/venue/${venue.id}/tasks`}>Tasks</Link>
+              <Link to={`/venue/${venue.id}/help`}>Help &amp; fallback</Link>
             </>
           ) : null}
         </nav>
@@ -344,11 +388,19 @@ function ToolCard({ tool }: { tool: DashboardTool }) {
     );
   }
 
+  const tone = tool.tone ?? 'neutral';
+  const statusClass = tool.status === 'preview' ? ' is-preview' : tool.status === 'pilot' ? ' is-pilot' : '';
+
   return (
-    <Link to={tool.route} className={`tool-card ${tool.tone ?? 'neutral'}`}>
-      <span>
+    <Link to={tool.route} className={`tool-card ${tone}${statusClass}`}>
+      <span className="tool-card-body">
         <strong>{tool.title}</strong>
         <p>{tool.description}</p>
+        {tool.status && tool.status !== 'live' ? (
+          <span className={`status-chip status-chip-${tool.status}`}>
+            {tool.status === 'preview' ? 'Preview' : 'Pilot'}
+          </span>
+        ) : null}
       </span>
       {tool.count !== undefined ? <span className="tool-count">{tool.count}</span> : null}
     </Link>
@@ -364,7 +416,34 @@ function Metric({ label, value, tone = 'neutral' }: { label: string; value: stri
   );
 }
 
-function VenueToolPage({ kind }: { kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings' | 'stock' }) {
+function PreviewBanner({ note }: { note: string }) {
+  return (
+    <div className="preview-panel">
+      <p className="preview-eyebrow">Preview</p>
+      <p>{note}</p>
+    </div>
+  );
+}
+
+function FallbackSteps({ title, steps }: { title: string; steps: string[] }) {
+  return (
+    <section className="section-block">
+      <div className="section-header">
+        <div>
+          <p className="eyebrow">Today's fallback</p>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      <ol className="fallback-steps">
+        {steps.map((step, i) => (
+          <li key={i}>{step}</li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
+function VenueToolPage({ kind }: { kind: 'checklists' | 'gift-cards' | 'tasks' | 'bookings' | 'stocktake' }) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
   if (!venue) return <Navigate to="/venue" replace />;
@@ -478,19 +557,19 @@ const toolPageContent = {
       { title: 'Late tables', detail: '16 covers', status: 'Open', tone: 'neutral' as const }
     ]
   },
-  stock: {
-    title: 'Stock',
-    description: 'Fast stock visibility for shared iPads without exposing full stock controls yet.',
+  stocktake: {
+    title: 'Stocktake',
+    description: 'Count by area, save drafts, and submit when locked. iPad-first stocktake — the workflow that lets us retire Loaded.',
     actions: [
-      { title: 'View low stock', detail: 'Urgent count list' },
-      { title: 'Add stock note', detail: 'Send note to manager' },
-      { title: 'Start quick count', detail: 'Placeholder for future stocktake' }
+      { title: 'Start new count', detail: 'Pick the count area to begin' },
+      { title: 'Resume draft', detail: 'Pick up an in-progress count' },
+      { title: 'Review variance', detail: 'High-variance items before submit' }
     ],
-    listTitle: 'Stock attention',
+    listTitle: 'Recent stocktakes',
     rows: [
-      { title: 'Limes', detail: 'Below par', status: 'Low', tone: 'warning' as const },
-      { title: 'Receipt rolls', detail: '2 boxes left', status: 'Watch', tone: 'neutral' as const },
-      { title: 'House sparkling', detail: 'Par level ok', status: 'Ok', tone: 'positive' as const }
+      { title: 'Bar — Friday', detail: '83 of 120 items counted', status: 'Draft', tone: 'warning' as const },
+      { title: 'Kitchen — Tuesday', detail: 'Submitted, awaiting review', status: 'Submitted', tone: 'neutral' as const },
+      { title: 'Cellar — last week', detail: 'Locked', status: 'Locked', tone: 'positive' as const }
     ]
   }
 } satisfies Record<string, {
@@ -500,6 +579,174 @@ const toolPageContent = {
   listTitle: string;
   rows: Array<{ title: string; detail: string; status: string; tone: 'neutral' | 'warning' | 'positive' }>;
 }>;
+
+function HandoverPage() {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+
+  return (
+    <AppShell venue={venue}>
+      <section className="page-stack">
+        <div className="section-block">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">{venue.name}</p>
+              <h2>Handover</h2>
+            </div>
+            <Link className="button secondary" to={`/venue/${venue.id}`}>
+              Back to venue
+            </Link>
+          </div>
+          <p className="section-copy">
+            Current shift notes and a place to post a new handover for the next shift. Stock issues,
+            staff issues, guest issues, maintenance and tomorrow's prep all live here.
+          </p>
+        </div>
+        <PreviewBanner note="The Handover model and post-a-note flow are being built next. For now, use the fallback below." />
+        <FallbackSteps
+          title="How to handover right now"
+          steps={[
+            'Post the handover in the venue Slack channel.',
+            'If service-critical, also message the next shift manager directly.',
+            'Cover stock, staff, guests, maintenance and tomorrow.'
+          ]}
+        />
+      </section>
+    </AppShell>
+  );
+}
+
+function RosterPage() {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+
+  return (
+    <AppShell venue={venue}>
+      <section className="page-stack">
+        <div className="section-block">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">{venue.name}</p>
+              <h2>Roster</h2>
+            </div>
+            <Link className="button secondary" to={`/venue/${venue.id}`}>
+              Back to venue
+            </Link>
+          </div>
+          <p className="section-copy">
+            Who's on now and the rest of the day's shifts. Read-only on the venue iPad — manager
+            changes happen in Alma Staff.
+          </p>
+        </div>
+        <PreviewBanner note="The roster API is being wired into the iPad next. Today, check Deputy or the printed sheet." />
+        <FallbackSteps
+          title="Where to find the roster right now"
+          steps={[
+            'Check Deputy on the office terminal.',
+            'The printed roster is on the office wall.',
+            'If neither is available, message the venue manager.'
+          ]}
+        />
+      </section>
+    </AppShell>
+  );
+}
+
+const APP_FALLBACKS: Array<{ app: string; steps: string[] }> = [
+  {
+    app: 'Gift cards',
+    steps: [
+      'Write down the gift card code and the amount being redeemed.',
+      'Photograph the back of the card.',
+      'Charge as cash equivalent on Square so service is not blocked.',
+      'Hand the note to the manager to reconcile after service.'
+    ]
+  },
+  {
+    app: 'Stocktake',
+    steps: [
+      'Use the paper count sheet in the office.',
+      'Photograph each completed count area.',
+      'Hand the sheets to the manager for entry once the system is back.'
+    ]
+  },
+  {
+    app: 'Bookings',
+    steps: [
+      'Use SevenRooms until the Alma cutover is complete.',
+      'For walk-ins, write on the floor plan and reconcile after service.'
+    ]
+  },
+  {
+    app: 'Checklists',
+    steps: [
+      'Use the paper checklist on the office clipboard.',
+      'Sign and date each one.',
+      'Hand to the manager to upload once the system is back.'
+    ]
+  },
+  {
+    app: 'Roster',
+    steps: [
+      'Check Deputy on the office terminal until the cutover is complete.',
+      'The printed roster lives on the office wall.'
+    ]
+  },
+  {
+    app: 'Clock in / out',
+    steps: [
+      'Use the wall iPad clock kiosk at the staff entry.',
+      'If both fail, write your start and end times on the paper sheet by the office.',
+      'Notify the manager so payroll is correct.'
+    ]
+  },
+  {
+    app: 'Anything else',
+    steps: ['Call the venue manager on shift.', 'In a genuine emergency, call the venue mobile.']
+  }
+];
+
+function HelpFallbackPage() {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+
+  return (
+    <AppShell venue={venue}>
+      <section className="page-stack">
+        <div className="section-block">
+          <div className="section-header">
+            <div>
+              <p className="eyebrow">{venue.name}</p>
+              <h2>Help &amp; fallback</h2>
+            </div>
+            <Link className="button secondary" to={`/venue/${venue.id}`}>
+              Back to venue
+            </Link>
+          </div>
+          <p className="section-copy">
+            If an app fails during service, find it in the list below, do the fallback, and fix the
+            system after service. Service does not wait for software.
+          </p>
+        </div>
+        <div className="fallback-list">
+          {APP_FALLBACKS.map((row) => (
+            <article key={row.app} className="fallback-card">
+              <strong>{row.app}</strong>
+              <ol>
+                {row.steps.map((step, i) => (
+                  <li key={i}>{step}</li>
+                ))}
+              </ol>
+            </article>
+          ))}
+        </div>
+      </section>
+    </AppShell>
+  );
+}
 
 export function App() {
   return (
@@ -511,7 +758,11 @@ export function App() {
       <Route path="/venue/:venueId/gift-cards" element={<VenueToolPage kind="gift-cards" />} />
       <Route path="/venue/:venueId/tasks" element={<VenueToolPage kind="tasks" />} />
       <Route path="/venue/:venueId/bookings" element={<VenueToolPage kind="bookings" />} />
-      <Route path="/venue/:venueId/stock" element={<VenueToolPage kind="stock" />} />
+      <Route path="/venue/:venueId/stocktake" element={<VenueToolPage kind="stocktake" />} />
+      <Route path="/venue/:venueId/stock" element={<Navigate to="stocktake" replace />} />
+      <Route path="/venue/:venueId/handover" element={<HandoverPage />} />
+      <Route path="/venue/:venueId/roster" element={<RosterPage />} />
+      <Route path="/venue/:venueId/help" element={<HelpFallbackPage />} />
       <Route path="*" element={<Navigate to="/venue" replace />} />
     </Routes>
   );
