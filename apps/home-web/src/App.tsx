@@ -405,7 +405,9 @@ export function App() {
 
       await api('/api/staff/me/pin', {
         method: 'POST',
-        body: JSON.stringify({ newPin: setupPin })
+        // Pass the password as proof so the server lets us set a new PIN even
+        // when one already exists (we have no current PIN to supply here).
+        body: JSON.stringify({ newPin: setupPin, password: setupPassword })
       });
 
       await api('/api/auth/logout', { method: 'POST' }).catch(() => undefined);

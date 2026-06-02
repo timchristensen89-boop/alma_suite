@@ -6029,13 +6029,24 @@ export const staffService = {
         employmentStatus: 'ACTIVE',
         mergedIntoStaffProfileId: null
       },
-      select: { id: true, pinHash: true }
+      select: { id: true, pinHash: true, passwordHash: true }
     });
     if (!profile) throw new HttpError(404, 'Staff profile not found.');
+    // When a PIN already exists, the caller must prove identity. Two paths:
+    //  - in-app "change PIN": supply the current PIN.
+    //  - kiosk "set with password" (no PIN to hand): supply the account
+    //    password, verified here so a stale session can't reset the PIN.
     if (profile.pinHash) {
-      if (!data.currentPin) throw new HttpError(400, 'Current PIN is required.');
-      const ok = await authService.comparePin(data.currentPin, profile.pinHash);
-      if (!ok) throw new HttpError(401, 'Current PIN is incorrect.');
+      if (data.currentPin) {
+        const ok = await authService.comparePin(data.currentPin, profile.pinHash);
+        if (!ok) throw new HttpError(401, 'Current PIN is incorrect.');
+      } else if (data.password) {
+        if (!profile.passwordHash) throw new HttpError(400, 'No password is set for this account.');
+        const ok = await authService.comparePassword(data.password, profile.passwordHash);
+        if (!ok) throw new HttpError(401, 'Password is incorrect.');
+      } else {
+        throw new HttpError(400, 'Current PIN is required.');
+      }
     }
     const pinHash = await authService.hashPin(data.newPin);
     await prisma.staffProfile.update({
