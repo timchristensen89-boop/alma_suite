@@ -1,5 +1,10 @@
 import { type FormEvent, type MouseEvent, useCallback, useEffect, useMemo, useState } from 'react';
 import type {
+  AlmaTask,
+  AlmaTaskPriority,
+  AlmaTaskSourceApp,
+  AlmaTasksPayload,
+  AlmaTasksSummary,
   AuthUser,
   DeviceClockedInStaff,
   DeviceStaffListResponse,
@@ -162,6 +167,9 @@ export function App() {
   const [payload, setPayload] = useState<DeviceStaffListResponse | null>(null);
   const [homeSummary, setHomeSummary] = useState<HomeOperationalSummary | null>(null);
   const [summaryLoading, setSummaryLoading] = useState(true);
+  const [almaTasks, setAlmaTasks] = useState<AlmaTask[] | null>(null);
+  const [almaTasksSummary, setAlmaTasksSummary] = useState<AlmaTasksSummary | null>(null);
+  const [almaTasksActioningId, setAlmaTasksActioningId] = useState<string | null>(null);
   const [humanClock, setHumanClock] = useState<StaffClockStatusPayload | null>(null);
   const [selected, setSelected] = useState<DeviceStaffOption | null>(null);
   const [entry, setEntry] = useState('');
@@ -212,6 +220,43 @@ export function App() {
       setSummaryLoading(false);
     }
   }, []);
+
+  // AlmaTasks (strategy doc #15) — visible on Home for signed-in staff
+  // so they see what's outstanding before they tap into Stock / Comms /
+  // wherever. Top 6 outstanding, refreshed alongside home summary.
+  const loadAlmaTasks = useCallback(async () => {
+    try {
+      const [list, sum] = await Promise.all([
+        api<AlmaTasksPayload>('/api/tasks?outstanding=true'),
+        api<AlmaTasksSummary>('/api/tasks/summary')
+      ]);
+      setAlmaTasks(list.tasks.slice(0, 6));
+      setAlmaTasksSummary(sum);
+    } catch {
+      // 401/403 expected when not signed in as HUMAN; render nothing.
+      setAlmaTasks(null);
+      setAlmaTasksSummary(null);
+    }
+  }, []);
+
+  const completeAlmaTask = useCallback(
+    async (task: AlmaTask, kind: 'complete' | 'dismiss') => {
+      if (almaTasksActioningId) return;
+      setAlmaTasksActioningId(task.id);
+      const prev = almaTasks;
+      setAlmaTasks((current) => (current ? current.filter((t) => t.id !== task.id) : current));
+      try {
+        await api<AlmaTask>(`/api/tasks/${task.id}/${kind}`, { method: 'POST' });
+        await loadAlmaTasks();
+      } catch {
+        // Rollback on failure — keep the row so the staff can retry.
+        setAlmaTasks(prev);
+      } finally {
+        setAlmaTasksActioningId(null);
+      }
+    },
+    [almaTasks, almaTasksActioningId, loadAlmaTasks]
+  );
 
   const loadHomeState = useCallback(async () => {
     setLoading(true);
@@ -274,6 +319,21 @@ export function App() {
     }, 60000);
     return () => window.clearInterval(id);
   }, [loadHomeSummary]);
+
+  // Tasks only render for a signed-in HUMAN (not VENUE_DEVICE accounts).
+  // Refresh whenever the user changes (sign-in / switch staff / sign-out).
+  useEffect(() => {
+    if (!user || user.accountType !== 'HUMAN') {
+      setAlmaTasks(null);
+      setAlmaTasksSummary(null);
+      return;
+    }
+    void loadAlmaTasks();
+    const id = window.setInterval(() => {
+      void loadAlmaTasks();
+    }, 60000);
+    return () => window.clearInterval(id);
+  }, [loadAlmaTasks, user]);
 
   useEffect(() => {
     if (!confirm) return;
@@ -666,11 +726,21 @@ export function App() {
             onRefresh={() => {
               void loadHomeState();
               void loadHomeSummary();
+              void loadAlmaTasks();
             }}
             onSwitchStaff={() => {
               void signOutSession().then(() => navigateHome('/'));
             }}
             onSignOut={() => void signOutSession()}
+            tasksPanel={
+              <AlmaTasksPanel
+                tasks={almaTasks}
+                summary={almaTasksSummary}
+                actioningId={almaTasksActioningId}
+                onComplete={(task) => void completeAlmaTask(task, 'complete')}
+                onDismiss={(task) => void completeAlmaTask(task, 'dismiss')}
+              />
+            }
           />
         ) : (
           <>
@@ -849,6 +919,106 @@ function HomeSummaryPanel({
   );
 }
 
+const ALMA_TASK_SOURCE_LABEL: Record<AlmaTaskSourceApp, string> = {
+  HOME: 'Home',
+  STAFF: 'Staff',
+  STOCK: 'Stock',
+  COMPLIANCE: 'Compliance',
+  RESERVE: 'Reserve',
+  MARKETING: 'Marketing',
+  GIFTCARDS: 'Gift cards',
+  REPORTS: 'Reports',
+  ADMIN: 'Admin',
+  COMMS: 'Comms'
+};
+
+const ALMA_TASK_PRIORITY_ORDER: AlmaTaskPriority[] = ['CRITICAL', 'TODAY', 'THIS_WEEK', 'LOW'];
+
+const ALMA_TASK_PRIORITY_LABEL: Record<AlmaTaskPriority, string> = {
+  CRITICAL: 'Critical',
+  TODAY: 'Today',
+  THIS_WEEK: 'This week',
+  LOW: 'Backlog'
+};
+
+function AlmaTasksPanel({
+  tasks,
+  summary,
+  actioningId,
+  onComplete,
+  onDismiss
+}: {
+  tasks: AlmaTask[] | null;
+  summary: AlmaTasksSummary | null;
+  actioningId: string | null;
+  onComplete: (task: AlmaTask) => void;
+  onDismiss: (task: AlmaTask) => void;
+}) {
+  // Hide the panel entirely when there's no signal (not signed in, or
+  // the API isn't reachable). Don't dilute the Home view with empty
+  // "no tasks" chatter — when there's nothing to do, say nothing.
+  if (!tasks || tasks.length === 0) return null;
+
+  const total = summary?.outstandingTotal ?? tasks.length;
+  const remaining = Math.max(0, total - tasks.length);
+
+  return (
+    <div className="kiosk-tasks">
+      <div className="kiosk-tasks__head">
+        <h4>Your tasks</h4>
+        <span className="kiosk-tasks__total">{total} outstanding</span>
+      </div>
+      {summary ? (
+        <div className="kiosk-tasks__chips">
+          {ALMA_TASK_PRIORITY_ORDER.filter((p) => summary.byPriority[p] > 0).map((p) => (
+            <span key={p} className={`kiosk-tasks__chip is-${p.toLowerCase()}`}>
+              <b>{summary.byPriority[p]}</b>
+              <em>{ALMA_TASK_PRIORITY_LABEL[p]}</em>
+            </span>
+          ))}
+        </div>
+      ) : null}
+      <ul className="kiosk-tasks__list">
+        {tasks.map((task) => (
+          <li key={task.id} className="kiosk-tasks__row">
+            <div className="kiosk-tasks__rowtext">
+              <div className="kiosk-tasks__rowmeta">
+                <span className="kiosk-tasks__source">{ALMA_TASK_SOURCE_LABEL[task.sourceApp]}</span>
+                {task.priority === 'CRITICAL' ? <span className="kiosk-tasks__crit">Critical</span> : null}
+              </div>
+              <strong>{task.title}</strong>
+              {task.description ? <p>{task.description}</p> : null}
+            </div>
+            <div className="kiosk-tasks__rowactions">
+              <button
+                type="button"
+                className="kiosk-tasks__btn kiosk-tasks__btn--dismiss"
+                disabled={actioningId === task.id}
+                onClick={() => onDismiss(task)}
+                aria-label={`Dismiss ${task.title}`}
+              >
+                Dismiss
+              </button>
+              <button
+                type="button"
+                className="kiosk-tasks__btn kiosk-tasks__btn--done"
+                disabled={actioningId === task.id}
+                onClick={() => onComplete(task)}
+                aria-label={`Complete ${task.title}`}
+              >
+                ✓ Done
+              </button>
+            </div>
+          </li>
+        ))}
+      </ul>
+      {remaining > 0 ? (
+        <div className="kiosk-tasks__more">{remaining} more — open Alma to see the full list.</div>
+      ) : null}
+    </div>
+  );
+}
+
 function HumanWelcomePanel({
   user,
   clock,
@@ -859,7 +1029,8 @@ function HumanWelcomePanel({
   onOpenApp,
   onRefresh,
   onSwitchStaff,
-  onSignOut
+  onSignOut,
+  tasksPanel
 }: {
   user: AuthUser;
   clock: StaffClockStatusPayload | null;
@@ -871,6 +1042,7 @@ function HumanWelcomePanel({
   onRefresh: () => void;
   onSwitchStaff: () => void;
   onSignOut: () => void;
+  tasksPanel?: React.ReactNode;
 }) {
   const name = displayName(user);
   const first = user.firstName || name.split(' ')[0] || 'there';
@@ -911,6 +1083,8 @@ function HumanWelcomePanel({
           {busy ? 'Updating...' : clockLabel}
         </button>
       </div>
+
+      {tasksPanel}
 
       <SuiteAppGrid apps={apps} onOpenApp={onOpenApp} />
 
