@@ -275,7 +275,7 @@ function toStocktakeReviewPayload(
   const variance = row.lines.reduce(
     (summary, line) => {
       const onHand = currentOnHandForReviewLine(row, line, venueOnHandByKey);
-      if (onHand === null) return summary;
+      if (onHand === null || line.countedQty == null) return summary;
       const delta = line.countedQty - onHand;
       if (Math.abs(delta) > 0.0001) summary.varianceLineCount += 1;
       summary.totalVarianceQuantity += delta;

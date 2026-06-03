@@ -78,7 +78,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
 
   // Per-line draft counts + touched flag, scoped to the open session.
   // Cleared whenever a different session is loaded.
-  const [draftCounts, setDraftCounts] = useState<Record<string, number>>({});
+  const [draftCounts, setDraftCounts] = useState<Record<string, number | null>>({});
   const [touched, setTouched] = useState<Record<string, true>>({});
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState('');
@@ -120,7 +120,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
       const data = await api<StocktakeWithLines>(`/api/stocktake/${id}`);
       setSession(data);
       // Seed drafts from current line values; touched stays empty.
-      const seed: Record<string, number> = {};
+      const seed: Record<string, number | null> = {};
       for (const line of data.lines) seed[line.id] = line.countedQty;
       setDraftCounts(seed);
       setTouched({});
@@ -177,7 +177,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
       setSession(updated);
       // Re-seed drafts from the server response, keep "touched" set so the
       // staff member can see what they updated this session.
-      const seed: Record<string, number> = {};
+      const seed: Record<string, number | null> = {};
       for (const line of updated.lines) seed[line.id] = line.countedQty;
       setDraftCounts(seed);
       setSavedAt(Date.now());
@@ -380,7 +380,7 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
                     type="text"
                     inputMode="decimal"
                     className="stock-count-input"
-                    value={value}
+                    value={value ?? ''}
                     onFocus={(e) => e.currentTarget.select()}
                     onChange={(e) => {
                       const raw = e.currentTarget.value;

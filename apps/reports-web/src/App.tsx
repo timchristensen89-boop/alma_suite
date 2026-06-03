@@ -2716,7 +2716,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       { key: 'stocktake', label: 'Stocktake', sortValue: (l) => l.stocktakeName, render: (l) => l.stocktakeName },
                       { key: 'item', label: 'Item', sortValue: (l) => l.itemName, render: (l) => l.itemName },
                       { key: 'venue', label: 'Venue', sortValue: (l) => l.venue ?? 'Unassigned', render: (l) => l.venue ?? 'Unassigned' },
-                      { key: 'variance', label: 'Variance', align: 'right', sortValue: (l) => l.variance, render: (l) => `${l.variance > 0 ? '+' : ''}${l.variance.toFixed(2)} ${l.unit ?? ''}` }
+                      { key: 'variance', label: 'Variance', align: 'right', sortValue: (l) => l.variance ?? 0, render: (l) => (l.variance == null ? '—' : `${l.variance > 0 ? '+' : ''}${l.variance.toFixed(2)} ${l.unit ?? ''}`) }
                     ]}
                   />
                 ) : (

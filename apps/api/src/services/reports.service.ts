@@ -190,7 +190,7 @@ function toStocktakeReviewPayload(row: Prisma.StocktakeGetPayload<{
 }>, venueOnHandByKey?: Map<string, number | null>): StocktakeReviewItem {
   const variance = row.lines.reduce(
     (summary, line) => {
-      if (!line.item) return summary;
+      if (!line.item || line.countedQty == null) return summary;
       const venueOnHand = row.venue ? venueOnHandByKey?.get(`${row.venue}:${line.item.id}`) : undefined;
       const onHand = venueOnHand ?? line.item.onHand;
       const delta = line.countedQty - onHand;
@@ -509,12 +509,12 @@ async function buildStockSummary(
         countedQty: line.countedQty,
         onHand,
         unit: line.unit ?? line.item?.unit ?? null,
-        variance: line.countedQty - onHand,
+        variance: line.countedQty == null ? null : line.countedQty - onHand,
         submittedAt: line.stocktake.submittedAt?.toISOString() ?? line.stocktake.updatedAt.toISOString()
       };
     })
-    .filter((line) => Math.abs(line.variance) > 0.0001)
-    .sort((a, b) => Math.abs(b.variance) - Math.abs(a.variance))
+    .filter((line) => line.variance != null && Math.abs(line.variance) > 0.0001)
+    .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0))
     .slice(0, 8);
 
   return {

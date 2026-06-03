@@ -204,7 +204,7 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
     lines: stocktake.lines.map((line) => ({
       itemId: line.itemId ?? '',
       label: line.label,
-      countedQty: String(line.countedQty),
+      countedQty: line.countedQty == null ? '' : String(line.countedQty),
       unit: line.unit ?? line.item?.unit ?? '',
       location: line.location ?? '',
       stockValueCents: line.stockValueCents === null ? '' : String(line.stockValueCents),
@@ -214,10 +214,12 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
 }
 
 function linePayload(line: LineDraft): StocktakeLineInput {
+  // A blank field means "not counted yet" (null) — distinct from a counted zero.
+  const countRaw = String(line.countedQty ?? '').trim();
   return {
     itemId: line.itemId,
     label: line.label.trim(),
-    countedQty: Number(line.countedQty || 0),
+    countedQty: countRaw === '' ? null : Number(countRaw),
     unit: line.unit.trim(),
     location: line.location.trim(),
     stockValueCents: line.stockValueCents === '' ? undefined : Math.round(Number(line.stockValueCents)),
@@ -395,6 +397,29 @@ export function StocktakePage() {
       setError(err instanceof ApiError ? err.message : 'Could not approve stocktake');
     } finally {
       setApplyingId(null);
+    }
+  }
+
+  async function downloadStocktakeCsv(stocktake: Stocktake) {
+    setError(null);
+    try {
+      const token = window.localStorage.getItem('alma.stock.session');
+      const res = await fetch(`/api/stocktake/${stocktake.id}/export.csv`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export stocktake CSV');
     }
   }
 
@@ -618,6 +643,15 @@ export function StocktakePage() {
                         onClick={() => void reopenStocktake(stocktake)}
                       >
                         {reopeningId === stocktake.id ? 'Reopening…' : 'Reopen draft'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        title="Download counted vs expected variance as CSV"
+                        onClick={() => void downloadStocktakeCsv(stocktake)}
+                      >
+                        Export CSV
                       </Button>
                     </td>
                   </tr>
