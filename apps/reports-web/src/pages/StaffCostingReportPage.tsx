@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import type { AdminStaffCostingPayload } from '@alma/shared';
 import { Badge, Button, Card, Input, Spinner } from '@alma/ui';
-import { api } from '../../../web/src/lib/api';
+import { staffApi } from '../lib/api';
 
 function startOfWeek(date = new Date()) {
   const next = new Date(date);
@@ -127,7 +127,7 @@ export function StaffCostingReportPage() {
       });
       const selectedVenue = next?.venue ?? venue;
       if (selectedVenue) params.set('venue', selectedVenue);
-      setReport(await api<AdminStaffCostingPayload>(`/api/admin/staff/costing-report?${params.toString()}`));
+      setReport(await staffApi<AdminStaffCostingPayload>(`/api/admin/staff/costing-report?${params.toString()}`));
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not load staff costing report.');
     } finally {
