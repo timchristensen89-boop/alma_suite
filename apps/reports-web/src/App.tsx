@@ -2844,28 +2844,43 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           : 'Import weekly sales totals to compare venue trading before item analysis is available.'
       }
     ];
-    const bucketRows = [
-      {
-        bucket: 'Stars',
-        meaning: 'High sales and high contribution margin.',
-        action: 'Keep visible and protect quality.'
-      },
-      {
-        bucket: 'Plowhorses',
-        meaning: 'High sales and low contribution margin.',
-        action: 'Review pricing, portions, or prep cost.'
-      },
-      {
-        bucket: 'Puzzles',
-        meaning: 'Low sales and high contribution margin.',
-        action: 'Train the team to suggest them or improve menu placement.'
-      },
-      {
-        bucket: 'Dogs',
-        meaning: 'Low sales and low contribution margin.',
-        action: 'Replace, remove, or rework the recipe.'
-      }
-    ];
+    // Operational menu-engineering matrix: classify each costed item by
+    // popularity (qty sold vs median) × profitability (food cost % vs median).
+    const bucketClassifiable = menuRows.filter((r) => r.foodCostPercent != null && r.quantitySold > 0);
+    const medianOf = (values: number[]) => {
+      if (!values.length) return 0;
+      const arr = [...values].sort((a, b) => a - b);
+      const mid = Math.floor(arr.length / 2);
+      return arr.length % 2 ? arr[mid]! : (arr[mid - 1]! + arr[mid]!) / 2;
+    };
+    const popMedian = medianOf(bucketClassifiable.map((r) => r.quantitySold));
+    const foodCostMedian = medianOf(bucketClassifiable.map((r) => r.foodCostPercent ?? 100));
+    const bucketMeta = {
+      Stars: { meaning: 'High sales and high margin.', action: 'Keep visible, protect quality.', tone: 'positive' as const },
+      Plowhorses: { meaning: 'High sales, low margin.', action: 'Review pricing, portions, or prep cost.', tone: 'warning' as const },
+      Puzzles: { meaning: 'Low sales, high margin.', action: 'Promote or improve menu placement.', tone: 'info' as const },
+      Dogs: { meaning: 'Low sales and low margin.', action: 'Replace, remove, or rework.', tone: 'danger' as const }
+    };
+    type BucketName = keyof typeof bucketMeta;
+    const bucketGroups: Record<BucketName, typeof bucketClassifiable> = { Stars: [], Plowhorses: [], Puzzles: [], Dogs: [] };
+    for (const r of bucketClassifiable) {
+      const popular = r.quantitySold >= popMedian;
+      const profitable = (r.foodCostPercent ?? 100) <= foodCostMedian;
+      const name: BucketName = popular ? (profitable ? 'Stars' : 'Plowhorses') : profitable ? 'Puzzles' : 'Dogs';
+      bucketGroups[name].push(r);
+    }
+    const bucketRows = (Object.keys(bucketMeta) as BucketName[]).map((bucket) => {
+      const items = bucketGroups[bucket].slice().sort((a, b) => b.netSalesCents - a.netSalesCents);
+      return {
+        bucket,
+        tone: bucketMeta[bucket].tone,
+        count: items.length,
+        salesCents: items.reduce((sum, r) => sum + r.netSalesCents, 0),
+        topItems: items.slice(0, 4).map((r) => r.squareItem),
+        meaning: bucketMeta[bucket].meaning,
+        action: bucketMeta[bucket].action
+      };
+    });
 
     return (
       <SectionShell
@@ -3089,6 +3104,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <SortableTable
                   rows={menuRowsDisplay}
                   rowKey={(row) => row.key}
+                  initialRowLimit={10}
                   defaultSortKey="qty"
                   onRowClick={(row) =>
                     row.almaRecipeId
@@ -3168,23 +3184,30 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="report-panel">
-            <h4>Bucket guide</h4>
+            <h4>Menu engineering buckets</h4>
+            <p className="subtle" style={{ marginTop: -4 }}>
+              {bucketClassifiable.length
+                ? `${bucketClassifiable.length} costed items classified by popularity (vs ${popMedian.toLocaleString(undefined, { maximumFractionDigits: 0 })} median units sold) × margin (vs ${foodCostMedian.toFixed(0)}% median food cost).`
+                : 'Buckets activate once items have both Square sales and a recipe cost — cost the items in the worklist above to populate them.'}
+            </p>
             <div className="table-scroll">
               <SortableTable
                 rows={bucketRows}
                 rowKey={(row) => row.bucket}
+                defaultSortKey="sales"
                 columns={[
-                  { key: 'bucket', label: 'Bucket', sortValue: (r) => r.bucket, render: (r) => r.bucket },
+                  { key: 'bucket', label: 'Bucket', sortValue: (r) => r.bucket, render: (r) => <Badge tone={r.tone}>{r.bucket}</Badge> },
+                  { key: 'count', label: 'Items', align: 'right', sortValue: (r) => r.count, render: (r) => r.count.toLocaleString() },
+                  { key: 'sales', label: 'Net sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
+                  { key: 'examples', label: 'Examples', sortValue: (r) => r.topItems.join(', '), render: (r) => <span className="subtle">{r.topItems.length ? r.topItems.join(', ') : '—'}</span> },
                   { key: 'meaning', label: 'Meaning', sortValue: (r) => r.meaning, render: (r) => r.meaning },
                   { key: 'action', label: 'Usual action', sortValue: (r) => r.action, render: (r) => r.action }
                 ]}
               />
             </div>
-            <p className="subtle">
-              {hasItemSales
-                ? 'These buckets stay informational until recipe cost matches are reviewed for each Square item.'
-                : 'These buckets stay informational until item-level sales, selling price, and recipe cost matches are available.'}
-            </p>
+            {bucketClassifiable.length ? (
+              <p className="subtle">Only items with both Square sales and a recipe cost are classified ({menuRows.length - bucketClassifiable.length} of {menuRows.length} rows still need a cost or mapping).</p>
+            ) : null}
           </div>
 
           <ActionPanel

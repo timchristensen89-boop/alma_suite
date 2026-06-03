@@ -23,7 +23,8 @@ export function SortableTable<T>({
   className = 'report-table',
   footer,
   onRowClick,
-  rowClickable
+  rowClickable,
+  initialRowLimit
 }: {
   columns: SortableColumn<T>[];
   rows: T[];
@@ -37,9 +38,13 @@ export function SortableTable<T>({
   // rows out (return false) — those render as normal, non-interactive rows.
   onRowClick?: (row: T) => void;
   rowClickable?: (row: T) => boolean;
+  // When set, render only the first N sorted rows with a "Show all" toggle.
+  // Sorting still applies across the full set before truncation.
+  initialRowLimit?: number;
 }) {
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
   const [dir, setDir] = useState<'asc' | 'desc'>(defaultSortDir);
+  const [showAll, setShowAll] = useState(false);
 
   const sorted = useMemo(() => {
     const col = columns.find((c) => c.key === sortKey);
@@ -61,6 +66,9 @@ export function SortableTable<T>({
     });
   }, [rows, columns, sortKey, dir]);
 
+  const limited = initialRowLimit != null && !showAll;
+  const visible = limited ? sorted.slice(0, initialRowLimit) : sorted;
+
   function onHeader(col: SortableColumn<T>) {
     if (!col.sortValue) return;
     if (sortKey === col.key) {
@@ -72,6 +80,7 @@ export function SortableTable<T>({
   }
 
   return (
+    <>
     <table className={className}>
       <thead>
         <tr>
@@ -114,7 +123,7 @@ export function SortableTable<T>({
         </tr>
       </thead>
       <tbody>
-        {sorted.map((row, index) => {
+        {visible.map((row, index) => {
           const clickable = Boolean(onRowClick) && (rowClickable ? rowClickable(row) : true);
           return (
             <tr
@@ -149,5 +158,11 @@ export function SortableTable<T>({
       </tbody>
       {footer ? <tfoot>{footer}</tfoot> : null}
     </table>
+    {initialRowLimit != null && sorted.length > initialRowLimit ? (
+      <button type="button" className="report-table-toggle" onClick={() => setShowAll((value) => !value)}>
+        {showAll ? 'Show fewer' : `Show all ${sorted.length} items`}
+      </button>
+    ) : null}
+    </>
   );
 }
