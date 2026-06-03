@@ -2298,12 +2298,14 @@ export function AdminPage({
     try {
       const end = new Date();
       const start = new Date(end.getTime() - lookbackDays * 24 * 60 * 60 * 1000);
-      const result = await api<{ imported?: number; updated?: number; ordersRead?: number; itemRows?: number; warnings?: string[] }>(`/api/integrations/square/import-item-sales${integrationAccountQuery(integration)}`, {
+      const result = await api<{ ordersRead?: number; itemSalesRowsUpserted?: number; unmatchedRows?: number; warnings?: string[] }>(`/api/integrations/square/import-item-sales${integrationAccountQuery(integration)}`, {
         method: 'POST',
         body: JSON.stringify({ start: start.toISOString(), end: end.toISOString(), lookbackDays })
       });
       await loadDashboard();
-      window.alert(`Square item sales imported.\nLast ${lookbackDays} days · ${result.ordersRead ?? 0} orders → ${result.itemRows ?? 0} line items (${result.imported ?? 0} new / ${result.updated ?? 0} updated).${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
+      const upserted = result.itemSalesRowsUpserted ?? 0;
+      const matched = upserted - (result.unmatchedRows ?? 0);
+      window.alert(`Square item sales imported.\nLast ${lookbackDays} days · ${result.ordersRead ?? 0} orders → ${upserted} item rows, ${matched} matched to a recipe.${(result.warnings ?? []).map((w) => `\n• ${w}`).join('')}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not import Square item sales.');
     } finally {

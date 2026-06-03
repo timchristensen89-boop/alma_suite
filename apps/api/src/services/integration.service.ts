@@ -4416,12 +4416,30 @@ export const integrationService = {
     const locationIds = squareStatus.locations.map((location) => location.id).filter(Boolean);
     if (!locationIds.length) throw new HttpError(409, `${squareAccountConfig(accountKey).label} Square locations must be synced before item sales can import.`);
 
-    const [ordersResponse, venues, recipes] = await Promise.all([
+    const [ordersResponse, venues, recipes, confirmedMappings] = await Promise.all([
       searchSquareOrders({ connection, beginTime: start, endTime: end, locationIds, limit }),
       configuredVenueNames(),
       prisma.recipe.findMany({
-        where: { title: { not: '' } },
+        // Production recipes (sauces, batches) are never sold directly — they're
+        // ingredients of other recipes. Excluding them here stops a batch that
+        // shares a name with a sellable item (e.g. a "Guacamole" prep batch vs
+        // the "Guacamole" plate) from stealing that item's sales attribution.
+        where: { title: { not: '' }, isPrepRecipe: false },
         select: { id: true, title: true, venue: true }
+      }),
+      // Manager-confirmed Square menu mappings drive attribution ahead of name
+      // matching: they route same-named items to the exact linked recipe and
+      // send $0 tasting/BB components to their mapped (often prep) recipe.
+      prisma.squareMenuRecipeMapping.findMany({
+        where: { accountKey, status: 'MAPPED', almaRecipeId: { not: null } },
+        select: {
+          squareItemId: true,
+          squareVariationId: true,
+          venue: true,
+          squareItemName: true,
+          almaRecipeId: true,
+          priceMoneyAmount: true
+        }
       })
     ]);
     const locationsById = new Map(squareStatus.locations.map((location) => [location.id, location]));
@@ -4432,6 +4450,38 @@ export const integrationService = {
       if (!nameKey) continue;
       if (recipe.venue) recipeByVenueAndName.set(`${normaliseMatchText(recipe.venue)}|${nameKey}`, recipe);
       if (!recipeByName.has(nameKey)) recipeByName.set(nameKey, recipe);
+    }
+
+    // Confirmed Square menu mappings take priority over title matching. Catalog
+    // ids are unique per Square item/variation, so they disambiguate items that
+    // share a normalised name — the "$16 Guacamole" plate vs a "$0 Guacamole*"
+    // tasting component both normalise to "guacamole". An order line carries the
+    // variation id in catalog_object_id, so key on that first, then the item id.
+    // The name fallbacks are price-aware: on a collision the higher-priced
+    // mapping wins, so a real sellable item beats a $0 component sharing its name.
+    const mappingByCatalogId = new Map<string, string>();
+    const mappingByVenueName = new Map<string, { recipeId: string; price: number }>();
+    const mappingByName = new Map<string, { recipeId: string; price: number }>();
+    for (const mapping of confirmedMappings) {
+      if (!mapping.almaRecipeId) continue;
+      if (mapping.squareVariationId) mappingByCatalogId.set(mapping.squareVariationId, mapping.almaRecipeId);
+      if (mapping.squareItemId && !mappingByCatalogId.has(mapping.squareItemId)) {
+        mappingByCatalogId.set(mapping.squareItemId, mapping.almaRecipeId);
+      }
+      const nameKey = normaliseMatchText(mapping.squareItemName);
+      if (!nameKey) continue;
+      const price = mapping.priceMoneyAmount ?? 0;
+      if (mapping.venue) {
+        const venueNameKey = `${normaliseMatchText(mapping.venue)}|${nameKey}`;
+        const prev = mappingByVenueName.get(venueNameKey);
+        if (!prev || price > prev.price) {
+          mappingByVenueName.set(venueNameKey, { recipeId: mapping.almaRecipeId, price });
+        }
+      }
+      const prevName = mappingByName.get(nameKey);
+      if (!prevName || price > prevName.price) {
+        mappingByName.set(nameKey, { recipeId: mapping.almaRecipeId, price });
+      }
     }
 
     const source = `square-item:${accountKey}`;
@@ -4493,8 +4543,17 @@ export const integrationService = {
           continue;
         }
         const itemNameKey = normaliseMatchText(itemName);
-        const recipe = recipeByVenueAndName.get(`${venueKey}|${itemNameKey}`) ?? recipeByName.get(itemNameKey) ?? null;
         const catalogObjectId = optionalText(line.catalog_object_id);
+        // Resolve the recipe: a confirmed mapping wins (catalog id → venue+name →
+        // name); otherwise fall back to a non-prep recipe title match.
+        const mappedRecipeId =
+          (catalogObjectId ? mappingByCatalogId.get(catalogObjectId) : undefined) ??
+          mappingByVenueName.get(`${venueKey}|${itemNameKey}`)?.recipeId ??
+          mappingByName.get(itemNameKey)?.recipeId ??
+          null;
+        const nameRecipe =
+          recipeByVenueAndName.get(`${venueKey}|${itemNameKey}`) ?? recipeByName.get(itemNameKey) ?? null;
+        const resolvedRecipeId = mappedRecipeId ?? nameRecipe?.id ?? null;
         const variationName = optionalText(line.variation_name);
         const catalogVersion = line.catalog_version === undefined ? null : String(line.catalog_version);
         const itemKey = catalogObjectId ?? `${itemNameKey}:${normaliseMatchText(variationName)}`;
@@ -4517,14 +4576,14 @@ export const integrationService = {
           netSalesCents: 0,
           orderIds: new Set<string>(),
           lineCount: 0,
-          recipeId: recipe?.id ?? null
+          recipeId: resolvedRecipeId
         };
         existing.quantity += quantity;
         existing.grossSalesCents += grossSalesCents;
         existing.netSalesCents += netSalesCents;
         existing.orderIds.add(orderId);
         existing.lineCount += 1;
-        if (!existing.recipeId && recipe?.id) existing.recipeId = recipe.id;
+        if (!existing.recipeId && resolvedRecipeId) existing.recipeId = resolvedRecipeId;
         grouped.set(key, existing);
       }
     }
@@ -4536,79 +4595,89 @@ export const integrationService = {
     const unmatchedRows = rows.filter((row) => !row.recipeId).length;
     if (unmatchedRows > 0) warnings.push(`${unmatchedRows} Square item sales rows did not match a Stock item recipe title yet.`);
 
-    await prisma.$transaction(async (tx) => {
-      for (const row of rows) {
-        await tx.salesItemActualEntry.upsert({
-          where: {
-            venue_serviceDate_source_externalId: {
+    // Upsert in small batched transactions rather than one long-lived
+    // interactive transaction. A large import (hundreds of rows) would
+    // otherwise exceed the interactive-transaction timeout or lose its pooled
+    // Cloud Run DB connection mid-loop, failing with "Transaction not found".
+    // Each batch is a fast single-round-trip transaction; upserts are
+    // idempotent (unique key) so a re-run safely fills any gap.
+    const UPSERT_BATCH_SIZE = 50;
+    for (let batchStart = 0; batchStart < rows.length; batchStart += UPSERT_BATCH_SIZE) {
+      const batch = rows.slice(batchStart, batchStart + UPSERT_BATCH_SIZE);
+      await prisma.$transaction(
+        batch.map((row) =>
+          prisma.salesItemActualEntry.upsert({
+            where: {
+              venue_serviceDate_source_externalId: {
+                venue: row.venue,
+                serviceDate: row.serviceDate,
+                source: row.source,
+                externalId: row.externalId
+              }
+            },
+            create: {
               venue: row.venue,
               serviceDate: row.serviceDate,
               source: row.source,
-              externalId: row.externalId
+              externalId: row.externalId,
+              itemName: row.itemName,
+              variationName: row.variationName,
+              catalogObjectId: row.catalogObjectId,
+              catalogVersion: row.catalogVersion,
+              locationId: row.locationId,
+              locationName: row.locationName,
+              quantity: row.quantity,
+              grossSalesCents: row.grossSalesCents,
+              netSalesCents: row.netSalesCents,
+              orderCount: row.orderIds.size,
+              lineCount: row.lineCount,
+              recipeId: row.recipeId,
+              notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+              sourceMetadata: {
+                importedFrom: 'square',
+                accountKey,
+                orderCount: row.orderIds.size,
+                matchedRecipe: Boolean(row.recipeId)
+              },
+              importedById: actor.id
+            },
+            update: {
+              itemName: row.itemName,
+              variationName: row.variationName,
+              catalogObjectId: row.catalogObjectId,
+              catalogVersion: row.catalogVersion,
+              locationId: row.locationId,
+              locationName: row.locationName,
+              quantity: row.quantity,
+              grossSalesCents: row.grossSalesCents,
+              netSalesCents: row.netSalesCents,
+              orderCount: row.orderIds.size,
+              lineCount: row.lineCount,
+              recipeId: row.recipeId,
+              notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+              sourceMetadata: {
+                importedFrom: 'square',
+                accountKey,
+                orderCount: row.orderIds.size,
+                matchedRecipe: Boolean(row.recipeId)
+              },
+              importedById: actor.id
             }
-          },
-          create: {
-            venue: row.venue,
-            serviceDate: row.serviceDate,
-            source: row.source,
-            externalId: row.externalId,
-            itemName: row.itemName,
-            variationName: row.variationName,
-            catalogObjectId: row.catalogObjectId,
-            catalogVersion: row.catalogVersion,
-            locationId: row.locationId,
-            locationName: row.locationName,
-            quantity: row.quantity,
-            grossSalesCents: row.grossSalesCents,
-            netSalesCents: row.netSalesCents,
-            orderCount: row.orderIds.size,
-            lineCount: row.lineCount,
-            recipeId: row.recipeId,
-            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
-            sourceMetadata: {
-              importedFrom: 'square',
-              accountKey,
-              orderCount: row.orderIds.size,
-              matchedRecipe: Boolean(row.recipeId)
-            },
-            importedById: actor.id
-          },
-          update: {
-            itemName: row.itemName,
-            variationName: row.variationName,
-            catalogObjectId: row.catalogObjectId,
-            catalogVersion: row.catalogVersion,
-            locationId: row.locationId,
-            locationName: row.locationName,
-            quantity: row.quantity,
-            grossSalesCents: row.grossSalesCents,
-            netSalesCents: row.netSalesCents,
-            orderCount: row.orderIds.size,
-            lineCount: row.lineCount,
-            recipeId: row.recipeId,
-            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
-            sourceMetadata: {
-              importedFrom: 'square',
-              accountKey,
-              orderCount: row.orderIds.size,
-              matchedRecipe: Boolean(row.recipeId)
-            },
-            importedById: actor.id
-          }
-        });
+          })
+        )
+      );
+    }
+    await prisma.integrationSyncRun.create({
+      data: {
+        provider: 'SQUARE',
+        connectionId: ordersResponse.connection.id,
+        syncType: options?.syncType ?? 'MANUAL',
+        status: 'SUCCESS',
+        finishedAt: new Date(),
+        recordsImported: rows.length,
+        recordsUpdated: ordersResponse.orders.length,
+        errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
       }
-      await tx.integrationSyncRun.create({
-        data: {
-          provider: 'SQUARE',
-          connectionId: ordersResponse.connection.id,
-          syncType: options?.syncType ?? 'MANUAL',
-          status: 'SUCCESS',
-          finishedAt: new Date(),
-          recordsImported: rows.length,
-          recordsUpdated: ordersResponse.orders.length,
-          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
-        }
-      });
     });
 
     await recordEvent({
