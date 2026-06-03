@@ -11232,19 +11232,17 @@ a.suite-app-tile:hover {
 
   .topbar-right {
     width: auto;
-    max-width: 64vw;
+    max-width: 72vw;
     margin-left: auto;
     justify-content: flex-end;
-    flex: 0 0 auto;
+    flex: 0 1 auto;
     flex-wrap: nowrap;
     gap: 6px;
-    overflow-x: auto;
-    scrollbar-width: none;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .topbar-right::-webkit-scrollbar {
-    display: none;
+    min-width: 0;
+    /* Must stay visible: a scroll/clip container here clips the position:fixed
+       topbar popovers (alerts/messages/apps) on iOS so they never appear. The
+       cluster is icon-only on the topbar, so it fits without scrolling. */
+    overflow: visible;
   }
 }
 
