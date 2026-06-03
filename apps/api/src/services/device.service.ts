@@ -503,7 +503,7 @@ export const deviceService = {
     return authService.effectiveDeviceUser(device, staffUser);
   },
 
-  async staffPinLogin(input: unknown, clientIp?: string) {
+  async staffPinLogin(input: unknown, clientIp?: string, deviceVenue?: string | null) {
     const data = staffHomePinLoginInputSchema.parse(input);
     assertPinLoginRateOk(clientIp);
     const profiles = await prisma.staffProfile.findMany({
@@ -511,7 +511,9 @@ export const deviceService = {
         accountType: 'HUMAN',
         employmentStatus: 'ACTIVE',
         mergedIntoStaffProfileId: null,
-        pinHash: { not: null }
+        pinHash: { not: null },
+        // Match the kiosk list scope when the device venue is known.
+        ...(deviceVenue ? { venue: deviceVenue } : {})
       },
       select: {
         id: true,
