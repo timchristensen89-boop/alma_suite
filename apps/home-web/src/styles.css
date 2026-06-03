@@ -34,6 +34,74 @@
   --kiosk-sans: "Avenir LT Std", "Manrope", ui-sans-serif, -apple-system, sans-serif;
 }
 
+/* ---- Dark mode ----
+   Token-only override so the whole kiosk re-themes from the variables it
+   already uses. Toggled by setting data-theme="dark" on <html> (persisted in
+   localStorage). The same [data-theme="dark"] pattern can be lifted into the
+   shared apps/web/src/styles.css to take the rest of the suite dark later. */
+html[data-theme='dark'] {
+  --color-accent: #6E97E0;
+  --color-accent-hover: #84A8E8;
+  --color-accent-soft: #21304A;
+  --color-accent-text: #E8EEF7;
+  --color-bg: #15120F;
+  --color-surface: #1E1A16;
+  --color-surface-muted: #262019;
+  --color-text: #F2ECE2;
+  --color-text-muted: rgba(242, 236, 226, 0.62);
+  --color-border: rgba(242, 236, 226, 0.16);
+
+  --kiosk-accent: #6E97E0;
+  --kiosk-page: #15120F;
+  --kiosk-cocoa: #C98B7A;
+  --kiosk-shell: #3A2A24;
+  --kiosk-paper: #1E1A16;
+  --kiosk-bone: #262019;
+  --kiosk-ink: #F2ECE2;
+  --kiosk-ash: rgba(242, 236, 226, 0.62);
+  --kiosk-quiet: rgba(242, 236, 226, 0.40);
+  --kiosk-hair: rgba(242, 236, 226, 0.16);
+  --kiosk-good: #7FA06F;
+}
+html[data-theme='dark'] body {
+  background: var(--kiosk-page);
+  color: var(--kiosk-ink);
+}
+/* Elements with hardcoded light colors that the token override can't reach. */
+html[data-theme='dark'] .kiosk-key {
+  background: var(--kiosk-bone);
+  color: var(--kiosk-ink);
+}
+html[data-theme='dark'] .kiosk-key:hover {
+  background: var(--kiosk-shell);
+}
+html[data-theme='dark'] .kiosk-wordmark__logo {
+  /* Monochrome wordmark → render white so it reads on the dark shell. */
+  filter: brightness(0) invert(1);
+}
+
+/* Floating theme toggle — always reachable, low-key. */
+.kiosk-theme-toggle {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 999px;
+  border: 1px solid var(--kiosk-hair);
+  background: var(--kiosk-paper);
+  color: var(--kiosk-ink);
+  cursor: pointer;
+  box-shadow: 0 6px 18px -10px rgba(0, 0, 0, 0.4);
+}
+.kiosk-theme-toggle:hover {
+  border-color: var(--kiosk-accent);
+}
+
 /* The kiosk takes over the viewport while keeping the shared suite page tone. */
 body:has(.kiosk) {
   background: var(--color-bg, #FFFFFF);

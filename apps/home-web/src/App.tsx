@@ -176,6 +176,17 @@ export function App() {
   const isVenueDeviceRoute = routePath === '/ipad' || routePath === '/venue';
   const isPinSetupRoute = !isVenueDeviceRoute && routePath === '/set-pin';
   const [now, setNow] = useState<Date>(() => new Date());
+  const [theme, setTheme] = useState<'light' | 'dark'>(() =>
+    typeof window !== 'undefined' && window.localStorage.getItem('alma.kiosk.theme') === 'dark' ? 'dark' : 'light'
+  );
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme);
+    try {
+      window.localStorage.setItem('alma.kiosk.theme', theme);
+    } catch {
+      /* private mode — fine, just don't persist */
+    }
+  }, [theme]);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [payload, setPayload] = useState<DeviceStaffListResponse | null>(null);
   const [homeSummary, setHomeSummary] = useState<HomeOperationalSummary | null>(null);
@@ -656,6 +667,15 @@ export function App() {
 
   return (
     <div className="kiosk">
+      <button
+        type="button"
+        className="kiosk-theme-toggle"
+        onClick={() => setTheme((value) => (value === 'dark' ? 'light' : 'dark'))}
+        aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+        title={theme === 'dark' ? 'Light mode' : 'Dark mode'}
+      >
+        {theme === 'dark' ? '☀' : '☾'}
+      </button>
       <div className="kiosk__left">
         <div className="kiosk-brandbar">
           <div className="kiosk-wordmark" aria-label="Alma Group Home">
