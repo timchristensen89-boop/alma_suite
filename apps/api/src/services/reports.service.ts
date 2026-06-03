@@ -1309,6 +1309,17 @@ export const reportsService = {
         .map(([itemName, units]) => ({ itemName, units }))
     }));
 
+    // Consolidated, ranked costing worklist across all menus — what to cost
+    // next to sharpen the COGS, biggest sales impact first. type: star =
+    // tasting/grazing course, bb = bottomless component.
+    const missingComponents: Array<{ itemName: string; venue: string; menu: string; units: number; type: 'star' | 'bb' }> = [];
+    for (const b of acc.values()) {
+      for (const [itemName, units] of b.missing) {
+        missingComponents.push({ itemName, venue: b.group.venue, menu: b.group.label, units, type: b.group.component });
+      }
+    }
+    missingComponents.sort((a, c) => c.units - a.units);
+
     const totalRevenue = groups.reduce((s, g) => s + g.revenueCents, 0);
     const totalCogs = groups.reduce((s, g) => s + g.cogsCents, 0);
 
@@ -1318,6 +1329,9 @@ export const reportsService = {
       endDate: end.toISOString(),
       venue: venueScope,
       groups,
+      missingComponents: missingComponents.slice(0, 60),
+      missingComponentCount: missingComponents.length,
+      missingComponentUnits: missingComponents.reduce((s, m) => s + m.units, 0),
       totals: {
         revenueCents: totalRevenue,
         cogsCents: totalCogs,

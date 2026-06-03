@@ -89,6 +89,9 @@ type MenuCogsPayload = {
   endDate: string;
   venue: string | null;
   groups: MenuCogsGroup[];
+  missingComponents?: Array<{ itemName: string; venue: string; menu: string; units: number; type: 'star' | 'bb' }>;
+  missingComponentCount?: number;
+  missingComponentUnits?: number;
   totals: { revenueCents: number; cogsCents: number; grossMarginCents: number; foodCostPct: number | null };
 };
 
@@ -2948,6 +2951,46 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     {formatCurrency(mc.totals.grossMarginCents)} gross margin.
                   </p>
                 ) : null}
+              </Card>
+            );
+          })()}
+
+          {/* Component costing worklist — what to cost next to sharpen menu COGS */}
+          {(() => {
+            const mc = data.menuCogs;
+            const missing = mc?.missingComponents ?? [];
+            if (!mc || missing.length === 0) return null;
+            return (
+              <Card
+                title="Component costing worklist"
+                subtitle={`${(mc.missingComponentCount ?? missing.length).toLocaleString()} set-menu components (${Math.round(mc.missingComponentUnits ?? 0).toLocaleString()} units sold) have no recipe cost yet — costing these lifts the menu COGS accuracy above. Ranked by sales impact. ✷ = tasting/grazing course · BB = bottomless drink.`}
+                action={<Button type="button" size="sm" variant="secondary" onClick={() => window.open(`${STOCK_WEB_URL}/recipes`, '_blank')}>Open Stock recipes →</Button>}
+                padding="none"
+              >
+                <div className="table-scroll">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th>Menu</th>
+                        <th>Venue</th>
+                        <th style={{ textAlign: 'right' }}>Units · 30d</th>
+                        <th>Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {missing.map((m, i) => (
+                        <tr key={`${m.itemName}|${m.venue}|${i}`}>
+                          <td><strong>{m.itemName}</strong></td>
+                          <td>{m.menu}</td>
+                          <td>{m.venue}</td>
+                          <td style={{ textAlign: 'right' }}>{Math.round(m.units).toLocaleString()}</td>
+                          <td><Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </Card>
             );
           })()}
