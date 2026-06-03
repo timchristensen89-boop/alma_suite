@@ -43,10 +43,23 @@ function messageForError(error: unknown, fallback: string) {
   return fallback;
 }
 
+// Bearer token captured from a staff PIN login. The same-origin session cookie
+// set behind the Firebase→Cloud Run rewrite doesn't reliably carry on the kiosk
+// (login 200, then /me/clock 401), so we also send the token the login endpoint
+// returns — the auth middleware accepts cookie OR bearer. Cleared on sign-out so
+// a shared kiosk never leaks a session.
+let homeAuthToken: string | null = null;
+function setHomeAuthToken(token: string | null) {
+  homeAuthToken = token;
+}
+
 async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   const headers = new Headers(init.headers);
   if (init.body && !headers.has('Content-Type')) {
     headers.set('Content-Type', 'application/json');
+  }
+  if (homeAuthToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${homeAuthToken}`);
   }
 
   const response = await fetch(normalisePath(path), {
@@ -438,6 +451,7 @@ export function App() {
     try {
       await api('/api/device/pin-logout', { method: 'POST' }).catch(() => undefined);
       await api('/api/auth/logout', { method: 'POST' });
+      setHomeAuthToken(null);
       setUser(null);
       setPayload(null);
       setHumanClock(null);
@@ -498,6 +512,7 @@ export function App() {
           method: 'POST',
           body: JSON.stringify({ pin: entry })
         });
+        setHomeAuthToken(result.token ?? null);
         const staff = staffOptionFromUser(result.user);
         const clock = await api<StaffClockStatusPayload>('/api/staff/me/clock');
         setUser(result.user);
