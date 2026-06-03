@@ -56,6 +56,7 @@ import {
 } from './lib/api';
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue } from './data/historicalSales';
+import { BarChart, Donut, HBars, TrendLine, CHART_COLORS, CHART_PALETTE } from './components/Charts';
 
 type SuiteSummary = {
   incidents?: { total?: number; open?: number; followUp?: number };
@@ -88,6 +89,9 @@ type MenuCogsPayload = {
   endDate: string;
   venue: string | null;
   groups: MenuCogsGroup[];
+  missingComponents?: Array<{ itemName: string; venue: string; menu: string; units: number; type: 'star' | 'bb' }>;
+  missingComponentCount?: number;
+  missingComponentUnits?: number;
   totals: { revenueCents: number; cogsCents: number; grossMarginCents: number; foodCostPct: number | null };
 };
 
@@ -733,6 +737,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [menuVenue, setMenuVenue] = useState('');
   const [menuCategory, setMenuCategory] = useState('');
   const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>('all');
+  const [menuGroupByRecipe, setMenuGroupByRecipe] = useState(false);
   const [data, setData] = useState<ReportsData>({
     overview: null,
     summary: null,
@@ -1948,6 +1953,38 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </EditorialPanel>
           ) : null}
 
+          {venueRows.length > 0 && totalsRow ? (
+            <div className="report-chart-grid">
+              <div className="report-chart-panel">
+                <h5 className="report-chart-title">Sales by venue · {weekWindowLabel}</h5>
+                <BarChart
+                  data={venueRows.map((r, i) => ({ label: r.venue, value: r.salesCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
+                  format={(v) => formatCurrency(v)}
+                  emptyLabel="No venue sales imported yet."
+                />
+              </div>
+              <div className="report-chart-panel">
+                <h5 className="report-chart-title">Group prime cost</h5>
+                <Donut
+                  size={130}
+                  segments={[
+                    { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
+                    { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent },
+                    {
+                      label: 'Gross profit',
+                      value: Math.max(0, totalsRow.salesCents - (primeTotals?.cogsCents ?? 0) - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
+                      color: CHART_COLORS.positive
+                    }
+                  ]}
+                  centerValue={totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(0)}%` : '—'}
+                  centerLabel="prime cost"
+                  format={(v) => formatCurrency(v)}
+                  emptyLabel="No prime cost data yet."
+                />
+              </div>
+            </div>
+          ) : null}
+
           {/* Top dishes — editorial panel */}
           {topDishes.length > 0 ? (
             <EditorialPanel
@@ -2262,6 +2299,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
+          {forecastHistory.filter((w) => w.actualCents > 0).length >= 2 ? (
+            <div className="report-panel">
+              <h4>Actual sales trend · last 8 weeks</h4>
+              <TrendLine
+                points={forecastHistory.map((w) => ({
+                  label: new Date(w.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
+                  value: w.actualCents
+                }))}
+                format={(v) => formatCurrency(v)}
+                color={CHART_COLORS.accent}
+              />
+            </div>
+          ) : null}
+
           {/* 8-week forecast vs actual */}
           {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
             <div className="report-panel">
@@ -2434,6 +2485,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
+          {(data.primeCost?.venues ?? []).filter((v) => v.venue && v.venue !== 'Both').length || wageRows.length ? (
+            <div className="report-chart-grid">
+              <div className="report-chart-panel">
+                <h5 className="report-chart-title">Wages by venue</h5>
+                <BarChart
+                  data={(data.primeCost?.venues ?? [])
+                    .filter((v) => v.venue && v.venue !== 'Both')
+                    .map((v, i) => ({ label: v.venue, value: v.wageCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
+                  format={(v) => formatCurrency(v)}
+                  emptyLabel="No venue wages for this week."
+                />
+              </div>
+              <div className="report-chart-panel">
+                <h5 className="report-chart-title">Top payroll — {weekWindowLabel}</h5>
+                <HBars
+                  data={[...wageRows]
+                    .sort((a, b) => b.approvedCostCents + b.tipsCents - (a.approvedCostCents + a.tipsCents))
+                    .slice(0, 6)
+                    .map((r) => ({ label: r.name, value: r.approvedCostCents + r.tipsCents }))}
+                  format={(v) => formatCurrency(v)}
+                  emptyLabel="No approved payroll yet."
+                />
+              </div>
+            </div>
+          ) : null}
+
           {wageRows.length ? (
             <div className="report-panel">
               <h4>Wage costing — {weekWindowLabel}</h4>
@@ -2556,6 +2633,31 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage impact" loading={loading} />
           </div>
 
+          <div className="report-chart-grid">
+            <div className="report-chart-panel">
+              <h5 className="report-chart-title">Prime cost composition</h5>
+              <Donut
+                size={130}
+                segments={[
+                  { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
+                  { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent }
+                ]}
+                centerValue={formatPercent(primeTotals?.primeCostPercent)}
+                centerLabel="prime %"
+                format={(v) => formatCurrency(v)}
+                emptyLabel="No prime cost data yet."
+              />
+            </div>
+            <div className="report-chart-panel">
+              <h5 className="report-chart-title">Stock value by category</h5>
+              <HBars
+                data={categoryValueRows.slice(0, 8).map((c) => ({ label: c.category, value: c.valueCents }))}
+                format={(v) => formatCurrency(v)}
+                emptyLabel="No stock value to show."
+              />
+            </div>
+          </div>
+
           <div className="report-detail-grid">
             <div className="report-panel">
               <h4>Stock health</h4>
@@ -2654,6 +2756,49 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const hasItemSales = Boolean(data.itemSales?.entries.length);
     const menuProfit = data.menuProfitability;
     const menuRows = menuProfit?.rows ?? [];
+    // "Merge to parent": collapse every Square item mapped to the same recipe
+    // into one parent row, summing sales + COGS. Lets variant/duplicate Square
+    // items (different SKUs, same dish) read as a single profitability line.
+    const menuRowsDisplay = (() => {
+      if (!menuGroupByRecipe) return menuRows;
+      const groups = new Map<string, typeof menuRows>();
+      const passthrough: typeof menuRows = [];
+      for (const r of menuRows) {
+        if (!r.almaRecipeId) {
+          passthrough.push(r);
+          continue;
+        }
+        const arr = groups.get(r.almaRecipeId) ?? [];
+        arr.push(r);
+        groups.set(r.almaRecipeId, arr);
+      }
+      const merged: typeof menuRows = [];
+      for (const [recipeId, rows] of groups) {
+        if (rows.length === 1) {
+          merged.push(rows[0]!);
+          continue;
+        }
+        const base = rows[0]!;
+        const qty = rows.reduce((s, x) => s + x.quantitySold, 0);
+        const net = rows.reduce((s, x) => s + x.netSalesCents, 0);
+        const anyCogsNull = rows.some((x) => x.estimatedCogsCents === null);
+        const cogs = anyCogsNull ? null : rows.reduce((s, x) => s + (x.estimatedCogsCents ?? 0), 0);
+        const venues = Array.from(new Set(rows.map((x) => x.venue)));
+        merged.push({
+          ...base,
+          key: `parent:${recipeId}`,
+          squareItem: base.almaRecipeTitle ?? base.squareItem,
+          variationName: `${rows.length} Square items merged`,
+          venue: venues.length > 1 ? 'Multiple venues' : venues[0]!,
+          quantitySold: qty,
+          netSalesCents: net,
+          estimatedCogsCents: cogs,
+          grossProfitCents: cogs === null ? null : net - cogs,
+          foodCostPercent: net > 0 && cogs !== null ? Math.round((cogs / net) * 1000) / 10 : null
+        });
+      }
+      return [...merged, ...passthrough];
+    })();
     const mappedMenuRows = menuProfit?.totals.mappedRows ?? 0;
     const menuEstimatedCogs = menuProfit?.totals.estimatedCogsCents;
     const menuGrossProfit = menuProfit?.totals.grossProfitCents;
@@ -2770,12 +2915,82 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   ))}
                 </div>
                 {mc.totals.revenueCents > 0 ? (
+                  <div className="report-chart-grid" style={{ marginTop: 16 }}>
+                    <div>
+                      <h5 className="report-chart-title">Revenue split — all set menus</h5>
+                      <Donut
+                        size={130}
+                        segments={[
+                          { label: 'Est. COGS', value: mc.totals.cogsCents, color: CHART_COLORS.danger },
+                          { label: 'Gross margin', value: mc.totals.grossMarginCents, color: CHART_COLORS.positive }
+                        ]}
+                        centerValue={mc.totals.foodCostPct == null ? '—' : `${mc.totals.foodCostPct}%`}
+                        centerLabel="food cost"
+                        format={(v) => formatCurrency(v)}
+                      />
+                    </div>
+                    <div>
+                      <h5 className="report-chart-title">Food cost % by menu</h5>
+                      <HBars
+                        data={groups
+                          .filter((g) => g.revenueCents > 0)
+                          .map((g) => ({
+                            label: g.label,
+                            value: g.foodCostPct ?? 0,
+                            color: (g.foodCostPct ?? 0) <= 30 ? CHART_COLORS.positive : (g.foodCostPct ?? 0) <= 40 ? CHART_COLORS.warning : CHART_COLORS.danger
+                          }))}
+                        format={(v) => `${v}%`}
+                      />
+                    </div>
+                  </div>
+                ) : null}
+                {mc.totals.revenueCents > 0 ? (
                   <p className="subtle" style={{ marginTop: 12 }}>
                     All set menus: {formatCurrency(mc.totals.revenueCents)} revenue · {formatCurrency(mc.totals.cogsCents)} est. COGS ·{' '}
                     {mc.totals.foodCostPct == null ? '—' : `${mc.totals.foodCostPct}% food cost`} ·{' '}
                     {formatCurrency(mc.totals.grossMarginCents)} gross margin.
                   </p>
                 ) : null}
+              </Card>
+            );
+          })()}
+
+          {/* Component costing worklist — what to cost next to sharpen menu COGS */}
+          {(() => {
+            const mc = data.menuCogs;
+            const missing = mc?.missingComponents ?? [];
+            if (!mc || missing.length === 0) return null;
+            return (
+              <Card
+                title="Component costing worklist"
+                subtitle={`${(mc.missingComponentCount ?? missing.length).toLocaleString()} set-menu components (${Math.round(mc.missingComponentUnits ?? 0).toLocaleString()} units sold) have no recipe cost yet — costing these lifts the menu COGS accuracy above. Ranked by sales impact. ✷ = tasting/grazing course · BB = bottomless drink.`}
+                action={<Button type="button" size="sm" variant="secondary" onClick={() => window.open(`${STOCK_WEB_URL}/recipes`, '_blank')}>Open Stock recipes →</Button>}
+                padding="none"
+              >
+                <div className="table-scroll">
+                  <table className="report-table">
+                    <thead>
+                      <tr>
+                        <th>Component</th>
+                        <th>Menu</th>
+                        <th>Venue</th>
+                        <th style={{ textAlign: 'right' }}>Units · 30d</th>
+                        <th>Type</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {missing.map((m, i) => (
+                        <tr key={`${m.itemName}|${m.venue}|${i}`}>
+                          <td><strong>{m.itemName}</strong></td>
+                          <td>{m.menu}</td>
+                          <td>{m.venue}</td>
+                          <td style={{ textAlign: 'right' }}>{Math.round(m.units).toLocaleString()}</td>
+                          <td><Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </Card>
             );
           })()}
@@ -2854,11 +3069,25 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   { label: 'Missing cost', value: 'missing_cost' }
                 ]}
               />
+              <Select
+                label="Grouping"
+                value={menuGroupByRecipe ? 'parent' : 'item'}
+                onChange={(event) => setMenuGroupByRecipe(event.currentTarget.value === 'parent')}
+                options={[
+                  { label: 'Per Square item', value: 'item' },
+                  { label: 'Merge to parent recipe', value: 'parent' }
+                ]}
+              />
             </div>
+            {menuGroupByRecipe ? (
+              <p className="subtle" style={{ margin: '0 0 8px' }}>
+                Square items sharing a recipe are merged into one parent line — sales and COGS combine onto the parent. Unmapped items stay separate.
+              </p>
+            ) : null}
             <div className="table-scroll">
-              {menuRows.length ? (
+              {menuRowsDisplay.length ? (
                 <SortableTable
-                  rows={menuRows}
+                  rows={menuRowsDisplay}
                   rowKey={(row) => row.key}
                   defaultSortKey="qty"
                   onRowClick={(row) =>
