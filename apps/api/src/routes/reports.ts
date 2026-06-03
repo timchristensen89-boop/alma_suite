@@ -98,6 +98,20 @@ reportsRouter.get('/item-sales', requireManager, async (req, res, next) => {
   }
 });
 
+// Set-menu margin roll-up: tasting / grazing / bottomless revenue vs the COGS
+// of their $0 component lines.
+reportsRouter.get('/menu-cogs', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.menuCostOfGoods({
+      start: typeof req.query.start === 'string' ? req.query.start : '',
+      end: typeof req.query.end === 'string' ? req.query.end : '',
+      venue: typeof req.query.venue === 'string' ? req.query.venue : ''
+    }, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.post('/sales/import', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.importActualSales(req.body, req.user!));
