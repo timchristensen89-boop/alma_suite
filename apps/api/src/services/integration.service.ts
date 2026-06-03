@@ -4432,7 +4432,14 @@ export const integrationService = {
       // send $0 tasting/BB components to their mapped (often prep) recipe.
       prisma.squareMenuRecipeMapping.findMany({
         where: { accountKey, status: 'MAPPED', almaRecipeId: { not: null } },
-        select: { squareItemId: true, venue: true, squareItemName: true, almaRecipeId: true }
+        select: {
+          squareItemId: true,
+          squareVariationId: true,
+          venue: true,
+          squareItemName: true,
+          almaRecipeId: true,
+          priceMoneyAmount: true
+        }
       })
     ]);
     const locationsById = new Map(squareStatus.locations.map((location) => [location.id, location]));
@@ -4445,22 +4452,36 @@ export const integrationService = {
       if (!recipeByName.has(nameKey)) recipeByName.set(nameKey, recipe);
     }
 
-    // Confirmed Square menu mappings take priority over title matching, keyed by
-    // Square catalog object id first, then venue+name, then name. This routes a
-    // sale to the exact recipe a manager linked — e.g. the "$16 Guacamole" plate
-    // rather than the like-named prep batch.
+    // Confirmed Square menu mappings take priority over title matching. Catalog
+    // ids are unique per Square item/variation, so they disambiguate items that
+    // share a normalised name — the "$16 Guacamole" plate vs a "$0 Guacamole*"
+    // tasting component both normalise to "guacamole". An order line carries the
+    // variation id in catalog_object_id, so key on that first, then the item id.
+    // The name fallbacks are price-aware: on a collision the higher-priced
+    // mapping wins, so a real sellable item beats a $0 component sharing its name.
     const mappingByCatalogId = new Map<string, string>();
-    const mappingByVenueName = new Map<string, string>();
-    const mappingByName = new Map<string, string>();
+    const mappingByVenueName = new Map<string, { recipeId: string; price: number }>();
+    const mappingByName = new Map<string, { recipeId: string; price: number }>();
     for (const mapping of confirmedMappings) {
       if (!mapping.almaRecipeId) continue;
-      if (mapping.squareItemId) mappingByCatalogId.set(mapping.squareItemId, mapping.almaRecipeId);
+      if (mapping.squareVariationId) mappingByCatalogId.set(mapping.squareVariationId, mapping.almaRecipeId);
+      if (mapping.squareItemId && !mappingByCatalogId.has(mapping.squareItemId)) {
+        mappingByCatalogId.set(mapping.squareItemId, mapping.almaRecipeId);
+      }
       const nameKey = normaliseMatchText(mapping.squareItemName);
       if (!nameKey) continue;
+      const price = mapping.priceMoneyAmount ?? 0;
       if (mapping.venue) {
-        mappingByVenueName.set(`${normaliseMatchText(mapping.venue)}|${nameKey}`, mapping.almaRecipeId);
+        const venueNameKey = `${normaliseMatchText(mapping.venue)}|${nameKey}`;
+        const prev = mappingByVenueName.get(venueNameKey);
+        if (!prev || price > prev.price) {
+          mappingByVenueName.set(venueNameKey, { recipeId: mapping.almaRecipeId, price });
+        }
       }
-      if (!mappingByName.has(nameKey)) mappingByName.set(nameKey, mapping.almaRecipeId);
+      const prevName = mappingByName.get(nameKey);
+      if (!prevName || price > prevName.price) {
+        mappingByName.set(nameKey, { recipeId: mapping.almaRecipeId, price });
+      }
     }
 
     const source = `square-item:${accountKey}`;
@@ -4527,8 +4548,8 @@ export const integrationService = {
         // name); otherwise fall back to a non-prep recipe title match.
         const mappedRecipeId =
           (catalogObjectId ? mappingByCatalogId.get(catalogObjectId) : undefined) ??
-          mappingByVenueName.get(`${venueKey}|${itemNameKey}`) ??
-          mappingByName.get(itemNameKey) ??
+          mappingByVenueName.get(`${venueKey}|${itemNameKey}`)?.recipeId ??
+          mappingByName.get(itemNameKey)?.recipeId ??
           null;
         const nameRecipe =
           recipeByVenueAndName.get(`${venueKey}|${itemNameKey}`) ?? recipeByName.get(itemNameKey) ?? null;
