@@ -1,6 +1,7 @@
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { SortableTable } from './components/SortableTable';
+import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
   AuthUser,
   RecipesSummary,
@@ -693,6 +694,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
+  // Recipe popup opened from a clickable menu-profitability row.
+  const [recipePreview, setRecipePreview] = useState<{ id: string; title: string | null } | null>(null);
   // Top-of-report period preset (drives the date-range state below).
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
   const periodLabel = useMemo(
@@ -2778,6 +2781,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rows={menuRows}
                   rowKey={(row) => row.key}
                   defaultSortKey="qty"
+                  onRowClick={(row) =>
+                    row.almaRecipeId
+                      ? setRecipePreview({ id: row.almaRecipeId, title: row.almaRecipeTitle })
+                      : undefined
+                  }
+                  rowClickable={(row) => Boolean(row.almaRecipeId)}
                   columns={[
                     { key: 'item', label: 'Square item', sortValue: (r) => r.squareItem, render: (r) => (
                       <>
@@ -3130,6 +3139,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </Button>
           </div>
         </Card>
+
+        {recipePreview ? (
+          <RecipePreviewModal
+            recipeId={recipePreview.id}
+            fallbackTitle={recipePreview.title}
+            onClose={() => setRecipePreview(null)}
+          />
+        ) : null}
       </div>
     </AppShell>
   );

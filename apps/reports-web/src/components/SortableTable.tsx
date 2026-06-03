@@ -21,7 +21,9 @@ export function SortableTable<T>({
   defaultSortKey,
   defaultSortDir = 'desc',
   className = 'report-table',
-  footer
+  footer,
+  onRowClick,
+  rowClickable
 }: {
   columns: SortableColumn<T>[];
   rows: T[];
@@ -31,6 +33,10 @@ export function SortableTable<T>({
   className?: string;
   // Optional totals row(s); rendered inside <tfoot> and not affected by sort.
   footer?: ReactNode;
+  // Make rows clickable (e.g. open a recipe). rowClickable can opt specific
+  // rows out (return false) — those render as normal, non-interactive rows.
+  onRowClick?: (row: T) => void;
+  rowClickable?: (row: T) => boolean;
 }) {
   const [sortKey, setSortKey] = useState<string | null>(defaultSortKey ?? null);
   const [dir, setDir] = useState<'asc' | 'desc'>(defaultSortDir);
@@ -108,19 +114,38 @@ export function SortableTable<T>({
         </tr>
       </thead>
       <tbody>
-        {sorted.map((row, index) => (
-          <tr key={rowKey(row, index)}>
-            {columns.map((col) => (
-              <td
-                key={col.key}
-                className={col.className}
-                style={col.align ? { textAlign: col.align } : undefined}
-              >
-                {col.render(row)}
-              </td>
-            ))}
-          </tr>
-        ))}
+        {sorted.map((row, index) => {
+          const clickable = Boolean(onRowClick) && (rowClickable ? rowClickable(row) : true);
+          return (
+            <tr
+              key={rowKey(row, index)}
+              className={clickable ? 'report-row-clickable' : undefined}
+              onClick={clickable ? () => onRowClick!(row) : undefined}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              onKeyDown={
+                clickable
+                  ? (event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault();
+                        onRowClick!(row);
+                      }
+                    }
+                  : undefined
+              }
+            >
+              {columns.map((col) => (
+                <td
+                  key={col.key}
+                  className={col.className}
+                  style={col.align ? { textAlign: col.align } : undefined}
+                >
+                  {col.render(row)}
+                </td>
+              ))}
+            </tr>
+          );
+        })}
       </tbody>
       {footer ? <tfoot>{footer}</tfoot> : null}
     </table>
