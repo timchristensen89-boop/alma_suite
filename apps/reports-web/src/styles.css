@@ -1700,6 +1700,22 @@
   letter-spacing: 0.05em;
   color: var(--color-text-muted, #8a8170);
 }
+.report-table-toggle {
+  display: block;
+  width: 100%;
+  padding: 10px 12px;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-muted);
+  color: var(--color-accent, #b5772f);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.report-table-toggle:hover {
+  background: var(--color-surface);
+}
 .report-chart-panel {
   border: 1px solid var(--color-border);
   border-radius: 14px;
