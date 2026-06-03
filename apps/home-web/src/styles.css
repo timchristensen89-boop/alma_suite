@@ -67,6 +67,18 @@ html[data-theme='dark'] body {
   background: var(--kiosk-page);
   color: var(--kiosk-ink);
 }
+/* Elements with hardcoded light colors that the token override can't reach. */
+html[data-theme='dark'] .kiosk-key {
+  background: var(--kiosk-bone);
+  color: var(--kiosk-ink);
+}
+html[data-theme='dark'] .kiosk-key:hover {
+  background: var(--kiosk-shell);
+}
+html[data-theme='dark'] .kiosk-wordmark__logo {
+  /* Monochrome wordmark → render white so it reads on the dark shell. */
+  filter: brightness(0) invert(1);
+}
 
 /* Floating theme toggle — always reachable, low-key. */
 .kiosk-theme-toggle {
