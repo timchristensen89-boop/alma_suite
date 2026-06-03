@@ -4574,79 +4574,89 @@ export const integrationService = {
     const unmatchedRows = rows.filter((row) => !row.recipeId).length;
     if (unmatchedRows > 0) warnings.push(`${unmatchedRows} Square item sales rows did not match a Stock item recipe title yet.`);
 
-    await prisma.$transaction(async (tx) => {
-      for (const row of rows) {
-        await tx.salesItemActualEntry.upsert({
-          where: {
-            venue_serviceDate_source_externalId: {
+    // Upsert in small batched transactions rather than one long-lived
+    // interactive transaction. A large import (hundreds of rows) would
+    // otherwise exceed the interactive-transaction timeout or lose its pooled
+    // Cloud Run DB connection mid-loop, failing with "Transaction not found".
+    // Each batch is a fast single-round-trip transaction; upserts are
+    // idempotent (unique key) so a re-run safely fills any gap.
+    const UPSERT_BATCH_SIZE = 50;
+    for (let batchStart = 0; batchStart < rows.length; batchStart += UPSERT_BATCH_SIZE) {
+      const batch = rows.slice(batchStart, batchStart + UPSERT_BATCH_SIZE);
+      await prisma.$transaction(
+        batch.map((row) =>
+          prisma.salesItemActualEntry.upsert({
+            where: {
+              venue_serviceDate_source_externalId: {
+                venue: row.venue,
+                serviceDate: row.serviceDate,
+                source: row.source,
+                externalId: row.externalId
+              }
+            },
+            create: {
               venue: row.venue,
               serviceDate: row.serviceDate,
               source: row.source,
-              externalId: row.externalId
+              externalId: row.externalId,
+              itemName: row.itemName,
+              variationName: row.variationName,
+              catalogObjectId: row.catalogObjectId,
+              catalogVersion: row.catalogVersion,
+              locationId: row.locationId,
+              locationName: row.locationName,
+              quantity: row.quantity,
+              grossSalesCents: row.grossSalesCents,
+              netSalesCents: row.netSalesCents,
+              orderCount: row.orderIds.size,
+              lineCount: row.lineCount,
+              recipeId: row.recipeId,
+              notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+              sourceMetadata: {
+                importedFrom: 'square',
+                accountKey,
+                orderCount: row.orderIds.size,
+                matchedRecipe: Boolean(row.recipeId)
+              },
+              importedById: actor.id
+            },
+            update: {
+              itemName: row.itemName,
+              variationName: row.variationName,
+              catalogObjectId: row.catalogObjectId,
+              catalogVersion: row.catalogVersion,
+              locationId: row.locationId,
+              locationName: row.locationName,
+              quantity: row.quantity,
+              grossSalesCents: row.grossSalesCents,
+              netSalesCents: row.netSalesCents,
+              orderCount: row.orderIds.size,
+              lineCount: row.lineCount,
+              recipeId: row.recipeId,
+              notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
+              sourceMetadata: {
+                importedFrom: 'square',
+                accountKey,
+                orderCount: row.orderIds.size,
+                matchedRecipe: Boolean(row.recipeId)
+              },
+              importedById: actor.id
             }
-          },
-          create: {
-            venue: row.venue,
-            serviceDate: row.serviceDate,
-            source: row.source,
-            externalId: row.externalId,
-            itemName: row.itemName,
-            variationName: row.variationName,
-            catalogObjectId: row.catalogObjectId,
-            catalogVersion: row.catalogVersion,
-            locationId: row.locationId,
-            locationName: row.locationName,
-            quantity: row.quantity,
-            grossSalesCents: row.grossSalesCents,
-            netSalesCents: row.netSalesCents,
-            orderCount: row.orderIds.size,
-            lineCount: row.lineCount,
-            recipeId: row.recipeId,
-            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
-            sourceMetadata: {
-              importedFrom: 'square',
-              accountKey,
-              orderCount: row.orderIds.size,
-              matchedRecipe: Boolean(row.recipeId)
-            },
-            importedById: actor.id
-          },
-          update: {
-            itemName: row.itemName,
-            variationName: row.variationName,
-            catalogObjectId: row.catalogObjectId,
-            catalogVersion: row.catalogVersion,
-            locationId: row.locationId,
-            locationName: row.locationName,
-            quantity: row.quantity,
-            grossSalesCents: row.grossSalesCents,
-            netSalesCents: row.netSalesCents,
-            orderCount: row.orderIds.size,
-            lineCount: row.lineCount,
-            recipeId: row.recipeId,
-            notes: `${squareAccountConfig(accountKey).label} Square item sales import.`,
-            sourceMetadata: {
-              importedFrom: 'square',
-              accountKey,
-              orderCount: row.orderIds.size,
-              matchedRecipe: Boolean(row.recipeId)
-            },
-            importedById: actor.id
-          }
-        });
+          })
+        )
+      );
+    }
+    await prisma.integrationSyncRun.create({
+      data: {
+        provider: 'SQUARE',
+        connectionId: ordersResponse.connection.id,
+        syncType: options?.syncType ?? 'MANUAL',
+        status: 'SUCCESS',
+        finishedAt: new Date(),
+        recordsImported: rows.length,
+        recordsUpdated: ordersResponse.orders.length,
+        errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
       }
-      await tx.integrationSyncRun.create({
-        data: {
-          provider: 'SQUARE',
-          connectionId: ordersResponse.connection.id,
-          syncType: options?.syncType ?? 'MANUAL',
-          status: 'SUCCESS',
-          finishedAt: new Date(),
-          recordsImported: rows.length,
-          recordsUpdated: ordersResponse.orders.length,
-          errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
-        }
-      });
     });
 
     await recordEvent({
