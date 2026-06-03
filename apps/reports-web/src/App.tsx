@@ -65,6 +65,32 @@ type SuiteSummary = {
   audits?: { templates?: number; runs?: number; averageScore?: number | null };
 };
 
+type MenuCogsGroup = {
+  key: string;
+  label: string;
+  venue: string;
+  revenueCents: number;
+  covers: number;
+  cogsCents: number;
+  grossMarginCents: number;
+  foodCostPct: number | null;
+  componentUnits: number;
+  costedUnits: number;
+  missingUnits: number;
+  coveragePct: number;
+  perCoverRevenueCents: number | null;
+  perCoverCogsCents: number | null;
+  topMissing: Array<{ itemName: string; units: number }>;
+};
+type MenuCogsPayload = {
+  generatedAt: string;
+  startDate: string;
+  endDate: string;
+  venue: string | null;
+  groups: MenuCogsGroup[];
+  totals: { revenueCents: number; cogsCents: number; grossMarginCents: number; foodCostPct: number | null };
+};
+
 type ReportsData = {
   overview: ReportsOverviewPayload | null;
   summary: SuiteSummary | null;
@@ -75,6 +101,7 @@ type ReportsData = {
   actualSales: SalesActualSummary | null;
   itemSales: SalesItemActualSummary | null;
   menuProfitability: ReportsMenuProfitabilityPayload | null;
+  menuCogs: MenuCogsPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
   stockItems: StockItemsPayload | null;
@@ -716,6 +743,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     actualSales: null,
     itemSales: null,
     menuProfitability: null,
+    menuCogs: null,
     primeCost: null,
     tips: null,
     stockItems: null,
@@ -751,7 +779,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       });
       if (menuVenue) menuProfitabilityParams.set('venue', menuVenue);
       if (menuCategory) menuProfitabilityParams.set('category', menuCategory);
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips] = await Promise.all([
+      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips] = await Promise.all([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -761,6 +789,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
+        staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
@@ -781,7 +810,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
@@ -2700,6 +2729,57 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         description="Shows whether the data is ready for COGS, margin, popularity, and menu action decisions"
       >
         <div className="report-section-stack">
+          {/* Set-menu margins: priced parent revenue vs $0-component COGS */}
+          {(() => {
+            const mc = data.menuCogs;
+            const groups = (mc?.groups ?? []).filter((g) => g.revenueCents > 0 || g.componentUnits > 0);
+            if (!mc || groups.length === 0) return null;
+            return (
+              <Card
+                title="Set menu margins"
+                subtitle="Theoretical margin for the priced set menus — revenue from the menu line vs the COGS of its $0 component courses (✷ tasting/grazing, BB bottomless). 'Costed' shows how many component units have a recipe cost; the rest are excluded until you cost them, so COGS is a floor."
+              >
+                <div className="menu-cogs-grid">
+                  {groups.map((g) => (
+                    <div key={g.key} className="menu-cogs-card">
+                      <div className="menu-cogs-head">
+                        <strong>{g.label}</strong>
+                        <Badge tone={g.coveragePct >= 80 ? 'positive' : g.coveragePct >= 50 ? 'warning' : 'danger'}>
+                          {g.coveragePct}% costed
+                        </Badge>
+                      </div>
+                      <div className="menu-cogs-stats">
+                        <div><span>Revenue</span><strong>{formatCurrency(g.revenueCents)}</strong></div>
+                        <div><span>Est. COGS</span><strong>{formatCurrency(g.cogsCents)}</strong></div>
+                        <div><span>Food cost</span><strong>{g.foodCostPct == null ? '—' : `${g.foodCostPct}%`}</strong></div>
+                        <div><span>Gross margin</span><strong>{formatCurrency(g.grossMarginCents)}</strong></div>
+                        <div><span>Covers</span><strong>{g.covers.toLocaleString()}</strong></div>
+                        <div><span>COGS / cover</span><strong>{g.perCoverCogsCents == null ? '—' : formatCurrency(g.perCoverCogsCents)}</strong></div>
+                      </div>
+                      {g.missingUnits > 0 ? (
+                        <details className="menu-cogs-missing">
+                          <summary>{g.missingUnits.toLocaleString()} component units still need a cost recipe</summary>
+                          <ul>
+                            {g.topMissing.map((m) => (
+                              <li key={m.itemName}><span>{m.itemName}</span><span>{m.units.toLocaleString()}×</span></li>
+                            ))}
+                          </ul>
+                        </details>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                {mc.totals.revenueCents > 0 ? (
+                  <p className="subtle" style={{ marginTop: 12 }}>
+                    All set menus: {formatCurrency(mc.totals.revenueCents)} revenue · {formatCurrency(mc.totals.cogsCents)} est. COGS ·{' '}
+                    {mc.totals.foodCostPct == null ? '—' : `${mc.totals.foodCostPct}% food cost`} ·{' '}
+                    {formatCurrency(mc.totals.grossMarginCents)} gross margin.
+                  </p>
+                ) : null}
+              </Card>
+            );
+          })()}
+
           <div className="stats-grid report-metric-grid">
             <StatCard label="Sales source" value={hasItemSales ? 'Square item sales' : hasVenueSales ? 'Venue totals' : 'Missing'} hint={hasItemSales ? `${itemSalesMatched} recipe matches` : 'Waiting on item-level sales'} loading={loading} />
             <StatCard label="Recipes available" value={data.recipes?.totalRecipes ?? 0} hint="From Stock recipe costing" loading={loading} />

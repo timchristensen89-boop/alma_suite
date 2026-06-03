@@ -6,12 +6,13 @@
   --color-accent-soft: #FAF0DC;
   --color-accent-text: #3D2810;
 
-  /* Reports app: warm page, lighter "bubbles". The page sits on a soft cream
-     and cards/panels read as crisp near-white tiles a shade brighter than the
-     background. Overrides the shared tokens for reports-web only. */
-  --color-bg: #F1ECE2;
-  --color-surface: #FFFFFF;
-  --color-surface-muted: #F8F5EF;
+  /* Reports app: white page, warm "bubbles". The page sits on crisp white and
+     cards/panels read as soft cream tiles that lift off the background; nested
+     insets use a slightly deeper warm so they recede inside a card. Overrides
+     the shared tokens for reports-web only. */
+  --color-bg: #FFFFFF;
+  --color-surface: #F1ECE2;
+  --color-surface-muted: #E9E2D3;
 }
 
 .reports-section {
@@ -1463,4 +1464,70 @@
   padding: 6px 0;
   border-top: 1px solid var(--color-border);
   font-size: 13px;
+}
+
+/* Set-menu margins (menu COGS roll-up) */
+.menu-cogs-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 14px;
+}
+.menu-cogs-card {
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-surface-muted);
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.menu-cogs-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.menu-cogs-head strong {
+  font-size: 15px;
+}
+.menu-cogs-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px 16px;
+}
+.menu-cogs-stats > div {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.menu-cogs-stats span {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #8a8170);
+}
+.menu-cogs-stats strong {
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.menu-cogs-missing {
+  font-size: 13px;
+}
+.menu-cogs-missing summary {
+  cursor: pointer;
+  color: var(--color-text-muted, #8a8170);
+}
+.menu-cogs-missing ul {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.menu-cogs-missing li {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  font-variant-numeric: tabular-nums;
 }

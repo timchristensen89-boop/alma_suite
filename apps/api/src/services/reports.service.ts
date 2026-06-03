@@ -1180,6 +1180,153 @@ export const reportsService = {
     };
   },
 
+  // Set-menu margin roll-up. The priced "parent" line (Trust Our Chef, Grazing
+  // Menu, Bottomless Lunch …) carries the revenue; the $0 component lines carry
+  // the COGS. Components split cleanly by venue + marker: a trailing "*" is a
+  // tasting/grazing course, a "BB " prefix is a bottomless component. Each
+  // component costs one portion of its mapped recipe (batch cost / portions),
+  // so a partly-mapped menu still rolls up — and the gaps are surfaced.
+  async menuCostOfGoods(input: unknown, actor?: AuthUser) {
+    const data = salesActualQuerySchema.parse(input);
+    const start = parseDate(data.start, 'Menu COGS start date');
+    const end = parseDate(data.end, 'Menu COGS end date');
+    if (end <= start) throw new HttpError(400, 'Menu COGS end date must be after the start date');
+    const venueScope = salesVenueScope(actor, data.venue);
+
+    const [entries, recipes] = await Promise.all([
+      prisma.salesItemActualEntry.findMany({
+        where: {
+          serviceDate: { gte: start, lt: end },
+          source: { startsWith: 'square-item:' },
+          ...(venueScope ? { venue: venueScope } : {})
+        },
+        select: { venue: true, itemName: true, quantity: true, netSalesCents: true, recipeId: true }
+      }),
+      prisma.recipe.findMany({
+        select: { id: true, estimatedCost: true, yieldQuantity: true, portionSize: true }
+      })
+    ]);
+
+    // Per-portion cost (cents): a component is one portion of its recipe, not
+    // the whole batch, so divide the batch cost by the portion count.
+    const costPerPortionCents = new Map<string, number>();
+    for (const recipe of recipes) {
+      if (recipe.estimatedCost == null || recipe.estimatedCost <= 0) continue;
+      const portions =
+        recipe.portionSize && recipe.portionSize > 0 && recipe.yieldQuantity && recipe.yieldQuantity > 0
+          ? recipe.yieldQuantity / recipe.portionSize
+          : recipe.yieldQuantity && recipe.yieldQuantity > 0
+            ? recipe.yieldQuantity
+            : 1;
+      costPerPortionCents.set(recipe.id, Math.round((recipe.estimatedCost * 100) / portions));
+    }
+
+    type MenuGroup = { key: string; label: string; venue: string; parent: RegExp; component: 'star' | 'bb' };
+    const GROUPS: MenuGroup[] = [
+      { key: 'tasting', label: 'Trust Our Chef · tasting', venue: 'St Alma', parent: /trust our chef/i, component: 'star' },
+      { key: 'grazing', label: 'Grazing Menu', venue: 'Alma Avalon', parent: /grazing menu/i, component: 'star' },
+      { key: 'bottomless-sta', label: 'Bottomless Lunch · St Alma', venue: 'St Alma', parent: /bottomless lunch (food|drinks)/i, component: 'bb' },
+      { key: 'bottomless-ava', label: 'Bottomless Lunch · Alma Avalon', venue: 'Alma Avalon', parent: /bottomless lunch (food|drinks)/i, component: 'bb' }
+    ];
+    const isStar = (name: string) => /\*\s*$/.test(name);
+    const isBb = (name: string) => /^bb\b/i.test(name);
+    const isWorkflowMarker = (name: string) => /already sent|^fire\b|^send\b|^course\b/i.test(name);
+
+    const acc = new Map<
+      string,
+      {
+        group: MenuGroup;
+        revenueCents: number;
+        covers: number;
+        cogsCents: number;
+        componentUnits: number;
+        costedUnits: number;
+        missingUnits: number;
+        missing: Map<string, number>;
+      }
+    >();
+    for (const group of GROUPS) {
+      acc.set(group.key, {
+        group,
+        revenueCents: 0,
+        covers: 0,
+        cogsCents: 0,
+        componentUnits: 0,
+        costedUnits: 0,
+        missingUnits: 0,
+        missing: new Map<string, number>()
+      });
+    }
+
+    for (const entry of entries) {
+      const name = (entry.itemName ?? '').trim();
+      if (!name) continue;
+      const componentType: 'star' | 'bb' | null = isStar(name) ? 'star' : isBb(name) ? 'bb' : null;
+
+      if (componentType && !isWorkflowMarker(name)) {
+        const group = GROUPS.find((g) => g.venue === entry.venue && g.component === componentType);
+        if (!group) continue;
+        const bucket = acc.get(group.key)!;
+        bucket.componentUnits += entry.quantity;
+        const unitCost = entry.recipeId ? costPerPortionCents.get(entry.recipeId) ?? null : null;
+        if (unitCost != null) {
+          bucket.cogsCents += unitCost * entry.quantity;
+          bucket.costedUnits += entry.quantity;
+        } else {
+          bucket.missingUnits += entry.quantity;
+          bucket.missing.set(name, (bucket.missing.get(name) ?? 0) + entry.quantity);
+        }
+        continue;
+      }
+
+      if (entry.netSalesCents > 0) {
+        const group = GROUPS.find((g) => g.venue === entry.venue && g.parent.test(name));
+        if (!group) continue;
+        const bucket = acc.get(group.key)!;
+        bucket.revenueCents += entry.netSalesCents;
+        bucket.covers += entry.quantity;
+      }
+    }
+
+    const groups = [...acc.values()].map((b) => ({
+      key: b.group.key,
+      label: b.group.label,
+      venue: b.group.venue,
+      revenueCents: b.revenueCents,
+      covers: b.covers,
+      cogsCents: b.cogsCents,
+      grossMarginCents: b.revenueCents - b.cogsCents,
+      foodCostPct: b.revenueCents > 0 ? Math.round((b.cogsCents / b.revenueCents) * 1000) / 10 : null,
+      componentUnits: b.componentUnits,
+      costedUnits: b.costedUnits,
+      missingUnits: b.missingUnits,
+      coveragePct: b.componentUnits > 0 ? Math.round((b.costedUnits / b.componentUnits) * 100) : 0,
+      perCoverRevenueCents: b.covers > 0 ? Math.round(b.revenueCents / b.covers) : null,
+      perCoverCogsCents: b.covers > 0 ? Math.round(b.cogsCents / b.covers) : null,
+      topMissing: [...b.missing.entries()]
+        .sort((a, c) => c[1] - a[1])
+        .slice(0, 8)
+        .map(([itemName, units]) => ({ itemName, units }))
+    }));
+
+    const totalRevenue = groups.reduce((s, g) => s + g.revenueCents, 0);
+    const totalCogs = groups.reduce((s, g) => s + g.cogsCents, 0);
+
+    return {
+      generatedAt: new Date().toISOString(),
+      startDate: start.toISOString(),
+      endDate: end.toISOString(),
+      venue: venueScope,
+      groups,
+      totals: {
+        revenueCents: totalRevenue,
+        cogsCents: totalCogs,
+        grossMarginCents: totalRevenue - totalCogs,
+        foodCostPct: totalRevenue > 0 ? Math.round((totalCogs / totalRevenue) * 1000) / 10 : null
+      }
+    };
+  },
+
   async importActualSales(input: unknown, actor?: AuthUser) {
     const data = salesActualImportSchema.parse(input);
     let imported = 0;
