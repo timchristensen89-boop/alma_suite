@@ -5,6 +5,13 @@
   --color-accent-hover: #8A5A20;
   --color-accent-soft: #FAF0DC;
   --color-accent-text: #3D2810;
+
+  /* Reports app: warm page, lighter "bubbles". The page sits on a soft cream
+     and cards/panels read as crisp near-white tiles a shade brighter than the
+     background. Overrides the shared tokens for reports-web only. */
+  --color-bg: #F1ECE2;
+  --color-surface: #FFFFFF;
+  --color-surface-muted: #F8F5EF;
 }
 
 .reports-section {
@@ -1355,4 +1362,105 @@
 .reports-weeknav-menu-item.is-active {
   background: rgba(31, 53, 36, 0.1);
   font-weight: 700;
+}
+
+/* Clickable report rows (e.g. menu profitability → recipe popup). */
+.report-table tbody tr.report-row-clickable {
+  cursor: pointer;
+}
+.report-table tbody tr.report-row-clickable:hover {
+  background: var(--color-surface-muted);
+}
+
+/* Recipe preview popup (opened from a menu-profitability row). */
+.recipe-preview-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  background: rgba(31, 53, 36, 0.32);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+.recipe-preview {
+  width: min(520px, 100%);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 16px;
+  padding: 20px;
+  box-shadow: 0 24px 70px rgba(15, 23, 42, 0.22);
+}
+.recipe-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+.recipe-preview-head h3 {
+  margin: 0;
+  font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
+  font-size: 24px;
+  font-weight: 600;
+}
+.recipe-preview-close {
+  border: 0;
+  background: none;
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-text-muted);
+}
+.recipe-preview-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.recipe-preview-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
+}
+.recipe-preview-stats > div {
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--color-surface-muted);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recipe-preview-stats span {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+.recipe-preview-stats strong {
+  font-size: 17px;
+}
+.recipe-preview-lines-label {
+  display: block;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  margin-bottom: 6px;
+}
+.recipe-preview-line {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 13px;
 }
