@@ -2422,7 +2422,9 @@ model StocktakeLine {
   itemId          String?
   position        Int                 @default(0)
   label           String
-  countedQty      Float
+  // Nullable so a not-yet-counted line (null) is distinct from a counted zero.
+  // All reads guard null; apply/variance skip uncounted lines.
+  countedQty      Float?
   unit            String?
   location        String?
   stockValueCents Int?

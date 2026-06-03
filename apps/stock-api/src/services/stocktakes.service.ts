@@ -424,7 +424,7 @@ function toStocktakeReviewPayload(
 ): StocktakeReviewItem {
   const variance = row.lines.reduce(
     (summary, line) => {
-      if (!line.item) return summary;
+      if (!line.item || line.countedQty == null) return summary;
       const onHand = effectiveVenueOnHand(row.venue, line.item.id, line.item.onHand, venueOnHandByKey);
       const delta = line.countedQty - onHand;
       if (Math.abs(delta) > 0.0001) summary.varianceLineCount += 1;
@@ -708,6 +708,9 @@ export const stocktakesService = {
       const movements: InventoryMovementRow[] = [];
       for (const line of stocktake.lines) {
         if (!line.itemId) continue;
+        // Not-yet-counted lines (null) carry no count — never adjust the ledger
+        // for them, or we'd zero a real item's on-hand.
+        if (line.countedQty == null) continue;
         const balanceTarget = await balanceTargetForItem(tx, line.itemId, stocktake.venue);
         if (!balanceTarget) continue;
 
@@ -1220,7 +1223,7 @@ export const stocktakesService = {
     const previousByItemId = new Map<string, { qty: number; valueCents: number | null }>();
     if (previous) {
       for (const line of previous.lines) {
-        if (!line.itemId) continue;
+        if (!line.itemId || line.countedQty == null) continue;
         previousByItemId.set(line.itemId, {
           qty: line.countedQty,
           valueCents: line.stockValueCents
@@ -1236,11 +1239,11 @@ export const stocktakesService = {
 
     const rows = target.lines.map((line) => {
       const prev = line.itemId ? previousByItemId.get(line.itemId) : undefined;
-      const varianceQty = prev !== undefined ? line.countedQty - prev.qty : null;
+      const varianceQty = prev !== undefined && line.countedQty !== null ? line.countedQty - prev.qty : null;
       const varianceValueCents = prev !== undefined && prev.valueCents !== null && line.stockValueCents !== null
         ? line.stockValueCents - prev.valueCents
         : null;
-      const variancePct = prev !== undefined && prev.qty > 0
+      const variancePct = prev !== undefined && prev.qty > 0 && line.countedQty !== null
         ? (line.countedQty - prev.qty) / prev.qty
         : null;
 

@@ -5558,7 +5558,7 @@ export type StocktakeLine = {
   item: { id: string; name: string; unit: string; onHand: number } | null;
   position: number;
   label: string;
-  countedQty: number;
+  countedQty: number | null;
   unit: string | null;
   location: string | null;
   stockValueCents: number | null;
@@ -5696,10 +5696,10 @@ export type ReportsStockSummary = {
     stocktakeName: string;
     venue: string | null;
     itemName: string;
-    countedQty: number;
+    countedQty: number | null;
     onHand: number;
     unit: string | null;
-    variance: number;
+    variance: number | null;
     submittedAt: string | null;
   }>;
   stockItemsVenueScoped: boolean;
@@ -5758,7 +5758,8 @@ export type ReportsOverviewPayload = {
 export const stocktakeLineInputSchema = z.object({
   itemId: z.string().optional().or(z.literal('')),
   label: z.string().min(1, 'Label is required'),
-  countedQty: z.coerce.number(),
+  // Null = not counted yet (distinct from a counted zero).
+  countedQty: z.coerce.number().nullable(),
   unit: z.string().optional().or(z.literal('')),
   location: z.string().optional().or(z.literal('')),
   stockValueCents: z.coerce.number().int().nonnegative().optional(),
@@ -5837,7 +5838,7 @@ export type StocktakeMovement = InventoryMovement & {
   sourceStocktakeLine: {
     id: string;
     label: string;
-    countedQty: number;
+    countedQty: number | null;
     unit: string | null;
     location: string | null;
   } | null;

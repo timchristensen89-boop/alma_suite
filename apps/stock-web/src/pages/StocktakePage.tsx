@@ -204,7 +204,7 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
     lines: stocktake.lines.map((line) => ({
       itemId: line.itemId ?? '',
       label: line.label,
-      countedQty: String(line.countedQty),
+      countedQty: line.countedQty == null ? '' : String(line.countedQty),
       unit: line.unit ?? line.item?.unit ?? '',
       location: line.location ?? '',
       stockValueCents: line.stockValueCents === null ? '' : String(line.stockValueCents),
@@ -214,10 +214,12 @@ function draftFromStocktake(stocktake: StocktakeWithLines): StocktakeDraft {
 }
 
 function linePayload(line: LineDraft): StocktakeLineInput {
+  // A blank field means "not counted yet" (null) — distinct from a counted zero.
+  const countRaw = String(line.countedQty ?? '').trim();
   return {
     itemId: line.itemId,
     label: line.label.trim(),
-    countedQty: Number(line.countedQty || 0),
+    countedQty: countRaw === '' ? null : Number(countRaw),
     unit: line.unit.trim(),
     location: line.location.trim(),
     stockValueCents: line.stockValueCents === '' ? undefined : Math.round(Number(line.stockValueCents)),
