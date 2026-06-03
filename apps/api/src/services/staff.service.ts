@@ -3283,6 +3283,30 @@ export const staffService = {
         staffInvites: 0
       };
 
+      // Carry the PIN / password forward. If the kept profile has none but a
+      // merged duplicate does, copy it so the person can still sign in with
+      // their existing PIN — otherwise the merge orphans their PIN on the
+      // archived row and they get "PIN login failed" with a correct PIN.
+      const pinSource = canonical.pinHash ? null : duplicates.find((duplicate) => duplicate.pinHash);
+      const passwordSource = canonical.passwordHash ? null : duplicates.find((duplicate) => duplicate.passwordHash);
+      if (pinSource || passwordSource) {
+        await tx.staffProfile.update({
+          where: { id: canonical.id },
+          data: {
+            ...(pinSource
+              ? {
+                  pinHash: pinSource.pinHash,
+                  pinUpdatedAt: pinSource.pinUpdatedAt ?? new Date(),
+                  pinFailedAttempts: 0,
+                  pinLockedUntil: null,
+                  pinLastFailedAt: null
+                }
+              : {}),
+            ...(passwordSource ? { passwordHash: passwordSource.passwordHash } : {})
+          }
+        });
+      }
+
       for (const duplicate of duplicates) {
         moved.complianceRecords += duplicate.records.length;
         await tx.staffComplianceRecord.updateMany({
