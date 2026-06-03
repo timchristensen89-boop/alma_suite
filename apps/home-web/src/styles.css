@@ -104,7 +104,10 @@ html[data-theme='dark'] .kiosk-wordmark__logo {
 
 /* The kiosk takes over the viewport while keeping the shared suite page tone. */
 body:has(.kiosk) {
-  background: var(--color-bg, #FFFFFF);
+  /* Soft sage canvas (a suite tint) so the cream dashboard reads as a raised
+     card instead of blending into a white page. Swap to the pink alt
+     (#F6E7E1) for the warm option. Dark mode keeps the dark page below. */
+  background: #E7EFE0;
   min-height: 100vh;
   margin: 0;
   display: flex;
@@ -114,6 +117,9 @@ body:has(.kiosk) {
   font-family: var(--kiosk-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+html[data-theme='dark'] body:has(.kiosk) {
+  background: var(--kiosk-page);
 }
 
 .kiosk {
@@ -1430,5 +1436,63 @@ body:has(.kiosk) {
   }
   .kiosk-tasks__btn {
     width: 100%;
+  }
+}
+
+/* ── Phones: single-screen PIN login, no scrolling ──────────────────
+   A small clock strip on top, the keypad fills the rest. The summary
+   cards are dropped on a phone — there's no room and they're optional
+   ("if space, cards but not necessary"). Tablets (≤900px) keep them. */
+@media (max-width: 640px) {
+  body:has(.kiosk) {
+    padding: 0;
+    overflow: hidden;
+    align-items: stretch;
+  }
+  .kiosk {
+    height: 100vh;
+    height: 100dvh;
+    max-width: none;
+    border-radius: 0;
+    box-shadow: none;
+    grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
+  }
+
+  /* Compact clock strip */
+  .kiosk__left {
+    padding: 14px 22px 6px;
+    min-height: 0;
+  }
+  .kiosk-greeting { display: none; }
+  .kiosk-onshift { display: none; }
+  .kiosk-clockwrap { margin-top: 6px; }
+  .kiosk-bigtime { font-size: 42px; line-height: 1; }
+  .kiosk-bigtime__ap { font-size: 17px; }
+  .kiosk-datestr { font-size: 12px; margin-top: 2px; }
+
+  /* Cards are optional — drop them on a phone so nothing scrolls */
+  .kiosk-summary-desktop,
+  .kiosk-summary-mobile { display: none; }
+
+  /* PIN panel fills the rest and fits without scrolling */
+  .kiosk__right {
+    padding: 6px 22px 16px;
+    justify-content: center;
+    gap: 4px;
+  }
+  .kiosk-right-head h2,
+  .kiosk-setup__body h2 { font-size: 30px; margin-top: 8px; }
+  .kiosk-right-head p { display: none; }
+  .kiosk-auto-submit-note { display: none; }
+  .kiosk-pad {
+    margin-top: 10px;
+    gap: 9px;
+    max-width: 300px;
+  }
+  .kiosk-key {
+    aspect-ratio: 1 / 0.52;
+    min-height: 46px;
+    font-size: 25px;
   }
 }
