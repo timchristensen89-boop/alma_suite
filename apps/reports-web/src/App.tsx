@@ -1605,10 +1605,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         </div>
       );
     // Overview owns its own gradient bubble header (AlmaHomeBubble); skip
-    // the Card title/subtitle so we don't render two stacked headers.
+    // the Card title/subtitle so we don't render two stacked headers. It still
+    // gets the same roster-style week selector at the top as every other page.
     if (id === 'overview') {
       return (
         <section id={id} className="reports-section report-active-section" aria-labelledby={`${id}-heading`}>
+          <div className="reports-section-actions reports-overview-weeknav">
+            <ReportsWeekNav />
+            {action}
+          </div>
           {children}
         </section>
       );

@@ -698,6 +698,12 @@
   justify-content: flex-end;
 }
 
+/* Overview/home page gets the same week selector at the top as every other
+   report page. */
+.reports-overview-weeknav {
+  margin-bottom: 14px;
+}
+
 @media (max-width: 760px) {
   .report-detail-grid,
   .report-split,
