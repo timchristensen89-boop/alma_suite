@@ -398,6 +398,29 @@ export function StocktakePage() {
     }
   }
 
+  async function downloadStocktakeCsv(stocktake: Stocktake) {
+    setError(null);
+    try {
+      const token = window.localStorage.getItem('alma.stock.session');
+      const res = await fetch(`/api/stocktake/${stocktake.id}/export.csv`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export stocktake CSV');
+    }
+  }
+
   async function reopenStocktake(stocktake: Stocktake) {
     if (!canManageReview) {
       setError('Manager access is required to reopen stocktakes.');
@@ -618,6 +641,15 @@ export function StocktakePage() {
                         onClick={() => void reopenStocktake(stocktake)}
                       >
                         {reopeningId === stocktake.id ? 'Reopening…' : 'Reopen draft'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        title="Download counted vs expected variance as CSV"
+                        onClick={() => void downloadStocktakeCsv(stocktake)}
+                      >
+                        Export CSV
                       </Button>
                     </td>
                   </tr>
