@@ -38,6 +38,56 @@ const LOOKBACK_OPTIONS: Array<{ label: string; value: number }> = [
   { label: 'Last 90 days', value: 90 }
 ];
 
+// Click-to-sort columns for the dish-margin table.
+type DishSortKey =
+  | 'title'
+  | 'venue'
+  | 'cost'
+  | 'sell'
+  | 'margin'
+  | 'sold'
+  | 'revenue'
+  | 'contribution'
+  | 'status';
+
+const DISH_COLUMNS: Array<{ key: DishSortKey; label: string }> = [
+  { key: 'title', label: 'Dish' },
+  { key: 'venue', label: 'Venue' },
+  { key: 'cost', label: 'Cost' },
+  { key: 'sell', label: 'Sell price' },
+  { key: 'margin', label: 'Margin' },
+  { key: 'sold', label: 'Sold' },
+  { key: 'revenue', label: 'Revenue' },
+  { key: 'contribution', label: 'Contribution' },
+  { key: 'status', label: 'Status' }
+];
+
+// Sort value per column. Returns null for "no data" so those rows sort last
+// regardless of direction.
+function dishSortValue(r: EnrichedRecipe, key: DishSortKey): string | number | null {
+  switch (key) {
+    case 'title':
+      return r.title.toLowerCase();
+    case 'venue':
+      return (r.venue || '').toLowerCase();
+    case 'cost':
+      return r.costCents;
+    case 'sell':
+      return r.sellCents;
+    case 'margin':
+    case 'status':
+      return r.marginPercent;
+    case 'sold':
+      return r.actualSales?.quantitySold ?? null;
+    case 'revenue':
+      return r.actualSales && r.actualSales.quantitySold > 0 ? r.actualSales.netSalesCents : null;
+    case 'contribution':
+      return r.contributionCents;
+    default:
+      return null;
+  }
+}
+
 // Effective sell price for a recipe given the selected venue filter: when a
 // specific venue is selected and that recipe has a per-venue override, use it;
 // otherwise fall back to the recipe's default sale price.
@@ -59,6 +109,19 @@ export function DishMarginPage() {
   const [lookbackDays, setLookbackDays] = useState<number>(30);
   // Quick view/edit popup — holds the id of the recipe being inspected.
   const [activeRecipeId, setActiveRecipeId] = useState<string | null>(null);
+  // Click-to-sort: default to lowest margin first (asc), matching the old
+  // hardcoded order.
+  const [sortKey, setSortKey] = useState<DishSortKey>('margin');
+  const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+
+  function toggleSort(key: DishSortKey) {
+    if (sortKey === key) {
+      setSortDir((dir) => (dir === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSortKey(key);
+      setSortDir('asc');
+    }
+  }
 
   async function loadRecipes() {
     try {
@@ -133,11 +196,19 @@ export function DishMarginPage() {
       })
       .filter((r) => !term || r.title.toLowerCase().includes(term))
       .sort((a, b) => {
-        if (a.marginPercent == null) return 1;
-        if (b.marginPercent == null) return -1;
-        return a.marginPercent - b.marginPercent;
+        const av = dishSortValue(a, sortKey);
+        const bv = dishSortValue(b, sortKey);
+        // Missing values always sort last, regardless of direction.
+        if (av == null && bv == null) return 0;
+        if (av == null) return 1;
+        if (bv == null) return -1;
+        const cmp =
+          typeof av === 'string' && typeof bv === 'string'
+            ? av.localeCompare(bv, undefined, { numeric: true })
+            : (av as number) - (bv as number);
+        return sortDir === 'asc' ? cmp : -cmp;
       });
-  }, [enriched, venueFilter, tone, search]);
+  }, [enriched, venueFilter, tone, search, sortKey, sortDir]);
 
   const summary = useMemo(() => {
     const totals = { positive: 0, warning: 0, danger: 0, muted: 0 };
@@ -169,7 +240,7 @@ export function DishMarginPage() {
     <div className="dish-margin-stack">
       <Card
         title="Dish margins"
-        subtitle="Recipe cost vs sell price across the menu — sorted by lowest margin first"
+        subtitle="Recipe cost vs sell price across the menu — click any column heading to sort"
       >
         <div className="dish-margin-summary">
           <div className="dish-margin-summary-tile is-positive">
@@ -251,15 +322,29 @@ export function DishMarginPage() {
         ) : (
           <div className="dish-margin-table">
             <div className="dish-margin-row dish-margin-head">
-              <span>Dish</span>
-              <span>Venue</span>
-              <span>Cost</span>
-              <span>Sell price</span>
-              <span>Margin</span>
-              <span>Sold ({lookbackDays}d)</span>
-              <span>Revenue ({lookbackDays}d)</span>
-              <span>Contribution</span>
-              <span>Status</span>
+              {DISH_COLUMNS.map((col) => {
+                const label =
+                  col.key === 'sold'
+                    ? `Sold (${lookbackDays}d)`
+                    : col.key === 'revenue'
+                      ? `Revenue (${lookbackDays}d)`
+                      : col.label;
+                const active = sortKey === col.key;
+                return (
+                  <button
+                    key={col.key}
+                    type="button"
+                    className={`dish-margin-th ${active ? 'is-active' : ''}`}
+                    aria-sort={active ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}
+                    onClick={() => toggleSort(col.key)}
+                  >
+                    {label}
+                    <span className="dish-margin-caret" aria-hidden="true">
+                      {active ? (sortDir === 'asc' ? '▲' : '▼') : '⇅'}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
             {filtered.map((r) => {
               const meta = classifyMargin(r.marginPercent);
