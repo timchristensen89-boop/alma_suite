@@ -3155,12 +3155,14 @@ export const integrationService = {
         accountKey,
         status: 'MAPPED',
         almaRecipeId: { not: null },
-        priceMoneyAmount: { not: null }
+        // Only mirror POSITIVE prices. $0 items (tasting-menu courses "* …" and
+        // bottomless "BB …" lines) must never overwrite a recipe's real price.
+        priceMoneyAmount: { gt: 0 }
       },
       select: { almaRecipeId: true, priceMoneyAmount: true, venue: true }
     });
     for (const mapping of confirmedMappings) {
-      if (!mapping.almaRecipeId || mapping.priceMoneyAmount === null) continue;
+      if (!mapping.almaRecipeId || !mapping.priceMoneyAmount || mapping.priceMoneyAmount <= 0) continue;
       const recipeId = mapping.almaRecipeId;
       const price = mapping.priceMoneyAmount;
       const venue = mapping.venue?.trim();
@@ -3453,8 +3455,9 @@ export const integrationService = {
         else needsReview += 1;
 
         // Mirror the confirmed price onto the recipe so dish margins reflect it
-        // immediately — same as the manual-map and catalogue-sync paths.
-        if (status === 'MAPPED' && best.type === 'recipe' && mapping.priceMoneyAmount !== null) {
+        // immediately — same as the manual-map and catalogue-sync paths. Only
+        // POSITIVE prices: a $0 item (BB/* component) must not zero the recipe.
+        if (status === 'MAPPED' && best.type === 'recipe' && mapping.priceMoneyAmount !== null && mapping.priceMoneyAmount > 0) {
           const recipeId = best.id;
           const price = mapping.priceMoneyAmount;
           const venue = mapping.venue?.trim();
@@ -3554,7 +3557,7 @@ export const integrationService = {
     // Once a Square item is confirmed against a recipe, push its POS price onto
     // Recipe.salePriceCents immediately so the Stock dish-margin page reflects it
     // without waiting for the next catalogue sync.
-    if (updated.status === 'MAPPED' && updated.almaRecipeId && updated.priceMoneyAmount !== null) {
+    if (updated.status === 'MAPPED' && updated.almaRecipeId && updated.priceMoneyAmount !== null && updated.priceMoneyAmount > 0) {
       const recipeId = updated.almaRecipeId;
       const price = updated.priceMoneyAmount;
       const venue = updated.venue?.trim();
