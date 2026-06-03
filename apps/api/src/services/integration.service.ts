@@ -4479,7 +4479,13 @@ export const integrationService = {
         const quantity = squareOrderLineQuantity(line);
         const grossSalesCents = squareOrderLineGrossCents(line);
         const netSalesCents = squareOrderLineNetCents(line);
-        if (quantity <= 0 || netSalesCents <= 0) {
+        // Keep $0-net lines as long as a real quantity was rung. Venues ring
+        // tasting-menu courses ("* …") and bottomless-brunch components ("BB
+        // …") as $0 items so the revenue sits on the priced parent. Capturing
+        // them lets each component's mapped recipe cost flow into theoretical
+        // COGS even though the line itself carries no revenue. (Comps/voids
+        // ring as $0 too — they only affect COGS if you map them to a recipe.)
+        if (quantity <= 0) {
           skippedLines += 1;
           continue;
         }
