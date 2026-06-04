@@ -91,14 +91,31 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
 };
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
-  { href: '#floor-plan', label: 'Floor plan', description: 'Drag-drop table layout', icon: <GearIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
   { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
-  { href: '#availability', label: 'Availability', description: 'Rules and blackouts', icon: <GearIcon /> },
-  { href: '#drinks', label: 'Drinks', description: 'Pre-paid drinks packages', icon: <GearIcon /> },
+  { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <GearIcon /> },
   { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
   { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
 ];
+
+// Config surfaces (booking rules, drink packages, tables, floor plan) live under
+// one full-width Settings tab, switched by hash sub-nav. The old per-area tabs
+// rendered Drinks/Tables inside the narrow 340-420px aside, so they were unreadable.
+const SETTINGS_HASHES = ['#settings', '#availability', '#drinks', '#tables', '#floor-plan'];
+const SETTINGS_TABS = [
+  { hash: '#availability', key: 'rules', label: 'Booking rules' },
+  { hash: '#drinks', key: 'drinks', label: 'Drink packages' },
+  { hash: '#tables', key: 'tables', label: 'Tables' },
+  { hash: '#floor-plan', key: 'floor-plan', label: 'Floor plan' }
+] as const;
+
+function resolveNavItem(activeHash: string) {
+  return (
+    MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ??
+    (SETTINGS_HASHES.includes(activeHash) ? MANAGER_NAV_ITEMS.find((item) => item.href === '#settings') : undefined) ??
+    MANAGER_NAV_ITEMS[0]!
+  );
+}
 
 // Waitlist is server-backed (GET/POST/PATCH /reserve/waitlist). The UI maps its
 // operational actions onto the DB status enum: Seated -> BOOKED, Notify ->
@@ -628,7 +645,7 @@ function SidebarNav() {
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
 
-  const active = MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ?? MANAGER_NAV_ITEMS[0]!;
+  const active = resolveNavItem(activeHash);
 
   return (
     <div ref={navRef} className="mobile-nav-layer">
@@ -651,7 +668,7 @@ function SidebarNav() {
           <li key={item.href}>
             <a
               href={item.href}
-              className={activeHash === item.href ? 'active' : ''}
+              className={active.href === item.href ? 'active' : ''}
               onClick={() => {
                 setActiveHash(item.href);
                 setMobileMenuOpen(false);
@@ -1728,7 +1745,7 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
     return () => window.removeEventListener('hashchange', sync);
   }, []);
 
-  const active = MANAGER_NAV_ITEMS.find((item) => item.href === activeHash) ?? MANAGER_NAV_ITEMS[0]!;
+  const active = resolveNavItem(activeHash);
 
   useEffect(() => {
     document.title = `${active.label} · Alma Reserve`;
@@ -2379,13 +2396,20 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
   const showDashboard = activeHash === '#dashboard' || activeHash === '';
-  const showFloorPlan = activeHash === '#floor-plan';
   const showGuests = activeHash === '#guests';
   const showWaitlist = activeHash === '#waitlist';
-  const showAvailability = activeHash === '#availability';
-  const showDrinks = activeHash === '#drinks';
   const showWidget = activeHash === '#widget-preview';
   const showGoogleReserve = activeHash === '#google-reserve';
+  const showSettings = SETTINGS_HASHES.includes(activeHash);
+  const settingsTab: 'rules' | 'drinks' | 'tables' | 'floor-plan' =
+    activeHash === '#drinks' ? 'drinks'
+      : activeHash === '#tables' ? 'tables'
+        : activeHash === '#floor-plan' ? 'floor-plan'
+          : 'rules';
+  const showAvailability = showSettings && settingsTab === 'rules';
+  const showDrinks = showSettings && settingsTab === 'drinks';
+  const showTables = showSettings && settingsTab === 'tables';
+  const showFloorPlan = showSettings && settingsTab === 'floor-plan';
   // Recent visit history for the guest being booked — shown when the email
   // entered in the quick-create form matches an existing guest in this venue.
   const [formGuestHistory, setFormGuestHistory] = useState<{
@@ -2972,7 +2996,23 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
         {feedback.target === 'page' && feedback.message ? <p className="error-text">{feedback.message}</p> : null}
 
-        <div className="reserve-layout">
+        {showSettings ? (
+          <nav className="reserve-settings-tabs" aria-label="Reserve settings">
+            {SETTINGS_TABS.map((tab) => (
+              <a
+                key={tab.hash}
+                href={tab.hash}
+                className={settingsTab === tab.key ? 'active' : ''}
+                onClick={() => setActiveHash(tab.hash)}
+              >
+                {tab.label}
+              </a>
+            ))}
+          </nav>
+        ) : null}
+
+        <div className={`reserve-layout${showSettings ? ' is-settings' : ''}`}>
+          {(!showSettings || showAvailability || showFloorPlan) ? (
           <section className="reserve-main">
             {showDashboard ? (
             <section id="dashboard">
@@ -3400,8 +3440,11 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </section>
             ) : null}
           </section>
+          ) : null}
 
+          {(!showSettings || showTables || showDrinks) ? (
           <aside className="reserve-side">
+            {!showSettings ? (
             <Card title="Quick create booking" subtitle="Manager-entered reservation with guest consent capture">
               <form className="reserve-form" onSubmit={(event) => void saveReservation(event)}>
                 <div className="form-grid two">
@@ -3519,7 +3562,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               ) : null}
             </Card>
+            ) : null}
 
+            {showTables ? (
             <Card title="Tables" subtitle="Lightweight table map foundation">
               <form className="reserve-form" onSubmit={(event) => void saveTable(event)}>
                 <div className="form-grid two">
@@ -3541,6 +3586,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 ))}
               </div>
             </Card>
+            ) : null}
 
             {showDrinks ? (
             <section id="drinks">
@@ -3600,6 +3646,8 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                         </div>
                       </form>
                     </Card>
+                  </div>
+                  <div className="reserve-stack">
                     <Card title="Packages" subtitle={`${drinkPackages.length} configured`}>
                       {drinkPackages.length === 0 ? (
                         <EmptyState title="No packages yet" description="Add a drinks package above — it’ll appear on the booking widget for that venue." />
@@ -3702,6 +3750,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </section>
             ) : null}
           </aside>
+          ) : null}
         </div>
       </div>
     </AppShell>
