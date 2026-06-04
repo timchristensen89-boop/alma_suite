@@ -787,7 +787,7 @@ export function App() {
                   ? user?.deviceAccount
                     ? `Using ${displayName(user)} on ${user.deviceAccount.name}.`
                     : `${venueLabel} device signed in.`
-                  : 'Your PIN identifies your staff profile, then clocks you in or out automatically.'}
+                  : 'Your PIN signs you in — then clock in or out, or jump straight to an app.'}
               </p>
             </div>
 
