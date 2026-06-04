@@ -26,6 +26,9 @@
   /* Forest ink as raw RGB channels, so the many rgba(var(--ink-forest-rgb),α) tints used
      for text/borders/insets keep their alpha but flip to light in dark mode. */
   --ink-forest-rgb: 31, 53, 36;
+  /* Pure-black display text (card values, panel titles). Paired so it stays
+     #000 in light and flips to light text in dark. */
+  --color-ink-black: #000;
   --color-border: #e2e8f0;
   --color-border-strong: #cbd5e1;
   --color-text: #0f172a;
@@ -780,7 +783,7 @@ p {
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-size: 24px;
   font-weight: 500;
-  color: #000;
+  color: var(--color-ink-black);
   letter-spacing: -0.005em;
   line-height: 1;
 }
@@ -1305,7 +1308,7 @@ p {
   font-weight: 500;
   letter-spacing: -0.005em;
   line-height: 1;
-  color: #000;
+  color: var(--color-ink-black);
   font-variant-numeric: tabular-nums;
   margin-top: 6px;
 }
@@ -5975,7 +5978,7 @@ a.suite-app-tile:hover {
   font-size: 26px;
   font-weight: 500;
   letter-spacing: -0.005em;
-  color: #000;
+  color: var(--color-ink-black);
   line-height: 1;
 }
 
@@ -6361,7 +6364,7 @@ a.suite-app-tile:hover {
   font-size: 26px;
   font-weight: 500;
   letter-spacing: -0.005em;
-  color: #000;
+  color: var(--color-ink-black);
   line-height: 1;
 }
 
@@ -8268,7 +8271,7 @@ a.suite-app-tile:hover {
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-weight: 500;
   font-size: 22px;
-  color: #000;
+  color: var(--color-ink-black);
   line-height: 1;
   letter-spacing: -0.005em;
   margin: 0;
@@ -8343,7 +8346,7 @@ a.suite-app-tile:hover {
   font-weight: 500;
   font-size: 44px;
   line-height: 1;
-  color: #000;
+  color: var(--color-ink-black);
   margin-top: 10px;
   font-variant-numeric: tabular-nums;
 }
@@ -9199,7 +9202,7 @@ a.suite-app-tile:hover {
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-size: 28px;
   font-weight: 500;
-  color: #000;
+  color: var(--color-ink-black);
   line-height: 1;
   letter-spacing: -0.005em;
 }
@@ -11313,6 +11316,7 @@ html[data-theme='dark'] {
   --color-elevated: #262019;
   --color-ink-forest: #EDE7DC;
   --ink-forest-rgb: 237, 231, 220;
+  --color-ink-black: var(--color-text);
   --color-border: rgba(237, 231, 220, 0.14);
   --color-border-strong: rgba(237, 231, 220, 0.26);
   --color-text: #F2ECE2;
@@ -11416,6 +11420,23 @@ html[data-theme='dark'] .alma-bigstat--danger {
 }
 html[data-theme='dark'] .suite-clock {
   background: var(--color-surface);
+}
+/* Bigstat delta pills (hardcoded pale bg + dark text). */
+html[data-theme='dark'] .alma-bigstat-delta.is-positive {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .alma-bigstat-delta.is-negative {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+/* App-switcher sticky head/footer fades should match the popover (elevated),
+   not the surface — otherwise a mismatched brown band shows top + bottom. */
+html[data-theme='dark'] .suite-switcher-popover--list .suite-switch-list-head {
+  background: linear-gradient(180deg, var(--color-elevated) 78%, transparent);
+}
+html[data-theme='dark'] .suite-switcher-popover--list .suite-switch-footer {
+  background: linear-gradient(0deg, var(--color-elevated) 78%, transparent);
 }
 
 /* Shared dark-mode toggle button — sits among the topbar icon actions. */
