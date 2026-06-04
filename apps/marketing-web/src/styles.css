@@ -542,3 +542,103 @@ html[data-theme='dark'] {
   --color-accent-soft: #342222;
   --color-accent-text: #F4E4E4;
 }
+
+/* ==========================================================================
+   Marketing redesign — refreshed design language (phase 1: polish)
+   Tasteful, structural-safe lift on the existing markup: rhythm, elevation,
+   type hierarchy, hover states, and brand-consistent accents.
+   ========================================================================== */
+
+.marketing-page { gap: 28px; }
+.marketing-page-section { gap: 22px; }
+
+/* Section headings → editorial eyebrow */
+.marketing-section-heading > strong {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+}
+
+/* Summary cards — softer, roomier, clearer type */
+.marketing-summary-card {
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: var(--color-surface);
+  box-shadow: var(--shadow-xs);
+}
+.marketing-summary-card > strong {
+  font-size: 14.5px;
+  letter-spacing: -0.01em;
+}
+
+/* Section launcher → premium nav tiles with an affordance arrow */
+.marketing-section-launcher { gap: 14px; }
+.marketing-section-link {
+  position: relative;
+  padding: 18px 20px 18px 20px;
+  border-radius: 16px;
+  background: linear-gradient(180deg, var(--color-surface), var(--color-surface-muted));
+}
+.marketing-section-link > strong { font-size: 15px; }
+.marketing-section-link::after {
+  content: '→';
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  color: var(--color-accent);
+  font-weight: 800;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+.marketing-section-link:hover::after,
+.marketing-section-link:focus-visible::after {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Stat cards — a touch more presence inside marketing */
+.stats-grid .stat-card {
+  border-radius: 16px;
+  padding: 18px 20px;
+}
+
+/* Asset / post / account cards — softer, lift on hover */
+.content-asset-card,
+.content-post-card,
+.social-account-card,
+.content-channel-preview,
+.content-calendar-row,
+.marketing-preview-frame,
+.birthday-row {
+  border-radius: 14px;
+}
+.content-asset-card,
+.content-post-card {
+  transition: border-color 0.16s ease, box-shadow 0.16s ease, transform 0.16s ease;
+}
+.content-asset-card:hover,
+.content-post-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 10px 26px rgba(104, 74, 74, 0.10);
+  transform: translateY(-1px);
+}
+
+/* AI helper panel — re-tint from the stray bright red to the marketing accent */
+.ai-helper-panel {
+  border: 1px solid var(--color-accent-soft);
+  border-radius: 16px;
+  background:
+    linear-gradient(135deg, var(--color-accent-soft), var(--color-surface)),
+    var(--color-surface);
+}
+.ai-helper-eyebrow {
+  background: var(--color-accent-soft);
+  color: var(--color-accent-text);
+}
+.ai-helper-card:hover {
+  border-color: var(--color-accent);
+  box-shadow: 0 6px 16px rgba(104, 74, 74, 0.10);
+}
