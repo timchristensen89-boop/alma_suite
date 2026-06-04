@@ -104,6 +104,24 @@ reserveRouter.post('/tables', requireManager, async (req, res, next) => {
   }
 });
 
+// Batch geometry save from the floor-plan editor. Declared before /tables/:id
+// so "layout" isn't captured as an :id.
+reserveRouter.patch('/tables/layout', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reserveService.saveTableLayout(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.patch('/tables/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reserveService.updateTable(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reserveRouter.get('/reservations', requireManager, async (req, res, next) => {
   try {
     res.json(
@@ -266,6 +284,16 @@ reserveRouter.get('/waitlist', requireManager, async (req, res, next) => {
     const venue = typeof req.query.venue === 'string' ? req.query.venue : undefined;
     const status = typeof req.query.status === 'string' ? req.query.status : undefined;
     res.json(await reserveService.listWaitlist(req.user, { venue, status }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager — add a walk-in / phone waitlist entry.
+reserveRouter.post('/waitlist', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await reserveService.createWaitlistEntry(req.user, req.body));
   } catch (error) {
     next(error);
   }

@@ -15,7 +15,9 @@ import type {
   ReserveReservation,
   ReserveReservationStatus,
   ReserveServicePeriod,
-  ReserveTable
+  ReserveTable,
+  ReserveWaitlistEntry,
+  ReserveWaitlistStatus
 } from '@alma/shared';
 import {
   ActionFeedback,
@@ -95,38 +97,11 @@ const MANAGER_NAV_ITEMS = [
   { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
 ];
 
-type WaitlistEntry = {
-  id: string;
-  venue: string;
-  guestName: string;
-  partySize: number;
-  phone: string;
-  notes: string;
-  addedAt: string;
-  estimatedWaitMinutes: number | null;
-  status: 'WAITING' | 'SEATED' | 'CANCELLED' | 'LEFT';
-};
-
-const WAITLIST_STORAGE_KEY = 'alma.reserve.waitlist.v1';
-
-function loadWaitlist(): WaitlistEntry[] {
-  try {
-    const raw = window.localStorage.getItem(WAITLIST_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function persistWaitlist(entries: WaitlistEntry[]) {
-  try {
-    window.localStorage.setItem(WAITLIST_STORAGE_KEY, JSON.stringify(entries));
-  } catch {
-    /* storage unavailable */
-  }
-}
+// Waitlist is server-backed (GET/POST/PATCH /reserve/waitlist). The UI maps its
+// operational actions onto the DB status enum: Seated -> BOOKED, Notify ->
+// NOTIFIED, Left -> EXPIRED, Cancel -> CANCELLED. A walk-in's "estimated wait"
+// is encoded as the windowStartsAt(now) -> windowEndsAt(now + est) span.
+const WAITLIST_WAITING: ReserveWaitlistStatus[] = ['WAITING', 'NOTIFIED'];
 
 type FeedbackTone = 'success' | 'error';
 
@@ -1750,7 +1725,10 @@ function WaitlistSection({
   defaultVenue: string;
   venueOptions: Array<{ label: string; value: string }>;
 }) {
-  const [entries, setEntries] = useState<WaitlistEntry[]>(() => loadWaitlist());
+  const [entries, setEntries] = useState<ReserveWaitlistEntry[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState({
     venue: defaultVenue,
     guestName: '',
@@ -1760,45 +1738,66 @@ function WaitlistSection({
     estimatedWaitMinutes: ''
   });
 
+  const reload = useCallback(async () => {
+    try {
+      const rows = await api<ReserveWaitlistEntry[]>('/api/reserve/waitlist');
+      setEntries(rows ?? []);
+      setError(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load the waitlist.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
-    persistWaitlist(entries);
-  }, [entries]);
+    void reload();
+  }, [reload]);
 
-  function addEntry(event: FormEvent<HTMLFormElement>) {
+  async function addEntry(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!draft.guestName.trim()) return;
-    const entry: WaitlistEntry = {
-      id: `wl-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      venue: draft.venue,
-      guestName: draft.guestName.trim(),
-      partySize: Math.max(1, Number(draft.partySize) || 1),
-      phone: draft.phone.trim(),
-      notes: draft.notes.trim(),
-      addedAt: new Date().toISOString(),
-      estimatedWaitMinutes: draft.estimatedWaitMinutes ? Number(draft.estimatedWaitMinutes) : null,
-      status: 'WAITING'
-    };
-    setEntries((current) => [entry, ...current]);
-    setDraft({
-      venue: draft.venue,
-      guestName: '',
-      partySize: '2',
-      phone: '',
-      notes: '',
-      estimatedWaitMinutes: ''
-    });
+    if (!draft.guestName.trim() || busy) return;
+    setBusy(true);
+    try {
+      const now = new Date();
+      const est = draft.estimatedWaitMinutes ? Math.max(0, Number(draft.estimatedWaitMinutes)) : 30;
+      const windowEndsAt = new Date(now.getTime() + est * 60000);
+      await api('/api/reserve/waitlist', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue: draft.venue,
+          guestName: draft.guestName.trim(),
+          guestPhone: draft.phone.trim(),
+          partySize: Math.max(1, Number(draft.partySize) || 1),
+          windowStartsAt: now.toISOString(),
+          windowEndsAt: windowEndsAt.toISOString(),
+          notes: draft.notes.trim()
+        })
+      });
+      setDraft({ venue: draft.venue, guestName: '', partySize: '2', phone: '', notes: '', estimatedWaitMinutes: '' });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add to the waitlist.');
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function updateStatus(id: string, status: WaitlistEntry['status']) {
-    setEntries((current) => current.map((e) => (e.id === id ? { ...e, status } : e)));
+  async function updateStatus(id: string, status: ReserveWaitlistStatus) {
+    if (busy) return;
+    setBusy(true);
+    try {
+      await api(`/api/reserve/waitlist/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) });
+      await reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not update the entry.');
+    } finally {
+      setBusy(false);
+    }
   }
 
-  function removeEntry(id: string) {
-    setEntries((current) => current.filter((e) => e.id !== id));
-  }
-
-  const waiting = entries.filter((e) => e.status === 'WAITING');
-  const resolved = entries.filter((e) => e.status !== 'WAITING').slice(0, 8);
+  const waiting = entries.filter((e) => WAITLIST_WAITING.includes(e.status));
+  const resolved = entries.filter((e) => !WAITLIST_WAITING.includes(e.status)).slice(0, 8);
 
   function timeSinceAdded(iso: string) {
     const minutes = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
@@ -1806,11 +1805,20 @@ function WaitlistSection({
     if (minutes < 60) return `${minutes}m ago`;
     return `${Math.floor(minutes / 60)}h ${minutes % 60}m ago`;
   }
+  function estWaitMinutes(entry: ReserveWaitlistEntry): number | null {
+    const span = Math.round((new Date(entry.windowEndsAt).getTime() - new Date(entry.windowStartsAt).getTime()) / 60000);
+    return span > 0 ? span : null;
+  }
+  function resolvedLabel(status: ReserveWaitlistStatus): string {
+    if (status === 'BOOKED') return 'Seated';
+    if (status === 'EXPIRED') return 'Left without staying';
+    return 'Cancelled';
+  }
 
   return (
     <Card
       title="Waitlist"
-      subtitle="Walk-in queue for peak service periods. Stored locally per browser — sync to the API in a future release."
+      subtitle="Walk-in queue for peak service periods. Synced to the API, so it's the same on every host and device."
     >
       <form className="reserve-form" onSubmit={addEntry}>
         <div className="form-grid two">
@@ -1831,7 +1839,7 @@ function WaitlistSection({
             label="Party size"
             type="number"
             min="1"
-            max="20"
+            max="40"
             value={draft.partySize}
             onChange={(event) => setDraft({ ...draft, partySize: event.currentTarget.value })}
           />
@@ -1856,8 +1864,9 @@ function WaitlistSection({
             placeholder="Window seat, bar OK..."
           />
         </div>
+        {error ? <p className="reserve-error">{error}</p> : null}
         <div className="toolbar-right">
-          <Button type="submit">Add to waitlist</Button>
+          <Button type="submit" disabled={busy}>Add to waitlist</Button>
         </div>
       </form>
 
@@ -1865,31 +1874,40 @@ function WaitlistSection({
         <div className="waitlist-section-head">
           <strong>Currently waiting · {waiting.length}</strong>
         </div>
-        {waiting.length === 0 ? (
+        {loading ? (
+          <EmptyState title="Loading…" description="Fetching the current waitlist." />
+        ) : waiting.length === 0 ? (
           <EmptyState
             title="No one waiting"
             description="Add walk-ins as they arrive to track the queue and wait times."
           />
         ) : (
-          waiting.map((entry) => (
-            <div key={entry.id} className="waitlist-row is-waiting">
-              <div className="waitlist-row-main">
-                <strong>{entry.guestName}</strong>
-                <span>{entry.partySize} {entry.partySize === 1 ? 'guest' : 'guests'} · {entry.venue}</span>
-                <small>
-                  Added {timeSinceAdded(entry.addedAt)}
-                  {entry.estimatedWaitMinutes !== null ? ` · Est. wait ${entry.estimatedWaitMinutes}m` : ''}
-                  {entry.phone ? ` · ${entry.phone}` : ''}
-                </small>
-                {entry.notes ? <em>{entry.notes}</em> : null}
+          waiting.map((entry) => {
+            const est = estWaitMinutes(entry);
+            const hasPhone = entry.guestPhone && entry.guestPhone !== '—';
+            return (
+              <div key={entry.id} className={`waitlist-row is-${entry.status.toLowerCase()}`}>
+                <div className="waitlist-row-main">
+                  <strong>{entry.guestName}{entry.status === 'NOTIFIED' ? ' · notified' : ''}</strong>
+                  <span>{entry.partySize} {entry.partySize === 1 ? 'guest' : 'guests'} · {entry.venue}</span>
+                  <small>
+                    Added {timeSinceAdded(entry.createdAt)}
+                    {est !== null ? ` · Est. wait ${est}m` : ''}
+                    {hasPhone ? ` · ${entry.guestPhone}` : ''}
+                  </small>
+                  {entry.notes ? <em>{entry.notes}</em> : null}
+                </div>
+                <div className="waitlist-row-actions">
+                  {entry.status !== 'NOTIFIED' ? (
+                    <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'NOTIFIED')}>Notify</Button>
+                  ) : null}
+                  <Button type="button" size="sm" disabled={busy} onClick={() => updateStatus(entry.id, 'BOOKED')}>Seated</Button>
+                  <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'EXPIRED')}>Left</Button>
+                  <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'CANCELLED')}>Cancel</Button>
+                </div>
               </div>
-              <div className="waitlist-row-actions">
-                <Button type="button" size="sm" onClick={() => updateStatus(entry.id, 'SEATED')}>Seated</Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => updateStatus(entry.id, 'LEFT')}>Left</Button>
-                <Button type="button" size="sm" variant="ghost" onClick={() => updateStatus(entry.id, 'CANCELLED')}>Cancel</Button>
-              </div>
-            </div>
-          ))
+            );
+          })
         )}
 
         {resolved.length > 0 ? (
@@ -1902,10 +1920,7 @@ function WaitlistSection({
                 <div className="waitlist-row-main">
                   <strong>{entry.guestName}</strong>
                   <span>{entry.partySize} guests · {entry.venue}</span>
-                  <small>{entry.status === 'SEATED' ? 'Seated' : entry.status === 'LEFT' ? 'Left without staying' : 'Cancelled'} · added {timeSinceAdded(entry.addedAt)}</small>
-                </div>
-                <div className="waitlist-row-actions">
-                  <Button type="button" size="sm" variant="ghost" onClick={() => removeEntry(entry.id)}>Clear</Button>
+                  <small>{resolvedLabel(entry.status)} · added {timeSinceAdded(entry.createdAt)}</small>
                 </div>
               </div>
             ))}
@@ -1916,105 +1931,122 @@ function WaitlistSection({
   );
 }
 
-// Per-venue table position storage. Backend doesn't track x/y coordinates,
-// so we persist them in localStorage keyed by venue. Each venue's layout is
-// the host's local layout — fine for single-venue use; for cross-device sync
-// the positions would need to move to the backend (StockItem-like venue
-// table positions table).
-type TablePosition = { x: number; y: number };
-function loadFloorLayout(venue: string): Record<string, TablePosition> {
-  try {
-    const raw = window.localStorage.getItem(`alma.reserve.floor.${venue}`);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw);
-    return typeof parsed === 'object' && parsed ? parsed : {};
-  } catch {
-    return {};
-  }
+// Floor-plan geometry now lives on the server (ReserveTable.posX/posY/width/
+// height/rotation/shape/seats), so the layout syncs across devices and hosts
+// instead of being stuck in one browser's localStorage. The editor keeps an
+// optimistic local copy while arranging, then persists the whole plan via
+// PATCH /reserve/tables/layout on "Done arranging".
+type TableShape = 'rect' | 'circle';
+type TableGeo = {
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  shape: TableShape;
+  seats: number;
+};
+export type TableLayoutUpdate = {
+  id: string;
+  posX: number;
+  posY: number;
+  width: number;
+  height: number;
+  rotation: number;
+  shape: TableShape;
+  seats: number;
+};
+
+const FLOOR_DEFAULT_W = 14;
+const FLOOR_DEFAULT_H = 12;
+const floorRound = (value: number) => Math.round(value * 10) / 10;
+const floorClamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+
+function seedTableGeo(table: ReserveTable, index: number): TableGeo {
+  const col = index % 4;
+  const row = Math.floor(index / 4);
+  return {
+    posX: table.posX ?? 12 + col * 22,
+    posY: table.posY ?? 16 + row * 22,
+    width: table.width ?? FLOOR_DEFAULT_W,
+    height: table.height ?? FLOOR_DEFAULT_H,
+    rotation: table.rotation ?? 0,
+    shape: table.shape === 'circle' ? 'circle' : 'rect',
+    seats: table.seats ?? table.maxCovers
+  };
 }
-function persistFloorLayout(venue: string, layout: Record<string, TablePosition>) {
-  try {
-    window.localStorage.setItem(`alma.reserve.floor.${venue}`, JSON.stringify(layout));
-  } catch {
-    /* swallow */
-  }
+function seedFloorGeometry(tables: ReserveTable[]): Record<string, TableGeo> {
+  const out: Record<string, TableGeo> = {};
+  tables.forEach((table, index) => {
+    out[table.id] = seedTableGeo(table, index);
+  });
+  return out;
 }
 
 function FloorPlanSection({
   venue,
   tables,
   reservations,
-  onAssignTable
+  onAssignTable,
+  onSaveLayout
 }: {
   venue: string;
   tables: ReserveTable[];
   reservations: ReserveReservation[];
   onAssignTable: (reservationId: string, tableId: string | null) => void | Promise<void>;
+  onSaveLayout: (updates: TableLayoutUpdate[]) => Promise<void>;
 }) {
-  const [layouts, setLayouts] = useState<Record<string, Record<string, TablePosition>>>(() => {
-    const initial: Record<string, Record<string, TablePosition>> = {};
-    for (const tableVenue of Array.from(new Set(tables.map((t) => t.venue)))) {
-      initial[tableVenue] = loadFloorLayout(tableVenue);
-    }
-    if (!initial[venue]) initial[venue] = loadFloorLayout(venue);
-    return initial;
-  });
+  const [geometry, setGeometry] = useState<Record<string, TableGeo>>(() => seedFloorGeometry(tables));
   const [editMode, setEditMode] = useState(false);
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [draggingReservationId, setDraggingReservationId] = useState<string | null>(null);
   const [dropTargetTableId, setDropTargetTableId] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const canvasRef = useRef<HTMLDivElement | null>(null);
 
-  // Refresh layout when venue changes
+  // Re-seed from the server when the table set changes — but never mid-edit,
+  // so in-progress arranging isn't clobbered. After "Done arranging" the parent
+  // reloads tables, which re-seeds from the saved geometry.
   useEffect(() => {
-    setLayouts((current) => ({
-      ...current,
-      [venue]: current[venue] ?? loadFloorLayout(venue)
-    }));
-  }, [venue]);
+    if (editMode) return;
+    setGeometry(seedFloorGeometry(tables));
+  }, [tables, editMode]);
 
-  // Persist when layout changes
-  useEffect(() => {
-    const layout = layouts[venue];
-    if (layout) persistFloorLayout(venue, layout);
-  }, [venue, layouts]);
+  const geoFor = (table: ReserveTable, index: number): TableGeo => geometry[table.id] ?? seedTableGeo(table, index);
 
-  const layout = layouts[venue] ?? {};
-
-  // Auto-place new tables in a grid if they don't have a saved position
-  const positionedTables = tables.map((table, index) => {
-    const saved = layout[table.id];
-    if (saved) return { table, x: saved.x, y: saved.y };
-    // Auto-grid: 4 columns
-    const col = index % 4;
-    const row = Math.floor(index / 4);
-    return { table, x: 8 + col * 22, y: 12 + row * 20 };
-  });
-
-  function updateTablePosition(tableId: string, x: number, y: number) {
-    setLayouts((current) => ({
-      ...current,
-      [venue]: {
-        ...(current[venue] ?? {}),
-        [tableId]: { x, y }
-      }
-    }));
+  function patchGeo(tableId: string, patch: Partial<TableGeo>) {
+    setGeometry((current) => {
+      const base = current[tableId];
+      if (!base) return current;
+      return { ...current, [tableId]: { ...base, ...patch } };
+    });
+  }
+  function resizeTable(tableId: string, direction: number) {
+    setGeometry((current) => {
+      const geo = current[tableId];
+      if (!geo) return current;
+      const step = 1.6 * direction;
+      const width = floorClamp(floorRound(geo.width + step), 6, 30);
+      const height = geo.shape === 'circle' ? width : floorClamp(floorRound(geo.height + step), 5, 28);
+      return { ...current, [tableId]: { ...geo, width, height } };
+    });
   }
 
   function handleTableMouseDown(event: ReactMouseEvent<HTMLDivElement>, tableId: string) {
     if (!editMode) return;
     event.preventDefault();
+    event.stopPropagation();
+    setSelectedTableId(tableId);
     setDraggingTableId(tableId);
   }
-
   function handleCanvasMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
     if (!draggingTableId || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = Math.max(2, Math.min(96, ((event.clientX - rect.left) / rect.width) * 100));
-    const y = Math.max(2, Math.min(94, ((event.clientY - rect.top) / rect.height) * 100));
-    updateTablePosition(draggingTableId, x, y);
+    const x = floorClamp(((event.clientX - rect.left) / rect.width) * 100, 4, 96);
+    const y = floorClamp(((event.clientY - rect.top) / rect.height) * 100, 4, 94);
+    patchGeo(draggingTableId, { posX: floorRound(x), posY: floorRound(y) });
   }
-
   function handleCanvasMouseUp() {
     setDraggingTableId(null);
   }
@@ -2024,14 +2056,12 @@ function FloorPlanSection({
     event.dataTransfer.effectAllowed = 'move';
     setDraggingReservationId(reservationId);
   }
-
   function handleTableDragOver(event: DragEvent<HTMLElement>, tableId: string) {
     if (!draggingReservationId) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'move';
     setDropTargetTableId(tableId);
   }
-
   function handleTableDrop(event: DragEvent<HTMLElement>, tableId: string) {
     event.preventDefault();
     const data = event.dataTransfer.getData('text/plain');
@@ -2041,6 +2071,30 @@ function FloorPlanSection({
     }
     setDraggingReservationId(null);
     setDropTargetTableId(null);
+  }
+
+  async function handleDoneArranging() {
+    setSaving(true);
+    try {
+      const updates: TableLayoutUpdate[] = tables.map((table, index) => {
+        const geo = geoFor(table, index);
+        return {
+          id: table.id,
+          posX: geo.posX,
+          posY: geo.posY,
+          width: geo.width,
+          height: geo.height,
+          rotation: geo.rotation,
+          shape: geo.shape,
+          seats: geo.seats
+        };
+      });
+      await onSaveLayout(updates);
+      setEditMode(false);
+      setSelectedTableId(null);
+    } finally {
+      setSaving(false);
+    }
   }
 
   // Reservations: split into assigned (have tableId) and unassigned
@@ -2056,6 +2110,10 @@ function FloorPlanSection({
     }
   }
 
+  const selectedIndex = selectedTableId ? tables.findIndex((t) => t.id === selectedTableId) : -1;
+  const selectedTable = selectedIndex >= 0 ? tables[selectedIndex] : null;
+  const selectedGeo = selectedTable ? geoFor(selectedTable, selectedIndex) : null;
+
   if (tables.length === 0) {
     return (
       <Card title="Floor plan" subtitle={`No tables configured for ${venue} yet — add tables in the Tables card first.`}>
@@ -2070,18 +2128,64 @@ function FloorPlanSection({
   return (
     <Card
       title="Floor plan"
-      subtitle={`${tables.length} table${tables.length === 1 ? '' : 's'} at ${venue}. ${editMode ? 'Drag tables to position them. Tap Done when finished.' : "Drag a booking from the side list onto a table to assign it. Tap Edit to rearrange tables."}`}
+      subtitle={`${tables.length} table${tables.length === 1 ? '' : 's'} at ${venue}. ${editMode ? 'Drag tables to move; tap one to change shape, size, rotation or seats. Tap Done to save.' : "Drag a booking from the side list onto a table to assign it. Tap Edit to rearrange."}`}
       action={
         <Button
           type="button"
           size="sm"
           variant={editMode ? 'primary' : 'secondary'}
-          onClick={() => setEditMode((current) => !current)}
+          disabled={saving}
+          onClick={() => {
+            if (editMode) void handleDoneArranging();
+            else setEditMode(true);
+          }}
         >
-          {editMode ? '✓ Done arranging' : '✎ Edit layout'}
+          {saving ? 'Saving…' : editMode ? '✓ Done arranging' : '✎ Edit layout'}
         </Button>
       }
     >
+      {editMode ? (
+        <div className="floor-plan-editor-bar">
+          {selectedTable && selectedGeo ? (
+            <>
+              <span className="floor-plan-editor-title">{selectedTable.label}</span>
+              <div className="floor-plan-editor-group">
+                <span>Shape</span>
+                <button
+                  type="button"
+                  className={selectedGeo.shape === 'rect' ? 'is-active' : ''}
+                  onClick={() => patchGeo(selectedTable.id, { shape: 'rect' })}
+                  title="Rectangular"
+                >▭</button>
+                <button
+                  type="button"
+                  className={selectedGeo.shape === 'circle' ? 'is-active' : ''}
+                  onClick={() => patchGeo(selectedTable.id, { shape: 'circle', height: selectedGeo.width })}
+                  title="Round"
+                >●</button>
+              </div>
+              <div className="floor-plan-editor-group">
+                <span>Size</span>
+                <button type="button" onClick={() => resizeTable(selectedTable.id, -1)} title="Smaller">−</button>
+                <button type="button" onClick={() => resizeTable(selectedTable.id, 1)} title="Bigger">＋</button>
+              </div>
+              <div className="floor-plan-editor-group">
+                <span>Rotate</span>
+                <button type="button" onClick={() => patchGeo(selectedTable.id, { rotation: (selectedGeo.rotation + 15) % 360 })} title="Rotate 15°">⟳</button>
+                <button type="button" onClick={() => patchGeo(selectedTable.id, { rotation: 0 })} title="Reset rotation">0°</button>
+              </div>
+              <div className="floor-plan-editor-group">
+                <span>Seats</span>
+                <button type="button" onClick={() => patchGeo(selectedTable.id, { seats: Math.max(1, selectedGeo.seats - 1) })}>−</button>
+                <strong>{selectedGeo.seats}</strong>
+                <button type="button" onClick={() => patchGeo(selectedTable.id, { seats: Math.min(30, selectedGeo.seats + 1) })}>＋</button>
+              </div>
+            </>
+          ) : (
+            <span className="subtle">Tap a table to change its shape, size, rotation or seats. Drag to move it.</span>
+          )}
+        </div>
+      ) : null}
       <div className="floor-plan-layout">
         {/* Canvas */}
         <div
@@ -2090,41 +2194,58 @@ function FloorPlanSection({
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
+          onMouseDown={() => { if (editMode) setSelectedTableId(null); }}
         >
-          {positionedTables.map(({ table, x, y }) => {
+          {tables.map((table, index) => {
+            const geo = geoFor(table, index);
             const tableBookings = reservationsByTable.get(table.id) ?? [];
             const occupancy = tableBookings.length;
             const tone = occupancy === 0 ? 'free' : tableBookings.some((r) => r.status === 'SEATED') ? 'seated' : 'booked';
             const isDropTarget = dropTargetTableId === table.id;
+            const isSelected = editMode && selectedTableId === table.id;
             return (
               <div
                 key={table.id}
-                className={`floor-plan-table is-${tone}${isDropTarget ? ' is-drop-target' : ''}${draggingTableId === table.id ? ' is-dragging' : ''}`}
-                style={{ left: `${x}%`, top: `${y}%`, cursor: editMode ? 'move' : 'default' }}
+                className={`floor-plan-table is-${tone} is-${geo.shape}${isDropTarget ? ' is-drop-target' : ''}${draggingTableId === table.id ? ' is-dragging' : ''}${isSelected ? ' is-selected' : ''}`}
+                style={{
+                  left: `${geo.posX}%`,
+                  top: `${geo.posY}%`,
+                  width: `${geo.width}%`,
+                  height: `${geo.height}%`,
+                  transform: `translate(-50%, -50%) rotate(${geo.rotation}deg)`,
+                  cursor: editMode ? 'move' : 'default'
+                }}
                 onMouseDown={(event) => handleTableMouseDown(event, table.id)}
                 onDragOver={(event) => handleTableDragOver(event, table.id)}
                 onDragLeave={() => setDropTargetTableId((current) => (current === table.id ? null : current))}
                 onDrop={(event) => handleTableDrop(event, table.id)}
               >
-                <span className="floor-plan-table-label">{table.label}</span>
-                <span className="floor-plan-table-area">{table.area}</span>
-                <span className="floor-plan-table-capacity">{table.minCovers}–{table.maxCovers} guests</span>
-                {tableBookings.length > 0 ? (
-                  <div className="floor-plan-table-bookings">
-                    {tableBookings.slice(0, 2).map((r) => (
-                      <span key={r.id} title={`${r.guestName} · ${r.covers} guests`}>
-                        {r.guestName?.split(' ')[0] ?? 'Guest'} · {r.covers}p
-                      </span>
-                    ))}
-                    {tableBookings.length > 2 ? <span>+{tableBookings.length - 2}</span> : null}
-                  </div>
-                ) : null}
+                {/* Counter-rotate the content so labels stay upright. */}
+                <div className="floor-plan-table-inner" style={{ transform: `rotate(${-geo.rotation}deg)` }}>
+                  <span className="floor-plan-table-label">{table.label}</span>
+                  <span className="floor-plan-seats" aria-label={`${geo.seats} seats`}>
+                    {geo.seats <= 12 ? (
+                      Array.from({ length: geo.seats }).map((_, i) => <i key={i} className="floor-plan-seat-dot" />)
+                    ) : (
+                      <small>{geo.seats} seats</small>
+                    )}
+                  </span>
+                  {tableBookings.length > 0 ? (
+                    <div className="floor-plan-table-bookings">
+                      {tableBookings.slice(0, 2).map((r) => (
+                        <span key={r.id} title={`${r.guestName} · ${r.covers} guests`}>
+                          {r.guestName?.split(' ')[0] ?? 'Guest'} · {r.covers}p
+                        </span>
+                      ))}
+                      {tableBookings.length > 2 ? <span>+{tableBookings.length - 2}</span> : null}
+                    </div>
+                  ) : (
+                    <span className="floor-plan-table-area">{table.area}</span>
+                  )}
+                </div>
               </div>
             );
           })}
-          {positionedTables.length === 0 ? (
-            <div className="floor-plan-empty">No tables placed</div>
-          ) : null}
         </div>
 
         {/* Side panel: unassigned reservations to drag onto tables */}
@@ -2548,7 +2669,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
         {(() => {
           const covers = dashboard?.totals.coversToday ?? 0;
           const bookings = dashboard?.totals.todayBookings ?? 0;
-          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           return (
             <AlmaHomeBubble
               app="reserve"
@@ -2588,7 +2709,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
         {showDashboard && (() => {
           // Editorial Bookings · tonight header — only on the dashboard tab.
           const isToday = selectedDate === new Date().toISOString().slice(0, 10);
-          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           const dateObj = new Date(`${selectedDate}T12:00:00`);
           const dateLabel = dateObj.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
           const allTodayReservations = dashboard?.todayReservations ?? [];
@@ -2930,15 +3051,15 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             {showWaitlist ? (
             <section id="waitlist">
-              <WaitlistSection defaultVenue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
+              <WaitlistSection defaultVenue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
             </section>
             ) : null}
 
             {showFloorPlan ? (
             <section id="floor-plan">
               <FloorPlanSection
-                venue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter}
-                tables={tables.filter((t) => t.isActive && (venueFilter === 'all' || t.venue === venueFilter))}
+                venue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter}
+                tables={tables.filter((t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter))}
                 reservations={dashboard?.todayReservations ?? []}
                 onAssignTable={async (reservationId, tableId) => {
                   try {
@@ -2950,6 +3071,21 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     void load();
                   } catch (error) {
                     setError('reservation', error, 'Could not assign reservation.');
+                  }
+                }}
+                onSaveLayout={async (updates) => {
+                  try {
+                    await api('/api/reserve/tables/layout', {
+                      method: 'PATCH',
+                      body: JSON.stringify({
+                        venue: venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter,
+                        tables: updates
+                      })
+                    });
+                    setSuccess('reservation', 'Floor plan saved.');
+                    void load();
+                  } catch (error) {
+                    setError('reservation', error, 'Could not save the floor plan.');
                   }
                 }}
               />

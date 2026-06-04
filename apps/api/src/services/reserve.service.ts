@@ -15,6 +15,9 @@ import {
   reserveReservationInputSchema,
   reserveReservationUpdateInputSchema,
   reserveTableInputSchema,
+  reserveTableUpdateInputSchema,
+  reserveTableLayoutInputSchema,
+  reserveManagerWaitlistInputSchema,
   reserveWaitlistUpdateInputSchema,
   googleReserveIntegrationSettingInputSchema,
   type AuthUser,
@@ -292,6 +295,13 @@ function toTablePayload(table: ReserveTableRow) {
     maxCovers: table.maxCovers,
     sortOrder: table.sortOrder,
     isActive: table.isActive,
+    posX: table.posX,
+    posY: table.posY,
+    width: table.width,
+    height: table.height,
+    rotation: table.rotation,
+    shape: table.shape,
+    seats: table.seats,
     createdAt: table.createdAt.toISOString(),
     updatedAt: table.updatedAt.toISOString()
   };
@@ -840,8 +850,19 @@ export const reserveService = {
         minCovers: data.minCovers,
         maxCovers: data.maxCovers,
         sortOrder: data.sortOrder,
-        isActive: data.isActive
+        isActive: data.isActive,
+        // Optional starting geometry for a table placed straight onto the plan.
+        posX: data.posX ?? null,
+        posY: data.posY ?? null,
+        width: data.width ?? null,
+        height: data.height ?? null,
+        rotation: data.rotation ?? 0,
+        shape: data.shape ?? 'rect',
+        seats: data.seats ?? null
       },
+      // On re-upsert of an existing label, preserve floor-plan geometry —
+      // metadata edits shouldn't move the table. Geometry is owned by
+      // updateTable / saveTableLayout.
       update: {
         area: data.area.trim(),
         minCovers: data.minCovers,
@@ -851,6 +872,74 @@ export const reserveService = {
       }
     });
     return toTablePayload(table);
+  },
+
+  // Single-table edit from the floor-plan editor: metadata and/or geometry.
+  async updateTable(actor: AuthUser, id: string, input: unknown) {
+    const data = reserveTableUpdateInputSchema.parse(input);
+    const existing = await prisma.reserveTable.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Table not found.');
+    const allowedVenue = actorVenueScope(actor, existing.venue, 'Reserve');
+    if (allowedVenue && existing.venue !== allowedVenue) {
+      throw new HttpError(403, 'Reserve is limited to your venue.');
+    }
+    const patch: Prisma.ReserveTableUpdateInput = {};
+    if (data.area !== undefined) patch.area = data.area.trim();
+    if (data.label !== undefined) patch.label = data.label.trim();
+    if (data.minCovers !== undefined) patch.minCovers = data.minCovers;
+    if (data.maxCovers !== undefined) patch.maxCovers = data.maxCovers;
+    if (data.sortOrder !== undefined) patch.sortOrder = data.sortOrder;
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    if (data.posX !== undefined) patch.posX = data.posX;
+    if (data.posY !== undefined) patch.posY = data.posY;
+    if (data.width !== undefined) patch.width = data.width;
+    if (data.height !== undefined) patch.height = data.height;
+    if (data.rotation !== undefined) patch.rotation = data.rotation;
+    if (data.shape !== undefined) patch.shape = data.shape;
+    if (data.seats !== undefined) patch.seats = data.seats;
+    const table = await prisma.reserveTable.update({ where: { id }, data: patch });
+    return toTablePayload(table);
+  },
+
+  // Batch geometry save — the editor persists the whole arrangement at once
+  // (on "Done arranging" / debounced drag). Only tables in the actor's venue
+  // scope are written; the full venue table list is returned.
+  async saveTableLayout(actor: AuthUser, input: unknown) {
+    const data = reserveTableLayoutInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue ?? null, 'Reserve');
+    const ids = data.tables.map((t) => t.id);
+    const existing = await prisma.reserveTable.findMany({ where: { id: { in: ids } } });
+    const byId = new Map(existing.map((row) => [row.id, row]));
+    const updates = data.tables.filter((t) => {
+      const row = byId.get(t.id);
+      if (!row) return false;
+      if (venue && row.venue !== venue) return false;
+      return true;
+    });
+    if (updates.length) {
+      await prisma.$transaction(
+        updates.map((t) =>
+          prisma.reserveTable.update({
+            where: { id: t.id },
+            data: {
+              posX: t.posX ?? null,
+              posY: t.posY ?? null,
+              ...(t.width !== undefined ? { width: t.width } : {}),
+              ...(t.height !== undefined ? { height: t.height } : {}),
+              ...(t.rotation !== undefined ? { rotation: t.rotation } : {}),
+              ...(t.shape !== undefined ? { shape: t.shape } : {}),
+              ...(t.seats !== undefined ? { seats: t.seats } : {})
+            }
+          })
+        )
+      );
+    }
+    const scopedVenue = venue ?? existing[0]?.venue;
+    const tables = await prisma.reserveTable.findMany({
+      where: tableScope(actor, scopedVenue),
+      orderBy: [{ venue: 'asc' }, { area: 'asc' }, { sortOrder: 'asc' }, { label: 'asc' }]
+    });
+    return tables.map(toTablePayload);
   },
 
   async createReservation(actor: AuthUser, input: unknown) {
@@ -1471,6 +1560,52 @@ export const reserveService = {
       windowEndsAt: entry.windowEndsAt.toISOString(),
       status: entry.status,
       createdAt: entry.createdAt.toISOString()
+    };
+  },
+
+  // Manager-side walk-in / phone waitlist add (source = 'manager').
+  async createWaitlistEntry(actor: AuthUser, input: unknown): Promise<ReserveWaitlistEntry> {
+    const data = reserveManagerWaitlistInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue, 'Reserve');
+    if (!venue) throw new HttpError(400, 'Waitlist venue is required');
+    const windowStartsAt = new Date(data.windowStartsAt);
+    const windowEndsAt = new Date(data.windowEndsAt);
+    if (Number.isNaN(windowStartsAt.getTime()) || Number.isNaN(windowEndsAt.getTime())) {
+      throw new HttpError(400, 'Enter a valid waitlist window.');
+    }
+    if (windowEndsAt < windowStartsAt) {
+      throw new HttpError(400, 'Waitlist window end must be after the start.');
+    }
+    const entry = await prisma.reserveWaitlistEntry.create({
+      data: {
+        venue,
+        guestName: data.guestName.trim(),
+        guestPhone: data.guestPhone?.trim() || '—',
+        guestEmail: data.guestEmail?.trim().toLowerCase() || null,
+        partySize: data.partySize,
+        windowStartsAt,
+        windowEndsAt,
+        notes: data.notes?.trim() || null,
+        source: 'manager'
+      }
+    });
+    return {
+      id: entry.id,
+      venue: entry.venue,
+      guestName: entry.guestName,
+      guestPhone: entry.guestPhone,
+      guestEmail: entry.guestEmail,
+      partySize: entry.partySize,
+      windowStartsAt: entry.windowStartsAt.toISOString(),
+      windowEndsAt: entry.windowEndsAt.toISOString(),
+      notes: entry.notes,
+      status: entry.status,
+      source: entry.source,
+      notifiedAt: entry.notifiedAt?.toISOString() ?? null,
+      notifiedByName: entry.notifiedByName,
+      matchedReservationId: entry.matchedReservationId,
+      createdAt: entry.createdAt.toISOString(),
+      updatedAt: entry.updatedAt.toISOString()
     };
   },
 
