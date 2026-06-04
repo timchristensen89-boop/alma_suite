@@ -1988,13 +1988,15 @@ function FloorPlanSection({
   tables,
   reservations,
   onAssignTable,
-  onSaveLayout
+  onSaveLayout,
+  onAutoAssign
 }: {
   venue: string;
   tables: ReserveTable[];
   reservations: ReserveReservation[];
   onAssignTable: (reservationId: string, tableId: string | null) => void | Promise<void>;
   onSaveLayout: (updates: TableLayoutUpdate[]) => Promise<void>;
+  onAutoAssign: () => void | Promise<void>;
 }) {
   const [geometry, setGeometry] = useState<Record<string, TableGeo>>(() => seedFloorGeometry(tables));
   const [editMode, setEditMode] = useState(false);
@@ -2253,9 +2255,13 @@ function FloorPlanSection({
           <strong className="floor-plan-side-head">
             Today's bookings · {unassignedReservations.length} unassigned
           </strong>
-          {unassignedReservations.length === 0 ? (
+          {unassignedReservations.length > 0 ? (
+            <Button type="button" size="sm" variant="secondary" onClick={() => void onAutoAssign()}>
+              Auto-assign by party size →
+            </Button>
+          ) : (
             <p className="subtle">All of today's bookings have a table. Drag any one off a table to unassign — or open the booking to change.</p>
-          ) : null}
+          )}
           {unassignedReservations.map((reservation) => (
             <div
               key={reservation.id}
@@ -2404,6 +2410,35 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     void load();
   }, [load]);
+
+  // Live sync: lightweight background refresh of the floor plan + today's
+  // bookings so other hosts' moves and table assignments appear without a manual
+  // refresh. Pauses when the tab is hidden; the floor-plan editor ignores
+  // incoming geometry while you're arranging (it only re-seeds when not editing).
+  const refreshLive = useCallback(async () => {
+    try {
+      const venueQuery = scopedVenueParam ? `venue=${encodeURIComponent(scopedVenueParam)}` : '';
+      const join = (path: string, params: string[]) =>
+        `${path}${params.filter(Boolean).length ? `?${params.filter(Boolean).join('&')}` : ''}`;
+      const [nextDashboard, nextTables] = await Promise.all([
+        api<ReserveDashboardPayload>(
+          join('/api/reserve/dashboard', [venueQuery, `date=${encodeURIComponent(`${selectedDate}T00:00:00`)}`])
+        ),
+        api<ReserveTable[]>(join('/api/reserve/tables', [venueQuery]))
+      ]);
+      setDashboard(nextDashboard);
+      setTables(nextTables);
+    } catch {
+      /* background refresh — stay quiet on transient errors */
+    }
+  }, [scopedVenueParam, selectedDate]);
+
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') void refreshLive();
+    }, 25000);
+    return () => window.clearInterval(id);
+  }, [refreshLive]);
 
   useEffect(() => {
     const nextVenue = firstManagerVenue(user, scopedVenueParam);
@@ -2659,13 +2694,6 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       topBar={<TopBarWithContext user={user} onLogout={onLogout} />}
     >
       <div className="reserve-page">
-        <div className="alma-preview-banner" role="status">
-          <span className="alma-preview-banner-tag">Pilot</span>
-          <span className="alma-preview-banner-text">
-            <strong>Bookings created here are real.</strong> Confirmation emails go out automatically, and the public booking widget is live.
-            SevenRooms is no longer the source of truth — Alma Reserve is. Verify cover counts, special requests, and table assignments before each service.
-          </span>
-        </div>
         {(() => {
           const covers = dashboard?.totals.coversToday ?? 0;
           const bookings = dashboard?.totals.todayBookings ?? 0;
@@ -3086,6 +3114,55 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     void load();
                   } catch (error) {
                     setError('reservation', error, 'Could not save the floor plan.');
+                  }
+                }}
+                onAutoAssign={async () => {
+                  // Greedy: seat the largest parties first into the smallest free
+                  // table that fits (min/max covers), so big tables aren't wasted.
+                  const venueTables = tables.filter(
+                    (t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter)
+                  );
+                  const todays = dashboard?.todayReservations ?? [];
+                  const taken = new Set(todays.filter((r) => r.tableId).map((r) => r.tableId));
+                  const free = venueTables
+                    .filter((t) => !taken.has(t.id))
+                    .sort((a, b) => a.maxCovers - b.maxCovers);
+                  const unassigned = todays
+                    .filter((r) => !r.tableId && r.status !== 'CANCELLED' && r.status !== 'NO_SHOW')
+                    .sort((a, b) => b.covers - a.covers);
+                  const assignments: Array<{ reservationId: string; tableId: string }> = [];
+                  for (const r of unassigned) {
+                    const idx = free.findIndex((t) => r.covers <= t.maxCovers && r.covers >= t.minCovers);
+                    if (idx >= 0) {
+                      assignments.push({ reservationId: r.id, tableId: free[idx]!.id });
+                      free.splice(idx, 1);
+                    }
+                  }
+                  if (assignments.length === 0) {
+                    setError(
+                      'reservation',
+                      new Error('No free tables match the unassigned bookings.'),
+                      'No free tables match the unassigned bookings.'
+                    );
+                    return;
+                  }
+                  try {
+                    await Promise.all(
+                      assignments.map((a) =>
+                        api(`/api/reserve/reservations/${a.reservationId}`, {
+                          method: 'PATCH',
+                          body: JSON.stringify({ tableId: a.tableId })
+                        })
+                      )
+                    );
+                    const leftover = unassigned.length - assignments.length;
+                    setSuccess(
+                      'reservation',
+                      `Assigned ${assignments.length} booking${assignments.length === 1 ? '' : 's'}${leftover > 0 ? ` · ${leftover} still need a table` : ''}.`
+                    );
+                    void load();
+                  } catch (error) {
+                    setError('reservation', error, 'Could not auto-assign tables.');
                   }
                 }}
               />
