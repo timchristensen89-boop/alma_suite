@@ -280,26 +280,75 @@ function socialAccountToForm(account: MarketingSocialAccount): SocialAccountForm
 
 const DATA_IMPORTS = [
   {
+    key: 'roster',
     title: 'Roster imports',
-    body: 'Configure roster import decisions in Admin, then hand off to Staff when live.',
-    surface: 'Staff'
+    body: 'Deputy employees, roster and timesheets sync into Staff.',
+    surface: 'Staff',
+    provider: 'deputy' as const,
+    runEndpoint: '/api/integrations/deputy/sync-all',
+    runLabel: 'Sync now',
+    appHref: 'https://alma-staff.web.app'
   },
   {
+    key: 'sales',
     title: 'Sales imports',
-    body: 'Future Square sales imports will land here before touching Reports or Stock.',
-    surface: 'Reports'
+    body: 'Square location sales feed Reports and the live dashboard.',
+    surface: 'Reports',
+    provider: 'square' as const,
+    runEndpoint: '/api/integrations/square/import-sales',
+    runLabel: 'Import sales',
+    appHref: 'https://alma-reports.web.app'
   },
   {
+    key: 'invoice',
     title: 'Invoice imports',
-    body: 'Future Xero bill and supplier import setup belongs here, not inside one app.',
-    surface: 'Reports'
+    body: 'Xero supplier bills import costs and supplier pricing.',
+    surface: 'Reports',
+    provider: 'xero' as const,
+    runEndpoint: '/api/integrations/xero/supplier-bills/import',
+    runLabel: 'Import bills',
+    appHref: 'https://alma-reports.web.app'
   },
   {
+    key: 'stock',
     title: 'Stock imports',
-    body: 'Stock item and supplier import status will sit here while Stock keeps daily work.',
-    surface: 'Stock'
+    body: 'Xero supplier contacts import into Stock; daily counts stay in Stock.',
+    surface: 'Stock',
+    provider: 'xero' as const,
+    runEndpoint: '/api/integrations/xero/supplier-contacts/import',
+    runLabel: 'Import suppliers',
+    appHref: 'https://alma-stock-v18.web.app'
   }
-];
+] as const;
+
+function importWhen(iso: string | null): string {
+  if (!iso) return '';
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString(undefined, { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' });
+}
+
+function importBadge(status?: IntegrationProviderStatus | null): {
+  tone: 'positive' | 'danger' | 'warning' | 'muted';
+  label: string;
+  detail: string;
+} {
+  if (!status) return { tone: 'muted', label: 'Unknown', detail: 'Status unavailable' };
+  if (status.status === 'CONNECTED') {
+    return {
+      tone: 'positive',
+      label: 'Connected',
+      detail: status.lastSyncAt ? `Last import ${importWhen(status.lastSyncAt)}` : 'Connected · no import yet'
+    };
+  }
+  if (status.status === 'ERROR') {
+    return { tone: 'danger', label: 'Error', detail: status.lastError ? status.lastError.slice(0, 90) : 'Last import failed' };
+  }
+  if (status.status === 'REVOKED') {
+    return { tone: 'warning', label: 'Reconnect', detail: 'Authorisation expired — reconnect in Integrations' };
+  }
+  return { tone: 'muted', label: 'Not connected', detail: 'Connect the source in Integrations' };
+}
 
 const ADMIN_SETUP_LINKS = [
   {
@@ -2098,6 +2147,20 @@ export function AdminPage({
     staffRole: 'USER' as AccessRole,
     enableStaffApp: true
   });
+
+  const [importRuns, setImportRuns] = useState<Record<string, { running?: boolean; message?: string; tone?: 'success' | 'error' }>>({});
+
+  async function runImport(key: string, endpoint: string) {
+    setImportRuns((current) => ({ ...current, [key]: { running: true } }));
+    try {
+      await api(endpoint, { method: 'POST' });
+      const fresh = await api<AdminIntegrationsStatusPayload>('/api/admin/integrations/status').catch(() => null);
+      if (fresh) setState((current) => ({ ...current, integrations: fresh }));
+      setImportRuns((current) => ({ ...current, [key]: { message: 'Import started ✓', tone: 'success' } }));
+    } catch (error) {
+      setImportRuns((current) => ({ ...current, [key]: { message: error instanceof Error ? error.message : 'Import failed', tone: 'error' } }));
+    }
+  }
 
   async function loadDashboard() {
     setLoading(true);
@@ -4339,12 +4402,38 @@ export function AdminPage({
           description="Admin manages the setup map. Import logic stays in the right app until the integration pass."
         />
         <div className="admin-grid four">
-          {DATA_IMPORTS.map((item) => (
-            <Card key={item.title} title={item.title} subtitle={item.surface}>
-              <p className="admin-card-copy">{item.body}</p>
-              <Badge tone="muted">Not checked</Badge>
-            </Card>
-          ))}
+          {DATA_IMPORTS.map((item) => {
+            const providerStatus =
+              item.provider === 'deputy' ? integrations?.deputy
+              : item.provider === 'square' ? integrations?.square
+              : integrations?.xero;
+            const badge = importBadge(providerStatus);
+            const run = importRuns[item.key];
+            return (
+              <Card key={item.title} title={item.title} subtitle={item.surface}>
+                <p className="admin-card-copy">{item.body}</p>
+                <div className="admin-import-status">
+                  <Badge tone={badge.tone}>{badge.label}</Badge>
+                  <span className="admin-import-detail">{badge.detail}</span>
+                </div>
+                <div className="admin-import-actions">
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    disabled={run?.running}
+                    onClick={() => void runImport(item.key, item.runEndpoint)}
+                  >
+                    {run?.running ? 'Running…' : item.runLabel}
+                  </Button>
+                  <a className="admin-import-link" href="#integrations">Setup</a>
+                  <a className="admin-import-link" href={item.appHref} target="_blank" rel="noreferrer">Open {item.surface}</a>
+                </div>
+                {run?.message ? (
+                  <p className={run.tone === 'error' ? 'admin-import-msg is-error' : 'admin-import-msg'}>{run.message}</p>
+                ) : null}
+              </Card>
+            );
+          })}
         </div>
       </section>
       ) : null}
