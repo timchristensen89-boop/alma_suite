@@ -640,6 +640,37 @@ function SidebarNav() {
   );
 }
 
+// Draft persistence — keep an in-progress builder form across navigation and
+// refreshes so an unsent campaign / unsaved post isn't lost. Merges the stored
+// value over the current defaults so newly-added fields still get a default.
+function usePersistentState<T>(key: string, initial: () => T) {
+  const [state, setState] = useState<T>(() => {
+    if (typeof window === 'undefined') return initial();
+    try {
+      const raw = window.localStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        const base = initial();
+        if (base && typeof base === 'object' && !Array.isArray(base)) {
+          return { ...(base as object), ...(parsed as object) } as T;
+        }
+        return parsed as T;
+      }
+    } catch {
+      /* ignore corrupt/blocked storage */
+    }
+    return initial();
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(key, JSON.stringify(state));
+    } catch {
+      /* ignore */
+    }
+  }, [key, state]);
+  return [state, setState] as const;
+}
+
 function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   const activePath = useMarketingActivePath();
   const options = useMemo(() => venueOptions(user), [user]);
@@ -671,12 +702,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const venueParam = venueFilter === ALL_VENUES ? '' : venueFilter;
   const defaultVenue = venueParam || user.venue || KNOWN_VENUES[0]!;
   const [tagForm, setTagForm] = useState<TagForm>(() => defaultTagForm(defaultVenue));
-  const [segmentForm, setSegmentForm] = useState<SegmentBuilder>(() => defaultSegmentBuilder(venueFilter));
-  const [templateForm, setTemplateForm] = useState<TemplateForm>(() => defaultTemplateForm(defaultVenue));
-  const [campaignForm, setCampaignForm] = useState<CampaignForm>(() => defaultCampaignForm(defaultVenue));
-  const [automationForm, setAutomationForm] = useState<AutomationForm>(() => defaultAutomationForm(defaultVenue));
+  const [segmentForm, setSegmentForm] = usePersistentState<SegmentBuilder>('alma.marketing.segmentForm', () => defaultSegmentBuilder(venueFilter));
+  const [templateForm, setTemplateForm] = usePersistentState<TemplateForm>('alma.marketing.templateForm', () => defaultTemplateForm(defaultVenue));
+  const [campaignForm, setCampaignForm] = usePersistentState<CampaignForm>('alma.marketing.campaignForm', () => defaultCampaignForm(defaultVenue));
+  const [automationForm, setAutomationForm] = usePersistentState<AutomationForm>('alma.marketing.automationForm', () => defaultAutomationForm(defaultVenue));
   const [contentAssetForm, setContentAssetForm] = useState<ContentAssetForm>(() => defaultContentAssetForm(defaultVenue));
-  const [contentPostForm, setContentPostForm] = useState<ContentPostForm>(() => defaultContentPostForm(defaultVenue));
+  const [contentPostForm, setContentPostForm] = usePersistentState<ContentPostForm>('alma.marketing.contentPostForm', () => defaultContentPostForm(defaultVenue));
 
   const tags = overview?.tags ?? [];
   const templates = overview?.templates ?? [];
