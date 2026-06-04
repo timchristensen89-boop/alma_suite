@@ -151,7 +151,7 @@ export function StaffCostingReportPage() {
     <div className="page-stack staff-costing-page">
       <Card
         title="Staff Costing"
-        subtitle="Actual labour cost, scheduled wage forecast, cost per hour, section mix, and variance for hospitality operations."
+        subtitle="Actual labour cost, scheduled wage forecast, cost per hour, section mix, and variance. Rates come from each profile's payroll section and include 12% super; full-timers are costed on salary with overtime past 45h/week."
         action={<Badge tone={report?.sourceQuality.missingRates ? 'warning' : 'positive'}>{report?.sourceQuality.missingRates ? 'Rate review needed' : 'Rates available'}</Badge>}
       >
         <form className="staff-cost-filters" onSubmit={submit}>
