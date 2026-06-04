@@ -873,7 +873,6 @@ model SuiteAnnouncement {
   title         String
   body          String
   audience      String     @default("ALL")
-  board         String     @default("STAFF")
   appId         AlmaAppId?
   venue         String?
   pinned        Boolean    @default(false)
@@ -889,7 +888,6 @@ model SuiteAnnouncement {
   expiresAt     DateTime?
 
   @@index([audience, appId, venue, createdAt])
-  @@index([board, deletedAt, pinned, createdAt])
   @@index([expiresAt])
   @@index([deletedAt])
 }

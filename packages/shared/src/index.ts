@@ -795,13 +795,10 @@ export const adminAccessBulkUpdateInputSchema = z.object({
   notes: z.string().trim().optional().or(z.literal(''))
 });
 
-export const noticeboardNameSchema = z.enum(['STAFF', 'AGISTMENT']);
-
 export const suiteAnnouncementInputSchema = z.object({
   title: z.string().min(2),
   body: z.string().min(1),
   audience: z.string().optional().or(z.literal('')).default('ALL'),
-  board: noticeboardNameSchema.optional().default('STAFF'),
   appId: almaAppIdSchema.optional(),
   venue: z.string().optional().or(z.literal('')),
   pinned: z.boolean().optional().default(false),
@@ -3111,14 +3108,11 @@ export type StaffRoleTemplate = {
   assignedStaffCount?: number;
 };
 
-export type NoticeboardName = z.infer<typeof noticeboardNameSchema>;
-
 export type SuiteAnnouncement = {
   id: string;
   title: string;
   body: string;
   audience: string;
-  board: NoticeboardName;
   appId: AlmaAppId | null;
   venue: string | null;
   pinned: boolean;
@@ -3134,25 +3128,9 @@ export type SuiteAnnouncement = {
   expiresAt: string | null;
 };
 
-// Noticeboard: both boards for the in-app management/read view.
-export type NoticeboardsPayload = {
-  staff: SuiteAnnouncement[];
-  agistment: SuiteAnnouncement[];
-};
-
-// Public (no-login) agistment notices for horse owners.
-export type PublicAgistmentNotice = {
-  id: string;
-  title: string;
-  body: string;
-  pinned: boolean;
-  createdAt: string;
-  expiresAt: string | null;
-};
-
-export type PublicAgistmentNoticesPayload = {
-  venue: string | null;
-  notices: PublicAgistmentNotice[];
+// Staff noticeboard read view (active announcements, pinned first).
+export type SuiteNoticesPayload = {
+  notices: SuiteAnnouncement[];
 };
 
 export type SuiteChatChannelType = z.infer<typeof suiteChatChannelTypeSchema>;

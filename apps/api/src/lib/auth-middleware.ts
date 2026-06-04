@@ -48,7 +48,6 @@ const PUBLIC_PREFIXES = [
   '/api/staff/invites/by-token/',
   '/api/reserve/public-widget/',
   '/api/reserve/public/',
-  '/api/communications/public/',
   '/api/public/venue-snapshot'
 ];
 

@@ -156,7 +156,7 @@ const navItems: CommsNavItem[] = [
   { to: '/inbox', label: 'Inbox', description: 'Direct messages and replies', icon: <IconFileText /> },
   { to: '/venue', label: 'Venue', description: 'Venue-wide team conversations', icon: <IconStore /> },
   { to: '/announcements', label: 'Announcements', description: 'Broadcasts to all staff', icon: <IconIssues /> },
-  { to: '/noticeboard', label: 'Noticeboard', description: 'Staff board + public agistment', icon: <IconChecklist /> },
+  { to: '/noticeboard', label: 'Noticeboard', description: 'Pinned notices for the team', icon: <IconChecklist /> },
   { to: '/handover', label: 'Handover', description: 'Shift handover notes', icon: <IconBriefcase /> },
   { to: '/tasks', label: 'Tasks', description: 'Follow-ups and action items', icon: <IconChecklist /> },
   { to: '/compose', label: 'Compose', description: 'Start a new thread or announcement', icon: <IconUpload /> },
@@ -1337,35 +1337,30 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
   );
 }
 
-type Board = 'STAFF' | 'AGISTMENT';
-type BoardNotice = {
+type Notice = {
   id: string;
   title: string;
   body: string;
-  board: Board;
   pinned: boolean;
   createdByName: string | null;
   createdAt: string;
   expiresAt: string | null;
 };
-type BoardsPayload = { staff: BoardNotice[]; agistment: BoardNotice[] };
-type PublicNotice = { id: string; title: string; body: string; pinned: boolean; createdAt: string; expiresAt: string | null };
+type NoticesPayload = { notices: Notice[] };
 
 function NoticeboardPage({ user }: { user: AuthUser }) {
   const isManager = Boolean(user.isAdmin || user.role === 'MANAGER' || user.role === 'ADMIN');
-  const [boards, setBoards] = useState<BoardsPayload | null>(null);
-  const [active, setActive] = useState<Board>('STAFF');
+  const [data, setData] = useState<NoticesPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState({ title: '', body: '', pinned: false, expiresAt: '' });
   const [saving, setSaving] = useState(false);
-  const [copied, setCopied] = useState(false);
 
   async function load() {
     setLoading(true);
     try {
-      const data = await api<BoardsPayload>('/communications/boards');
-      setBoards(data);
+      const payload = await api<NoticesPayload>('/communications/notices');
+      setData(payload);
       setError(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load the noticeboard.');
@@ -1387,7 +1382,6 @@ function NoticeboardPage({ user }: { user: AuthUser }) {
         body: JSON.stringify({
           title: form.title.trim(),
           body: form.body.trim(),
-          board: active,
           pinned: form.pinned,
           expiresAt: form.expiresAt || undefined
         })
@@ -1410,41 +1404,15 @@ function NoticeboardPage({ user }: { user: AuthUser }) {
     }
   }
 
-  const notices = active === 'STAFF' ? boards?.staff ?? [] : boards?.agistment ?? [];
-  const publicUrl = typeof window !== 'undefined' ? `${window.location.origin}/agistment` : '/agistment';
+  const notices = data?.notices ?? [];
 
   return (
-    <PageShell title="Noticeboard" eyebrow="Notices" subtitle="Pinned notices for the team and for agistment clients.">
-      <div className="comms-board-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={active === 'STAFF'} className={active === 'STAFF' ? 'active' : ''} onClick={() => setActive('STAFF')}>Staff</button>
-        <button type="button" role="tab" aria-selected={active === 'AGISTMENT'} className={active === 'AGISTMENT' ? 'active' : ''} onClick={() => setActive('AGISTMENT')}>Agistment</button>
-      </div>
-
-      {active === 'AGISTMENT' ? (
-        <Card className="comms-board-public-note">
-          <p className="comms-muted">
-            Agistment notices are <strong>public</strong> — horse owners can read them at{' '}
-            <a href="/agistment" target="_blank" rel="noreferrer">{publicUrl}</a> with no login.
-          </p>
-          <button
-            type="button"
-            className="comms-board-copy"
-            onClick={() => {
-              void navigator.clipboard?.writeText(publicUrl);
-              setCopied(true);
-              window.setTimeout(() => setCopied(false), 1500);
-            }}
-          >
-            {copied ? 'Copied ✓' : 'Copy public link'}
-          </button>
-        </Card>
-      ) : null}
-
+    <PageShell title="Noticeboard" eyebrow="Notices" subtitle="Pinned notices and updates for the team.">
       {error ? <p className="comms-error">{error}</p> : null}
 
       {isManager ? (
         <Card>
-          <h2>Post a {active === 'STAFF' ? 'staff' : 'agistment'} notice</h2>
+          <h2>Post a notice</h2>
           <form className="comms-form" onSubmit={postNotice}>
             <label>
               Title
@@ -1515,59 +1483,7 @@ function NoticeboardPage({ user }: { user: AuthUser }) {
   );
 }
 
-// Public, no-login agistment noticeboard for horse owners (served at /agistment).
-function PublicAgistmentBoard() {
-  const [notices, setNotices] = useState<PublicNotice[] | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/communications/public/agistment-notices', { headers: { Accept: 'application/json' } })
-      .then((response) => (response.ok ? response.json() : Promise.reject(new Error('Could not load notices.'))))
-      .then((data: { notices: PublicNotice[] }) => setNotices(data.notices ?? []))
-      .catch((e) => setError(e instanceof Error ? e.message : 'Could not load notices.'));
-  }, []);
-
-  return (
-    <main className="agist-public">
-      <header className="agist-public-head">
-        <p className="agist-public-eyebrow">Kavalley Equestrian</p>
-        <h1>Agistment noticeboard</h1>
-        <p className="agist-public-sub">News and notices for our agistment community. Check back for updates.</p>
-      </header>
-
-      {error ? <p className="agist-public-error">{error}</p> : null}
-
-      {!notices && !error ? (
-        <p className="agist-public-muted">Loading notices…</p>
-      ) : notices && notices.length === 0 ? (
-        <div className="agist-public-empty">
-          <h2>No notices right now</h2>
-          <p>When there's news for the yard, it'll appear here.</p>
-        </div>
-      ) : (
-        <div className="agist-public-list">
-          {(notices ?? []).map((notice) => (
-            <article key={notice.id} className={notice.pinned ? 'agist-note is-pinned' : 'agist-note'}>
-              {notice.pinned ? <span className="agist-note-pin">Pinned</span> : null}
-              <h2>{notice.title}</h2>
-              <p>{notice.body}</p>
-              <time>{new Date(notice.createdAt).toLocaleDateString(undefined, { day: 'numeric', month: 'long', year: 'numeric' })}</time>
-            </article>
-          ))}
-        </div>
-      )}
-
-      <footer className="agist-public-foot">Powered by Alma · Kavalley Equestrian</footer>
-    </main>
-  );
-}
-
 function Root() {
-  const publicPath = typeof window !== 'undefined' ? window.location.pathname : '';
-  if (publicPath === '/agistment' || publicPath.startsWith('/agistment/')) {
-    return <PublicAgistmentBoard />;
-  }
-
   const [user, setUser] = useState<AuthUser | null | undefined>(undefined);
 
   async function loadUser() {
