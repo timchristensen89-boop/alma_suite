@@ -1934,7 +1934,9 @@ export const reserveService = {
       currency: 'aud',
       customer: customer.id,
       setup_future_usage: 'off_session',
-      automatic_payment_methods: { enabled: true },
+      // Card-only so the Payment Element confirms inline (redirect: 'if_required')
+      // without needing a return_url.
+      payment_method_types: ['card'],
       description: `Alma Reserve drinks pre-payment · ${venue}`,
       metadata: {
         venue,

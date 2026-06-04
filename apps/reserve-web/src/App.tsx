@@ -16,6 +16,7 @@ import type {
   ReserveReservationStatus,
   ReserveServicePeriod,
   ReserveTable,
+  ReserveDrinkPackage,
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
 } from '@alma/shared';
@@ -51,6 +52,7 @@ import {
 } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
+import { DrinksPaymentPanel } from './DrinksPaymentPanel';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ALL_VENUES = 'All venues';
@@ -93,6 +95,7 @@ const MANAGER_NAV_ITEMS = [
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
   { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
   { href: '#availability', label: 'Availability', description: 'Rules and blackouts', icon: <GearIcon /> },
+  { href: '#drinks', label: 'Drinks', description: 'Pre-paid drinks packages', icon: <GearIcon /> },
   { href: '#widget-preview', label: 'Widget', description: 'Safe public booking preview', icon: <DocumentIcon /> },
   { href: '#google-reserve', label: 'Google Reserve', description: 'Setup-required integration', icon: <GearIcon /> }
 ];
@@ -279,6 +282,7 @@ type BookingRowProps = {
   reservation: ReserveReservation;
   feedback: FeedbackState;
   onStatus: (status: ReserveReservationStatus) => void;
+  onRedeemDrinks?: () => void;
 };
 
 function statusPillKind(status: ReserveReservationStatus): { label: string; kind: 'success' | 'warn' | 'danger' | 'info' | 'neutral' } {
@@ -305,7 +309,7 @@ function dietaryTone(text: string): 'allergy' | 'diet' | 'occasion' | 'neutral' 
   return 'neutral';
 }
 
-function BookingRow({ reservation, feedback, onStatus }: BookingRowProps) {
+function BookingRow({ reservation, feedback, onStatus, onRedeemDrinks }: BookingRowProps) {
   const status = statusPillKind(reservation.status);
   const guestName = reservation.guestName || fullName(reservation.guest);
   const note = reservation.specialRequests || reservation.notes;
@@ -346,6 +350,11 @@ function BookingRow({ reservation, feedback, onStatus }: BookingRowProps) {
               {note.length > 36 ? `${note.slice(0, 33)}…` : note}
             </span>
           ) : null}
+          {reservation.drinksPaidAt ? (
+            <span className={`alma-booking-chip alma-booking-chip--drinks${reservation.drinksRedeemedAt ? ' is-served' : ''}`}>
+              🍸 Drinks ${((reservation.drinksTotalCents ?? 0) / 100).toFixed(2)}{reservation.drinksRedeemedAt ? ' · served' : ' · prepaid'}
+            </span>
+          ) : null}
         </div>
         {reservation.internalNotes ? (
           <div className="alma-booking-note">&ldquo;{reservation.internalNotes}&rdquo;</div>
@@ -382,6 +391,11 @@ function BookingRow({ reservation, feedback, onStatus }: BookingRowProps) {
             onClick={() => onStatus('CANCELLED')}
           >
             Cancel
+          </button>
+        ) : null}
+        {reservation.drinksPaidAt && onRedeemDrinks ? (
+          <button type="button" className="alma-booking-ghost" onClick={onRedeemDrinks}>
+            {reservation.drinksRedeemedAt ? 'Undo drinks' : 'Drinks served'}
           </button>
         ) : null}
       </div>
@@ -785,6 +799,7 @@ function PublicBookingWidget() {
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [reservation, setReservation] = useState<ReservePublicBookingConfirmation | null>(null);
+  const [widgetDrinksIntentId, setWidgetDrinksIntentId] = useState<string | null>(null);
 
   // Waitlist (fully-booked alternate state) — guest leaves name + phone
   // and the host follows up when a table opens. Same panel as step 2;
@@ -891,7 +906,7 @@ function PublicBookingWidget() {
     setSelectedSlot(slot);
   }
 
-  async function submitBooking() {
+  async function submitBooking(drinksIntentId?: string) {
     if (!selectedSlot) return;
     setSubmitting(true);
     setSubmitError(null);
@@ -912,7 +927,8 @@ function PublicBookingWidget() {
           occasion: guest.occasion ?? '',
           dietaryNotes: guest.dietaryTags.join(', '),
           specialRequests: guest.kitchenNote.trim(),
-          marketingOptIn: guest.marketingOptIn
+          marketingOptIn: guest.marketingOptIn,
+          drinksPaymentIntentId: drinksIntentId || widgetDrinksIntentId || undefined
         })
       });
       setReservation(created);
@@ -963,6 +979,7 @@ function PublicBookingWidget() {
     setStep(0);
     setSelectedSlot(null);
     setReservation(null);
+    setWidgetDrinksIntentId(null);
     setAvailability(null);
     setGuest({
       firstName: '',
@@ -1416,6 +1433,30 @@ function PublicBookingWidget() {
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Save these for next time and send me occasional updates.</span>
               </label>
 
+              {(() => {
+                const venueCfg = config?.venues.find((v) => v.name === venue);
+                const venuePackages = venueCfg?.drinkPackages ?? [];
+                if (!venuePackages.length) return null;
+                if (widgetDrinksIntentId) {
+                  return (
+                    <div className="drinks-paid-note" style={{ marginTop: 16 }}>
+                      ✓ Drinks pre-paid — confirm your booking below.{' '}
+                      <button type="button" className="drinks-pay__back" onClick={() => setWidgetDrinksIntentId(null)}>Remove</button>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: 16 }}>
+                    <DrinksPaymentPanel
+                      venue={venue}
+                      packages={venuePackages.map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }))}
+                      guestEmail={guest.email}
+                      onPaid={(id) => setWidgetDrinksIntentId(id)}
+                    />
+                  </div>
+                );
+              })()}
+
               {submitError ? <div className="alma-booking-error" style={{ marginTop: 16 }}>{submitError}</div> : null}
 
               <div className="alma-booking-actions">
@@ -1425,7 +1466,7 @@ function PublicBookingWidget() {
                   className="alma-booking-btn"
                   disabled={!detailsValid || submitting}
                 >
-                  {submitting ? 'Sending…' : 'Confirm booking'}
+                  {submitting ? 'Sending…' : widgetDrinksIntentId ? 'Confirm booking + drinks' : 'Confirm booking'}
                   <AlmaBookingArrow />
                 </button>
               </div>
@@ -2309,6 +2350,18 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [tables, setTables] = useState<ReserveTable[]>([]);
   const [rules, setRules] = useState<ReserveAvailabilityRule[]>([]);
   const [blackouts, setBlackouts] = useState<ReserveBlackout[]>([]);
+  const [drinkPackages, setDrinkPackages] = useState<ReserveDrinkPackage[]>([]);
+  const [drinkPackageForm, setDrinkPackageForm] = useState({
+    venue: KNOWN_VENUES[0] ?? '',
+    name: '',
+    description: '',
+    price: '',
+    sortOrder: '0',
+    isActive: true
+  });
+  // When a manager pre-pays drinks on a booking, the confirmed PaymentIntent id
+  // is held here until they hit Save booking.
+  const [bookingDrinksIntentId, setBookingDrinksIntentId] = useState<string | null>(null);
   const [integration, setIntegration] = useState<GoogleReserveIntegrationSetting | null>(null);
   const [widgetConfig, setWidgetConfig] = useState<ReservePublicWidgetConfig | null>(null);
   const [widgetAvailability, setWidgetAvailability] = useState<ReservePublicAvailabilityResponse | null>(null);
@@ -2330,6 +2383,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const showGuests = activeHash === '#guests';
   const showWaitlist = activeHash === '#waitlist';
   const showAvailability = activeHash === '#availability';
+  const showDrinks = activeHash === '#drinks';
   const showWidget = activeHash === '#widget-preview';
   const showGoogleReserve = activeHash === '#google-reserve';
   // Recent visit history for the guest being booked — shown when the email
@@ -2369,7 +2423,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const venueQuery = scopedVenueParam ? `venue=${encodeURIComponent(scopedVenueParam)}` : '';
       const join = (path: string, params: string[]) => `${path}${params.filter(Boolean).length ? `?${params.filter(Boolean).join('&')}` : ''}`;
 
-      const [nextDashboard, nextDiary, nextGuests, nextTables, nextRules, nextBlackouts, nextWidgetConfig, nextIntegration] =
+      const [nextDashboard, nextDiary, nextGuests, nextTables, nextRules, nextBlackouts, nextWidgetConfig, nextIntegration, nextDrinkPackages] =
         await Promise.all([
           api<ReserveDashboardPayload>(join('/api/reserve/dashboard', [venueQuery, `date=${encodeURIComponent(`${selectedDate}T00:00:00`)}`])),
           api<ReserveDiarySummary>(
@@ -2384,7 +2438,8 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           api<ReserveAvailabilityRule[]>(join('/api/reserve/availability-rules', [venueQuery])),
           api<ReserveBlackout[]>(join('/api/reserve/blackouts', [venueQuery])),
           api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config'),
-          scopedVenueParam ? api<GoogleReserveIntegrationSetting>(join('/api/reserve/google-reserve-settings', [venueQuery])) : Promise.resolve(null)
+          scopedVenueParam ? api<GoogleReserveIntegrationSetting>(join('/api/reserve/google-reserve-settings', [venueQuery])) : Promise.resolve(null),
+          api<ReserveDrinkPackage[]>(join('/api/reserve/drink-packages', [venueQuery]))
         ]);
 
       setDashboard(nextDashboard);
@@ -2395,6 +2450,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       setBlackouts(nextBlackouts);
       setWidgetConfig(nextWidgetConfig);
       setIntegration(nextIntegration);
+      setDrinkPackages(nextDrinkPackages);
       if (nextIntegration) setIntegrationForm(nextIntegration);
     } catch (error) {
       setFeedback({
@@ -2560,11 +2616,13 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           occasion: reservationForm.occasion,
           specialRequests: reservationForm.specialRequests,
           internalNotes: reservationForm.internalNotes,
-          marketingOptIn: reservationForm.marketingOptIn
+          marketingOptIn: reservationForm.marketingOptIn,
+          drinksPaymentIntentId: bookingDrinksIntentId || undefined
         })
       });
       setReservationForm(defaultReservationForm(reservationForm.venue));
-      setSuccess('reservation', 'Booking saved to the live Reserve diary.');
+      setSuccess('reservation', bookingDrinksIntentId ? 'Booking saved with prepaid drinks.' : 'Booking saved to the live Reserve diary.');
+      setBookingDrinksIntentId(null);
       await load();
     } catch (error) {
       setError('reservation', error, 'Could not save booking.');
@@ -2641,6 +2699,50 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       await load();
     } catch (error) {
       setError('blackout', error, 'Could not save blackout.');
+    }
+  }
+
+  async function saveDrinkPackage(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      await api<ReserveDrinkPackage>('/api/reserve/drink-packages', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue: drinkPackageForm.venue,
+          name: drinkPackageForm.name,
+          description: drinkPackageForm.description,
+          priceCents: Math.round(Number(drinkPackageForm.price || 0) * 100),
+          sortOrder: Number(drinkPackageForm.sortOrder || 0),
+          isActive: drinkPackageForm.isActive
+        })
+      });
+      setDrinkPackageForm({ venue: drinkPackageForm.venue, name: '', description: '', price: '', sortOrder: '0', isActive: true });
+      setSuccess('drinks', 'Drinks package saved.');
+      await load();
+    } catch (error) {
+      setError('drinks', error, 'Could not save the drinks package.');
+    }
+  }
+
+  async function toggleDrinkPackage(pkg: ReserveDrinkPackage) {
+    try {
+      await api<ReserveDrinkPackage>(`/api/reserve/drink-packages/${pkg.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !pkg.isActive })
+      });
+      await load();
+    } catch (error) {
+      setError('drinks', error, 'Could not update the drinks package.');
+    }
+  }
+
+  async function redeemDrinksFor(reservationId: string) {
+    try {
+      await api(`/api/reserve/reservations/${reservationId}/redeem-drinks`, { method: 'POST' });
+      setSuccess('reservation', 'Drinks updated.');
+      await load();
+    } catch (error) {
+      setError('reservation', error, 'Could not update the drinks.');
     }
   }
 
@@ -2915,6 +3017,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                                     reservation={reservation}
                                     feedback={feedback}
                                     onStatus={(status) => void updateReservationStatus(reservation, status)}
+                                    onRedeemDrinks={() => void redeemDrinksFor(reservation.id)}
                                   />
                                 ))}
                               </div>
@@ -3330,6 +3433,30 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   />
                   <span>Guest opted into venue marketing updates.</span>
                 </label>
+                {(() => {
+                  const venuePackages = drinkPackages
+                    .filter((p) => p.venue === reservationForm.venue && p.isActive)
+                    .map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }));
+                  if (!venuePackages.length) return null;
+                  if (bookingDrinksIntentId) {
+                    return (
+                      <div className="drinks-paid-note">
+                        ✓ Drinks pre-paid for this booking.{' '}
+                        <button type="button" className="drinks-pay__back" onClick={() => setBookingDrinksIntentId(null)}>Remove</button>
+                      </div>
+                    );
+                  }
+                  return (
+                    <DrinksPaymentPanel
+                      venue={reservationForm.venue}
+                      packages={venuePackages}
+                      guestEmail={reservationForm.email}
+                      title="Pre-pay drinks (optional)"
+                      subtitle="Take the guest's card to add drinks to this booking, redeemed on arrival."
+                      onPaid={(intentId) => setBookingDrinksIntentId(intentId)}
+                    />
+                  );
+                })()}
                 <div className="toolbar-right">
                   <ActionFeedback message={feedback.target === 'reservation' ? feedback.message : null} tone={feedback.tone} />
                   <Button type="submit">Save booking</Button>
@@ -3414,6 +3541,90 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 ))}
               </div>
             </Card>
+
+            {showDrinks ? (
+            <section id="drinks">
+              <Card title="Drinks packages" subtitle="Pre-paid drinks guests add at booking and redeem on arrival. Charged in full at booking.">
+                <div className="reserve-section-grid">
+                  <div className="reserve-stack">
+                    <Card title="Add a package" subtitle="Per venue · price in dollars">
+                      <form className="reserve-form" onSubmit={(event) => void saveDrinkPackage(event)}>
+                        <div className="form-grid two">
+                          <Select
+                            label="Venue"
+                            value={drinkPackageForm.venue}
+                            onChange={(event) => { const v = event.currentTarget.value; setDrinkPackageForm((c) => ({ ...c, venue: v })); }}
+                            options={KNOWN_VENUES.map((value) => ({ label: value, value }))}
+                          />
+                          <Input
+                            label="Name"
+                            required
+                            value={drinkPackageForm.name}
+                            onChange={(event) => { const v = event.currentTarget.value; setDrinkPackageForm((c) => ({ ...c, name: v })); }}
+                            placeholder="e.g. Welcome Prosecco"
+                          />
+                          <Input
+                            label="Price (AUD)"
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            required
+                            value={drinkPackageForm.price}
+                            onChange={(event) => { const v = event.currentTarget.value; setDrinkPackageForm((c) => ({ ...c, price: v })); }}
+                            placeholder="45.00"
+                          />
+                          <Input
+                            label="Sort"
+                            type="number"
+                            value={drinkPackageForm.sortOrder}
+                            onChange={(event) => { const v = event.currentTarget.value; setDrinkPackageForm((c) => ({ ...c, sortOrder: v })); }}
+                          />
+                          <Input
+                            label="Description"
+                            value={drinkPackageForm.description}
+                            onChange={(event) => { const v = event.currentTarget.value; setDrinkPackageForm((c) => ({ ...c, description: v })); }}
+                            placeholder="A bottle of NV Prosecco on the table"
+                          />
+                        </div>
+                        <label className="reserve-inline-check">
+                          <input
+                            type="checkbox"
+                            checked={drinkPackageForm.isActive}
+                            onChange={(event) => { const v = event.currentTarget.checked; setDrinkPackageForm((c) => ({ ...c, isActive: v })); }}
+                          />
+                          <span>Available to guests</span>
+                        </label>
+                        <div className="toolbar-right">
+                          <ActionFeedback message={feedback.target === 'drinks' ? feedback.message : null} tone={feedback.tone} />
+                          <Button type="submit">Save package</Button>
+                        </div>
+                      </form>
+                    </Card>
+                    <Card title="Packages" subtitle={`${drinkPackages.length} configured`}>
+                      {drinkPackages.length === 0 ? (
+                        <EmptyState title="No packages yet" description="Add a drinks package above — it’ll appear on the booking widget for that venue." />
+                      ) : (
+                        <div className="reserve-timeline">
+                          {drinkPackages.map((pkg) => (
+                            <div key={pkg.id} className="reserve-summary-card">
+                              <strong>{pkg.name} · ${(pkg.priceCents / 100).toFixed(2)}</strong>
+                              <span>{pkg.venue}{pkg.description ? ` · ${pkg.description}` : ''}</span>
+                              <div className="reserve-note-list">
+                                {pkg.isActive ? <Badge tone="positive">Active</Badge> : <Badge tone="neutral">Hidden</Badge>}
+                                <Button type="button" size="sm" variant="ghost" onClick={() => void toggleDrinkPackage(pkg)}>
+                                  {pkg.isActive ? 'Hide' : 'Show'}
+                                </Button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </Card>
+                  </div>
+                </div>
+              </Card>
+            </section>
+            ) : null}
 
             {showWidget ? (
             <section id="widget-preview">

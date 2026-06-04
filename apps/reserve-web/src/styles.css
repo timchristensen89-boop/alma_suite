@@ -1747,6 +1747,57 @@
   color: var(--tone-danger-fg, #b91c1c);
 }
 
+/* ── Drinks pre-payment panel (shared by widget + manager form) ──────── */
+.drinks-pay {
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface-muted, var(--color-surface));
+}
+.drinks-pay__head { display: grid; gap: 2px; margin-bottom: 10px; }
+.drinks-pay__head strong { font-size: 14px; color: var(--color-text); }
+.drinks-pay__head span { font-size: 12px; color: var(--color-text-muted); }
+.drinks-pay__list { display: grid; gap: 8px; }
+.drinks-pay__item {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: 10px 12px; border: 1px solid var(--color-border); border-radius: 10px;
+  background: var(--color-elevated, #fff);
+}
+.drinks-pay__item.is-on { border-color: var(--color-accent); }
+.drinks-pay__item-copy { display: grid; gap: 1px; }
+.drinks-pay__item-copy strong { font-size: 13.5px; color: var(--color-text); }
+.drinks-pay__item-copy span { font-size: 12px; color: var(--color-text-muted); }
+.drinks-pay__item-copy em { font-size: 12px; font-style: normal; font-weight: 700; color: var(--color-accent); }
+.drinks-pay__stepper { display: inline-flex; align-items: center; gap: 8px; }
+.drinks-pay__stepper button {
+  width: 30px; height: 30px; border-radius: 8px; border: 1px solid var(--color-border);
+  background: var(--color-elevated, #fff); color: var(--color-text); font-size: 16px; line-height: 1; cursor: pointer;
+}
+.drinks-pay__stepper button:disabled { opacity: 0.4; cursor: default; }
+.drinks-pay__stepper span { min-width: 18px; text-align: center; font-weight: 700; color: var(--color-text); }
+.drinks-pay__cta {
+  width: 100%; margin-top: 12px; padding: 11px; border: 0; border-radius: 10px;
+  background: var(--color-accent); color: var(--color-accent-text, #fff); font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.drinks-pay__cta:disabled { opacity: 0.6; cursor: default; }
+.drinks-pay__back { display: block; margin-top: 8px; background: none; border: 0; color: var(--color-text-muted); font-size: 12.5px; cursor: pointer; text-decoration: underline; }
+.drinks-pay__hint { margin: 10px 0 0; font-size: 12.5px; color: var(--color-text-muted); }
+.drinks-pay__error { margin-top: 10px; font-size: 13px; color: var(--tone-danger-fg, #b91c1c); }
+.drinks-pay__summary { display: grid; gap: 4px; margin-bottom: 12px; font-size: 13px; color: var(--color-text); }
+.drinks-pay__summary > div { display: flex; justify-content: space-between; }
+.drinks-pay__summary-total { font-weight: 800; border-top: 1px solid var(--color-border); padding-top: 6px; margin-top: 2px; }
+.drinks-pay__element { margin: 6px 0 4px; }
+.drinks-paid-note {
+  padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--tone-positive-fg, #16a34a);
+  background: var(--tone-positive-bg, #ecfdf5);
+  color: var(--tone-positive-fg, #047857);
+  font-size: 13px; font-weight: 600;
+}
+.alma-booking-chip--drinks { background: var(--tone-warning-bg, #fff7ed); color: var(--tone-warning-fg, #92400e); }
+.alma-booking-chip--drinks.is-served { background: var(--tone-positive-bg, #ecfdf5); color: var(--tone-positive-fg, #047857); }
+
 .floor-plan-table.is-free { border-color: rgba(34, 197, 94, 0.5); }
 .floor-plan-table.is-booked {
   border-color: var(--color-accent);
