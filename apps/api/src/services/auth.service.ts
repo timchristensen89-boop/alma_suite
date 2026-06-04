@@ -6,6 +6,8 @@ import {
   authLoginSchema,
   authPasswordResetCompleteSchema,
   authPasswordResetRequestSchema,
+  authSignUpSchema,
+  PENDING_APPROVAL_EMPLOYMENT_STATUS,
   type AuthUser
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
@@ -242,6 +244,9 @@ export const authService = {
     if (profile.accountType === 'VENUE_DEVICE' && profile.employmentStatus !== 'ACTIVE') {
       throw new HttpError(401, 'Email or password is incorrect');
     }
+    if (profile.employmentStatus === PENDING_APPROVAL_EMPLOYMENT_STATUS) {
+      throw new HttpError(403, 'Your account is awaiting approval. An admin will be in touch shortly.');
+    }
 
     const ok = await bcrypt.compare(password, profile.passwordHash);
     if (!ok) {
@@ -254,6 +259,29 @@ export const authService = {
     });
 
     return toAuthUser(profile);
+  },
+
+  async signUp(input: unknown) {
+    const data = authSignUpSchema.parse(input);
+    const email = data.email.toLowerCase().trim();
+    const existing = await prisma.staffProfile.findUnique({ where: { email } });
+    if (existing) {
+      throw new HttpError(409, 'An account already exists for that email.');
+    }
+    const passwordHash = await bcrypt.hash(data.password, 10);
+    const profile = await prisma.staffProfile.create({
+      data: {
+        firstName: data.firstName.trim(),
+        lastName: data.lastName.trim(),
+        email,
+        passwordHash,
+        roleTitle: data.roleTitle?.trim() || 'Staff',
+        venue: data.venue?.trim() || null,
+        accountType: 'HUMAN',
+        employmentStatus: PENDING_APPROVAL_EMPLOYMENT_STATUS
+      }
+    });
+    return { id: profile.id, email: profile.email, firstName: profile.firstName, lastName: profile.lastName };
   },
 
   async getById(userId: string): Promise<AuthUser | null> {

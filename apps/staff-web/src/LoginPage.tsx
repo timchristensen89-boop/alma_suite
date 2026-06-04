@@ -1,75 +1,33 @@
-import { FormEvent, useState } from 'react';
-import { Link, Navigate, useLocation } from 'react-router-dom';
-import { Button, Card, Input, ProductLogo, SuiteAppSwitcher, SUITE_APPS } from '@alma/ui';
+import { useEffect } from 'react';
+import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
-import { withSuiteAppLinks } from './config/suiteLinks';
 
-const SUITE_LINKS = withSuiteAppLinks(SUITE_APPS);
+const HOME_WEB_URL = (
+  (import.meta.env.VITE_HOME_WEB_URL as string | undefined) ?? 'https://alma-home.web.app'
+).replace(/\/+$/, '');
 
 export function LoginPage() {
   const location = useLocation();
-  const { user, login, loading } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading || user) return;
+    const from = (location.state as { from?: string } | null)?.from;
+    const returnTo = from
+      ? new URL(from.startsWith('/') ? from : `/${from}`, window.location.origin).toString()
+      : window.location.origin + '/';
+    window.location.replace(`${HOME_WEB_URL}/login?returnTo=${encodeURIComponent(returnTo)}`);
+  }, [loading, user, location.state]);
 
   if (!loading && user) {
     const from = (location.state as { from?: string } | null)?.from ?? '/';
     return <Navigate to={from} replace />;
   }
 
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setSubmitting(true);
-    setMessage(null);
-    try {
-      await login(email.trim(), password);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : 'Could not sign in');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="login-page">
       <div className="login-shell">
-        <div className="login-brand">
-          <ProductLogo appId="staff" size="lg" />
-        </div>
-
-        <Card title="Sign in" subtitle="Use your ALMA account to manage staff">
-          <form className="login-form" onSubmit={handleSubmit}>
-            <Input
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.currentTarget.value)}
-            />
-            <Input
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              required
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.currentTarget.value)}
-            />
-            <p className="login-help">
-              <Link to="/forgot-password">Forgot password?</Link>
-            </p>
-            {message ? <p className="error-text">{message}</p> : null}
-            <Button type="submit" disabled={submitting}>
-              {submitting ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
-        </Card>
-
-        <p className="login-help">Need access? Ask an admin to enable ALMA Staff for you.</p>
-        <SuiteAppSwitcher currentApp="staff" apps={SUITE_LINKS} />
+        <p className="login-redirecting">Redirecting to Alma Home to sign in…</p>
       </div>
     </div>
   );

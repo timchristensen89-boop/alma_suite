@@ -4722,6 +4722,14 @@ html[data-theme='dark'] .skeleton {
   width: 100%;
 }
 
+.login-redirecting {
+  margin: 0;
+  padding: 36px 16px;
+  text-align: center;
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
 .login-help {
   margin: -4px 0 0;
   text-align: center;

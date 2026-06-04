@@ -23,6 +23,15 @@ authRouter.post('/login', async (req, res, next) => {
   }
 });
 
+authRouter.post('/sign-up', async (req, res, next) => {
+  try {
+    const created = await authService.signUp(req.body);
+    res.status(201).json({ ok: true, user: created });
+  } catch (error) {
+    next(error);
+  }
+});
+
 authRouter.post('/logout', (_req, res) => {
   clearDevicePinSessionCookie(res);
   clearSessionCookie(res);

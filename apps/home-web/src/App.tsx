@@ -151,6 +151,36 @@ function routeFromLocation(pathname = window.location.pathname) {
   return path || '/';
 }
 
+function getReturnToFromUrl(): string | null {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const raw = params.get('returnTo');
+    if (!raw) return null;
+    const url = new URL(raw, window.location.origin);
+    if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function appendSuiteToken(returnTo: string, token: string): string {
+  const sep = returnTo.includes('?') ? '&' : '?';
+  return `${returnTo}${sep}suite_token=${encodeURIComponent(token)}`;
+}
+
+async function completeSuiteHandoffAndRedirect(returnTo: string): Promise<void> {
+  try {
+    const { token } = await api<{ token: string; expiresInSeconds: number }>(
+      '/api/auth/handoff',
+      { method: 'POST', body: '{}' }
+    );
+    window.location.replace(appendSuiteToken(returnTo, token));
+  } catch {
+    window.location.replace(returnTo);
+  }
+}
+
 function staffOptionFromUser(user: AuthUser): DeviceStaffOption {
   return {
     id: user.id,
@@ -175,6 +205,8 @@ export function App() {
   const [routePath, setRoutePath] = useState(() => routeFromLocation());
   const isVenueDeviceRoute = routePath === '/ipad' || routePath === '/venue';
   const isPinSetupRoute = !isVenueDeviceRoute && routePath === '/set-pin';
+  const isSuiteLoginRoute = routePath === '/login';
+  const isSuiteSignUpRoute = routePath === '/signup';
   const [now, setNow] = useState<Date>(() => new Date());
   const [theme, setTheme] = useState<'light' | 'dark'>(() =>
     typeof window !== 'undefined' && window.localStorage.getItem('alma.kiosk.theme') === 'dark' ? 'dark' : 'light'
@@ -659,6 +691,21 @@ export function App() {
       : isVenueDeviceRoute
         ? 'Select a staff profile first.'
         : 'Enter your staff PIN.');
+
+  if (isSuiteLoginRoute) {
+    return (
+      <SuiteLoginPanel
+        onSignUp={() => navigateHome('/signup' + window.location.search)}
+        onPinPath={() => navigateHome('/')}
+      />
+    );
+  }
+
+  if (isSuiteSignUpRoute) {
+    return (
+      <SuiteSignUpPanel onBackToLogin={() => navigateHome('/login' + window.location.search)} />
+    );
+  }
 
   return (
     <div className="kiosk">
@@ -1495,6 +1542,222 @@ function ConfirmOverlay({
           Done
         </button>
         <div className="kiosk-confirm__auto">Returning to the clock...</div>
+      </div>
+    </div>
+  );
+}
+
+function SuiteLoginPanel({ onSignUp, onPinPath }: { onSignUp: () => void; onPinPath: () => void }) {
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const returnTo = useMemo(() => getReturnToFromUrl(), []);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      const result = await api<{ user: AuthUser; token: string }>('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: email.trim(), password })
+      });
+      setHomeAuthToken(result.token);
+      if (returnTo) {
+        await completeSuiteHandoffAndRedirect(returnTo);
+        return;
+      }
+      window.location.assign('/');
+    } catch (err) {
+      setError(messageForError(err, 'Could not sign in. Try again.'));
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="suite-auth">
+      <div className="suite-auth__card">
+        <div className="suite-auth__brand">
+          <img src="/images/alma-group-logo.png" alt="Alma Group" className="suite-auth__logo" />
+          <span>home</span>
+        </div>
+        <h1 className="suite-auth__title">Sign in</h1>
+        <p className="suite-auth__sub">
+          Use the email and password for your Alma account.
+        </p>
+        <form className="suite-auth__form" onSubmit={handleSubmit} noValidate>
+          <label className="suite-auth__label">
+            <span>Email</span>
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="suite-auth__label">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          {error ? <div className="suite-auth__error">{error}</div> : null}
+          <button type="submit" className="suite-auth__primary" disabled={busy}>
+            {busy ? 'Signing in...' : 'Sign in'}
+          </button>
+        </form>
+        <div className="suite-auth__divider">or</div>
+        <button type="button" className="suite-auth__secondary" onClick={onSignUp} disabled={busy}>
+          New user — request access
+        </button>
+        <button type="button" className="suite-auth__ghost" onClick={onPinPath} disabled={busy}>
+          Use staff PIN instead
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function SuiteSignUpPanel({ onBackToLogin }: { onBackToLogin: () => void }) {
+  const [firstName, setFirstName] = useState('');
+  const [lastName, setLastName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [venue, setVenue] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [submitted, setSubmitted] = useState(false);
+
+  async function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+    if (busy) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api<{ ok: true }>('/api/auth/sign-up', {
+        method: 'POST',
+        body: JSON.stringify({
+          firstName: firstName.trim(),
+          lastName: lastName.trim(),
+          email: email.trim(),
+          password,
+          venue: venue.trim()
+        })
+      });
+      setSubmitted(true);
+    } catch (err) {
+      setError(messageForError(err, 'Could not create your account. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (submitted) {
+    return (
+      <div className="suite-auth">
+        <div className="suite-auth__card">
+          <div className="suite-auth__brand">
+            <img src="/images/alma-group-logo.png" alt="Alma Group" className="suite-auth__logo" />
+            <span>home</span>
+          </div>
+          <h1 className="suite-auth__title">Request received</h1>
+          <p className="suite-auth__sub">
+            Thanks. An Alma admin will review your account and email you when it's approved.
+          </p>
+          <button type="button" className="suite-auth__primary" onClick={onBackToLogin}>
+            Back to sign in
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="suite-auth">
+      <div className="suite-auth__card">
+        <div className="suite-auth__brand">
+          <img src="/images/alma-group-logo.png" alt="Alma Group" className="suite-auth__logo" />
+          <span>home</span>
+        </div>
+        <h1 className="suite-auth__title">Request access</h1>
+        <p className="suite-auth__sub">
+          New here? Tell us who you are and an Alma admin will approve your account.
+        </p>
+        <form className="suite-auth__form" onSubmit={handleSubmit} noValidate>
+          <div className="suite-auth__row">
+            <label className="suite-auth__label">
+              <span>First name</span>
+              <input
+                type="text"
+                autoComplete="given-name"
+                required
+                value={firstName}
+                onChange={(event) => setFirstName(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+            <label className="suite-auth__label">
+              <span>Last name</span>
+              <input
+                type="text"
+                autoComplete="family-name"
+                required
+                value={lastName}
+                onChange={(event) => setLastName(event.target.value)}
+                disabled={busy}
+              />
+            </label>
+          </div>
+          <label className="suite-auth__label">
+            <span>Email</span>
+            <input
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="suite-auth__label">
+            <span>Password</span>
+            <input
+              type="password"
+              autoComplete="new-password"
+              required
+              minLength={8}
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <label className="suite-auth__label">
+            <span>Venue (optional)</span>
+            <input
+              type="text"
+              value={venue}
+              onChange={(event) => setVenue(event.target.value)}
+              disabled={busy}
+              placeholder="St Alma, Alma Avalon, ..."
+            />
+          </label>
+          {error ? <div className="suite-auth__error">{error}</div> : null}
+          <button type="submit" className="suite-auth__primary" disabled={busy}>
+            {busy ? 'Submitting...' : 'Request access'}
+          </button>
+        </form>
+        <button type="button" className="suite-auth__ghost" onClick={onBackToLogin} disabled={busy}>
+          Already have an account? Sign in
+        </button>
       </div>
     </div>
   );
