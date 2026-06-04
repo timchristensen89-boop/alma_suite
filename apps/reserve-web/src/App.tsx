@@ -1553,6 +1553,22 @@ function PublicBookingWidget() {
                   ) : null}
                 </div>
                 <div className="alma-booking-ticket__footer">
+                  {(() => {
+                    const calendarHref = reservationCalendarHref(reservation);
+                    return calendarHref ? (
+                      <a
+                        href={calendarHref}
+                        download={`alma-booking-${reservation.id.slice(0, 6).toLowerCase()}.ics`}
+                        style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}
+                      >
+                        <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                          <rect x="2" y="3" width="12" height="11" rx="2" />
+                          <path d="M2 6.5h12M5.5 1.5v3M10.5 1.5v3" />
+                        </svg>
+                        Add to calendar
+                      </a>
+                    ) : null;
+                  })()}
                   <button type="button" onClick={() => window.print()}>Print</button>
                   {reservation.manageUrl ? (
                     <a href={reservation.manageUrl} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>Manage booking</a>
@@ -1734,6 +1750,49 @@ function restOf(value: string) {
   const parts = value.split(' ');
   if (parts.length <= 1) return '';
   return parts[parts.length - 1] ?? '';
+}
+
+// Build a downloadable .ics for a confirmed booking so guests can drop it into
+// Apple Calendar / Google Calendar / Outlook. UTC stamps (YYYYMMDDTHHMMSSZ),
+// CRLF line breaks, and escaped text per RFC 5545.
+function icsStamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  return d.toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
+}
+function icsEscape(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/\n/g, '\\n').replace(/,/g, '\\,').replace(/;/g, '\\;');
+}
+function reservationCalendarHref(reservation: ReservePublicBookingConfirmation): string | null {
+  const start = icsStamp(reservation.startsAt);
+  if (!start) return null;
+  // Fall back to a 2-hour sitting if the end time is missing.
+  const end = icsStamp(reservation.endsAt) || icsStamp(new Date(new Date(reservation.startsAt).getTime() + 2 * 60 * 60 * 1000).toISOString());
+  const ref = `ALMA-${reservation.id.slice(0, 6).toUpperCase()}`;
+  const descParts = [
+    `${reservation.covers} guest${reservation.covers === 1 ? '' : 's'}`,
+    reservation.occasion ? `Occasion: ${reservation.occasion}` : '',
+    `Reference: ${ref}`,
+    reservation.manageUrl ? `Manage your booking: ${reservation.manageUrl}` : ''
+  ].filter(Boolean);
+  const lines = [
+    'BEGIN:VCALENDAR',
+    'VERSION:2.0',
+    'PRODID:-//Alma Reserve//Booking//EN',
+    'CALSCALE:GREGORIAN',
+    'METHOD:PUBLISH',
+    'BEGIN:VEVENT',
+    `UID:${reservation.id}@alma-reserve`,
+    `DTSTAMP:${icsStamp(reservation.createdAt) || start}`,
+    `DTSTART:${start}`,
+    `DTEND:${end}`,
+    `SUMMARY:${icsEscape(`Booking at ${reservation.venue}`)}`,
+    `DESCRIPTION:${icsEscape(descParts.join('\n'))}`,
+    `LOCATION:${icsEscape(reservation.venue)}`,
+    'END:VEVENT',
+    'END:VCALENDAR'
+  ];
+  return `data:text/calendar;charset=utf-8,${encodeURIComponent(lines.join('\r\n'))}`;
 }
 
 function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
