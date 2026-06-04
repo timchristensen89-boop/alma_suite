@@ -163,7 +163,7 @@
   overflow: hidden;
   scroll-margin-top: 96px;
   padding: 20px 22px;
-  border: 1px solid rgba(31, 53, 36, 0.1);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
   border-radius: 16px;
   background: #F8F6F1;
 }
@@ -849,7 +849,7 @@
   gap: 28px;
   align-items: center;
   padding: 22px 24px;
-  border: 1px solid rgba(31, 53, 36, 0.1);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
   border-radius: 16px;
   background: #F8F6F1;
   box-shadow: none;
@@ -865,7 +865,7 @@
 
 .prime-cost-hero:hover {
   transform: translateY(-1px);
-  border-color: rgba(31, 53, 36, 0.18);
+  border-color: rgba(var(--ink-forest-rgb), 0.18);
 }
 
 /* App-colored left edge accent — runs in the same thread as the sidebar
@@ -877,7 +877,7 @@
   top: 0;
   bottom: 0;
   width: 4px;
-  background: rgba(31, 53, 36, 0.4);
+  background: rgba(var(--ink-forest-rgb), 0.4);
   border-radius: 0 9999px 9999px 0;
 }
 
@@ -896,7 +896,7 @@
 
 .prime-cost-hero-eyebrow {
   font-family: "Avenir LT Std", "Manrope", sans-serif;
-  color: rgba(31, 53, 36, 0.55);
+  color: rgba(var(--ink-forest-rgb), 0.55);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.32em;
@@ -922,7 +922,7 @@
   display: inline-flex;
   flex-wrap: wrap;
   gap: 12px;
-  color: rgba(31, 53, 36, 0.65);
+  color: rgba(var(--ink-forest-rgb), 0.65);
   font-family: "Avenir LT Std", "Manrope", sans-serif;
   font-size: 13px;
   font-weight: 600;
@@ -963,8 +963,8 @@
 .prime-cost-hero-bar.is-warning  .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #C8924E 0%, #6F4915 100%); }
 .prime-cost-hero-bar.is-danger   .prime-cost-hero-bar-fill { background: linear-gradient(180deg, #B85745 0%, #6E2419 100%); }
 .prime-cost-hero-bar.is-muted    .prime-cost-hero-bar-fill {
-  background: repeating-linear-gradient(45deg, rgba(31,53,36,0.06) 0 6px, transparent 6px 12px);
-  border: 1px dashed rgba(31, 53, 36, 0.18);
+  background: repeating-linear-gradient(45deg, rgba(var(--ink-forest-rgb),0.06) 0 6px, transparent 6px 12px);
+  border: 1px dashed rgba(var(--ink-forest-rgb), 0.18);
   opacity: 0.7;
 }
 
@@ -983,7 +983,7 @@
 .prime-cost-hero-bar small {
   font-family: "Avenir LT Std", "Manrope", sans-serif;
   font-size: 9.5px;
-  color: rgba(31, 53, 36, 0.55);
+  color: rgba(var(--ink-forest-rgb), 0.55);
   letter-spacing: 0.06em;
 }
 
@@ -992,7 +992,7 @@
   padding: 20px 22px;
   border: 1px solid var(--color-border);
   border-radius: 16px;
-  background: #fff;
+  background: var(--color-elevated);
   box-shadow: 0 4px 14px rgba(15, 23, 42, 0.05);
 }
 
@@ -1261,19 +1261,19 @@
   height: 32px;
   border-radius: 9999px;
   background: transparent;
-  border: 1px solid rgba(31, 53, 36, 0.12);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.12);
   display: inline-flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  color: #1f3524;
+  color: var(--color-ink-forest);
   transition: border-color 0.14s ease, background 0.14s ease;
 }
 
 .alma-roster-weeknav-btn:hover {
-  background: rgba(31, 53, 36, 0.04);
-  border-color: rgba(31, 53, 36, 0.3);
+  background: rgba(var(--ink-forest-rgb), 0.04);
+  border-color: rgba(var(--ink-forest-rgb), 0.3);
 }
 
 .alma-roster-weeknav-btn svg {
@@ -1294,17 +1294,17 @@
   align-items: center;
   gap: 8px;
   padding: 5px 12px;
-  border: 1px solid rgba(31, 53, 36, 0.12);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.12);
   border-radius: 9999px;
   background: transparent;
   cursor: pointer;
-  color: #1f3524;
+  color: var(--color-ink-forest);
   transition: border-color 0.14s ease, background 0.14s ease;
 }
 
 .reports-weeknav-label-btn:hover {
-  background: rgba(31, 53, 36, 0.04);
-  border-color: rgba(31, 53, 36, 0.3);
+  background: rgba(var(--ink-forest-rgb), 0.04);
+  border-color: rgba(var(--ink-forest-rgb), 0.3);
 }
 
 .reports-weeknav-label-btn strong {
@@ -1318,7 +1318,7 @@
 .reports-weeknav-label-btn span {
   font-family: var(--font-mono, ui-monospace, monospace);
   font-size: 11px;
-  color: rgba(31, 53, 36, 0.55);
+  color: rgba(var(--ink-forest-rgb), 0.55);
   white-space: nowrap;
 }
 
@@ -1338,9 +1338,9 @@
   padding: 6px;
   display: grid;
   gap: 2px;
-  border: 1px solid rgba(31, 53, 36, 0.14);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.14);
   border-radius: 12px;
-  background: #fff;
+  background: var(--color-elevated);
   box-shadow: 0 18px 40px rgba(15, 23, 42, 0.14), 0 2px 6px rgba(15, 23, 42, 0.06);
 }
 
@@ -1353,15 +1353,15 @@
   cursor: pointer;
   font-family: 'Avenir LT Std', Manrope, sans-serif;
   font-size: 13px;
-  color: #1f3524;
+  color: var(--color-ink-forest);
 }
 
 .reports-weeknav-menu-item:hover {
-  background: rgba(31, 53, 36, 0.06);
+  background: rgba(var(--ink-forest-rgb), 0.06);
 }
 
 .reports-weeknav-menu-item.is-active {
-  background: rgba(31, 53, 36, 0.1);
+  background: rgba(var(--ink-forest-rgb), 0.1);
   font-weight: 700;
 }
 
@@ -1378,7 +1378,7 @@
   position: fixed;
   inset: 0;
   z-index: 240;
-  background: rgba(31, 53, 36, 0.32);
+  background: rgba(var(--ink-forest-rgb), 0.32);
   display: grid;
   place-items: center;
   padding: 20px;
@@ -1729,4 +1729,97 @@ html[data-theme='dark'] {
   --color-accent-hover: #E6B36F;
   --color-accent-soft: #3A2C16;
   --color-accent-text: #F6E7CF;
+
+  /* This app's :root re-themes the surface tokens to a light "warm bubbles"
+     palette. Because that :root block is authored after the imported base dark
+     block (equal specificity), it would otherwise win in dark mode and keep the
+     page/cards light. Re-assert the dark surface values here so token-driven
+     rules adapt. */
+  --color-bg: #141210;
+  --color-surface: #1E1A16;
+  --color-surface-muted: #242019;
+}
+
+/* ── Dark-mode overrides for this app's own hardcoded light values ──────────
+   The shared base re-themes via tokens; these rules used literal light colours
+   the token sweep never reached. Light theme is left byte-identical above. */
+
+/* White / cream surfaces → elevated dark surface */
+html[data-theme='dark'] .report-panel,
+html[data-theme='dark'] .prime-cost-hero {
+  background: var(--color-elevated);
+}
+html[data-theme='dark'] .prime-cost-hero.is-current .prime-cost-hero-bar-fill,
+html[data-theme='dark'] .prime-cost-hero-bar.is-current .prime-cost-hero-bar-fill {
+  box-shadow: 0 0 0 2px var(--color-elevated), 0 0 0 3px currentColor;
+}
+
+/* Near-black headings / labels → adaptive text */
+html[data-theme='dark'] .report-panel h4,
+html[data-theme='dark'] .prime-cost-hero-value,
+html[data-theme='dark'] .prime-cost-hero-bar-label {
+  color: var(--color-text);
+}
+
+/* Prime-cost hero warn/danger panel tints (white→pale wash) → tone surfaces */
+html[data-theme='dark'] .prime-cost-hero.is-warning {
+  background: var(--tone-warning-bg);
+}
+html[data-theme='dark'] .prime-cost-hero.is-danger {
+  background: var(--tone-danger-bg);
+}
+
+/* Prime-cost hero value, when status-coloured, uses dark inks → bright tone fg */
+html[data-theme='dark'] .prime-cost-hero.is-positive .prime-cost-hero-value {
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .prime-cost-hero.is-warning .prime-cost-hero-value {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .prime-cost-hero.is-danger .prime-cost-hero-value {
+  color: var(--tone-danger-fg);
+}
+
+/* Default (neutral) hero trend bar is dark forest → invisible on dark; brighten */
+html[data-theme='dark'] .prime-cost-hero-bar-fill {
+  background: linear-gradient(180deg, #6F9560 0%, #3E5836 100%);
+}
+
+/* Venue-comparison prime totals use dark status inks → bright tone fg */
+html[data-theme='dark'] .venue-comparison-row.is-prime.is-positive > strong {
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .venue-comparison-row.is-prime.is-warning > strong {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .venue-comparison-row.is-prime.is-danger > strong {
+  color: var(--tone-danger-fg);
+}
+
+/* Forecast-vs-actual: neutral chip + status chips with dark text */
+html[data-theme='dark'] .forecast-vs-actual-week span {
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral-fg);
+}
+html[data-theme='dark'] .forecast-vs-actual-week.is-positive span {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .forecast-vs-actual-week.is-warning span {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .forecast-vs-actual-week.is-danger span {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+/* Muted (no-data) striped bar used pale slate stripes → dark neutral stripes */
+html[data-theme='dark'] .forecast-vs-actual-week.is-muted .forecast-vs-actual-bar {
+  background: repeating-linear-gradient(45deg, var(--color-surface-muted), var(--color-surface-muted) 4px, var(--color-surface-hover) 4px, var(--color-surface-hover) 8px);
+}
+
+/* Margin alert row: red bar + pale-red wash → danger tone */
+html[data-theme='dark'] .margin-alert-row {
+  border-left-color: var(--tone-danger-fg);
+  background: var(--tone-danger-bg);
 }

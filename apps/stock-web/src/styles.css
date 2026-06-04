@@ -197,6 +197,10 @@ tbody tr.stock-selected-row:hover {
   background: #d8f0e8;
 }
 
+html[data-theme='dark'] .stock-duplicate-hint {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
 .stock-duplicate-hint {
   display: inline-flex;
   margin-left: 8px;

@@ -504,6 +504,9 @@
   background: rgba(154, 58, 46, 0.08);
   color: #9A3A2E;
 }
+html[data-theme='dark'] .end-of-shift-check {
+  background: var(--color-surface);
+}
 .end-of-shift-check {
   margin-top: 14px;
   padding: 12px;
