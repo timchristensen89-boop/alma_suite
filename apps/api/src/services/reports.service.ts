@@ -1,6 +1,7 @@
 import { prisma } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
+import { staffCostingRate, splitOvertimeHours, costForRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import {
   salesActualImportSchema,
   salesActualQuerySchema,
@@ -760,7 +761,7 @@ export const reportsService = {
           ...(venue ? { venue } : {}),
           staffProfile: { accountType: 'HUMAN' }
         },
-        include: { staffProfile: { select: { venue: true, payRateCents: true, trainingPayRateCents: true } } }
+        include: { staffProfile: { select: { venue: true, ...staffPayRateSelect } } }
       }),
       prisma.rosterShift.findMany({
         where: {
@@ -770,7 +771,7 @@ export const reportsService = {
           ...(venue ? { venue } : {}),
           staffProfile: { accountType: 'HUMAN' }
         },
-        include: { staffProfile: { select: { venue: true, payRateCents: true, trainingPayRateCents: true } } }
+        include: { staffProfile: { select: { venue: true, ...staffPayRateSelect } } }
       }),
       prisma.supplierInvoiceLine.findMany({
         where: {
@@ -822,10 +823,15 @@ export const reportsService = {
       row.salesCents += entry.salesCents;
       row.salesDays.add(entry.serviceDate.toISOString().slice(0, 10));
     }
+    // Cumulative weekly hours per staff for overtime (salaried full-timers >45h/wk).
+    const actualWeekHours = new Map<string, number>();
+    const scheduledWeekHours = new Map<string, number>();
     for (const entry of timesheets) {
       const row = rowFor(entry.venue || entry.staffProfile.venue);
       const hours = workedHours(entry);
-      const cost = Math.round(hours * payRateCents(entry.staffProfile));
+      const rate = staffCostingRate(entry.staffProfile);
+      const split = splitOvertimeHours(actualWeekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
+      const cost = costForRate(rate, split);
       row.timesheetHours += hours;
       row.wageCents += cost;
       if (entry.status === 'APPROVED' || entry.status === 'EXPORTED') row.approvedWageCents += cost;
@@ -833,8 +839,10 @@ export const reportsService = {
     for (const shift of rosterShifts) {
       const row = rowFor(shift.venue || shift.staffProfile.venue);
       const hours = rosterHours(shift);
+      const rate = staffCostingRate(shift.staffProfile);
+      const split = splitOvertimeHours(scheduledWeekHours, shift.staffProfileId, shift.startsAt, hours, rate.appliesOvertime);
       row.rosterHours += hours;
-      row.rosterWageEstimateCents += Math.round(hours * payRateCents(shift.staffProfile));
+      row.rosterWageEstimateCents += costForRate(rate, split);
     }
     for (const line of invoiceLines) rowFor(line.invoice.venue).invoiceCogsCents += Math.max(0, line.lineAmountCents);
     for (const wastage of wastageRows) rowFor(wastage.venue).wastageCents += Math.max(0, wastage.costImpactCents ?? 0);
