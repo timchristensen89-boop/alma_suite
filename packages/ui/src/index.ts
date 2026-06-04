@@ -8,6 +8,9 @@ export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidg
 export { SuiteSearchWidget } from './search/SuiteSearchWidget';
 export type { SuiteSearchItem } from './search/SuiteSearchWidget';
 export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';
+export { useTheme, readStoredTheme, THEME_STORAGE_KEY } from './hooks/useTheme';
+export type { ThemeMode } from './hooks/useTheme';
+export { ThemeToggle } from './primitives/ThemeToggle';
 export { Card } from './primitives/Card';
 export { CollapsibleCard } from './primitives/CollapsibleCard';
 export { StatCard } from './primitives/StatCard';

@@ -405,9 +405,9 @@ a {
   gap: 6px;
   padding: 24px 26px;
   border-radius: 18px;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  box-shadow: 0 4px 18px rgba(15, 23, 42, 0.06);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-sm);
 }
 
 .ipad-live-panel.is-positive { border-left: 6px solid #16a34a; }
@@ -428,7 +428,7 @@ a {
   font-size: clamp(40px, 5.5vw, 56px);
   font-weight: 400;
   line-height: 1;
-  color: #0f172a;
+  color: var(--color-text);
 }
 
 .ipad-live-panel.is-danger .ipad-live-value { color: #991b1b; }
@@ -1603,3 +1603,33 @@ a {
     flex: 1;
   }
 }
+
+/* ── Dark mode ── token override; toggled via data-theme on <html>. */
+html[data-theme='dark'] {
+  color-scheme: dark;
+  --color-bg: #141210;
+  --color-surface: #1E1A16;
+  --color-surface-muted: #242019;
+  --color-text: #F2ECE2;
+  --color-muted: rgba(242, 236, 226, 0.64);
+  --color-border: rgba(242, 236, 226, 0.16);
+  --color-accent: #6FAF8C;
+  --color-accent-soft: #1E2B22;
+  --color-warning: #E2B566;
+  --color-warning-soft: #352A14;
+  --color-positive: #7FD0A0;
+  --color-positive-soft: #15301F;
+  --shadow-sm: 0 8px 24px rgba(0, 0, 0, 0.5);
+}
+html[data-theme='dark'] body { background: var(--color-bg); color: var(--color-text); }
+
+/* Toggle button styling (this app doesn't import the shared base where
+   .suite-theme-toggle lives, so define it here). */
+.suite-theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 40px; height: 40px; border-radius: 999px;
+  border: 1px solid var(--color-border); background: var(--color-surface);
+  color: var(--color-muted); cursor: pointer;
+  transition: color 140ms ease, border-color 140ms ease;
+}
+.suite-theme-toggle:hover { color: var(--color-text); border-color: var(--color-accent); }

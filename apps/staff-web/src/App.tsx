@@ -82,6 +82,7 @@ import {
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
   Textarea,
+  ThemeToggle,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -789,6 +790,7 @@ function TopBarWithContext() {
               api={api}
               userName={`${user.firstName} ${user.lastName}`}
             />
+            <ThemeToggle />
             <SuiteClock />
             <Button
               size="sm"

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteCommsWidget, SuiteFeedbackWidget, SuiteNotificationsWidget, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
@@ -133,6 +133,7 @@ function TopBarWithContext() {
             />
             <SuiteNotificationsWidget api={api} currentApp="stock" />
             <SuiteFeedbackWidget appId="STOCK" api={api} userName={`${user.firstName} ${user.lastName}`} />
+            <ThemeToggle />
             <SuiteClock />
             <IconButton
               label="Sign out"
