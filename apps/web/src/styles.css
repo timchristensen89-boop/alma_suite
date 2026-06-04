@@ -2309,6 +2309,10 @@ tbody tr:hover {
   animation: shimmer 1.4s ease-in-out infinite;
   vertical-align: middle;
 }
+html[data-theme='dark'] .skeleton {
+  background: linear-gradient(90deg, var(--color-surface-muted) 0%, var(--color-surface-hover) 50%, var(--color-surface-muted) 100%);
+  background-size: 200% 100%;
+}
 
 .skeleton-value {
   width: 60px;
@@ -5573,7 +5577,7 @@ a.suite-app-tile:hover {
   top: -22px;
   margin-top: -22px;
   padding-top: 24px;
-  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(180deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -5588,7 +5592,7 @@ a.suite-app-tile:hover {
   bottom: -22px;
   margin-bottom: -22px;
   padding-bottom: 22px;
-  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(0deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -5926,7 +5930,7 @@ a.suite-app-tile:hover {
   top: -22px;
   margin-top: -22px;
   padding: 24px 6px 14px;
-  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(180deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -5935,7 +5939,7 @@ a.suite-app-tile:hover {
   bottom: -22px;
   margin-bottom: -22px;
   padding: 14px 6px 22px;
-  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(0deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -6291,7 +6295,7 @@ a.suite-app-tile:hover {
   top: -22px;
   margin-top: -22px;
   padding: 24px 6px 14px;
-  background: linear-gradient(180deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(180deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -6308,7 +6312,7 @@ a.suite-app-tile:hover {
   bottom: -22px;
   margin-bottom: -22px;
   padding: 14px 6px 22px;
-  background: linear-gradient(0deg, #F8F6F1 75%, rgba(248, 246, 241, 0));
+  background: linear-gradient(0deg, var(--color-surface) 75%, rgba(248, 246, 241, 0));
   z-index: 2;
 }
 
@@ -11399,6 +11403,19 @@ html[data-theme='dark'] .alma-home-bubble .alma-home-bubble-eyebrow {
 html[data-theme='dark'] .alma-home-bubble-btn--ghost {
   color: var(--color-text) !important;
   border-color: var(--color-border-strong) !important;
+}
+
+/* Literal cream/white gradients the token sweep can't reach. */
+html[data-theme='dark'] .alma-bigstat--warn {
+  background: var(--tone-warning-bg);
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .alma-bigstat--danger {
+  background: var(--tone-danger-bg);
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .suite-clock {
+  background: var(--color-surface);
 }
 
 /* Shared dark-mode toggle button — sits among the topbar icon actions. */

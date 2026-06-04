@@ -2722,3 +2722,66 @@ html[data-theme='dark'] {
   --color-accent-soft: #1E2B1C;
   --color-accent-text: #E4F0E1;
 }
+
+/* ─────────────────────────────────────────────────────────────────────
+   Dark-mode leak sweep (admin dashboard only)
+   These selectors carried hardcoded light values (cream paper, forest
+   ink, pale shell, warm warning) that the token sweep never reached.
+   The public booking widget (.alma-booking-*, .reserve-public-*,
+   .reserve-widget-page) is a separate, intentionally cream-on-forest
+   editorial page rendered outside the themed shell, so it is left as-is.
+   Light theme stays byte-identical — every rule below is dark-only.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Guest CRM row + availability slot — selected/active highlight
+   (was a pale peach #F5DCCE). */
+html[data-theme='dark'] .reserve-guest-row.active,
+html[data-theme='dark'] .reserve-slot-button.active {
+  background: var(--color-accent-soft);
+}
+
+/* Booking-form guest-match panel — was cream gradient + forest ink. */
+html[data-theme='dark'] .reserve-guest-match-panel {
+  background: var(--color-elevated);
+  border-color: var(--color-border);
+}
+
+html[data-theme='dark'] .reserve-guest-match-head strong,
+html[data-theme='dark'] .reserve-guest-match-stats strong,
+html[data-theme='dark'] .reserve-guest-match-row > span:first-child,
+html[data-theme='dark'] .reserve-guest-match-notes,
+html[data-theme='dark'] .reserve-guest-match-notes strong {
+  color: var(--color-text);
+}
+
+html[data-theme='dark'] .reserve-guest-match-head small,
+html[data-theme='dark'] .reserve-guest-match-stats span,
+html[data-theme='dark'] .reserve-guest-match-row > span:nth-child(2) {
+  color: var(--color-text-muted);
+}
+
+html[data-theme='dark'] .reserve-guest-match-stats {
+  border-top-color: var(--color-border);
+  border-bottom-color: var(--color-border);
+}
+
+html[data-theme='dark'] .reserve-guest-match-stats strong.is-warning {
+  color: var(--tone-warning-fg);
+}
+
+html[data-theme='dark'] .reserve-guest-match-row {
+  background: var(--color-surface-muted);
+}
+
+/* "PILOT" status banner — styled in the shared base (no dark override
+   there) but only ever rendered inside this app, so re-theme it here.
+   Was warm amber paper (rgba(255,247,232,.92)) + dark cocoa text. */
+html[data-theme='dark'] .alma-preview-banner {
+  background: var(--tone-warning-bg);
+  border-color: var(--tone-warning-fg);
+  color: var(--tone-warning-fg);
+}
+
+html[data-theme='dark'] .alma-preview-banner-text {
+  color: var(--tone-warning-fg);
+}

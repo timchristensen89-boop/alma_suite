@@ -566,6 +566,9 @@
   border-left: 4px solid #d97706;
   background: #fffaf0;
 }
+html[data-theme='dark'] .integration-health-tile.is-warning {
+  background: var(--tone-warning-bg);
+}
 
 .integration-health-tile.is-danger {
   border-left: 4px solid #dc2626;

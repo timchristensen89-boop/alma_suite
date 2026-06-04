@@ -1502,7 +1502,7 @@
   padding: 12px 14px;
   border: 1px solid var(--color-border);
   border-radius: 10px;
-  background: #FFFFFF;
+  background: var(--color-elevated);
   transition: background 160ms ease, border-color 160ms ease;
 }
 
@@ -1713,15 +1713,15 @@
   /* Editorial collapsible panel — paper-cream surface, hairline border,
      rounded 16px. Matches the panel chrome from the design system. */
   min-width: 0;
-  border: 1px solid rgba(31, 53, 36, 0.08);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.08);
   border-radius: 16px;
-  background: #F8F6F1;
+  background: var(--color-surface);
   box-shadow: none;
 }
 
 .roster-control-panel.is-open {
   grid-column: span 3;
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 .roster-control-panel-toggle {
@@ -1734,14 +1734,14 @@
   padding: 12px 16px;
   border: 0;
   background: transparent;
-  color: #1F3524;
+  color: var(--color-ink-forest);
   text-align: left;
   cursor: pointer;
 }
 
 .roster-control-panel-toggle::after {
   content: "▾";
-  color: rgba(31, 53, 36, 0.45);
+  color: rgba(var(--ink-forest-rgb), 0.45);
   font-size: 14px;
   transition: transform 0.16s ease;
 }
@@ -1758,7 +1758,7 @@
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-size: 18px;
   font-weight: 500;
-  color: #1F3524;
+  color: var(--color-ink-forest);
   letter-spacing: -0.005em;
 }
 
@@ -1766,7 +1766,7 @@
   min-width: 0;
   max-width: 220px;
   overflow: hidden;
-  color: rgba(31, 53, 36, 0.55);
+  color: rgba(var(--ink-forest-rgb), 0.55);
   font-family: "Cormorant Garamond", "Hoefler Text", Georgia, serif;
   font-style: italic;
   font-size: 13.5px;
@@ -1888,7 +1888,7 @@
   padding: 7px 9px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
-  background: #ffffff;
+  background: var(--color-elevated);
   color: var(--color-text);
   text-align: left;
   cursor: pointer;
@@ -3448,23 +3448,23 @@
   justify-content: flex-start;
   width: 100%;
   padding: 6px 12px 6px 12px;
-  border: 1px solid rgba(31, 53, 36, 0.08);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.08);
   border-radius: 9999px;
-  background: #F8F6F1;
+  background: var(--color-surface);
   cursor: pointer;
   transition: border-color 140ms ease, background 140ms ease, transform 140ms ease;
   overflow: hidden;
 }
 
 .roster-staff-bubble:hover {
-  border-color: rgba(31, 53, 36, 0.18);
-  background: #FFFFFF;
+  border-color: rgba(var(--ink-forest-rgb), 0.18);
+  background: var(--color-elevated);
   transform: translateY(-1px);
 }
 
 .roster-staff-bubble.is-selected {
   border-color: var(--color-accent);
-  background: rgba(31, 53, 36, 0.04);
+  background: rgba(var(--ink-forest-rgb), 0.04);
   box-shadow: 0 0 0 1px var(--color-accent) inset;
 }
 
@@ -3473,7 +3473,7 @@
   height: auto;
   background: none;
   border-radius: 0;
-  color: #1F3524;
+  color: var(--color-ink-forest);
   font-family: "Avenir LT Std", "Manrope", sans-serif;
   font-size: 12.5px;
   font-weight: 700;
@@ -3487,7 +3487,7 @@
 }
 
 .roster-staff-bubble.is-selected .roster-avatar {
-  color: #1F3524;
+  color: var(--color-ink-forest);
 }
 
 .roster-staff-bubble.is-long-name {
@@ -3517,7 +3517,7 @@
   z-index: 300;
   width: 240px;
   padding: 14px 16px;
-  background: #fff;
+  background: var(--color-elevated);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: 0 8px 32px rgba(0,0,0,0.16), 0 2px 8px rgba(0,0,0,0.08);
@@ -3715,7 +3715,7 @@
   display: flex;
   flex-direction: column;
   gap: 2px;
-  background: #ffffff;
+  background: var(--color-elevated);
   border: 1px solid var(--color-border);
   border-radius: 12px;
   box-shadow: 0 12px 32px rgba(26, 34, 56, 0.16);
@@ -3782,7 +3782,7 @@
   padding: 4px 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  background: #FFFFFF;
+  background: var(--color-elevated);
   font-family: var(--font-sans);
   cursor: text;
 }
@@ -3837,7 +3837,7 @@
   padding: 4px 12px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: #FFFFFF;
+  background: var(--color-elevated);
   font-family: var(--font-sans);
   white-space: nowrap;
 }
@@ -3876,7 +3876,7 @@
   padding: 4px 12px;
   border: 1px solid var(--color-border);
   border-radius: 999px;
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 .roster-board-command-staff-inline--expand > span:last-child {
@@ -3887,7 +3887,7 @@
 .roster-forecast-summary {
   margin: 0;
   padding: 8px 16px;
-  background: #FFFFFF;
+  background: var(--color-elevated);
   border-bottom: 1px solid var(--color-border);
   font-family: var(--font-serif);
   font-size: 14.5px;
@@ -3933,7 +3933,7 @@
   min-height: 36px;
   border-right: 1px solid var(--color-border);
   border-bottom: 1px solid var(--color-border);
-  background: #FFFFFF;
+  background: var(--color-elevated);
   font-family: var(--font-sans);
   font-size: 11px;
   letter-spacing: 0.01em;
@@ -3975,7 +3975,7 @@
 
 .deputy-day-summary.is-closed {
   background: var(--color-surface, #F8F6F1);
-  color: rgba(31, 53, 36, 0.4);
+  color: rgba(var(--ink-forest-rgb), 0.4);
 }
 
 .deputy-day-summary-closed {
@@ -3986,7 +3986,7 @@
 }
 
 .deputy-day-summary.is-today {
-  background: #FFFFFF;
+  background: var(--color-elevated);
   box-shadow: inset 0 -2px 0 var(--color-text);
 }
 
@@ -4026,15 +4026,15 @@
   border-top: 1px solid var(--color-border) !important;
   /* Day-summary boxes are pills — pure white sitting on the cream
      surface below so they read as the "card" inside the section. */
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 .deputy-venue-cell.is-weekend {
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 .deputy-venue-cell.is-today {
-  background: #FFFFFF;
+  background: var(--color-elevated);
   box-shadow: inset 0 -2px 0 var(--color-text);
 }
 
@@ -4100,7 +4100,7 @@
   font-family: var(--font-serif);
   font-style: italic;
   font-size: 12px;
-  color: rgba(31, 53, 36, 0.4);
+  color: rgba(var(--ink-forest-rgb), 0.4);
 }
 
 /* Venue label sits taller now because the venue cells in the same row
@@ -4149,9 +4149,9 @@
   display: grid;
   place-items: center;
   min-height: 32px;
-  border: 1px dashed rgba(31, 53, 36, 0.16);
+  border: 1px dashed rgba(var(--ink-forest-rgb), 0.16);
   border-radius: 6px;
-  color: rgba(31, 53, 36, 0.42);
+  color: rgba(var(--ink-forest-rgb), 0.42);
   font-family: var(--font-sans);
   font-size: 11px;
   font-weight: 600;
@@ -4285,7 +4285,7 @@
 }
 
 .roster-board-command--inline .roster-board-command-meta::-webkit-scrollbar-thumb {
-  background: rgba(31, 53, 36, 0.18);
+  background: rgba(var(--ink-forest-rgb), 0.18);
   border-radius: 999px;
 }
 
@@ -4304,7 +4304,7 @@
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.01em;
-  background: #FFFFFF;
+  background: var(--color-elevated);
   border: 1px solid var(--color-border);
   box-shadow: none;
 }
@@ -4564,7 +4564,7 @@
 
 .deputy-day-head.is-today {
   box-shadow: inset 0 -2px 0 var(--color-text);
-  background: #FFFFFF;
+  background: var(--color-elevated);
   color: var(--color-text);
   position: sticky;
 }
@@ -4662,7 +4662,7 @@
 }
 
 .deputy-row-label:hover {
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 /* Larger avatar in the row label — it's the focal point now that the
@@ -4786,7 +4786,7 @@
   padding: 5px 6px;
   border-top: 0;
   border-left: 0;
-  background: #FFFFFF;
+  background: var(--color-elevated);
   text-align: left;
   cursor: pointer;
   transition: background-color 120ms ease, box-shadow 120ms ease;
@@ -4794,7 +4794,7 @@
 
 .deputy-schedule-cell:hover {
   background: var(--color-surface, #F8F6F1);
-  box-shadow: inset 0 0 0 1px rgba(31, 53, 36, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(var(--ink-forest-rgb), 0.08);
 }
 
 .deputy-schedule-cell:focus-visible {
@@ -4807,7 +4807,7 @@
 }
 
 .deputy-schedule-cell.has-shifts {
-  background: #FFFFFF;
+  background: var(--color-elevated);
 }
 
 .deputy-schedule-cell.is-closed {
@@ -4895,7 +4895,7 @@
 }
 
 .deputy-shift-card:hover {
-  background: #FFFFFF;
+  background: var(--color-elevated);
   border-color: var(--shift-border, var(--color-text));
 }
 
@@ -6190,7 +6190,7 @@
 }
 
 .staff-pin-keypad button {
-  background: #fff;
+  background: var(--color-elevated);
   border: 1px solid #d9dde6;
   border-radius: 8px;
   font-size: 20px;
@@ -7035,7 +7035,7 @@
    carry on the personal home. */
 .staff-daily-home .roster-team-member.is-rostered {
   background: var(--color-surface, #F8F6F1);
-  border-color: rgba(31, 53, 36, 0.18);
+  border-color: rgba(var(--ink-forest-rgb), 0.18);
 }
 /* ==========================================================================
    Mobile pass (≤480px)
@@ -7081,7 +7081,7 @@
 }
 
 .timesheet-group {
-  border:1px solid rgba(31,53,36,.12);
+  border:1px solid rgba(var(--ink-forest-rgb),.12);
   border-radius:14px;
   background:var(--color-surface-muted, #fff);
   overflow:hidden;
@@ -7093,7 +7093,7 @@
   gap:12px;
   padding:12px 16px;
   background:var(--color-surface, #f8f6f1);
-  border-bottom:1px solid rgba(31,53,36,.1);
+  border-bottom:1px solid rgba(var(--ink-forest-rgb),.1);
 }
 
 .timesheet-group-avatar {
@@ -7151,7 +7151,7 @@
   align-items:center;
   gap:12px;
   padding:10px 16px;
-  border-top:1px solid rgba(31,53,36,.07);
+  border-top:1px solid rgba(var(--ink-forest-rgb),.07);
 }
 
 .timesheet-row:first-child {
@@ -7259,7 +7259,7 @@
   align-items:center;
   justify-content:space-between;
   padding:16px 20px;
-  border-bottom:1px solid rgba(31,53,36,.1);
+  border-bottom:1px solid rgba(var(--ink-forest-rgb),.1);
   background:var(--color-surface, #f8f6f1);
 }
 
@@ -7473,4 +7473,207 @@ html[data-theme='dark'] {
   --color-accent-hover: #A6B7D3;
   --color-accent-soft: #232A38;
   --color-accent-text: #E6ECF5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Dark-mode leak sweep — Part B.
+   These rules carry hardcoded light tints / dark-on-pale text that the
+   paired-token swap (Part A) can't cover. Each override re-themes via the
+   tone tokens so the LIGHT theme stays byte-identical and dark mode no
+   longer leaks light cards or dark text.
+   ───────────────────────────────────────────────────────────────────── */
+
+/* Staff readiness tiles (known leaks) */
+html[data-theme='dark'] .staff-readiness-item.is-warning {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .staff-readiness-item.is-positive {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+
+/* Roster closed-days buttons */
+html[data-theme='dark'] .roster-closed-days button:hover {
+  background: var(--tone-neutral-bg);
+}
+html[data-theme='dark'] .roster-closed-days button.is-closed {
+  border-color: var(--color-border);
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+/* Roster section-delete / danger menu items */
+html[data-theme='dark'] .alma-roster-section-delete {
+  border-color: var(--color-border);
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .alma-roster-section-delete:hover:not(:disabled) {
+  background: var(--tone-danger-bg);
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .alma-roster-delete-menu-item.is-danger {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .alma-roster-delete-menu-item.is-danger:hover:not(:disabled) {
+  background: var(--tone-danger-bg);
+}
+html[data-theme='dark'] .roster-shift-context-menu button.is-danger {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .roster-shift-context-menu button.is-danger:hover,
+html[data-theme='dark'] .roster-shift-context-menu button.is-danger:focus-visible {
+  background: var(--tone-danger-bg);
+}
+
+/* Deputy day-summary over/under accents */
+html[data-theme='dark'] .deputy-day-summary-cost.is-over em,
+html[data-theme='dark'] .deputy-venue-cell-pct.is-over {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .deputy-day-summary-cost.is-under em,
+html[data-theme='dark'] .deputy-venue-cell-pct.is-under {
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .deputy-day-head .day-head-cost.is-over {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .deputy-day-head .day-head-cost.is-under {
+  color: var(--tone-positive-fg);
+}
+
+/* Roster board command meta pills */
+html[data-theme='dark'] .roster-board-command-meta span {
+  background: var(--color-elevated);
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .roster-board-command-meta span.is-warning {
+  border-color: var(--color-border);
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .roster-board-command-meta span.is-warning strong {
+  color: var(--tone-warning-fg);
+}
+
+/* Deputy schedule cells / shift pills */
+html[data-theme='dark'] .deputy-schedule-cell.is-closed {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .deputy-closed-cell small {
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .deputy-shift-status-pill.is-draft {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .deputy-shift-status-pill.is-cancelled {
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral-fg);
+}
+html[data-theme='dark'] .deputy-shift-cancelled {
+  border-left-color: var(--color-border-strong);
+  background: var(--tone-neutral-bg);
+  color: var(--tone-neutral-fg);
+}
+
+/* Roster conflict warning — blocking (danger) variant */
+html[data-theme='dark'] .roster-conflict-warning.is-blocking {
+  border-color: var(--color-border);
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
+}
+
+/* Staff device / PIN entry surfaces */
+html[data-theme='dark'] .staff-device-card {
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .staff-device-avatar {
+  background: var(--tone-indigo-bg);
+  color: var(--tone-indigo-fg);
+}
+html[data-theme='dark'] .staff-pin-display {
+  background: var(--tone-neutral-bg);
+  border-color: var(--color-border);
+}
+html[data-theme='dark'] .staff-pin-keypad button {
+  border-color: var(--color-border);
+}
+
+/* Live dashboard badge + hero/pulse tone tiles */
+html[data-theme='dark'] .live-badge {
+  background: var(--tone-positive-bg);
+  border-color: var(--color-border);
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .live-hero-metric.is-warning {
+  background: var(--tone-warning-bg);
+}
+html[data-theme='dark'] .live-hero-metric.is-warning .live-hero-value {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .live-hero-metric.is-danger {
+  background: var(--tone-danger-bg);
+}
+html[data-theme='dark'] .live-hero-metric.is-danger .live-hero-value {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .live-hero-metric.is-positive .live-hero-value {
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .live-pulse-strip > button.is-warning {
+  background: var(--tone-warning-bg);
+}
+html[data-theme='dark'] .live-pulse-strip > button.is-warning strong {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .live-pulse-strip > button.is-danger {
+  background: var(--tone-danger-bg);
+}
+html[data-theme='dark'] .live-pulse-strip > button.is-danger strong {
+  color: var(--tone-danger-fg);
+}
+
+/* Roster cost-forecast pill accents */
+html[data-theme='dark'] .roster-cost-forecast-pill.is-positive .roster-cost-forecast-pct,
+html[data-theme='dark'] .roster-cost-forecast-pill.is-positive small {
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .roster-cost-forecast-pill.is-warning .roster-cost-forecast-pct,
+html[data-theme='dark'] .roster-cost-forecast-pill.is-warning small {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .roster-cost-forecast-pill.is-danger .roster-cost-forecast-pct,
+html[data-theme='dark'] .roster-cost-forecast-pill.is-danger small {
+  color: var(--tone-danger-fg);
+}
+
+/* Clock drift + award compliance notes */
+html[data-theme='dark'] .award-compliance-warning {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .clock-drift-note.is-warning {
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .clock-drift-note.is-danger {
+  color: var(--tone-danger-fg);
+}
+
+/* HR / training expiry rows */
+html[data-theme='dark'] .hr-expiry-row.is-danger,
+html[data-theme='dark'] .training-chase-row.is-danger {
+  background: var(--tone-danger-bg);
+}
+html[data-theme='dark'] .hr-expiry-row.is-warning,
+html[data-theme='dark'] .training-chase-row.is-warning {
+  background: var(--tone-warning-bg);
+}
+html[data-theme='dark'] .hr-expiry-row.is-danger .hr-expiry-when {
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .hr-expiry-row.is-warning .hr-expiry-when {
+  color: var(--tone-warning-fg);
 }
