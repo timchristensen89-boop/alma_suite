@@ -11539,3 +11539,35 @@ html[data-theme='dark'] .suite-switcher-popover--list .suite-switch-footer {
   border-color: var(--color-border-strong);
   background: var(--color-surface-hover);
 }
+
+/* Admin → Data imports: live status cards. */
+.admin-import-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin: 10px 0 12px;
+}
+.admin-import-detail {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+.admin-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.admin-import-link {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-accent, #3F5739);
+  text-decoration: none;
+}
+.admin-import-link:hover { text-decoration: underline; }
+.admin-import-msg {
+  margin: 10px 0 0;
+  font-size: 12.5px;
+  color: var(--tone-positive-fg, #047857);
+}
+.admin-import-msg.is-error { color: #9A3A2E; }
