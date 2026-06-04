@@ -528,16 +528,11 @@ export function App() {
         const clock = await api<StaffClockStatusPayload>('/api/staff/me/clock');
         setUser(result.user);
         setSelected(staff);
-
-        if (clock.activeSession) {
-          const worked = durSince(clock.activeSession.clockInAt);
-          await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: staff.name, dir: 'out', worked, at: Date.now() });
-        } else {
-          await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({}) });
-          setConfirm({ staffName: staff.name, dir: 'in', at: Date.now() });
-        }
-        setHumanClock(await api<StaffClockStatusPayload>('/api/staff/me/clock'));
+        // Don't auto clock the person in/out — the PIN is also used just to land
+        // on the launcher and switch between apps. Show their current status and
+        // a Clock in / Clock out button on the signed-in panel so they choose
+        // when to clock.
+        setHumanClock(clock);
       }
 
       setEntryStatus('ok');
@@ -1099,7 +1094,7 @@ function HumanWelcomePanel({
         <h2>
           Welcome, <span className="kiosk-it">{first}.</span>
         </h2>
-        <p>Clock in for your shift, then open the suite app you need.</p>
+        <p>Open the app you need — and clock in or out below whenever you want.</p>
       </div>
 
       <div className={`kiosk-welcome-card${activeSession ? ' is-clocked-in' : ''}`}>
