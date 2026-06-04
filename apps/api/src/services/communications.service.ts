@@ -9,10 +9,8 @@ import {
   suiteChatMessageUpdateSchema,
   type AlmaAppId,
   type AuthUser,
-  type NoticeboardName,
-  type NoticeboardsPayload,
-  type PublicAgistmentNoticesPayload,
   type SuiteAnnouncement,
+  type SuiteNoticesPayload,
   type SuiteChatChannel,
   type SuiteChatChannelInput,
   type SuiteChatChannelType,
@@ -131,7 +129,6 @@ function toAnnouncement(row: {
   title: string;
   body: string;
   audience: string;
-  board: string;
   appId: AlmaAppId | null;
   venue: string | null;
   pinned: boolean;
@@ -148,7 +145,6 @@ function toAnnouncement(row: {
 }): SuiteAnnouncement {
   return {
     ...row,
-    board: (row.board as NoticeboardName) ?? 'STAFF',
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
     expiresAt: row.expiresAt?.toISOString() ?? null,
@@ -408,7 +404,6 @@ export const communicationsService = {
       prisma.suiteAnnouncement.findMany({
         where: {
           deletedAt: null,
-          board: 'STAFF',
           AND: [
             { OR: [{ expiresAt: null }, { expiresAt: { gt: now } }] },
             { OR: [{ appId: null }, { appId }] },
@@ -466,48 +461,19 @@ export const communicationsService = {
     };
   },
 
-  // Noticeboard read view — active notices for both boards (staff + agistment),
-  // pinned first. Any signed-in user can read; posting/editing stays manager-gated.
-  async listBoards(_user?: AuthUser): Promise<NoticeboardsPayload> {
-    const now = new Date();
-    const forBoard = (board: NoticeboardName) =>
-      prisma.suiteAnnouncement.findMany({
-        where: {
-          deletedAt: null,
-          board,
-          OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
-        },
-        orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
-        take: 100
-      });
-    const [staff, agistment] = await Promise.all([forBoard('STAFF'), forBoard('AGISTMENT')]);
-    return { staff: staff.map(toAnnouncement), agistment: agistment.map(toAnnouncement) };
-  },
-
-  // Public (no-login) agistment notices for horse owners — read-only, no
-  // internal author/audience metadata exposed.
-  async listPublicAgistmentNotices(): Promise<PublicAgistmentNoticesPayload> {
+  // Staff noticeboard read view — active announcements, pinned first. Any
+  // signed-in user can read; posting/editing stays manager-gated.
+  async listNotices(_user?: AuthUser): Promise<SuiteNoticesPayload> {
     const now = new Date();
     const notices = await prisma.suiteAnnouncement.findMany({
       where: {
         deletedAt: null,
-        board: 'AGISTMENT',
         OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
       },
       orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
       take: 100
     });
-    return {
-      venue: null,
-      notices: notices.map((n) => ({
-        id: n.id,
-        title: n.title,
-        body: n.body,
-        pinned: n.pinned,
-        createdAt: n.createdAt.toISOString(),
-        expiresAt: n.expiresAt?.toISOString() ?? null
-      }))
-    };
+    return { notices: notices.map(toAnnouncement) };
   },
 
   async listChannels(input: { appId?: AlmaAppId; venue?: string; includeInactive?: boolean }, user?: AuthUser) {
@@ -540,7 +506,6 @@ export const communicationsService = {
         title: data.title.trim(),
         body: data.body.trim(),
         audience: clean(data.audience)?.toUpperCase() ?? 'ALL',
-        board: data.board ?? 'STAFF',
         appId: data.appId ?? null,
         venue: clean(data.venue) ?? null,
         pinned: data.pinned ?? false,
@@ -562,7 +527,6 @@ export const communicationsService = {
         ...(data.title !== undefined && { title: data.title.trim() }),
         ...(data.body !== undefined && { body: data.body.trim() }),
         ...(data.audience !== undefined && { audience: clean(data.audience)?.toUpperCase() ?? 'ALL' }),
-        ...(data.board !== undefined && { board: data.board }),
         ...(data.appId !== undefined && { appId: data.appId ?? null }),
         ...(data.venue !== undefined && { venue: clean(data.venue) ?? null }),
         ...(data.pinned !== undefined && { pinned: data.pinned }),
