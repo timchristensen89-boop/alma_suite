@@ -11393,6 +11393,22 @@ html[data-theme='dark'] .suite-search-panel {
   border-color: var(--color-border);
 }
 
+/* Sticky header/footer fades inside the messages + alerts popups paint a
+   --color-surface gradient; in dark the panel itself is --color-elevated, so
+   the fade read as a darker band behind the headings. Match the panel. */
+html[data-theme='dark'] .suite-msg-panel .suite-msg-head {
+  background: linear-gradient(180deg, var(--color-elevated) 75%, transparent);
+}
+html[data-theme='dark'] .suite-msg-panel .suite-msg-footer {
+  background: linear-gradient(0deg, var(--color-elevated) 75%, transparent);
+}
+html[data-theme='dark'] .suite-alert-panel .suite-alert-head {
+  background: linear-gradient(180deg, var(--color-elevated) 75%, transparent);
+}
+html[data-theme='dark'] .suite-alert-panel .suite-alert-footer {
+  background: linear-gradient(0deg, var(--color-elevated) 75%, transparent);
+}
+
 /* Editorial hero bubble paints its gradient inline (per-app colours), so the
    dark override needs !important. Keep a hint of the app accent via
    --color-accent-soft (which is a dark accent tint in dark mode). */

@@ -133,6 +133,34 @@ async function apiGet<T>(connection: IntegrationConnection, path: string): Promi
   return (await response.json()) as T;
 }
 
+// Deputy's /resource/<Object>/QUERY endpoints are POST-only — a GET returns
+// 404 "No method for resource found". search / join / max go in the JSON body,
+// not the query string.
+async function apiPost<T>(connection: IntegrationConnection, path: string, body: unknown): Promise<T> {
+  let current = await validAccessToken(connection);
+  const endpoint = deputyEndpointFromConnection(current.connection);
+  const doFetch = (token: string) =>
+    fetch(`https://${endpoint}/api/v1${path}`, {
+      method: 'POST',
+      headers: {
+        authorization: `OAuth ${token}`,
+        accept: 'application/json',
+        'content-type': 'application/json'
+      },
+      body: JSON.stringify(body ?? {})
+    });
+  let response = await doFetch(current.accessToken);
+  if (response.status === 401) {
+    current = await refreshConnection(current.connection);
+    response = await doFetch(current.accessToken);
+  }
+  if (!response.ok) {
+    const detail = await response.text().catch(() => '');
+    throw new HttpError(response.status, `Deputy POST ${path} (${response.status}): ${detail.slice(0, 240)}`);
+  }
+  return (await response.json()) as T;
+}
+
 async function apiGetBytes(connection: IntegrationConnection, path: string) {
   let current = await validAccessToken(connection);
   const endpoint = deputyEndpointFromConnection(current.connection);
@@ -255,12 +283,13 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const search = encodeURIComponent(JSON.stringify({
-    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-  }));
-  const path = `/resource/Roster/QUERY?search=${search}&join%5B%5D=EmployeeInfo&join%5B%5D=OperationalUnitInfo`;
-  const shifts = await apiGet<DeputyRosterShift[]>(connection, path);
+  const shifts = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
+    search: {
+      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+    },
+    join: ['EmployeeInfo', 'OperationalUnitInfo']
+  });
 
   // Clear previously-imported shifts in this window before re-creating them.
   // Match on startsAt only — the Deputy query filters by StartTime, so every
@@ -428,10 +457,10 @@ function pickFirstNonEmpty(...values: Array<string | null | undefined>): string 
 }
 
 export async function syncEmployees(connection: IntegrationConnection) {
-  const employees = await apiGet<DeputyEmployee[]>(
-    connection,
-    '/resource/Employee/QUERY?max=500&join%5B%5D=CompanyInfo&join%5B%5D=RoleInfo'
-  );
+  const employees = await apiPost<DeputyEmployee[]>(connection, '/resource/Employee/QUERY', {
+    max: 500,
+    join: ['CompanyInfo', 'RoleInfo']
+  });
 
   let created = 0;
   let updated = 0;
@@ -604,10 +633,10 @@ function classifyDocument(doc: DeputyEmployeeDocument):
 }
 
 export async function syncDocuments(connection: IntegrationConnection) {
-  const documents = await apiGet<DeputyEmployeeDocument[]>(
-    connection,
-    '/resource/EmployeeDocument/QUERY?max=500&join%5B%5D=EmployeeInfo'
-  );
+  const documents = await apiPost<DeputyEmployeeDocument[]>(connection, '/resource/EmployeeDocument/QUERY', {
+    max: 500,
+    join: ['EmployeeInfo']
+  });
 
   let complianceCreated = 0;
   let reviewsCreated = 0;
@@ -767,12 +796,13 @@ export async function syncTimesheets(
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const search = encodeURIComponent(JSON.stringify({
-    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-  }));
-  const path = `/resource/Timesheet/QUERY?search=${search}&join%5B%5D=EmployeeInfo&join%5B%5D=OperationalUnitInfo`;
-  const sheets = await apiGet<DeputyTimesheet[]>(connection, path);
+  const sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+    search: {
+      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+    },
+    join: ['EmployeeInfo', 'OperationalUnitInfo']
+  });
 
   let created = 0;
   let updated = 0;
