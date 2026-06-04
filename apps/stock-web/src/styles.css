@@ -1725,6 +1725,14 @@ tbody tr.row-detail:hover {
 .price-movement-row.is-up { background: rgba(254, 242, 242, 0.45); }
 .price-movement-row.is-down { background: rgba(240, 253, 244, 0.45); }
 
+/* Dark — price movement: light row washes + dark tile text washed out on the
+   dark surface. Darken the green/red row tints, lighten the tile values. */
+html[data-theme='dark'] .price-movement-row.is-up   { background: rgba(241, 148, 142, 0.09); }
+html[data-theme='dark'] .price-movement-row.is-down { background: rgba(127, 208, 160, 0.09); }
+html[data-theme='dark'] .price-movement-tile.is-warning strong  { color: var(--tone-warning-fg); }
+html[data-theme='dark'] .price-movement-tile.is-danger strong   { color: var(--tone-danger-fg); }
+html[data-theme='dark'] .price-movement-tile.is-positive strong { color: var(--tone-positive-fg); }
+
 .price-movement-name {
   display: grid;
   gap: 1px;
