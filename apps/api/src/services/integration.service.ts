@@ -2258,7 +2258,7 @@ function verifySquareSignature(req: Request, rawBody: string, accountKey: Square
   const signature = req.header('x-square-hmacsha256-signature');
   const key = squareAccountConfig(accountKey).webhookSignatureKey;
   const url = squareWebhookUrl(accountKey);
-  if (!key || !url) throw new HttpError(503, 'Square webhook verification is not configured.');
+  if (!key || !url) return false;
   const generated = crypto.createHmac('sha256', key).update(`${url}${rawBody}`).digest('base64');
   return safeCompareBase64(signature, generated);
 }
@@ -5411,7 +5411,15 @@ export const integrationService = {
     const accountKey = normaliseSquareAccountKey(accountInput);
     const rawBody = rawBodyFromRequest(req);
     if (!verifySquareSignature(req, rawBody, accountKey)) {
-      throw new HttpError(401, 'Invalid Square webhook signature.');
+      // Acknowledge (200) so Square stops retrying — a mismatched signature will
+      // never verify on retry, so 401s just create a retry storm. We deliberately
+      // do NOT process the unverified payload; the 15-min sales poll backfills.
+      // Fix by aligning SQUARE_<ACCOUNT>_WEBHOOK_SIGNATURE_KEY + SQUARE_WEBHOOK_URL
+      // with the subscription's signature key + notification URL in Square.
+      console.warn(
+        `[square-webhook] signature verification failed for the ${accountKey} account — acknowledged without processing.`
+      );
+      return { ok: false, ignored: 'invalid_signature' as const, account: accountKey };
     }
     return recordWebhook('SQUARE', rawBody, accountKey);
   },

@@ -364,11 +364,15 @@ export const adminService = {
       byDay.set(dateKey, row);
       return row;
     };
-    const staffFor = (profile: typeof timesheets[number]['staffProfile']) => {
-      const venue = profile.venue?.trim() || 'Unassigned';
+    // Per-staff rows are split by the venue they actually worked at (from the
+    // timesheet/shift), so staff who work across both venues — full-timers
+    // especially — show a row per venue with that venue's hours and cost.
+    const staffFor = (profile: typeof timesheets[number]['staffProfile'], entryVenue: string) => {
+      const venue = entryVenue || profile.venue?.trim() || 'Unassigned';
       const roleTitle = profile.roleTitle?.trim() || 'Unassigned role';
       const rate = staffCostingRate(profile);
-      const row = byStaff.get(profile.id) ?? {
+      const key = `${profile.id}|${venue}`;
+      const row = byStaff.get(key) ?? {
         ...emptyCostingRow(),
         staffProfileId: profile.id,
         staffName: `${profile.firstName} ${profile.lastName}`.trim(),
@@ -378,7 +382,7 @@ export const adminService = {
         rateSource: rate.source,
         missingRate: !rate.rateCents
       };
-      byStaff.set(profile.id, row);
+      byStaff.set(key, row);
       return row;
     };
 
@@ -395,7 +399,7 @@ export const adminService = {
       addActual(rowFor(byVenue, venue), entry.staffProfileId, hours, cost, approved, missingRate);
       addActual(areaFor(venue, area), entry.staffProfileId, hours, cost, approved, missingRate);
       addActual(roleFor(roleTitle), entry.staffProfileId, hours, cost, approved, missingRate);
-      addActual(staffFor(entry.staffProfile), entry.staffProfileId, hours, cost, approved, missingRate);
+      addActual(staffFor(entry.staffProfile, venue), entry.staffProfileId, hours, cost, approved, missingRate);
       const day = dayFor(isoDate(entry.workDate));
       day.actualHours += hours;
       day.actualCostCents += cost;
@@ -414,7 +418,7 @@ export const adminService = {
       addScheduled(rowFor(byVenue, venue), shift.staffProfileId, hours, cost, missingRate);
       addScheduled(areaFor(venue, area), shift.staffProfileId, hours, cost, missingRate);
       addScheduled(roleFor(roleTitle), shift.staffProfileId, hours, cost, missingRate);
-      addScheduled(staffFor(shift.staffProfile), shift.staffProfileId, hours, cost, missingRate);
+      addScheduled(staffFor(shift.staffProfile, venue), shift.staffProfileId, hours, cost, missingRate);
       const day = dayFor(isoDate(shift.startsAt));
       day.scheduledHours += hours;
       day.scheduledCostCents += cost;
