@@ -32,6 +32,24 @@ communicationsRouter.get('/admin', requireManager, async (req, res, next) => {
   }
 });
 
+// Noticeboard read view (staff + agistment boards) — any signed-in user.
+communicationsRouter.get('/boards', async (req, res, next) => {
+  try {
+    res.json(await communicationsService.listBoards(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Public agistment noticeboard — no auth (allowlisted prefix). For horse owners.
+communicationsRouter.get('/public/agistment-notices', async (_req, res, next) => {
+  try {
+    res.json(await communicationsService.listPublicAgistmentNotices());
+  } catch (error) {
+    next(error);
+  }
+});
+
 communicationsRouter.get('/channels', async (req, res, next) => {
   try {
     res.json(await communicationsService.listChannels({

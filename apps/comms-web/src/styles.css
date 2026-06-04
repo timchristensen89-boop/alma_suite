@@ -574,3 +574,155 @@ html[data-theme='dark'] {
   --color-accent-soft: #2A2E34;
   --color-accent-text: #ECEFF3;
 }
+
+/* ── Noticeboard (Comms tab) ───────────────────────────────────────── */
+.comms-board-tabs {
+  display: inline-flex;
+  gap: 4px;
+  padding: 4px;
+  border-radius: 12px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  margin-bottom: 4px;
+}
+.comms-board-tabs button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 8px 18px;
+  border-radius: 9px;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+.comms-board-tabs button.active {
+  background: var(--color-elevated);
+  color: var(--color-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+}
+.comms-board-public-note {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.comms-board-copy,
+.comms-board-actions button {
+  appearance: none;
+  border: 1px solid var(--color-border);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.comms-board-form-row {
+  display: flex;
+  gap: 16px;
+  align-items: flex-end;
+  flex-wrap: wrap;
+}
+.comms-board-check {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13.5px;
+}
+.comms-board-check input { width: auto; }
+.comms-board-list {
+  display: grid;
+  gap: 12px;
+}
+.comms-board-note.is-pinned {
+  border-color: rgba(var(--ink-forest-rgb), 0.35);
+}
+.comms-board-note-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.comms-board-note-head h3 { margin: 0; }
+.comms-board-pin {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-accent, #3F5739);
+  background: var(--tone-positive-bg, #ecfdf5);
+  padding: 2px 8px;
+  border-radius: 999px;
+}
+.comms-board-body { white-space: pre-wrap; margin: 8px 0 12px; }
+.comms-board-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--color-text-muted);
+}
+.comms-board-actions { display: inline-flex; gap: 8px; }
+.comms-board-delete { color: #9A3A2E; }
+
+/* ── Public agistment noticeboard (/agistment, no login) ───────────── */
+.agist-public {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 56px 22px 80px;
+  font-family: var(--font-sans);
+  color: var(--color-text);
+}
+.agist-public-head { text-align: center; margin-bottom: 36px; }
+.agist-public-eyebrow {
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent, #3F5739);
+  margin: 0 0 8px;
+}
+.agist-public-head h1 {
+  font-family: var(--font-serif, Georgia, serif);
+  font-size: 34px;
+  margin: 0 0 10px;
+}
+.agist-public-sub { color: var(--color-text-muted); margin: 0; }
+.agist-public-list { display: grid; gap: 16px; }
+.agist-note {
+  position: relative;
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  background: var(--color-elevated);
+  padding: 20px 22px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+.agist-note.is-pinned { border-color: rgba(var(--ink-forest-rgb), 0.4); }
+.agist-note-pin {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-accent, #3F5739);
+}
+.agist-note h2 { font-family: var(--font-serif, Georgia, serif); font-size: 20px; margin: 0 0 8px; padding-right: 70px; }
+.agist-note p { margin: 0 0 12px; white-space: pre-wrap; line-height: 1.5; }
+.agist-note time { font-size: 12.5px; color: var(--color-text-muted); }
+.agist-public-empty { text-align: center; padding: 48px 0; color: var(--color-text-muted); }
+.agist-public-muted { text-align: center; color: var(--color-text-muted); padding: 40px 0; }
+.agist-public-error { text-align: center; color: #9A3A2E; }
+.agist-public-foot {
+  text-align: center;
+  margin-top: 48px;
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
