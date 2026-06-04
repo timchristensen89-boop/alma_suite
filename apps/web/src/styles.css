@@ -11409,6 +11409,19 @@ html[data-theme='dark'] .alma-home-bubble-btn--ghost {
   border-color: var(--color-border-strong) !important;
 }
 
+/* Near-black inks sitting on surfaces that flip dark (the token sweep missed
+   these specific selectors) → adaptive text so they don't read as black. */
+html[data-theme='dark'] .suite-switcher-current-mark > .alma-app-icon,
+html[data-theme='dark'] .suite-switcher-current-mark > .alma-app-icon > span[aria-hidden='true']:last-child {
+  color: var(--color-text) !important;
+}
+html[data-theme='dark'] .issue-cat-chip {
+  color: var(--color-text);
+}
+html[data-theme='dark'] .alma-service-nowline-label {
+  color: var(--color-text);
+}
+
 /* Literal cream/white gradients the token sweep can't reach. */
 html[data-theme='dark'] .alma-bigstat--warn {
   background: var(--tone-warning-bg);
