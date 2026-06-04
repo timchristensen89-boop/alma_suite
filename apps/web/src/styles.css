@@ -11333,16 +11333,16 @@ html[data-theme='dark'] {
   --color-focus: #6E97E0;
 
   /* status tones — deep bg, bright fg so badges stay legible */
-  --tone-positive-bg: #15301F;
+  --tone-positive-bg: #11251A;
   --tone-positive-fg: #7FD0A0;
   --tone-positive-dot: #34d399;
-  --tone-warning-bg: #382B12;
+  --tone-warning-bg: #2B2110;
   --tone-warning-fg: #F4CE7C;
   --tone-warning-dot: #f59e0b;
-  --tone-danger-bg: #3C1D1D;
+  --tone-danger-bg: #30191A;
   --tone-danger-fg: #F1948E;
   --tone-danger-dot: #f87171;
-  --tone-info-bg: #142C3A;
+  --tone-info-bg: #11242F;
   --tone-info-fg: #7FC2E8;
   --tone-info-dot: #38bdf8;
   --tone-indigo-bg: #20223F;
@@ -11430,6 +11430,58 @@ html[data-theme='dark'] .alma-bigstat-delta.is-negative {
   background: var(--tone-danger-bg);
   color: var(--tone-danger-fg);
 }
+
+/* Dark — tone squares that bypassed the tokens: light cream/tint backgrounds
+   compositing to washed-out olive/green/yellow over the dark forest surface,
+   and dark tone text that loses contrast. Light theme stays untouched. */
+html[data-theme='dark'] .daily-brief-next-steps li {
+  background: rgba(255, 255, 255, 0.04);
+  border-left-color: rgba(var(--ink-forest-rgb), 0.5);
+}
+html[data-theme='dark'] .daily-brief-list-row {
+  background: rgba(255, 255, 255, 0.04);
+}
+html[data-theme='dark'] .daily-brief-next-steps a {
+  color: var(--tone-info-fg);
+}
+html[data-theme='dark'] .daily-brief-headsup.is-danger {
+  background: rgba(241, 148, 142, 0.09);
+  border-color: rgba(241, 148, 142, 0.30);
+  color: var(--tone-danger-fg);
+}
+html[data-theme='dark'] .daily-brief-headsup.is-danger .daily-brief-headsup-dot { background: var(--tone-danger-dot); }
+html[data-theme='dark'] .daily-brief-headsup.is-warning {
+  background: rgba(244, 206, 124, 0.09);
+  border-color: rgba(244, 206, 124, 0.30);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .daily-brief-headsup.is-warning .daily-brief-headsup-dot { background: var(--tone-warning-dot); }
+html[data-theme='dark'] .daily-brief-headsup.is-info {
+  background: rgba(127, 194, 232, 0.09);
+  border-color: rgba(127, 194, 232, 0.28);
+  color: var(--tone-info-fg);
+}
+html[data-theme='dark'] .daily-brief-headsup.is-info .daily-brief-headsup-dot { background: var(--tone-info-dot); }
+html[data-theme='dark'] .notification.tone-warning .notification-icon {
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+html[data-theme='dark'] .notification.tone-positive .notification-icon {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .admin-access-pill.enabled {
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+}
+html[data-theme='dark'] .alma-pill-success { background: var(--tone-positive-bg); color: var(--tone-positive-fg); }
+html[data-theme='dark'] .alma-pill-warn    { background: var(--tone-warning-bg);  color: var(--tone-warning-fg); }
+html[data-theme='dark'] .alma-pill-danger  { background: var(--tone-danger-bg);   color: var(--tone-danger-fg); }
+html[data-theme='dark'] .alma-pill-info    { background: var(--tone-info-bg);     color: var(--tone-info-fg); }
+html[data-theme='dark'] .alma-roster-variance.is-success { background: var(--tone-positive-bg); color: var(--tone-positive-fg); }
+html[data-theme='dark'] .alma-roster-variance.is-warn    { background: var(--tone-warning-bg);  color: var(--tone-warning-fg); }
+html[data-theme='dark'] .alma-roster-variance.is-danger  { background: var(--tone-danger-bg);   color: var(--tone-danger-fg); }
+
 /* App-switcher sticky head/footer fades should match the popover (elevated),
    not the surface — otherwise a mismatched brown band shows top + bottom. */
 html[data-theme='dark'] .suite-switcher-popover--list .suite-switch-list-head {

@@ -467,6 +467,8 @@
 
 .automation-metric.is-positive strong { color: #166534; }
 .automation-metric.is-warning strong { color: #92400e; }
+html[data-theme='dark'] .automation-metric.is-positive strong { color: var(--tone-positive-fg); }
+html[data-theme='dark'] .automation-metric.is-warning strong { color: var(--tone-warning-fg); }
 
 /* Birthday list */
 .birthday-list {
