@@ -178,6 +178,33 @@ reserveRouter.patch('/availability-rules/:id', requireManager, async (req, res, 
   }
 });
 
+// Drinks packages (admin) — guests pre-pay for these at booking.
+reserveRouter.get('/drink-packages', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await reserveService.listDrinkPackages(req.user!, typeof req.query.venue === 'string' ? req.query.venue : undefined)
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.post('/drink-packages', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.createDrinkPackage(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.patch('/drink-packages/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reserveService.updateDrinkPackage(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reserveRouter.get('/blackouts', requireManager, async (req, res, next) => {
   try {
     res.json(await reserveService.listBlackouts(req.user!, typeof req.query.venue === 'string' ? req.query.venue : undefined));
@@ -340,6 +367,16 @@ reserveRouter.post('/public-widget/setup-intent', async (req, res, next) => {
   }
 });
 
+// Public — create a PaymentIntent for the guest's selected drinks packages.
+// Charged at booking; also saves the card for no-show protection.
+reserveRouter.post('/public-widget/drinks-payment-intent', async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.createDrinksPaymentIntent(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Manager — charge the saved card-on-file for a no-show. Body shape:
 // { amountCents?: number; reason?: string }. Defaults to $50/cover
 // (capped at 9 covers).
@@ -347,6 +384,16 @@ reserveRouter.post('/reservations/:id/charge-no-show', requireManager, async (re
   try {
     if (!req.user) throw new Error('Not authenticated');
     res.json(await reserveService.chargeReservationNoShow(req.user, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager — mark the prepaid drinks redeemed (served on arrival). Toggles.
+reserveRouter.post('/reservations/:id/redeem-drinks', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.redeemDrinks(req.user, String(req.params.id)));
   } catch (error) {
     next(error);
   }

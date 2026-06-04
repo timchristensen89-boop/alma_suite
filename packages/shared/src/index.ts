@@ -1172,7 +1172,10 @@ export const reserveReservationInputSchema = z.object({
   notes: z.string().optional().or(z.literal('')),
   specialRequests: z.string().optional().or(z.literal('')),
   internalNotes: z.string().optional().or(z.literal('')),
-  marketingOptIn: z.boolean().default(false)
+  marketingOptIn: z.boolean().default(false),
+  // Drinks pre-payment — a PaymentIntent the manager confirmed (guest card,
+  // in person / over the phone) for the selected drinks packages.
+  drinksPaymentIntentId: z.string().optional().or(z.literal(''))
 });
 
 export const reserveReservationUpdateInputSchema = reserveReservationInputSchema.partial();
@@ -1275,7 +1278,10 @@ export const reservePublicBookingInputSchema = z.object({
   // marks no-show.
   stripeSetupIntentId: z.string().optional().or(z.literal('')),
   stripePaymentMethodId: z.string().optional().or(z.literal('')),
-  stripeCustomerId: z.string().optional().or(z.literal(''))
+  stripeCustomerId: z.string().optional().or(z.literal('')),
+  // Drinks pre-payment — the id of the PaymentIntent the guest already
+  // confirmed (and paid) for their selected drinks packages.
+  drinksPaymentIntentId: z.string().optional().or(z.literal(''))
 });
 
 export const reservePublicWaitlistInputSchema = z.object({
@@ -1351,6 +1357,62 @@ export type ReservePublicSetupIntentResponse = {
   customerId: string;
   setupIntentId: string;
   publishableKey: string | null;
+};
+
+// ── Drinks pre-payment ──────────────────────────────────────────────
+export type ReserveDrinksLineItem = {
+  packageId: string;
+  name: string;
+  priceCents: number;
+  qty: number;
+};
+
+export type ReserveDrinkPackage = {
+  id: string;
+  venue: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const reserveDrinkPackageInputSchema = z.object({
+  venue: z.string().min(1),
+  name: z.string().min(1).max(80),
+  description: z.string().max(300).optional().or(z.literal('')),
+  priceCents: z.coerce.number().int().min(0).max(1000000),
+  sortOrder: z.coerce.number().int().default(0),
+  isActive: z.boolean().default(true)
+});
+
+export const reserveDrinkPackageUpdateInputSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  description: z.string().max(300).optional().or(z.literal('')),
+  priceCents: z.coerce.number().int().min(0).max(1000000).optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional()
+});
+
+// Create a PaymentIntent for the selected drinks packages (charged at booking).
+// The server prices the items from the packages — the client never sends prices.
+export const reserveDrinksPaymentIntentInputSchema = z.object({
+  venue: z.string().min(1),
+  guestEmail: z.string().email().optional().or(z.literal('')),
+  items: z
+    .array(z.object({ packageId: z.string().min(1), qty: z.coerce.number().int().min(1).max(50) }))
+    .min(1)
+});
+
+export type ReserveDrinksPaymentIntentResponse = {
+  clientSecret: string;
+  customerId: string;
+  paymentIntentId: string;
+  amountCents: number;
+  publishableKey: string | null;
+  lineItems: ReserveDrinksLineItem[];
 };
 
 export const reserveNoShowChargeInputSchema = z.object({
@@ -3560,6 +3622,10 @@ export type ReserveReservation = {
   createdById: string | null;
   cancelledAt: string | null;
   completedAt: string | null;
+  drinksLineItems: ReserveDrinksLineItem[] | null;
+  drinksTotalCents: number | null;
+  drinksPaidAt: string | null;
+  drinksRedeemedAt: string | null;
   createdAt: string;
   updatedAt: string;
   guest: ReserveGuest;
@@ -3662,6 +3728,7 @@ export type ReservePublicWidgetConfig = {
     onlineEnabled: boolean;
     activeRules: number;
     googleReserveReady: boolean;
+    drinkPackages: Array<{ id: string; name: string; description: string | null; priceCents: number }>;
   }>;
   limitations: string[];
 };

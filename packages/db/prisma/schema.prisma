@@ -1279,6 +1279,23 @@ model ReserveTable {
   @@index([isActive])
 }
 
+// Admin-defined drinks packages a guest can pre-pay for at booking,
+// redeemed on arrival (e.g. "Welcome Prosecco", "Cocktail on arrival").
+model ReserveDrinkPackage {
+  id          String   @id @default(cuid())
+  venue       String
+  name        String
+  description String?
+  priceCents  Int
+  sortOrder   Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([venue, name])
+  @@index([venue, isActive, sortOrder])
+}
+
 model ReserveReservation {
   id                       String                   @id @default(cuid())
   venue                    String
@@ -1315,6 +1332,14 @@ model ReserveReservation {
   noShowFeeChargedAt       DateTime?
   noShowFeePaymentIntentId String?
   noShowFeeError           String?
+  // Drinks pre-payment — charged in full at booking via a PaymentIntent.
+  // drinksLineItems is the captured snapshot [{packageId,name,priceCents,qty}].
+  drinksLineItems          Json?
+  drinksTotalCents         Int?
+  drinksPaymentIntentId    String?
+  drinksPaidAt             DateTime?
+  drinksRedeemedAt         DateTime?
+  drinksPaymentError       String?
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
   guest                    ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)
