@@ -2669,7 +2669,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
         {(() => {
           const covers = dashboard?.totals.coversToday ?? 0;
           const bookings = dashboard?.totals.todayBookings ?? 0;
-          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           return (
             <AlmaHomeBubble
               app="reserve"
@@ -2709,7 +2709,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
         {showDashboard && (() => {
           // Editorial Bookings · tonight header — only on the dashboard tab.
           const isToday = selectedDate === new Date().toISOString().slice(0, 10);
-          const venueLabel = venueFilter === 'all' ? 'All venues' : venueFilter;
+          const venueLabel = venueFilter === ALL_VENUES ? 'All venues' : venueFilter;
           const dateObj = new Date(`${selectedDate}T12:00:00`);
           const dateLabel = dateObj.toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' });
           const allTodayReservations = dashboard?.todayReservations ?? [];
@@ -3051,15 +3051,15 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
             {showWaitlist ? (
             <section id="waitlist">
-              <WaitlistSection defaultVenue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
+              <WaitlistSection defaultVenue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter} venueOptions={venueOptions} />
             </section>
             ) : null}
 
             {showFloorPlan ? (
             <section id="floor-plan">
               <FloorPlanSection
-                venue={venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter}
-                tables={tables.filter((t) => t.isActive && (venueFilter === 'all' || t.venue === venueFilter))}
+                venue={venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter}
+                tables={tables.filter((t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter))}
                 reservations={dashboard?.todayReservations ?? []}
                 onAssignTable={async (reservationId, tableId) => {
                   try {
@@ -3078,7 +3078,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     await api('/api/reserve/tables/layout', {
                       method: 'PATCH',
                       body: JSON.stringify({
-                        venue: venueFilter === 'all' ? KNOWN_VENUES[0]! : venueFilter,
+                        venue: venueFilter === ALL_VENUES ? KNOWN_VENUES[0]! : venueFilter,
                         tables: updates
                       })
                     });
