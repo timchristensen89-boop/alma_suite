@@ -43,6 +43,44 @@
   align-items: start;
 }
 
+/* Settings tab renders full-width (no booking aside) so booking rules, drink
+   packages, tables and the floor plan are readable instead of crushed into
+   the 340-420px side column. */
+.reserve-layout.is-settings {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.reserve-settings-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 18px;
+  border-bottom: 1px solid var(--color-border);
+}
+.reserve-settings-tabs a {
+  padding: 9px 16px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 10px 10px 0 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+  text-decoration: none;
+  position: relative;
+  bottom: -1px;
+  transition: color 120ms ease, background 120ms ease;
+}
+.reserve-settings-tabs a:hover {
+  color: var(--color-text);
+  background: var(--color-surface);
+}
+.reserve-settings-tabs a.active {
+  color: var(--color-text);
+  background: var(--color-elevated);
+  border-color: var(--color-border);
+}
+
 .reserve-main,
 .reserve-side,
 .reserve-form {
