@@ -1323,6 +1323,30 @@ function PublicBookingWidget() {
                 {venue} · {selectedDate.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })} · {selectedSlot ? new Date(selectedSlot.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : 'select a time'} · {partySize} guests
               </div>
 
+              {(() => {
+                const venueCfg = config?.venues.find((v) => v.name === venue);
+                const venuePackages = venueCfg?.drinkPackages ?? [];
+                if (!venuePackages.length) return null;
+                if (widgetDrinksIntentId) {
+                  return (
+                    <div className="drinks-paid-note" style={{ marginTop: 16 }}>
+                      ✓ Drinks pre-paid — confirm your booking below.{' '}
+                      <button type="button" className="drinks-pay__back" onClick={() => setWidgetDrinksIntentId(null)}>Remove</button>
+                    </div>
+                  );
+                }
+                return (
+                  <div style={{ marginTop: 16 }}>
+                    <DrinksPaymentPanel
+                      venue={venue}
+                      packages={venuePackages.map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }))}
+                      guestEmail={guest.email}
+                      onPaid={(id) => setWidgetDrinksIntentId(id)}
+                    />
+                  </div>
+                );
+              })()}
+
               <div className="alma-booking-grid">
                 <label>
                   <span className="alma-booking-field__eyebrow">Your name</span>
@@ -1432,30 +1456,6 @@ function PublicBookingWidget() {
                 />
                 <span style={{ fontSize: 13, fontWeight: 500 }}>Save these for next time and send me occasional updates.</span>
               </label>
-
-              {(() => {
-                const venueCfg = config?.venues.find((v) => v.name === venue);
-                const venuePackages = venueCfg?.drinkPackages ?? [];
-                if (!venuePackages.length) return null;
-                if (widgetDrinksIntentId) {
-                  return (
-                    <div className="drinks-paid-note" style={{ marginTop: 16 }}>
-                      ✓ Drinks pre-paid — confirm your booking below.{' '}
-                      <button type="button" className="drinks-pay__back" onClick={() => setWidgetDrinksIntentId(null)}>Remove</button>
-                    </div>
-                  );
-                }
-                return (
-                  <div style={{ marginTop: 16 }}>
-                    <DrinksPaymentPanel
-                      venue={venue}
-                      packages={venuePackages.map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }))}
-                      guestEmail={guest.email}
-                      onPaid={(id) => setWidgetDrinksIntentId(id)}
-                    />
-                  </div>
-                );
-              })()}
 
               {submitError ? <div className="alma-booking-error" style={{ marginTop: 16 }}>{submitError}</div> : null}
 
