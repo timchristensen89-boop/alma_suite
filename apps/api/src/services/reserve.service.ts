@@ -19,9 +19,15 @@ import {
   reserveTableLayoutInputSchema,
   reserveManagerWaitlistInputSchema,
   reserveWaitlistUpdateInputSchema,
+  reserveDrinkPackageInputSchema,
+  reserveDrinkPackageUpdateInputSchema,
+  reserveDrinksPaymentIntentInputSchema,
   googleReserveIntegrationSettingInputSchema,
   type AuthUser,
   type ReserveGuest,
+  type ReserveDrinkPackage,
+  type ReserveDrinksLineItem,
+  type ReserveDrinksPaymentIntentResponse,
   type ReserveNoShowChargeResult,
   type ReservePublicBookingConfirmation,
   type ReservePublicManageView,
@@ -93,6 +99,77 @@ async function resolveCardOnFileFromSetupIntent(input: {
     });
     return null;
   }
+}
+
+function toDrinkPackagePayload(row: {
+  id: string;
+  venue: string;
+  name: string;
+  description: string | null;
+  priceCents: number;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): ReserveDrinkPackage {
+  return {
+    id: row.id,
+    venue: row.venue,
+    name: row.name,
+    description: row.description,
+    priceCents: row.priceCents,
+    sortOrder: row.sortOrder,
+    isActive: row.isActive,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+// Verify a drinks PaymentIntent the guest already paid, and reconstruct the
+// line-items snapshot from the packages (server is the source of truth for
+// names + prices). Also surfaces the saved card so the same card covers
+// no-show protection (the intent is created with setup_future_usage).
+async function resolveDrinksFromPaymentIntent(paymentIntentId: string, venue: string) {
+  if (!stripe) throw new HttpError(503, 'Payments are not configured.');
+  const intent = await stripe.paymentIntents.retrieve(paymentIntentId, { expand: ['payment_method'] });
+  if (intent.metadata?.source !== 'reserve-drinks') {
+    throw new HttpError(400, 'That payment is not a drinks pre-payment.');
+  }
+  if (intent.metadata?.venue && intent.metadata.venue !== venue) {
+    throw new HttpError(400, 'Drinks payment is for a different venue.');
+  }
+  if (intent.status !== 'succeeded') {
+    throw new HttpError(409, 'Drinks payment has not completed.');
+  }
+  let compact: Array<{ p: string; q: number }> = [];
+  try {
+    const parsed = JSON.parse(intent.metadata?.drinksItems ?? '[]');
+    if (Array.isArray(parsed)) compact = parsed;
+  } catch {
+    compact = [];
+  }
+  let lineItems: ReserveDrinksLineItem[] = [];
+  if (compact.length) {
+    const pkgs = await prisma.reserveDrinkPackage.findMany({ where: { id: { in: compact.map((c) => c.p) } } });
+    const byId = new Map(pkgs.map((p) => [p.id, p]));
+    lineItems = compact
+      .map((c) => {
+        const p = byId.get(c.p);
+        return p ? { packageId: p.id, name: p.name, priceCents: p.priceCents, qty: c.q } : null;
+      })
+      .filter((x): x is ReserveDrinksLineItem => x !== null);
+  }
+  const pm = intent.payment_method && typeof intent.payment_method === 'object' ? intent.payment_method : null;
+  const customerId = typeof intent.customer === 'string' ? intent.customer : (intent.customer?.id ?? null);
+  return {
+    drinksPaymentIntentId: intent.id,
+    drinksTotalCents: intent.amount,
+    drinksLineItems: lineItems,
+    customerId,
+    paymentMethodId: pm?.id ?? (typeof intent.payment_method === 'string' ? intent.payment_method : null),
+    brand: pm?.card?.brand ?? null,
+    last4: pm?.card?.last4 ?? null
+  };
 }
 
 const ACTIVE_BOOKING_STATUSES = new Set<ReserveReservationStatus>(['PENDING', 'CONFIRMED', 'SEATED']);
@@ -368,6 +445,10 @@ function toReservationPayload(reservation: ReserveReservationRow): ReserveReserv
     createdById: reservation.createdById,
     cancelledAt: reservation.cancelledAt?.toISOString() ?? null,
     completedAt: reservation.completedAt?.toISOString() ?? null,
+    drinksLineItems: (reservation.drinksLineItems as ReserveDrinksLineItem[] | null) ?? null,
+    drinksTotalCents: reservation.drinksTotalCents ?? null,
+    drinksPaidAt: reservation.drinksPaidAt?.toISOString() ?? null,
+    drinksRedeemedAt: reservation.drinksRedeemedAt?.toISOString() ?? null,
     createdAt: reservation.createdAt.toISOString(),
     updatedAt: reservation.updatedAt.toISOString(),
     guest: toGuestPayload(reservation.guest),
@@ -951,6 +1032,9 @@ export const reserveService = {
     if (endsAt <= startsAt) throw new HttpError(400, 'Reservation end time must be after start time');
     await Promise.all([ensureTableVenue(data.tableId || null, venue), ensureRuleVenue(data.availabilityRuleId || null, venue)]);
 
+    const managerDrinksIntentId = cleanText(data.drinksPaymentIntentId);
+    const drinks = managerDrinksIntentId ? await resolveDrinksFromPaymentIntent(managerDrinksIntentId, venue) : null;
+
     const reservation = await prisma.$transaction(async (tx) => {
       let guest: ReserveGuestRow | null = data.guestId
         ? await tx.reserveGuest.findFirst({
@@ -992,7 +1076,19 @@ export const reserveService = {
           marketingOptIn: data.marketingOptIn,
           createdById: actor.id,
           cancelledAt: data.status === 'CANCELLED' ? new Date() : null,
-          completedAt: VISIT_STATUSES.has(data.status) ? new Date() : null
+          completedAt: VISIT_STATUSES.has(data.status) ? new Date() : null,
+          ...(drinks
+            ? {
+                stripeCustomerId: drinks.customerId,
+                stripePaymentMethodId: drinks.paymentMethodId,
+                stripePaymentMethodBrand: drinks.brand,
+                stripePaymentMethodLast4: drinks.last4,
+                drinksLineItems: drinks.drinksLineItems as Prisma.InputJsonValue,
+                drinksTotalCents: drinks.drinksTotalCents,
+                drinksPaymentIntentId: drinks.drinksPaymentIntentId,
+                drinksPaidAt: new Date()
+              }
+            : {})
         },
         include: reserveReservationWithRelationsArgs.include
       });
@@ -1275,7 +1371,7 @@ export const reserveService = {
   },
 
   async publicWidgetConfig() {
-    const [settings, rules, integrations] = await Promise.all([
+    const [settings, rules, integrations, drinkPackages] = await Promise.all([
       prisma.appSettings.findUnique({ where: { id: 'singleton' }, select: { venues: true } }),
       prisma.reserveAvailabilityRule.findMany({
         where: { active: true, onlineEnabled: true },
@@ -1283,6 +1379,11 @@ export const reserveService = {
       }),
       prisma.googleReserveIntegrationSetting.findMany({
         select: { venue: true, enabled: true, merchantId: true, integrationStatus: true }
+      }),
+      prisma.reserveDrinkPackage.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { id: true, venue: true, name: true, description: true, priceCents: true }
       })
     ]);
 
@@ -1305,7 +1406,10 @@ export const reserveService = {
             integration.merchantId &&
             integration.integrationStatus === 'ACTIVE' &&
             rules.some((rule) => rule.venue === venue && rule.googleReserveEnabled)
-        )
+        ),
+        drinkPackages: drinkPackages
+          .filter((p) => p.venue === venue)
+          .map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }))
       };
     });
 
@@ -1438,6 +1542,9 @@ export const reserveService = {
       customerId: cleanText(data.stripeCustomerId)
     });
 
+    const drinksIntentId = cleanText(data.drinksPaymentIntentId);
+    const drinks = drinksIntentId ? await resolveDrinksFromPaymentIntent(drinksIntentId, venue) : null;
+
     const reservation = await prisma.$transaction(async (tx) => {
       const created = await tx.reserveReservation.create({
         data: {
@@ -1457,11 +1564,19 @@ export const reserveService = {
           occasion: cleanText(data.occasion),
           specialRequests: requestLines.length ? requestLines.join('\n') : null,
           marketingOptIn: data.marketingOptIn,
-          stripeCustomerId: cardOnFile?.customerId ?? null,
+          stripeCustomerId: drinks?.customerId ?? cardOnFile?.customerId ?? null,
           stripeSetupIntentId: cardOnFile?.setupIntentId ?? null,
-          stripePaymentMethodId: cardOnFile?.paymentMethodId ?? null,
-          stripePaymentMethodBrand: cardOnFile?.brand ?? null,
-          stripePaymentMethodLast4: cardOnFile?.last4 ?? null
+          stripePaymentMethodId: drinks?.paymentMethodId ?? cardOnFile?.paymentMethodId ?? null,
+          stripePaymentMethodBrand: drinks?.brand ?? cardOnFile?.brand ?? null,
+          stripePaymentMethodLast4: drinks?.last4 ?? cardOnFile?.last4 ?? null,
+          ...(drinks
+            ? {
+                drinksLineItems: drinks.drinksLineItems as Prisma.InputJsonValue,
+                drinksTotalCents: drinks.drinksTotalCents,
+                drinksPaymentIntentId: drinks.drinksPaymentIntentId,
+                drinksPaidAt: new Date()
+              }
+            : {})
         },
         include: reserveReservationWithRelationsArgs.include
       });
@@ -1735,6 +1850,126 @@ export const reserveService = {
   // Public — issue a SetupIntent that the Stripe Elements client
   // confirms with the guest's card. Used by the booking widget to
   // capture a card-on-file for no-show protection without charging.
+  // ── Drinks packages (admin) ───────────────────────────────────────
+  async listDrinkPackages(actor: AuthUser, venue?: string): Promise<ReserveDrinkPackage[]> {
+    const scopedVenue = actorVenueScope(actor, venue ?? null, 'Reserve');
+    const where: Prisma.ReserveDrinkPackageWhereInput = {};
+    if (scopedVenue) where.venue = scopedVenue;
+    const rows = await prisma.reserveDrinkPackage.findMany({
+      where,
+      orderBy: [{ venue: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+    });
+    return rows.map(toDrinkPackagePayload);
+  },
+
+  async createDrinkPackage(actor: AuthUser, input: unknown): Promise<ReserveDrinkPackage> {
+    const data = reserveDrinkPackageInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue, 'Reserve');
+    if (!venue) throw new HttpError(400, 'Drink package venue is required');
+    const row = await prisma.reserveDrinkPackage.upsert({
+      where: { venue_name: { venue, name: data.name.trim() } },
+      create: {
+        venue,
+        name: data.name.trim(),
+        description: data.description?.trim() || null,
+        priceCents: data.priceCents,
+        sortOrder: data.sortOrder,
+        isActive: data.isActive
+      },
+      update: {
+        description: data.description?.trim() || null,
+        priceCents: data.priceCents,
+        sortOrder: data.sortOrder,
+        isActive: data.isActive
+      }
+    });
+    return toDrinkPackagePayload(row);
+  },
+
+  async updateDrinkPackage(actor: AuthUser, id: string, input: unknown): Promise<ReserveDrinkPackage> {
+    const data = reserveDrinkPackageUpdateInputSchema.parse(input);
+    const existing = await prisma.reserveDrinkPackage.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Drink package not found.');
+    const allowedVenue = actorVenueScope(actor, existing.venue, 'Reserve');
+    if (allowedVenue && existing.venue !== allowedVenue) {
+      throw new HttpError(403, 'Reserve is limited to your venue.');
+    }
+    const patch: Prisma.ReserveDrinkPackageUpdateInput = {};
+    if (data.name !== undefined) patch.name = data.name.trim();
+    if (data.description !== undefined) patch.description = data.description?.trim() || null;
+    if (data.priceCents !== undefined) patch.priceCents = data.priceCents;
+    if (data.sortOrder !== undefined) patch.sortOrder = data.sortOrder;
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    const row = await prisma.reserveDrinkPackage.update({ where: { id }, data: patch });
+    return toDrinkPackagePayload(row);
+  },
+
+  // Charge the selected drinks packages now (guest present). The same card is
+  // saved for no-show protection via setup_future_usage. Server prices the
+  // items from the packages — the client never sends prices.
+  async createDrinksPaymentIntent(input: unknown): Promise<ReserveDrinksPaymentIntentResponse> {
+    const data = reserveDrinksPaymentIntentInputSchema.parse(input);
+    if (!stripe) throw new HttpError(503, 'Payments are not configured.');
+    const venue = data.venue.trim();
+    const ids = data.items.map((item) => item.packageId);
+    const packages = await prisma.reserveDrinkPackage.findMany({
+      where: { id: { in: ids }, venue, isActive: true }
+    });
+    const byId = new Map(packages.map((p) => [p.id, p]));
+    const lineItems: ReserveDrinksLineItem[] = [];
+    for (const item of data.items) {
+      const pkg = byId.get(item.packageId);
+      if (!pkg) throw new HttpError(400, 'One of the selected drinks is no longer available.');
+      lineItems.push({ packageId: pkg.id, name: pkg.name, priceCents: pkg.priceCents, qty: item.qty });
+    }
+    const amountCents = lineItems.reduce((sum, li) => sum + li.priceCents * li.qty, 0);
+    if (amountCents <= 0) throw new HttpError(400, 'Drinks total must be greater than zero.');
+    const customer = await stripe.customers.create({
+      email: data.guestEmail?.trim() || undefined,
+      metadata: { venue, source: 'reserve-drinks' }
+    });
+    const compact = lineItems.map((li) => ({ p: li.packageId, q: li.qty }));
+    const intent = await stripe.paymentIntents.create({
+      amount: amountCents,
+      currency: 'aud',
+      customer: customer.id,
+      setup_future_usage: 'off_session',
+      // Card-only so the Payment Element confirms inline (redirect: 'if_required')
+      // without needing a return_url.
+      payment_method_types: ['card'],
+      description: `Alma Reserve drinks pre-payment · ${venue}`,
+      metadata: {
+        venue,
+        source: 'reserve-drinks',
+        drinksItems: JSON.stringify(compact).slice(0, 480)
+      }
+    });
+    if (!intent.client_secret) {
+      throw new HttpError(502, 'Stripe did not return a PaymentIntent client secret.');
+    }
+    return {
+      clientSecret: intent.client_secret,
+      customerId: customer.id,
+      paymentIntentId: intent.id,
+      amountCents,
+      publishableKey: process.env.STRIPE_PUBLISHABLE_KEY ?? null,
+      lineItems
+    };
+  },
+
+  // Toggle "drinks redeemed" when the host serves them on arrival.
+  async redeemDrinks(actor: AuthUser, id: string): Promise<ReserveReservation> {
+    const reservation = await prisma.reserveReservation.findFirst({ where: { id, ...reservationScope(actor, null) } });
+    if (!reservation) throw new HttpError(404, 'Reservation not found.');
+    if (!reservation.drinksPaidAt) throw new HttpError(409, 'No prepaid drinks on this reservation.');
+    const updated = await prisma.reserveReservation.update({
+      where: { id },
+      data: { drinksRedeemedAt: reservation.drinksRedeemedAt ? null : new Date() },
+      include: reserveReservationWithRelationsArgs.include
+    });
+    return toReservationPayload(updated);
+  },
+
   async createPublicSetupIntent(input: unknown): Promise<ReservePublicSetupIntentResponse> {
     const data = reservePublicSetupIntentInputSchema.parse(input);
     if (!stripe) throw new HttpError(503, 'Card-on-file is not configured.');
