@@ -2903,3 +2903,11 @@
     -webkit-print-color-adjust: exact;
   }
 }
+
+/* Dark-mode accent — brightened so the app's colour reads on dark. */
+html[data-theme='dark'] {
+  --color-accent: #D2A08C;
+  --color-accent-hover: #E0B4A2;
+  --color-accent-soft: #382520;
+  --color-accent-text: #F6E5DC;
+}

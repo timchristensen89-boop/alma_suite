@@ -1722,3 +1722,11 @@
   background: var(--color-surface);
   padding: 16px 18px;
 }
+
+/* Dark-mode accent — brightened so the app's colour reads on dark. */
+html[data-theme='dark'] {
+  --color-accent: #D9A05A;
+  --color-accent-hover: #E6B36F;
+  --color-accent-soft: #3A2C16;
+  --color-accent-text: #F6E7CF;
+}

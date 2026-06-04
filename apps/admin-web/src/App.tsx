@@ -21,6 +21,7 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  ThemeToggle,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -493,6 +494,7 @@ function AdminTopBar() {
           <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="settings" />
           <SuiteFeedbackWidget appId="settings" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
+          <ThemeToggle />
           <SuiteClock />
           <UserMenu />
         </>

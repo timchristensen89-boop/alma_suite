@@ -20,6 +20,7 @@ import {
   SuiteClock,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  ThemeToggle,
   TopBar
 } from '@alma/ui';
 import {
@@ -1297,6 +1298,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
           <SuiteAppSwitcher currentApp="comms" apps={suiteApps} variant="topbar" />
           <SuiteNotificationsWidget api={api} currentApp="comms" />
           <SuiteFeedbackWidget appId="COMMS" api={api} userName={user?.name ?? undefined} />
+          <ThemeToggle />
           <SuiteClock />
           <CommsUserMenu
             user={user}

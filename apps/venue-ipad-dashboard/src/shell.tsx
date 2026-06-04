@@ -4,6 +4,7 @@
 // same chrome (sidebar nav, topbar, AuthChip) without re-implementing it.
 
 import { Link } from 'react-router-dom';
+import { ThemeToggle } from '@alma/ui';
 import { AuthChip, useAuth } from './auth';
 
 export type Venue = {
@@ -114,6 +115,7 @@ export function AppShell({
             <h1>{venue ? venue.name : 'Select venue'}</h1>
           </div>
           <div className="topbar-actions">
+            <ThemeToggle />
             <AuthChip
               staff={auth.staff}
               onSignIn={onRequestStaffPin}

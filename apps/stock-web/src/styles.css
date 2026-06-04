@@ -2088,3 +2088,11 @@ tbody tr.row-detail:hover {
   font-size: 12px;
   line-height: 1.4;
 }
+
+/* Dark-mode accent — brightened so the app's colour reads on dark. */
+html[data-theme='dark'] {
+  --color-accent: #8FB57F;
+  --color-accent-hover: #A6C898;
+  --color-accent-soft: #20301B;
+  --color-accent-text: #E6F0E0;
+}

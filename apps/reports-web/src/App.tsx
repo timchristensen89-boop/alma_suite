@@ -42,6 +42,7 @@ import {
   SuiteCommsWidget,
   SuiteFeedbackWidget,
   SuiteNotificationsWidget,
+  ThemeToggle,
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
@@ -3430,6 +3431,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               />
               <SuiteNotificationsWidget api={staffApi} currentApp="reports" />
               <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
+              <ThemeToggle />
               <SuiteClock />
               <ReportsUserMenu user={user} onLogout={onLogout} />
             </>

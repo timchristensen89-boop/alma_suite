@@ -2626,3 +2626,11 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
+
+/* Dark-mode accent — brightened so the app's colour reads on dark. */
+html[data-theme='dark'] {
+  --color-accent: #88B27E;
+  --color-accent-hover: #9EC595;
+  --color-accent-soft: #1E2B1C;
+  --color-accent-text: #E4F0E1;
+}
