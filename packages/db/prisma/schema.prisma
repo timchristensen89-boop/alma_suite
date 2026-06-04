@@ -1261,6 +1261,15 @@ model ReserveTable {
   maxCovers    Int
   sortOrder    Int                  @default(0)
   isActive     Boolean              @default(true)
+  // Floor-plan geometry. posX/posY/width/height are percentages of the canvas
+  // (0–100) so the layout is responsive; null until the table is placed.
+  posX         Float?
+  posY         Float?
+  width        Float?
+  height       Float?
+  rotation     Int                  @default(0)
+  shape        String               @default("rect")
+  seats        Int?
   createdAt    DateTime             @default(now())
   updatedAt    DateTime             @updatedAt
   reservations ReserveReservation[]

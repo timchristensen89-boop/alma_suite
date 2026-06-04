@@ -1101,7 +1101,53 @@ export const reserveTableInputSchema = z.object({
   minCovers: z.coerce.number().int().positive().default(1),
   maxCovers: z.coerce.number().int().positive(),
   sortOrder: z.coerce.number().int().default(0),
-  isActive: z.boolean().default(true)
+  isActive: z.boolean().default(true),
+  // Optional floor-plan geometry when placing a table directly.
+  posX: z.coerce.number().optional(),
+  posY: z.coerce.number().optional(),
+  width: z.coerce.number().optional(),
+  height: z.coerce.number().optional(),
+  rotation: z.coerce.number().int().optional(),
+  shape: z.enum(['rect', 'circle']).optional(),
+  seats: z.coerce.number().int().optional()
+});
+
+// Single-table edit (metadata and/or geometry); every field optional so the
+// editor can patch just what changed. Nullable geometry lets a table be
+// "un-placed" back to the tray.
+export const reserveTableUpdateInputSchema = z.object({
+  area: z.string().min(1).optional(),
+  label: z.string().min(1).optional(),
+  minCovers: z.coerce.number().int().positive().optional(),
+  maxCovers: z.coerce.number().int().positive().optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional(),
+  posX: z.coerce.number().nullable().optional(),
+  posY: z.coerce.number().nullable().optional(),
+  width: z.coerce.number().nullable().optional(),
+  height: z.coerce.number().nullable().optional(),
+  rotation: z.coerce.number().int().optional(),
+  shape: z.enum(['rect', 'circle']).optional(),
+  seats: z.coerce.number().int().nullable().optional()
+});
+
+// Batch geometry save for the whole arrangement.
+export const reserveTableLayoutInputSchema = z.object({
+  venue: z.string().optional(),
+  tables: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        posX: z.coerce.number().nullable().optional(),
+        posY: z.coerce.number().nullable().optional(),
+        width: z.coerce.number().nullable().optional(),
+        height: z.coerce.number().nullable().optional(),
+        rotation: z.coerce.number().int().optional(),
+        shape: z.enum(['rect', 'circle']).optional(),
+        seats: z.coerce.number().int().nullable().optional()
+      })
+    )
+    .max(500)
 });
 
 export const reserveGuestUpdateInputSchema = reserveGuestInputSchema.partial();
@@ -1238,6 +1284,18 @@ export const reservePublicWaitlistInputSchema = z.object({
   guestPhone: z.string().min(6).max(40),
   guestEmail: z.string().email().optional().or(z.literal('')),
   partySize: z.coerce.number().int().min(1).max(20),
+  windowStartsAt: z.string().min(4),
+  windowEndsAt: z.string().min(4),
+  notes: z.string().max(500).optional().or(z.literal(''))
+});
+
+// Manager-side walk-in / phone waitlist add (venue required, party up to 40).
+export const reserveManagerWaitlistInputSchema = z.object({
+  venue: z.string().min(1),
+  guestName: z.string().min(1).max(80),
+  guestPhone: z.string().max(40).optional().or(z.literal('')),
+  guestEmail: z.string().email().optional().or(z.literal('')),
+  partySize: z.coerce.number().int().min(1).max(40),
   windowStartsAt: z.string().min(4),
   windowEndsAt: z.string().min(4),
   notes: z.string().max(500).optional().or(z.literal(''))
@@ -3424,6 +3482,13 @@ export type ReserveTable = {
   maxCovers: number;
   sortOrder: number;
   isActive: boolean;
+  posX: number | null;
+  posY: number | null;
+  width: number | null;
+  height: number | null;
+  rotation: number;
+  shape: string;
+  seats: number | null;
   createdAt: string;
   updatedAt: string;
 };
