@@ -6,7 +6,13 @@ import {
   salesActualImportSchema,
   salesActualQuerySchema,
   reportsMenuProfitabilityQuerySchema,
+  reportsMonthlyRecapQuerySchema,
+  reportsMonthlyRecapEmailInputSchema,
   type AuthUser,
+  type MonthlyRecapPayload,
+  type MonthlyRecapPeriod,
+  type MonthlyRecapRecommendation,
+  type MonthlyRecapStockQuality,
   type ReportsMenuProfitabilityPayload,
   type ReportsMenuProfitabilityRow,
   type ReportsComplianceSummary,
@@ -23,6 +29,7 @@ import {
   type StocktakeReviewItem
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { mailService } from './mail.service.js';
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
@@ -693,6 +700,149 @@ async function buildGiftCardSummary(): Promise<ReportsGiftCardSummary> {
     totalPendingAmountCents: pendingAmount._sum.initialValueCents ?? 0,
     fulfilledOrders
   };
+}
+
+// ── Monthly recap helpers ───────────────────────────────────────────────────
+function recapMonthLabel(month: string): string {
+  const y = Number(month.slice(0, 4));
+  const m = Number(month.slice(5, 7));
+  return new Date(y, m - 1, 1).toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
+}
+// AU financial year starts 1 July.
+function financialYearStart(date: Date): Date {
+  const year = date.getMonth() >= 6 ? date.getFullYear() : date.getFullYear() - 1;
+  return new Date(year, 6, 1);
+}
+function recapMoney(cents: number): string {
+  return `$${Math.round(cents / 100).toLocaleString('en-AU')}`;
+}
+function escapeHtml(value: string): string {
+  return value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
+}
+
+async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
+  const timesheets = await prisma.timesheet.findMany({
+    where: {
+      workDate: { gte: start, lt: end },
+      status: { in: ['DRAFT', 'SUBMITTED', 'APPROVED', 'EXPORTED'] },
+      ...(venue ? { venue } : {}),
+      staffProfile: { accountType: 'HUMAN' }
+    },
+    include: { staffProfile: { select: staffPayRateSelect } }
+  });
+  const weekHours = new Map<string, number>();
+  let cents = 0;
+  for (const entry of timesheets) {
+    const hours = workedHours(entry);
+    const rate = staffCostingRate(entry.staffProfile);
+    const split = splitOvertimeHours(weekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
+    cents += costForRate(rate, split);
+  }
+  return cents;
+}
+
+// Total value of the latest finalised stocktake on or before `at`.
+async function recapStockValueCents(venue: string | null, at: Date): Promise<number | null> {
+  const stocktake = await prisma.stocktake.findFirst({
+    where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, ...(venue ? { venue } : {}) },
+    orderBy: { countedAt: 'desc' },
+    select: { id: true }
+  });
+  if (!stocktake) return null;
+  const agg = await prisma.stocktakeLine.aggregate({ where: { stocktakeId: stocktake.id }, _sum: { stockValueCents: true } });
+  return agg._sum.stockValueCents ?? 0;
+}
+
+async function recapPeriod(venue: string | null, start: Date, end: Date, label: string): Promise<MonthlyRecapPeriod> {
+  const [salesAgg, wageCents, purchasesAgg, openingStock, closingStock] = await Promise.all([
+    prisma.salesActualEntry.aggregate({ where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) }, _sum: { salesCents: true } }),
+    recapWageCents(venue, start, end),
+    prisma.supplierInvoice.aggregate({ where: { invoiceDate: { gte: start, lt: end }, status: { not: 'DRAFT' }, ...(venue ? { venue } : {}) }, _sum: { totalCents: true } }),
+    recapStockValueCents(venue, start),
+    recapStockValueCents(venue, new Date(end.getTime() - 1))
+  ]);
+  const salesCents = salesAgg._sum.salesCents ?? 0;
+  const purchasesCents = purchasesAgg._sum.totalCents ?? 0;
+  const openingStockCents = openingStock ?? 0;
+  const closingStockCents = closingStock ?? 0;
+  let stockQuality: MonthlyRecapStockQuality = 'complete';
+  let cogsCents: number;
+  if (openingStock != null && closingStock != null) {
+    cogsCents = Math.max(0, openingStockCents + purchasesCents - closingStockCents);
+  } else {
+    stockQuality = openingStock == null && closingStock == null ? 'estimated' : openingStock == null ? 'missing_opening' : 'missing_closing';
+    cogsCents = purchasesCents; // fall back to purchases when no stocktake bounds the period
+  }
+  const primeCostCents = wageCents + cogsCents;
+  const pct = (n: number) => (salesCents > 0 ? Math.round((n / salesCents) * 1000) / 10 : null);
+  return {
+    label, start: start.toISOString(), end: end.toISOString(),
+    salesCents, wageCents, openingStockCents, closingStockCents, purchasesCents, cogsCents, primeCostCents,
+    wagePct: pct(wageCents), cogsPct: pct(cogsCents), primePct: pct(primeCostCents), stockQuality
+  };
+}
+
+function recapRecommendations(
+  month: MonthlyRecapPeriod,
+  priorYear: MonthlyRecapPeriod,
+  targets: { wagePct: number; cogsPct: number; primePct: number }
+): MonthlyRecapRecommendation[] {
+  const recs: MonthlyRecapRecommendation[] = [];
+  const fmt = (n: number | null) => (n == null ? '—' : `${n.toFixed(1)}%`);
+  if (month.salesCents === 0) {
+    return [{ tone: 'info', title: 'No sales recorded for this month', detail: 'Import Square sales for the period to compute wage %, COGS % and prime cost.' }];
+  }
+  if (month.primePct != null) {
+    if (month.primePct > targets.primePct) {
+      recs.push({ tone: 'danger', title: `Prime cost ${fmt(month.primePct)} — above the ${targets.primePct}% target`, detail: `Wages ${fmt(month.wagePct)} + COGS ${fmt(month.cogsPct)}. Tighten the larger of the two to bring prime cost under ${targets.primePct}%.` });
+    } else {
+      recs.push({ tone: 'positive', title: `Prime cost ${fmt(month.primePct)} — within the ${targets.primePct}% target`, detail: 'Healthy — hold rostering and purchasing discipline.' });
+    }
+  }
+  if (month.wagePct != null && month.wagePct > targets.wagePct) {
+    recs.push({ tone: 'warning', title: `Wages ${fmt(month.wagePct)} of sales — over ${targets.wagePct}%`, detail: 'Review rostering on quiet shifts and overtime; the Staff Costing report breaks this down by venue and role.' });
+  }
+  if (month.cogsPct != null && month.cogsPct > targets.cogsPct) {
+    recs.push({ tone: 'warning', title: `COGS ${fmt(month.cogsPct)} of sales — over ${targets.cogsPct}%`, detail: 'Check supplier price movement and waste, and confirm the closing stocktake is locked for an accurate figure.' });
+  }
+  if (priorYear.salesCents > 0) {
+    const salesPct = Math.round(((month.salesCents - priorYear.salesCents) / priorYear.salesCents) * 1000) / 10;
+    recs.push({ tone: salesPct >= 0 ? 'positive' : 'info', title: `Sales ${salesPct >= 0 ? 'up' : 'down'} ${Math.abs(salesPct).toFixed(1)}% vs last year`, detail: `${recapMoney(month.salesCents)} this year vs ${recapMoney(priorYear.salesCents)} the same month last year.` });
+    if (month.primePct != null && priorYear.primePct != null) {
+      const primeDelta = Math.round((month.primePct - priorYear.primePct) * 10) / 10;
+      if (Math.abs(primeDelta) >= 1) {
+        recs.push({ tone: primeDelta > 0 ? 'warning' : 'positive', title: `Prime cost ${primeDelta > 0 ? 'up' : 'down'} ${Math.abs(primeDelta).toFixed(1)}pts vs last year`, detail: `${fmt(priorYear.primePct)} last year → ${fmt(month.primePct)} now.` });
+      }
+    }
+  }
+  if (month.stockQuality !== 'complete') {
+    recs.push({ tone: 'info', title: 'COGS is estimated (no stocktake bounds)', detail: 'No locked stocktake found at the period boundaries, so COGS uses purchases only. Lock an opening and closing stocktake for a true opening + purchases − closing figure.' });
+  }
+  return recs;
+}
+
+function renderMonthlyRecapText(recap: MonthlyRecapPayload): string {
+  const line = (p: MonthlyRecapPeriod) => `${p.label}: Sales ${recapMoney(p.salesCents)} | Wages ${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%) | COGS ${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%) | Prime ${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)`;
+  return [
+    `Monthly Recap — ${recap.monthLabel}${recap.venue ? ` · ${recap.venue}` : ''}`,
+    '', 'THIS MONTH', line(recap.monthCurrent), 'SAME MONTH LAST YEAR', line(recap.monthPriorYear),
+    '', recap.ytdLabel.toUpperCase(), line(recap.ytdCurrent), 'PRIOR FY TO DATE', line(recap.ytdPriorYear),
+    '', 'RECOMMENDATIONS', ...recap.recommendations.map((r) => `- ${r.title}: ${r.detail}`)
+  ].join('\n');
+}
+
+function renderMonthlyRecapHtml(recap: MonthlyRecapPayload): string {
+  const row = (p: MonthlyRecapPeriod) => `<tr><td style="padding:6px 8px">${escapeHtml(p.label)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.salesCents)}</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.wageCents)} (${p.wagePct ?? '—'}%)</td><td style="padding:6px 8px;text-align:right">${recapMoney(p.cogsCents)} (${p.cogsPct ?? '—'}%)</td><td style="padding:6px 8px;text-align:right"><strong>${recapMoney(p.primeCostCents)} (${p.primePct ?? '—'}%)</strong></td></tr>`;
+  return `<div style="font-family:Arial,Helvetica,sans-serif;color:#1f2a1e;max-width:700px">
+  <h2 style="font-family:Georgia,serif">Monthly Recap — ${escapeHtml(recap.monthLabel)}${recap.venue ? ` · ${escapeHtml(recap.venue)}` : ''}</h2>
+  <table style="width:100%;border-collapse:collapse;font-size:13px;border:1px solid #e3ddd2">
+    <thead><tr style="background:#f5f1e8;text-align:left"><th style="padding:6px 8px">Period</th><th style="padding:6px 8px;text-align:right">Sales</th><th style="padding:6px 8px;text-align:right">Wages</th><th style="padding:6px 8px;text-align:right">COGS</th><th style="padding:6px 8px;text-align:right">Prime</th></tr></thead>
+    <tbody>${row(recap.monthCurrent)}${row(recap.monthPriorYear)}${row(recap.ytdCurrent)}${row(recap.ytdPriorYear)}</tbody>
+  </table>
+  <h3>Recommendations</h3>
+  <ul style="font-size:13px;line-height:1.5">${recap.recommendations.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.detail)}</li>`).join('')}</ul>
+  <p style="color:#8a8a8a;font-size:11px">Generated ${new Date(recap.generatedAt).toLocaleString('en-AU')}. COGS = opening stock + purchases − closing stock. Targets: wages ${recap.targets.wagePct}% / COGS ${recap.targets.cogsPct}% / prime ${recap.targets.primePct}% of sales.</p>
+</div>`;
 }
 
 export const reportsService = {
@@ -1419,6 +1569,58 @@ export const reportsService = {
   // Stocktake status overview (Sprint 2.4) — for each venue, return the
   // latest LOCKED stocktake (the one Reports trust for stock value /
   // COGS) plus a freshness signal. Used by the Reports Overview widget.
+  async monthlyRecap(input: unknown, actor: AuthUser): Promise<MonthlyRecapPayload> {
+    const query = reportsMonthlyRecapQuerySchema.parse(input ?? {});
+    const venue = actorVenueScope(actor, query.venue);
+    const today = new Date();
+    const month = query.month ?? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const yy = Number(month.slice(0, 4));
+    const mm = Number(month.slice(5, 7));
+    const monthStart = new Date(yy, mm - 1, 1);
+    const monthEnd = new Date(yy, mm, 1);
+    const priorMonthStart = new Date(yy - 1, mm - 1, 1);
+    const priorMonthEnd = new Date(yy - 1, mm, 1);
+    const fyStart = financialYearStart(monthStart);
+    const priorFyStart = new Date(fyStart.getFullYear() - 1, 6, 1);
+    const priorFyYtdEnd = new Date(monthEnd.getFullYear() - 1, monthEnd.getMonth(), 1);
+
+    const [monthCurrent, monthPriorYear, ytdCurrent, ytdPriorYear] = await Promise.all([
+      recapPeriod(venue, monthStart, monthEnd, recapMonthLabel(month)),
+      recapPeriod(venue, priorMonthStart, priorMonthEnd, recapMonthLabel(`${yy - 1}-${String(mm).padStart(2, '0')}`)),
+      recapPeriod(venue, fyStart, monthEnd, 'FY to date'),
+      recapPeriod(venue, priorFyStart, priorFyYtdEnd, 'Prior FY to date')
+    ]);
+    const targets = { wagePct: 30, cogsPct: 30, primePct: 60 };
+    return {
+      generatedAt: new Date().toISOString(),
+      venue: venue ?? null,
+      month,
+      monthLabel: recapMonthLabel(month),
+      ytdBasis: 'FY',
+      ytdLabel: `FY ${fyStart.getFullYear()}/${String(fyStart.getFullYear() + 1).slice(2)} to ${recapMonthLabel(month)}`,
+      targets,
+      monthCurrent,
+      monthPriorYear,
+      ytdCurrent,
+      ytdPriorYear,
+      recommendations: recapRecommendations(monthCurrent, monthPriorYear, targets)
+    };
+  },
+
+  async emailMonthlyRecap(input: unknown, actor: AuthUser) {
+    const data = reportsMonthlyRecapEmailInputSchema.parse(input ?? {});
+    if (!mailService.isConfigured()) throw new HttpError(503, 'Email delivery is not configured.');
+    const recap = await reportsService.monthlyRecap({ month: data.month, venue: data.venue }, actor);
+    const subject = `Monthly Recap — ${recap.monthLabel}${recap.venue ? ` · ${recap.venue}` : ''}`;
+    const result = await mailService.sendDocument({
+      to: data.to,
+      subject,
+      text: renderMonthlyRecapText(recap),
+      html: renderMonthlyRecapHtml(recap)
+    });
+    return { status: result.status, to: data.to, month: recap.month };
+  },
+
   async stocktakeStatus(actor: AuthUser) {
     const venue = actorVenueScope(actor);
     const venues = venue

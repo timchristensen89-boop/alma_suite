@@ -3402,6 +3402,55 @@ export type ReportsPrimeCostVenueRow = {
   missing: string[];
 };
 
+// ── Monthly recap ──────────────────────────────────────────────────────────
+export const reportsMonthlyRecapQuerySchema = z.object({
+  month: z.string().regex(/^\d{4}-\d{2}$/).optional(),
+  venue: z.string().optional()
+});
+export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchema.extend({
+  to: z.string().email()
+});
+
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated';
+
+export type MonthlyRecapPeriod = {
+  label: string;
+  start: string;
+  end: string;
+  salesCents: number;
+  wageCents: number;
+  openingStockCents: number;
+  closingStockCents: number;
+  purchasesCents: number;
+  cogsCents: number;
+  primeCostCents: number;
+  wagePct: number | null;
+  cogsPct: number | null;
+  primePct: number | null;
+  stockQuality: MonthlyRecapStockQuality;
+};
+
+export type MonthlyRecapRecommendation = {
+  tone: 'positive' | 'warning' | 'danger' | 'info';
+  title: string;
+  detail: string;
+};
+
+export type MonthlyRecapPayload = {
+  generatedAt: string;
+  venue: string | null;
+  month: string;
+  monthLabel: string;
+  ytdBasis: 'FY';
+  ytdLabel: string;
+  targets: { wagePct: number; cogsPct: number; primePct: number };
+  monthCurrent: MonthlyRecapPeriod;
+  monthPriorYear: MonthlyRecapPeriod;
+  ytdCurrent: MonthlyRecapPeriod;
+  ytdPriorYear: MonthlyRecapPeriod;
+  recommendations: MonthlyRecapRecommendation[];
+};
+
 export type ReportsPrimeCostPayload = {
   period: { start: string; end: string };
   totals: Omit<ReportsPrimeCostVenueRow, 'venue' | 'sourceQuality' | 'missing'> & {

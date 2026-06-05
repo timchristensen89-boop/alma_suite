@@ -8,6 +8,8 @@ import type {
   ReportsMenuProfitabilityPayload,
   ReportsOverviewPayload,
   ReportsPrimeCostPayload,
+  MonthlyRecapPayload,
+  MonthlyRecapPeriod,
   RosterForecastSnapshot,
   RosterShift,
   SalesActualSummary,
@@ -178,6 +180,7 @@ type ReportSectionId =
   | 'compliance'
   | 'stock'
   | 'menu-engineering'
+  | 'monthly-recap'
   | 'reserve'
   | 'marketing'
   | 'content'
@@ -238,6 +241,13 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     icon: <ChartIcon />
   },
   {
+    id: 'monthly-recap',
+    label: 'Monthly Recap',
+    title: 'Monthly Recap',
+    description: 'Month vs last year + FY-to-date: sales, wages, COGS, prime cost and recommendations. Export or email.',
+    icon: <ChartIcon />
+  },
+  {
     id: 'reserve',
     label: 'Reserve',
     title: 'Reserve Reports',
@@ -287,6 +297,7 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
   '#wages': 'staff',
   '#cogs': 'stock',
   '#menu-engineering': 'menu-engineering',
+  '#monthly-recap': 'monthly-recap',
   '#website-menu': 'exports'
 };
 
@@ -388,6 +399,147 @@ function formatCurrency(cents: number) {
 
 function formatPercent(value: number | null | undefined) {
   return value === null || value === undefined ? '—' : `${value.toFixed(1)}%`;
+}
+
+function RecapCard({ title, period, compare, compareLabel }: { title: string; period: MonthlyRecapPeriod; compare: MonthlyRecapPeriod; compareLabel: string }) {
+  const delta = (cur: number, prev: number) => (prev > 0 ? Math.round(((cur - prev) / prev) * 1000) / 10 : null);
+  function Metric({ label, cents, prev, pct }: { label: string; cents: number; prev: number; pct: number | null }) {
+    const d = delta(cents, prev);
+    return (
+      <div className="recap-metric">
+        <span className="recap-metric-label">{label}</span>
+        <strong>{formatCurrency(cents)}{pct != null ? <em> · {pct.toFixed(1)}%</em> : null}</strong>
+        <span className={`recap-metric-delta${d == null ? '' : d >= 0 ? ' is-up' : ' is-down'}`}>
+          {d == null ? `vs ${compareLabel} —` : `${d >= 0 ? '+' : ''}${d.toFixed(1)}% vs ${compareLabel}`}
+        </span>
+      </div>
+    );
+  }
+  return (
+    <div className="recap-card">
+      <div className="recap-card-head">
+        <strong>{title}</strong>
+        {period.stockQuality !== 'complete' ? <Badge tone="warning">COGS est.</Badge> : null}
+      </div>
+      <Metric label="Sales" cents={period.salesCents} prev={compare.salesCents} pct={null} />
+      <Metric label="Wages" cents={period.wageCents} prev={compare.wageCents} pct={period.wagePct} />
+      <Metric label="COGS" cents={period.cogsCents} prev={compare.cogsCents} pct={period.cogsPct} />
+      <Metric label="Prime cost" cents={period.primeCostCents} prev={compare.primeCostCents} pct={period.primePct} />
+      <div className="recap-card-foot">
+        Opening {formatCurrency(period.openingStockCents)} + purchases {formatCurrency(period.purchasesCents)} − closing {formatCurrency(period.closingStockCents)}
+      </div>
+    </div>
+  );
+}
+
+function MonthlyRecapSection({ venues }: { venues: string[] }) {
+  const [month, setMonth] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  });
+  const [venue, setVenue] = useState('');
+  const [recap, setRecap] = useState<MonthlyRecapPayload | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [emailTo, setEmailTo] = useState('');
+  const [emailMsg, setEmailMsg] = useState<{ tone: 'positive' | 'danger'; text: string } | null>(null);
+  const [sending, setSending] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    const params = new URLSearchParams({ month });
+    if (venue) params.set('venue', venue);
+    staffApi<MonthlyRecapPayload>(`/api/reports/monthly-recap?${params.toString()}`)
+      .then((data) => { if (active) { setRecap(data); setError(null); } })
+      .catch((e) => { if (active) setError(e instanceof Error ? e.message : 'Could not load the recap.'); })
+      .finally(() => { if (active) setLoading(false); });
+    return () => { active = false; };
+  }, [month, venue]);
+
+  function shiftMonth(deltaMonths: number) {
+    const y = Number(month.slice(0, 4));
+    const m = Number(month.slice(5, 7));
+    const d = new Date(y, m - 1 + deltaMonths, 1);
+    setMonth(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
+  }
+
+  function exportCsv() {
+    if (!recap) return;
+    const rows = [recap.monthCurrent, recap.monthPriorYear, recap.ytdCurrent, recap.ytdPriorYear];
+    const header = ['Period', 'Sales', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Opening stock', 'Purchases', 'Closing stock', 'Prime cost', 'Prime %'];
+    const lines = rows.map((p) => [
+      `"${p.label}"`, p.salesCents / 100, p.wageCents / 100, p.wagePct ?? '', p.cogsCents / 100, p.cogsPct ?? '',
+      p.openingStockCents / 100, p.purchasesCents / 100, p.closingStockCents / 100, p.primeCostCents / 100, p.primePct ?? ''
+    ].join(','));
+    const blob = new Blob([[header.join(','), ...lines].join('\n')], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `monthly-recap-${recap.month}${recap.venue ? `-${recap.venue}` : ''}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function sendEmail() {
+    if (!emailTo.trim() || sending) return;
+    setSending(true);
+    setEmailMsg(null);
+    try {
+      await staffApi('/api/reports/monthly-recap/email', {
+        method: 'POST',
+        body: JSON.stringify({ month, venue: venue || undefined, to: emailTo.trim() })
+      });
+      setEmailMsg({ tone: 'positive', text: `Sent to ${emailTo.trim()}` });
+    } catch (e) {
+      setEmailMsg({ tone: 'danger', text: e instanceof Error ? e.message : 'Could not send.' });
+    } finally {
+      setSending(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <Card title="Monthly Recap" subtitle="This month vs the same month last year, plus financial-year-to-date. Sales, wages, true COGS (opening + purchases − closing), prime cost, and recommendations.">
+        <div className="recap-controls">
+          <button type="button" className="recap-nav" onClick={() => shiftMonth(-1)} aria-label="Previous month">‹</button>
+          <Input label="Month" type="month" value={month} onChange={(event) => setMonth(event.currentTarget.value)} />
+          <button type="button" className="recap-nav" onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
+          <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={[{ label: 'All venues', value: '' }, ...venues.map((v) => ({ label: v, value: v }))]} />
+          <button type="button" className="recap-export" onClick={exportCsv} disabled={!recap}>Export CSV</button>
+        </div>
+
+        {loading ? (
+          <Spinner label="Loading recap…" />
+        ) : error ? (
+          <p className="report-error">{error}</p>
+        ) : recap ? (
+          <>
+            <div className="recap-grid">
+              <RecapCard title={recap.monthCurrent.label} period={recap.monthCurrent} compare={recap.monthPriorYear} compareLabel="last year" />
+              <RecapCard title={recap.ytdLabel} period={recap.ytdCurrent} compare={recap.ytdPriorYear} compareLabel="prior FY" />
+            </div>
+
+            <h4 className="recap-section-title">Recommendations</h4>
+            <div className="recap-recs">
+              {recap.recommendations.map((r, i) => (
+                <div key={i} className={`recap-rec is-${r.tone}`}>
+                  <strong>{r.title}</strong>
+                  <span>{r.detail}</span>
+                </div>
+              ))}
+            </div>
+
+            <div className="recap-email">
+              <Input label="Email this recap to" type="email" value={emailTo} placeholder="name@venue.com" onChange={(event) => setEmailTo(event.currentTarget.value)} />
+              <button type="button" className="recap-send" disabled={sending || !emailTo.trim()} onClick={() => void sendEmail()}>{sending ? 'Sending…' : 'Send'}</button>
+              {emailMsg ? <span className={emailMsg.tone === 'danger' ? 'recap-email-msg is-error' : 'recap-email-msg'}>{emailMsg.text}</span> : null}
+            </div>
+          </>
+        ) : null}
+      </Card>
+    </div>
+  );
 }
 
 function qualityLabel(value: ReportsPrimeCostPayload['totals']['sourceQuality'] | undefined) {
@@ -3395,6 +3547,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderStockSection();
       case 'menu-engineering':
         return renderMenuEngineeringSection();
+      case 'monthly-recap':
+        return <MonthlyRecapSection venues={venues} />;
       case 'reserve':
         return renderReserveSection();
       case 'marketing':
