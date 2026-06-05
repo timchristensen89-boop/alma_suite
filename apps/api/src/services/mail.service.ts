@@ -246,6 +246,11 @@ export const mailService = {
     return isResendConfigured() || isSmtpConfigured();
   },
 
+  // Generic HTML email — used for sending report documents (e.g. Monthly Recap).
+  async sendDocument(input: { to: string; subject: string; text: string; html: string }): Promise<EmailDeliveryResult> {
+    return deliverEmail(input);
+  },
+
   async sendStaffInvite(input: InviteEmailInput): Promise<EmailDeliveryResult> {
     const venueLine = input.venue ? ` for ${input.venue}` : '';
     const expiry = input.expiresAt.toLocaleDateString('en-AU', {

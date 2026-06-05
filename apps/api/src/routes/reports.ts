@@ -59,6 +59,22 @@ reportsRouter.get('/prime-cost', requireManager, async (req, res, next) => {
   }
 });
 
+reportsRouter.get('/monthly-recap', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.monthlyRecap(req.query, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.post('/monthly-recap/email', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.emailMonthlyRecap(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.get('/menu-profitability', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.menuProfitability({
