@@ -264,6 +264,32 @@ function appColorStyle(app: SuiteAppIdentity): CSSProperties {
   } as CSSProperties;
 }
 
+// House glyph for the Home shortcut pinned at the top of the topbar switcher.
+function HomeGlyph() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+      <path d="M3 12 L12 3 L21 12" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M5 10 V20 H19 V10" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+// Alma Suite Home — surfaced as a pinned destination inside the app switcher so
+// the topbar no longer needs a separate Home button (keeps mobile chrome tight).
+const HOME_APP: SuiteAppIdentity = {
+  id: 'home' as SuiteAppId,
+  label: 'Home',
+  shortLabel: 'Home',
+  description: 'Daily brief, tasks, and every Alma app in one place.',
+  status: 'active',
+  lifecycle: 'live',
+  href: (SUITE_APP_HOSTS as Partial<Record<string, string>>).home ?? 'https://alma-home.web.app',
+  fromColor: '#2F343A',
+  toColor: '#1F2429',
+  iconKey: 'gear',
+  icon: <HomeGlyph />
+};
+
 function getSuiteApp(appId: SuiteAppId): SuiteAppIdentity {
   return ALL_APPS.find((app) => app.id === appId) ?? SUITE_APPS[0]!;
 }
@@ -721,6 +747,15 @@ function SuiteEditorialSwitcher({
           />
           <span className="suite-switch-kbd">↵</span>
         </div>
+
+        {!searching ? (
+          <SuiteSwitchRow
+            app={HOME_APP}
+            focused={false}
+            appColorStyle={appColorStyle}
+            onSelect={() => activate(HOME_APP)}
+          />
+        ) : null}
 
         {!searching && current ? (
           <SuiteSwitchRow app={current} current focused={false} appColorStyle={appColorStyle} onSelect={() => closeMobile()} />

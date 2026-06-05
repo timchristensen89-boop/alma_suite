@@ -5,6 +5,7 @@ export { SuiteClock } from './layout/SuiteClock';
 export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { SuiteFeedbackWidget } from './feedback/SuiteFeedbackWidget';
 export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidget';
+export { SuiteInboxWidget } from './inbox/SuiteInboxWidget';
 export { SuiteSearchWidget } from './search/SuiteSearchWidget';
 export type { SuiteSearchItem } from './search/SuiteSearchWidget';
 export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';

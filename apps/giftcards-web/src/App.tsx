@@ -39,9 +39,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   Textarea,
   ThemeToggle,
   TopBar,
@@ -1819,14 +1818,14 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
           right={
             <>
               <SuiteAppSwitcher currentApp="giftcards" apps={suiteApps} variant="topbar" />
-              <SuiteCommsWidget
+              <SuiteInboxWidget
                 appId="GIFTCARDS"
                 api={api}
+                currentApp="giftcards"
                 venue={user.venue}
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteNotificationsWidget api={api} currentApp="giftcards" />
               <SuiteFeedbackWidget appId="GIFTCARDS" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
