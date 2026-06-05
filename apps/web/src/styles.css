@@ -47,10 +47,13 @@
   --tone-positive-bg: #ecfdf5;
   --tone-positive-fg: #047857;
   --tone-positive-dot: #10b981;
-  --tone-warning-bg: #fef3c7;
-  --tone-warning-fg: #92400e;
+  /* Warning/danger backgrounds run one shade deeper than the old #fef3c7/#fee2e2
+     so red + yellow tone surfaces (badges, severity, status, alerts) read
+     clearly across the suite. Foreground inks stay 800-level for AA contrast. */
+  --tone-warning-bg: #fbe08a;
+  --tone-warning-fg: #854d0e;
   --tone-warning-dot: #f59e0b;
-  --tone-danger-bg: #fee2e2;
+  --tone-danger-bg: #fbc4c4;
   --tone-danger-fg: #991b1b;
   --tone-danger-dot: #ef4444;
   --tone-info-bg: #e0f2fe;
