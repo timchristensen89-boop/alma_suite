@@ -1279,6 +1279,43 @@ model ReserveTable {
   @@index([isActive])
 }
 
+enum ReserveTableCallType {
+  WATER
+  CLEAR
+  ORDER
+  CHECK
+  ATTENTION
+  CUSTOM
+}
+
+enum ReserveTableCallStatus {
+  OPEN
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+// A "table call" raised from the live service map — any host/floor staff can
+// send one (water, clear, check, needs attention, or a custom note) and it
+// shows to all staff on the board until acknowledged / resolved.
+model ReserveTableCall {
+  id                 String                 @id @default(cuid())
+  venue              String
+  tableId            String?
+  tableLabel         String
+  reservationId      String?
+  type               ReserveTableCallType   @default(ATTENTION)
+  message            String?
+  status             ReserveTableCallStatus @default(OPEN)
+  createdByName      String?
+  createdAt          DateTime               @default(now())
+  acknowledgedAt     DateTime?
+  acknowledgedByName String?
+  resolvedAt         DateTime?
+  resolvedByName     String?
+
+  @@index([venue, status, createdAt])
+}
+
 // Admin-defined drinks packages a guest can pre-pay for at booking,
 // redeemed on arrival (e.g. "Welcome Prosecco", "Cocktail on arrival").
 model ReserveDrinkPackage {

@@ -16,6 +16,9 @@ import type {
   ReserveReservationStatus,
   ReserveServicePeriod,
   ReserveTable,
+  ReserveTableCall,
+  ReserveTableCallAction,
+  ReserveTableCallType,
   ReserveDrinkPackage,
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
@@ -2139,19 +2142,46 @@ function deriveServiceState(bookings: ServiceReservation[], nowMs: number): { to
   return { tone: 'free', reservation: null, minutes: 0 };
 }
 
+const CALL_PRESETS: { type: ReserveTableCallType; label: string }[] = [
+  { type: 'WATER', label: 'Water' },
+  { type: 'CLEAR', label: 'Clear plates' },
+  { type: 'ORDER', label: 'Ready to order' },
+  { type: 'CHECK', label: 'Check on table' },
+  { type: 'ATTENTION', label: 'Needs attention' }
+];
+const CALL_LABEL: Record<ReserveTableCallType, string> = {
+  WATER: 'Water',
+  CLEAR: 'Clear plates',
+  ORDER: 'Ready to order',
+  CHECK: 'Check on table',
+  ATTENTION: 'Needs attention',
+  CUSTOM: 'Note'
+};
+function callAgeLabel(iso: string, nowMs: number): string {
+  const mins = Math.max(0, Math.round((nowMs - new Date(iso).getTime()) / 60000));
+  return mins < 1 ? 'just now' : `${mins}m`;
+}
+
 function ServiceBoard({
   tables,
   reservations,
   onAction,
-  busy
+  busy,
+  calls,
+  onCall,
+  onUpdateCall
 }: {
   tables: ReserveTable[];
   reservations: ServiceReservation[];
   onAction: (reservationId: string, action: ServiceAction, stage?: ServiceStage) => void | Promise<void>;
   busy: boolean;
+  calls: ReserveTableCall[];
+  onCall: (table: ReserveTable, type: ReserveTableCallType, message?: string) => void | Promise<void>;
+  onUpdateCall: (id: string, action: ReserveTableCallAction) => void | Promise<void>;
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const [customCall, setCustomCall] = useState('');
   const geometry = seedFloorGeometry(tables);
 
   useEffect(() => {
@@ -2178,9 +2208,19 @@ function ServiceBoard({
     else counts.seated += 1;
   }
 
+  const activeCalls = calls.filter((c) => c.status === 'OPEN' || c.status === 'ACKNOWLEDGED');
+  const callsByTable = new Map<string, ReserveTableCall[]>();
+  for (const call of activeCalls) {
+    if (!call.tableId) continue;
+    const list = callsByTable.get(call.tableId) ?? [];
+    list.push(call);
+    callsByTable.set(call.tableId, list);
+  }
+
   const selected = selectedTableId ? tables.find((t) => t.id === selectedTableId) ?? null : null;
   const selectedState = selectedTableId ? states.get(selectedTableId) ?? null : null;
   const selectedReservation = selectedState?.reservation ?? null;
+  const selectedCalls = selectedTableId ? callsByTable.get(selectedTableId) ?? [] : [];
 
   if (tables.length === 0) {
     return <EmptyState title="No tables on the floor yet" description="Add tables in Settings → Tables and place them on the floor plan, then run service here." />;
@@ -2193,7 +2233,30 @@ function ServiceBoard({
         <span className="service-chip is-overdue">{counts.overdue} overdue</span>
         <span className="service-chip is-due">{counts.due} due in</span>
         <span className="service-chip is-free">{counts.free} free</span>
+        {activeCalls.length > 0 ? <span className="service-chip is-call">{activeCalls.length} call{activeCalls.length === 1 ? '' : 's'}</span> : null}
       </div>
+
+      {activeCalls.length > 0 ? (
+        <div className="service-calls-feed" aria-label="Active table calls">
+          {activeCalls.map((call) => (
+            <div key={call.id} className={`service-call-chip is-${call.status.toLowerCase()}`}>
+              <button
+                type="button"
+                className="service-call-chip-main"
+                onClick={() => { if (call.tableId) setSelectedTableId(call.tableId); }}
+              >
+                <strong>{call.tableLabel}</strong>
+                <span>{call.type === 'CUSTOM' && call.message ? call.message : CALL_LABEL[call.type]}</span>
+                <em>{callAgeLabel(call.createdAt, now)}</em>
+              </button>
+              {call.status === 'OPEN' ? (
+                <button type="button" className="service-call-ack" disabled={busy} onClick={() => void onUpdateCall(call.id, 'ACKNOWLEDGE')}>Ack</button>
+              ) : null}
+              <button type="button" className="service-call-resolve" disabled={busy} onClick={() => void onUpdateCall(call.id, 'RESOLVE')}>Done</button>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <div className="service-board-layout">
         <div className="floor-plan-canvas service-canvas" onMouseDown={() => setSelectedTableId(null)}>
           {tables.map((table, index) => {
@@ -2205,7 +2268,7 @@ function ServiceBoard({
               <button
                 type="button"
                 key={table.id}
-                className={`floor-plan-table service-table is-${state.tone} is-${geo.shape}${isSelected ? ' is-selected' : ''}`}
+                className={`floor-plan-table service-table is-${state.tone} is-${geo.shape}${isSelected ? ' is-selected' : ''}${callsByTable.has(table.id) ? ' has-call' : ''}`}
                 style={{
                   left: `${geo.posX}%`,
                   top: `${geo.posY}%`,
@@ -2216,6 +2279,7 @@ function ServiceBoard({
                 onMouseDown={(event) => { event.stopPropagation(); setSelectedTableId(table.id); }}
               >
                 <div className="floor-plan-table-inner" style={{ transform: `rotate(${-geo.rotation}deg)` }}>
+                  {callsByTable.has(table.id) ? <span className="service-table-call-badge" aria-label="Active call">{callsByTable.get(table.id)!.length}</span> : null}
                   <span className="floor-plan-table-label">{table.label}</span>
                   {r ? (
                     <span className="service-table-meta">{r.guestName?.split(' ')[0] ?? 'Guest'} · {r.covers}p</span>
@@ -2280,6 +2344,46 @@ function ServiceBoard({
             ) : (
               <p className="subtle">No booking on this table right now.</p>
             )}
+
+            {selected ? (
+              <div className="service-panel-calls">
+                {selectedCalls.length > 0 ? (
+                  <div className="service-panel-call-list">
+                    {selectedCalls.map((call) => (
+                      <div key={call.id} className={`service-call-row is-${call.status.toLowerCase()}`}>
+                        <span>{call.type === 'CUSTOM' && call.message ? call.message : CALL_LABEL[call.type]} · {callAgeLabel(call.createdAt, now)}{call.status === 'ACKNOWLEDGED' ? ' · ack' : ''}</span>
+                        <span className="service-call-row-actions">
+                          {call.status === 'OPEN' ? (
+                            <button type="button" disabled={busy} onClick={() => void onUpdateCall(call.id, 'ACKNOWLEDGE')}>Ack</button>
+                          ) : null}
+                          <button type="button" disabled={busy} onClick={() => void onUpdateCall(call.id, 'RESOLVE')}>Done</button>
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <span className="service-panel-call-label">Send a call</span>
+                <div className="service-call-presets">
+                  {CALL_PRESETS.map((preset) => (
+                    <button type="button" key={preset.type} disabled={busy} onClick={() => void onCall(selected, preset.type)}>
+                      {preset.label}
+                    </button>
+                  ))}
+                </div>
+                <form
+                  className="service-call-custom"
+                  onSubmit={(event) => {
+                    event.preventDefault();
+                    if (!customCall.trim()) return;
+                    void onCall(selected, 'CUSTOM', customCall.trim());
+                    setCustomCall('');
+                  }}
+                >
+                  <input value={customCall} maxLength={200} placeholder="Custom call…" onChange={(event) => setCustomCall(event.currentTarget.value)} />
+                  <button type="submit" disabled={busy || !customCall.trim()}>Send</button>
+                </form>
+              </div>
+            ) : null}
           </aside>
         ) : (
           <aside className="service-panel service-panel--empty">
@@ -2770,6 +2874,54 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }, 25000);
     return () => window.clearInterval(id);
   }, [refreshLive]);
+
+  // Live service-map table calls — polled while the Service view is open so the
+  // same active calls show to everyone working the floor.
+  const [calls, setCalls] = useState<ReserveTableCall[]>([]);
+  const refreshCalls = useCallback(async () => {
+    try {
+      const venueQuery = scopedVenueParam ? `?venue=${encodeURIComponent(scopedVenueParam)}` : '';
+      setCalls(await api<ReserveTableCall[]>(`/api/reserve/calls${venueQuery}`));
+    } catch {
+      /* background — stay quiet on transient errors */
+    }
+  }, [scopedVenueParam]);
+
+  useEffect(() => {
+    if (!showService) return;
+    void refreshCalls();
+    const id = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') void refreshCalls();
+    }, 10000);
+    return () => window.clearInterval(id);
+  }, [showService, refreshCalls]);
+
+  async function sendTableCall(table: ReserveTable, type: ReserveTableCallType, message?: string) {
+    try {
+      await api('/api/reserve/calls', {
+        method: 'POST',
+        body: JSON.stringify({
+          venue: table.venue,
+          tableId: table.id,
+          tableLabel: table.label,
+          type,
+          message: message?.trim() || undefined
+        })
+      });
+      await refreshCalls();
+    } catch (error) {
+      setError('reservation', error, 'Could not send the call.');
+    }
+  }
+
+  async function updateTableCall(id: string, action: ReserveTableCallAction) {
+    try {
+      await api(`/api/reserve/calls/${id}`, { method: 'PATCH', body: JSON.stringify({ action }) });
+      await refreshCalls();
+    } catch (error) {
+      setError('reservation', error, 'Could not update the call.');
+    }
+  }
 
   useEffect(() => {
     const nextVenue = firstManagerVenue(user, scopedVenueParam);
@@ -3294,6 +3446,9 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   reservations={dashboard?.todayReservations ?? []}
                   onAction={serviceAction}
                   busy={serviceBusy}
+                  calls={calls}
+                  onCall={sendTableCall}
+                  onUpdateCall={updateTableCall}
                 />
               </Card>
             </section>

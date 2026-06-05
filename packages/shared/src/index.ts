@@ -119,6 +119,22 @@ export const reserveServiceUpdateInputSchema = z.object({
   action: reserveServiceActionSchema,
   stage: reserveServiceStageSchema.optional()
 });
+
+// Live service-map table calls.
+export const reserveTableCallTypeSchema = z.enum(['WATER', 'CLEAR', 'ORDER', 'CHECK', 'ATTENTION', 'CUSTOM']);
+export const reserveTableCallStatusSchema = z.enum(['OPEN', 'ACKNOWLEDGED', 'RESOLVED']);
+export const reserveTableCallCreateInputSchema = z.object({
+  venue: z.string().optional(),
+  tableId: z.string().optional(),
+  tableLabel: z.string().min(1, 'Table is required'),
+  reservationId: z.string().optional(),
+  type: reserveTableCallTypeSchema.default('ATTENTION'),
+  message: z.string().max(200).optional()
+});
+export const reserveTableCallActionSchema = z.enum(['ACKNOWLEDGE', 'RESOLVE', 'REOPEN']);
+export const reserveTableCallUpdateInputSchema = z.object({
+  action: reserveTableCallActionSchema
+});
 export const marketingChannelSchema = z.enum(['EMAIL', 'SMS']);
 export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SCHEDULED', 'SENDING', 'SENT', 'CANCELLED', 'ARCHIVED']);
 export const guestTagTypeSchema = z.enum(['MANUAL', 'AUTOMATIC', 'SYSTEM', 'CUSTOM']);
@@ -2799,6 +2815,26 @@ export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSc
 export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
 export type ReserveServiceStage = z.infer<typeof reserveServiceStageSchema>;
 export type ReserveServiceUpdateInput = z.infer<typeof reserveServiceUpdateInputSchema>;
+export type ReserveTableCallType = z.infer<typeof reserveTableCallTypeSchema>;
+export type ReserveTableCallStatus = z.infer<typeof reserveTableCallStatusSchema>;
+export type ReserveTableCallCreateInput = z.infer<typeof reserveTableCallCreateInputSchema>;
+export type ReserveTableCallAction = z.infer<typeof reserveTableCallActionSchema>;
+export type ReserveTableCall = {
+  id: string;
+  venue: string;
+  tableId: string | null;
+  tableLabel: string;
+  reservationId: string | null;
+  type: ReserveTableCallType;
+  message: string | null;
+  status: ReserveTableCallStatus;
+  createdByName: string | null;
+  createdAt: string;
+  acknowledgedAt: string | null;
+  acknowledgedByName: string | null;
+  resolvedAt: string | null;
+  resolvedByName: string | null;
+};
 export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
 export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
 export type MarketingContentAssetType = z.infer<typeof marketingContentAssetTypeSchema>;

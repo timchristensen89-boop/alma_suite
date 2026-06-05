@@ -408,3 +408,36 @@ reserveRouter.patch('/reservations/:id/service', requireManager, async (req, res
     next(error);
   }
 });
+
+// Live service-map table calls — raise / list / acknowledge / resolve.
+reserveRouter.get('/calls', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    const includeResolved = req.query.includeResolved === 'true' || req.query.includeResolved === '1';
+    res.json(await reserveService.listTableCalls(
+      req.user,
+      typeof req.query.venue === 'string' ? req.query.venue : undefined,
+      includeResolved
+    ));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.post('/calls', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.createTableCall(req.user, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.patch('/calls/:id', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.updateTableCall(req.user, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
