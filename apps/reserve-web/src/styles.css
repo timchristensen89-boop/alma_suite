@@ -2874,3 +2874,77 @@ html[data-theme='dark'] .alma-preview-banner {
 html[data-theme='dark'] .alma-preview-banner-text {
   color: var(--tone-warning-fg);
 }
+
+/* ── In-service live floor map ───────────────────────────────────────── */
+.service-board { display: grid; gap: 14px; }
+.service-board-summary { display: flex; flex-wrap: wrap; gap: 8px; }
+.service-chip {
+  font-size: 12px; font-weight: 700; padding: 4px 11px; border-radius: 999px;
+  text-transform: capitalize; letter-spacing: 0.01em;
+  background: rgba(var(--ink-forest-rgb), 0.07); color: var(--color-text);
+}
+.service-chip.is-seated  { background: rgba(36, 76, 159, 0.14);  color: #1E3565; }
+.service-chip.is-entree  { background: rgba(13, 148, 136, 0.14); color: #0F766E; }
+.service-chip.is-mains   { background: rgba(180, 121, 53, 0.16); color: #6F4915; }
+.service-chip.is-dessert { background: rgba(124, 58, 173, 0.14); color: #5B2A86; }
+.service-chip.is-bill    { background: var(--tone-positive-bg, #E4EBDB); color: var(--tone-positive-fg, #2F4129); }
+.service-chip.is-due     { background: rgba(209, 138, 0, 0.16);  color: #6A4A05; }
+.service-chip.is-overdue { background: rgba(154, 58, 46, 0.14);  color: #9A3A2E; }
+.service-chip.is-free    { background: rgba(var(--ink-forest-rgb), 0.07); color: var(--color-text-muted); }
+
+.service-board-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 320px); gap: 16px; align-items: start; }
+.service-canvas { position: relative; min-height: 460px; }
+
+/* Status colours for service tables (reuse .floor-plan-table base). */
+.service-table {
+  appearance: none; cursor: pointer; padding: 0;
+  border: 2px solid rgba(var(--ink-forest-rgb), 0.22);
+  background: var(--color-elevated);
+  transition: transform 100ms ease, box-shadow 120ms ease;
+}
+.service-table:hover { box-shadow: 0 6px 18px -8px rgba(var(--ink-forest-rgb), 0.35); }
+.service-table.is-selected { box-shadow: 0 0 0 3px var(--color-accent, #3F5739); z-index: 3; }
+.service-table.is-free    { border-color: rgba(var(--ink-forest-rgb), 0.2); background: var(--color-elevated); }
+.service-table.is-due     { border-color: #D18A00; background: rgba(209, 138, 0, 0.10); }
+.service-table.is-seated  { border-color: #244C9F; background: rgba(36, 76, 159, 0.10); }
+.service-table.is-entree  { border-color: #0D9488; background: rgba(13, 148, 136, 0.10); }
+.service-table.is-mains   { border-color: #B47935; background: rgba(180, 121, 53, 0.12); }
+.service-table.is-dessert { border-color: #7C3AAD; background: rgba(124, 58, 173, 0.10); }
+.service-table.is-bill    { border-color: #3F5739; background: rgba(63, 87, 57, 0.14); }
+.service-table.is-overdue { border-color: #9A3A2E; background: rgba(154, 58, 46, 0.12); animation: service-pulse 1.8s ease-in-out infinite; }
+@keyframes service-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(154,58,46,0.0); } 50% { box-shadow: 0 0 0 4px rgba(154,58,46,0.18); } }
+
+.service-table-meta { font-size: 11px; font-weight: 600; color: var(--color-text); line-height: 1.1; text-align: center; }
+.service-table-meta.is-subtle { color: var(--color-text-muted); font-weight: 500; }
+.service-table-timer { font-size: 10.5px; font-weight: 700; color: var(--color-text-muted); margin-top: 1px; }
+
+.service-panel {
+  position: sticky; top: 12px;
+  border: 1px solid var(--color-border); border-radius: 14px;
+  background: var(--color-elevated); padding: 16px; display: grid; gap: 12px;
+}
+.service-panel--empty { align-content: start; }
+.service-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.service-panel-head strong { font-family: var(--font-serif, Georgia, serif); font-size: 18px; }
+.service-panel-guest { display: grid; gap: 3px; font-size: 13px; }
+.service-panel-guest strong { font-size: 14.5px; }
+.service-panel-guest span { color: var(--color-text-muted); font-size: 12.5px; }
+.service-panel-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(72px, 1fr)); gap: 6px; }
+.service-panel-stages button {
+  appearance: none; border: 1px solid var(--color-border); background: var(--color-surface);
+  border-radius: 9px; padding: 8px 6px; font-size: 12.5px; font-weight: 600; color: var(--color-text); cursor: pointer;
+}
+.service-panel-stages button.is-active { background: var(--color-accent, #3F5739); color: #fff; border-color: transparent; }
+.service-panel-actions { display: flex; gap: 8px; }
+.service-panel-actions button, .service-seat {
+  appearance: none; border-radius: 9px; padding: 9px 14px; font-size: 13px; font-weight: 700; cursor: pointer; border: 1px solid transparent;
+}
+.service-seat { width: 100%; background: var(--color-accent, #3F5739); color: #fff; }
+.service-clear { flex: 1; background: var(--tone-positive-bg, #E4EBDB); color: var(--tone-positive-fg, #2F4129); }
+.service-ghost { background: transparent; border-color: var(--color-border); color: var(--color-text-muted); }
+.service-panel-stages button:disabled, .service-panel-actions button:disabled, .service-seat:disabled { opacity: 0.55; cursor: default; }
+
+@media (max-width: 860px) {
+  .service-board-layout { grid-template-columns: 1fr; }
+  .service-panel { position: static; }
+}

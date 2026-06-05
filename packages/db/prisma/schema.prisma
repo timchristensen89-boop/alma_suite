@@ -1340,6 +1340,10 @@ model ReserveReservation {
   drinksPaidAt             DateTime?
   drinksRedeemedAt         DateTime?
   drinksPaymentError       String?
+  // In-service state: when the party was seated (turn timer) + course stage
+  // (SEATED, ENTREE, MAINS, DESSERT, BILL). Null until seated.
+  seatedAt                 DateTime?
+  serviceStage             String?
   createdAt                DateTime                 @default(now())
   updatedAt                DateTime                 @updatedAt
   guest                    ReserveGuest             @relation(fields: [guestId], references: [id], onDelete: Cascade)

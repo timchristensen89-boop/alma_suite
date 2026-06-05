@@ -111,6 +111,14 @@ export const trainingModuleStatusSchema = z.enum(['ACTIVE', 'ARCHIVED']);
 export const staffTrainingStatusSchema = z.enum(['ASSIGNED', 'IN_PROGRESS', 'COMPLETED', 'EXPIRED']);
 export const reserveReservationStatusSchema = z.enum(['PENDING', 'CONFIRMED', 'SEATED', 'COMPLETED', 'CANCELLED', 'NO_SHOW']);
 export const reserveServicePeriodSchema = z.enum(['BREAKFAST', 'LUNCH', 'DINNER', 'EVENT']);
+
+// In-service course progression for a seated table.
+export const reserveServiceStageSchema = z.enum(['SEATED', 'ENTREE', 'MAINS', 'DESSERT', 'BILL']);
+export const reserveServiceActionSchema = z.enum(['SEAT', 'STAGE', 'CLEAR', 'UNSEAT']);
+export const reserveServiceUpdateInputSchema = z.object({
+  action: reserveServiceActionSchema,
+  stage: reserveServiceStageSchema.optional()
+});
 export const marketingChannelSchema = z.enum(['EMAIL', 'SMS']);
 export const marketingCampaignStatusSchema = z.enum(['DRAFT', 'READY', 'SCHEDULED', 'SENDING', 'SENT', 'CANCELLED', 'ARCHIVED']);
 export const guestTagTypeSchema = z.enum(['MANUAL', 'AUTOMATIC', 'SYSTEM', 'CUSTOM']);
@@ -2789,6 +2797,8 @@ export type TrainingModuleStatus = z.infer<typeof trainingModuleStatusSchema>;
 export type StaffTrainingStatus = z.infer<typeof staffTrainingStatusSchema>;
 export type ReserveReservationStatus = z.infer<typeof reserveReservationStatusSchema>;
 export type ReserveServicePeriod = z.infer<typeof reserveServicePeriodSchema>;
+export type ReserveServiceStage = z.infer<typeof reserveServiceStageSchema>;
+export type ReserveServiceUpdateInput = z.infer<typeof reserveServiceUpdateInputSchema>;
 export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
 export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
 export type MarketingContentAssetType = z.infer<typeof marketingContentAssetTypeSchema>;
@@ -3631,6 +3641,8 @@ export type ReserveReservation = {
   drinksTotalCents: number | null;
   drinksPaidAt: string | null;
   drinksRedeemedAt: string | null;
+  seatedAt: string | null;
+  serviceStage: ReserveServiceStage | null;
   createdAt: string;
   updatedAt: string;
   guest: ReserveGuest;

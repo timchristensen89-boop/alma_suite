@@ -91,6 +91,7 @@ const servicePeriodLabels: Record<ReserveServicePeriod, string> = {
 };
 const MANAGER_NAV_ITEMS = [
   { href: '#dashboard', label: 'Dashboard', description: 'Bookings and covers', icon: <DocumentIcon /> },
+  { href: '#service', label: 'Service', description: 'Live floor — seat, courses, bill', icon: <DocumentIcon /> },
   { href: '#guests', label: 'Guests', description: 'CRM and visit history', icon: <SearchIcon /> },
   { href: '#waitlist', label: 'Waitlist', description: 'Walk-in queue for peak periods', icon: <SearchIcon /> },
   { href: '#settings', label: 'Settings', description: 'Rules, packages, tables, floor plan', icon: <GearIcon /> },
@@ -2100,6 +2101,197 @@ function seedFloorGeometry(tables: ReserveTable[]): Record<string, TableGeo> {
   return out;
 }
 
+// ── In-service live floor map ───────────────────────────────────────────────
+type ServiceStage = 'SEATED' | 'ENTREE' | 'MAINS' | 'DESSERT' | 'BILL';
+type ServiceAction = 'SEAT' | 'STAGE' | 'CLEAR' | 'UNSEAT';
+type ServiceReservation = {
+  id: string;
+  tableId: string | null;
+  status: string;
+  covers: number;
+  guestName: string | null;
+  startsAt: string;
+  seatedAt: string | null;
+  serviceStage: string | null;
+  occasion: string | null;
+};
+type ServiceTone = 'free' | 'due' | 'seated' | 'entree' | 'mains' | 'dessert' | 'bill' | 'overdue';
+
+const SERVICE_TURN_MINUTES = 120;
+const SERVICE_STAGES: { key: ServiceStage; label: string }[] = [
+  { key: 'SEATED', label: 'Seated' },
+  { key: 'ENTREE', label: 'Entrée' },
+  { key: 'MAINS', label: 'Mains' },
+  { key: 'DESSERT', label: 'Dessert' },
+  { key: 'BILL', label: 'Bill' }
+];
+
+function deriveServiceState(bookings: ServiceReservation[], nowMs: number): { tone: ServiceTone; reservation: ServiceReservation | null; minutes: number } {
+  const active = bookings.filter((r) => r.status !== 'CANCELLED' && r.status !== 'NO_SHOW' && r.status !== 'COMPLETED');
+  const seated = active.find((r) => r.status === 'SEATED');
+  if (seated) {
+    const minutes = seated.seatedAt ? Math.max(0, Math.floor((nowMs - new Date(seated.seatedAt).getTime()) / 60000)) : 0;
+    const tone = (seated.serviceStage ?? 'SEATED').toLowerCase() as ServiceTone;
+    const overdue = minutes >= SERVICE_TURN_MINUTES && tone !== 'bill';
+    return { tone: overdue ? 'overdue' : tone, reservation: seated, minutes };
+  }
+  const due = active.find((r) => r.status === 'CONFIRMED' || r.status === 'PENDING');
+  if (due) return { tone: 'due', reservation: due, minutes: 0 };
+  return { tone: 'free', reservation: null, minutes: 0 };
+}
+
+function ServiceBoard({
+  tables,
+  reservations,
+  onAction,
+  busy
+}: {
+  tables: ReserveTable[];
+  reservations: ServiceReservation[];
+  onAction: (reservationId: string, action: ServiceAction, stage?: ServiceStage) => void | Promise<void>;
+  busy: boolean;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
+  const geometry = seedFloorGeometry(tables);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const byTable = new Map<string, ServiceReservation[]>();
+  for (const r of reservations) {
+    if (!r.tableId) continue;
+    const list = byTable.get(r.tableId) ?? [];
+    list.push(r);
+    byTable.set(r.tableId, list);
+  }
+
+  const counts = { seated: 0, due: 0, overdue: 0, free: 0 };
+  const states = new Map<string, ReturnType<typeof deriveServiceState>>();
+  for (const table of tables) {
+    const state = deriveServiceState(byTable.get(table.id) ?? [], now);
+    states.set(table.id, state);
+    if (state.tone === 'free') counts.free += 1;
+    else if (state.tone === 'due') counts.due += 1;
+    else if (state.tone === 'overdue') counts.overdue += 1;
+    else counts.seated += 1;
+  }
+
+  const selected = selectedTableId ? tables.find((t) => t.id === selectedTableId) ?? null : null;
+  const selectedState = selectedTableId ? states.get(selectedTableId) ?? null : null;
+  const selectedReservation = selectedState?.reservation ?? null;
+
+  if (tables.length === 0) {
+    return <EmptyState title="No tables on the floor yet" description="Add tables in Settings → Tables and place them on the floor plan, then run service here." />;
+  }
+
+  return (
+    <div className="service-board">
+      <div className="service-board-summary">
+        <span className="service-chip is-seated">{counts.seated} seated</span>
+        <span className="service-chip is-overdue">{counts.overdue} overdue</span>
+        <span className="service-chip is-due">{counts.due} due in</span>
+        <span className="service-chip is-free">{counts.free} free</span>
+      </div>
+      <div className="service-board-layout">
+        <div className="floor-plan-canvas service-canvas" onMouseDown={() => setSelectedTableId(null)}>
+          {tables.map((table, index) => {
+            const geo = geometry[table.id] ?? seedTableGeo(table, index);
+            const state = states.get(table.id)!;
+            const r = state.reservation;
+            const isSelected = selectedTableId === table.id;
+            return (
+              <button
+                type="button"
+                key={table.id}
+                className={`floor-plan-table service-table is-${state.tone} is-${geo.shape}${isSelected ? ' is-selected' : ''}`}
+                style={{
+                  left: `${geo.posX}%`,
+                  top: `${geo.posY}%`,
+                  width: `${geo.width}%`,
+                  height: `${geo.height}%`,
+                  transform: `translate(-50%, -50%) rotate(${geo.rotation}deg)`
+                }}
+                onMouseDown={(event) => { event.stopPropagation(); setSelectedTableId(table.id); }}
+              >
+                <div className="floor-plan-table-inner" style={{ transform: `rotate(${-geo.rotation}deg)` }}>
+                  <span className="floor-plan-table-label">{table.label}</span>
+                  {r ? (
+                    <span className="service-table-meta">{r.guestName?.split(' ')[0] ?? 'Guest'} · {r.covers}p</span>
+                  ) : (
+                    <span className="service-table-meta is-subtle">{table.seats ?? table.maxCovers} seats</span>
+                  )}
+                  {r && r.status === 'SEATED' ? (
+                    <span className="service-table-timer">{state.minutes}m</span>
+                  ) : state.tone === 'due' && r ? (
+                    <span className="service-table-timer">{new Date(r.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+                  ) : null}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+
+        {selected && selectedState ? (
+          <aside className="service-panel">
+            <div className="service-panel-head">
+              <strong>{selected.label}</strong>
+              <span className={`service-chip is-${selectedState.tone}`}>{selectedState.tone === 'free' ? 'Free' : selectedState.tone}</span>
+            </div>
+            {selectedReservation ? (
+              <>
+                <div className="service-panel-guest">
+                  <strong>{selectedReservation.guestName ?? 'Guest'}</strong>
+                  <span>
+                    {selectedReservation.covers} guests · booked {new Date(selectedReservation.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}
+                    {selectedReservation.occasion ? ` · ${selectedReservation.occasion}` : ''}
+                  </span>
+                  {selectedReservation.status === 'SEATED' ? (
+                    <span>Seated {selectedState.minutes} min ago{selectedState.tone === 'overdue' ? ' · over turn time' : ''}</span>
+                  ) : null}
+                </div>
+                {selectedReservation.status === 'SEATED' ? (
+                  <>
+                    <div className="service-panel-stages">
+                      {SERVICE_STAGES.map((stage) => (
+                        <button
+                          type="button"
+                          key={stage.key}
+                          disabled={busy}
+                          className={(selectedReservation.serviceStage ?? 'SEATED') === stage.key ? 'is-active' : ''}
+                          onClick={() => void onAction(selectedReservation.id, 'STAGE', stage.key)}
+                        >
+                          {stage.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="service-panel-actions">
+                      <button type="button" disabled={busy} className="service-clear" onClick={() => void onAction(selectedReservation.id, 'CLEAR')}>Clear table</button>
+                      <button type="button" disabled={busy} className="service-ghost" onClick={() => void onAction(selectedReservation.id, 'UNSEAT')}>Unseat</button>
+                    </div>
+                  </>
+                ) : (
+                  <button type="button" disabled={busy} className="service-seat" onClick={() => void onAction(selectedReservation.id, 'SEAT')}>
+                    Seat {selectedReservation.guestName?.split(' ')[0] ?? 'guest'}
+                  </button>
+                )}
+              </>
+            ) : (
+              <p className="subtle">No booking on this table right now.</p>
+            )}
+          </aside>
+        ) : (
+          <aside className="service-panel service-panel--empty">
+            <p className="subtle">Tap a table to seat guests, advance courses, or clear it. Colours show live status; the timer counts minutes since seating.</p>
+          </aside>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function FloorPlanSection({
   venue,
   tables,
@@ -2455,6 +2647,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return () => window.removeEventListener('hashchange', syncHash);
   }, []);
   const showDashboard = activeHash === '#dashboard' || activeHash === '';
+  const showService = activeHash === '#service';
   const showGuests = activeHash === '#guests';
   const showWaitlist = activeHash === '#waitlist';
   const showWidget = activeHash === '#widget-preview';
@@ -2658,6 +2851,23 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       message: error instanceof Error ? error.message : fallback,
       tone: 'error'
     });
+  }
+
+  const [serviceBusy, setServiceBusy] = useState(false);
+  async function serviceAction(reservationId: string, action: ServiceAction, stage?: ServiceStage) {
+    if (serviceBusy) return;
+    setServiceBusy(true);
+    try {
+      await api(`/api/reserve/reservations/${reservationId}/service`, {
+        method: 'PATCH',
+        body: JSON.stringify({ action, stage })
+      });
+      await refreshLive();
+    } catch (error) {
+      setError('reservation', error, 'Could not update the table.');
+    } finally {
+      setServiceBusy(false);
+    }
   }
 
   async function saveReservation(event: FormEvent<HTMLFormElement>) {
@@ -3073,6 +3283,23 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
         <div className={`reserve-layout${showSettings ? ' is-settings' : ''}`}>
           {(!showSettings || showAvailability || showFloorPlan) ? (
           <section className="reserve-main">
+            {showService ? (
+            <section id="service">
+              <Card
+                title="Service"
+                subtitle={`Live floor${scopedVenueParam ? ` · ${scopedVenueParam}` : ''} — seat guests, advance courses, request the bill, clear tables.`}
+              >
+                {loading && !dashboard ? <Spinner label="Loading service floor…" /> : null}
+                <ServiceBoard
+                  tables={tables.filter((t) => t.isActive && (venueFilter === ALL_VENUES || t.venue === venueFilter))}
+                  reservations={dashboard?.todayReservations ?? []}
+                  onAction={serviceAction}
+                  busy={serviceBusy}
+                />
+              </Card>
+            </section>
+            ) : null}
+
             {showDashboard ? (
             <section id="dashboard">
               <Card title="Today and upcoming" subtitle={scopedVenueParam ?? 'All venues'}>
