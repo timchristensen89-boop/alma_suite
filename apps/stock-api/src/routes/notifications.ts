@@ -1,18 +1,7 @@
-import { prisma } from '@alma/db';
-import type { AuthUser } from '@alma/shared';
 import { Router } from 'express';
+import { notificationsService } from '../services/notifications.service.js';
 
 export const notificationsRouter = Router();
-
-const COMMS_WEB_URL = (process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app').replace(/\/+$/, '');
-
-function actorScope(user: AuthUser | undefined) {
-  return {
-    venue: user?.venue ?? null,
-    staffProfileId: user?.id ?? null,
-    role: user?.roleTitle ?? user?.role ?? null
-  };
-}
 
 notificationsRouter.get('/', async (req, res, next) => {
   try {
@@ -20,42 +9,70 @@ notificationsRouter.get('/', async (req, res, next) => {
       res.status(401).json({ message: 'Not authenticated' });
       return;
     }
+    res.json(await notificationsService.list(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
 
-    const { venue, staffProfileId, role } = actorScope(req.user);
-    const threads = await prisma.commsThread.findMany({
-      where: {
-        archivedAt: null,
-        OR: [
-          staffProfileId ? { recipients: { some: { staffProfileId, readAt: null } } } : undefined,
-          venue ? { recipients: { some: { venue, readAt: null } } } : undefined,
-          role ? { recipients: { some: { role, readAt: null } } } : undefined,
-          staffProfileId ? { recipients: { some: { staffProfileId, actionRequired: true, acknowledgedAt: null } } } : undefined,
-          venue ? { recipients: { some: { venue, actionRequired: true, acknowledgedAt: null } } } : undefined,
-          role ? { recipients: { some: { role, actionRequired: true, acknowledgedAt: null } } } : undefined
-        ].filter(Boolean) as any
-      },
-      include: {
-        recipients: true,
-        messages: { orderBy: { createdAt: 'desc' }, take: 1 }
-      },
-      orderBy: { updatedAt: 'desc' },
-      take: 12
-    });
+// GET /api/notifications/mutes — available categories + the user's muted set
+notificationsRouter.get('/mutes', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    res.json(await notificationsService.mutes(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
 
-    res.json(threads.map((thread) => {
-      const actionRequired = thread.recipients.some((recipient) => recipient.actionRequired && !recipient.acknowledgedAt);
-      return {
-        id: `comms-${thread.id}`,
-        tone: thread.priority === 'URGENT' ? 'danger' : actionRequired ? 'warning' : 'info',
-        title: actionRequired ? `Action required: ${thread.subject}` : `Unread: ${thread.subject}`,
-        description: thread.messages[0]?.body?.slice(0, 140) || `${thread.category.toLowerCase()} message`,
-        to: `/threads/${thread.id}`,
-        href: `${COMMS_WEB_URL}/threads/${thread.id}`,
-        appId: 'comms',
-        appLabel: 'Comms',
-        createdAt: thread.updatedAt.toISOString()
-      };
-    }));
+// POST /api/notifications/mutes { category, muted } — toggle a category mute
+notificationsRouter.post('/mutes', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    const category = typeof req.body?.category === 'string' ? req.body.category : '';
+    const muted = Boolean(req.body?.muted);
+    res.json(await notificationsService.setMute(req.user, category, muted));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/notifications/reads { ids?: string[], all?: boolean } — mark
+// notifications read for the current user. Read state is server-side so it
+// syncs across every app in the suite.
+notificationsRouter.post('/reads', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    if (req.body?.all === true) {
+      res.json(await notificationsService.markAllRead(req.user));
+      return;
+    }
+    const ids = Array.isArray(req.body?.ids)
+      ? req.body.ids.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    res.json(await notificationsService.markRead(req.user, ids));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// DELETE /api/notifications/reads — clear all read markers (restore to unread)
+notificationsRouter.delete('/reads', async (req, res, next) => {
+  try {
+    if (!req.user) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    res.json(await notificationsService.clearReads(req.user));
   } catch (error) {
     next(error);
   }

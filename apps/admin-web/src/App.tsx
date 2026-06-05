@@ -18,9 +18,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   ThemeToggle,
   TopBar,
   useDismissibleLayer
@@ -484,15 +483,15 @@ function AdminTopBar() {
       subtitle={active.description}
       right={
         <>
-          <SuiteCommsWidget
+          <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
+          <SuiteInboxWidget
             appId="settings"
             api={api}
+            currentApp="settings"
             venue={user?.venue}
             userName={user ? `${user.firstName} ${user.lastName}` : undefined}
             canAnnounce={canAdmin(user)}
           />
-          <SuiteAppSwitcher currentApp="settings" apps={suiteApps} variant="topbar" />
-          <SuiteNotificationsWidget api={api} currentApp="settings" />
           <SuiteFeedbackWidget appId="settings" api={api} userName={user ? `${user.firstName} ${user.lastName}` : undefined} />
           <ThemeToggle />
           <SuiteClock />

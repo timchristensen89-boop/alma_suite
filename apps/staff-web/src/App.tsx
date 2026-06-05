@@ -78,9 +78,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   Textarea,
   ThemeToggle,
   TopBar,
@@ -777,14 +776,14 @@ function TopBarWithContext() {
                 <SuiteAppSwitcher currentApp="staff" apps={suiteAppsForUser(user)} variant="topbar" />
               </>
             ) : null}
-            <SuiteCommsWidget
+            <SuiteInboxWidget
               appId="STAFF"
               api={api}
+              currentApp="staff"
               venue={user.venue}
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={canManageCommunications(user)}
             />
-            <SuiteNotificationsWidget api={api} currentApp="staff" />
             <SuiteFeedbackWidget
               appId="STAFF"
               api={api}

@@ -44,9 +44,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   Textarea,
   ThemeToggle,
   TopBar,
@@ -1369,14 +1368,14 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
           right={
             <>
               <SuiteAppSwitcher currentApp="marketing" apps={suiteApps} variant="topbar" />
-              <SuiteCommsWidget
+              <SuiteInboxWidget
                 appId="MARKETING"
                 api={api}
+                currentApp="marketing"
                 venue={user.venue}
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteNotificationsWidget api={api} currentApp="marketing" />
               <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />

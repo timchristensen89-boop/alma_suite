@@ -11574,3 +11574,76 @@ html[data-theme='dark'] .suite-switcher-popover--list .suite-switch-footer {
   color: var(--tone-positive-fg, #047857);
 }
 .admin-import-msg.is-error { color: #9A3A2E; }
+
+/* ── Unified Suite Inbox (Alerts + Messages in one popup) ─────────────── */
+.suite-inbox-tabs {
+  position: sticky;
+  top: -22px;
+  margin: -22px -22px 0;
+  padding: 14px 22px 12px 16px;
+  display: flex;
+  gap: 8px;
+  background: var(--color-surface);
+  z-index: 3;
+  border-bottom: 1px solid rgba(var(--ink-forest-rgb), 0.08);
+}
+.suite-inbox-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13.5px;
+  color: var(--color-text-muted, #6b7280);
+  padding: 8px 15px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: background 0.14s ease, color 0.14s ease;
+}
+.suite-inbox-tab:hover { color: var(--color-ink-forest, #1f3524); }
+.suite-inbox-tab.is-active {
+  background: var(--color-elevated, #ffffff);
+  color: var(--color-ink-forest, #1f3524);
+  box-shadow: 0 1px 2px rgba(31, 53, 36, 0.06), 0 0 0 1px rgba(var(--ink-forest-rgb), 0.10);
+}
+.suite-inbox-tab-count {
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #A0463A;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.suite-inbox-pane { display: block; }
+
+/* The tab bar owns the sticky top now, so reset the inner head/filters that
+   previously tucked under the panel edge. */
+.suite-inbox-panel .suite-alert-head {
+  position: static;
+  margin-top: 8px;
+  top: auto;
+  padding-top: 4px;
+  background: transparent;
+}
+.suite-inbox-panel .suite-alert-filters {
+  position: static;
+  top: auto;
+}
+
+html[data-theme='dark'] .suite-inbox-tabs {
+  background: var(--color-surface);
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+html[data-theme='dark'] .suite-inbox-tab.is-active {
+  background: var(--color-elevated);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4), 0 0 0 1px rgba(255, 255, 255, 0.10);
+}

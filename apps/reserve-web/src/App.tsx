@@ -42,9 +42,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   Textarea,
   ThemeToggle,
   TopBar,
@@ -1818,14 +1817,14 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
       right={
         <>
           <SuiteAppSwitcher currentApp="reserve" apps={suiteApps} variant="topbar" />
-          <SuiteCommsWidget
+          <SuiteInboxWidget
             appId="RESERVE"
             api={api}
+            currentApp="reserve"
             venue={user.venue}
             userName={`${user.firstName} ${user.lastName}`}
             canAnnounce={user.role !== 'STAFF'}
           />
-          <SuiteNotificationsWidget api={api} currentApp="reserve" />
           <SuiteFeedbackWidget appId="RESERVE" api={api} userName={`${user.firstName} ${user.lastName}`} />
           <ThemeToggle />
           <SuiteClock />

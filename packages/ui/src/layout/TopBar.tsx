@@ -4,13 +4,17 @@ type Props = {
   title: ReactNode;
   subtitle?: ReactNode;
   right?: ReactNode;
-  /** Set false on the Home app itself, where a "Back to Home" link is redundant. */
+  /**
+   * Whether to show the standalone Home icon button. Defaults to false — Home
+   * now lives as a pinned shortcut inside the app switcher, which keeps the
+   * mobile topbar from overflowing. Opt back in per-app if ever needed.
+   */
   showHomeLink?: boolean;
   /** Override the Home URL — defaults to the public alma-home.web.app. */
   homeUrl?: string;
 };
 
-export function TopBar({ title, subtitle, right, showHomeLink = true, homeUrl = 'https://alma-home.web.app/' }: Props) {
+export function TopBar({ title, subtitle, right, showHomeLink = false, homeUrl = 'https://alma-home.web.app/' }: Props) {
   return (
     <div className="topbar">
       <div className="topbar-text">

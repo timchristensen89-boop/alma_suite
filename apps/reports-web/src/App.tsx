@@ -41,9 +41,8 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteCommsWidget,
   SuiteFeedbackWidget,
-  SuiteNotificationsWidget,
+  SuiteInboxWidget,
   ThemeToggle,
   TopBar,
   useDismissibleLayer
@@ -3576,14 +3575,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           right={
             <>
               <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
-              <SuiteCommsWidget
+              <SuiteInboxWidget
                 appId="REPORTS"
                 api={staffApi}
+                currentApp="reports"
                 venue={user.venue}
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteNotificationsWidget api={staffApi} currentApp="reports" />
               <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
