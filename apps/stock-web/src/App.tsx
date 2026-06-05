@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, HelpButton, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
@@ -123,6 +124,9 @@ function TopBarWithContext() {
       right={
         user ? (
           <>
+            {STOCK_HELP[active.to] ? (
+              <HelpButton {...STOCK_HELP[active.to]!} layerId={`stock-help-${active.to}`} />
+            ) : null}
             <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="topbar" />
             <SuiteInboxWidget
               appId="STOCK"

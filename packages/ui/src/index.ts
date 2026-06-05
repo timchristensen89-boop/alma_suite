@@ -6,6 +6,8 @@ export { SuiteCommsWidget } from './communications/SuiteCommsWidget';
 export { SuiteFeedbackWidget } from './feedback/SuiteFeedbackWidget';
 export { SuiteNotificationsWidget } from './notifications/SuiteNotificationsWidget';
 export { SuiteInboxWidget } from './inbox/SuiteInboxWidget';
+export { HelpButton } from './primitives/HelpButton';
+export type { HelpContent, HelpFeature } from './primitives/HelpButton';
 export { SuiteSearchWidget } from './search/SuiteSearchWidget';
 export type { SuiteSearchItem } from './search/SuiteSearchWidget';
 export { notifyDismissibleLayerOpen, useDismissibleLayer } from './hooks/useDismissibleLayer';

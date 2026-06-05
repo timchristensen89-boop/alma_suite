@@ -14,6 +14,7 @@ import type {
   StocktakesSummary
 } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -533,6 +534,8 @@ export function StocktakePage() {
         <StatCard label="In progress" value={loading ? '—' : String(summary?.inProgress ?? 0)} hint="Counts not yet submitted" tone={summary && summary.inProgress > 0 ? 'warning' : 'neutral'} />
         <StatCard label="Ready for review" value={loading ? '—' : String(summary?.submitted ?? 0)} hint="Submitted counts" tone={summary && summary.submitted > 0 ? 'warning' : 'neutral'} />
       </div>
+
+      <LoadedStocktakeImportCard onImported={() => void load()} />
 
       {dataQuality ? (
         <Card

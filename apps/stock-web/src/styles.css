@@ -2108,3 +2108,47 @@ html[data-theme='dark'] {
   --color-accent-soft: #20301B;
   --color-accent-text: #E6F0E0;
 }
+
+/* ── Loaded stocktake import card ─────────────────────────────────────── */
+.loaded-import { display: grid; gap: 14px; }
+.loaded-import-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.loaded-import-file {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border: 1px dashed var(--color-border); border-radius: 10px;
+  background: var(--color-surface); cursor: pointer; font-size: 13px; color: var(--color-text-muted);
+  max-width: 320px;
+}
+.loaded-import-file input { display: none; }
+.loaded-import-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.loaded-import .btn-ghost { background: transparent; border: 0; color: var(--color-text-muted); cursor: pointer; font-weight: 600; }
+.loaded-import .btn-ghost:hover { color: var(--color-text); }
+
+.loaded-import-paste { font-size: 13px; }
+.loaded-import-paste summary { cursor: pointer; color: var(--color-text-muted); font-weight: 600; }
+.loaded-import-textarea {
+  width: 100%; margin-top: 8px; padding: 10px 12px; border: 1px solid var(--color-border);
+  border-radius: 10px; background: var(--color-surface); color: var(--color-text);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; resize: vertical;
+}
+.loaded-import-hint { margin: 6px 0 0; font-size: 12px; color: var(--color-text-muted); line-height: 1.45; }
+.loaded-import-hint code { font-size: 11.5px; background: var(--color-surface-muted, rgba(0,0,0,0.05)); padding: 1px 5px; border-radius: 5px; }
+
+.loaded-import-error { margin: 0; color: #9A3A2E; font-size: 13px; }
+.loaded-import-result {
+  margin: 0; padding: 12px 14px; border-radius: 10px;
+  background: var(--tone-positive-bg); color: var(--tone-positive-fg); font-size: 13px;
+}
+
+.loaded-import-preview { display: grid; gap: 12px; padding-top: 4px; border-top: 1px solid var(--color-border); }
+.loaded-import-summary { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; color: var(--color-text-muted); }
+.loaded-import-summary strong { color: var(--color-text); font-size: 16px; }
+.loaded-import-summary .is-warn strong { color: #B47935; }
+.loaded-import-sessions { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.loaded-import-sessions li {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 12px;
+  padding: 9px 12px; border: 1px solid var(--color-border); border-radius: 9px; background: var(--color-surface);
+}
+.loaded-import-session-name { font-weight: 600; font-size: 13.5px; }
+.loaded-import-session-meta { font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; }
+.loaded-import-toggle { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--color-text); line-height: 1.4; }
+.loaded-import-toggle input { margin-top: 2px; }
