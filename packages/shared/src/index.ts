@@ -5712,7 +5712,14 @@ export const recipeCreateInputSchema = z.object({
   subcategory: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal('')),
   salePriceCents: z.coerce.number().int().nonnegative().optional(),
-  portionSize: z.coerce.number().positive().optional(),
+  // Portion size is "how many servings this recipe yields". Treat blank, 0 and
+  // negatives as "not specified" (undefined → stored null) instead of throwing,
+  // so an empty or zeroed field never blocks a save with a cryptic error.
+  portionSize: z.preprocess((value) => {
+    if (value === '' || value === null || value === undefined) return undefined;
+    const n = Number(value);
+    return Number.isFinite(n) && n > 0 ? n : undefined;
+  }, z.number().positive().optional()),
   portionUnit: z.string().optional().or(z.literal('')),
   yieldQuantity: z.coerce.number().optional(),
   yieldUnit: z.string().optional().or(z.literal('')),
