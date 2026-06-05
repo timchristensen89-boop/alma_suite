@@ -34,6 +34,9 @@ import {
   type ReservePublicSetupIntentResponse,
   type ReservePublicWaitlistConfirmation,
   reserveServiceUpdateInputSchema,
+  reserveTableCallCreateInputSchema,
+  reserveTableCallUpdateInputSchema,
+  type ReserveTableCall,
   type ReserveReservation,
   type ReserveServiceStage,
   type ReserveReservationStatus,
@@ -676,6 +679,44 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
   }
 
   return slots.sort((a, b) => a.startsAt.localeCompare(b.startsAt));
+}
+
+function actorName(actor: AuthUser): string | null {
+  return `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || null;
+}
+
+function toTableCallPayload(row: {
+  id: string;
+  venue: string;
+  tableId: string | null;
+  tableLabel: string;
+  reservationId: string | null;
+  type: ReserveTableCall['type'];
+  message: string | null;
+  status: ReserveTableCall['status'];
+  createdByName: string | null;
+  createdAt: Date;
+  acknowledgedAt: Date | null;
+  acknowledgedByName: string | null;
+  resolvedAt: Date | null;
+  resolvedByName: string | null;
+}): ReserveTableCall {
+  return {
+    id: row.id,
+    venue: row.venue,
+    tableId: row.tableId,
+    tableLabel: row.tableLabel,
+    reservationId: row.reservationId,
+    type: row.type,
+    message: row.message,
+    status: row.status,
+    createdByName: row.createdByName,
+    createdAt: row.createdAt.toISOString(),
+    acknowledgedAt: row.acknowledgedAt ? row.acknowledgedAt.toISOString() : null,
+    acknowledgedByName: row.acknowledgedByName,
+    resolvedAt: row.resolvedAt ? row.resolvedAt.toISOString() : null,
+    resolvedByName: row.resolvedByName
+  };
 }
 
 export const reserveService = {
@@ -2002,6 +2043,62 @@ export const reserveService = {
       include: reserveReservationWithRelationsArgs.include
     });
     return toReservationPayload(updated);
+  },
+
+  // ── Live service-map table calls ───────────────────────────────────────
+  async listTableCalls(actor: AuthUser, requestedVenue?: string | null, includeResolved = false): Promise<ReserveTableCall[]> {
+    const venue = actorVenueScope(actor, requestedVenue ?? undefined, 'Reserve');
+    const rows = await prisma.reserveTableCall.findMany({
+      where: {
+        ...(venue ? { venue } : {}),
+        ...(includeResolved ? {} : { status: { in: ['OPEN', 'ACKNOWLEDGED'] } })
+      },
+      orderBy: [{ status: 'asc' }, { createdAt: 'asc' }],
+      take: 100
+    });
+    return rows.map(toTableCallPayload);
+  },
+
+  async createTableCall(actor: AuthUser, input: unknown): Promise<ReserveTableCall> {
+    const data = reserveTableCallCreateInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue ?? undefined, 'Reserve');
+    if (!venue) throw new HttpError(400, 'A venue is required to raise a table call.');
+    const created = await prisma.reserveTableCall.create({
+      data: {
+        venue,
+        tableId: data.tableId || null,
+        tableLabel: data.tableLabel,
+        reservationId: data.reservationId || null,
+        type: data.type,
+        message: data.message?.trim() || null,
+        createdByName: actorName(actor)
+      }
+    });
+    return toTableCallPayload(created);
+  },
+
+  async updateTableCall(actor: AuthUser, id: string, input: unknown): Promise<ReserveTableCall> {
+    const data = reserveTableCallUpdateInputSchema.parse(input);
+    const venue = actorVenueScope(actor, undefined, 'Reserve');
+    const existing = await prisma.reserveTableCall.findFirst({ where: { id, ...(venue ? { venue } : {}) } });
+    if (!existing) throw new HttpError(404, 'Table call not found.');
+    const who = actorName(actor);
+    let patch: Prisma.ReserveTableCallUpdateInput;
+    if (data.action === 'ACKNOWLEDGE') {
+      patch = { status: 'ACKNOWLEDGED', acknowledgedAt: new Date(), acknowledgedByName: who };
+    } else if (data.action === 'RESOLVE') {
+      patch = {
+        status: 'RESOLVED',
+        resolvedAt: new Date(),
+        resolvedByName: who,
+        acknowledgedAt: existing.acknowledgedAt ?? new Date(),
+        acknowledgedByName: existing.acknowledgedByName ?? who
+      };
+    } else {
+      patch = { status: 'OPEN', acknowledgedAt: null, acknowledgedByName: null, resolvedAt: null, resolvedByName: null };
+    }
+    const updated = await prisma.reserveTableCall.update({ where: { id }, data: patch });
+    return toTableCallPayload(updated);
   },
 
   async createPublicSetupIntent(input: unknown): Promise<ReservePublicSetupIntentResponse> {

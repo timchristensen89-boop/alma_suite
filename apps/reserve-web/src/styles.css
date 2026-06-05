@@ -2948,3 +2948,65 @@ html[data-theme='dark'] .alma-preview-banner-text {
   .service-board-layout { grid-template-columns: 1fr; }
   .service-panel { position: static; }
 }
+
+/* ── Service-map table calls (P2) ─────────────────────────────────────── */
+.service-chip.is-call { background: #7A2E2E; color: #FBE9E4; }
+
+.service-calls-feed {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px;
+}
+.service-call-chip {
+  display: inline-flex; align-items: stretch; gap: 0;
+  border: 1px solid rgba(160, 70, 58, 0.4); border-radius: 10px; overflow: hidden;
+  background: #FBEDE8;
+}
+.service-call-chip.is-acknowledged { opacity: 0.72; border-style: dashed; }
+.service-call-chip-main {
+  display: inline-flex; flex-direction: column; align-items: flex-start; gap: 0;
+  padding: 6px 12px; border: 0; background: transparent; cursor: pointer; text-align: left; color: #5A1E1E;
+}
+.service-call-chip-main strong { font-size: 12.5px; }
+.service-call-chip-main span { font-size: 12px; }
+.service-call-chip-main em { font-style: normal; font-size: 11px; opacity: 0.7; }
+.service-call-ack, .service-call-resolve {
+  border: 0; border-left: 1px solid rgba(160, 70, 58, 0.3); background: rgba(160,70,58,0.08);
+  padding: 0 12px; font-size: 11.5px; font-weight: 700; cursor: pointer; color: #7A2E2E;
+}
+.service-call-resolve { background: rgba(63, 87, 57, 0.12); color: #2F4129; }
+
+/* Pulsing dot on a table tile that has an active call */
+.service-table.has-call { box-shadow: 0 0 0 2px #A0463A, 0 0 0 6px rgba(160,70,58,0.25); }
+.service-table-call-badge {
+  position: absolute; top: 3px; right: 4px; z-index: 2;
+  min-width: 16px; height: 16px; padding: 0 4px; border-radius: 999px;
+  background: #A0463A; color: #fff; font-size: 10px; font-weight: 800; line-height: 16px; text-align: center;
+  animation: service-call-pulse 1.4s ease-in-out infinite;
+}
+@keyframes service-call-pulse { 0%,100% { transform: scale(1); } 50% { transform: scale(1.18); } }
+
+.service-panel-calls { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); display: grid; gap: 8px; }
+.service-panel-call-list { display: grid; gap: 5px; }
+.service-call-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12.5px; color: #5A1E1E; }
+.service-call-row.is-acknowledged { opacity: 0.7; }
+.service-call-row-actions { display: inline-flex; gap: 6px; }
+.service-call-row-actions button {
+  border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 7px;
+  padding: 3px 9px; font-size: 11.5px; font-weight: 600; cursor: pointer; color: var(--color-text);
+}
+.service-panel-call-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-text-muted); }
+.service-call-presets { display: flex; flex-wrap: wrap; gap: 6px; }
+.service-call-presets button {
+  border: 1px solid var(--color-border); background: var(--color-surface); border-radius: 999px;
+  padding: 6px 12px; font-size: 12px; font-weight: 600; cursor: pointer; color: var(--color-text);
+}
+.service-call-presets button:hover:not(:disabled) { border-color: #A0463A; color: #7A2E2E; }
+.service-call-custom { display: flex; gap: 6px; }
+.service-call-custom input {
+  flex: 1; min-width: 0; border: 1px solid var(--color-border); border-radius: 8px;
+  padding: 7px 10px; font-size: 12.5px; background: var(--color-surface); color: var(--color-text);
+}
+.service-call-custom button {
+  border: 0; background: var(--color-accent, #3F5739); color: #fff; border-radius: 8px;
+  padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
+}
+.service-call-custom button:disabled, .service-call-presets button:disabled { opacity: 0.5; cursor: default; }
