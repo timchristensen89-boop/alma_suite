@@ -1113,7 +1113,7 @@ function RecipeForm({
         venuePrices: draft.venuePrices
           .filter((vp) => vp.venue.trim() !== '' && vp.salePrice !== '')
           .map((vp) => ({ venue: vp.venue.trim(), salePriceCents: Math.round(Number(vp.salePrice) * 100) })),
-      portionSize: draft.portionSize === '' ? undefined : Number(draft.portionSize),
+      portionSize: draft.portionSize === '' || !(Number(draft.portionSize) > 0) ? undefined : Number(draft.portionSize),
       portionUnit: draft.portionUnit.trim(),
       yieldQuantity: draft.yieldQuantity === '' ? undefined : Number(draft.yieldQuantity),
       yieldUnit: draft.yieldUnit.trim(),
@@ -1261,7 +1261,7 @@ function RecipeForm({
           onChange={(event) => update('yieldQuantity', event.currentTarget.value)}
         />
         <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
-        <Input label="Portion size" type="number" step="0.01" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
+        <Input label="Portion size" type="number" min="0" step="0.01" placeholder="Servings (leave blank for 1)" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
         <Input label="Portion unit" placeholder="portion, kg, L" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} />
         <Select
           label="Status"
