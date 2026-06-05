@@ -398,3 +398,13 @@ reserveRouter.post('/reservations/:id/redeem-drinks', requireManager, async (req
     next(error);
   }
 });
+
+// In-service floor map: seat / advance course / bill / clear a table.
+reserveRouter.patch('/reservations/:id/service', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.setServiceState(req.user, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});

@@ -33,7 +33,9 @@ import {
   type ReservePublicManageView,
   type ReservePublicSetupIntentResponse,
   type ReservePublicWaitlistConfirmation,
+  reserveServiceUpdateInputSchema,
   type ReserveReservation,
+  type ReserveServiceStage,
   type ReserveReservationStatus,
   type ReserveServicePeriod,
   type ReservePublicAvailabilitySlot,
@@ -449,6 +451,8 @@ function toReservationPayload(reservation: ReserveReservationRow): ReserveReserv
     drinksTotalCents: reservation.drinksTotalCents ?? null,
     drinksPaidAt: reservation.drinksPaidAt?.toISOString() ?? null,
     drinksRedeemedAt: reservation.drinksRedeemedAt?.toISOString() ?? null,
+    seatedAt: reservation.seatedAt?.toISOString() ?? null,
+    serviceStage: (reservation.serviceStage as ReserveServiceStage | null) ?? null,
     createdAt: reservation.createdAt.toISOString(),
     updatedAt: reservation.updatedAt.toISOString(),
     guest: toGuestPayload(reservation.guest),
@@ -1965,6 +1969,36 @@ export const reserveService = {
     const updated = await prisma.reserveReservation.update({
       where: { id },
       data: { drinksRedeemedAt: reservation.drinksRedeemedAt ? null : new Date() },
+      include: reserveReservationWithRelationsArgs.include
+    });
+    return toReservationPayload(updated);
+  },
+
+  // In-service floor map: seat a party, advance the course stage, request the
+  // bill, clear the table, or undo back to confirmed.
+  async setServiceState(actor: AuthUser, id: string, input: unknown): Promise<ReserveReservation> {
+    const data = reserveServiceUpdateInputSchema.parse(input);
+    const reservation = await prisma.reserveReservation.findFirst({ where: { id, ...reservationScope(actor, null) } });
+    if (!reservation) throw new HttpError(404, 'Reservation not found.');
+
+    let updateData: Prisma.ReserveReservationUpdateInput;
+    if (data.action === 'CLEAR') {
+      updateData = { status: 'COMPLETED', completedAt: new Date(), serviceStage: null };
+    } else if (data.action === 'UNSEAT') {
+      updateData = { status: 'CONFIRMED', seatedAt: null, serviceStage: null };
+    } else {
+      // SEAT (status SEATED, stamp seatedAt) or STAGE (advance the course).
+      const stage: ReserveServiceStage = data.action === 'STAGE' && data.stage ? data.stage : 'SEATED';
+      updateData = {
+        status: 'SEATED',
+        seatedAt: reservation.seatedAt ?? new Date(),
+        serviceStage: stage
+      };
+    }
+
+    const updated = await prisma.reserveReservation.update({
+      where: { id },
+      data: updateData,
       include: reserveReservationWithRelationsArgs.include
     });
     return toReservationPayload(updated);
