@@ -1141,13 +1141,13 @@
 }
 
 .forecast-vs-actual-week.is-warning span {
-  background: rgba(245, 158, 11, 0.16);
-  color: #92400e;
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
 }
 
 .forecast-vs-actual-week.is-danger span {
-  background: rgba(239, 68, 68, 0.14);
-  color: #991b1b;
+  background: var(--tone-danger-bg);
+  color: var(--tone-danger-fg);
 }
 
 .forecast-vs-actual-week.is-muted .forecast-vs-actual-bar {
@@ -1176,7 +1176,7 @@
   border: 1px solid var(--color-border);
   border-left: 4px solid #dc2626;
   border-radius: 10px;
-  background: rgba(254, 242, 242, 0.45);
+  background: var(--tone-danger-bg);
 }
 
 .margin-alert-main {
