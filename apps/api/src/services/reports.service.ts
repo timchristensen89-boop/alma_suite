@@ -1621,6 +1621,64 @@ export const reportsService = {
     return { status: result.status, to: data.to, month: recap.month };
   },
 
+  // Cron entrypoint: email the just-finished month's recap (all venues) to the
+  // configured recipients. Recipients come from MONTHLY_RECAP_RECIPIENTS
+  // (comma/space/semicolon-separated). Designed to be hit by Cloud Scheduler on
+  // the 1st of each month; supports { previewOnly:true } for safe dry runs.
+  async sendScheduledMonthlyRecap(options: { previewOnly?: boolean; month?: string; recipients?: string[] } = {}) {
+    const now = new Date();
+    const prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const month = options.month ?? `${prev.getFullYear()}-${String(prev.getMonth() + 1).padStart(2, '0')}`;
+    const recipients = (options.recipients?.length
+      ? options.recipients
+      : (process.env.MONTHLY_RECAP_RECIPIENTS ?? '')
+          .split(/[,;\s]+/)
+          .map((value) => value.trim())
+          .filter((value) => value.includes('@')));
+    if (recipients.length === 0) {
+      return {
+        sent: false as const,
+        reason: 'no_recipients',
+        month,
+        note: 'Set MONTHLY_RECAP_RECIPIENTS (comma-separated) to enable the monthly auto-send.'
+      };
+    }
+    if (!mailService.isConfigured()) {
+      return { sent: false as const, reason: 'mail_not_configured', month };
+    }
+    // System actor so the recap spans all venues (admin scope).
+    const systemActor = {
+      id: null,
+      firstName: 'Alma',
+      lastName: 'Scheduler',
+      email: null,
+      venue: null,
+      isAdmin: true,
+      role: 'ADMIN'
+    } as unknown as AuthUser;
+    const recap = await reportsService.monthlyRecap({ month }, systemActor);
+    const subject = `Monthly Recap — ${recap.monthLabel}`;
+    if (options.previewOnly) {
+      return { sent: false as const, previewOnly: true, month, recipients, subject };
+    }
+    const results = await Promise.all(
+      recipients.map(async (to) => {
+        try {
+          const result = await mailService.sendDocument({
+            to,
+            subject,
+            text: renderMonthlyRecapText(recap),
+            html: renderMonthlyRecapHtml(recap)
+          });
+          return { to, status: result.status };
+        } catch (error) {
+          return { to, status: 'error', error: error instanceof Error ? error.message : 'failed' };
+        }
+      })
+    );
+    return { sent: true as const, month, subject, recipients: recipients.length, results, ranAt: new Date().toISOString() };
+  },
+
   async stocktakeStatus(actor: AuthUser) {
     const venue = actorVenueScope(actor);
     const venues = venue

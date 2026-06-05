@@ -7,6 +7,7 @@ import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { integrationService } from '../services/integration.service.js';
+import { reportsService } from '../services/reports.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
 export const integrationJobsRouter = Router();
@@ -98,6 +99,20 @@ integrationJobsRouter.post('/gift-cards/drain', async (_req, res, next) => {
 integrationJobsRouter.post('/govee/sync', async (_req, res, next) => {
   try {
     res.json(await temperatureService.syncGovee());
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Monthly recap email — 1st of month 9am Sydney by Cloud Scheduler. Emails the
+// just-finished month's all-venues recap to MONTHLY_RECAP_RECIPIENTS. Body
+// { previewOnly:true } supported for safe dry-runs.
+integrationJobsRouter.post('/monthly-recap', async (req, res, next) => {
+  try {
+    const previewOnly = Boolean(
+      req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>).previewOnly : undefined
+    );
+    res.json(await reportsService.sendScheduledMonthlyRecap({ previewOnly }));
   } catch (error) {
     next(error);
   }
