@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { StockItem, StockItemsPayload, StockTransfer } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, Textarea } from '@alma/ui';
+import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 
@@ -69,10 +70,6 @@ export function TransfersPage() {
 
   const venues = catalogue?.venues ?? [];
   const venueOptions = venues.map((v) => ({ label: v, value: v }));
-  const itemOptions = [
-    { label: 'Choose item', value: '' },
-    ...(catalogue?.items ?? []).map((item) => ({ label: `${item.name}${item.sku ? ` · ${item.sku}` : ''}`, value: item.id }))
-  ];
   const selectedItem = catalogue?.items.find((item) => item.id === draft.stockItemId);
   const countUnit = countUnitOf(selectedItem);
   const purchaseUnit = purchaseUnitOf(selectedItem);
@@ -143,11 +140,11 @@ export function TransfersPage() {
               <Select label="To venue" value={draft.toVenue} onChange={(event) => { const v = event.currentTarget.value; setDraft((c) => ({ ...c, toVenue: v })); }} options={venueOptions} />
             </div>
 
-            <Select
+            <StockItemPicker
               label="Item"
+              items={(catalogue?.items ?? []).filter((item) => item.status === 'ACTIVE')}
               value={draft.stockItemId}
-              onChange={(event) => { setDraft((c) => ({ ...c, stockItemId: event.currentTarget.value })); setUnitMode('count'); }}
-              options={itemOptions}
+              onChange={(id) => { setDraft((c) => ({ ...c, stockItemId: id })); setUnitMode('count'); }}
             />
 
             {selectedItem && venueOnHand ? (

@@ -300,11 +300,21 @@ async function balanceTargetForItem(
   return {
     item,
     quantityBefore: venueStock.onHand ?? item.onHand,
-    updateQuantityAfter: (quantityAfter: number) =>
-      tx.venueStockItem.update({
+    updateQuantityAfter: async (quantityAfter: number) => {
+      await tx.venueStockItem.update({
         where: { id: venueStock.id },
         data: { onHand: quantityAfter, active: true }
-      })
+      });
+      // Keep the item-level on-hand (shown on the Items page) in sync with the
+      // counts: it's the total across every venue that has been counted, so an
+      // approved stocktake is reflected there regardless of venue scope.
+      const rows = await tx.venueStockItem.findMany({
+        where: { stockItemId: item.id, onHand: { not: null } },
+        select: { onHand: true }
+      });
+      const total = rows.reduce((sum, row) => sum + (row.onHand ?? 0), 0);
+      await tx.stockItem.update({ where: { id: item.id }, data: { onHand: total } });
+    }
   };
 }
 
