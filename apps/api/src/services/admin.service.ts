@@ -23,7 +23,7 @@ import { integrationService } from './integration.service.js';
 import { mailService } from './mail.service.js';
 import { settingsService } from './settings.service.js';
 import { HttpError } from '../lib/http.js';
-import { staffCostingRate, splitOvertimeHours, costForRate } from '../lib/staff-pay-rates.js';
+import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, FULL_TIME_ORDINARY_WEEKLY_HOURS } from '../lib/staff-pay-rates.js';
 
 const APP_LABELS: Record<AlmaAppId, string> = {
   COMPLIANCE: 'Compliance',
@@ -289,7 +289,7 @@ export const adminService = {
       }
     } satisfies Prisma.StaffProfileSelect;
 
-    const [timesheets, rosterShifts] = await Promise.all([
+    const [timesheets, rosterShifts, activeStaff] = await Promise.all([
       prisma.timesheet.findMany({
         where: {
           workDate: { gte: start, lt: end },
@@ -316,6 +316,17 @@ export const adminService = {
         },
         include: { staffProfile: { select: staffSelect } },
         orderBy: [{ startsAt: 'asc' }]
+      }),
+      // Active salaried staff are costed every week regardless of timesheets, so
+      // we need the full active roster (filtered to salaried + costed below).
+      prisma.staffProfile.findMany({
+        where: {
+          accountType: 'HUMAN',
+          mergedIntoStaffProfileId: null,
+          employmentStatus: 'ACTIVE',
+          payProfile: { isNot: null }
+        },
+        select: staffSelect
       })
     ]);
 
@@ -393,7 +404,9 @@ export const adminService = {
       const rate = staffCostingRate(entry.staffProfile);
       const hours = hoursBetween(entry.clockInAt, entry.clockOutAt, entry.breakMinutes);
       const split = splitOvertimeHours(actualWeekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
-      const cost = costForRate(rate, split);
+      // Salaried staff: ordinary hours are covered by their fixed weekly salary
+      // (added after the loops), so only their overtime is costed from timesheets.
+      const cost = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
       const approved = entry.status === 'APPROVED' || entry.status === 'EXPORTED';
       const missingRate = !rate.rateCents && hours > 0;
       addActual(rowFor(byVenue, venue), entry.staffProfileId, hours, cost, approved, missingRate);
@@ -413,7 +426,7 @@ export const adminService = {
       const rate = staffCostingRate(shift.staffProfile);
       const hours = hoursBetween(shift.startsAt, shift.endsAt, shift.breakMinutes);
       const split = splitOvertimeHours(scheduledWeekHours, shift.staffProfileId, shift.startsAt, hours, rate.appliesOvertime);
-      const cost = costForRate(rate, split);
+      const cost = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
       const missingRate = !rate.rateCents && hours > 0;
       addScheduled(rowFor(byVenue, venue), shift.staffProfileId, hours, cost, missingRate);
       addScheduled(areaFor(venue, area), shift.staffProfileId, hours, cost, missingRate);
@@ -423,6 +436,80 @@ export const adminService = {
       day.scheduledHours += hours;
       day.scheduledCostCents += cost;
       day.staffIds.add(shift.staffProfileId);
+    }
+
+    // ── Salaried full-timers: full weekly salary + super, every week ──────────
+    // A salaried staffer costs their fixed weekly salary regardless of (or even
+    // without) timesheets, so add it across the period — split across the venues
+    // they worked by hours, defaulting to their home venue. Overtime past 45h/wk
+    // is already costed from timesheets above; ordinary hours are covered here.
+    const salariedStaff = activeStaff.filter((profile) => weeklyFixedCostCents(staffCostingRate(profile)) > 0);
+    if (salariedStaff.length > 0) {
+      const periodDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+      const periodWeeks = periodDays / 7;
+      const dayKeys: string[] = [];
+      for (let d = new Date(start); d < end; d = addDays(d, 1)) dayKeys.push(isoDate(d));
+
+      const salariedIds = salariedStaff.map((profile) => profile.id);
+      const allVenueSheets = await prisma.timesheet.findMany({
+        where: {
+          workDate: { gte: start, lt: end },
+          status: { not: 'REJECTED' },
+          staffProfileId: { in: salariedIds },
+          staffProfile: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
+        },
+        select: {
+          staffProfileId: true,
+          venue: true,
+          clockInAt: true,
+          clockOutAt: true,
+          breakMinutes: true,
+          staffProfile: { select: { venue: true } }
+        }
+      });
+      const hoursByStaffVenue = new Map<string, Map<string, number>>();
+      for (const ts of allVenueSheets) {
+        const v = ts.venue?.trim() || ts.staffProfile.venue?.trim() || 'Unassigned';
+        const h = hoursBetween(ts.clockInAt, ts.clockOutAt, ts.breakMinutes);
+        const m = hoursByStaffVenue.get(ts.staffProfileId) ?? new Map<string, number>();
+        m.set(v, (m.get(v) ?? 0) + h);
+        hoursByStaffVenue.set(ts.staffProfileId, m);
+      }
+
+      for (const profile of salariedStaff) {
+        const rate = staffCostingRate(profile);
+        const fixedForPeriod = Math.round(weeklyFixedCostCents(rate) * periodWeeks);
+        if (fixedForPeriod <= 0) continue;
+        const hv = hoursByStaffVenue.get(profile.id);
+        const totalHours = hv ? Array.from(hv.values()).reduce((a, b) => a + b, 0) : 0;
+        const allocations: Array<{ venue: string; fraction: number }> = [];
+        if (hv && totalHours > 0) {
+          for (const [v, h] of hv) allocations.push({ venue: v, fraction: h / totalHours });
+        } else {
+          allocations.push({ venue: profile.venue?.trim() || 'Unassigned', fraction: 1 });
+        }
+        const applied = venueFilter ? allocations.filter((a) => a.venue === venueFilter) : allocations;
+        for (const alloc of applied) {
+          const cents = Math.round(fixedForPeriod * alloc.fraction);
+          if (cents <= 0) continue;
+          const roleTitle = profile.roleTitle?.trim() || 'Unassigned role';
+          addActual(rowFor(byVenue, alloc.venue), profile.id, 0, cents, true, false);
+          addActual(areaFor(alloc.venue, 'Salaried'), profile.id, 0, cents, true, false);
+          addActual(roleFor(roleTitle), profile.id, 0, cents, true, false);
+          addActual(staffFor(profile, alloc.venue), profile.id, 0, cents, true, false);
+          addScheduled(rowFor(byVenue, alloc.venue), profile.id, 0, cents, false);
+          addScheduled(areaFor(alloc.venue, 'Salaried'), profile.id, 0, cents, false);
+          addScheduled(roleFor(roleTitle), profile.id, 0, cents, false);
+          addScheduled(staffFor(profile, alloc.venue), profile.id, 0, cents, false);
+          const perDay = cents / dayKeys.length;
+          for (const dk of dayKeys) {
+            const day = dayFor(dk);
+            day.actualCostCents += perDay;
+            day.scheduledCostCents += perDay;
+            day.staffIds.add(profile.id);
+          }
+        }
+      }
     }
 
     const totals = Array.from(byVenue.values()).reduce((sum, row) => {
