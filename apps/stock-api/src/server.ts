@@ -15,6 +15,7 @@ import { operationsRouter } from './routes/operations.js';
 import { recipesRouter } from './routes/recipes.js';
 import { stocktakeRouter } from './routes/stocktake.js';
 import { suppliersRouter } from './routes/suppliers.js';
+import { transfersRouter } from './routes/transfers.js';
 import { uploadsRouter } from './routes/uploads.js';
 
 const app = express();
@@ -46,6 +47,7 @@ app.use('/api/stocktake', stocktakeRouter);
 app.use('/api/suppliers', suppliersRouter);
 app.use('/api/invoices', invoicesRouter);
 app.use('/api/recipes', recipesRouter);
+app.use('/api/stock-transfers', transfersRouter);
 app.use('/api/uploads', uploadsRouter);
 app.use('/stock-api/api/health', healthRouter);
 app.use('/stock-api/api/auth', authRouter);
@@ -57,6 +59,7 @@ app.use('/stock-api/api/stocktake', stocktakeRouter);
 app.use('/stock-api/api/suppliers', suppliersRouter);
 app.use('/stock-api/api/invoices', invoicesRouter);
 app.use('/stock-api/api/recipes', recipesRouter);
+app.use('/stock-api/api/stock-transfers', transfersRouter);
 app.use('/stock-api/api/uploads', uploadsRouter);
 
 app.use(notFoundHandler);

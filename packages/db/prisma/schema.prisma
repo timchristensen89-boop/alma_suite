@@ -2334,11 +2334,35 @@ model StockItem {
   deliveryCheckItems StockDeliveryCheckItem[]
   reorderNotices     StockReorderNotice[]
   squareMenuMappings SquareMenuRecipeMapping[]
+  transfers          StockTransfer[]
 
   @@index([categoryId])
   @@index([status])
   @@index([name])
   @@index([countArea])
+}
+
+// Manager/admin-initiated movement of stock between venues. Adjusts each
+// venue's VenueStockItem.onHand so the next stocktake variance is correct;
+// total company stock is unchanged.
+model StockTransfer {
+  id              String    @id @default(cuid())
+  stockItemId     String
+  fromVenue       String
+  toVenue         String
+  quantity        Float
+  unit            String?
+  notes           String?
+  createdByName   String?
+  createdByUserId String?
+  fromOnHandAfter Float?
+  toOnHandAfter   Float?
+  createdAt       DateTime  @default(now())
+  stockItem       StockItem @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@index([stockItemId, createdAt])
+  @@index([fromVenue, createdAt])
+  @@index([toVenue, createdAt])
 }
 
 model VenueStockItem {

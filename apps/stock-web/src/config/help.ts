@@ -53,6 +53,24 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ],
     tips: ['A blank count is "not counted yet" — different from counting zero on hand.']
   },
+  '/transfers': {
+    title: 'Transfers',
+    intro: 'Move stock between venues so each venue\'s on-hand — and its next stocktake variance — stays correct.',
+    steps: [
+      'Pick the From venue and the To venue.',
+      'Choose the item; the current on-hand at each venue is shown.',
+      'Enter the quantity (in the item\'s unit) and an optional note.',
+      'Transfer — it comes off the From venue and is added to the To venue.'
+    ],
+    features: [
+      { name: 'Per-venue on-hand', desc: 'The quantity shifts between venues; total company stock is unchanged.' },
+      { name: 'History', desc: 'Every transfer is logged with who, when, and the resulting balances.' }
+    ],
+    tips: [
+      'Do the transfer when stock physically moves, so the receiving venue\'s count reconciles.',
+      'Managers and admins only.'
+    ]
+  },
   '/suppliers': {
     title: 'Suppliers',
     intro: 'Who you buy from, and the order/contact details for each.',

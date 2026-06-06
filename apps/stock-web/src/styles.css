@@ -2152,3 +2152,9 @@ html[data-theme='dark'] {
 .loaded-import-session-meta { font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; }
 .loaded-import-toggle { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--color-text); line-height: 1.4; }
 .loaded-import-toggle input { margin-top: 2px; }
+
+/* ── Inter-venue transfers ────────────────────────────────────────────── */
+.transfer-arrow { align-self: center; font-size: 18px; color: var(--color-text-muted); padding: 0 2px; }
+.transfer-onhand { margin: 0; }
+.transfer-onhand strong { color: var(--color-text); }
+.transfer-ok { margin: 0; padding: 9px 12px; border-radius: 9px; background: var(--tone-positive-bg); color: var(--tone-positive-fg); font-size: 13px; }
