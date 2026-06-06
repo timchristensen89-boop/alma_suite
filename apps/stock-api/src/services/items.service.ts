@@ -4,6 +4,7 @@ import {
   stockCategoryCreateInputSchema,
   stockCategoryUpdateInputSchema,
   stockItemBulkDeleteInputSchema,
+  stockItemBulkUpdateInputSchema,
   stockItemCreateInputSchema,
   stockItemUpdateInputSchema,
   venueStockItemUpdateInputSchema,
@@ -815,6 +816,43 @@ export const itemsService = {
     });
 
     return toVenueStockPayload(row);
+  },
+
+  async bulkUpdate(input: unknown): Promise<{ updated: number; venueUpdated: number }> {
+    const data = stockItemBulkUpdateInputSchema.parse(input);
+    const ids = Array.from(new Set(data.ids));
+
+    // Validate a non-null category exists so a bad id can't FK-error the batch.
+    if (data.categoryId) {
+      const category = await prisma.stockCategory.findUnique({ where: { id: data.categoryId }, select: { id: true } });
+      if (!category) throw new HttpError(400, 'Category not found.');
+    }
+
+    const patch: Prisma.StockItemUncheckedUpdateManyInput = {};
+    if (data.categoryId !== undefined) patch.categoryId = data.categoryId;
+    if (data.status !== undefined) patch.status = data.status;
+    if (data.countArea !== undefined) patch.countArea = data.countArea?.trim() || null;
+
+    let updated = 0;
+    if (Object.keys(patch).length > 0) {
+      const result = await prisma.stockItem.updateMany({ where: { id: { in: ids } }, data: patch });
+      updated = result.count;
+    }
+
+    let venueUpdated = 0;
+    const venue = data.venue?.trim();
+    if (venue && data.venueActive !== undefined) {
+      for (const stockItemId of ids) {
+        await prisma.venueStockItem.upsert({
+          where: { venue_stockItemId: { venue, stockItemId } },
+          create: { venue, stockItemId, active: data.venueActive },
+          update: { active: data.venueActive }
+        });
+        venueUpdated += 1;
+      }
+    }
+
+    return { updated, venueUpdated };
   },
 
   async deleteItems(input: unknown): Promise<{ deleted: number }> {

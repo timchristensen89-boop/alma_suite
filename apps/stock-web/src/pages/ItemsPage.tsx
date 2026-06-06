@@ -230,6 +230,14 @@ export function ItemsPage() {
   const [form, setForm] = useState<FormState>({ mode: 'closed' });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState(false);
+  const [bulkCategory, setBulkCategory] = useState('');
+  const [bulkStatus, setBulkStatus] = useState<'' | 'ACTIVE' | 'ARCHIVED'>('');
+  const [bulkCountAreaOn, setBulkCountAreaOn] = useState(false);
+  const [bulkCountArea, setBulkCountArea] = useState('');
+  const [bulkVenueActive, setBulkVenueActive] = useState<'' | 'active' | 'inactive'>('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [selectedVenue, setSelectedVenue] = useState('');
@@ -262,7 +270,7 @@ export function ItemsPage() {
     return () => {
       cancelled = true;
     };
-  }, [selectedVenue]);
+  }, [selectedVenue, reloadKey]);
 
   const activeVenue = selectedVenue || data?.scope?.venue || '';
 
@@ -452,6 +460,44 @@ export function ItemsPage() {
       }
       return next;
     });
+  }
+
+  async function applyBulkEdit() {
+    if (selectedIds.size === 0 || bulkBusy) return;
+    if (!canManage) {
+      setError('Manager access is required to edit stock items.');
+      return;
+    }
+    const payload: Record<string, unknown> = { ids: Array.from(selectedIds) };
+    if (bulkCategory === '__none__') payload.categoryId = null;
+    else if (bulkCategory) payload.categoryId = bulkCategory;
+    if (bulkStatus) payload.status = bulkStatus;
+    if (bulkCountAreaOn) payload.countArea = bulkCountArea.trim() || null;
+    if (bulkVenueActive && activeVenue) {
+      payload.venue = activeVenue;
+      payload.venueActive = bulkVenueActive === 'active';
+    }
+    if (!('categoryId' in payload) && !('status' in payload) && !('countArea' in payload) && !('venue' in payload)) {
+      setError('Choose at least one field to change.');
+      return;
+    }
+    setBulkBusy(true);
+    setError(null);
+    try {
+      await api<{ updated: number; venueUpdated: number }>('/api/items/bulk', { method: 'POST', body: JSON.stringify(payload) });
+      setSelectedIds(new Set());
+      setBulkOpen(false);
+      setBulkCategory('');
+      setBulkStatus('');
+      setBulkCountAreaOn(false);
+      setBulkCountArea('');
+      setBulkVenueActive('');
+      setReloadKey((key) => key + 1);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not bulk-edit items.');
+    } finally {
+      setBulkBusy(false);
+    }
   }
 
   async function deleteSelectedItems() {
@@ -773,16 +819,26 @@ export function ItemsPage() {
                       variant="ghost"
                       size="sm"
                       onClick={() => setSelectedIds(new Set())}
-                      disabled={deleting}
+                      disabled={deleting || bulkBusy}
                     >
                       Clear
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      size="sm"
+                      onClick={() => setBulkOpen((value) => !value)}
+                      disabled={deleting || bulkBusy || !canManage}
+                      title={canManage ? undefined : 'Manager access required'}
+                    >
+                      {bulkOpen ? 'Close bulk edit' : 'Bulk edit'}
                     </Button>
                     <Button
                       type="button"
                       variant="danger"
                       size="sm"
                       onClick={() => void deleteSelectedItems()}
-                      disabled={deleting || !canManage}
+                      disabled={deleting || bulkBusy || !canManage}
                       title={canManage ? undefined : 'Manager access required'}
                     >
                       {deleting
@@ -801,6 +857,57 @@ export function ItemsPage() {
                 )}
               </span>
             </div>
+            {bulkOpen && selectedIds.size > 0 ? (
+              <div className="stock-bulk-edit-panel">
+                <span className="stock-bulk-edit-title">Bulk edit {selectedIds.size} item{selectedIds.size === 1 ? '' : 's'} — only the fields you set are changed.</span>
+                <div className="stock-bulk-edit-grid">
+                  <Select
+                    label="Category"
+                    value={bulkCategory}
+                    onChange={(event) => setBulkCategory(event.currentTarget.value)}
+                    options={[
+                      { label: '— leave unchanged —', value: '' },
+                      { label: 'Uncategorised', value: '__none__' },
+                      ...(data?.categories ?? []).map((category) => ({ label: category.name, value: category.id }))
+                    ]}
+                  />
+                  <Select
+                    label="Status"
+                    value={bulkStatus}
+                    onChange={(event) => setBulkStatus(event.currentTarget.value as '' | 'ACTIVE' | 'ARCHIVED')}
+                    options={[
+                      { label: '— leave unchanged —', value: '' },
+                      { label: 'Active', value: 'ACTIVE' },
+                      { label: 'Archived', value: 'ARCHIVED' }
+                    ]}
+                  />
+                  <div className="stock-bulk-edit-area">
+                    <label className="stock-bulk-edit-check">
+                      <input type="checkbox" checked={bulkCountAreaOn} onChange={(event) => setBulkCountAreaOn(event.currentTarget.checked)} />
+                      <span>Set count area</span>
+                    </label>
+                    <Input label="" placeholder="e.g. Cool room" value={bulkCountArea} disabled={!bulkCountAreaOn} onChange={(event) => setBulkCountArea(event.currentTarget.value)} />
+                  </div>
+                  <Select
+                    label={activeVenue ? `Active at ${activeVenue}` : 'Active at venue'}
+                    value={bulkVenueActive}
+                    disabled={!activeVenue}
+                    onChange={(event) => setBulkVenueActive(event.currentTarget.value as '' | 'active' | 'inactive')}
+                    options={[
+                      { label: '— leave unchanged —', value: '' },
+                      { label: 'Active here', value: 'active' },
+                      { label: 'Inactive here', value: 'inactive' }
+                    ]}
+                  />
+                </div>
+                <div className="stock-bulk-edit-actions">
+                  <Button type="button" variant="ghost" size="sm" onClick={() => setBulkOpen(false)} disabled={bulkBusy}>Cancel</Button>
+                  <Button type="button" variant="primary" size="sm" onClick={() => void applyBulkEdit()} disabled={bulkBusy}>
+                    {bulkBusy ? 'Applying…' : `Apply to ${selectedIds.size}`}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             {viewMode === 'category' ? (
               <div className="stock-category-groups">
                 {itemCategoryGroups.length > 0 ? (

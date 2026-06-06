@@ -5314,6 +5314,19 @@ export const stockItemBulkDeleteInputSchema = z.object({
   })
 });
 
+// Bulk-edit selected items. Each field is optional — only provided fields are
+// applied. `categoryId`/`countArea` null clears the value; `venue`+`venueActive`
+// toggles the items' active state at that venue.
+export const stockItemBulkUpdateInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1, 'Select at least one item'),
+  categoryId: z.string().nullable().optional(),
+  status: stockItemStatusSchema.optional(),
+  countArea: z.string().nullable().optional(),
+  venue: z.string().optional(),
+  venueActive: z.boolean().optional()
+});
+export type StockItemBulkUpdateInput = z.infer<typeof stockItemBulkUpdateInputSchema>;
+
 export type StockCategoryCreateInput = z.infer<
   typeof stockCategoryCreateInputSchema
 >;
