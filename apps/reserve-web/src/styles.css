@@ -3043,3 +3043,20 @@ html[data-theme='dark'] .floor-plan-canvas.is-snap {
     linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
     linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
 }
+
+/* ── Square open-tab totals on the service map (P4) ───────────────────── */
+.service-table-tab {
+  display: inline-block; margin-top: 2px;
+  font-size: 11px; font-weight: 800; color: #2F4129;
+  background: rgba(63, 122, 78, 0.16); border-radius: 6px; padding: 1px 6px;
+}
+html[data-theme='dark'] .service-table-tab { color: #BFE6C8; background: rgba(63, 122, 78, 0.28); }
+
+.service-panel-tab { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--color-border); display: grid; gap: 8px; }
+.service-panel-tab-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.service-panel-tab-head strong { font-size: 18px; color: #2F4129; }
+html[data-theme='dark'] .service-panel-tab-head strong { color: #BFE6C8; }
+.service-tab-items { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.service-tab-items li { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; font-size: 12.5px; }
+.service-tab-items li span:last-child { color: var(--color-text-muted); white-space: nowrap; }
+.service-tab-items li.is-more { color: var(--color-text-muted); font-size: 12px; }

@@ -37,6 +37,8 @@ import {
   reserveTableCallCreateInputSchema,
   reserveTableCallUpdateInputSchema,
   type ReserveTableCall,
+  type ReserveSquareOrdersPayload,
+  type ReserveSquareTableOrder,
   type ReserveReservation,
   type ReserveServiceStage,
   type ReserveReservationStatus,
@@ -50,6 +52,7 @@ import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { createReservationManageToken, reservationManageUrl, verifyReservationManageToken } from '../lib/reservation-manage-token.js';
 import { mailService } from './mail.service.js';
+import { integrationService } from './integration.service.js';
 import { buildGuestTimeline, recalculateAutoTagsForGuest } from './marketing.service.js';
 
 const stripe = env.stripe.secretKey
@@ -683,6 +686,12 @@ async function listPublicSlots(input: ReturnType<typeof reservePublicAvailabilit
 
 function actorName(actor: AuthUser): string | null {
   return `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || null;
+}
+
+// Trailing number on a table label / ticket name, e.g. "Table 12" → "12".
+function tableTrailingNumber(value: string): string | null {
+  const match = value.match(/(\d+)\s*$/);
+  return match ? match[1]! : null;
 }
 
 function toTableCallPayload(row: {
@@ -2099,6 +2108,71 @@ export const reserveService = {
     }
     const updated = await prisma.reserveTableCall.update({ where: { id }, data: patch });
     return toTableCallPayload(updated);
+  },
+
+  // ── Live Square open-ticket totals per table (service map) ──────────────
+  async squareTableOrders(actor: AuthUser, requestedVenue?: string | null): Promise<ReserveSquareOrdersPayload> {
+    const venue = actorVenueScope(actor, requestedVenue ?? undefined, 'Reserve');
+    const venues = venue
+      ? [venue]
+      : Array.from(new Set((await prisma.reserveTable.findMany({
+          where: { isActive: true },
+          select: { venue: true },
+          distinct: ['venue']
+        })).map((row) => row.venue)));
+    if (venues.length === 0) return { configured: false, orders: [], unmatched: 0 };
+
+    let configured = false;
+    let unmatched = 0;
+    const orders: ReserveSquareTableOrder[] = [];
+
+    for (const v of venues) {
+      const tables = await prisma.reserveTable.findMany({
+        where: { venue: v, isActive: true },
+        select: { id: true, label: true }
+      });
+      // Match a Square ticket name to a table by exact label first, then by the
+      // trailing number on each (so "Table 12" / "T12" / "12" all hit table 12).
+      const byLabel = new Map<string, { id: string; label: string }>();
+      const byNumber = new Map<string, { id: string; label: string }>();
+      const numberDuplicated = new Set<string>();
+      for (const table of tables) {
+        byLabel.set(table.label.trim().toLowerCase(), table);
+        const num = tableTrailingNumber(table.label);
+        if (num) {
+          if (byNumber.has(num)) numberDuplicated.add(num);
+          else byNumber.set(num, table);
+        }
+      }
+
+      const result = await integrationService.fetchOpenSquareOrders(v).catch(() => ({ configured: false, orders: [] as Awaited<ReturnType<typeof integrationService.fetchOpenSquareOrders>>['orders'] }));
+      if (result.configured) configured = true;
+
+      for (const order of result.orders) {
+        const key = order.ticketName.trim().toLowerCase();
+        let table = byLabel.get(key);
+        if (!table) {
+          const num = tableTrailingNumber(order.ticketName);
+          if (num && !numberDuplicated.has(num)) table = byNumber.get(num);
+        }
+        if (!table) {
+          unmatched += 1;
+          continue;
+        }
+        orders.push({
+          tableId: table.id,
+          tableLabel: table.label,
+          venue: v,
+          ticketName: order.ticketName,
+          totalCents: order.totalCents,
+          itemCount: order.itemCount,
+          openedAt: order.openedAt,
+          lineItems: order.lineItems
+        });
+      }
+    }
+
+    return { configured, orders, unmatched };
   },
 
   async createPublicSetupIntent(input: unknown): Promise<ReservePublicSetupIntentResponse> {

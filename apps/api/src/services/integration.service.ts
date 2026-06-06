@@ -497,6 +497,9 @@ type SquareOrder = {
   id?: string;
   location_id?: string;
   state?: string;
+  ticket_name?: string;
+  name?: string;
+  total_money?: SquareMoney;
   created_at?: string;
   closed_at?: string;
   line_items?: SquareOrderLineItem[];
@@ -1318,6 +1321,25 @@ async function searchSquareOrders(input: {
   }
 
   return { connection, orders, tokenStatus, limited: Boolean(cursor) };
+}
+
+// Live open tickets/orders (state OPEN) for the given locations — used by the
+// Reserve service map to show what each table is currently spending. No date
+// filter: open tabs can have been opened any time today.
+async function searchSquareOpenOrders(input: { connection: IntegrationConnection; locationIds: string[]; limit?: number }) {
+  let connection = input.connection;
+  const body: Prisma.InputJsonObject = {
+    location_ids: input.locationIds,
+    limit: Math.min(200, input.limit ?? 200),
+    return_entries: false,
+    query: {
+      filter: { state_filter: { states: ['OPEN'] } },
+      sort: { sort_field: 'CREATED_AT', sort_order: 'DESC' }
+    }
+  };
+  const response = await squarePostJson<SquareOrdersSearchResponse>('/orders/search', body, { connection });
+  connection = response.connection;
+  return { connection, orders: response.data.orders ?? [], tokenStatus: response.tokenStatus };
 }
 
 function squarePaymentAmountCents(payment: SquarePayment) {
@@ -2377,6 +2399,89 @@ async function recordWebhook(provider: Provider, rawBody: string, accountKey: Sq
 
 export const integrationService = {
   normaliseProvider,
+
+  // Live open Square tickets for a venue — used by the Reserve service map. Walks
+  // every connected Square account, finds the location(s) matching the venue, and
+  // returns each open ticket with its name (table identifier), total and items.
+  async fetchOpenSquareOrders(venue: string): Promise<{
+    configured: boolean;
+    orders: Array<{
+      ticketName: string;
+      locationId: string | null;
+      totalCents: number;
+      itemCount: number;
+      openedAt: string | null;
+      lineItems: Array<{ name: string; quantity: string; totalCents: number }>;
+    }>;
+  }> {
+    const target = venue.trim();
+    if (!target) return { configured: false, orders: [] };
+    let configured = false;
+    const orders: Array<{
+      ticketName: string;
+      locationId: string | null;
+      totalCents: number;
+      itemCount: number;
+      openedAt: string | null;
+      lineItems: Array<{ name: string; quantity: string; totalCents: number }>;
+    }> = [];
+
+    for (const accountKey of SQUARE_ACCOUNT_KEYS) {
+      let connection: IntegrationConnection;
+      try {
+        connection = await connectedSquareConnection(accountKey);
+      } catch {
+        continue; // account not connected — skip quietly
+      }
+      configured = true;
+
+      let locations: SquareLocation[];
+      try {
+        const locResp = await listSquareLocations(connection);
+        connection = locResp.connection;
+        locations = locResp.locations;
+      } catch {
+        continue;
+      }
+
+      const locationIds = locations
+        .filter((loc) => Boolean(loc.id) && squareLocationMatchesVenue(loc, target))
+        .map((loc) => loc.id as string);
+      if (locationIds.length === 0) continue;
+
+      try {
+        const result = await searchSquareOpenOrders({ connection, locationIds });
+        for (const order of result.orders) {
+          const ticketName = (order.ticket_name ?? order.name ?? '').trim();
+          if (!ticketName) continue;
+          const lineItems = (order.line_items ?? []).map((line) => ({
+            name: line.name ?? line.variation_name ?? 'Item',
+            quantity: line.quantity ?? '1',
+            totalCents: squareOrderLineGrossCents(line)
+          }));
+          const orderTotalCents = typeof order.total_money?.amount === 'number'
+            ? Math.max(0, Math.round(order.total_money.amount))
+            : lineItems.reduce((sum, line) => sum + line.totalCents, 0);
+          const itemCount = lineItems.reduce((sum, line) => {
+            const qty = Number(line.quantity);
+            return sum + (Number.isFinite(qty) && qty > 0 ? qty : 1);
+          }, 0);
+          orders.push({
+            ticketName,
+            locationId: order.location_id ?? null,
+            totalCents: orderTotalCents,
+            itemCount,
+            openedAt: order.created_at ?? null,
+            lineItems
+          });
+        }
+      } catch {
+        continue;
+      }
+    }
+
+    return { configured, orders };
+  },
 
   metaStatus,
 

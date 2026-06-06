@@ -441,3 +441,13 @@ reserveRouter.patch('/calls/:id', requireManager, async (req, res, next) => {
     next(error);
   }
 });
+
+// Live Square open-ticket totals matched to tables, for the service map.
+reserveRouter.get('/square-orders', requireManager, async (req, res, next) => {
+  try {
+    if (!req.user) throw new Error('Not authenticated');
+    res.json(await reserveService.squareTableOrders(req.user, typeof req.query.venue === 'string' ? req.query.venue : undefined));
+  } catch (error) {
+    next(error);
+  }
+});
