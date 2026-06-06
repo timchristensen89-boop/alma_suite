@@ -1139,6 +1139,15 @@ function StocktakeLinesTable({
   canManageReview: boolean;
   onChanged: () => void;
 }) {
+  // Category groups start collapsed; `expanded` holds the ones the user opened.
+  const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
+  const toggleGroup = (key: string) =>
+    setExpanded((current) => {
+      const next = new Set(current);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
   if (detail.lines.length === 0) return <p className="subtle">This stocktake has no recorded lines.</p>;
 
   const summary = varianceSummary(detail);
@@ -1178,9 +1187,31 @@ function StocktakeLinesTable({
       ) : (
         <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
       )}
-      {[...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([location, lines]) => (
-        <div key={location} className="stocktake-line-group">
-          <h4 className="stocktake-line-group-title">{location}</h4>
+      <div className="stocktake-groups-toolbar">
+        <span className="subtle">{groups.size} categor{groups.size === 1 ? 'y' : 'ies'}</span>
+        <button
+          type="button"
+          className="stocktake-groups-toggle"
+          onClick={() => {
+            const allKeys = [...groups.keys()];
+            const allOpen = allKeys.length > 0 && allKeys.every((key) => expanded.has(key));
+            setExpanded(allOpen ? new Set() : new Set(allKeys));
+          }}
+        >
+          {[...groups.keys()].length > 0 && [...groups.keys()].every((key) => expanded.has(key)) ? 'Collapse all' : 'Expand all'}
+        </button>
+      </div>
+      {[...groups.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([location, lines]) => {
+        const isOpen = expanded.has(location);
+        const groupValue = lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0);
+        return (
+        <div key={location} className={`stocktake-line-group ${isOpen ? 'is-open' : 'is-collapsed'}`}>
+          <button type="button" className="stocktake-line-group-title" onClick={() => toggleGroup(location)} aria-expanded={isOpen}>
+            <span className="stocktake-group-caret" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
+            <span className="stocktake-group-name">{location}</span>
+            <span className="stocktake-group-meta">{lines.length} item{lines.length === 1 ? '' : 's'}{groupValue ? ` · ${formatCurrency(groupValue)}` : ''}</span>
+          </button>
+          {isOpen ? (
           <table className="recipe-lines-table">
             <thead>
               <tr>
@@ -1237,8 +1268,10 @@ function StocktakeLinesTable({
               })}
             </tbody>
           </table>
+          ) : null}
         </div>
-      ))}
+        );
+      })}
       <StocktakeMovementReview
         detail={detail}
         canManageReview={canManageReview}

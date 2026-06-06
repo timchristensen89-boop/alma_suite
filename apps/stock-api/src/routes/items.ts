@@ -104,6 +104,15 @@ itemsRouter.delete('/', async (req, res, next) => {
   }
 });
 
+itemsRouter.post('/bulk', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await itemsService.bulkUpdate(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.patch('/:id', async (req, res, next) => {
   try {
     requireStockManager(req.user);
