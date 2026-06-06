@@ -148,3 +148,12 @@ export function costForRate(rate: StaffCostingRate, split: { ordinary: number; o
   const overtime = rate.overtimeRateCents ? split.overtime * rate.overtimeRateCents : 0;
   return Math.round(ordinary + overtime);
 }
+
+// Salaried full-timers are paid a fixed weekly salary (incl. super) every week
+// regardless of hours worked. `ordinaryRateCents` already bakes in super and is
+// salary ÷ 45h, so the weekly cost is that rate across the 45h ordinary week.
+// Returns 0 for anyone who isn't salaried (they're costed on hours instead).
+export function weeklyFixedCostCents(rate: StaffCostingRate): number {
+  if (!rate.appliesOvertime || !rate.ordinaryRateCents) return 0;
+  return Math.round(rate.ordinaryRateCents * FULL_TIME_ORDINARY_WEEKLY_HOURS);
+}
