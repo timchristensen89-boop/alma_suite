@@ -431,6 +431,79 @@ function RecapCard({ title, period, compare, compareLabel }: { title: string; pe
   );
 }
 
+function RecapCharts({ recap }: { recap: MonthlyRecapPayload }) {
+  const cur = recap.monthCurrent;
+  const prev = recap.monthPriorYear;
+  const metrics = [
+    { key: 'sales', label: 'Sales', cur: cur.salesCents, prev: prev.salesCents },
+    { key: 'wages', label: 'Wages', cur: cur.wageCents, prev: prev.wageCents },
+    { key: 'cogs', label: 'COGS', cur: cur.cogsCents, prev: prev.cogsCents },
+    { key: 'prime', label: 'Prime cost', cur: cur.primeCostCents, prev: prev.primeCostCents }
+  ];
+  const ratios = [
+    { key: 'wage', label: 'Wage % of sales', pct: cur.wagePct, target: recap.targets.wagePct },
+    { key: 'cogs', label: 'COGS % of sales', pct: cur.cogsPct, target: recap.targets.cogsPct },
+    { key: 'prime', label: 'Prime % of sales', pct: cur.primePct, target: recap.targets.primePct }
+  ];
+  return (
+    <div className="recap-charts">
+      <div className="recap-chart">
+        <span className="recap-chart-title">{cur.label} vs {prev.label}</span>
+        <div className="recap-bars">
+          {metrics.map((m) => {
+            const max = Math.max(m.cur, m.prev, 1);
+            return (
+              <div key={m.key} className="recap-bar-row">
+                <span className="recap-bar-label">{m.label}</span>
+                <div className="recap-bar-pair">
+                  <div className="recap-bar-track">
+                    <div className="recap-bar is-current" style={{ width: `${(m.cur / max) * 100}%` }} />
+                    <span>{formatCurrency(m.cur)}</span>
+                  </div>
+                  <div className="recap-bar-track">
+                    <div className="recap-bar is-prior" style={{ width: `${(m.prev / max) * 100}%` }} />
+                    <span>{formatCurrency(m.prev)}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <div className="recap-chart-legend">
+          <span><i className="recap-legend-dot is-current" /> {cur.label}</span>
+          <span><i className="recap-legend-dot is-prior" /> {prev.label}</span>
+        </div>
+      </div>
+
+      <div className="recap-chart">
+        <span className="recap-chart-title">Cost ratios vs target</span>
+        <div className="recap-gauges">
+          {ratios.map((r) => {
+            const pct = r.pct ?? 0;
+            const over = r.pct != null && pct > r.target;
+            const scaleMax = Math.max(pct, r.target, 1) * 1.3;
+            return (
+              <div key={r.key} className="recap-gauge-row">
+                <span className="recap-bar-label">{r.label}</span>
+                <div className="recap-gauge-track">
+                  <div className={`recap-gauge-fill ${over ? 'is-over' : 'is-under'}`} style={{ width: `${Math.min(100, (pct / scaleMax) * 100)}%` }} />
+                  <div className="recap-gauge-target" style={{ left: `${Math.min(100, (r.target / scaleMax) * 100)}%` }} title={`Target ${r.target}%`} />
+                </div>
+                <span className={`recap-gauge-value ${over ? 'is-over' : 'is-under'}`}>
+                  {r.pct == null ? '—' : `${pct.toFixed(1)}%`}<em> / {r.target}%</em>
+                </span>
+              </div>
+            );
+          })}
+        </div>
+        <div className="recap-chart-legend">
+          <span><i className="recap-legend-tick" /> Target</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function MonthlyRecapSection({ venues }: { venues: string[] }) {
   const [month, setMonth] = useState(() => {
     const d = new Date();
@@ -443,6 +516,9 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
   const [emailTo, setEmailTo] = useState('');
   const [emailMsg, setEmailMsg] = useState<{ tone: 'positive' | 'danger'; text: string } | null>(null);
   const [sending, setSending] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState<{ tone: 'positive' | 'danger'; text: string } | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -454,7 +530,29 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
       .catch((e) => { if (active) setError(e instanceof Error ? e.message : 'Could not load the recap.'); })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
-  }, [month, venue]);
+  }, [month, venue, reloadKey]);
+
+  async function syncSources() {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg(null);
+    try {
+      const res = await staffApi<{ xero: boolean; deputy: boolean; errors: string[] }>('/api/reports/monthly-recap/sync', {
+        method: 'POST',
+        body: JSON.stringify({ month, venue: venue || undefined })
+      });
+      const parts = [res.xero ? 'Xero ✓' : 'Xero ✗', res.deputy ? 'Deputy ✓' : 'Deputy ✗'];
+      setSyncMsg({
+        tone: res.errors.length ? 'danger' : 'positive',
+        text: `${parts.join(' · ')}${res.errors.length ? ` — ${res.errors.join('; ')}` : ' — refreshed'}`
+      });
+      setReloadKey((key) => key + 1);
+    } catch (e) {
+      setSyncMsg({ tone: 'danger', text: e instanceof Error ? e.message : 'Sync failed.' });
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   function shiftMonth(deltaMonths: number) {
     const y = Number(month.slice(0, 4));
@@ -505,8 +603,12 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
           <Input label="Month" type="month" value={month} onChange={(event) => setMonth(event.currentTarget.value)} />
           <button type="button" className="recap-nav" onClick={() => shiftMonth(1)} aria-label="Next month">›</button>
           <Select label="Venue" value={venue} onChange={(event) => setVenue(event.currentTarget.value)} options={[{ label: 'All venues', value: '' }, ...venues.map((v) => ({ label: v, value: v }))]} />
+          <button type="button" className="recap-sync" onClick={() => void syncSources()} disabled={syncing} title="Pull supplier bills from Xero and timesheets from Deputy for this month, then refresh">
+            {syncing ? 'Syncing…' : '↻ Sync Xero & Deputy'}
+          </button>
           <button type="button" className="recap-export" onClick={exportCsv} disabled={!recap}>Export CSV</button>
         </div>
+        {syncMsg ? <p className={syncMsg.tone === 'danger' ? 'recap-sync-msg is-error' : 'recap-sync-msg'}>{syncMsg.text}</p> : null}
 
         {loading ? (
           <Spinner label="Loading recap…" />
@@ -518,6 +620,8 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
               <RecapCard title={recap.monthCurrent.label} period={recap.monthCurrent} compare={recap.monthPriorYear} compareLabel="last year" />
               <RecapCard title={recap.ytdLabel} period={recap.ytdCurrent} compare={recap.ytdPriorYear} compareLabel="prior FY" />
             </div>
+
+            <RecapCharts recap={recap} />
 
             <h4 className="recap-section-title">Recommendations</h4>
             <div className="recap-recs">

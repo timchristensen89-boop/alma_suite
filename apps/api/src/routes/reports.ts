@@ -75,6 +75,14 @@ reportsRouter.post('/monthly-recap/email', requireManager, async (req, res, next
   }
 });
 
+reportsRouter.post('/monthly-recap/sync', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.syncMonthlyRecapSources(req.body, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.get('/menu-profitability', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.menuProfitability({
