@@ -3010,3 +3010,36 @@ html[data-theme='dark'] .alma-preview-banner-text {
   padding: 7px 14px; font-size: 12.5px; font-weight: 600; cursor: pointer;
 }
 .service-call-custom button:disabled, .service-call-presets button:disabled { opacity: 0.5; cursor: default; }
+
+/* ── Floor-plan zones + snap grid (P3) ────────────────────────────────── */
+.floor-plan-zone {
+  position: absolute;
+  z-index: 0;
+  border: 1px dashed rgba(31, 53, 36, 0.16);
+  border-radius: 16px;
+  pointer-events: none;
+}
+.floor-plan-zone-label {
+  position: absolute;
+  top: 6px;
+  left: 10px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: rgba(31, 53, 36, 0.5);
+}
+html[data-theme='dark'] .floor-plan-zone { border-color: rgba(255, 255, 255, 0.14); }
+html[data-theme='dark'] .floor-plan-zone-label { color: rgba(255, 255, 255, 0.45); }
+
+.floor-plan-canvas.is-snap {
+  background-image:
+    linear-gradient(rgba(31, 53, 36, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(31, 53, 36, 0.06) 1px, transparent 1px);
+  background-size: 5% 5%;
+}
+html[data-theme='dark'] .floor-plan-canvas.is-snap {
+  background-image:
+    linear-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+}

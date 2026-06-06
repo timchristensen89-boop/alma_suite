@@ -2162,6 +2162,13 @@ function callAgeLabel(iso: string, nowMs: number): string {
   return mins < 1 ? 'just now' : `${mins}m`;
 }
 
+// Stable translucent tint per floor-plan zone (area name).
+function zoneTint(area: string): string {
+  let hash = 0;
+  for (let i = 0; i < area.length; i += 1) hash = (hash * 31 + area.charCodeAt(i)) % 360;
+  return `hsla(${hash}, 45%, 52%, 0.10)`;
+}
+
 function ServiceBoard({
   tables,
   reservations,
@@ -2417,7 +2424,10 @@ function FloorPlanSection({
   const [draggingReservationId, setDraggingReservationId] = useState<string | null>(null);
   const [dropTargetTableId, setDropTargetTableId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [snapToGrid, setSnapToGrid] = useState(true);
   const canvasRef = useRef<HTMLDivElement | null>(null);
+  const GRID_PCT = 2.5;
+  const applySnap = (value: number) => (snapToGrid ? Math.round(value / GRID_PCT) * GRID_PCT : value);
 
   // Re-seed from the server when the table set changes — but never mid-edit,
   // so in-progress arranging isn't clobbered. After "Done arranging" the parent
@@ -2457,9 +2467,23 @@ function FloorPlanSection({
   function handleCanvasMouseMove(event: ReactMouseEvent<HTMLDivElement>) {
     if (!draggingTableId || !canvasRef.current) return;
     const rect = canvasRef.current.getBoundingClientRect();
-    const x = floorClamp(((event.clientX - rect.left) / rect.width) * 100, 4, 96);
-    const y = floorClamp(((event.clientY - rect.top) / rect.height) * 100, 4, 94);
+    const x = floorClamp(applySnap(((event.clientX - rect.left) / rect.width) * 100), 4, 96);
+    const y = floorClamp(applySnap(((event.clientY - rect.top) / rect.height) * 100), 4, 94);
     patchGeo(draggingTableId, { posX: floorRound(x), posY: floorRound(y) });
+  }
+
+  function tidyToGrid() {
+    setGeometry((current) => {
+      const next: Record<string, TableGeo> = {};
+      for (const [id, geo] of Object.entries(current)) {
+        next[id] = {
+          ...geo,
+          posX: floorRound(Math.round(geo.posX / GRID_PCT) * GRID_PCT),
+          posY: floorRound(Math.round(geo.posY / GRID_PCT) * GRID_PCT)
+        };
+      }
+      return next;
+    });
   }
   function handleCanvasMouseUp() {
     setDraggingTableId(null);
@@ -2528,6 +2552,32 @@ function FloorPlanSection({
   const selectedTable = selectedIndex >= 0 ? tables[selectedIndex] : null;
   const selectedGeo = selectedTable ? geoFor(selectedTable, selectedIndex) : null;
 
+  // Zones — derived from each table's area, drawn as labelled regions behind
+  // the tables so the floor reads as grouped sections (Bar, Terrace, Dining…).
+  const zones = (() => {
+    const byArea = new Map<string, TableGeo[]>();
+    tables.forEach((table, index) => {
+      const geo = geoFor(table, index);
+      const list = byArea.get(table.area) ?? [];
+      list.push(geo);
+      byArea.set(table.area, list);
+    });
+    const pad = 3;
+    return Array.from(byArea.entries()).map(([area, geos]) => {
+      const minX = Math.min(...geos.map((g) => g.posX - g.width / 2));
+      const maxX = Math.max(...geos.map((g) => g.posX + g.width / 2));
+      const minY = Math.min(...geos.map((g) => g.posY - g.height / 2));
+      const maxY = Math.max(...geos.map((g) => g.posY + g.height / 2));
+      return {
+        area,
+        left: Math.max(0, minX - pad),
+        top: Math.max(0, minY - pad),
+        width: Math.min(100, maxX - minX + pad * 2),
+        height: Math.min(100, maxY - minY + pad * 2)
+      };
+    });
+  })();
+
   if (tables.length === 0) {
     return (
       <Card title="Floor plan" subtitle={`No tables configured for ${venue} yet — add tables in the Tables card first.`}>
@@ -2560,6 +2610,15 @@ function FloorPlanSection({
     >
       {editMode ? (
         <div className="floor-plan-editor-bar">
+          <div className="floor-plan-editor-group">
+            <button
+              type="button"
+              className={snapToGrid ? 'is-active' : ''}
+              onClick={() => setSnapToGrid((value) => !value)}
+              title="Snap tables to a grid while dragging"
+            >⊞ Grid</button>
+            <button type="button" onClick={tidyToGrid} title="Snap every table to the grid">Tidy</button>
+          </div>
           {selectedTable && selectedGeo ? (
             <>
               <span className="floor-plan-editor-title">{selectedTable.label}</span>
@@ -2604,12 +2663,21 @@ function FloorPlanSection({
         {/* Canvas */}
         <div
           ref={canvasRef}
-          className={`floor-plan-canvas ${editMode ? 'is-editing' : ''}`}
+          className={`floor-plan-canvas ${editMode ? 'is-editing' : ''}${editMode && snapToGrid ? ' is-snap' : ''}`}
           onMouseMove={handleCanvasMouseMove}
           onMouseUp={handleCanvasMouseUp}
           onMouseLeave={handleCanvasMouseUp}
           onMouseDown={() => { if (editMode) setSelectedTableId(null); }}
         >
+          {zones.map((zone) => (
+            <div
+              key={zone.area}
+              className="floor-plan-zone"
+              style={{ left: `${zone.left}%`, top: `${zone.top}%`, width: `${zone.width}%`, height: `${zone.height}%`, background: zoneTint(zone.area) }}
+            >
+              <span className="floor-plan-zone-label">{zone.area}</span>
+            </div>
+          ))}
           {tables.map((table, index) => {
             const geo = geoFor(table, index);
             const tableBookings = reservationsByTable.get(table.id) ?? [];
