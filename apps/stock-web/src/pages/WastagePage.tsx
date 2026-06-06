@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import type { StockItem, StockWastagePayload, StockWastageReason } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
+import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 
@@ -61,10 +62,6 @@ export function WastagePage() {
   const venueOptions = [
     ...(data?.scope.admin ? [{ label: 'All venues', value: '' }] : []),
     ...(data?.venues ?? []).map((venue) => ({ label: venue, value: venue }))
-  ];
-  const itemOptions = [
-    { label: 'Choose item', value: '' },
-    ...(data?.items ?? []).map((item) => ({ label: `${item.name}${item.sku ? ` · ${item.sku}` : ''}`, value: item.id }))
   ];
   const totals = useMemo(() => ({
     count: data?.records.length ?? 0,
@@ -164,15 +161,14 @@ export function WastagePage() {
       <div className="stock-operations-grid">
         <Card title="Record wastage" subtitle="Use clear reasons so managers can spot repeat issues.">
           <form className="stock-operation-form" onSubmit={submit}>
-            <Select
+            <StockItemPicker
               label="Item"
+              items={data?.items ?? []}
               value={draft.stockItemId}
-              onChange={(event) => {
-                const el = event.currentTarget;
-                const item = data?.items.find((candidate) => candidate.id === el.value);
-                setDraft((current) => ({ ...current, stockItemId: el.value, unit: itemUnit(item) }));
+              onChange={(id) => {
+                const item = data?.items.find((candidate) => candidate.id === id);
+                setDraft((current) => ({ ...current, stockItemId: id, unit: itemUnit(item) }));
               }}
-              options={itemOptions}
             />
             <div className="stock-filter-toolbar">
               <Input label="Quantity" type="number" min="0.01" step="0.01" value={draft.quantity} onChange={(event) => { const el = event.currentTarget; setDraft((current) => ({ ...current, quantity: el.value })); }} />

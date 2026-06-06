@@ -2158,3 +2158,14 @@ html[data-theme='dark'] {
 .transfer-onhand { margin: 0; }
 .transfer-onhand strong { color: var(--color-text); }
 .transfer-ok { margin: 0; padding: 9px 12px; border-radius: 9px; background: var(--tone-positive-bg); color: var(--tone-positive-fg); font-size: 13px; }
+
+/* ── StockItemPicker: Frequent section divider ────────────────────────── */
+.item-search-section-label {
+  padding: 7px 12px 3px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted);
+  pointer-events: none;
+}
