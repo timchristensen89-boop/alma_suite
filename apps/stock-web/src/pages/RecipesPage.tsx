@@ -352,6 +352,29 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     setRecipeGroupsInitialised(true);
   }, [recipeCategoryGroupIds, recipeGroupsInitialised]);
 
+  // Deep link: /recipes?recipe=<id> opens that recipe straight into the editor
+  // (used by the "Edit recipe" links in Reports). The param is then stripped so
+  // a refresh doesn't reopen it.
+  useEffect(() => {
+    const deepId = new URLSearchParams(window.location.search).get('recipe');
+    if (!deepId) return;
+    let active = true;
+    void (async () => {
+      try {
+        const full = await api<RecipeWithLines>(`/api/recipes/${deepId}`);
+        if (active) setForm({ mode: 'edit', recipe: full });
+      } catch {
+        /* recipe may not exist / no access — ignore */
+      } finally {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('recipe');
+        window.history.replaceState({}, '', url.toString());
+      }
+    })();
+    return () => { active = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function toggleRow(recipe: Recipe) {
     if (expandedId === recipe.id) {
       setExpandedId(null);

@@ -983,6 +983,26 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
   // Recipe popup opened from a clickable menu-profitability row.
   const [recipePreview, setRecipePreview] = useState<{ id: string; title: string | null } | null>(null);
+  // Menu-engineering buckets that are expanded (collapsed by default).
+  const [expandedBuckets, setExpandedBuckets] = useState<Set<string>>(() => new Set());
+  const toggleBucket = (name: string) =>
+    setExpandedBuckets((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  // Open a recipe in the Stock app (new tab) via the suite handoff so it stays
+  // signed in — for editing the recipe behind a flagged/menu item.
+  function openRecipeInStock(recipeId: string) {
+    const href = `https://alma-stock-v18.web.app/recipes?recipe=${encodeURIComponent(recipeId)}`;
+    const handoff = (globalThis as typeof globalThis & { almaCreateSuiteHandoffUrl?: (h: string) => Promise<string> }).almaCreateSuiteHandoffUrl;
+    if (handoff) {
+      void handoff(href).then((url) => window.open(url, '_blank', 'noopener')).catch(() => window.open(href, '_blank', 'noopener'));
+    } else {
+      window.open(href, '_blank', 'noopener');
+    }
+  }
   // Top-of-report period preset (drives the date-range state below).
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
   const periodLabel = useMemo(
@@ -3134,7 +3154,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         salesCents: items.reduce((sum, r) => sum + r.netSalesCents, 0),
         topItems: items.slice(0, 4).map((r) => r.squareItem),
         meaning: bucketMeta[bucket].meaning,
-        action: bucketMeta[bucket].action
+        action: bucketMeta[bucket].action,
+        items
       };
     });
 
@@ -3446,20 +3467,57 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 ? `${bucketClassifiable.length} costed items classified by popularity (vs ${popMedian.toLocaleString(undefined, { maximumFractionDigits: 0 })} median units sold) × margin (vs ${foodCostMedian.toFixed(0)}% median food cost).`
                 : 'Buckets activate once items have both Square sales and a recipe cost — cost the items in the worklist above to populate them.'}
             </p>
-            <div className="table-scroll">
-              <SortableTable
-                rows={bucketRows}
-                rowKey={(row) => row.bucket}
-                defaultSortKey="sales"
-                columns={[
-                  { key: 'bucket', label: 'Bucket', sortValue: (r) => r.bucket, render: (r) => <Badge tone={r.tone}>{r.bucket}</Badge> },
-                  { key: 'count', label: 'Items', align: 'right', sortValue: (r) => r.count, render: (r) => r.count.toLocaleString() },
-                  { key: 'sales', label: 'Net sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
-                  { key: 'examples', label: 'Examples', sortValue: (r) => r.topItems.join(', '), render: (r) => <span className="subtle">{r.topItems.length ? r.topItems.join(', ') : '—'}</span> },
-                  { key: 'meaning', label: 'Meaning', sortValue: (r) => r.meaning, render: (r) => r.meaning },
-                  { key: 'action', label: 'Usual action', sortValue: (r) => r.action, render: (r) => r.action }
-                ]}
-              />
+            <div className="menu-buckets">
+              {bucketRows.map((row) => {
+                const isOpen = expandedBuckets.has(row.bucket);
+                return (
+                  <div key={row.bucket} className={`menu-bucket ${isOpen ? 'is-open' : ''}`}>
+                    <button type="button" className="menu-bucket-head" onClick={() => toggleBucket(row.bucket)} aria-expanded={isOpen}>
+                      <span className="menu-bucket-caret" aria-hidden="true">{isOpen ? '▾' : '▸'}</span>
+                      <Badge tone={row.tone}>{row.bucket}</Badge>
+                      <span className="menu-bucket-meaning">{row.meaning}</span>
+                      <span className="menu-bucket-stats">
+                        <strong>{row.count}</strong> item{row.count === 1 ? '' : 's'} · <strong>{formatCurrency(row.salesCents)}</strong>
+                      </span>
+                    </button>
+                    {isOpen ? (
+                      <div className="menu-bucket-body">
+                        <p className="subtle menu-bucket-action">Usual action: {row.action}</p>
+                        {row.items.length === 0 ? (
+                          <p className="subtle">No items in this bucket.</p>
+                        ) : (
+                          <table className="report-table menu-bucket-table">
+                            <thead>
+                              <tr>
+                                <th>Item</th>
+                                <th style={{ textAlign: 'right' }}>Sold</th>
+                                <th style={{ textAlign: 'right' }}>Net sales</th>
+                                <th style={{ textAlign: 'right' }}>Food cost</th>
+                                <th />
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {row.items.map((item) => (
+                                <tr key={item.key}>
+                                  <td><strong>{item.squareItem}</strong>{item.almaRecipeTitle ? <span className="subtle"> · {item.almaRecipeTitle}</span> : null}</td>
+                                  <td style={{ textAlign: 'right' }}>{item.quantitySold.toLocaleString()}</td>
+                                  <td style={{ textAlign: 'right' }}>{formatCurrency(item.netSalesCents)}</td>
+                                  <td style={{ textAlign: 'right' }}>{item.foodCostPercent == null ? '—' : `${item.foodCostPercent.toFixed(1)}%`}</td>
+                                  <td style={{ textAlign: 'right' }}>
+                                    {item.almaRecipeId ? (
+                                      <button type="button" className="menu-bucket-recipe-link" onClick={() => openRecipeInStock(item.almaRecipeId!)}>Edit recipe ↗</button>
+                                    ) : null}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
             {bucketClassifiable.length ? (
               <p className="subtle">Only items with both Square sales and a recipe cost are classified ({menuRows.length - bucketClassifiable.length} of {menuRows.length} rows still need a cost or mapping).</p>
@@ -3735,6 +3793,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <RecipePreviewModal
             recipeId={recipePreview.id}
             fallbackTitle={recipePreview.title}
+            onEditInStock={() => openRecipeInStock(recipePreview.id)}
             onClose={() => setRecipePreview(null)}
           />
         ) : null}

@@ -17,11 +17,13 @@ function formatMoney(cents: number | null | undefined): string {
 export function RecipePreviewModal({
   recipeId,
   fallbackTitle,
-  onClose
+  onClose,
+  onEditInStock
 }: {
   recipeId: string;
   fallbackTitle?: string | null;
   onClose: () => void;
+  onEditInStock?: () => void;
 }) {
   const [recipe, setRecipe] = useState<RecipeWithLines | null>(null);
   const [cost, setCost] = useState<RecipeCostPayload | null>(null);
@@ -62,9 +64,12 @@ export function RecipePreviewModal({
       <div className="recipe-preview" onClick={(event) => event.stopPropagation()}>
         <div className="recipe-preview-head">
           <h3>{recipe?.title ?? fallbackTitle ?? 'Recipe'}</h3>
-          <button type="button" className="recipe-preview-close" onClick={onClose} aria-label="Close">
-            ×
-          </button>
+          <div className="recipe-preview-head-actions">
+            {onEditInStock ? (
+              <button type="button" className="recipe-preview-edit" onClick={onEditInStock}>Edit in Stock ↗</button>
+            ) : null}
+            <button type="button" className="recipe-preview-close" onClick={onClose} aria-label="Close">×</button>
+          </div>
         </div>
 
         {loading ? <Spinner label="Loading recipe…" /> : null}
