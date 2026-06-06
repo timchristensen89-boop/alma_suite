@@ -5350,6 +5350,7 @@ export type StockTransfer = {
   toVenue: string;
   quantity: number;
   unit: string | null;
+  valueCents: number | null;
   notes: string | null;
   createdByName: string | null;
   createdAt: string;

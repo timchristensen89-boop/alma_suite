@@ -2352,6 +2352,7 @@ model StockTransfer {
   toVenue         String
   quantity        Float
   unit            String?
+  valueCents      Int?
   notes           String?
   createdByName   String?
   createdByUserId String?
