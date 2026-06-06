@@ -245,6 +245,7 @@ export function StocktakePage() {
   const [form, setForm] = useState<FormState>({ mode: 'closed' });
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
+  const [bulkBusy, setBulkBusy] = useState<null | 'submit' | 'approve'>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
   // Data quality snapshot from /api/items/data-quality — fed by Sprint 1's
@@ -519,6 +520,55 @@ export function StocktakePage() {
     }
   }
 
+  async function submitSelectedStocktakes() {
+    const targets = selectedStocktakes.filter((stocktake) => stocktake.status === 'IN_PROGRESS');
+    if (targets.length === 0) {
+      setError('Select one or more in-progress stocktakes to submit.');
+      return;
+    }
+    setBulkBusy('submit');
+    setError(null);
+    const results = await Promise.allSettled(
+      targets.map((stocktake) => api(`/api/stocktake/${stocktake.id}/submit`, { method: 'POST' }))
+    );
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    setSelectedIds(new Set());
+    setBulkBusy(null);
+    await load();
+    if (failed) setError(`Submitted ${results.length - failed} of ${results.length}; ${failed} could not be submitted.`);
+  }
+
+  async function approveSelectedStocktakes() {
+    if (!canManageReview) {
+      setError('Manager access is required to approve stocktakes.');
+      return;
+    }
+    const targets = selectedStocktakes.filter(
+      (stocktake) => (stocktake.status === 'SUBMITTED' || stocktake.status === 'REVIEWED') && !stocktake.appliedAt
+    );
+    if (targets.length === 0) {
+      setError('Select one or more submitted stocktakes to approve.');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Approve ${targets.length} stocktake${targets.length === 1 ? '' : 's'} to the ledger?`,
+      message:
+        'Each posts InventoryMovement ledger records and updates item balances. This cannot be run twice and is not bulk-reversible.',
+      confirmationText: 'APPROVE LEDGER'
+    });
+    if (!confirmed) return;
+    setBulkBusy('approve');
+    setError(null);
+    const results = await Promise.allSettled(
+      targets.map((stocktake) => api(`/api/stocktake/${stocktake.id}/approve`, { method: 'POST' }))
+    );
+    const failed = results.filter((r) => r.status === 'rejected').length;
+    setSelectedIds(new Set());
+    setBulkBusy(null);
+    await load();
+    if (failed) setError(`Approved ${results.length - failed} of ${results.length}; ${failed} could not be approved.`);
+  }
+
   const cardTitle =
     form.mode === 'create'
       ? 'New stocktake'
@@ -725,16 +775,35 @@ export function StocktakePage() {
                         variant="ghost"
                         size="sm"
                         onClick={() => setSelectedIds(new Set())}
-                        disabled={deleting}
+                        disabled={deleting || bulkBusy !== null}
                       >
                         Clear
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void submitSelectedStocktakes()}
+                        disabled={deleting || bulkBusy !== null}
+                      >
+                        {bulkBusy === 'submit' ? 'Submitting…' : 'Submit selected'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="primary"
+                        size="sm"
+                        onClick={() => void approveSelectedStocktakes()}
+                        disabled={deleting || bulkBusy !== null || !canManageReview}
+                        title={canManageReview ? 'Submit + post to the ledger' : 'Manager access required'}
+                      >
+                        {bulkBusy === 'approve' ? 'Approving…' : 'Approve selected'}
                       </Button>
                       <Button
                         type="button"
                         variant="danger"
                         size="sm"
                         onClick={() => void deleteSelectedStocktakes()}
-                        disabled={deleting || !canManageReview}
+                        disabled={deleting || bulkBusy !== null || !canManageReview}
                         title={canManageReview ? undefined : 'Manager access required'}
                       >
                         {deleting

@@ -9,6 +9,7 @@ type TransferRow = {
   toVenue: string;
   quantity: number;
   unit: string | null;
+  valueCents: number | null;
   notes: string | null;
   createdByName: string | null;
   fromOnHandAfter: number | null;
@@ -26,6 +27,7 @@ function toPayload(row: TransferRow): StockTransfer {
     toVenue: row.toVenue,
     quantity: row.quantity,
     unit: row.unit,
+    valueCents: row.valueCents,
     notes: row.notes,
     createdByName: row.createdByName,
     createdAt: row.createdAt.toISOString(),
@@ -55,7 +57,7 @@ export const transfersService = {
     return prisma.$transaction(async (tx) => {
       const item = await tx.stockItem.findUnique({
         where: { id: data.stockItemId },
-        select: { id: true, name: true, onHand: true, parLevel: true, reorderPoint: true, unit: true, countUnit: true }
+        select: { id: true, name: true, onHand: true, parLevel: true, reorderPoint: true, unit: true, countUnit: true, avgCostCents: true }
       });
       if (!item) throw new HttpError(404, 'Stock item not found.');
 
@@ -80,6 +82,8 @@ export const transfersService = {
       await tx.venueStockItem.update({ where: { id: fromRow.id }, data: { onHand: fromAfter, active: true } });
       await tx.venueStockItem.update({ where: { id: toRow.id }, data: { onHand: toAfter, active: true } });
 
+      const valueCents = item.avgCostCents != null ? Math.round(data.quantity * item.avgCostCents) : null;
+
       const created = await tx.stockTransfer.create({
         data: {
           stockItemId: item.id,
@@ -87,6 +91,7 @@ export const transfersService = {
           toVenue,
           quantity: data.quantity,
           unit: (data.unit?.trim() || item.countUnit || item.unit) ?? null,
+          valueCents,
           notes: data.notes?.trim() || null,
           createdByName: `${actor.firstName ?? ''} ${actor.lastName ?? ''}`.trim() || null,
           createdByUserId: actor.id ?? null,
