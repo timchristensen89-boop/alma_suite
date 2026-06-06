@@ -8,7 +8,7 @@ import type {
   SquareMenuMappingSyncResult,
   SquareMenuAutoMatchResult
 } from '@alma/shared';
-import { Badge, Button, Card, EmptyState, Input, Select, Spinner } from '@alma/ui';
+import { Badge, Button, Card, EmptyState, Input, SearchSelect, Select, Spinner } from '@alma/ui';
 import { api } from '../../../web/src/lib/api';
 
 const ACCOUNT_LABELS: Record<SquareAccountKey, string> = {
@@ -287,26 +287,29 @@ export function SquareMenuMappingPage() {
                     Recipe cost: {recipeCost(mapping.almaRecipe?.estimatedCost)} · Margin: {marginLabel(mapping)}
                   </small>
                 </div>
-                <label className="field">
+                <div className="field">
                   <span>Alma recipe</span>
-                  <select value={selectedRecipes[mapping.id] ?? ''} onChange={(event) => { const value = event.currentTarget.value; setSelectedRecipes((current) => ({ ...current, [mapping.id]: value })); }}>
-                    <option value="">No recipe selected</option>
-                    {recipes.map((recipe) => (
-                      <option key={recipe.id} value={recipe.id}>
-                        {recipe.title} {recipe.venue ? `· ${recipe.venue}` : ''} · {recipeCost(recipe.estimatedCost)}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="field">
+                  <SearchSelect
+                    value={selectedRecipes[mapping.id] ?? ''}
+                    onChange={(value) => setSelectedRecipes((current) => ({ ...current, [mapping.id]: value }))}
+                    placeholder="Search recipes…"
+                    emptyLabel="No recipe selected"
+                    options={recipes.map((recipe) => ({
+                      value: recipe.id,
+                      label: `${recipe.title}${recipe.venue ? ` · ${recipe.venue}` : ''} · ${recipeCost(recipe.estimatedCost)}`
+                    }))}
+                  />
+                </div>
+                <div className="field">
                   <span>Stock item fallback</span>
-                  <select value={selectedStockItems[mapping.id] ?? ''} onChange={(event) => { const value = event.currentTarget.value; setSelectedStockItems((current) => ({ ...current, [mapping.id]: value })); }}>
-                    <option value="">No stock item selected</option>
-                    {stockItems.map((item) => (
-                      <option key={item.id} value={item.id}>{item.name} · {item.unit}</option>
-                    ))}
-                  </select>
-                </label>
+                  <SearchSelect
+                    value={selectedStockItems[mapping.id] ?? ''}
+                    onChange={(value) => setSelectedStockItems((current) => ({ ...current, [mapping.id]: value }))}
+                    placeholder="Search stock items…"
+                    emptyLabel="No stock item selected"
+                    options={stockItems.map((item) => ({ value: item.id, label: `${item.name} · ${item.unit}` }))}
+                  />
+                </div>
                 <div className="admin-row-actions square-menu-actions">
                   <Button type="button" onClick={() => updateMapping(mapping)} disabled={savingId === mapping.id}>Save mapping</Button>
                   <Button type="button" variant="secondary" onClick={() => updateMapping(mapping, { status: 'IGNORED' })} disabled={savingId === mapping.id}>Ignore</Button>
