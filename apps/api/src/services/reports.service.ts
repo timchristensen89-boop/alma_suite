@@ -30,6 +30,8 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { integrationService } from './integration.service.js';
+import { deputyService } from './deputy.service.js';
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
@@ -1619,6 +1621,36 @@ export const reportsService = {
       html: renderMonthlyRecapHtml(recap)
     });
     return { status: result.status, to: data.to, month: recap.month };
+  },
+
+  // Pull the data behind the recap straight from source: Xero supplier bills
+  // (purchases → COGS) and Deputy timesheets (→ wages). Looks back far enough
+  // to cover the start of the month being viewed. Sales come from Square, not
+  // these two, so they're left untouched.
+  async syncMonthlyRecapSources(input: unknown, actor: AuthUser) {
+    const query = reportsMonthlyRecapQuerySchema.parse(input ?? {});
+    const today = new Date();
+    const month = query.month ?? `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
+    const yy = Number(month.slice(0, 4));
+    const mm = Number(month.slice(5, 7));
+    const monthStart = new Date(yy, mm - 1, 1);
+    const lookbackDays = Math.min(180, Math.max(7, Math.ceil((today.getTime() - monthStart.getTime()) / 86_400_000) + 2));
+    const errors: string[] = [];
+    let xero = false;
+    let deputy = false;
+    try {
+      await integrationService.runScheduledXeroImport({ lookbackDays });
+      xero = true;
+    } catch (error) {
+      errors.push(`Xero: ${error instanceof Error ? error.message : 'sync failed'}`);
+    }
+    try {
+      await deputyService.syncTimesheetsNow(actor);
+      deputy = true;
+    } catch (error) {
+      errors.push(`Deputy: ${error instanceof Error ? error.message : 'sync failed'}`);
+    }
+    return { month, lookbackDays, xero, deputy, errors, ranAt: new Date().toISOString() };
   },
 
   // Cron entrypoint: email the just-finished month's recap (all venues) to the
