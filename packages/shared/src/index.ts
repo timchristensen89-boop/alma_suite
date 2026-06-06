@@ -2835,6 +2835,24 @@ export type ReserveTableCall = {
   resolvedAt: string | null;
   resolvedByName: string | null;
 };
+
+// Live Square open-ticket totals matched to Reserve tables (service map).
+export type ReserveSquareTableOrderLine = { name: string; quantity: string; totalCents: number };
+export type ReserveSquareTableOrder = {
+  tableId: string;
+  tableLabel: string;
+  venue: string;
+  ticketName: string;
+  totalCents: number;
+  itemCount: number;
+  openedAt: string | null;
+  lineItems: ReserveSquareTableOrderLine[];
+};
+export type ReserveSquareOrdersPayload = {
+  configured: boolean;
+  orders: ReserveSquareTableOrder[];
+  unmatched: number;
+};
 export type MarketingChannel = z.infer<typeof marketingChannelSchema>;
 export type MarketingCampaignStatus = z.infer<typeof marketingCampaignStatusSchema>;
 export type MarketingContentAssetType = z.infer<typeof marketingContentAssetTypeSchema>;

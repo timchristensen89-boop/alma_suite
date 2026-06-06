@@ -19,6 +19,8 @@ import type {
   ReserveTableCall,
   ReserveTableCallAction,
   ReserveTableCallType,
+  ReserveSquareTableOrder,
+  ReserveSquareOrdersPayload,
   ReserveDrinkPackage,
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
@@ -2162,6 +2164,10 @@ function callAgeLabel(iso: string, nowMs: number): string {
   return mins < 1 ? 'just now' : `${mins}m`;
 }
 
+function squareMoney(cents: number): string {
+  return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'AUD', maximumFractionDigits: cents % 100 === 0 ? 0 : 2 }).format(cents / 100);
+}
+
 // Stable translucent tint per floor-plan zone (area name).
 function zoneTint(area: string): string {
   let hash = 0;
@@ -2176,7 +2182,8 @@ function ServiceBoard({
   busy,
   calls,
   onCall,
-  onUpdateCall
+  onUpdateCall,
+  squareOrders
 }: {
   tables: ReserveTable[];
   reservations: ServiceReservation[];
@@ -2185,6 +2192,7 @@ function ServiceBoard({
   calls: ReserveTableCall[];
   onCall: (table: ReserveTable, type: ReserveTableCallType, message?: string) => void | Promise<void>;
   onUpdateCall: (id: string, action: ReserveTableCallAction) => void | Promise<void>;
+  squareOrders: ReserveSquareTableOrder[];
 }) {
   const [now, setNow] = useState(() => Date.now());
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
@@ -2224,10 +2232,16 @@ function ServiceBoard({
     callsByTable.set(call.tableId, list);
   }
 
+  const ordersByTable = new Map<string, ReserveSquareTableOrder>();
+  for (const order of squareOrders) {
+    if (order.tableId) ordersByTable.set(order.tableId, order);
+  }
+
   const selected = selectedTableId ? tables.find((t) => t.id === selectedTableId) ?? null : null;
   const selectedState = selectedTableId ? states.get(selectedTableId) ?? null : null;
   const selectedReservation = selectedState?.reservation ?? null;
   const selectedCalls = selectedTableId ? callsByTable.get(selectedTableId) ?? [] : [];
+  const selectedOrder = selectedTableId ? ordersByTable.get(selectedTableId) ?? null : null;
 
   if (tables.length === 0) {
     return <EmptyState title="No tables on the floor yet" description="Add tables in Settings → Tables and place them on the floor plan, then run service here." />;
@@ -2297,6 +2311,9 @@ function ServiceBoard({
                     <span className="service-table-timer">{state.minutes}m</span>
                   ) : state.tone === 'due' && r ? (
                     <span className="service-table-timer">{new Date(r.startsAt).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })}</span>
+                  ) : null}
+                  {ordersByTable.has(table.id) ? (
+                    <span className="service-table-tab">{squareMoney(ordersByTable.get(table.id)!.totalCents)}</span>
                   ) : null}
                 </div>
               </button>
@@ -2389,6 +2406,25 @@ function ServiceBoard({
                   <input value={customCall} maxLength={200} placeholder="Custom call…" onChange={(event) => setCustomCall(event.currentTarget.value)} />
                   <button type="submit" disabled={busy || !customCall.trim()}>Send</button>
                 </form>
+              </div>
+            ) : null}
+
+            {selectedOrder ? (
+              <div className="service-panel-tab">
+                <div className="service-panel-tab-head">
+                  <span className="service-panel-call-label">Open tab · Square</span>
+                  <strong>{squareMoney(selectedOrder.totalCents)}</strong>
+                </div>
+                <ul className="service-tab-items">
+                  {selectedOrder.lineItems.slice(0, 12).map((line, i) => (
+                    <li key={i}>
+                      <span>{Number(line.quantity) > 1 ? `${Number(line.quantity)}× ` : ''}{line.name}</span>
+                      <span>{squareMoney(line.totalCents)}</span>
+                    </li>
+                  ))}
+                  {selectedOrder.lineItems.length > 12 ? <li className="is-more">+{selectedOrder.lineItems.length - 12} more</li> : null}
+                  {selectedOrder.lineItems.length === 0 ? <li className="is-more">{selectedOrder.itemCount} item{selectedOrder.itemCount === 1 ? '' : 's'}</li> : null}
+                </ul>
               </div>
             ) : null}
           </aside>
@@ -2991,6 +3027,27 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }
   }
 
+  // Live Square open-ticket totals per table — polled while Service is open.
+  const [squareOrders, setSquareOrders] = useState<ReserveSquareTableOrder[]>([]);
+  const refreshSquareOrders = useCallback(async () => {
+    try {
+      const venueQuery = scopedVenueParam ? `?venue=${encodeURIComponent(scopedVenueParam)}` : '';
+      const payload = await api<ReserveSquareOrdersPayload>(`/api/reserve/square-orders${venueQuery}`);
+      setSquareOrders(payload.orders ?? []);
+    } catch {
+      /* background — Square may be disconnected; stay quiet */
+    }
+  }, [scopedVenueParam]);
+
+  useEffect(() => {
+    if (!showService) return;
+    void refreshSquareOrders();
+    const id = window.setInterval(() => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') void refreshSquareOrders();
+    }, 15000);
+    return () => window.clearInterval(id);
+  }, [showService, refreshSquareOrders]);
+
   useEffect(() => {
     const nextVenue = firstManagerVenue(user, scopedVenueParam);
     setReservationForm(defaultReservationForm(nextVenue));
@@ -3517,6 +3574,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   calls={calls}
                   onCall={sendTableCall}
                   onUpdateCall={updateTableCall}
+                  squareOrders={squareOrders}
                 />
               </Card>
             </section>
