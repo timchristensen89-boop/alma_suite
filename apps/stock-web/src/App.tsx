@@ -5,6 +5,7 @@ import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { StocktakePage } from './pages/StocktakePage';
+import { TransfersPage } from './pages/TransfersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
@@ -165,6 +166,7 @@ function StockAppShell() {
         <Route path="/" element={<DashboardPage />} />
         <Route path="/items" element={<ItemsPage />} />
         <Route path="/stocktake" element={<StocktakePage />} />
+        <Route path="/transfers" element={<TransfersPage />} />
         <Route path="/suppliers" element={<SuppliersPage />} />
         <Route path="/invoices" element={<InvoicesPage />} />
         <Route path="/deliveries" element={<DeliveriesPage />} />

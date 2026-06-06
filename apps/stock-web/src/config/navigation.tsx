@@ -6,7 +6,8 @@ import {
   IconRecipes,
   IconSettings,
   IconStocktake,
-  IconSuppliers
+  IconSuppliers,
+  IconTransfer
 } from '../lib/icons';
 import { SETTINGS_WEB_URL } from './suiteLinks';
 
@@ -40,6 +41,12 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Stocktakes',
     description: 'Periodic counts and variance',
     icon: <IconStocktake />
+  },
+  {
+    to: '/transfers',
+    label: 'Transfers',
+    description: 'Move stock between venues',
+    icon: <IconTransfer />
   },
   {
     to: '/suppliers',

@@ -5326,6 +5326,37 @@ export type StockItemBulkDeleteInput = z.infer<
   typeof stockItemBulkDeleteInputSchema
 >;
 export type VenueStockItemUpdateInput = z.infer<typeof venueStockItemUpdateInputSchema>;
+
+// Inter-venue stock transfer.
+export const stockTransferCreateInputSchema = z
+  .object({
+    stockItemId: z.string().min(1, 'Item is required'),
+    fromVenue: z.string().min(1, 'From venue is required'),
+    toVenue: z.string().min(1, 'To venue is required'),
+    quantity: z.coerce.number().positive('Quantity must be greater than zero'),
+    unit: z.string().optional().or(z.literal('')),
+    notes: z.string().max(300).optional().or(z.literal(''))
+  })
+  .refine((value) => value.fromVenue !== value.toVenue, {
+    message: 'From and To venues must be different',
+    path: ['toVenue']
+  });
+export type StockTransferCreateInput = z.infer<typeof stockTransferCreateInputSchema>;
+export type StockTransfer = {
+  id: string;
+  stockItemId: string;
+  itemName: string;
+  fromVenue: string;
+  toVenue: string;
+  quantity: number;
+  unit: string | null;
+  notes: string | null;
+  createdByName: string | null;
+  createdAt: string;
+  fromOnHandAfter: number | null;
+  toOnHandAfter: number | null;
+};
+
 export type StockWastageCreateInput = z.infer<typeof stockWastageCreateInputSchema>;
 export type StockDeliveryCheckCreateInput = z.infer<typeof stockDeliveryCheckCreateInputSchema>;
 export type StockDeliveryCheckUpdateInput = z.infer<typeof stockDeliveryCheckUpdateInputSchema>;
