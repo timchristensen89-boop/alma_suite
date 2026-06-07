@@ -577,6 +577,14 @@ export const invoicesService = {
     const row = id
       ? await prisma.invoiceExclusionRule.update({ where: { id }, data: payload })
       : await prisma.invoiceExclusionRule.create({ data: payload });
+    // Immediately clear any already-waiting invoices the (now saved) rules
+    // match — so creating a rule affects the invoices sitting in triage, not
+    // just future imports. Don't fail the save if the sweep errors.
+    try {
+      await this.applyExclusionRulesToExisting();
+    } catch (err) {
+      console.error('[invoices] retroactive exclusion sweep failed', err);
+    }
     return {
       id: row.id,
       name: row.name,
@@ -590,6 +598,49 @@ export const invoicesService = {
   async deleteExclusionRule(id: string): Promise<{ deleted: boolean }> {
     await prisma.invoiceExclusionRule.delete({ where: { id } });
     return { deleted: true };
+  },
+
+  // Retroactively apply enabled exclusion rules to already-imported invoices
+  // still awaiting triage. Matches are deleted (lines cascade) — the same
+  // outcome the import path produces by never creating them. This is what
+  // catches invoices that arrived via the Xero bill sync (which doesn't run
+  // the rules at import time) and anything imported before a rule existed.
+  async applyExclusionRulesToExisting(): Promise<{ excluded: number; rules: number; sample: string[] }> {
+    const rules: LoadedExclusionRule[] = (
+      await prisma.invoiceExclusionRule.findMany({ where: { enabled: true } })
+    ).map((row) => ({ id: row.id, name: row.name, conditions: parseExclusionConditions(row.conditions) }));
+    const usable = rules.filter((rule) => rule.conditions.length > 0);
+    if (usable.length === 0) return { excluded: 0, rules: 0, sample: [] };
+
+    const pending = await prisma.supplierInvoice.findMany({
+      where: { triageStatus: { in: ['PENDING', 'NEEDS_REVIEW'] } },
+      select: {
+        id: true,
+        supplierName: true,
+        invoiceNumber: true,
+        sourceFileName: true,
+        lines: { select: { description: true } }
+      }
+    });
+
+    const toExclude: Array<{ id: string; label: string }> = [];
+    for (const inv of pending) {
+      const fields: Record<ExclusionField, string> = {
+        title: (inv.sourceFileName ?? '').toLowerCase(),
+        body: inv.lines.map((line) => line.description ?? '').join(' ').toLowerCase(),
+        supplier: (inv.supplierName ?? '').toLowerCase(),
+        invoiceNumber: (inv.invoiceNumber ?? '').toLowerCase()
+      };
+      const matched = usable.some((rule) =>
+        rule.conditions.every((condition) => fields[condition.field].includes(condition.value.toLowerCase()))
+      );
+      if (matched) toExclude.push({ id: inv.id, label: inv.invoiceNumber || inv.supplierName });
+    }
+
+    if (toExclude.length > 0) {
+      await prisma.supplierInvoice.deleteMany({ where: { id: { in: toExclude.map((x) => x.id) } } });
+    }
+    return { excluded: toExclude.length, rules: usable.length, sample: toExclude.slice(0, 10).map((x) => x.label) };
   },
 
   async list(options?: { includeNoItem?: boolean }): Promise<StockInvoicesPayload> {
@@ -653,13 +704,21 @@ export const invoicesService = {
       where: {
         accountType: 'HUMAN',
         employmentStatus: 'ACTIVE',
-        appAccess: {
-          some: {
-            appId: 'STOCK',
-            status: 'ENABLED',
-            role: { in: ['ADMIN', 'MANAGER'] }
+        // Admins/owners often have no explicit STOCK appAccess row (they pass
+        // via isAdmin), so include them too — otherwise the assignee dropdown
+        // comes back empty for the very people who triage invoices.
+        OR: [
+          { isAdmin: true },
+          {
+            appAccess: {
+              some: {
+                appId: 'STOCK',
+                status: 'ENABLED',
+                role: { in: ['ADMIN', 'MANAGER'] }
+              }
+            }
           }
-        }
+        ]
       },
       select: assigneeSelect,
       orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }]

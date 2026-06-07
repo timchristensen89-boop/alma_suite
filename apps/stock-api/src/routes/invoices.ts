@@ -83,6 +83,17 @@ invoicesRouter.delete('/exclusion-rules/:ruleId', async (req, res, next) => {
   }
 });
 
+// Re-apply exclusion rules to invoices already sitting in triage (e.g. Xero
+// bills that synced after the rule was created).
+invoicesRouter.post('/exclusion-rules/apply', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.applyExclusionRulesToExisting());
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.get('/:id', async (req, res, next) => {
   try {
     res.json(await invoicesService.get(String(req.params.id)));
