@@ -269,6 +269,71 @@ function stripAccents(value: string) {
   return value.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 }
 
+// ── Accent/variation-tolerant staff matching ──────────────────────────────
+// Deputy was minting duplicate staff (e.g. "Rodrigo Golçalves" vs
+// "Rodrigo Golcalves", "Enzo Funada Yamashita" vs "Enzo Yamashita") because
+// the previous match was an exact firstName+lastName+venue lookup — accent-
+// and case-sensitive, and intolerant of an extra middle name or hyphenated
+// surname. These helpers match the same person across those variations so the
+// sync attaches to the existing profile instead of creating a new one.
+
+type StaffNameCandidate = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  venue: string | null;
+  payRateCents: number | null;
+};
+
+function nameTokenSet(first: string, last: string): Set<string> {
+  return new Set(
+    stripAccents(`${first} ${last}`)
+      .split(/[^a-z0-9]+/)
+      .filter(Boolean)
+  );
+}
+
+function firstNameToken(first: string): string {
+  return stripAccents(first).split(/[^a-z0-9]+/).filter(Boolean)[0] ?? '';
+}
+
+// Same person if the first-name token matches AND one full token set is a
+// subset of the other (tolerates an added middle name / hyphenated surname).
+function deputyNameMatches(aFirst: string, aLast: string, bFirst: string, bLast: string): boolean {
+  const af = firstNameToken(aFirst);
+  const bf = firstNameToken(bFirst);
+  if (!af || af !== bf) return false;
+  const a = nameTokenSet(aFirst, aLast);
+  const b = nameTokenSet(bFirst, bLast);
+  if (a.size === 0 || b.size === 0) return false;
+  const subset = (x: Set<string>, y: Set<string>) => [...x].every((t) => y.has(t));
+  return subset(a, b) || subset(b, a);
+}
+
+// Pick the best existing profile for a Deputy name. Prefers a same-venue match,
+// then the one with a pay rate (the "real" account when a duplicate exists).
+function matchStaffCandidate<T extends StaffNameCandidate>(
+  candidates: T[],
+  firstName: string,
+  lastName: string,
+  venue: string | null
+): T | null {
+  const matches = candidates.filter((c) => deputyNameMatches(firstName, lastName, c.firstName, c.lastName));
+  if (matches.length === 0) return null;
+  if (matches.length === 1) return matches[0] ?? null;
+  const sameVenue = venue ? matches.filter((m) => m.venue === venue) : [];
+  const pool = sameVenue.length ? sameVenue : matches;
+  return [...pool].sort((a, b) => (b.payRateCents ?? 0) - (a.payRateCents ?? 0))[0] ?? null;
+}
+
+// Load the non-merged human staff once per sync so name matching is an
+// in-memory pass rather than a query per row.
+async function loadStaffCandidates() {
+  return prisma.staffProfile.findMany({
+    where: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
+  });
+}
+
 const ROSTER_MARKER = 'Deputy sync: roster';
 const EMPLOYEE_MARKER = 'Deputy sync: employee';
 const DOCUMENT_REVIEW_SOURCE = 'deputy-document-sync';
@@ -333,6 +398,7 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
   let staffMatched = 0;
   let shiftsCreated = 0;
   const skipped: Array<{ id: number; reason: string }> = [];
+  const staffCandidates = await loadStaffCandidates();
 
   for (const shift of Array.isArray(shifts) ? shifts : []) {
     const startsAt = new Date(shift.StartTime * 1000);
@@ -356,7 +422,8 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
 
     let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
     if (!profile && firstName && lastName) {
-      profile = await prisma.staffProfile.findFirst({ where: { firstName, lastName, venue } });
+      const match = matchStaffCandidate(staffCandidates, firstName, lastName, venue);
+      if (match) profile = match;
     }
 
     if (!profile) {
@@ -399,6 +466,7 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
           }
         });
         staffCreated += 1;
+        staffCandidates.push(profile);
       }
     } else {
       staffMatched += 1;
@@ -505,6 +573,7 @@ export async function syncEmployees(connection: IntegrationConnection) {
   let updated = 0;
   let unchanged = 0;
   const conflicts: Array<{ deputyId: number; reason: string }> = [];
+  const staffCandidates = await loadStaffCandidates();
 
   for (const employee of Array.isArray(employees) ? employees : []) {
     const firstName = (employee.FirstName ?? '').trim();
@@ -520,30 +589,9 @@ export async function syncEmployees(connection: IntegrationConnection) {
     let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
 
     if (!profile) {
-      const candidates = await prisma.staffProfile.findMany({
-        where: { firstName, lastName, venue },
-        take: 3
-      });
-      if (candidates.length === 1 && candidates[0]) {
-        profile = candidates[0];
-      } else if (candidates.length > 1) {
-        conflicts.push({ deputyId: employee.Id, reason: 'Multiple matches by name+venue' });
-        continue;
-      }
-    }
-    if (!profile) {
-      const looseMatches = await prisma.staffProfile.findMany({
-        where: {
-          firstName: { equals: firstName, mode: 'insensitive' },
-          lastName: { equals: lastName, mode: 'insensitive' }
-        },
-        take: 3
-      });
-      if (looseMatches.length === 1 && looseMatches[0]) profile = looseMatches[0];
-      else if (looseMatches.length > 1) {
-        conflicts.push({ deputyId: employee.Id, reason: 'Multiple loose-name matches' });
-        continue;
-      }
+      // Accent/variation-tolerant match against existing staff (prevents the
+      // duplicate profiles Deputy used to mint for ç-vs-c / middle-name cases).
+      profile = matchStaffCandidate(staffCandidates, firstName, lastName, venue);
     }
 
     const noteMarker = `${EMPLOYEE_MARKER} id:${employee.Id}`;
@@ -553,7 +601,7 @@ export async function syncEmployees(connection: IntegrationConnection) {
     const dob = employee.DateOfBirth ? new Date(employee.DateOfBirth) : null;
 
     if (!profile) {
-      await prisma.staffProfile.create({
+      const createdProfile = await prisma.staffProfile.create({
         data: {
           firstName,
           lastName,
@@ -573,6 +621,7 @@ export async function syncEmployees(connection: IntegrationConnection) {
           notes: noteMarker
         }
       });
+      staffCandidates.push(createdProfile);
       created += 1;
       continue;
     }
@@ -858,6 +907,7 @@ export async function syncTimesheets(
   let created = 0;
   let updated = 0;
   const skipped: Array<{ id: number; reason: string }> = [];
+  const staffCandidates = await loadStaffCandidates();
 
   for (const ts of Array.isArray(sheets) ? sheets : []) {
     if (ts.Discarded) {
@@ -894,7 +944,8 @@ export async function syncTimesheets(
     // Actuals must attach to a real person — never create placeholder staff.
     let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
     if (!profile && firstName && lastName) {
-      profile = await prisma.staffProfile.findFirst({ where: { firstName, lastName, venue } });
+      const match = matchStaffCandidate(staffCandidates, firstName, lastName, venue);
+      if (match) profile = match;
     }
     if (!profile) {
       skipped.push({ id: ts.Id, reason: 'No matching staff profile' });
