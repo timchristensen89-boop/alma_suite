@@ -24,6 +24,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import { ForgotPasswordPage, ResetPasswordPage } from '../../web/src/pages/PasswordRecoveryPages';
 import { HandbookAdminPage } from '../../web/src/pages/handbook/HandbookIndexPage';
 import { api } from '../../web/src/lib/api';
@@ -41,7 +42,6 @@ import {
   IconHandbook,
   IconIssues,
   IconKeyRound,
-  IconLogout,
   IconPlug,
   IconReceipt,
   IconStore,
@@ -416,58 +416,19 @@ function AdminSidebar() {
   );
 }
 
-function initialsOf(user: { firstName: string; lastName: string } | null) {
-  if (!user) return '';
-  return `${user.firstName?.[0] ?? ''}${user.lastName?.[0] ?? ''}`.toUpperCase();
-}
-
 function UserMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = () => setOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [open]);
 
   if (!user) return null;
 
   return (
-    <div className="user-menu" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        className="topbar-avatar"
-        onClick={() => setOpen((current) => !current)}
-        aria-label="Account menu"
-      >
-        {initialsOf(user)}
-      </button>
-      {open ? (
-        <div className="user-menu-panel">
-          <div className="user-menu-head">
-            <strong>
-              {user.firstName} {user.lastName}
-            </strong>
-            <span className="subtle">{user.email ?? user.roleTitle}</span>
-          </div>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={async () => {
-              setOpen(false);
-              await logout();
-              navigate('/login', { replace: true });
-            }}
-          >
-            <IconLogout size={14} />
-            <span>Sign out</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <SuiteSignOutButton
+      onClick={async () => {
+        await logout();
+        navigate('/login', { replace: true });
+      }}
+    />
   );
 }
 

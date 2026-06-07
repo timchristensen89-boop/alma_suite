@@ -54,6 +54,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 import { DrinksPaymentPanel } from './DrinksPaymentPanel';
@@ -1833,7 +1834,7 @@ function TopBarWithContext({ user, onLogout }: { user: AuthUser; onLogout: () =>
           <SuiteFeedbackWidget appId="RESERVE" api={api} userName={`${user.firstName} ${user.lastName}`} />
           <ThemeToggle />
           <SuiteClock />
-          <Button size="sm" type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+          <SuiteSignOutButton onClick={() => void onLogout()} />
         </>
       }
     />

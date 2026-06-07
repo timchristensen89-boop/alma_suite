@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -50,7 +50,6 @@ import { canAdmin, canManage, type BetaRole } from './lib/rbac';
 import {
   IconChevronDown,
   IconHandbook,
-  IconLogout,
   IconSettings
 } from './lib/icons';
 
@@ -140,72 +139,19 @@ function currentPage(pathname: string, navItems = NAV_ITEMS) {
   };
 }
 
-function initialsOf(user: { firstName: string; lastName: string } | null) {
-  if (!user) return '';
-  return (
-    (user.firstName?.[0] ?? '').toUpperCase() +
-    (user.lastName?.[0] ?? '').toUpperCase()
-  );
-}
-
 function UserMenu() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = () => setOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [open]);
 
   if (!user) return null;
 
   return (
-    <div className="user-menu" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        className="topbar-avatar"
-        onClick={() => setOpen((p) => !p)}
-        aria-label="Account menu"
-      >
-        {initialsOf(user)}
-      </button>
-      {open ? (
-        <div className="user-menu-panel">
-          <div className="user-menu-head">
-            <strong>
-              {user.firstName} {user.lastName}
-            </strong>
-            <span className="subtle">{user.email ?? user.roleTitle}</span>
-          </div>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={() => {
-              setOpen(false);
-              navigate('/settings');
-            }}
-          >
-            <IconSettings size={14} />
-            <span>Settings</span>
-          </button>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={async () => {
-              setOpen(false);
-              await logout();
-              navigate('/login', { replace: true });
-            }}
-          >
-            <IconLogout size={14} />
-            <span>Sign out</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
+    <SuiteSignOutButton
+      onClick={async () => {
+        await logout();
+        navigate('/login', { replace: true });
+      }}
+    />
   );
 }
 

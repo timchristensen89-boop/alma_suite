@@ -47,6 +47,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import {
   clearApiAuthTokens,
   consumeSuiteHandoffToken,
@@ -756,54 +757,9 @@ function staffName(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
   return `${member.firstName} ${member.lastName}`.trim();
 }
 
-function initialsOf(user: AuthUser) {
-  const first = user.firstName?.trim().charAt(0) ?? '';
-  const last = user.lastName?.trim().charAt(0) ?? '';
-  return `${first}${last}`.toUpperCase() || user.email?.charAt(0).toUpperCase() || 'A';
-}
-
 function ReportsUserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = () => setOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [open]);
-
-  return (
-    <div className="user-menu" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        className="topbar-avatar"
-        onClick={() => setOpen((current) => !current)}
-        aria-label="Account menu"
-      >
-        {initialsOf(user)}
-      </button>
-      {open ? (
-        <div className="user-menu-panel">
-          <div className="user-menu-head">
-            <strong>
-              {user.firstName} {user.lastName}
-            </strong>
-            <span className="subtle">{user.email ?? user.roleTitle}</span>
-          </div>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={async () => {
-              setOpen(false);
-              await onLogout();
-            }}
-          >
-            <span>Sign out</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
+  if (!user) return null;
+  return <SuiteSignOutButton onClick={() => void onLogout()} />;
 }
 
 function useReportsAuth() {
