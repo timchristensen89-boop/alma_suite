@@ -672,10 +672,22 @@ function classifyDocument(doc: DeputyEmployeeDocument):
 }
 
 export async function syncDocuments(connection: IntegrationConnection) {
-  const documents = await apiPost<DeputyEmployeeDocument[]>(connection, '/resource/EmployeeDocument/QUERY', {
-    max: 500,
-    join: ['EmployeeInfo']
-  });
+  let documents: DeputyEmployeeDocument[];
+  try {
+    documents = await apiPost<DeputyEmployeeDocument[]>(connection, '/resource/EmployeeDocument/QUERY', {
+      max: 500,
+      join: ['EmployeeInfo']
+    });
+  } catch (error) {
+    // Some Deputy installs/plans don't expose the EmployeeDocument resource at
+    // all — the QUERY 404s with "Invalid object requested". Treat that as
+    // "no documents to sync" instead of failing the run; document sync is
+    // auxiliary (compliance-cert routing), unlike roster/timesheets.
+    if (error instanceof HttpError && error.statusCode === 404) {
+      return { rowsRead: 0, complianceCreated: 0, reviewsCreated: 0, skippedDuplicates: 0, failures: [], resourceUnavailable: true as const };
+    }
+    throw error;
+  }
 
   let complianceCreated = 0;
   let reviewsCreated = 0;
