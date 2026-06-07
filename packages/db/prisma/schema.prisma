@@ -1890,6 +1890,10 @@ model Timesheet {
   xeroEarningsRateId String?
   xeroTimesheetId    String?
   xeroExportBatchId  String?
+  // Idempotency key for rows IMPORTED from Xero Payroll timesheets:
+  // "${tenantId}:${xeroTimesheetId}:${dayOffset}". Distinguishes import-origin
+  // rows from Deputy/manual/export rows so re-syncs only touch their own data.
+  xeroImportKey      String?         @unique
   paymentMethod      String          @default("XERO")
   cashPaidAt         DateTime?
   cashPaidById       String?

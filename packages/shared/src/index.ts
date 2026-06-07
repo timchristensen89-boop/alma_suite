@@ -2643,6 +2643,33 @@ export type XeroPayRateSyncResult = {
   }>;
 };
 
+export type XeroTimesheetSyncResult = {
+  // Day-level timesheet rows written (one per worked day across all staff).
+  imported: number;
+  // Distinct staff that had at least one day imported.
+  staffMatched: number;
+  // Xero timesheets processed across all tenants.
+  timesheetCount: number;
+  // Timesheets skipped (no usable hours, or out of the date window).
+  skipped: number;
+  // Xero employees that couldn't be matched to an Alma staff profile.
+  notMatched: number;
+  tenants: Array<{
+    tenantId: string;
+    tenantName: string | null;
+    venue: string | null;
+    imported: number;
+    timesheetCount: number;
+    error: string | null;
+  }>;
+  unmatched: Array<{
+    xeroEmployeeId: string;
+    name: string | null;
+    tenantName: string | null;
+  }>;
+  warnings: string[];
+};
+
 export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
 
 export type LegacyAdminIntegrationProviderStatus = {

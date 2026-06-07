@@ -225,6 +225,19 @@ integrationsRouter.post('/xero/sync-pay-rates', async (req, res, next) => {
   }
 });
 
+integrationsRouter.post('/xero/sync-timesheets', async (req, res, next) => {
+  try {
+    const lookbackDays = Number((req.body ?? {}).lookbackDays);
+    res.json(
+      await integrationService.syncXeroTimesheets(req.user!, {
+        lookbackDays: Number.isFinite(lookbackDays) ? lookbackDays : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/xero/supplier-contacts/preview', async (req, res, next) => {
   try {
     res.json(await integrationService.previewXeroSupplierContacts(req.query));
