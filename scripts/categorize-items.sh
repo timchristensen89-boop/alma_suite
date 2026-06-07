@@ -42,8 +42,12 @@ print(urlunsplit((parts.scheme, new_netloc, parts.path, urlencode(query), parts.
 
 echo "→ Running stock item categorisation (${CATEGORIZE_CONFIRM:-DRY RUN})..."
 cd "$(dirname "$0")/.."
+# `pnpm --filter @alma/api exec` runs from apps/api, so resolve the CSV to an
+# absolute path (relative to the repo root) before handing it over.
+CSV_PATH="${CATEGORIES_CSV:-docs/items-categorized.csv}"
+case "$CSV_PATH" in /*) ;; *) CSV_PATH="$(pwd)/$CSV_PATH" ;; esac
 DATABASE_URL="$TCP_URL" \
-  CATEGORIES_CSV="${CATEGORIES_CSV:-docs/items-categorized.csv}" \
+  CATEGORIES_CSV="$CSV_PATH" \
   CATEGORIZE_CONFIRM="${CATEGORIZE_CONFIRM:-}" \
   pnpm --filter @alma/api exec tsx scripts/categorize-items.ts
 
