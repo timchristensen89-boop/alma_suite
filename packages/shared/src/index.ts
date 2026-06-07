@@ -2670,6 +2670,41 @@ export type XeroTimesheetSyncResult = {
   warnings: string[];
 };
 
+// One row in the "Link staff to Xero" matcher — a Xero payroll employee with
+// its current/suggested Alma staff match so a manager can wire them up by hand.
+export type XeroEmployeeLinkRow = {
+  xeroEmployeeId: string;
+  firstName: string;
+  lastName: string;
+  email: string | null;
+  status: string;
+  tenantId: string;
+  tenantName: string | null;
+  ratePerUnitCents: number | null;
+  linkedStaffId: string | null;
+  linkedStaffName: string | null;
+  suggestedStaffId: string | null;
+};
+
+export type XeroEmployeesPayload = {
+  employees: XeroEmployeeLinkRow[];
+  staff: Array<{
+    id: string;
+    firstName: string;
+    lastName: string;
+    email: string | null;
+    xeroEmployeeId: string | null;
+  }>;
+};
+
+export type XeroEmployeeLinkResult = {
+  staffId: string;
+  staffName: string;
+  xeroEmployeeId: string | null;
+  payRateCents: number | null;
+  rateUpdated: boolean;
+};
+
 export type AdminIntegrationProviderStatus = IntegrationProviderStatus;
 
 export type LegacyAdminIntegrationProviderStatus = {
