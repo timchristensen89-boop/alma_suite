@@ -85,6 +85,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, createSuiteHandoffUrl } from './lib/api';
@@ -103,7 +104,6 @@ import {
   IconFiles,
   IconFileSignature,
   IconFileText,
-  IconLogout,
   IconMail,
   IconTriangle,
   IconUserPlus,
@@ -791,19 +791,13 @@ function TopBarWithContext() {
             />
             <ThemeToggle />
             <SuiteClock />
-            <Button
-              size="sm"
-              variant="secondary"
+            <SuiteSignOutButton
               className="staff-topbar-signout"
-              aria-label="Sign out"
-              title="Sign out"
               onClick={async () => {
                 await logout();
                 navigate('/login', { replace: true });
               }}
-            >
-              <IconLogout size={16} />
-            </Button>
+            />
           </>
         ) : null
       }

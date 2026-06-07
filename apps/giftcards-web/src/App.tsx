@@ -46,6 +46,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { API_BASE_URL, api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
@@ -1829,7 +1830,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               <SuiteFeedbackWidget appId="GIFTCARDS" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
-              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+              <SuiteSignOutButton onClick={() => void onLogout()} />
             </>
           }
         />

@@ -51,6 +51,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import { MARKETING_WEB_URL, RESERVE_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { api, clearApiAuthToken, consumeSuiteHandoffToken, installSuiteHandoff, setApiAuthToken } from './lib/api';
 
@@ -1379,7 +1380,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
               <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
-              <Button type="button" variant="secondary" onClick={() => void onLogout()}>Sign out</Button>
+              <SuiteSignOutButton onClick={() => void onLogout()} />
             </>
           }
         />

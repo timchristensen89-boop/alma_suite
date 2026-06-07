@@ -23,6 +23,7 @@ import {
   ThemeToggle,
   TopBar
 } from '@alma/ui';
+import { SuiteSignOutButton } from '@alma/ui';
 import {
   IconBriefcase,
   IconChecklist,
@@ -1152,14 +1153,6 @@ function currentCommsPage(pathname: string) {
     ) ?? navItems[0]!;
 }
 
-function initialsOf(user: AuthUser) {
-  const nameParts = (user.name ?? '').trim().split(/\s+/).filter(Boolean);
-  const fromName = nameParts.length > 1
-    ? `${nameParts[0]?.[0] ?? ''}${nameParts[nameParts.length - 1]?.[0] ?? ''}`
-    : nameParts[0]?.slice(0, 2) ?? '';
-  return fromName.toUpperCase() || user.email?.trim().charAt(0).toUpperCase() || 'A';
-}
-
 function CommsSidebar() {
   const location = useLocation();
   const active = currentCommsPage(location.pathname);
@@ -1200,73 +1193,9 @@ function CommsSidebar() {
   );
 }
 
-function CommsUserMenu({
-  user,
-  adminUrl,
-  onAdmin,
-  onSignOut
-}: {
-  user: AuthUser;
-  adminUrl: string;
-  onAdmin: (event: React.MouseEvent<HTMLAnchorElement>) => void;
-  onSignOut: () => void;
-}) {
-  const [open, setOpen] = useState(false);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const close = () => setOpen(false);
-    window.addEventListener('click', close);
-    return () => window.removeEventListener('click', close);
-  }, [open]);
-
-  return (
-    <div className="user-menu" onClick={(event) => event.stopPropagation()}>
-      <button
-        type="button"
-        className="topbar-avatar"
-        onClick={() => setOpen((current) => !current)}
-        aria-label="Account menu"
-      >
-        {initialsOf(user)}
-      </button>
-      {open ? (
-        <div className="user-menu-panel">
-          <div className="user-menu-head">
-            <strong>{user.name || user.email || 'Signed in'}</strong>
-            {user.email && user.name ? <span className="subtle">{user.email}</span> : null}
-          </div>
-          <a
-            className="user-menu-item"
-            href={adminUrl}
-            onClick={(event) => {
-              setOpen(false);
-              onAdmin(event);
-            }}
-          >
-            <IconSettings size={14} />
-            <span>Admin</span>
-          </a>
-          <button
-            type="button"
-            className="user-menu-item"
-            onClick={() => {
-              setOpen(false);
-              onSignOut();
-            }}
-          >
-            <span>Sign out</span>
-          </button>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => void }) {
   const location = useLocation();
   const active = currentCommsPage(location.pathname);
-  const adminUrl = 'https://alma-suite-admin.web.app';
 
   useEffect(() => {
     document.title = `${active.label} · Alma Comms`;
@@ -1281,15 +1210,6 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
     }
   }
 
-  function openWithHandoff(event: React.MouseEvent<HTMLAnchorElement>, href: string) {
-    event.preventDefault();
-    void createSuiteHandoffUrl(href).then((nextHref) => {
-      window.location.assign(nextHref);
-    }).catch(() => {
-      window.location.assign(href);
-    });
-  }
-
   const topBar = (
     <TopBar
       title={active.label}
@@ -1301,12 +1221,7 @@ function AppLayout({ user, onSignedOut }: { user: AuthUser; onSignedOut: () => v
           <SuiteFeedbackWidget appId="COMMS" api={api} userName={user?.name ?? undefined} />
           <ThemeToggle />
           <SuiteClock />
-          <CommsUserMenu
-            user={user}
-            adminUrl={adminUrl}
-            onAdmin={(event) => openWithHandoff(event, adminUrl)}
-            onSignOut={() => void signOut()}
-          />
+          <SuiteSignOutButton onClick={() => void signOut()} />
         </div>
       }
     />

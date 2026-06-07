@@ -21,6 +21,7 @@ export { CollapsibleCard } from './primitives/CollapsibleCard';
 export { StatCard } from './primitives/StatCard';
 export { Button } from './primitives/Button';
 export { IconButton } from './primitives/IconButton';
+export { SuiteSignOutButton } from './primitives/SuiteSignOutButton';
 export { Input } from './primitives/Input';
 export { Textarea } from './primitives/Textarea';
 export { Select } from './primitives/Select';

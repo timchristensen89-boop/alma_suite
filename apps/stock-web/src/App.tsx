@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, HelpButton, IconButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
@@ -21,7 +21,7 @@ import { StockBrand } from './components/StockBrand';
 import { NAV_ITEMS } from './config/navigation';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { IconChevronDown, IconExternal } from './lib/icons';
+import { IconChevronDown } from './lib/icons';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
@@ -140,9 +140,7 @@ function TopBarWithContext() {
             <SuiteFeedbackWidget appId="STOCK" api={api} userName={`${user.firstName} ${user.lastName}`} />
             <ThemeToggle />
             <SuiteClock />
-            <IconButton
-              label="Sign out"
-              icon={<IconExternal size={15} />}
+            <SuiteSignOutButton
               onClick={async () => {
                 await logout();
                 navigate('/login', { replace: true });
