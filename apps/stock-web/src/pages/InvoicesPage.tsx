@@ -126,6 +126,7 @@ export function InvoicesPage() {
   const [assignees, setAssignees] = useState<StockInvoiceAssignee[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [applyingRules, setApplyingRules] = useState(false);
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<string | null>(null);
   const [venue, setVenue] = useState('');
   const [sourceFileName, setSourceFileName] = useState('');
@@ -164,6 +165,29 @@ export function InvoicesPage() {
       setError(err instanceof ApiError ? err.message : 'Could not load invoices');
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function applyExclusionRules() {
+    setApplyingRules(true);
+    setError(null);
+    try {
+      const result = await api<{ excluded: number; rules: number; sample: string[] }>(
+        '/api/invoices/exclusion-rules/apply',
+        { method: 'POST' }
+      );
+      await loadInvoices({ showNoItem: includeNoItem });
+      showFeedback(
+        'apply-rules',
+        result.rules === 0
+          ? 'No enabled exclusion rules to apply.'
+          : `${result.excluded} waiting invoice${result.excluded === 1 ? '' : 's'} removed by ${result.rules} rule${result.rules === 1 ? '' : 's'}.`,
+        result.excluded > 0 ? 'success' : 'info'
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not apply exclusion rules');
+    } finally {
+      setApplyingRules(false);
     }
   }
 
@@ -729,14 +753,28 @@ export function InvoicesPage() {
           title="Imported invoices"
           subtitle="Xero bills and ripped supplier invoices."
           action={
-            <label className="stock-invoice-filter-toggle">
-              <input
-                type="checkbox"
-                checked={includeNoItem}
-                onChange={(event) => setIncludeNoItem(event.currentTarget.checked)}
-              />
-              Show no-item invoices
-            </label>
+            <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+              {canManage ? (
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={applyingRules}
+                  title="Remove any waiting invoices that match your exclusion rules (e.g. Square fees from the Xero sync)"
+                  onClick={() => void applyExclusionRules()}
+                >
+                  {applyingRules ? 'Applying…' : 'Apply exclusion rules'}
+                </Button>
+              ) : null}
+              <label className="stock-invoice-filter-toggle">
+                <input
+                  type="checkbox"
+                  checked={includeNoItem}
+                  onChange={(event) => setIncludeNoItem(event.currentTarget.checked)}
+                />
+                Show no-item invoices
+              </label>
+            </div>
           }
         >
           {loading ? (
