@@ -79,3 +79,5 @@ export {
   suiteApp
 } from './brand/SuiteApps';
 export type { SuiteAppId, SuiteAppIdentity, SuiteAppStatus } from './brand/SuiteApps';
+export { canUseApp, accessibleSuiteApps, almaAppIdForSuiteApp } from './brand/appAccess';
+export { AppAccessGate } from './brand/AppAccessGate';

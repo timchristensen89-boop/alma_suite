@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
@@ -128,7 +128,7 @@ function TopBarWithContext() {
             {STOCK_HELP[active.to] ? (
               <HelpButton {...STOCK_HELP[active.to]!} layerId={`stock-help-${active.to}`} />
             ) : null}
-            <SuiteAppSwitcher currentApp="stock" apps={suiteApps} variant="topbar" />
+            <SuiteAppSwitcher currentApp="stock" apps={accessibleSuiteApps(user, suiteApps)} variant="topbar" />
             <SuiteInboxWidget
               appId="STOCK"
               api={api}
@@ -154,12 +154,14 @@ function TopBarWithContext() {
 }
 
 function StockAppShell() {
+  const { user } = useAuth();
   return (
     <AppShell
       brand={<StockBrand />}
       sidebar={<SidebarNav />}
       topBar={<TopBarWithContext />}
     >
+      <AppAccessGate user={user} appId="STOCK" appName="Stock" apps={suiteApps}>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/items" element={<ItemsPage />} />
@@ -177,6 +179,7 @@ function StockAppShell() {
         <Route path="/settings" element={<SettingsPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </AppAccessGate>
     </AppShell>
   );
 }
