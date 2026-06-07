@@ -43,6 +43,15 @@ type PasswordResetEmailInput = {
   appName?: string | null;
 };
 
+type WelcomeEmailInput = {
+  to: string;
+  firstName?: string | null;
+  loginUrl?: string | null;
+  resetLink: string;
+  expiresAt: Date;
+  appName?: string | null;
+};
+
 type EmailDeliveryResult =
   | { status: 'sent'; to: string; provider: 'resend' | 'smtp' }
   | { status: 'skipped'; reason: string }
@@ -359,6 +368,62 @@ export const mailService = {
         <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
           If the button doesn't work, paste this link into your browser:<br>
           <span style="word-break:break-all;color:#475569">${safeResetLink}</span>
+        </p>
+      </div>
+    `;
+
+    return deliverEmail({ to: input.to, subject, text, html });
+  },
+
+  // Sent once a staff member's onboarding is approved: tells them the account
+  // is active, where to sign in, and gives a "set / reset your password" link
+  // in case they've forgotten the one they chose during onboarding.
+  async sendWelcomeActivation(input: WelcomeEmailInput): Promise<EmailDeliveryResult> {
+    const appName = input.appName?.trim() || 'ALMA Staff';
+    const firstName = input.firstName?.trim() || 'there';
+    const loginUrl = input.loginUrl?.trim() || 'https://alma-staff.web.app';
+    const expiry = input.expiresAt.toLocaleString('en-AU', { dateStyle: 'medium', timeStyle: 'short' });
+    const safeAppName = escapeHtml(appName);
+    const safeFirstName = escapeHtml(firstName);
+    const safeLoginUrl = escapeHtml(loginUrl);
+    const safeResetLink = escapeHtml(input.resetLink);
+    const subject = `Your ${appName} account is ready — sign in`;
+    const text = [
+      `Hi ${firstName},`,
+      '',
+      `Your ${appName} onboarding has been approved and your account is now active.`,
+      '',
+      `Sign in here: ${loginUrl}`,
+      `Use your email address and the password you set during onboarding.`,
+      '',
+      `Forgot it, or never set one? Use this private link to set a new password:`,
+      input.resetLink,
+      `(This link expires at ${expiry}.)`
+    ].join('\n');
+    const html = `
+      <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;line-height:1.55;color:#0f172a;max-width:560px;margin:0 auto;padding:24px">
+        <div style="font-size:11px;letter-spacing:0.16em;text-transform:uppercase;color:#64748b;margin-bottom:18px">
+          ${safeAppName}
+        </div>
+        <p style="font-size:16px;margin:0 0 12px">Hi ${safeFirstName},</p>
+        <p style="font-size:14px;margin:0 0 18px">
+          Your onboarding has been approved and your <strong>${safeAppName}</strong> account is now active. You're ready to sign in.
+        </p>
+        <p style="margin:0 0 22px">
+          <a href="${safeLoginUrl}" style="display:inline-block;background:${BRAND_ACCENT};color:#ffffff;text-decoration:none;font-weight:700;padding:12px 18px;border-radius:8px;font-size:14px;letter-spacing:0.02em">
+            Sign in
+          </a>
+        </p>
+        <p style="font-size:14px;margin:0 0 8px">
+          Use your email address and the password you set during onboarding.
+        </p>
+        <p style="font-size:13px;color:#475569;margin:0 0 18px">
+          Forgot it (or never set one)? <a href="${safeResetLink}" style="color:${BRAND_ACCENT};font-weight:600">Set a new password here</a> — this private link expires at ${escapeHtml(expiry)}.
+        </p>
+        <p style="font-size:12px;color:#94a3b8;margin:18px 0 0;border-top:1px solid #e2e8f0;padding-top:14px">
+          If the buttons don't work, paste these into your browser:<br>
+          Sign in: <span style="word-break:break-all;color:#475569">${safeLoginUrl}</span><br>
+          Set password: <span style="word-break:break-all;color:#475569">${safeResetLink}</span>
         </p>
       </div>
     `;

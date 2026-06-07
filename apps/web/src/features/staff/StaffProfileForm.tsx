@@ -178,6 +178,9 @@ type Props = {
   submitting?: boolean;
   onCancel?: () => void;
   compact?: boolean;
+  /** Public self-onboarding mode: hides manager/payroll-only fields (pay rate,
+      award) the new hire shouldn't set themselves. */
+  onboarding?: boolean;
 };
 
 export function StaffProfileForm({
@@ -187,7 +190,8 @@ export function StaffProfileForm({
   onSubmit,
   submitting = false,
   onCancel,
-  compact = false
+  compact = false,
+  onboarding = false
 }: Props) {
   const [showNotes, setShowNotes] = useState(false);
 
@@ -313,8 +317,12 @@ export function StaffProfileForm({
             <div className="form-grid two">
               <Select label="Employment type" value={value.employmentType} onChange={(event) => patch('employmentType', event.target.value)} options={employmentTypeOptions} />
               <Select label="Pay type" value={value.payType} onChange={(event) => patch('payType', event.target.value)} options={payTypeOptions} />
-              <Input label="Pay rate" value={value.payRate} onChange={(event) => patch('payRate', event.target.value)} placeholder="Example: 32.50" />
-              <Input label="Award / classification" value={value.payAward} onChange={(event) => patch('payAward', event.target.value)} placeholder="Example: HIGA Level 2" />
+              {!onboarding ? (
+                <>
+                  <Input label="Pay rate" value={value.payRate} onChange={(event) => patch('payRate', event.target.value)} placeholder="Example: 32.50" />
+                  <Input label="Award / classification" value={value.payAward} onChange={(event) => patch('payAward', event.target.value)} placeholder="Example: HIGA Level 2" />
+                </>
+              ) : null}
               <Input label="Xero employee ID" value={value.xeroEmployeeId} onChange={(event) => patch('xeroEmployeeId', event.target.value)} />
               <Input label="Xero payroll calendar ID" value={value.xeroPayrollCalendarId} onChange={(event) => patch('xeroPayrollCalendarId', event.target.value)} />
               <Input label="Xero earnings rate ID" value={value.xeroEarningsRateId} onChange={(event) => patch('xeroEarningsRateId', event.target.value)} />
@@ -356,12 +364,18 @@ export function StaffProfileForm({
           <Card title="Visa and work rights">
             <div className="form-grid two">
               <Select label="Visa / work rights status" value={value.visaStatus} onChange={(event) => patch('visaStatus', event.target.value)} options={visaStatusOptions} />
-              <Input label="Visa subclass" value={value.visaSubclass} onChange={(event) => patch('visaSubclass', event.target.value)} placeholder="Example: 417, 500" />
-              <Input label="Visa expiry date" type="date" value={value.visaExpiryDate} onChange={(event) => patch('visaExpiryDate', event.target.value)} />
+              {!['Australian citizen', 'Australian permanent resident', 'New Zealand citizen'].includes(value.visaStatus) ? (
+                <>
+                  <Input label="Visa subclass" value={value.visaSubclass} onChange={(event) => patch('visaSubclass', event.target.value)} placeholder="Example: 417, 500" />
+                  <Input label="Visa expiry date" type="date" value={value.visaExpiryDate} onChange={(event) => patch('visaExpiryDate', event.target.value)} />
+                </>
+              ) : null}
             </div>
-            <div style={{ marginTop: 12 }}>
-              <Textarea label="Work rights notes" value={value.workRightsNotes} onChange={(event) => patch('workRightsNotes', event.target.value)} rows={2} />
-            </div>
+            {!['Australian citizen', 'Australian permanent resident', 'New Zealand citizen'].includes(value.visaStatus) ? (
+              <div style={{ marginTop: 12 }}>
+                <Textarea label="Work rights notes" value={value.workRightsNotes} onChange={(event) => patch('workRightsNotes', event.target.value)} rows={2} />
+              </div>
+            ) : null}
           </Card>
         </>
       ) : null}

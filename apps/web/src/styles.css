@@ -4799,7 +4799,8 @@ html[data-theme='dark'] .skeleton {
 }
 
 .suite-switcher {
-  padding: 2px 0 0;
+  padding: 14px 0 0;
+  margin-top: 4px;
   max-width: 100%;
 }
 
@@ -4827,8 +4828,10 @@ html[data-theme='dark'] .skeleton {
   display: flex;
   justify-content: center;
   align-items: flex-start;
-  gap: 6px;
-  flex-wrap: nowrap;
+  gap: 8px 6px;
+  /* Wrap onto multiple rows instead of overflowing the login card: 9 fixed
+     58px tiles overran the 520px shell on desktop. */
+  flex-wrap: wrap;
   width: 100%;
 }
 
@@ -4837,7 +4840,8 @@ html[data-theme='dark'] .skeleton {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 58px;
+  width: 56px;
+  flex: 0 1 56px;
   min-height: 84px;
   padding: 4px 3px 8px;
   border: 1px solid transparent;
