@@ -8738,6 +8738,21 @@ a.suite-app-tile:hover {
   opacity: 0.88;
 }
 
+/* Dark mode: --color-accent-text flips to a near-white tint, which made this
+   button white-on-white (cream text on a near-white surface, so it rendered
+   as a blank box). Re-theme to the dark accent with dark text so it stays
+   visible, matching the filled-accent button family. */
+html[data-theme='dark'] .alma-roster-publish {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-bg);
+}
+html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
+  background: var(--color-accent-hover);
+  border-color: var(--color-accent-hover);
+  opacity: 1;
+}
+
 .alma-roster-publish-sub {
   padding: 3px 9px 2px;
   background: rgba(255, 255, 255, 0.16);

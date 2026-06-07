@@ -7493,6 +7493,26 @@ html[data-theme='dark'] .staff-readiness-item.is-positive {
   color: var(--tone-positive-fg);
 }
 
+/* Manager leave calendar — the day cells, selected cell, and date pill carried
+   hardcoded near-opaque WHITE gradients/backgrounds that the token swap can't
+   reach, so in dark mode the cells stayed white and the date numerals read
+   white-on-white. Re-theme via tokens. */
+html[data-theme='dark'] .leave-calendar-day {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.02)),
+    var(--color-surface);
+}
+html[data-theme='dark'] .leave-calendar-day.is-selected {
+  border-color: var(--color-accent);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.03)),
+    var(--color-accent-soft);
+}
+html[data-theme='dark'] .leave-calendar-date {
+  background: var(--color-surface-hover);
+  color: var(--color-text);
+}
+
 /* Roster closed-days buttons */
 html[data-theme='dark'] .roster-closed-days button:hover {
   background: var(--tone-neutral-bg);

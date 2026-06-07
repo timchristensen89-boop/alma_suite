@@ -1982,6 +1982,23 @@ export const staffService = {
         trainingRecords: { include: { module: true }, orderBy: [{ updatedAt: 'desc' }] }
       }
     });
+
+    // Auto-trigger onboarding for a newly added employee: issue an invite +
+    // email so they complete their own details (sets them PENDING until done).
+    // Fires only for real people with an email — skips device/placeholder and
+    // admin accounts — and never fails the create if the invite/email errors.
+    if (profile.email && profile.accountType === 'HUMAN' && !profile.isAdmin) {
+      try {
+        await this.reonboardProfile(profile.id, {}, actor);
+        profile.employmentStatus = 'PENDING';
+      } catch (err) {
+        console.error('[staff.create] auto-onboarding failed', {
+          staffProfileId: profile.id,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
     return redactStaffProfileFields(withoutStaffSecrets(attachDefaultPayProfile(profile, staffDefaults)), actor);
   },
 
@@ -4755,7 +4772,11 @@ export const staffService = {
     const now = new Date();
     const startDate = start ? parseDate(start, 'Timesheet start date') : new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7);
     const endDate = end ? parseDate(end, 'Timesheet end date') : new Date(startDate.getTime() + 14 * 24 * 60 * 60 * 1000);
-    const scopedVenue = scopeVenueForActor(venue, actor);
+    // The "All venues" filter sends the literal string "all"; treat it as no
+    // venue filter (otherwise the query becomes `venue = 'all'` and matches
+    // nothing — the Timesheets tab looked empty while the dashboard, which
+    // never sends "all", showed the same rows).
+    const scopedVenue = scopeVenueForActor(venue && venue !== 'all' ? venue : undefined, actor);
 
     if (actor?.role === 'STAFF' && staffProfileId && staffProfileId !== actor.id) {
       throw new HttpError(403, 'You can only view your own timesheets.');
