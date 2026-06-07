@@ -5575,7 +5575,8 @@ export const integrationService = {
         lastName: true,
         email: true,
         xeroEmployeeId: true,
-        payRateCents: true
+        payRateCents: true,
+        payProfile: { select: { payMode: true } }
       }
     });
 
@@ -5630,6 +5631,17 @@ export const integrationService = {
           lastName: emp.LastName,
           email: emp.Email ?? null
         });
+        continue;
+      }
+
+      // The Alma profile is the source of truth for salaried staff: if a
+      // manager has set a manual full-time salary, don't let Xero's hourly
+      // rate clobber it. Still stamp the Xero link for traceability.
+      if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME') {
+        if (!profile.xeroEmployeeId) {
+          await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
+        }
+        skipped++;
         continue;
       }
 

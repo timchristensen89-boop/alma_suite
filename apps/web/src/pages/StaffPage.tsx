@@ -775,6 +775,15 @@ function AwardPaySetupPanel({
   const manualPayCents = Math.round(Number(manualPay) * 100);
   const fullTime = employmentType === 'FULL_TIME';
   const manualPayInvalid = fullTime && (!Number.isFinite(manualPayCents) || manualPayCents <= 0);
+  // Salary → hourly: the costing engine spreads an annual salary over a 45h
+  // week (salary ÷ 52 ÷ 45), then adds 12% super. Surface that derived rate
+  // live so a manager who enters a salary sees the per-hour figure.
+  const FULL_TIME_WEEKLY_HOURS = 45;
+  const SUPER_MULTIPLIER = 1.12;
+  const derivedHourlyCents =
+    fullTime && manualFrequency === 'ANNUAL_SALARY' && Number.isFinite(manualPayCents) && manualPayCents > 0
+      ? Math.round(manualPayCents / 52 / FULL_TIME_WEEKLY_HOURS)
+      : null;
 
   function changeAward(nextAwardCode: AustralianAwardCode) {
     const nextAward = AWARD_RATE_SETS.find((item) => item.awardCode === nextAwardCode) ?? AWARD_RATE_SETS[0]!;
@@ -910,6 +919,14 @@ function AwardPaySetupPanel({
             hint={`${manualNote.trim().length}/${STAFF_PAY_NOTE_MAX_LENGTH} characters`}
           />
         </div>
+      ) : null}
+
+      {derivedHourlyCents != null ? (
+        <p className="subtle" style={{ margin: '8px 0 0' }}>
+          ≈ <strong>{formatMoney(derivedHourlyCents)}/hr</strong> ordinary (salary ÷ 52 weeks ÷ 45h) ·{' '}
+          {formatMoney(Math.round(derivedHourlyCents * SUPER_MULTIPLIER))}/hr incl. 12% super. This is the rate the
+          costing report uses for this person; hours beyond 45/week are paid at 1.5×.
+        </p>
       ) : null}
 
       {manualPayInvalid ? <p className="error-text">Enter a positive manual full-time pay amount.</p> : null}
