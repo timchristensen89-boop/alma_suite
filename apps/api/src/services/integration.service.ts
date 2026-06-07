@@ -5589,6 +5589,18 @@ export const integrationService = {
         .filter((p) => p.email)
         .map((p) => [p.email!.toLowerCase(), p])
     );
+    // Name fallback (accent/case-insensitive) for staff with no Xero ID and a
+    // non-matching/absent email — catches the bulk that would otherwise be
+    // left unmatched. Only used when the name is unambiguous (one staffer).
+    const xeroNameKey = (first: string, last: string) =>
+      `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+    const byName = new Map<string, typeof staffProfiles>();
+    for (const p of staffProfiles) {
+      const key = xeroNameKey(p.firstName, p.lastName);
+      const list = byName.get(key) ?? [];
+      list.push(p);
+      byName.set(key, list);
+    }
 
     const updated: XeroPayRateSyncResult['updated'] = [];
     const unmatched: XeroPayRateSyncResult['unmatched'] = [];
@@ -5605,9 +5617,11 @@ export const integrationService = {
         continue;
       }
 
+      const nameList = byName.get(xeroNameKey(emp.FirstName, emp.LastName)) ?? [];
       const profile =
         byXeroId.get(emp.EmployeeID.toLowerCase()) ??
-        (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined);
+        (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
+        (nameList.length === 1 ? nameList[0] : undefined);
 
       if (!profile) {
         unmatched.push({
@@ -5622,7 +5636,9 @@ export const integrationService = {
       const newPayRateCents = Math.round(ratePerUnit * 100);
       await prisma.staffProfile.update({
         where: { id: profile.id },
-        data: { payRateCents: newPayRateCents }
+        // Stamp the Xero link so future syncs match by id even when first
+        // matched by name/email.
+        data: { payRateCents: newPayRateCents, xeroEmployeeId: emp.EmployeeID }
       });
 
       updated.push({
