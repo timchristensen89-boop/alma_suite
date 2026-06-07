@@ -9248,13 +9248,15 @@ function RosterPage({
   const totalHours = useMemo(() => visibleRoster.reduce((sum, shift) => sum + shiftHours(shift), 0), [visibleRoster]);
   const averageRateCents = useMemo(() => {
     const rates = activeStaff
-      .map((member) => member.trainingPayRateCents ?? member.payRateCents ?? 0)
+      .map((member) => rosterHourlyRateCents(member) ?? 0)
       .filter((rate) => rate > 0);
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
   const rosterCostCents = useMemo(() => visibleRoster.reduce((sum, shift) => {
     const member = staffById.get(shift.staffProfileId);
-    const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+    // Use the staffer's effective hourly cost; fall back to the roster average
+    // when they have no usable rate (or it was clamped away as bad data).
+    const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
     return sum + Math.round(shiftHours(shift) * rateCents);
   }, 0), [averageRateCents, staffById, visibleRoster]);
   const operationalVenues = useMemo(() => venues.some((venue) => venue === 'Alma Avalon' || venue === 'St Alma')
@@ -9327,7 +9329,7 @@ function RosterPage({
     const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
     const plannedCostCents = shifts.reduce((sum, shift) => {
       const member = staffById.get(shift.staffProfileId);
-      const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+      const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
     const dayKey = toDateInput(day);
@@ -9421,7 +9423,7 @@ function RosterPage({
     const plannedHours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
     const plannedCostCents = shifts.reduce((sum, shift) => {
       const member = staffById.get(shift.staffProfileId);
-      const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+      const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
     const historicalSalesCents = Math.round(days.reduce((sum, day) => sum + historicalSalesForDate(venue, day), 0) * 100);
@@ -10910,7 +10912,7 @@ function RosterPage({
                         const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
                         const dayCostCents = dayShifts.reduce((sum, shift) => {
                           const member = staffById.get(shift.staffProfileId);
-                          const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+                          const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
                           return sum + Math.round(shiftHours(shift) * rateCents);
                         }, 0);
                         const isClosed = isVenueClosedOnDate(row.venue, day);
@@ -11235,7 +11237,7 @@ function RosterPage({
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
                       const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
                       const memberHours = memberShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
-                      const memberRateCents = member.trainingPayRateCents ?? member.payRateCents ?? averageRateCents;
+                      const memberRateCents = rosterHourlyRateCents(member) ?? averageRateCents;
                       const memberWeekCost = Math.round(memberHours * memberRateCents);
                       const rateLabel = memberRateCents ? `$${(memberRateCents / 100).toFixed(2)}/hr` : 'No rate set';
                       const costLabel = memberWeekCost > 0 ? ` · $${(memberWeekCost / 100).toFixed(2)} this week` : '';
@@ -11995,6 +11997,47 @@ function shiftHours(shift: RosterShift) {
   const endsAt = new Date(shift.endsAt).getTime();
   if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt <= startsAt) return 0;
   return (endsAt - startsAt) / 36e5;
+}
+
+// Any "hourly rate" above $200/hr is bad data — almost always an annual salary
+// that's landed in an hourly field. The roster forecast clamps to this so one
+// bad record can't blow the whole board's wage total up.
+const ROSTER_SANE_MAX_RATE_CENTS = 20000;
+
+// The effective hourly cost (cents) the roster forecast should use for a
+// staffer — mirrors the reports' costing: cash gets its flat rate, salaried /
+// full-timers get their salary spread over a 45h week, everyone else the
+// hourly/award rate. Returns null when no usable rate (caller falls back to the
+// roster average). Deliberately excludes super so the forecast matches the
+// roster's prior basis; reports add on-costs separately.
+function rosterHourlyRateCents(member: StaffProfile): number | null {
+  const profile = member.payProfile;
+  const sane = (cents: number | null | undefined): number | null =>
+    cents && cents > 0 && cents <= ROSTER_SANE_MAX_RATE_CENTS ? cents : null;
+
+  // Cash — flat hourly rate, paid in cash.
+  if (profile?.payMode === 'CASH') return sane(profile.cashHourlyRateCents);
+
+  // Salaried / full-time — convert the salary to an hourly rate over a 45h week.
+  const salaried =
+    profile?.payMode === 'MANUAL_FULL_TIME' ||
+    /full.?time|salar|permanent/i.test(profile?.employmentType ?? member.employmentType ?? '');
+  if (salaried && profile?.manualFullTimePayAmountCents) {
+    const amount = profile.manualFullTimePayAmountCents;
+    const freq = (profile.manualFullTimePayFrequency ?? '').toUpperCase();
+    if (freq === 'HOURLY_FULL_TIME') return sane(amount);
+    const annual =
+      freq === 'WEEKLY' ? amount * 52
+      : freq === 'FORTNIGHTLY' ? amount * 26
+      : freq === 'MONTHLY' ? amount * 12
+      : amount; // ANNUAL_SALARY / default
+    return sane(Math.round(annual / 52 / 45));
+  }
+
+  // Hourly — training rate, then base, then the award ordinary rate.
+  return sane(member.trainingPayRateCents)
+    ?? sane(member.payRateCents)
+    ?? sane(profile?.ordinaryHourlyRateCents);
 }
 
 function mobileRosterStatusGroup(shift: RosterShift): MobileRosterGroupKey {
