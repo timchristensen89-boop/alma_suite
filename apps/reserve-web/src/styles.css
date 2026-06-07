@@ -1742,6 +1742,31 @@
   font-size: 13px;
   color: var(--color-text);
 }
+.floor-plan-area-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.floor-plan-area-filter button {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-elevated, #fff);
+  color: var(--color-text);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  cursor: pointer;
+}
+.floor-plan-area-filter button:hover { border-color: var(--color-accent); }
+.floor-plan-area-filter button.is-active {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: var(--color-accent-text, #fff);
+}
 .floor-plan-editor-group {
   display: inline-flex;
   align-items: center;

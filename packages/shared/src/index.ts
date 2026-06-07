@@ -1186,6 +1186,7 @@ export const reserveReservationInputSchema = z.object({
   status: reserveReservationStatusSchema.default('PENDING'),
   source: z.string().optional().or(z.literal('')),
   tableId: z.string().optional().or(z.literal('')),
+  area: z.string().optional().or(z.literal('')),
   guestId: z.string().optional().or(z.literal('')),
   availabilityRuleId: z.string().optional().or(z.literal('')),
   guest: reserveGuestInputSchema.optional(),
@@ -1277,6 +1278,7 @@ export const reservePublicAvailabilityInputSchema = z.object({
 export const reservePublicBookingInputSchema = z.object({
   venue: z.string().min(1),
   availabilityRuleId: z.string().optional().or(z.literal('')),
+  area: z.string().optional().or(z.literal('')),
   serviceDate: z.string().min(4),
   startsAt: z.string().min(4),
   partySize: z.coerce.number().int().min(1).max(20),
@@ -1419,6 +1421,35 @@ export const reserveDrinkPackageUpdateInputSchema = z.object({
   sortOrder: z.coerce.number().int().optional(),
   isActive: z.boolean().optional()
 });
+
+// Bookable areas per venue (Avalon: Inside/Outside/Bar; St Alma: Dining Room/
+// Bar Counter/Kitchen Counter). Drives the booking area picker, the table
+// editor's area dropdown, and the floor-plan area filter.
+export type ReserveArea = {
+  id: string;
+  venue: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export const reserveAreaInputSchema = z.object({
+  venue: z.string().min(1),
+  name: z.string().min(1).max(80),
+  sortOrder: z.coerce.number().int().default(0),
+  isActive: z.boolean().default(true)
+});
+
+export const reserveAreaUpdateInputSchema = z.object({
+  name: z.string().min(1).max(80).optional(),
+  sortOrder: z.coerce.number().int().optional(),
+  isActive: z.boolean().optional()
+});
+
+export type ReserveAreaInput = z.infer<typeof reserveAreaInputSchema>;
+export type ReserveAreaUpdateInput = z.infer<typeof reserveAreaUpdateInputSchema>;
 
 // Create a PaymentIntent for the selected drinks packages (charged at booking).
 // The server prices the items from the packages — the client never sends prices.
@@ -3727,6 +3758,7 @@ export type ReserveReservation = {
   status: ReserveReservationStatus;
   source: string;
   tableId: string | null;
+  area: string | null;
   guestId: string;
   availabilityRuleId: string | null;
   guestName: string | null;
@@ -3849,6 +3881,7 @@ export type ReservePublicWidgetConfig = {
     activeRules: number;
     googleReserveReady: boolean;
     drinkPackages: Array<{ id: string; name: string; description: string | null; priceCents: number }>;
+    areas: string[];
   }>;
   limitations: string[];
 };

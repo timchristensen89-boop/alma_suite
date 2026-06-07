@@ -1333,6 +1333,23 @@ model ReserveDrinkPackage {
   @@index([venue, isActive, sortOrder])
 }
 
+// Bookable areas per venue (e.g. Alma Avalon: Inside / Outside / Bar;
+// St Alma: Dining Room / Bar Counter / Kitchen Counter). Drives the area
+// picker in the booking flow, the table editor's area dropdown, and the
+// floor-plan area filter. Admin-editable; deactivate via isActive (no delete).
+model ReserveArea {
+  id        String   @id @default(cuid())
+  venue     String
+  name      String
+  sortOrder Int      @default(0)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([venue, name])
+  @@index([venue, isActive, sortOrder])
+}
+
 model ReserveReservation {
   id                       String                   @id @default(cuid())
   venue                    String
@@ -1344,6 +1361,7 @@ model ReserveReservation {
   status                   ReserveReservationStatus @default(PENDING)
   source                   String                   @default("manager")
   tableId                  String?
+  area                     String?
   guestId                  String
   availabilityRuleId       String?
   guestName                String?
