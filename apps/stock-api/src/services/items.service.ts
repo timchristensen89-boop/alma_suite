@@ -400,6 +400,36 @@ export const itemsService = {
     };
   },
 
+  // Full-catalogue CSV export — every item with its current category, count
+  // area, unit, status and latest cost. Column names line up with the
+  // categorize-items helper (item / sku / category) so it round-trips.
+  async exportCsv(): Promise<{ filename: string; csv: string }> {
+    const items = await prisma.stockItem.findMany({
+      include: { category: { select: { name: true } } },
+      orderBy: [{ category: { name: 'asc' } }, { name: 'asc' }]
+    });
+
+    const csvCell = (value: unknown): string => {
+      const text = value == null ? '' : String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const headers = ['item', 'sku', 'category', 'count_area', 'unit', 'count_unit', 'status', 'latest_cost_cents'];
+    const rows = items.map((item) => [
+      item.name,
+      item.sku ?? '',
+      item.category?.name ?? '',
+      item.countArea ?? '',
+      item.unit ?? '',
+      item.countUnit ?? '',
+      item.status,
+      item.latestCostCents ?? item.avgCostCents ?? ''
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+    return { filename: 'alma-stock-items.csv', csv };
+  },
+
   async summary(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockItemsSummary> {
     const venue = actorVenueScope(actor, requestedVenue);
     const [totalItems, activeItems, categories, venueRows] = await Promise.all([
