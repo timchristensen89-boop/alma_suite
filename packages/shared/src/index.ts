@@ -2613,7 +2613,9 @@ export const xeroSupplierBillsImportInputSchema = z.object({
   venue: z.string().optional().or(z.literal('')),
   startDate: z.string().optional().or(z.literal('')),
   endDate: z.string().optional().or(z.literal('')),
-  limit: z.number().int().min(1).max(100).optional(),
+  // The scheduler/backfill clamp billsLimit to 1000; the actual fetch is still
+  // bounded by the preview, so accept up to 1000 here instead of rejecting.
+  limit: z.number().int().min(1).max(1000).optional(),
   confirmationText: z.literal('IMPORT XERO BILLS', {
     errorMap: () => ({ message: 'Type IMPORT XERO BILLS to confirm bill import' })
   })
