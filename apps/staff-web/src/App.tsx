@@ -82,6 +82,7 @@ import {
   StatCard,
   SUITE_APPS,
   SuiteAppSwitcher,
+  accessibleSuiteApps,
   SuiteClock,
   SuiteFeedbackWidget,
   SuiteInboxWidget,
@@ -710,14 +711,9 @@ function navItemsForUser(user: ReturnType<typeof useAuth>['user']) {
 }
 
 function suiteAppsForUser(user: ReturnType<typeof useAuth>['user']) {
-  if (!user || user.isAdmin) return suiteApps;
-
-  return suiteApps.filter((app) => {
-    const accessAppId = SUITE_APP_ACCESS_MAP[app.id];
-    if (!accessAppId) return false;
-    if (accessAppId === 'SETTINGS') return canAccessSettings(user);
-    return user.appAccess.some((access) => access.appId === accessAppId && access.status === 'ENABLED');
-  });
+  // Shared, manager-safe access filter: admins + managers see every app, only
+  // STAFF are scoped to the apps enabled on their profile.
+  return accessibleSuiteApps(user, suiteApps);
 }
 
 function canManageCommunications(user: ReturnType<typeof useAuth>['user']) {

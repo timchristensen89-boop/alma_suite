@@ -39,6 +39,8 @@ import {
   Spinner,
   StatCard,
   SUITE_APPS,
+  AppAccessGate,
+  accessibleSuiteApps,
   SuiteAppSwitcher,
   SuiteClock,
   SuiteFeedbackWidget,
@@ -3692,7 +3694,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           subtitle="Read-only operating reports"
           right={
             <>
-              <SuiteAppSwitcher currentApp="reports" apps={suiteApps} variant="topbar" />
+              <SuiteAppSwitcher currentApp="reports" apps={accessibleSuiteApps(user, suiteApps)} variant="topbar" />
               <SuiteInboxWidget
                 appId="REPORTS"
                 api={staffApi}
@@ -3841,5 +3843,9 @@ export function App() {
     return <LoginScreen onLogin={auth.login} />;
   }
 
-  return <ReportsDashboard user={auth.user} onLogout={auth.logout} />;
+  return (
+    <AppAccessGate user={auth.user} appId="REPORTS" appName="Reports" apps={suiteApps}>
+      <ReportsDashboard user={auth.user} onLogout={auth.logout} />
+    </AppAccessGate>
+  );
 }
