@@ -1342,14 +1342,24 @@ async function searchSquareOpenOrders(input: { connection: IntegrationConnection
   return { connection, orders: response.data.orders ?? [], tokenStatus: response.tokenStatus };
 }
 
+// Australian GST is 10% and built into menu prices. Square's "Net Sales"
+// figure (what operators reconcile against) excludes GST and tips, but a
+// payment's total_money includes both. Convert each payment to ex-GST,
+// ex-tip net sales so the report matches the Square dashboard.
+const AU_GST_DIVISOR = 1.1;
+
 function squarePaymentAmountCents(payment: SquarePayment) {
-  const total = typeof payment.total_money?.amount === 'number'
+  const gross = typeof payment.total_money?.amount === 'number'
     ? payment.total_money.amount
     : typeof payment.amount_money?.amount === 'number'
       ? payment.amount_money.amount
       : 0;
+  const tip = typeof payment.tip_money?.amount === 'number' ? payment.tip_money.amount : 0;
   const refunded = typeof payment.refunded_money?.amount === 'number' ? payment.refunded_money.amount : 0;
-  return Math.max(0, Math.round(total - refunded));
+  // total_money = item sales + GST + tips. Strip tips + refunds, then back out
+  // the GST baked into the GST-inclusive remainder → ex-GST, ex-tip net sales.
+  const gstInclusiveNet = Math.max(0, gross - tip - refunded);
+  return Math.max(0, Math.round(gstInclusiveNet / AU_GST_DIVISOR));
 }
 
 function squareOrderLineGrossCents(line: SquareOrderLineItem) {
@@ -4420,12 +4430,12 @@ export const integrationService = {
             salesCents: row.salesCents,
             source: row.source,
             externalId: row.externalId,
-            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
+            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: net sales (ex GST + tips) from ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
             importedById: actor.id
           },
           update: {
             salesCents: row.salesCents,
-            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
+            notes: `${squareAccountConfig(accountKey).label} Square ${row.locationName}: net sales (ex GST + tips) from ${row.paymentCount} completed payments${row.currency ? ` (${row.currency})` : ''}.`,
             importedById: actor.id
           }
         });
