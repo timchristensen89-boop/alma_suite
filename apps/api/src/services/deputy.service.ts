@@ -49,6 +49,38 @@ export function deputyEndpointFromConnection(connection: IntegrationConnection):
 
 const TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+const MAX_FETCH_RETRIES = 3;
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+// 0.6s, 1.2s, 2.4s — fast enough for an interactive "Sync now", patient enough
+// to ride out Deputy's transient 5xx ("Due to internal error … please be
+// patient as we fix the problem").
+const retryDelayMs = (attempt: number) => 600 * 2 ** attempt;
+
+// Deputy's API 5xx's intermittently. Retry server errors (and network faults)
+// a few times with backoff before surfacing the failure; 4xx are returned
+// as-is since retrying a bad request won't help.
+async function fetchWithRetry(makeRequest: () => Promise<Response>): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= MAX_FETCH_RETRIES; attempt += 1) {
+    try {
+      const response = await makeRequest();
+      if (response.status >= 500 && attempt < MAX_FETCH_RETRIES) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+      return response;
+    } catch (error) {
+      lastError = error;
+      if (attempt < MAX_FETCH_RETRIES) {
+        await sleep(retryDelayMs(attempt));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error('Deputy request failed');
+}
+
 async function refreshConnection(connection: IntegrationConnection) {
   if (!connection.refreshTokenEncrypted) {
     throw new HttpError(409, 'Deputy refresh token missing — please reconnect.');
@@ -111,20 +143,14 @@ async function validAccessToken(connection: IntegrationConnection) {
 async function apiGet<T>(connection: IntegrationConnection, path: string): Promise<T> {
   let current = await validAccessToken(connection);
   const endpoint = deputyEndpointFromConnection(current.connection);
-  let response = await fetch(`https://${endpoint}/api/v1${path}`, {
-    headers: {
-      authorization: `OAuth ${current.accessToken}`,
-      accept: 'application/json'
-    }
-  });
+  const doFetch = (token: string) =>
+    fetch(`https://${endpoint}/api/v1${path}`, {
+      headers: { authorization: `OAuth ${token}`, accept: 'application/json' }
+    });
+  let response = await fetchWithRetry(() => doFetch(current.accessToken));
   if (response.status === 401) {
     current = await refreshConnection(current.connection);
-    response = await fetch(`https://${endpoint}/api/v1${path}`, {
-      headers: {
-        authorization: `OAuth ${current.accessToken}`,
-        accept: 'application/json'
-      }
-    });
+    response = await fetchWithRetry(() => doFetch(current.accessToken));
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
@@ -149,10 +175,10 @@ async function apiPost<T>(connection: IntegrationConnection, path: string, body:
       },
       body: JSON.stringify(body ?? {})
     });
-  let response = await doFetch(current.accessToken);
+  let response = await fetchWithRetry(() => doFetch(current.accessToken));
   if (response.status === 401) {
     current = await refreshConnection(current.connection);
-    response = await doFetch(current.accessToken);
+    response = await fetchWithRetry(() => doFetch(current.accessToken));
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
@@ -164,14 +190,12 @@ async function apiPost<T>(connection: IntegrationConnection, path: string, body:
 async function apiGetBytes(connection: IntegrationConnection, path: string) {
   let current = await validAccessToken(connection);
   const endpoint = deputyEndpointFromConnection(current.connection);
-  let response = await fetch(`https://${endpoint}/api/v1${path}`, {
-    headers: { authorization: `OAuth ${current.accessToken}` }
-  });
+  const doFetch = (token: string) =>
+    fetch(`https://${endpoint}/api/v1${path}`, { headers: { authorization: `OAuth ${token}` } });
+  let response = await fetchWithRetry(() => doFetch(current.accessToken));
   if (response.status === 401) {
     current = await refreshConnection(current.connection);
-    response = await fetch(`https://${endpoint}/api/v1${path}`, {
-      headers: { authorization: `OAuth ${current.accessToken}` }
-    });
+    response = await fetchWithRetry(() => doFetch(current.accessToken));
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
@@ -457,10 +481,25 @@ function pickFirstNonEmpty(...values: Array<string | null | undefined>): string 
 }
 
 export async function syncEmployees(connection: IntegrationConnection) {
-  const employees = await apiPost<DeputyEmployee[]>(connection, '/resource/Employee/QUERY', {
-    max: 500,
-    join: ['CompanyInfo', 'RoleInfo']
-  });
+  const queryEmployees = (withJoins: boolean) =>
+    apiPost<DeputyEmployee[]>(connection, '/resource/Employee/QUERY', {
+      max: 500,
+      ...(withJoins ? { join: ['CompanyInfo', 'RoleInfo'] } : {})
+    });
+  // Deputy intermittently 500s on the *joined* Employee query. If the joined
+  // form fails with a server error, retry without joins so we still sync core
+  // employee fields — the Company/Role enrichment below already treats the
+  // joined metadata as optional.
+  let employees: DeputyEmployee[];
+  try {
+    employees = await queryEmployees(true);
+  } catch (error) {
+    if (error instanceof HttpError && error.statusCode >= 500) {
+      employees = await queryEmployees(false);
+    } else {
+      throw error;
+    }
+  }
 
   let created = 0;
   let updated = 0;
@@ -900,6 +939,45 @@ type SyncTrigger = 'MANUAL' | 'SCHEDULED';
 
 async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'roster' | 'employees' | 'documents' | 'timesheets' | 'all') {
   const connection = await connectedDeputyConnection();
+
+  // 'all' runs each resource independently so a transient failure on one
+  // (Deputy regularly 500s on a single resource — most often Employee) no
+  // longer aborts the rest. Roster + timesheets feed the daily brief and the
+  // labour-cost reports, so they must still import even when employee sync is
+  // down. We mark ERROR only when every resource failed; a partial run stays
+  // CONNECTED with the failing resource(s) noted. Order is preserved so later
+  // syncs can match employees imported earlier in the same run.
+  if (task === 'all') {
+    const reason = (error: unknown) => (error instanceof Error ? error.message : 'failed');
+    const failures: string[] = [];
+    let employees: Awaited<ReturnType<typeof syncEmployees>> | undefined;
+    let documents: Awaited<ReturnType<typeof syncDocuments>> | undefined;
+    let roster: Awaited<ReturnType<typeof syncRoster>> | undefined;
+    let timesheets: Awaited<ReturnType<typeof syncTimesheets>> | undefined;
+    try { employees = await syncEmployees(connection); } catch (error) { failures.push(`employees: ${reason(error)}`); }
+    try { documents = await syncDocuments(connection); } catch (error) { failures.push(`documents: ${reason(error)}`); }
+    try { roster = await syncRoster(connection); } catch (error) { failures.push(`roster: ${reason(error)}`); }
+    try { timesheets = await syncTimesheets(connection); } catch (error) { failures.push(`timesheets: ${reason(error)}`); }
+
+    const allFailed = failures.length === 4;
+    await markSyncRun(connection, trigger, allFailed ? 'ERROR' : 'SUCCESS', {
+      recordsImported:
+        (employees?.created ?? 0) +
+        (documents?.complianceCreated ?? 0) +
+        (documents?.reviewsCreated ?? 0) +
+        (roster?.shiftsCreated ?? 0) +
+        (timesheets?.created ?? 0),
+      recordsUpdated:
+        (employees?.updated ?? 0) + (roster?.staffMatched ?? 0) + (timesheets?.updated ?? 0),
+      errorSummary: failures.length ? failures.join(' • ') : null
+    });
+    if (allFailed) {
+      throw new HttpError(502, `Deputy sync failed — ${failures.join(' • ')}`);
+    }
+    return { ok: true, trigger, actorId: actor.id, employees, documents, roster, timesheets, partialFailures: failures };
+  }
+
+  // Single-resource syncs: success marks SUCCESS; any throw marks ERROR.
   try {
     if (task === 'roster') {
       const result = await syncRoster(connection);
@@ -924,32 +1002,12 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
       });
       return { ok: true, trigger, actorId: actor.id, documents: result };
     }
-    if (task === 'timesheets') {
-      const result = await syncTimesheets(connection);
-      await markSyncRun(connection, trigger, 'SUCCESS', {
-        recordsImported: result.created,
-        recordsUpdated: result.updated
-      });
-      return { ok: true, trigger, actorId: actor.id, timesheets: result };
-    }
-    // 'all' — run in employee → documents → roster → timesheets order so the
-    // document/roster/timesheet syncs can match newly-imported employees, and
-    // so the roster sync (which can also create unallocated placeholders) runs
-    // before timesheets attach actuals.
-    const employees = await syncEmployees(connection);
-    const documents = await syncDocuments(connection);
-    const roster = await syncRoster(connection);
-    const timesheets = await syncTimesheets(connection);
+    const result = await syncTimesheets(connection);
     await markSyncRun(connection, trigger, 'SUCCESS', {
-      recordsImported:
-        employees.created +
-        documents.complianceCreated +
-        documents.reviewsCreated +
-        roster.shiftsCreated +
-        timesheets.created,
-      recordsUpdated: employees.updated + roster.staffMatched + timesheets.updated
+      recordsImported: result.created,
+      recordsUpdated: result.updated
     });
-    return { ok: true, trigger, actorId: actor.id, employees, documents, roster, timesheets };
+    return { ok: true, trigger, actorId: actor.id, timesheets: result };
   } catch (error) {
     const errorSummary = error instanceof Error ? error.message : 'Deputy sync failed';
     await markSyncRun(connection, trigger, 'ERROR', { errorSummary });
