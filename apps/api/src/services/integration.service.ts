@@ -1407,7 +1407,22 @@ function resolveVenueFromTenantName(tenantName: string | null, venues: string[])
     const v = normaliseMatchText(venue);
     return v.length > 0 && (target.includes(v) || v.includes(target));
   });
-  return contained ?? null;
+  if (contained) return contained;
+  // Xero org names are legal entities that often don't contain the trading
+  // venue name (e.g. "Alma Freshwater Pty Ltd" is the St Alma entity, "Alma
+  // Avalon Pty Ltd" is Alma Avalon). Map known location keywords to the
+  // configured venue so those bills don't import Unassigned.
+  const aliasKeywords: Array<{ keyword: string; venueText: string }> = [
+    { keyword: 'freshwater', venueText: 'st alma' },
+    { keyword: 'avalon', venueText: 'alma avalon' }
+  ];
+  for (const alias of aliasKeywords) {
+    if (target.includes(alias.keyword)) {
+      const match = venues.find((venue) => normaliseMatchText(venue) === normaliseMatchText(alias.venueText));
+      if (match) return match;
+    }
+  }
+  return null;
 }
 
 function squarePaymentVenue(input: {
