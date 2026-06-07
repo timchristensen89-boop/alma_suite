@@ -372,7 +372,7 @@ export const staffManagerNoteInputSchema = z.object({
 
 const awardCodes = AWARD_RATE_SETS.map((award) => award.awardCode) as [AustralianAwardCode, ...AustralianAwardCode[]];
 const staffAwardEmploymentTypes = ['CASUAL', 'PART_TIME', 'FULL_TIME'] as const satisfies readonly StaffAwardEmploymentType[];
-const staffPayModes = ['AWARD', 'MANUAL_FULL_TIME'] as const satisfies readonly StaffPayMode[];
+const staffPayModes = ['AWARD', 'MANUAL_FULL_TIME', 'CASH'] as const satisfies readonly StaffPayMode[];
 const manualFullTimePayFrequencies = ['ANNUAL_SALARY', 'HOURLY_FULL_TIME'] as const satisfies readonly ManualFullTimePayFrequency[];
 
 export const staffAwardCodeSchema = z.enum(awardCodes);
@@ -387,8 +387,18 @@ export const staffPayProfileInputSchema = z.object({
   payMode: staffPayModeSchema.default('AWARD'),
   manualFullTimePayAmountCents: z.coerce.number().int().nonnegative().optional().nullable(),
   manualFullTimePayFrequency: manualFullTimePayFrequencySchema.optional().nullable(),
-  manualFullTimePayNote: z.string().trim().max(1000).optional().or(z.literal(''))
+  manualFullTimePayNote: z.string().trim().max(1000).optional().or(z.literal('')),
+  // Cash wages: a flat hourly rate paid in cash (not synced to Xero). Required
+  // when payMode = 'CASH'.
+  cashHourlyRateCents: z.coerce.number().int().nonnegative().optional().nullable()
 }).superRefine((data, ctx) => {
+  if (data.payMode === 'CASH' && (!data.cashHourlyRateCents || data.cashHourlyRateCents <= 0)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ['cashHourlyRateCents'],
+      message: 'A cash hourly rate is required for cash-paid staff.'
+    });
+  }
   const isManual = data.employmentType === 'FULL_TIME' || data.payMode === 'MANUAL_FULL_TIME';
   if (isManual) {
     if (data.payMode !== 'MANUAL_FULL_TIME') {
@@ -3129,6 +3139,7 @@ export type StaffPayProfile = {
   manualFullTimePayAmountCents: number | null;
   manualFullTimePayFrequency: ManualFullTimePayFrequency | null;
   manualFullTimePayNote: string | null;
+  cashHourlyRateCents: number | null;
   payUpdatedAt: string | null;
   payUpdatedByUserId: string | null;
   createdAt: string | null;

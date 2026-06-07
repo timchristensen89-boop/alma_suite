@@ -1,6 +1,6 @@
 export type AustralianAwardCode = 'MA000119' | 'MA000009';
 export type StaffAwardEmploymentType = 'CASUAL' | 'PART_TIME' | 'FULL_TIME';
-export type StaffPayMode = 'AWARD' | 'MANUAL_FULL_TIME';
+export type StaffPayMode = 'AWARD' | 'MANUAL_FULL_TIME' | 'CASH';
 export type ManualFullTimePayFrequency = 'ANNUAL_SALARY' | 'HOURLY_FULL_TIME';
 
 export type AwardClassificationRate = {

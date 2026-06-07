@@ -592,6 +592,7 @@ function currentPayProfile(staff: StaffProfile): StaffPayProfile {
     manualFullTimePayAmountCents: null,
     manualFullTimePayFrequency: null,
     manualFullTimePayNote: null,
+    cashHourlyRateCents: null,
     payUpdatedAt: null,
     payUpdatedByUserId: null,
     createdAt: null,
@@ -767,14 +768,20 @@ function AwardPaySetupPanel({
     initialProfile.manualFullTimePayFrequency ?? 'ANNUAL_SALARY'
   );
   const [manualNote, setManualNote] = useState(initialProfile.manualFullTimePayNote ?? '');
+  const [paidInCash, setPaidInCash] = useState(initialProfile.payMode === 'CASH');
+  const [cashRate, setCashRate] = useState(
+    initialProfile.cashHourlyRateCents ? String(initialProfile.cashHourlyRateCents / 100) : ''
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const award = AWARD_RATE_SETS.find((item) => item.awardCode === awardCode) ?? AWARD_RATE_SETS[0]!;
   const classification = award.classifications.find((item) => item.id === classificationId) ?? award.classifications[0]!;
   const manualPayCents = Math.round(Number(manualPay) * 100);
-  const fullTime = employmentType === 'FULL_TIME';
+  const fullTime = employmentType === 'FULL_TIME' && !paidInCash;
   const manualPayInvalid = fullTime && (!Number.isFinite(manualPayCents) || manualPayCents <= 0);
+  const cashRateCents = Math.round(Number(cashRate) * 100);
+  const cashRateInvalid = paidInCash && (!Number.isFinite(cashRateCents) || cashRateCents <= 0);
   // Salary → hourly: the costing engine spreads an annual salary over a 45h
   // week (salary ÷ 52 ÷ 45), then adds 12% super. Surface that derived rate
   // live so a manager who enters a salary sees the per-hour figure.
@@ -792,16 +799,28 @@ function AwardPaySetupPanel({
   }
 
   async function save() {
-    if (saving || manualPayInvalid) return;
-    const payload: StaffPayProfileInput = {
-      awardCode,
-      awardClassification: classification.id,
-      employmentType,
-      payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
-      manualFullTimePayAmountCents: fullTime ? manualPayCents : null,
-      manualFullTimePayFrequency: fullTime ? manualFrequency : null,
-      manualFullTimePayNote: fullTime ? manualNote.trim() : ''
-    };
+    if (saving || manualPayInvalid || cashRateInvalid) return;
+    const payload: StaffPayProfileInput = paidInCash
+      ? {
+          awardCode,
+          awardClassification: classification.id,
+          employmentType,
+          payMode: 'CASH',
+          cashHourlyRateCents: cashRateCents,
+          manualFullTimePayAmountCents: null,
+          manualFullTimePayFrequency: null,
+          manualFullTimePayNote: ''
+        }
+      : {
+          awardCode,
+          awardClassification: classification.id,
+          employmentType,
+          payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
+          cashHourlyRateCents: null,
+          manualFullTimePayAmountCents: fullTime ? manualPayCents : null,
+          manualFullTimePayFrequency: fullTime ? manualFrequency : null,
+          manualFullTimePayNote: fullTime ? manualNote.trim() : ''
+        };
 
     setSaving(true);
     setError(null);
@@ -893,6 +912,29 @@ function AwardPaySetupPanel({
         ) : null}
       </div>
 
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={paidInCash}
+          onChange={(event) => setPaidInCash(event.target.checked)}
+        />
+        Paid in cash
+      </label>
+
+      {paidInCash ? (
+        <div className="form-grid two" style={{ marginTop: 12 }}>
+          <Input
+            label="Cash hourly rate ($/hr)"
+            type="number"
+            min="0"
+            step="0.01"
+            value={cashRate}
+            onChange={(event) => setCashRate(event.target.value)}
+            hint="Flat rate, same every day. Not synced to Xero."
+          />
+        </div>
+      ) : null}
+
       {fullTime ? (
         <div className="form-grid two" style={{ marginTop: 12 }}>
           <Input
@@ -930,9 +972,10 @@ function AwardPaySetupPanel({
       ) : null}
 
       {manualPayInvalid ? <p className="error-text">Enter a positive manual full-time pay amount.</p> : null}
+      {cashRateInvalid ? <p className="error-text">Enter a positive cash hourly rate.</p> : null}
       {error ? <p className="error-text">{error}</p> : null}
       <div className="toolbar-right">
-        <Button type="button" onClick={() => void save()} disabled={saving || manualPayInvalid}>
+        <Button type="button" onClick={() => void save()} disabled={saving || manualPayInvalid || cashRateInvalid}>
           {saving ? 'Saving…' : 'Save award pay setup'}
         </Button>
       </div>

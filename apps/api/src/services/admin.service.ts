@@ -284,7 +284,8 @@ export const adminService = {
           ordinaryHourlyRateCents: true,
           casualLoadedHourlyRateCents: true,
           manualFullTimePayAmountCents: true,
-          manualFullTimePayFrequency: true
+          manualFullTimePayFrequency: true,
+          cashHourlyRateCents: true
         }
       }
     } satisfies Prisma.StaffProfileSelect;
