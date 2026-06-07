@@ -5649,10 +5649,10 @@ export const integrationService = {
         continue;
       }
 
-      // The Alma profile is the source of truth for salaried staff: if a
-      // manager has set a manual full-time salary, don't let Xero's hourly
-      // rate clobber it. Still stamp the Xero link for traceability.
-      if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME') {
+      // The Alma profile is the source of truth for salaried and cash-paid
+      // staff: if a manager has set a manual full-time salary or cash wages,
+      // don't let Xero's hourly rate clobber it. Still stamp the Xero link.
+      if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH') {
         if (!profile.xeroEmployeeId) {
           await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
         }

@@ -20,7 +20,8 @@ export const staffPayRateSelect = {
       ordinaryHourlyRateCents: true,
       casualLoadedHourlyRateCents: true,
       manualFullTimePayAmountCents: true,
-      manualFullTimePayFrequency: true
+      manualFullTimePayFrequency: true,
+      cashHourlyRateCents: true
     }
   }
 } as const;
@@ -35,6 +36,7 @@ export type StaffCostProfile = {
     casualLoadedHourlyRateCents: number | null;
     manualFullTimePayAmountCents: number | null;
     manualFullTimePayFrequency: string | null;
+    cashHourlyRateCents: number | null;
   } | null;
 };
 
@@ -65,6 +67,16 @@ export function staffCostingRate(profile: StaffCostProfile): StaffCostingRate {
   };
 
   const payProfile = profile.payProfile;
+
+  // Cash wages — a flat hourly rate paid in cash, the same every day, with no
+  // overtime split and no super on top (the rate is the actual cost). Takes
+  // precedence over employment type.
+  if (payProfile && payProfile.payMode === 'CASH') {
+    const base = payProfile.cashHourlyRateCents;
+    if (!base) return missing;
+    return { ordinaryRateCents: base, overtimeRateCents: null, appliesOvertime: false, rateCents: base, source: 'Cash (flat, no super)' };
+  }
+
   const fullTime = payProfile
     ? payProfile.payMode === 'MANUAL_FULL_TIME' || isFullTimeType(payProfile.employmentType)
     : false;

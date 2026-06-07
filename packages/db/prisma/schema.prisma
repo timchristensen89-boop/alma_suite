@@ -741,6 +741,9 @@ model StaffPayProfile {
   manualFullTimePayAmountCents Int?
   manualFullTimePayFrequency   String?
   manualFullTimePayNote        String?
+  // Cash wages: a flat hourly rate paid in cash (set rate, no penalties/OT,
+  // not synced to/from Xero). Used when payMode = 'CASH'.
+  cashHourlyRateCents          Int?
   payUpdatedAt                 DateTime     @default(now())
   payUpdatedByUserId           String?
   createdAt                    DateTime     @default(now())

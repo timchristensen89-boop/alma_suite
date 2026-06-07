@@ -3345,13 +3345,19 @@ function CostingPayProfilePanel({
     profile?.manualFullTimePayFrequency ?? 'ANNUAL_SALARY'
   );
   const [payNote, setPayNote] = useState(profile?.manualFullTimePayNote ?? '');
+  const [paidInCash, setPaidInCash] = useState(profile?.payMode === 'CASH');
+  const [cashRate, setCashRate] = useState(
+    profile?.cashHourlyRateCents ? String(profile.cashHourlyRateCents / 100) : ''
+  );
   const [savingPayProfile, setSavingPayProfile] = useState(false);
   const [payProfileError, setPayProfileError] = useState<string | null>(null);
 
-  const fullTime = payEmploymentType === 'FULL_TIME';
+  const fullTime = payEmploymentType === 'FULL_TIME' && !paidInCash;
   const salaryCents = Math.round(Number(paySalary) * 100);
   const salaryValid = Number.isFinite(salaryCents) && salaryCents > 0;
   const salaryInvalid = fullTime && !salaryValid;
+  const cashRateCents = Math.round(Number(cashRate) * 100);
+  const cashRateInvalid = paidInCash && (!Number.isFinite(cashRateCents) || cashRateCents <= 0);
 
   // Salary → hourly: the costing engine spreads an annual salary over a 45h
   // week (salary ÷ 52 ÷ 45), then adds 12% super. Surface that derived rate live.
@@ -3363,16 +3369,28 @@ function CostingPayProfilePanel({
       : null;
 
   async function savePayProfile() {
-    if (!canManage || savingPayProfile || salaryInvalid) return;
-    const payload: StaffPayProfileInput = {
-      awardCode: profile?.awardCode ?? DEFAULT_STAFF_AWARD_CODE,
-      awardClassification: profile?.awardClassification ?? DEFAULT_STAFF_AWARD_CLASSIFICATION,
-      employmentType: payEmploymentType,
-      payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
-      manualFullTimePayAmountCents: fullTime ? salaryCents : null,
-      manualFullTimePayFrequency: fullTime ? payFrequency : null,
-      manualFullTimePayNote: fullTime ? payNote.trim() : ''
-    };
+    if (!canManage || savingPayProfile || salaryInvalid || cashRateInvalid) return;
+    const payload: StaffPayProfileInput = paidInCash
+      ? {
+          awardCode: profile?.awardCode ?? DEFAULT_STAFF_AWARD_CODE,
+          awardClassification: profile?.awardClassification ?? DEFAULT_STAFF_AWARD_CLASSIFICATION,
+          employmentType: payEmploymentType,
+          payMode: 'CASH',
+          cashHourlyRateCents: cashRateCents,
+          manualFullTimePayAmountCents: null,
+          manualFullTimePayFrequency: null,
+          manualFullTimePayNote: ''
+        }
+      : {
+          awardCode: profile?.awardCode ?? DEFAULT_STAFF_AWARD_CODE,
+          awardClassification: profile?.awardClassification ?? DEFAULT_STAFF_AWARD_CLASSIFICATION,
+          employmentType: payEmploymentType,
+          payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
+          cashHourlyRateCents: null,
+          manualFullTimePayAmountCents: fullTime ? salaryCents : null,
+          manualFullTimePayFrequency: fullTime ? payFrequency : null,
+          manualFullTimePayNote: fullTime ? payNote.trim() : ''
+        };
 
     setSavingPayProfile(true);
     setPayProfileError(null);
@@ -3425,6 +3443,29 @@ function CostingPayProfilePanel({
           </>
         ) : null}
       </div>
+      <label className="check-row">
+        <input
+          type="checkbox"
+          checked={paidInCash}
+          disabled={!canManage}
+          onChange={(event) => setPaidInCash(event.currentTarget.checked)}
+        />
+        Paid in cash
+      </label>
+      {paidInCash ? (
+        <div className="form-grid" style={{ marginTop: 10 }}>
+          <Input
+            label="Cash hourly rate ($/hr)"
+            type="number"
+            min="0"
+            step="0.01"
+            value={cashRate}
+            onChange={(event) => setCashRate(event.currentTarget.value)}
+            hint="Flat rate, same every day. Not synced to Xero."
+            disabled={!canManage}
+          />
+        </div>
+      ) : null}
       {fullTime ? (
         <div className="form-grid" style={{ marginTop: 10 }}>
           <Textarea
@@ -3443,6 +3484,7 @@ function CostingPayProfilePanel({
         </p>
       ) : null}
       {salaryInvalid ? <p className="error-text">Enter a positive annual salary for full-time staff.</p> : null}
+      {cashRateInvalid ? <p className="error-text">Enter a positive cash hourly rate.</p> : null}
       {payProfileError ? <p className="error-text">{payProfileError}</p> : null}
       {canManage ? (
         <div style={{ marginTop: 10 }}>
@@ -3450,7 +3492,7 @@ function CostingPayProfilePanel({
             type="button"
             size="sm"
             onClick={() => void savePayProfile()}
-            disabled={savingPayProfile || salaryInvalid}
+            disabled={savingPayProfile || salaryInvalid || cashRateInvalid}
           >
             {savingPayProfile ? 'Saving…' : 'Save pay profile'}
           </Button>
@@ -3563,6 +3605,16 @@ function StaffProfileWorkspacePage({
     groups[item.group] = [...(groups[item.group] ?? []), item];
     return groups;
   }, {});
+  // Switch-staff dropdown: list active (non-archived) staff plus the current
+  // member (so an archived profile reached via URL stays selectable), sorted by name.
+  const switchStaffOptions = staff
+    .filter((item) => item.employmentStatus !== 'ARCHIVED' || item.id === member.id)
+    .slice()
+    .sort((left, right) => staffFullName(left).localeCompare(staffFullName(right)))
+    .map((item) => ({
+      label: item.venue ? `${staffFullName(item)} · ${item.venue}` : staffFullName(item),
+      value: item.id
+    }));
 
   async function handleProfileSaved(saved: StaffProfile) {
     await reload();
@@ -4394,6 +4446,7 @@ function StaffProfileWorkspacePage({
               </span>
             </span>
           </div>
+          <Select label="Staff member" value={member.id} onChange={(event) => navigate(`/staff/${event.currentTarget.value}/${activeSection}`)} options={switchStaffOptions} />
           <Select label="Profile section" value={activeSection} onChange={(event) => navigate(`/staff/${member.id}/${event.currentTarget.value}`)} options={STAFF_PROFILE_SECTIONS.map((item) => ({ label: item.sensitive ? `${item.label} (restricted)` : item.label, value: item.id }))} />
           <nav className="staff-profile-section-nav">
             {Object.entries(sidebarGroups).map(([group, items]) => (
