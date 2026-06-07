@@ -12,6 +12,17 @@ itemsRouter.get('/', async (req, res, next) => {
   }
 });
 
+itemsRouter.get('/export.csv', async (req, res, next) => {
+  try {
+    const { filename, csv } = await itemsService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/summary', async (req, res, next) => {
   try {
     res.json(await itemsService.summary(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));

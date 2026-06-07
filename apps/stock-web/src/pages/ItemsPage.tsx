@@ -233,6 +233,7 @@ export function ItemsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [exportingItems, setExportingItems] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkStatus, setBulkStatus] = useState<'' | 'ACTIVE' | 'ARCHIVED'>('');
   const [bulkCountAreaOn, setBulkCountAreaOn] = useState(false);
@@ -500,6 +501,32 @@ export function ItemsPage() {
     }
   }
 
+  async function downloadItemsCsv() {
+    setExportingItems(true);
+    setError(null);
+    try {
+      const token = window.localStorage.getItem('alma.stock.session');
+      const res = await fetch('/api/items/export.csv', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'alma-stock-items.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export items CSV');
+    } finally {
+      setExportingItems(false);
+    }
+  }
+
   async function deleteSelectedItems() {
     if (selectedIds.size === 0) return;
     if (!canManage) {
@@ -713,15 +740,27 @@ export function ItemsPage() {
         subtitle={cardSubtitle}
         action={
           form.mode === 'closed' ? (
-            <Button
-              type="button"
-              size="sm"
-              disabled={!canManage}
-              title={canManage ? undefined : 'Manager access required'}
-              onClick={() => setForm({ mode: 'create' })}
-            >
-              {canManage ? 'New item' : 'Manager required'}
-            </Button>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={exportingItems}
+                title="Download the whole catalogue as a CSV (item, sku, category, count area, status)"
+                onClick={() => void downloadItemsCsv()}
+              >
+                {exportingItems ? 'Exporting…' : 'Export CSV'}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!canManage}
+                title={canManage ? undefined : 'Manager access required'}
+                onClick={() => setForm({ mode: 'create' })}
+              >
+                {canManage ? 'New item' : 'Manager required'}
+              </Button>
+            </div>
           ) : null
         }
       >
