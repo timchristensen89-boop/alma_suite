@@ -33,6 +33,9 @@ import type {
   StaffManagementEvent,
   StaffManagerDashboardPayload,
   StaffMyRosterPayload,
+  StaffAwardEmploymentType,
+  ManualFullTimePayFrequency,
+  StaffPayProfileInput,
   StaffTrainingStatus,
   SuiteAnnouncement,
   SuiteChatChannel,
@@ -47,6 +50,8 @@ import type {
 } from '@alma/shared';
 import {
   AWARD_RATE_SETS,
+  DEFAULT_STAFF_AWARD_CODE,
+  DEFAULT_STAFF_AWARD_CLASSIFICATION,
   DEFAULT_STAFF_DEFAULTS,
   DEFAULT_ONBOARDING_SETTINGS,
   normaliseOnboardingSettings,
@@ -3301,6 +3306,160 @@ function ProfileInfoGrid({ items }: { items: Array<{ label: string; value: React
   );
 }
 
+function formatPayCents(cents: number) {
+  return (cents / 100).toLocaleString(undefined, { style: 'currency', currency: 'AUD' });
+}
+
+const COSTING_EMPLOYMENT_TYPE_OPTIONS: Array<{ label: string; value: StaffAwardEmploymentType }> = [
+  { label: 'Casual', value: 'CASUAL' },
+  { label: 'Part-time', value: 'PART_TIME' },
+  { label: 'Full-time', value: 'FULL_TIME' }
+];
+
+const COSTING_PAY_FREQUENCY_OPTIONS: Array<{ label: string; value: ManualFullTimePayFrequency }> = [
+  { label: 'Annual salary', value: 'ANNUAL_SALARY' },
+  { label: 'Hourly full-time rate', value: 'HOURLY_FULL_TIME' }
+];
+
+// Costing pay-profile editor — sets a staffer's employment type and (for
+// full-timers) their salary so the Staff app is the source of truth for the
+// costing engine. Mirrors the Compliance app's AwardPaySetupPanel logic, minus
+// the award/classification selects (those values are preserved on save).
+function CostingPayProfilePanel({
+  member,
+  canManage,
+  onSaved
+}: {
+  member: StaffProfile;
+  canManage: boolean;
+  onSaved: (message: string) => void | Promise<void>;
+}) {
+  const profile = member.payProfile;
+  const [payEmploymentType, setPayEmploymentType] = useState<StaffAwardEmploymentType>(
+    profile?.employmentType ?? 'CASUAL'
+  );
+  const [paySalary, setPaySalary] = useState(
+    profile?.manualFullTimePayAmountCents ? String(profile.manualFullTimePayAmountCents / 100) : ''
+  );
+  const [payFrequency, setPayFrequency] = useState<ManualFullTimePayFrequency>(
+    profile?.manualFullTimePayFrequency ?? 'ANNUAL_SALARY'
+  );
+  const [payNote, setPayNote] = useState(profile?.manualFullTimePayNote ?? '');
+  const [savingPayProfile, setSavingPayProfile] = useState(false);
+  const [payProfileError, setPayProfileError] = useState<string | null>(null);
+
+  const fullTime = payEmploymentType === 'FULL_TIME';
+  const salaryCents = Math.round(Number(paySalary) * 100);
+  const salaryValid = Number.isFinite(salaryCents) && salaryCents > 0;
+  const salaryInvalid = fullTime && !salaryValid;
+
+  // Salary → hourly: the costing engine spreads an annual salary over a 45h
+  // week (salary ÷ 52 ÷ 45), then adds 12% super. Surface that derived rate live.
+  const FULL_TIME_WEEKLY_HOURS = 45;
+  const SUPER_MULTIPLIER = 1.12;
+  const derivedHourlyCents =
+    fullTime && payFrequency === 'ANNUAL_SALARY' && salaryValid
+      ? Math.round(salaryCents / 52 / FULL_TIME_WEEKLY_HOURS)
+      : null;
+
+  async function savePayProfile() {
+    if (!canManage || savingPayProfile || salaryInvalid) return;
+    const payload: StaffPayProfileInput = {
+      awardCode: profile?.awardCode ?? DEFAULT_STAFF_AWARD_CODE,
+      awardClassification: profile?.awardClassification ?? DEFAULT_STAFF_AWARD_CLASSIFICATION,
+      employmentType: payEmploymentType,
+      payMode: fullTime ? 'MANUAL_FULL_TIME' : 'AWARD',
+      manualFullTimePayAmountCents: fullTime ? salaryCents : null,
+      manualFullTimePayFrequency: fullTime ? payFrequency : null,
+      manualFullTimePayNote: fullTime ? payNote.trim() : ''
+    };
+
+    setSavingPayProfile(true);
+    setPayProfileError(null);
+    try {
+      await api<StaffProfile>(`/api/staff/${member.id}/pay-profile`, {
+        method: 'PUT',
+        body: JSON.stringify(payload)
+      });
+      await onSaved('Costing pay profile saved.');
+    } catch (err) {
+      setPayProfileError(err instanceof Error ? err.message : 'Could not save costing pay profile.');
+    } finally {
+      setSavingPayProfile(false);
+    }
+  }
+
+  return (
+    <section className="staff-modal-section">
+      <h3>Costing pay profile</h3>
+      <p className="subtle" style={{ margin: '0 0 10px' }}>
+        Sets the employment type and (for full-timers) the agreed salary the costing engine uses for this person. The Staff app is the source of truth.
+      </p>
+      <div className="form-grid three">
+        <Select
+          label="Employment type"
+          value={payEmploymentType}
+          onChange={(event) => setPayEmploymentType(event.currentTarget.value as StaffAwardEmploymentType)}
+          options={COSTING_EMPLOYMENT_TYPE_OPTIONS}
+          disabled={!canManage}
+        />
+        {fullTime ? (
+          <>
+            <Input
+              label="Annual salary"
+              type="number"
+              min="0"
+              step="0.01"
+              value={paySalary}
+              onChange={(event) => setPaySalary(event.currentTarget.value)}
+              hint="Required for full-time. Enter dollars, not cents."
+              disabled={!canManage}
+            />
+            <Select
+              label="Pay frequency"
+              value={payFrequency}
+              onChange={(event) => setPayFrequency(event.currentTarget.value as ManualFullTimePayFrequency)}
+              options={COSTING_PAY_FREQUENCY_OPTIONS}
+              disabled={!canManage}
+            />
+          </>
+        ) : null}
+      </div>
+      {fullTime ? (
+        <div className="form-grid" style={{ marginTop: 10 }}>
+          <Textarea
+            label="Pay note (optional)"
+            rows={2}
+            value={payNote}
+            onChange={(event) => setPayNote(event.currentTarget.value)}
+            disabled={!canManage}
+          />
+        </div>
+      ) : null}
+      {derivedHourlyCents != null ? (
+        <p className="subtle" style={{ margin: '8px 0 0' }}>
+          ≈ <strong>{formatPayCents(derivedHourlyCents)}/hr</strong> ordinary (salary ÷ 52 weeks ÷ 45h) ·{' '}
+          {formatPayCents(Math.round(derivedHourlyCents * SUPER_MULTIPLIER))}/hr incl. 12% super.
+        </p>
+      ) : null}
+      {salaryInvalid ? <p className="error-text">Enter a positive annual salary for full-time staff.</p> : null}
+      {payProfileError ? <p className="error-text">{payProfileError}</p> : null}
+      {canManage ? (
+        <div style={{ marginTop: 10 }}>
+          <Button
+            type="button"
+            size="sm"
+            onClick={() => void savePayProfile()}
+            disabled={savingPayProfile || salaryInvalid}
+          >
+            {savingPayProfile ? 'Saving…' : 'Save pay profile'}
+          </Button>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function StaffProfileWorkspacePage({
   staff,
   roleTemplates,
@@ -3903,6 +4062,16 @@ function StaffProfileWorkspacePage({
               <Input label="Award / classification" value={profileDraft.payAward} onChange={(event) => updateProfile('payAward', event.currentTarget.value)} />
             </div>
           </section>
+
+          <CostingPayProfilePanel
+            member={member}
+            canManage={canManageProfileAccess}
+            onSaved={async (savedMessage) => {
+              await reload();
+              setMessageTarget('payroll');
+              setMessage(savedMessage);
+            }}
+          />
 
           <section className="staff-modal-section">
             <h3>Tax</h3>
