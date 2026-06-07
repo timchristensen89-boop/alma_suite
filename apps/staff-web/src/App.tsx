@@ -3034,6 +3034,12 @@ function StaffModal({
   width?: 'standard' | 'wide';
 }) {
   const panelRef = useRef<HTMLDivElement>(null);
+  // Keep the latest onClose without making it an effect dependency — otherwise
+  // the parent's inline `onClose={() => …}` changes identity every render, the
+  // effect re-runs, and `panel.focus()` yanks focus out of whatever input the
+  // user is typing in (the "type one letter then it clicks out" bug).
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     if (!open) return undefined;
@@ -3041,7 +3047,7 @@ function StaffModal({
     document.body.style.overflow = 'hidden';
     const timer = window.setTimeout(() => panelRef.current?.focus(), 0);
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') onClose();
+      if (event.key === 'Escape') onCloseRef.current();
     };
     window.addEventListener('keydown', onKeyDown);
     return () => {
@@ -3049,7 +3055,7 @@ function StaffModal({
       window.removeEventListener('keydown', onKeyDown);
       document.body.style.overflow = previousOverflow;
     };
-  }, [onClose, open]);
+  }, [open]);
 
   if (!open) return null;
 
