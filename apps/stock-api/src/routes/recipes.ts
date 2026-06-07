@@ -26,6 +26,17 @@ recipesRouter.get('/summary', async (_req, res, next) => {
   }
 });
 
+recipesRouter.get('/export.csv', async (_req, res, next) => {
+  try {
+    const { filename, csv } = await recipesService.exportCsv();
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (error) {
+    next(error);
+  }
+});
+
 recipesRouter.get('/cost-of-goods', async (req, res, next) => {
   try {
     const days = Number(req.query.days);
