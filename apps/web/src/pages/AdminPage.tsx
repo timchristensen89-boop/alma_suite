@@ -46,6 +46,7 @@ import type {
   StaffRoleTemplate,
   XeroConnectionHealthPayload,
   XeroPayRateSyncResult,
+  XeroTimesheetSyncResult,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
   XeroSupplierContactsImportResult,
@@ -1480,6 +1481,7 @@ function IntegrationCard({
   onDisconnect,
   onHealthCheck,
   onSyncPayRates,
+  onSyncTimesheets,
   onRefresh,
   onSyncLocations,
   onImportSales,
@@ -1496,6 +1498,7 @@ function IntegrationCard({
   onDisconnect: (integration: IntegrationProviderStatus) => void;
   onHealthCheck?: () => void;
   onSyncPayRates?: () => void;
+  onSyncTimesheets?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
   onImportSales?: () => void;
@@ -1510,6 +1513,7 @@ function IntegrationCard({
   const isBusy = busy === `${integration.provider}${accountSuffix}`;
   const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
   const isSyncPayRatesBusy = busy === 'xero-sync-pay-rates';
+  const isSyncTimesheetsBusy = busy === 'xero-sync-timesheets';
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isImportSalesBusy = busy === `square${accountSuffix}-import-sales`;
@@ -1706,6 +1710,11 @@ function IntegrationCard({
           {isXero && onSyncPayRates ? (
             <Button variant="secondary" disabled={isSyncPayRatesBusy || integration.status !== 'CONNECTED'} onClick={onSyncPayRates}>
               {isSyncPayRatesBusy ? 'Syncing pay rates...' : 'Sync pay rates from Xero'}
+            </Button>
+          ) : null}
+          {isXero && onSyncTimesheets ? (
+            <Button variant="secondary" disabled={isSyncTimesheetsBusy || integration.status !== 'CONNECTED'} onClick={onSyncTimesheets}>
+              {isSyncTimesheetsBusy ? 'Importing timesheets...' : 'Import timesheets from Xero'}
             </Button>
           ) : null}
           {isSquare && onHealthCheck ? (
@@ -2115,6 +2124,7 @@ export function AdminPage({
   const [xeroSyncFeedback, setXeroSyncFeedback] = useState<string | null>(null);
   const [xeroAllowCreateSuppliers, setXeroAllowCreateSuppliers] = useState(false);
   const [xeroPayRateSyncResult, setXeroPayRateSyncResult] = useState<XeroPayRateSyncResult | null>(null);
+  const [xeroTimesheetSyncResult, setXeroTimesheetSyncResult] = useState<XeroTimesheetSyncResult | null>(null);
   const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
@@ -2272,6 +2282,22 @@ export function AdminPage({
       setXeroPayRateSyncResult(result);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not sync pay rates from Xero.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function syncXeroTimesheets() {
+    setIntegrationBusy('xero-sync-timesheets');
+    setError(null);
+    setXeroTimesheetSyncResult(null);
+    try {
+      const result = await api<XeroTimesheetSyncResult>('/api/integrations/xero/sync-timesheets', {
+        method: 'POST'
+      });
+      setXeroTimesheetSyncResult(result);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not import timesheets from Xero.');
     } finally {
       setIntegrationBusy(null);
     }
@@ -3972,6 +3998,7 @@ export function AdminPage({
                         : undefined
                   }
                   onSyncPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates() : undefined}
+                  onSyncTimesheets={integration.provider === 'xero' && showXero ? () => void syncXeroTimesheets() : undefined}
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
                   onImportSales={integration.provider === 'square' ? () => void importSquareSales(integration) : undefined}
@@ -4077,6 +4104,64 @@ export function AdminPage({
                             value={row.email ?? row.xeroEmployeeId}
                             tone="warning"
                           />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </Card>
+              </AdminCollapsibleSection>
+            ) : null}
+            {xeroTimesheetSyncResult ? (
+              <AdminCollapsibleSection
+                title="Timesheets imported"
+                summary={`${xeroTimesheetSyncResult.imported} day-rows · ${xeroTimesheetSyncResult.staffMatched} staff · ${xeroTimesheetSyncResult.notMatched} unmatched`}
+                defaultOpen
+                status={<Badge tone={xeroTimesheetSyncResult.imported > 0 ? 'positive' : 'info'}>{xeroTimesheetSyncResult.imported} rows</Badge>}
+              >
+                <Card>
+                  <div className="admin-status-stack">
+                    <StatusLine label="Day-rows imported" value={String(xeroTimesheetSyncResult.imported)} tone="positive" />
+                    <StatusLine label="Staff matched" value={String(xeroTimesheetSyncResult.staffMatched)} tone="muted" />
+                    <StatusLine label="Timesheets processed" value={String(xeroTimesheetSyncResult.timesheetCount)} tone="muted" />
+                    <StatusLine label="Unmatched employees" value={String(xeroTimesheetSyncResult.notMatched)} tone={xeroTimesheetSyncResult.notMatched > 0 ? 'warning' : 'muted'} />
+                  </div>
+                  {xeroTimesheetSyncResult.tenants.length > 0 ? (
+                    <div>
+                      <strong>By organisation</strong>
+                      <div className="admin-status-stack">
+                        {xeroTimesheetSyncResult.tenants.map((t) => (
+                          <StatusLine
+                            key={t.tenantId}
+                            label={`${t.tenantName ?? t.tenantId}${t.venue ? ` → ${t.venue}` : ''}`}
+                            value={t.error ? `Error: ${t.error}` : `${t.imported} rows · ${t.timesheetCount} timesheets`}
+                            tone={t.error ? 'warning' : 'positive'}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {xeroTimesheetSyncResult.unmatched.length > 0 ? (
+                    <div>
+                      <strong>Unmatched Xero employees</strong>
+                      <p className="muted">These employees had timesheets in Xero but couldn't be matched to a staff profile. Link them by adding the Xero Employee ID to each profile, or check the name/email match.</p>
+                      <div className="admin-status-stack">
+                        {xeroTimesheetSyncResult.unmatched.map((row) => (
+                          <StatusLine
+                            key={`${row.tenantName ?? ''}:${row.xeroEmployeeId}`}
+                            label={row.name ?? row.xeroEmployeeId}
+                            value={row.tenantName ?? row.xeroEmployeeId}
+                            tone="warning"
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                  {xeroTimesheetSyncResult.warnings.length > 0 ? (
+                    <div>
+                      <strong>Notes</strong>
+                      <div className="admin-status-stack">
+                        {xeroTimesheetSyncResult.warnings.map((w, i) => (
+                          <StatusLine key={i} label="Note" value={w} tone="warning" />
                         ))}
                       </div>
                     </div>

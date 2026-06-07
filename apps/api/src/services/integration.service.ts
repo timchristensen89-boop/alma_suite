@@ -12,6 +12,7 @@ import type {
   IntegrationStatusPayload,
   SquareConfigMissingMap,
   XeroPayRateSyncResult,
+  XeroTimesheetSyncResult,
   XeroScheduledImportStatus,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
@@ -65,7 +66,8 @@ const XERO_SCOPES = [
   'accounting.invoices.read',
   'accounting.contacts.read',
   'accounting.settings.read',
-  'payroll.employees.read'
+  'payroll.employees.read',
+  'payroll.timesheets.read'
 ];
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -5698,6 +5700,262 @@ export const integrationService = {
       notMatched: unmatched.length,
       updated,
       unmatched
+    };
+  },
+
+  // Import worked hours FROM Xero Payroll timesheets into Alma's Timesheet
+  // rows so Staff costing has real hours when Deputy's feed is unreliable.
+  // Xero AU timesheets are weekly with a per-day hours array per earnings
+  // line; we write one Alma row per worked day (synthetic 09:00 clock-in so
+  // the existing clockOut−clockIn hour math is exact). Idempotent per Xero
+  // timesheet via xeroImportKey, so re-runs only touch import-origin rows.
+  async syncXeroTimesheets(
+    actor: AuthUser,
+    input: { lookbackDays?: number } = {}
+  ): Promise<XeroTimesheetSyncResult> {
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const targets = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (targets.length === 0) {
+      throw new HttpError(409, 'No Xero tenants are connected.');
+    }
+
+    const lookbackDays = clampLimit(input.lookbackDays, 35, 120);
+    const windowStart = new Date();
+    windowStart.setHours(0, 0, 0, 0);
+    windowStart.setDate(windowStart.getDate() - lookbackDays);
+
+    const venueNames = await configuredVenueNames();
+
+    const staffProfiles = await prisma.staffProfile.findMany({
+      where: { mergedIntoStaffProfileId: null },
+      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true }
+    });
+    const byXeroId = new Map(
+      staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
+    );
+    const byEmail = new Map(
+      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
+    );
+    const nameKey = (first: string, last: string) =>
+      `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+    const byName = new Map<string, typeof staffProfiles>();
+    for (const p of staffProfiles) {
+      const k = nameKey(p.firstName, p.lastName);
+      const list = byName.get(k) ?? [];
+      list.push(p);
+      byName.set(k, list);
+    }
+
+    type XeroPayrollEmployee = { EmployeeID: string; FirstName: string; LastName: string; Email?: string; Status: string };
+    type XeroTimesheetLine = { EarningsRateID?: string; NumberOfUnits?: number[] };
+    type XeroTimesheet = {
+      TimesheetID: string;
+      EmployeeID: string;
+      StartDate: string;
+      EndDate: string;
+      Status?: string;
+      TimesheetLines?: XeroTimesheetLine[];
+    };
+
+    const matchedStaffIds = new Set<string>();
+    const unmatched: XeroTimesheetSyncResult['unmatched'] = [];
+    const unmatchedSeen = new Set<string>();
+    const tenantResults: XeroTimesheetSyncResult['tenants'] = [];
+    const warnings: string[] = [];
+    let totalImported = 0;
+    let totalTimesheets = 0;
+    let totalSkipped = 0;
+
+    for (const tenant of targets) {
+      let tenantImported = 0;
+      let tenantTimesheets = 0;
+      let tenantError: string | null = null;
+      const tenantVenue = resolveVenueFromTenantName(tenant.name, venueNames);
+
+      try {
+        // Timesheets only carry EmployeeID, so fetch this tenant's employee
+        // directory to recover names/emails for matching Alma profiles.
+        const empResponse = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          '/payroll.xro/1.0/Employees',
+          { connection, tenantId: tenant.id }
+        );
+        const employeesById = new Map(
+          (empResponse.data.Employees ?? []).map((e) => [e.EmployeeID, e])
+        );
+
+        // Page through timesheets (100/page), dedup by id, stop at a short
+        // page or when a page adds nothing new. Then keep only the window.
+        const allTimesheets: XeroTimesheet[] = [];
+        const seenIds = new Set<string>();
+        for (let page = 1; page <= 10; page++) {
+          const tsResponse = await xeroGetJson<{ Timesheets?: XeroTimesheet[] }>(
+            `/payroll.xro/1.0/Timesheets?page=${page}`,
+            { connection, tenantId: tenant.id }
+          );
+          const batch = tsResponse.data.Timesheets ?? [];
+          const fresh = batch.filter((ts) => ts.TimesheetID && !seenIds.has(ts.TimesheetID));
+          fresh.forEach((ts) => seenIds.add(ts.TimesheetID));
+          allTimesheets.push(...fresh);
+          if (batch.length < 100 || fresh.length === 0) break;
+        }
+
+        const timesheets = allTimesheets.filter((ts) => {
+          const end = parseXeroDate(ts.EndDate) ?? parseXeroDate(ts.StartDate);
+          return end ? end >= windowStart : false;
+        });
+
+        if (timesheets.length > 0 && !tenantVenue) {
+          warnings.push(`${tenant.name ?? tenant.id} did not match a configured venue — its timesheets imported without a venue.`);
+        }
+
+        for (const summary of timesheets) {
+          tenantTimesheets++;
+          totalTimesheets++;
+
+          const emp = employeesById.get(summary.EmployeeID);
+          const nameList = emp ? byName.get(nameKey(emp.FirstName, emp.LastName)) ?? [] : [];
+          const profile =
+            byXeroId.get(summary.EmployeeID.toLowerCase()) ??
+            (emp?.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
+            (nameList.length === 1 ? nameList[0] : undefined);
+
+          if (!profile) {
+            const key = `${tenant.id}:${summary.EmployeeID}`;
+            if (!unmatchedSeen.has(key)) {
+              unmatchedSeen.add(key);
+              unmatched.push({
+                xeroEmployeeId: summary.EmployeeID,
+                name: emp ? `${emp.FirstName} ${emp.LastName}`.trim() : null,
+                tenantName: tenant.name
+              });
+            }
+            totalSkipped++;
+            continue;
+          }
+
+          // Per-day hours only come back on the detail GET.
+          let lines = summary.TimesheetLines;
+          if (!lines || lines.length === 0) {
+            const detail = await xeroGetJson<{ Timesheets?: XeroTimesheet[] }>(
+              `/payroll.xro/1.0/Timesheets/${summary.TimesheetID}`,
+              { connection, tenantId: tenant.id }
+            );
+            lines = detail.data.Timesheets?.[0]?.TimesheetLines ?? [];
+          }
+
+          const start = parseXeroDate(summary.StartDate);
+          if (!start) { totalSkipped++; continue; }
+          start.setHours(0, 0, 0, 0);
+
+          // Sum hours per day across every earnings line (ordinary + OT/penalty
+          // are all worked hours for costing). Index = days from StartDate.
+          const perDayHours = new Map<number, number>();
+          for (const line of lines) {
+            const units = Array.isArray(line.NumberOfUnits) ? line.NumberOfUnits : [];
+            units.forEach((u, dayOffset) => {
+              const hrs = Number(u);
+              if (Number.isFinite(hrs) && hrs > 0) {
+                perDayHours.set(dayOffset, (perDayHours.get(dayOffset) ?? 0) + hrs);
+              }
+            });
+          }
+          if (perDayHours.size === 0) { totalSkipped++; continue; }
+
+          const status: 'APPROVED' | 'SUBMITTED' =
+            (summary.Status ?? '').toUpperCase() === 'APPROVED' ? 'APPROVED' : 'SUBMITTED';
+
+          const rows = [...perDayHours.entries()].map(([dayOffset, hours]) => {
+            const workDate = new Date(start);
+            workDate.setDate(workDate.getDate() + dayOffset);
+            const clockInAt = new Date(workDate);
+            clockInAt.setHours(9, 0, 0, 0);
+            const clockOutAt = new Date(clockInAt.getTime() + hours * 3_600_000);
+            return {
+              staffProfileId: profile.id,
+              venue: tenantVenue ?? null,
+              workDate,
+              clockInAt,
+              clockOutAt,
+              breakMinutes: 0,
+              status,
+              xeroEmployeeId: summary.EmployeeID,
+              xeroTimesheetId: summary.TimesheetID,
+              xeroImportKey: `${tenant.id}:${summary.TimesheetID}:${dayOffset}`,
+              paymentMethod: 'XERO',
+              notes: 'Imported from Xero Payroll'
+            };
+          });
+
+          // Replace this timesheet's prior import rows (handles edited/removed
+          // days), then insert. Only ever touches rows with this xeroImportKey
+          // prefix — never Deputy/manual/export-origin rows.
+          await prisma.$transaction([
+            prisma.timesheet.deleteMany({
+              where: { xeroImportKey: { startsWith: `${tenant.id}:${summary.TimesheetID}:` } }
+            }),
+            prisma.timesheet.createMany({ data: rows })
+          ]);
+
+          matchedStaffIds.add(profile.id);
+          tenantImported += rows.length;
+          totalImported += rows.length;
+        }
+      } catch (error) {
+        tenantError = safeErrorMessage(error);
+        if (error instanceof HttpError && error.statusCode === 429) {
+          warnings.push(
+            `${tenant.name ?? tenant.id} hit Xero's rate limit after importing ${tenantImported} day-rows — run the sync again in a minute to import the rest.`
+          );
+        }
+      }
+
+      tenantResults.push({
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        venue: tenantVenue,
+        imported: tenantImported,
+        timesheetCount: tenantTimesheets,
+        error: tenantError
+      });
+    }
+
+    const errorMessages = tenantResults
+      .filter((t) => t.error)
+      .map((t) => `${t.tenantName ?? t.tenantId}: ${t.error}`);
+    // Only fail outright if every tenant failed (retryable outage). Partial
+    // success returns normally with per-tenant errors surfaced in the result.
+    if (errorMessages.length > 0 && tenantResults.every((t) => t.error)) {
+      throw new HttpError(502, `Xero timesheet import failed: ${errorMessages.join(' | ')}`);
+    }
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'DATA_IMPORTED',
+      summary: `Xero timesheets synced: ${totalImported} day-rows for ${matchedStaffIds.size} staff across ${tenantResults.length} tenant(s).`,
+      actor,
+      metadata: {
+        imported: totalImported,
+        staffMatched: matchedStaffIds.size,
+        timesheetCount: totalTimesheets,
+        notMatched: unmatched.length
+      }
+    });
+
+    return {
+      imported: totalImported,
+      staffMatched: matchedStaffIds.size,
+      timesheetCount: totalTimesheets,
+      skipped: totalSkipped,
+      notMatched: unmatched.length,
+      tenants: tenantResults,
+      unmatched,
+      warnings
     };
   },
 
