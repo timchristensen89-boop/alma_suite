@@ -22,9 +22,12 @@ import {
   reserveDrinkPackageInputSchema,
   reserveDrinkPackageUpdateInputSchema,
   reserveDrinksPaymentIntentInputSchema,
+  reserveAreaInputSchema,
+  reserveAreaUpdateInputSchema,
   googleReserveIntegrationSettingInputSchema,
   type AuthUser,
   type ReserveGuest,
+  type ReserveArea,
   type ReserveDrinkPackage,
   type ReserveDrinksLineItem,
   type ReserveDrinksPaymentIntentResponse,
@@ -126,6 +129,26 @@ function toDrinkPackagePayload(row: {
     name: row.name,
     description: row.description,
     priceCents: row.priceCents,
+    sortOrder: row.sortOrder,
+    isActive: row.isActive,
+    createdAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString()
+  };
+}
+
+function toAreaPayload(row: {
+  id: string;
+  venue: string;
+  name: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+}): ReserveArea {
+  return {
+    id: row.id,
+    venue: row.venue,
+    name: row.name,
     sortOrder: row.sortOrder,
     isActive: row.isActive,
     createdAt: row.createdAt.toISOString(),
@@ -440,6 +463,7 @@ function toReservationPayload(reservation: ReserveReservationRow): ReserveReserv
     status: reservation.status,
     source: reservation.source,
     tableId: reservation.tableId,
+    area: reservation.area ?? null,
     guestId: reservation.guestId,
     availabilityRuleId: reservation.availabilityRuleId,
     guestName: reservation.guestName,
@@ -1118,6 +1142,7 @@ export const reserveService = {
           status: data.status,
           source: cleanText(data.source) ?? 'manager',
           tableId: cleanText(data.tableId) ?? null,
+          area: cleanText(data.area) ?? null,
           availabilityRuleId: cleanText(data.availabilityRuleId) ?? null,
           guestId: guest.id,
           guestName: cleanText(data.guestName) ?? ((`${guest.firstName} ${guest.lastName}`.trim()) || null),
@@ -1228,6 +1253,7 @@ export const reserveService = {
     if (data.status !== undefined) patch.status = data.status;
     if (data.source !== undefined) patch.source = cleanText(data.source) ?? 'manager';
     if (data.tableId !== undefined) patch.tableId = cleanText(data.tableId) ?? null;
+    if (data.area !== undefined) patch.area = cleanText(data.area) ?? null;
     if (data.availabilityRuleId !== undefined) patch.availabilityRuleId = cleanText(data.availabilityRuleId) ?? null;
     if (data.guestName !== undefined) patch.guestName = cleanText(data.guestName);
     if (data.guestEmail !== undefined) patch.guestEmail = cleanText(data.guestEmail)?.toLowerCase() ?? null;
@@ -1425,7 +1451,7 @@ export const reserveService = {
   },
 
   async publicWidgetConfig() {
-    const [settings, rules, integrations, drinkPackages] = await Promise.all([
+    const [settings, rules, integrations, drinkPackages, areasRows] = await Promise.all([
       prisma.appSettings.findUnique({ where: { id: 'singleton' }, select: { venues: true } }),
       prisma.reserveAvailabilityRule.findMany({
         where: { active: true, onlineEnabled: true },
@@ -1438,6 +1464,11 @@ export const reserveService = {
         where: { isActive: true },
         orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
         select: { id: true, venue: true, name: true, description: true, priceCents: true }
+      }),
+      prisma.reserveArea.findMany({
+        where: { isActive: true },
+        orderBy: [{ sortOrder: 'asc' }, { name: 'asc' }],
+        select: { venue: true, name: true }
       })
     ]);
 
@@ -1463,7 +1494,8 @@ export const reserveService = {
         ),
         drinkPackages: drinkPackages
           .filter((p) => p.venue === venue)
-          .map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents }))
+          .map((p) => ({ id: p.id, name: p.name, description: p.description, priceCents: p.priceCents })),
+        areas: areasRows.filter((a) => a.venue === venue).map((a) => a.name)
       };
     });
 
@@ -1610,6 +1642,7 @@ export const reserveService = {
           covers: data.partySize,
           status: 'CONFIRMED',
           source: 'public_widget',
+          area: cleanText(data.area) ?? null,
           availabilityRuleId: cleanText(data.availabilityRuleId) ?? slot.availabilityRuleId,
           guestId: guest.id,
           guestName: `${guest.firstName} ${guest.lastName}`.trim(),
@@ -1956,6 +1989,45 @@ export const reserveService = {
     if (data.isActive !== undefined) patch.isActive = data.isActive;
     const row = await prisma.reserveDrinkPackage.update({ where: { id }, data: patch });
     return toDrinkPackagePayload(row);
+  },
+
+  async listAreas(actor: AuthUser, venue?: string): Promise<ReserveArea[]> {
+    const scopedVenue = actorVenueScope(actor, venue ?? null, 'Reserve');
+    const where: Prisma.ReserveAreaWhereInput = {};
+    if (scopedVenue) where.venue = scopedVenue;
+    const rows = await prisma.reserveArea.findMany({
+      where,
+      orderBy: [{ venue: 'asc' }, { sortOrder: 'asc' }, { name: 'asc' }]
+    });
+    return rows.map(toAreaPayload);
+  },
+
+  async createArea(actor: AuthUser, input: unknown): Promise<ReserveArea> {
+    const data = reserveAreaInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue, 'Reserve');
+    if (!venue) throw new HttpError(400, 'Area venue is required');
+    const row = await prisma.reserveArea.upsert({
+      where: { venue_name: { venue, name: data.name.trim() } },
+      create: { venue, name: data.name.trim(), sortOrder: data.sortOrder, isActive: data.isActive },
+      update: { sortOrder: data.sortOrder, isActive: data.isActive }
+    });
+    return toAreaPayload(row);
+  },
+
+  async updateArea(actor: AuthUser, id: string, input: unknown): Promise<ReserveArea> {
+    const data = reserveAreaUpdateInputSchema.parse(input);
+    const existing = await prisma.reserveArea.findUnique({ where: { id } });
+    if (!existing) throw new HttpError(404, 'Area not found.');
+    const allowedVenue = actorVenueScope(actor, existing.venue, 'Reserve');
+    if (allowedVenue && existing.venue !== allowedVenue) {
+      throw new HttpError(403, 'Reserve is limited to your venue.');
+    }
+    const patch: Prisma.ReserveAreaUpdateInput = {};
+    if (data.name !== undefined) patch.name = data.name.trim();
+    if (data.sortOrder !== undefined) patch.sortOrder = data.sortOrder;
+    if (data.isActive !== undefined) patch.isActive = data.isActive;
+    const row = await prisma.reserveArea.update({ where: { id }, data: patch });
+    return toAreaPayload(row);
   },
 
   // Charge the selected drinks packages now (guest present). The same card is

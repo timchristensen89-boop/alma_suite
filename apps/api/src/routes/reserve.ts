@@ -205,6 +205,32 @@ reserveRouter.patch('/drink-packages/:id', requireManager, async (req, res, next
   }
 });
 
+reserveRouter.get('/areas', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await reserveService.listAreas(req.user!, typeof req.query.venue === 'string' ? req.query.venue : undefined)
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.post('/areas', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await reserveService.createArea(req.user!, req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reserveRouter.patch('/areas/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reserveService.updateArea(req.user!, String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 reserveRouter.get('/blackouts', requireManager, async (req, res, next) => {
   try {
     res.json(await reserveService.listBlackouts(req.user!, typeof req.query.venue === 'string' ? req.query.venue : undefined));

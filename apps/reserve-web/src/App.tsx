@@ -22,6 +22,7 @@ import type {
   ReserveSquareTableOrder,
   ReserveSquareOrdersPayload,
   ReserveDrinkPackage,
+  ReserveArea,
   ReserveWaitlistEntry,
   ReserveWaitlistStatus
 } from '@alma/shared';
@@ -107,10 +108,11 @@ const MANAGER_NAV_ITEMS = [
 // Config surfaces (booking rules, drink packages, tables, floor plan) live under
 // one full-width Settings tab, switched by hash sub-nav. The old per-area tabs
 // rendered Drinks/Tables inside the narrow 340-420px aside, so they were unreadable.
-const SETTINGS_HASHES = ['#settings', '#availability', '#drinks', '#tables', '#floor-plan'];
+const SETTINGS_HASHES = ['#settings', '#availability', '#drinks', '#areas', '#tables', '#floor-plan'];
 const SETTINGS_TABS = [
   { hash: '#availability', key: 'rules', label: 'Booking rules' },
   { hash: '#drinks', key: 'drinks', label: 'Drink packages' },
+  { hash: '#areas', key: 'areas', label: 'Areas' },
   { hash: '#tables', key: 'tables', label: 'Tables' },
   { hash: '#floor-plan', key: 'floor-plan', label: 'Floor plan' }
 ] as const;
@@ -144,6 +146,7 @@ type ReservationForm = {
   time: string;
   durationMinutes: string;
   covers: string;
+  area: string;
   tableId: string;
   availabilityRuleId: string;
   status: ReserveReservationStatus;
@@ -471,6 +474,7 @@ function defaultReservationForm(venue: string): ReservationForm {
     time: '18:30',
     durationMinutes: '120',
     covers: '2',
+    area: '',
     tableId: '',
     availabilityRuleId: '',
     status: 'CONFIRMED',
@@ -814,6 +818,7 @@ function PublicBookingWidget() {
     lastName: '',
     email: '',
     phone: '',
+    area: '',
     dietaryTags: [] as string[],
     occasion: null as string | null,
     kitchenNote: '',
@@ -948,6 +953,7 @@ function PublicBookingWidget() {
           email: guest.email.trim(),
           phone: guest.phone.trim(),
           occasion: guest.occasion ?? '',
+          area: guest.area || undefined,
           dietaryNotes: guest.dietaryTags.join(', '),
           specialRequests: guest.kitchenNote.trim(),
           marketingOptIn: guest.marketingOptIn,
@@ -1009,6 +1015,7 @@ function PublicBookingWidget() {
       lastName: '',
       email: '',
       phone: '',
+      area: '',
       dietaryTags: [],
       occasion: null,
       kitchenNote: '',
@@ -1099,7 +1106,7 @@ function PublicBookingWidget() {
                         key={v.name}
                         type="button"
                         className={`alma-booking-venue ${active ? 'alma-booking-venue--active' : ''}`}
-                        onClick={() => setVenue(v.name)}
+                        onClick={() => { setVenue(v.name); setGuest((g) => ({ ...g, area: '' })); }}
                         aria-pressed={active}
                         style={style}
                       >
@@ -1366,6 +1373,28 @@ function PublicBookingWidget() {
                       guestEmail={guest.email}
                       onPaid={(id) => setWidgetDrinksIntentId(id)}
                     />
+                  </div>
+                );
+              })()}
+
+              {(() => {
+                const venueAreas = config?.venues.find((v) => v.name === venue)?.areas ?? [];
+                if (!venueAreas.length) return null;
+                return (
+                  <div className="alma-booking-field">
+                    <label>
+                      <span className="alma-booking-field__eyebrow">Area</span>
+                      <select
+                        className="alma-booking-input"
+                        value={guest.area}
+                        onChange={(event) => { const el = event.currentTarget; setGuest((g) => ({ ...g, area: el.value })); }}
+                      >
+                        <option value="">No preference</option>
+                        {venueAreas.map((area) => (
+                          <option key={area} value={area}>{area}</option>
+                        ))}
+                      </select>
+                    </label>
                   </div>
                 );
               })()}
@@ -2456,6 +2485,9 @@ function FloorPlanSection({
 }) {
   const [geometry, setGeometry] = useState<Record<string, TableGeo>>(() => seedFloorGeometry(tables));
   const [editMode, setEditMode] = useState(false);
+  // Pure view filter — narrow the floor to a single area. 'all' shows everything.
+  // Persisted in component state only; never touches saved data.
+  const [areaFilter, setAreaFilter] = useState<string>('all');
   const [selectedTableId, setSelectedTableId] = useState<string | null>(null);
   const [draggingTableId, setDraggingTableId] = useState<string | null>(null);
   const [draggingReservationId, setDraggingReservationId] = useState<string | null>(null);
@@ -2615,6 +2647,14 @@ function FloorPlanSection({
     });
   })();
 
+  // Distinct areas present on this floor, in first-seen order — drives the
+  // filter chip row. If the active filter's area vanishes (e.g. venue switch),
+  // fall back to 'all' for rendering.
+  const floorAreas = Array.from(new Set(tables.map((t) => t.area)));
+  const activeArea = areaFilter !== 'all' && floorAreas.includes(areaFilter) ? areaFilter : 'all';
+  const areaMatches = (area: string) => activeArea === 'all' || area === activeArea;
+  const visibleZones = zones.filter((zone) => areaMatches(zone.area));
+
   if (tables.length === 0) {
     return (
       <Card title="Floor plan" subtitle={`No tables configured for ${venue} yet — add tables in the Tables card first.`}>
@@ -2696,6 +2736,23 @@ function FloorPlanSection({
           )}
         </div>
       ) : null}
+      {!editMode && floorAreas.length > 1 ? (
+        <div className="floor-plan-area-filter" role="group" aria-label="Filter floor by area">
+          <button
+            type="button"
+            className={activeArea === 'all' ? 'is-active' : ''}
+            onClick={() => setAreaFilter('all')}
+          >All areas</button>
+          {floorAreas.map((area) => (
+            <button
+              key={area}
+              type="button"
+              className={activeArea === area ? 'is-active' : ''}
+              onClick={() => setAreaFilter((current) => (current === area ? 'all' : area))}
+            >{area}</button>
+          ))}
+        </div>
+      ) : null}
       <div className="floor-plan-layout">
         {/* Canvas */}
         <div
@@ -2706,7 +2763,7 @@ function FloorPlanSection({
           onMouseLeave={handleCanvasMouseUp}
           onMouseDown={() => { if (editMode) setSelectedTableId(null); }}
         >
-          {zones.map((zone) => (
+          {(editMode ? zones : visibleZones).map((zone) => (
             <div
               key={zone.area}
               className="floor-plan-zone"
@@ -2716,6 +2773,9 @@ function FloorPlanSection({
             </div>
           ))}
           {tables.map((table, index) => {
+            // View-only area filter — hide tables outside the selected area.
+            // Never filters while editing the layout (all tables stay editable).
+            if (!editMode && !areaMatches(table.area)) return null;
             const geo = geoFor(table, index);
             const tableBookings = reservationsByTable.get(table.id) ?? [];
             const occupancy = tableBookings.length;
@@ -2835,6 +2895,16 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     sortOrder: '0',
     isActive: true
   });
+  // Bookable areas per venue (Inside/Outside/Bar etc.). Drives the booking
+  // area picker, the table editor's area dropdown, and the floor-plan filter.
+  const [areas, setAreas] = useState<ReserveArea[]>([]);
+  const [areaForm, setAreaForm] = useState<{ id: string | null; venue: string; name: string; sortOrder: string; isActive: boolean }>({
+    id: null,
+    venue: KNOWN_VENUES[0] ?? '',
+    name: '',
+    sortOrder: '0',
+    isActive: true
+  });
   // When a manager pre-pays drinks on a booking, the confirmed PaymentIntent id
   // is held here until they hit Save booking.
   const [bookingDrinksIntentId, setBookingDrinksIntentId] = useState<string | null>(null);
@@ -2861,13 +2931,15 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const showWidget = activeHash === '#widget-preview';
   const showGoogleReserve = activeHash === '#google-reserve';
   const showSettings = SETTINGS_HASHES.includes(activeHash);
-  const settingsTab: 'rules' | 'drinks' | 'tables' | 'floor-plan' =
+  const settingsTab: 'rules' | 'drinks' | 'areas' | 'tables' | 'floor-plan' =
     activeHash === '#drinks' ? 'drinks'
-      : activeHash === '#tables' ? 'tables'
-        : activeHash === '#floor-plan' ? 'floor-plan'
-          : 'rules';
+      : activeHash === '#areas' ? 'areas'
+        : activeHash === '#tables' ? 'tables'
+          : activeHash === '#floor-plan' ? 'floor-plan'
+            : 'rules';
   const showAvailability = showSettings && settingsTab === 'rules';
   const showDrinks = showSettings && settingsTab === 'drinks';
+  const showAreas = showSettings && settingsTab === 'areas';
   const showTables = showSettings && settingsTab === 'tables';
   const showFloorPlan = showSettings && settingsTab === 'floor-plan';
   // Recent visit history for the guest being booked — shown when the email
@@ -2907,7 +2979,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const venueQuery = scopedVenueParam ? `venue=${encodeURIComponent(scopedVenueParam)}` : '';
       const join = (path: string, params: string[]) => `${path}${params.filter(Boolean).length ? `?${params.filter(Boolean).join('&')}` : ''}`;
 
-      const [nextDashboard, nextDiary, nextGuests, nextTables, nextRules, nextBlackouts, nextWidgetConfig, nextIntegration, nextDrinkPackages] =
+      const [nextDashboard, nextDiary, nextGuests, nextTables, nextRules, nextBlackouts, nextWidgetConfig, nextIntegration, nextDrinkPackages, nextAreas] =
         await Promise.all([
           api<ReserveDashboardPayload>(join('/api/reserve/dashboard', [venueQuery, `date=${encodeURIComponent(`${selectedDate}T00:00:00`)}`])),
           api<ReserveDiarySummary>(
@@ -2923,7 +2995,8 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           api<ReserveBlackout[]>(join('/api/reserve/blackouts', [venueQuery])),
           api<ReservePublicWidgetConfig>('/api/reserve/public-widget/config'),
           scopedVenueParam ? api<GoogleReserveIntegrationSetting>(join('/api/reserve/google-reserve-settings', [venueQuery])) : Promise.resolve(null),
-          api<ReserveDrinkPackage[]>(join('/api/reserve/drink-packages', [venueQuery]))
+          api<ReserveDrinkPackage[]>(join('/api/reserve/drink-packages', [venueQuery])),
+          api<ReserveArea[]>(join('/api/reserve/areas', [venueQuery]))
         ]);
 
       setDashboard(nextDashboard);
@@ -2935,6 +3008,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       setWidgetConfig(nextWidgetConfig);
       setIntegration(nextIntegration);
       setDrinkPackages(nextDrinkPackages);
+      setAreas(nextAreas);
       if (nextIntegration) setIntegrationForm(nextIntegration);
     } catch (error) {
       setFeedback({
@@ -2979,6 +3053,15 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }, 25000);
     return () => window.clearInterval(id);
   }, [refreshLive]);
+
+  // Pin the new-area form's venue to the scoped venue when a specific venue is
+  // selected (the venue picker is only shown under "All venues"). Skips while
+  // editing an existing area so its venue is preserved.
+  useEffect(() => {
+    if (scopedVenueParam) {
+      setAreaForm((current) => (current.id || current.venue === scopedVenueParam ? current : { ...current, venue: scopedVenueParam }));
+    }
+  }, [scopedVenueParam]);
 
   // Live service-map table calls — polled while the Service view is open so the
   // same active calls show to everyone working the floor.
@@ -3115,7 +3198,22 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return () => window.clearTimeout(handle);
   }, [reservationForm.email]);
 
-  const tableOptions = [{ label: 'Unassigned', value: '' }, ...tables.map((table) => ({ label: `${table.label} · ${table.area}`, value: table.id }))];
+  // Active area names for a venue, sorted by sortOrder (then name) — drives the
+  // booking area picker, table editor dropdown, and floor-plan filter.
+  const areasForVenue = useCallback(
+    (venue: string): string[] =>
+      areas
+        .filter((area) => area.venue === venue && area.isActive)
+        .sort((a, b) => a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+        .map((area) => area.name),
+    [areas]
+  );
+
+  // Quick-create table picker: filter by the chosen area when one is set.
+  const bookingTables = reservationForm.area
+    ? tables.filter((table) => table.area === reservationForm.area)
+    : tables;
+  const tableOptions = [{ label: 'Unassigned', value: '' }, ...bookingTables.map((table) => ({ label: `${table.label} · ${table.area}`, value: table.id }))];
   const ruleOptions = [{ label: 'None', value: '' }, ...rules.map((rule) => ({ label: `${rule.name} · ${rule.venue}`, value: rule.id }))];
 
   function setSuccess(target: string, message: string) {
@@ -3161,6 +3259,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           startsAt: startsAt.toISOString(),
           endsAt: endsAt.toISOString(),
           covers: Number(reservationForm.covers || 1),
+          area: reservationForm.area || undefined,
           tableId: reservationForm.tableId,
           availabilityRuleId: reservationForm.availabilityRuleId,
           status: reservationForm.status,
@@ -3303,6 +3402,49 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
       await load();
     } catch (error) {
       setError('drinks', error, 'Could not update the drinks package.');
+    }
+  }
+
+  async function saveArea(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    try {
+      if (areaForm.id) {
+        await api<ReserveArea>(`/api/reserve/areas/${areaForm.id}`, {
+          method: 'PATCH',
+          body: JSON.stringify({
+            name: areaForm.name,
+            sortOrder: Number(areaForm.sortOrder || 0),
+            isActive: areaForm.isActive
+          })
+        });
+      } else {
+        await api<ReserveArea>('/api/reserve/areas', {
+          method: 'POST',
+          body: JSON.stringify({
+            venue: areaForm.venue,
+            name: areaForm.name,
+            sortOrder: Number(areaForm.sortOrder || 0),
+            isActive: areaForm.isActive
+          })
+        });
+      }
+      setAreaForm({ id: null, venue: areaForm.venue, name: '', sortOrder: '0', isActive: true });
+      setSuccess('areas', 'Area saved.');
+      await load();
+    } catch (error) {
+      setError('areas', error, 'Could not save the area.');
+    }
+  }
+
+  async function toggleArea(area: ReserveArea) {
+    try {
+      await api<ReserveArea>(`/api/reserve/areas/${area.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ isActive: !area.isActive })
+      });
+      await load();
+    } catch (error) {
+      setError('areas', error, 'Could not update the area.');
     }
   }
 
@@ -4009,18 +4151,21 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </section>
           ) : null}
 
-          {(!showSettings || showTables || showDrinks) ? (
+          {(!showSettings || showTables || showDrinks || showAreas) ? (
           <aside className="reserve-side">
             {!showSettings ? (
             <Card title="Quick create booking" subtitle="Manager-entered reservation with guest consent capture">
               <form className="reserve-form" onSubmit={(event) => void saveReservation(event)}>
                 <div className="form-grid two">
-                  <Select label="Venue" value={reservationForm.venue} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
+                  <Select label="Venue" value={reservationForm.venue} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, venue: el.value, area: '', tableId: '' })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
                   <Select label="Service" value={reservationForm.servicePeriod} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, servicePeriod: el.value as ReserveServicePeriod })); }} options={SERVICE_PERIODS.map((value) => ({ label: value, value }))} />
                   <Input label="Date" type="date" value={reservationForm.serviceDate} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, serviceDate: el.value })); }} />
                   <Input label="Time" type="time" value={reservationForm.time} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, time: el.value })); }} />
                   <Input label="Guests" type="number" min="1" value={reservationForm.covers} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, covers: el.value })); }} />
                   <Input label="Duration mins" type="number" min="30" value={reservationForm.durationMinutes} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, durationMinutes: el.value })); }} />
+                  {areasForVenue(reservationForm.venue).length > 0 ? (
+                    <Select label="Area" value={reservationForm.area} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, area: el.value, tableId: '' })); }} options={[{ label: 'Any area', value: '' }, ...areasForVenue(reservationForm.venue).map((value) => ({ label: value, value }))]} />
+                  ) : null}
                   <Select label="Table" value={reservationForm.tableId} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, tableId: el.value })); }} options={tableOptions} />
                   <Select label="Rule" value={reservationForm.availabilityRuleId} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, availabilityRuleId: el.value })); }} options={ruleOptions} />
                   <Input label="First name" required value={reservationForm.firstName} onChange={(event) => { const el = event.currentTarget; setReservationForm((current) => ({ ...current, firstName: el.value })); }} />
@@ -4136,7 +4281,21 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <form className="reserve-form" onSubmit={(event) => void saveTable(event)}>
                 <div className="form-grid two">
                   <Select label="Venue" value={tableForm.venue} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
-                  <Input label="Area" value={tableForm.area} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, area: el.value })); }} />
+                  {(() => {
+                    const venueAreas = areasForVenue(tableForm.venue || venueFilter);
+                    // No configured areas for this venue → keep the original free-text
+                    // input so the field never becomes unusable.
+                    if (venueAreas.length === 0) {
+                      return <Input label="Area" value={tableForm.area} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, area: el.value })); }} />;
+                    }
+                    // Include the current value as an option if it's not in the list,
+                    // so editing an existing table never silently loses its area.
+                    const areaOptions = (tableForm.area && !venueAreas.includes(tableForm.area)
+                      ? [tableForm.area, ...venueAreas]
+                      : venueAreas
+                    ).map((value) => ({ label: value, value }));
+                    return <Select label="Area" value={tableForm.area} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, area: el.value })); }} options={areaOptions} />;
+                  })()}
                   <Input label="Label" required value={tableForm.label} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, label: el.value })); }} />
                   <Input label="Min covers" type="number" min="1" value={tableForm.minCovers} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, minCovers: el.value })); }} />
                   <Input label="Max covers" type="number" min="1" value={tableForm.maxCovers} onChange={(event) => { const el = event.currentTarget; setTableForm((current) => ({ ...current, maxCovers: el.value })); }} />
@@ -4153,6 +4312,90 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 ))}
               </div>
             </Card>
+            ) : null}
+
+            {showAreas ? (
+            <section id="areas">
+              <Card title="Areas" subtitle="Bookable areas per venue (e.g. Inside, Outside, Bar). Drive the booking area picker, the table editor, and the floor-plan filter.">
+                <div className="reserve-section-grid">
+                  <div className="reserve-stack">
+                    <Card title={areaForm.id ? 'Edit area' : 'Add an area'} subtitle="Per venue · lower sort shows first">
+                      <form className="reserve-form" onSubmit={(event) => void saveArea(event)}>
+                        <div className="form-grid two">
+                          {venueFilter === ALL_VENUES ? (
+                            <Select
+                              label="Venue"
+                              value={areaForm.venue}
+                              onChange={(event) => { const v = event.currentTarget.value; setAreaForm((c) => ({ ...c, venue: v })); }}
+                              options={KNOWN_VENUES.map((value) => ({ label: value, value }))}
+                            />
+                          ) : (
+                            <Input label="Venue" value={areaForm.venue} disabled readOnly />
+                          )}
+                          <Input
+                            label="Name"
+                            required
+                            value={areaForm.name}
+                            onChange={(event) => { const v = event.currentTarget.value; setAreaForm((c) => ({ ...c, name: v })); }}
+                            placeholder="e.g. Outside"
+                          />
+                          <Input
+                            label="Sort"
+                            type="number"
+                            value={areaForm.sortOrder}
+                            onChange={(event) => { const v = event.currentTarget.value; setAreaForm((c) => ({ ...c, sortOrder: v })); }}
+                          />
+                        </div>
+                        <label className="reserve-inline-check">
+                          <input
+                            type="checkbox"
+                            checked={areaForm.isActive}
+                            onChange={(event) => { const v = event.currentTarget.checked; setAreaForm((c) => ({ ...c, isActive: v })); }}
+                          />
+                          <span>Available for bookings</span>
+                        </label>
+                        <div className="toolbar-right">
+                          <ActionFeedback message={feedback.target === 'areas' ? feedback.message : null} tone={feedback.tone} />
+                          {areaForm.id ? (
+                            <Button type="button" size="sm" variant="ghost" onClick={() => setAreaForm({ id: null, venue: areaForm.venue, name: '', sortOrder: '0', isActive: true })}>
+                              Cancel
+                            </Button>
+                          ) : null}
+                          <Button type="submit">{areaForm.id ? 'Update area' : 'Save area'}</Button>
+                        </div>
+                      </form>
+                    </Card>
+                  </div>
+                  <div className="reserve-stack">
+                    <Card title="Areas" subtitle={`${areas.length} configured`}>
+                      {areas.length === 0 ? (
+                        <EmptyState title="No areas yet" description="Add an area above — it'll appear in the booking form, the table editor, and the floor-plan filter for that venue." />
+                      ) : (
+                        <div className="reserve-timeline">
+                          {[...areas]
+                            .sort((a, b) => a.venue.localeCompare(b.venue) || a.sortOrder - b.sortOrder || a.name.localeCompare(b.name))
+                            .map((area) => (
+                              <div key={area.id} className="reserve-summary-card">
+                                <strong>{area.name}</strong>
+                                <span>{area.venue} · sort {area.sortOrder}</span>
+                                <div className="reserve-note-list">
+                                  {area.isActive ? <Badge tone="positive">Active</Badge> : <Badge tone="neutral">Hidden</Badge>}
+                                  <Button type="button" size="sm" variant="ghost" onClick={() => setAreaForm({ id: area.id, venue: area.venue, name: area.name, sortOrder: String(area.sortOrder), isActive: area.isActive })}>
+                                    Edit
+                                  </Button>
+                                  <Button type="button" size="sm" variant="ghost" onClick={() => void toggleArea(area)}>
+                                    {area.isActive ? 'Hide' : 'Show'}
+                                  </Button>
+                                </div>
+                              </div>
+                            ))}
+                        </div>
+                      )}
+                    </Card>
+                  </div>
+                </div>
+              </Card>
+            </section>
             ) : null}
 
             {showDrinks ? (
