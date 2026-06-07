@@ -519,6 +519,59 @@ async function listRecipeCategories(syncFromRecipes: boolean) {
 }
 
 export const recipesService = {
+  // Full recipe-book CSV export — every recipe with its type, category, venue,
+  // portion/yield, sale price, estimated cost, line count and ingredient list.
+  async exportCsv(): Promise<{ filename: string; csv: string }> {
+    const recipes = await prisma.recipe.findMany({
+      include: {
+        _count: { select: { lines: true } },
+        lines: {
+          select: {
+            quantity: true,
+            unit: true,
+            item: { select: { name: true } },
+            subRecipe: { select: { title: true } }
+          }
+        }
+      },
+      orderBy: [{ category: 'asc' }, { title: 'asc' }]
+    });
+
+    const csvCell = (value: unknown): string => {
+      const text = value == null ? '' : String(value);
+      return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+    };
+
+    const headers = [
+      'recipe', 'kind', 'category', 'subcategory', 'venue', 'is_prep', 'status',
+      'portion_size', 'portion_unit', 'yield_qty', 'yield_unit',
+      'sale_price_cents', 'estimated_cost', 'line_count', 'ingredients'
+    ];
+    const rows = recipes.map((r) => [
+      r.title,
+      r.kind ?? '',
+      r.category ?? '',
+      r.subcategory ?? '',
+      r.venue ?? '',
+      r.isPrepRecipe ? 'yes' : 'no',
+      r.status,
+      r.portionSize ?? '',
+      r.portionUnit ?? '',
+      r.yieldQuantity ?? '',
+      r.yieldUnit ?? '',
+      r.salePriceCents ?? '',
+      r.estimatedCost ?? '',
+      r._count.lines,
+      r.lines
+        .map((l) => `${l.quantity ?? ''}${l.unit ? ' ' + l.unit : ''} ${l.item?.name ?? l.subRecipe?.title ?? ''}`.trim())
+        .filter(Boolean)
+        .join('; ')
+    ]);
+
+    const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
+    return { filename: 'alma-recipes.csv', csv };
+  },
+
   // Cost of Goods summary for the stock dashboard.
   // Theoretical COGS = Σ (recipe cost × units sold) from Square sales.
   // Actual COGS     = Σ supplier purchases (invoice totals) in the window.

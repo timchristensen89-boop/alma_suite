@@ -201,6 +201,33 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     () => new Set()
   );
   const [recipeGroupsInitialised, setRecipeGroupsInitialised] = useState(false);
+  const [exportingRecipes, setExportingRecipes] = useState(false);
+
+  async function downloadRecipesCsv() {
+    setExportingRecipes(true);
+    setError(null);
+    try {
+      const token = window.localStorage.getItem('alma.stock.session');
+      const res = await fetch('/api/recipes/export.csv', {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+        credentials: 'include'
+      });
+      if (!res.ok) throw new Error(`Export failed (${res.status})`);
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'alma-recipes.csv';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not export recipes CSV');
+    } finally {
+      setExportingRecipes(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -719,9 +746,21 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
         }
         action={
           form.mode === 'closed' ? (
-            <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
-              {isProductionMode ? 'New production recipe' : 'New item recipe'}
-            </Button>
+            <div style={{ display: 'flex', gap: '0.4rem' }}>
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                disabled={exportingRecipes}
+                title="Download every recipe as a CSV (type, category, portion/yield, cost, ingredients)"
+                onClick={() => void downloadRecipesCsv()}
+              >
+                {exportingRecipes ? 'Exporting…' : 'Export CSV'}
+              </Button>
+              <Button type="button" size="sm" onClick={() => setForm({ mode: 'create' })}>
+                {isProductionMode ? 'New production recipe' : 'New item recipe'}
+              </Button>
+            </div>
           ) : null
         }
       >
