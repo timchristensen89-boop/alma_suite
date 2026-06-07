@@ -321,6 +321,12 @@ export const authService = {
       resetBaseUrl?: string;
       appName?: string;
       allowVenueDevice?: boolean;
+      // Welcome/activation variant: sends the "your account is active — sign in"
+      // email (with a set-password link) instead of the plain reset email,
+      // bypasses the cooldown, and uses a longer link TTL.
+      welcome?: boolean;
+      loginUrl?: string;
+      ttlMs?: number;
     } = {}
   ): Promise<PasswordResetResult> {
     const email = normaliseEmail(emailInput);
@@ -357,15 +363,17 @@ export const authService = {
       orderBy: { createdAt: 'desc' }
     });
 
-    if (recentToken) {
+    // Welcome/activation sends bypass the cooldown (a freshly approved hire
+    // should always get their email even if a reset was just triggered).
+    if (recentToken && !options.welcome) {
       console.info('[auth] password-reset: cooldown active', { email, profileId: profile.id });
       return { accountExists: true, deliveryStatus: 'cooldown' };
     }
 
-    console.info('[auth] password-reset: creating token and sending email', { email, profileId: profile.id });
+    console.info('[auth] password-reset: creating token and sending email', { email, profileId: profile.id, welcome: !!options.welcome });
 
     const token = randomBytes(32).toString('base64url');
-    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+    const expiresAt = new Date(Date.now() + (options.ttlMs ?? PASSWORD_RESET_TTL_MS));
     const resetLink = resetLinkFor(token, resetUrl);
 
     await prisma.staffPasswordResetToken.create({
@@ -383,13 +391,22 @@ export const authService = {
       }
     });
 
-    const delivery = await mailService.sendPasswordReset({
-      to: profile.email!,
-      firstName: profile.firstName,
-      resetLink,
-      expiresAt,
-      appName: options.appName
-    });
+    const delivery = options.welcome
+      ? await mailService.sendWelcomeActivation({
+          to: profile.email!,
+          firstName: profile.firstName,
+          loginUrl: options.loginUrl,
+          resetLink,
+          expiresAt,
+          appName: options.appName
+        })
+      : await mailService.sendPasswordReset({
+          to: profile.email!,
+          firstName: profile.firstName,
+          resetLink,
+          expiresAt,
+          appName: options.appName
+        });
 
     if (delivery.status !== 'sent') {
       console.error('[auth] Password reset email not delivered', {

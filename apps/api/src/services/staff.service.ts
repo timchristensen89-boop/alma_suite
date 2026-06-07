@@ -6095,6 +6095,31 @@ export const staffService = {
         rosterShifts: { orderBy: [{ startsAt: 'asc' }] }
       }
     });
+
+    // Onboarding approved → send the "account is active, here's how to sign in"
+    // email, with a set/reset-password link in case they forgot the one they
+    // chose. Reuses the existing reset-token machinery (welcome variant: longer
+    // TTL, bypasses cooldown). Never fails approval if the email errors.
+    if (approvedProfile.email && approvedProfile.accountType === 'HUMAN') {
+      const staffWebUrl = (process.env.STAFF_WEB_URL || 'https://alma-staff.web.app').replace(/\/+$/, '');
+      try {
+        await authService.requestPasswordResetForEmail(approvedProfile.email, {
+          welcome: true,
+          loginUrl: staffWebUrl,
+          resetBaseUrl: `${staffWebUrl}/reset-password`,
+          ttlMs: 72 * 60 * 60 * 1000,
+          appName: 'ALMA Staff',
+          allowVenueDevice: false,
+          requestedBy: actor
+        });
+      } catch (err) {
+        console.error('[staff.approveOnboarding] welcome/activation email failed', {
+          staffProfileId,
+          error: err instanceof Error ? err.message : String(err)
+        });
+      }
+    }
+
     return redactStaffProfileFields(withoutStaffSecrets(approvedProfile), actor);
   },
 

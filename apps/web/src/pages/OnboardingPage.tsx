@@ -157,6 +157,7 @@ export function OnboardingPage() {
             <StaffProfileForm
               value={draft}
               onChange={setDraft}
+              onboarding
             />
 
             <Card
