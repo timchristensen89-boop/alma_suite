@@ -13,6 +13,8 @@ import type {
   SquareConfigMissingMap,
   XeroPayRateSyncResult,
   XeroTimesheetSyncResult,
+  XeroEmployeesPayload,
+  XeroEmployeeLinkResult,
   XeroScheduledImportStatus,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
@@ -5956,6 +5958,232 @@ export const integrationService = {
       tenants: tenantResults,
       unmatched,
       warnings
+    };
+  },
+
+  // List Xero payroll employees (across every connected org, deduped to one
+  // row per person) alongside the Alma staff list, each pre-matched to its
+  // current/suggested staff profile so a manager can hand-link them.
+  async listXeroEmployees(): Promise<XeroEmployeesPayload> {
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const targets = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (targets.length === 0) {
+      throw new HttpError(409, 'No Xero tenants are connected.');
+    }
+
+    type XeroPayrollEmployee = {
+      EmployeeID: string;
+      FirstName: string;
+      LastName: string;
+      Email?: string;
+      Status: string;
+      PayTemplate?: { EarningsLines?: Array<{ EarningsType?: string; RatePerUnit?: number }> };
+    };
+
+    const staffProfiles = await prisma.staffProfile.findMany({
+      where: { mergedIntoStaffProfileId: null },
+      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true },
+      orderBy: [{ firstName: 'asc' }, { lastName: 'asc' }]
+    });
+    const nameKey = (first: string, last: string) =>
+      `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+    const staffByXeroId = new Map(
+      staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
+    );
+    const staffByEmail = new Map(
+      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
+    );
+    const staffByName = new Map<string, typeof staffProfiles>();
+    for (const p of staffProfiles) {
+      const k = nameKey(p.firstName, p.lastName);
+      const list = staffByName.get(k) ?? [];
+      list.push(p);
+      staffByName.set(k, list);
+    }
+    const staffName = (p: { firstName: string; lastName: string }) => `${p.firstName} ${p.lastName}`.trim();
+
+    // Dedup the same person across orgs; prefer the org entry that carries a
+    // rate so the displayed rate is useful.
+    const byKey = new Map<string, { emp: XeroPayrollEmployee; tenant: { id: string; name: string | null }; rateCents: number | null }>();
+    for (const tenant of targets) {
+      const resp = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+        '/payroll.xro/1.0/Employees',
+        { connection, tenantId: tenant.id }
+      );
+      for (const emp of resp.data.Employees ?? []) {
+        const line = emp.PayTemplate?.EarningsLines?.find((l) => l.EarningsType === 'ORDINARYTIMEEARNINGS')
+          ?? emp.PayTemplate?.EarningsLines?.[0];
+        const rateCents = line?.RatePerUnit && line.RatePerUnit > 0 ? Math.round(line.RatePerUnit * 100) : null;
+        const key = (emp.Email?.toLowerCase().trim() || nameKey(emp.FirstName, emp.LastName)) || emp.EmployeeID;
+        const existing = byKey.get(key);
+        if (!existing || (rateCents !== null && existing.rateCents === null)) {
+          byKey.set(key, { emp, tenant: { id: tenant.id, name: tenant.name }, rateCents });
+        }
+      }
+    }
+
+    const employees = [...byKey.values()].map(({ emp, tenant, rateCents }) => {
+      const linked = staffByXeroId.get(emp.EmployeeID.toLowerCase()) ?? null;
+      let suggested: typeof staffProfiles[number] | null = null;
+      if (!linked) {
+        const nameList = staffByName.get(nameKey(emp.FirstName, emp.LastName)) ?? [];
+        suggested =
+          (emp.Email ? staffByEmail.get(emp.Email.toLowerCase()) : undefined) ??
+          (nameList.length === 1 ? nameList[0] : undefined) ??
+          null;
+      }
+      return {
+        xeroEmployeeId: emp.EmployeeID,
+        firstName: emp.FirstName,
+        lastName: emp.LastName,
+        email: emp.Email ?? null,
+        status: emp.Status,
+        tenantId: tenant.id,
+        tenantName: tenant.name,
+        ratePerUnitCents: rateCents,
+        linkedStaffId: linked?.id ?? null,
+        linkedStaffName: linked ? staffName(linked) : null,
+        suggestedStaffId: suggested?.id ?? null
+      };
+    });
+    // Unlinked first, then alphabetical — puts the work to be done up top.
+    employees.sort((a, b) => {
+      const al = a.linkedStaffId ? 1 : 0;
+      const bl = b.linkedStaffId ? 1 : 0;
+      if (al !== bl) return al - bl;
+      return `${a.firstName} ${a.lastName}`.localeCompare(`${b.firstName} ${b.lastName}`);
+    });
+
+    return {
+      employees,
+      staff: staffProfiles.map((p) => ({
+        id: p.id,
+        firstName: p.firstName,
+        lastName: p.lastName,
+        email: p.email,
+        xeroEmployeeId: p.xeroEmployeeId
+      }))
+    };
+  },
+
+  // Link a staff profile to a Xero employee (stamps xeroEmployeeId). If the
+  // profile isn't a manual salary / cash payee and the Xero employee has an
+  // ordinary rate, pull it across so the link is immediately useful.
+  async linkXeroEmployee(
+    actor: AuthUser,
+    input: { staffProfileId: string; xeroEmployeeId: string; tenantId?: string }
+  ): Promise<XeroEmployeeLinkResult> {
+    const staffProfileId = optionalText(input.staffProfileId);
+    const xeroEmployeeId = optionalText(input.xeroEmployeeId);
+    if (!staffProfileId || !xeroEmployeeId) {
+      throw new HttpError(400, 'staffProfileId and xeroEmployeeId are required.');
+    }
+    const connection = await connectedXeroConnection();
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { id: true, firstName: true, lastName: true, payProfile: { select: { payMode: true } } }
+    });
+    if (!profile) {
+      throw new HttpError(404, 'Staff profile not found.');
+    }
+
+    // Pull this one employee's rate from its org (falls back to scanning all
+    // tenants if no tenant hint was supplied).
+    type XeroPayrollEmployee = {
+      EmployeeID: string;
+      PayTemplate?: { EarningsLines?: Array<{ EarningsType?: string; RatePerUnit?: number }> };
+    };
+    const tenantOrder = (() => {
+      const all = xeroTenantsFromConnection(connection).map((t) => t.id);
+      const hint = optionalText(input.tenantId);
+      if (hint) return [hint, ...all.filter((id) => id !== hint)];
+      return all.length > 0 ? all : (connection.providerAccountId ? [connection.providerAccountId] : []);
+    })();
+
+    let rateCents: number | null = null;
+    for (const tenantId of tenantOrder) {
+      try {
+        const resp = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          `/payroll.xro/1.0/Employees/${xeroEmployeeId}`,
+          { connection, tenantId }
+        );
+        const emp = resp.data.Employees?.[0];
+        const line = emp?.PayTemplate?.EarningsLines?.find((l) => l.EarningsType === 'ORDINARYTIMEEARNINGS')
+          ?? emp?.PayTemplate?.EarningsLines?.[0];
+        if (line?.RatePerUnit && line.RatePerUnit > 0) {
+          rateCents = Math.round(line.RatePerUnit * 100);
+          break;
+        }
+      } catch {
+        // Employee not in this org — try the next tenant.
+      }
+    }
+
+    const manualPay = profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH';
+    const rateUpdated = rateCents !== null && !manualPay;
+    const updated = await prisma.staffProfile.update({
+      where: { id: profile.id },
+      data: {
+        xeroEmployeeId,
+        ...(rateUpdated ? { payRateCents: rateCents! } : {})
+      },
+      select: { payRateCents: true }
+    });
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'DATA_IMPORTED',
+      summary: `Linked ${profile.firstName} ${profile.lastName} to Xero employee${rateUpdated ? ` and set rate $${(rateCents! / 100).toFixed(2)}/hr` : ''}.`,
+      actor,
+      metadata: { staffProfileId: profile.id, xeroEmployeeId, rateUpdated }
+    });
+
+    return {
+      staffId: profile.id,
+      staffName: `${profile.firstName} ${profile.lastName}`.trim(),
+      xeroEmployeeId,
+      payRateCents: updated.payRateCents,
+      rateUpdated
+    };
+  },
+
+  async unlinkXeroEmployee(
+    actor: AuthUser,
+    input: { staffProfileId: string }
+  ): Promise<XeroEmployeeLinkResult> {
+    const staffProfileId = optionalText(input.staffProfileId);
+    if (!staffProfileId) {
+      throw new HttpError(400, 'staffProfileId is required.');
+    }
+    const connection = await connectedXeroConnection();
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { id: true, firstName: true, lastName: true, payRateCents: true }
+    });
+    if (!profile) {
+      throw new HttpError(404, 'Staff profile not found.');
+    }
+    await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: null } });
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'DATA_IMPORTED',
+      summary: `Unlinked ${profile.firstName} ${profile.lastName} from Xero.`,
+      actor,
+      metadata: { staffProfileId: profile.id }
+    });
+    return {
+      staffId: profile.id,
+      staffName: `${profile.firstName} ${profile.lastName}`.trim(),
+      xeroEmployeeId: null,
+      payRateCents: profile.payRateCents,
+      rateUpdated: false
     };
   },
 

@@ -238,6 +238,42 @@ integrationsRouter.post('/xero/sync-timesheets', async (req, res, next) => {
   }
 });
 
+integrationsRouter.get('/xero/employees', async (_req, res, next) => {
+  try {
+    res.json(await integrationService.listXeroEmployees());
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/xero/link-employee', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    res.json(
+      await integrationService.linkXeroEmployee(req.user!, {
+        staffProfileId: String(body.staffProfileId ?? ''),
+        xeroEmployeeId: String(body.xeroEmployeeId ?? ''),
+        tenantId: body.tenantId ? String(body.tenantId) : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/xero/unlink-employee', async (req, res, next) => {
+  try {
+    const body = req.body ?? {};
+    res.json(
+      await integrationService.unlinkXeroEmployee(req.user!, {
+        staffProfileId: String(body.staffProfileId ?? '')
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/xero/supplier-contacts/preview', async (req, res, next) => {
   try {
     res.json(await integrationService.previewXeroSupplierContacts(req.query));

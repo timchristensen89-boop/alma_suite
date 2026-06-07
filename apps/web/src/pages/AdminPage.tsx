@@ -9,6 +9,7 @@ import {
   GearIcon,
   Input,
   PageHeader,
+  SearchSelect,
   Select,
   Spinner,
   StatCard,
@@ -47,6 +48,7 @@ import type {
   XeroConnectionHealthPayload,
   XeroPayRateSyncResult,
   XeroTimesheetSyncResult,
+  XeroEmployeesPayload,
   XeroSupplierBillsImportResult,
   XeroSupplierBillsPreviewPayload,
   XeroSupplierContactsImportResult,
@@ -1482,6 +1484,7 @@ function IntegrationCard({
   onHealthCheck,
   onSyncPayRates,
   onSyncTimesheets,
+  onManageXeroLinks,
   onRefresh,
   onSyncLocations,
   onImportSales,
@@ -1499,6 +1502,7 @@ function IntegrationCard({
   onHealthCheck?: () => void;
   onSyncPayRates?: () => void;
   onSyncTimesheets?: () => void;
+  onManageXeroLinks?: () => void;
   onRefresh?: () => void;
   onSyncLocations?: () => void;
   onImportSales?: () => void;
@@ -1514,6 +1518,7 @@ function IntegrationCard({
   const isHealthBusy = busy === `${integration.provider}${accountSuffix}-health`;
   const isSyncPayRatesBusy = busy === 'xero-sync-pay-rates';
   const isSyncTimesheetsBusy = busy === 'xero-sync-timesheets';
+  const isManageLinksBusy = busy === 'xero-employees-load';
   const isRefreshBusy = busy === `square${accountSuffix}-refresh`;
   const isSyncBusy = busy === `square${accountSuffix}-sync-locations`;
   const isImportSalesBusy = busy === `square${accountSuffix}-import-sales`;
@@ -1715,6 +1720,11 @@ function IntegrationCard({
           {isXero && onSyncTimesheets ? (
             <Button variant="secondary" disabled={isSyncTimesheetsBusy || integration.status !== 'CONNECTED'} onClick={onSyncTimesheets}>
               {isSyncTimesheetsBusy ? 'Importing timesheets...' : 'Import timesheets from Xero'}
+            </Button>
+          ) : null}
+          {isXero && onManageXeroLinks ? (
+            <Button variant="secondary" disabled={isManageLinksBusy || integration.status !== 'CONNECTED'} onClick={onManageXeroLinks}>
+              {isManageLinksBusy ? 'Loading employees...' : 'Link staff to Xero'}
             </Button>
           ) : null}
           {isSquare && onHealthCheck ? (
@@ -2125,6 +2135,9 @@ export function AdminPage({
   const [xeroAllowCreateSuppliers, setXeroAllowCreateSuppliers] = useState(false);
   const [xeroPayRateSyncResult, setXeroPayRateSyncResult] = useState<XeroPayRateSyncResult | null>(null);
   const [xeroTimesheetSyncResult, setXeroTimesheetSyncResult] = useState<XeroTimesheetSyncResult | null>(null);
+  const [xeroEmployees, setXeroEmployees] = useState<XeroEmployeesPayload | null>(null);
+  const [linkSelections, setLinkSelections] = useState<Record<string, string>>({});
+  const [linkRowBusy, setLinkRowBusy] = useState<string | null>(null);
   const [callbackBanner] = useState<CallbackBanner>(() => currentCallbackBanner());
   const [socialBusy, setSocialBusy] = useState<string | null>(null);
   const [socialFeedback, setSocialFeedback] = useState<string | null>(null);
@@ -2300,6 +2313,62 @@ export function AdminPage({
       setError(err instanceof Error ? err.message : 'Could not import timesheets from Xero.');
     } finally {
       setIntegrationBusy(null);
+    }
+  }
+
+  async function loadXeroEmployees() {
+    setIntegrationBusy('xero-employees-load');
+    setError(null);
+    try {
+      const result = await api<XeroEmployeesPayload>('/api/integrations/xero/employees');
+      setXeroEmployees(result);
+      // Seed each row's picker with its current link, else the suggested match.
+      const seeds: Record<string, string> = {};
+      for (const emp of result.employees) {
+        seeds[emp.xeroEmployeeId] = emp.linkedStaffId ?? emp.suggestedStaffId ?? '';
+      }
+      setLinkSelections(seeds);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load Xero employees.');
+    } finally {
+      setIntegrationBusy(null);
+    }
+  }
+
+  async function linkXeroEmployeeRow(xeroEmployeeId: string, tenantId: string) {
+    const staffProfileId = linkSelections[xeroEmployeeId];
+    if (!staffProfileId) {
+      setError('Pick a staff profile to link first.');
+      return;
+    }
+    setLinkRowBusy(xeroEmployeeId);
+    setError(null);
+    try {
+      await api('/api/integrations/xero/link-employee', {
+        method: 'POST',
+        body: JSON.stringify({ staffProfileId, xeroEmployeeId, tenantId })
+      });
+      await loadXeroEmployees();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not link the employee.');
+    } finally {
+      setLinkRowBusy(null);
+    }
+  }
+
+  async function unlinkXeroEmployeeRow(xeroEmployeeId: string, staffProfileId: string) {
+    setLinkRowBusy(xeroEmployeeId);
+    setError(null);
+    try {
+      await api('/api/integrations/xero/unlink-employee', {
+        method: 'POST',
+        body: JSON.stringify({ staffProfileId })
+      });
+      await loadXeroEmployees();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not unlink the employee.');
+    } finally {
+      setLinkRowBusy(null);
     }
   }
 
@@ -3999,6 +4068,7 @@ export function AdminPage({
                   }
                   onSyncPayRates={integration.provider === 'xero' && showXero ? () => void syncXeroPayRates() : undefined}
                   onSyncTimesheets={integration.provider === 'xero' && showXero ? () => void syncXeroTimesheets() : undefined}
+                  onManageXeroLinks={integration.provider === 'xero' && showXero ? () => void loadXeroEmployees() : undefined}
                   onRefresh={integration.provider === 'square' ? () => void refreshSquareToken(integration) : undefined}
                   onSyncLocations={integration.provider === 'square' ? () => void syncSquareLocations(integration) : undefined}
                   onImportSales={integration.provider === 'square' ? () => void importSquareSales(integration) : undefined}
@@ -4166,6 +4236,83 @@ export function AdminPage({
                       </div>
                     </div>
                   ) : null}
+                </Card>
+              </AdminCollapsibleSection>
+            ) : null}
+            {xeroEmployees ? (
+              <AdminCollapsibleSection
+                title="Link staff to Xero"
+                summary={`${xeroEmployees.employees.filter((e) => e.linkedStaffId).length} of ${xeroEmployees.employees.length} Xero employees linked`}
+                defaultOpen
+                status={
+                  <Badge tone={xeroEmployees.employees.length > 0 && xeroEmployees.employees.every((e) => e.linkedStaffId) ? 'positive' : 'info'}>
+                    {xeroEmployees.employees.filter((e) => !e.linkedStaffId).length} to link
+                  </Badge>
+                }
+              >
+                <Card>
+                  <p className="muted">
+                    Match each Xero payroll employee to its Alma staff profile. Linking stamps the Xero Employee ID on the profile — so pay-rate and timesheet syncs match cleanly — and pulls across the Xero ordinary rate unless the profile is on a manual salary or cash.
+                  </p>
+                  <div className="admin-status-stack">
+                    {xeroEmployees.employees.map((emp) => {
+                      const staffOptions = xeroEmployees.staff.map((p) => ({
+                        label: `${p.firstName} ${p.lastName}${p.email ? ` · ${p.email}` : ''}${p.xeroEmployeeId && p.xeroEmployeeId !== emp.xeroEmployeeId ? ' (linked to another)' : ''}`,
+                        value: p.id
+                      }));
+                      const selected = linkSelections[emp.xeroEmployeeId] ?? '';
+                      const rowBusy = linkRowBusy === emp.xeroEmployeeId;
+                      return (
+                        <div
+                          key={emp.xeroEmployeeId}
+                          style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-start', flexWrap: 'wrap', borderBottom: '1px solid var(--border-subtle, #e5e7eb)', paddingBottom: '0.75rem' }}
+                        >
+                          <div style={{ flex: '1 1 220px', minWidth: 0 }}>
+                            <strong>{emp.firstName} {emp.lastName}</strong>
+                            <div className="muted" style={{ fontSize: '0.85em' }}>
+                              {emp.email ?? 'no email'}{emp.tenantName ? ` · ${emp.tenantName}` : ''}{emp.ratePerUnitCents != null ? ` · $${(emp.ratePerUnitCents / 100).toFixed(2)}/hr` : ' · no rate in Xero'}
+                            </div>
+                            <div style={{ marginTop: '0.2rem' }}>
+                              {emp.linkedStaffId ? (
+                                <Badge tone="positive">Linked → {emp.linkedStaffName}</Badge>
+                              ) : emp.suggestedStaffId ? (
+                                <Badge tone="info">Suggested match ready</Badge>
+                              ) : (
+                                <Badge tone="warning">Unlinked</Badge>
+                              )}
+                            </div>
+                          </div>
+                          <div style={{ flex: '1 1 260px', minWidth: 0 }}>
+                            <SearchSelect
+                              options={staffOptions}
+                              value={selected}
+                              onChange={(value) => setLinkSelections((prev) => ({ ...prev, [emp.xeroEmployeeId]: value }))}
+                              emptyLabel="— No staff profile —"
+                              placeholder="Search staff…"
+                              disabled={rowBusy}
+                            />
+                          </div>
+                          <div style={{ display: 'flex', gap: '0.4rem', alignItems: 'center' }}>
+                            <Button
+                              variant="secondary"
+                              disabled={rowBusy || !selected || selected === emp.linkedStaffId}
+                              onClick={() => void linkXeroEmployeeRow(emp.xeroEmployeeId, emp.tenantId)}
+                            >
+                              {rowBusy ? 'Saving…' : emp.linkedStaffId ? 'Relink' : 'Link'}
+                            </Button>
+                            {emp.linkedStaffId ? (
+                              <Button variant="ghost" disabled={rowBusy} onClick={() => void unlinkXeroEmployeeRow(emp.xeroEmployeeId, emp.linkedStaffId!)}>
+                                Unlink
+                              </Button>
+                            ) : null}
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {xeroEmployees.employees.length === 0 ? (
+                      <p className="muted">No Xero payroll employees found. Check that the Xero org has employees and the connection has payroll access.</p>
+                    ) : null}
+                  </div>
                 </Card>
               </AdminCollapsibleSection>
             ) : null}
