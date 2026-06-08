@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import type {
   RecipeCategory,
   RecipeCategoryKind,
@@ -53,8 +54,10 @@ function recipeDraftFromCategory(category: RecipeCategory): RecipeCategoryDraft 
   };
 }
 
-export function SettingsPage() {
-  useDocumentTitle('Setup');
+export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {}) {
+  useDocumentTitle(
+    section === 'stock' ? 'Stock categories' : section === 'recipe' ? 'Recipe categories' : 'Setup'
+  );
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
@@ -314,17 +317,28 @@ export function SettingsPage() {
 
   return (
     <div className="page-stack">
-      <Card
-        title="Setup"
-        subtitle="Category and recipe setup belongs here. Daily stock health, low-stock work, item edits and stocktake review stay in the operational Stock pages."
-      >
-        <p className="subtle">
-          Broader suite configuration, permissions and integrations remain Admin-owned. This page keeps only the stock setup controls that are active and manager guarded today.
-        </p>
-      </Card>
+      {section === undefined ? (
+        <Card
+          title="Setup"
+          subtitle="Category management now lives next to where it's used. Daily stock health, low-stock work, item edits and stocktake review stay in the operational Stock pages."
+        >
+          <p className="subtle" style={{ marginBottom: 10 }}>
+            Manage categories from their hub:
+          </p>
+          <div className="toolbar-right" style={{ justifyContent: 'flex-start', gap: 10 }}>
+            <Link className="btn btn-ghost btn-sm" to="/items/categories">
+              Stock categories →
+            </Link>
+            <Link className="btn btn-ghost btn-sm" to="/recipes/categories">
+              Recipe categories →
+            </Link>
+          </div>
+        </Card>
+      ) : null}
 
       {error && !feedbackTarget ? <p className="error-text">{error}</p> : null}
 
+      {section === 'stock' ? (
       <CollapsibleCard
         title="Stock categories"
         description="Used by items, stocktake locations, and catalogue grouping."
@@ -445,7 +459,9 @@ export function SettingsPage() {
           </div>
         ) : null}
       </CollapsibleCard>
+      ) : null}
 
+      {section === 'recipe' ? (
       <CollapsibleCard
         title="Recipe categories"
         description="Controls the recipe category dropdown and renames existing recipe category values."
@@ -593,6 +609,7 @@ export function SettingsPage() {
           </div>
         ) : null}
       </CollapsibleCard>
+      ) : null}
     </div>
   );
 }
