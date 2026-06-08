@@ -59,7 +59,6 @@ type RecipeViewMode = 'category' | 'table';
 type RecipesPageMode = 'item' | 'production';
 
 const PRODUCTION_RECIPE_CATEGORY = 'Production Recipes';
-const PRODUCTION_RECIPE_MARKER = 'production recipe';
 
 const RECIPE_KIND_FILTER_OPTIONS: Array<{ label: string; value: RecipeKindFilter }> = [
   { label: 'All recipes', value: '' },
@@ -144,22 +143,12 @@ function formatYield(recipe: Pick<Recipe, 'yieldQuantity' | 'yieldUnit'>) {
   return formatQuantity(recipe.yieldQuantity, recipe.yieldUnit);
 }
 
-function isProductionRecipe(recipe: Pick<Recipe, 'category' | 'subcategory' | 'title' | 'notes' | 'yieldQuantity' | 'isPrepRecipe'>) {
-  if ('isPrepRecipe' in recipe && recipe.isPrepRecipe) return true;
-  const value = [
-    recipe.category ?? '',
-    recipe.subcategory ?? '',
-    recipe.title ?? '',
-    recipe.notes ?? ''
-  ]
-    .join(' ')
-    .toLowerCase();
-
-  return (
-    recipe.category === PRODUCTION_RECIPE_CATEGORY ||
-    value.includes(PRODUCTION_RECIPE_MARKER) ||
-    /\b(prep|batch|sauce|salsa|syrup|marinade|garnish|mise|component|production)\b/.test(value)
-  );
+function isProductionRecipe(recipe: Pick<Recipe, 'isPrepRecipe'>) {
+  // Prep vs menu is driven solely by the explicit isPrepRecipe flag (backfilled
+  // from the legacy heuristic). No more fragile keyword matching that pulled any
+  // dish with "sauce"/"salsa" in its name into the Prep tab — and a manual
+  // un-flag on a recipe now sticks instead of being overridden by the regex.
+  return Boolean(recipe.isPrepRecipe);
 }
 
 function duplicateRecipeKey(recipe: Recipe) {
