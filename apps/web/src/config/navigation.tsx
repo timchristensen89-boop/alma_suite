@@ -4,7 +4,6 @@ import {
   IconChecklist,
   IconDashboard,
   IconHandbook,
-  IconIncident,
   IconIssues,
   IconLicences,
   IconSettings,
@@ -13,7 +12,7 @@ import {
 
 // Multi-item groups get a section header; single hub items + the dashboard sit
 // headerless, in array order.
-export const NAV_SECTIONS = ['Issues & Incidents', 'Records & expiry'] as const;
+export const NAV_SECTIONS = ['Records & expiry'] as const;
 export type NavSection = (typeof NAV_SECTIONS)[number];
 
 export type NavItem = {
@@ -46,20 +45,13 @@ export const NAV_ITEMS: NavItem[] = [
     match: ['/temperatures', '/audits']
   },
 
-  // ── Issues & Incidents ────────────────────────────────────────────
   {
+    // Issues & Incidents hub: Issues + Incidents as in-page tabs.
     to: '/issues',
-    label: 'Issues',
-    description: 'Track hazards, defects, follow-through',
+    label: 'Issues & Incidents',
+    description: 'Hazards, defects, follow-through and incident reports',
     icon: <IconIssues />,
-    section: 'Issues & Incidents'
-  },
-  {
-    to: '/incidents',
-    label: 'Incidents',
-    description: 'Injury, first aid, near miss reports',
-    icon: <IconIncident />,
-    section: 'Issues & Incidents'
+    match: ['/incidents']
   },
 
   // ── Records & expiry ──────────────────────────────────────────────
