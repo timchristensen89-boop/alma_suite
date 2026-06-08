@@ -8,7 +8,14 @@
   <body>
     <div id="root"></div>
     <script>
-      try { if (localStorage.getItem('alma.theme') === 'dark') document.documentElement.setAttribute('data-theme', 'dark'); } catch (e) {}
+      // Venue iPad sits on the service floor — default to dark so it isn't a
+      // glaring white panel. Set before paint (no flash); the toggle can still
+      // switch a given device to light if someone wants it.
+      try {
+        var t = localStorage.getItem('alma.theme');
+        document.documentElement.setAttribute('data-theme', t === 'light' ? 'light' : 'dark');
+        if (!t) localStorage.setItem('alma.theme', 'dark');
+      } catch (e) { document.documentElement.setAttribute('data-theme', 'dark'); }
     </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>

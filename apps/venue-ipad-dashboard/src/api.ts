@@ -51,3 +51,30 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
   if (response.status === 204) return undefined as T;
   return response.json() as Promise<T>;
 }
+
+// ── Cross-app session handoff ────────────────────────────────────────────
+// Mint a one-time token from the current (device) session and append it to a
+// target suite-app URL so the user lands signed in instead of at a login wall.
+// Mirrors the other suite apps' handoff helper.
+export async function createSuiteHandoffUrl(href: string): Promise<string> {
+  try {
+    const { token } = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
+    const url = new URL(href, window.location.origin);
+    url.searchParams.set('suite_token', token);
+    url.searchParams.set('suite_from', window.location.origin);
+    return url.toString();
+  } catch {
+    // Fall back to the bare URL (the target will prompt for login).
+    return href;
+  }
+}
+
+export function installSuiteHandoff() {
+  (globalThis as unknown as { almaCreateSuiteHandoffUrl?: typeof createSuiteHandoffUrl }).almaCreateSuiteHandoffUrl =
+    createSuiteHandoffUrl;
+}
+
+// Navigate to another suite app, carrying the session via a handoff token.
+export async function openSuiteApp(href: string) {
+  window.location.assign(await createSuiteHandoffUrl(href));
+}
