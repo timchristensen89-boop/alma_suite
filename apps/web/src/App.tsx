@@ -269,7 +269,9 @@ function AuthenticatedApp() {
               Compliance is bounced to the right place. */}
           <Route path="/admin" element={<AdminRedirect />} />
           <Route path="/admin/*" element={<AdminRedirect />} />
-          <Route path="/settings" element={<RequireRole minimum="ADMIN"><SettingsPage /></RequireRole>} />
+          {/* All roles can reach Settings — SettingsPage self-gates the admin
+              tabs and shows non-admins just "My account" (change password). */}
+          <Route path="/settings" element={<SettingsPage />} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ErrorBoundary>
