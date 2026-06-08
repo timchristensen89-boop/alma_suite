@@ -16,7 +16,6 @@ import {
   Spinner
 } from '@alma/ui';
 import { IconItems, IconRecipes } from '../lib/icons';
-import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -594,8 +593,6 @@ export function SettingsPage() {
           </div>
         ) : null}
       </CollapsibleCard>
-
-      <InvoiceExclusionRulesCard canManage={canManage} />
     </div>
   );
 }
