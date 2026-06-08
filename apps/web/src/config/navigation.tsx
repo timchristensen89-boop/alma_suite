@@ -13,6 +13,12 @@ import {
   IconTemperature
 } from '../lib/icons';
 
+// Top-level nav sections, in display order. Overview sits above them with no
+// header (section omitted). Grouping turns a flat 10-item scan into ~5 labelled
+// clusters for a time-poor manager mid-service.
+export const NAV_SECTIONS = ['Checks', 'Issues & Incidents', 'Records & expiry', 'Handbook', 'Setup'] as const;
+export type NavSection = (typeof NAV_SECTIONS)[number];
+
 export type NavItem = {
   to: string;
   label: string;
@@ -21,6 +27,7 @@ export type NavItem = {
   /** react-router end prop (exact match) */
   end?: boolean;
   minimumRole?: BetaRole;
+  section?: NavSection;
 };
 
 export const NAV_ITEMS: NavItem[] = [
@@ -31,64 +38,83 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconDashboard />,
     end: true
   },
-  {
-    to: '/issues',
-    label: 'Issues',
-    description: 'Track hazards, defects, follow-through',
-    icon: <IconIssues />
-  },
+
+  // ── Checks — the template → run → history family ──────────────────
   {
     to: '/checklists',
     label: 'Checklists',
-    description: 'Operational checks and runs',
-    icon: <IconChecklist />
-  },
-  {
-    to: '/staff',
-    label: 'Staff',
-    description: 'RSA, first aid, food safety records',
-    icon: <IconStaff />,
-    minimumRole: 'MANAGER'
+    description: 'Opening/closing and operational checks',
+    icon: <IconChecklist />,
+    section: 'Checks'
   },
   {
     to: '/temperatures',
     label: 'Temperatures',
     description: 'Fridges, freezers, cool-room logs',
     icon: <IconTemperature />,
-    minimumRole: 'MANAGER'
-  },
-  {
-    to: '/licences',
-    label: 'Licences',
-    description: 'Venue approvals, permits, expiry, conditions',
-    icon: <IconLicences />,
-    minimumRole: 'MANAGER'
-  },
-  {
-    to: '/incidents',
-    label: 'Incidents',
-    description: 'Injury, first aid, near miss reports',
-    icon: <IconIncident />
+    minimumRole: 'MANAGER',
+    section: 'Checks'
   },
   {
     to: '/audits',
     label: 'Audits',
     description: 'Health inspection & internal audits',
     icon: <IconAudit />,
-    minimumRole: 'MANAGER'
+    minimumRole: 'MANAGER',
+    section: 'Checks'
   },
+
+  // ── Issues & Incidents — track something that went wrong ──────────
+  {
+    to: '/issues',
+    label: 'Issues',
+    description: 'Track hazards, defects, follow-through',
+    icon: <IconIssues />,
+    section: 'Issues & Incidents'
+  },
+  {
+    to: '/incidents',
+    label: 'Incidents',
+    description: 'Injury, first aid, near miss reports',
+    icon: <IconIncident />,
+    section: 'Issues & Incidents'
+  },
+
+  // ── Records & expiry — watch these before they lapse ──────────────
+  {
+    to: '/staff',
+    label: 'Staff certificates',
+    description: 'RSA, first aid, food safety expiry',
+    icon: <IconStaff />,
+    minimumRole: 'MANAGER',
+    section: 'Records & expiry'
+  },
+  {
+    to: '/licences',
+    label: 'Licences & approvals',
+    description: 'Liquor licences, permits, expiry, conditions',
+    icon: <IconLicences />,
+    minimumRole: 'MANAGER',
+    section: 'Records & expiry'
+  },
+
+  // ── Handbook — reference content ──────────────────────────────────
   {
     to: '/handbook',
     label: 'Handbook',
     description: 'Staff guidance and venue procedures',
-    icon: <IconHandbook />
+    icon: <IconHandbook />,
+    section: 'Handbook'
   },
+
+  // ── Setup — off-app admin ─────────────────────────────────────────
   {
     to: '/admin',
-    label: 'Admin',
-    description: 'Suite setup, access and health',
+    label: 'Open Alma Admin',
+    description: 'Suite setup, access and health — opens the Admin app',
     icon: <IconSettings />,
-    minimumRole: 'ADMIN'
+    minimumRole: 'ADMIN',
+    section: 'Setup'
   }
 ];
 

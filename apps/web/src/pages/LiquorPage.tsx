@@ -113,7 +113,7 @@ function licenceStatus(licence: LiquorLicence): {
 }
 
 export function LiquorPage() {
-  useDocumentTitle('Licences');
+  useDocumentTitle('Licences & approvals');
   const { user } = useAuth();
   const isManager = canManage(user);
 
