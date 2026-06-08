@@ -1827,6 +1827,17 @@ export const authLoginSchema = z.object({
   password: z.string().min(1).max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer')
 });
 
+export const PENDING_APPROVAL_EMPLOYMENT_STATUS = 'PENDING_APPROVAL';
+
+export const authSignUpSchema = z.object({
+  firstName: z.string().trim().min(1, 'First name is required').max(80),
+  lastName: z.string().trim().min(1, 'Last name is required').max(80),
+  email: z.string().email(),
+  password: passwordSchema,
+  venue: z.string().trim().max(80).optional().or(z.literal('')),
+  roleTitle: z.string().trim().max(120).optional().or(z.literal(''))
+});
+
 export const authChangePasswordSchema = z.object({
   currentPassword: z.string().min(1).max(PASSWORD_MAX_LENGTH, 'Password must be 256 characters or fewer'),
   newPassword: passwordSchema

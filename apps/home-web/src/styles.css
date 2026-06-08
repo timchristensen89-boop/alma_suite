@@ -1496,3 +1496,227 @@ html[data-theme='dark'] body:has(.kiosk) {
     font-size: 25px;
   }
 }
+
+/* ==========================================================================
+   Suite login + sign-up (cross-app SSO entry point).
+   Rendered for /login and /signup. Standalone — does not use the kiosk grid.
+   ========================================================================== */
+.suite-auth {
+  min-height: 100vh;
+  min-height: 100dvh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px 18px;
+  background: #E7EFE0;
+}
+html[data-theme='dark'] .suite-auth { background: var(--kiosk-page); }
+
+.suite-auth__card {
+  width: 100%;
+  max-width: 420px;
+  padding: 32px 28px 24px;
+  background: var(--kiosk-paper);
+  color: var(--kiosk-ink);
+  border-radius: 18px;
+  box-shadow:
+    0 24px 70px -48px rgba(31, 53, 36, 0.42),
+    0 2px 0 rgba(255, 255, 255, 0.5) inset;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.suite-auth__brand {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+.suite-auth__logo {
+  display: block;
+  width: 90px;
+  height: auto;
+  object-fit: contain;
+}
+.suite-auth__brand span {
+  font-family: var(--kiosk-serif);
+  font-style: italic;
+  font-weight: 500;
+  font-size: 16px;
+  color: var(--kiosk-cocoa);
+  padding-bottom: 4px;
+  line-height: 1;
+}
+
+.suite-auth__title {
+  font-family: var(--kiosk-serif);
+  font-weight: 400;
+  font-size: 32px;
+  line-height: 1;
+  letter-spacing: -0.01em;
+  margin: 4px 0 0;
+}
+.suite-auth__sub {
+  margin: 0;
+  font-size: 13.5px;
+  color: var(--kiosk-ash);
+  line-height: 1.5;
+}
+
+.suite-auth__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 6px;
+}
+.suite-auth__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.suite-auth__label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  font-family: var(--kiosk-sans);
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--kiosk-ash);
+}
+.suite-auth__label input {
+  font: inherit;
+  font-size: 14.5px;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--kiosk-ink);
+  padding: 11px 12px;
+  border: 1px solid var(--kiosk-hair);
+  border-radius: 10px;
+  background: #FFFFFF;
+  min-height: 44px;
+}
+html[data-theme='dark'] .suite-auth__label input {
+  background: var(--kiosk-bone);
+  color: var(--kiosk-ink);
+}
+.suite-auth__label input:focus {
+  outline: none;
+  border-color: var(--kiosk-accent);
+  box-shadow: 0 0 0 3px rgba(36, 76, 159, 0.14);
+}
+
+.suite-auth__primary,
+.suite-auth__secondary,
+.suite-auth__ghost {
+  font: inherit;
+  font-family: var(--kiosk-sans);
+  font-weight: 700;
+  font-size: 14px;
+  border-radius: 10px;
+  min-height: 46px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+.suite-auth__primary {
+  background: var(--kiosk-accent);
+  color: #FFFFFF;
+  border: 1px solid var(--kiosk-accent);
+}
+.suite-auth__primary:hover:not(:disabled) { background: var(--kiosk-cocoa); border-color: var(--kiosk-cocoa); }
+.suite-auth__primary:disabled { opacity: 0.6; cursor: not-allowed; }
+.suite-auth__secondary {
+  background: #FFFFFF;
+  color: var(--kiosk-ink);
+  border: 1px solid var(--kiosk-hair);
+}
+html[data-theme='dark'] .suite-auth__secondary { background: var(--kiosk-bone); }
+.suite-auth__secondary:hover:not(:disabled) { border-color: var(--kiosk-accent); }
+.suite-auth__ghost {
+  background: transparent;
+  color: var(--kiosk-ash);
+  border: 1px solid transparent;
+  min-height: 36px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.suite-auth__ghost:hover:not(:disabled) { color: var(--kiosk-ink); }
+
+.suite-auth__divider {
+  text-align: center;
+  font-family: var(--kiosk-sans);
+  font-weight: 600;
+  font-size: 11px;
+  letter-spacing: 0.3em;
+  text-transform: uppercase;
+  color: var(--kiosk-quiet);
+  margin: 4px 0;
+}
+
+.suite-auth__error {
+  font-size: 13px;
+  font-weight: 600;
+  color: #B43B3B;
+  background: rgba(180, 59, 59, 0.08);
+  border: 1px solid rgba(180, 59, 59, 0.18);
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+
+@media (max-width: 480px) {
+  .suite-auth { padding: 14px 12px; }
+  .suite-auth__card {
+    padding: 22px 18px 18px;
+    border-radius: 14px;
+    box-shadow: none;
+    gap: 10px;
+  }
+  .suite-auth__title { font-size: 26px; }
+  .suite-auth__sub { font-size: 12.5px; }
+  .suite-auth__row { grid-template-columns: 1fr; gap: 10px; }
+  .suite-auth__divider { margin: 2px 0; font-size: 10px; letter-spacing: 0.24em; }
+}
+
+/* ==========================================================================
+   Mobile pass (≤480px) on the kiosk — drop the big clock + date + greeting.
+   "On mobile view the clock and date are not needed and are way too big" —
+   the existing 640px breakpoint just shrinks them; at phone widths we hide
+   the whole clockwrap to reduce visual noise and stop the keypad scrolling.
+   ========================================================================== */
+@media (max-width: 480px) {
+  .kiosk__left {
+    padding: 10px 16px 0;
+    min-height: 0;
+  }
+  .kiosk-clockwrap,
+  .kiosk-bigtime,
+  .kiosk-datestr,
+  .kiosk-greeting { display: none; }
+  .kiosk-brandbar { margin-bottom: 0; }
+  .kiosk-wordmark__logo { width: 78px; }
+  .kiosk-wordmark span { font-size: 14px; padding-bottom: 3px; }
+  .kiosk-venue-pill { padding: 4px 10px; font-size: 9px; }
+
+  .kiosk__right {
+    padding: 4px 16px 12px;
+    gap: 2px;
+  }
+  .kiosk-right-head h2,
+  .kiosk-setup__body h2 { font-size: 24px; margin-top: 2px; }
+  .kiosk-right-head .kiosk-eyebrow { font-size: 10px; letter-spacing: 0.28em; }
+  .kiosk-pad {
+    margin-top: 6px;
+    gap: 8px;
+    max-width: 280px;
+  }
+  .kiosk-key {
+    aspect-ratio: 1 / 0.48;
+    min-height: 42px;
+    font-size: 22px;
+  }
+  .kiosk-right-foot { gap: 8px; padding-top: 6px; flex-wrap: wrap; }
+}

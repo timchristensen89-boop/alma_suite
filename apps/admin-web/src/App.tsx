@@ -463,65 +463,33 @@ function AdminTopBar() {
   );
 }
 
+const HOME_WEB_URL = (
+  (import.meta.env.VITE_HOME_WEB_URL as string | undefined) ?? 'https://alma-home.web.app'
+).replace(/\/+$/, '');
+
 function AdminLoginPage() {
   useDocumentTitle('Sign in');
   const location = useLocation();
-  const { user, login, loading } = useAuth();
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (loading || user) return;
+    const from = (location.state as { from?: string } | null)?.from;
+    const returnTo = from
+      ? new URL(from.startsWith('/') ? from : `/${from}`, window.location.origin).toString()
+      : window.location.origin + '/';
+    window.location.replace(`${HOME_WEB_URL}/login?returnTo=${encodeURIComponent(returnTo)}`);
+  }, [loading, user, location.state]);
 
   if (!loading && user) {
     const redirect = (location.state as { from?: string } | null)?.from ?? '/';
     return <Navigate to={redirect} replace />;
   }
 
-  async function onSubmit(event: FormEvent) {
-    event.preventDefault();
-    setSubmitting(true);
-    setError(null);
-    try {
-      await login(email.trim(), password);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not sign in');
-    } finally {
-      setSubmitting(false);
-    }
-  }
-
   return (
     <div className="login-wrap admin-login-page">
       <div className="login-card">
-        <div className="login-brand">
-          <ProductLogo appId="settings" size="lg" />
-        </div>
-        <Card title="Sign in to Alma Admin" subtitle="Use your manager or admin account.">
-          <form className="page-stack compact" onSubmit={onSubmit}>
-            <Input
-              label="Email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(event) => setEmail(event.currentTarget.value)}
-            />
-            <Input
-              label="Password"
-              type="password"
-              autoComplete="current-password"
-              required
-              maxLength={256}
-              value={password}
-              onChange={(event) => setPassword(event.currentTarget.value)}
-            />
-            {error ? <p className="error-text">{error}</p> : null}
-            <Button type="submit" disabled={submitting}>
-              {submitting ? 'Signing in...' : 'Sign in'}
-            </Button>
-          </form>
-        </Card>
-        <SuiteAppSwitcher currentApp="settings" apps={suiteApps} />
+        <p className="login-redirecting">Redirecting to Alma Home to sign in…</p>
       </div>
     </div>
   );
