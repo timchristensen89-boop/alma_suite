@@ -24,7 +24,8 @@ async function main() {
   since.setDate(since.getDate() - LOOKBACK_DAYS);
 
   const stocktakes = await prisma.stocktake.findMany({
-    where: { countedAt: { gte: since }, status: { in: ['SUBMITTED', 'APPROVED', 'COMPLETED', 'COUNTED'] } },
+    // Counted/finished stocktakes only (skip drafts still IN_PROGRESS).
+    where: { countedAt: { gte: since }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED', 'REOPENED'] } },
     select: { venue: true, lines: { select: { itemId: true, countedQty: true } } }
   });
 
