@@ -6,6 +6,7 @@
 import { Link } from 'react-router-dom';
 import { ThemeToggle } from '@alma/ui';
 import { AuthChip, useAuth } from './auth';
+import { openSuiteApp } from './api';
 
 export type Venue = {
   id: 'st-alma' | 'alma-avalon';
@@ -35,7 +36,7 @@ export type PageShellProps = {
   requirePin: RequirePin;
 };
 
-export const ALMA_HOME_URL = '/apps';
+export const ALMA_HOME_URL = 'https://alma-home.web.app';
 
 export function AppShell({
   venue,
@@ -64,7 +65,15 @@ export function AppShell({
         </Link>
 
         <nav className="side-nav" aria-label="Venue navigation">
-          <Link to={ALMA_HOME_URL}>Alma Home</Link>
+          <a
+            href={ALMA_HOME_URL}
+            onClick={(event) => {
+              event.preventDefault();
+              void openSuiteApp(ALMA_HOME_URL);
+            }}
+          >
+            Alma Home
+          </a>
           <Link to="/venue">Venue Home</Link>
           {venue ? (
             <>
@@ -121,9 +130,16 @@ export function AppShell({
               onSignIn={onRequestStaffPin}
               onSwitch={onSwitchStaff}
             />
-            <Link className="button secondary" to={ALMA_HOME_URL}>
+            <a
+              className="button secondary"
+              href={ALMA_HOME_URL}
+              onClick={(event) => {
+                event.preventDefault();
+                void openSuiteApp(ALMA_HOME_URL);
+              }}
+            >
               Alma Home
-            </Link>
+            </a>
             <Link className="button" to={venue ? `/venue/${venue.id}` : '/venue'}>
               Venue Home
             </Link>
