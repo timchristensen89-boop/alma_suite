@@ -408,16 +408,16 @@ const STAFF_MEMBER_NAV_ITEMS = [
     end: true
   },
   {
-    to: '/roster',
-    label: 'Roster',
-    description: 'My upcoming and past shifts',
-    icon: <IconCalendarClock />
-  },
-  {
     to: '/clock',
     label: 'Clock',
     description: 'Clock in, out and breaks',
     icon: <IconClock />
+  },
+  {
+    to: '/roster',
+    label: 'Roster',
+    description: 'My upcoming and past shifts',
+    icon: <IconCalendarClock />
   },
   {
     to: '/leave',
@@ -445,8 +445,8 @@ const STAFF_MEMBER_NAV_ITEMS = [
   },
   {
     to: '/compliance',
-    label: 'Compliance',
-    description: 'Documents, training and reminders',
+    label: 'My compliance',
+    description: 'My documents, training and reminders',
     icon: <IconFileLock />
   },
   {
@@ -14697,6 +14697,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   // Explorer rail selection (all / a venue / a staff member).
   const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
+  // A STAFF member only ever sees their own hours (server forces this), so hide
+  // the manager-only approval/payroll affordances from them.
+  const { user: timesheetsViewer } = useAuth();
+  const isManagerView = timesheetsViewer?.role !== 'STAFF';
 
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
   // Effective query window: the navigated week, or a rolling N-day lookback.
@@ -15106,7 +15110,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             ) : null}
             {group.approvedCount ? <Badge tone="positive">{group.approvedCount} approved</Badge> : null}
           </div>
-          {group.submittedIds.length ? (
+          {isManagerView && group.submittedIds.length ? (
             <Button type="button" size="sm" disabled={saving} onClick={() => void approveGroup(group.submittedIds)}>
               Approve all
             </Button>
@@ -15142,17 +15146,17 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   ) : null}
                 </div>
                 <div className="timesheet-row-actions">
-                  {entry.status === 'SUBMITTED' || entry.status === 'REJECTED' ? (
+                  {isManagerView && (entry.status === 'SUBMITTED' || entry.status === 'REJECTED') ? (
                     <Button type="button" size="sm" disabled={saving} onClick={() => void approve(entry.id)}>
                       Approve
                     </Button>
                   ) : null}
-                  {entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
+                  {isManagerView && entry.status === 'APPROVED' && entry.paymentMethod === 'CASH' && !entry.cashPaidAt ? (
                     <Button type="button" size="sm" disabled={saving} onClick={() => void markCashPaid(entry.id)}>
                       Cash paid
                     </Button>
                   ) : null}
-                  {entry.status !== 'EXPORTED' ? (
+                  {isManagerView && entry.status !== 'EXPORTED' ? (
                     <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void reject(entry.id)}>
                       Reject
                     </Button>
@@ -15197,17 +15201,19 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         >
           + Submit new timesheet
         </Button>
-        <div className="toolbar-right">
-          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
-            Preview CSV
-          </Button>
-          <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(true)}>
-            Export CSV
-          </Button>
-          <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
-            Push to Xero
-          </Button>
-        </div>
+        {isManagerView ? (
+          <div className="toolbar-right">
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
+              Preview CSV
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(true)}>
+              Export CSV
+            </Button>
+            <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
+              Push to Xero
+            </Button>
+          </div>
+        ) : null}
       </div>
 
       {/* Week selector — same editorial style as the roster board, sitting
