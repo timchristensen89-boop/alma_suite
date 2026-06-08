@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
@@ -18,10 +18,10 @@ import { WastagePage } from './pages/WastagePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
-import { NAV_ITEMS } from './config/navigation';
+import { NAV_ITEMS, NAV_SECTIONS, type NavItem } from './config/navigation';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { IconChevronDown } from './lib/icons';
+import { IconChevronDown, IconExternal } from './lib/icons';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
@@ -40,6 +40,39 @@ function openWithSuiteHandoff(event: MouseEvent<HTMLAnchorElement>, href: string
   }).catch(() => {
     window.location.assign(href);
   });
+}
+
+function NavItemLink({ item }: { item: NavItem }) {
+  // External jump to another app — only render as a link when we have a URL.
+  if (item.external) {
+    if (!item.externalHref) {
+      return (
+        <li>
+          <span aria-disabled="true" title="Unavailable — Admin app not configured" style={{ opacity: 0.45, cursor: 'not-allowed' }}>
+            <span className="sidebar-nav-icon">{item.icon}</span>
+            <span>{item.label}</span>
+          </span>
+        </li>
+      );
+    }
+    return (
+      <li>
+        <a href={item.externalHref} onClick={(event) => openWithSuiteHandoff(event, item.externalHref!)}>
+          <span className="sidebar-nav-icon">{item.icon}</span>
+          <span>{item.label}</span>
+          <IconExternal size={13} style={{ marginLeft: 'auto', opacity: 0.6 }} />
+        </a>
+      </li>
+    );
+  }
+  return (
+    <li>
+      <NavLink to={item.to} end={item.end}>
+        <span className="sidebar-nav-icon">{item.icon}</span>
+        <span>{item.label}</span>
+      </NavLink>
+    </li>
+  );
 }
 
 function SidebarNav() {
@@ -73,22 +106,21 @@ function SidebarNav() {
         id="stock-mobile-nav"
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
-        <li className="sidebar-nav-section">Stock</li>
-        {NAV_ITEMS.map((item) => (
-          <li key={item.to}>
-            {item.externalHref ? (
-              <a href={item.externalHref} onClick={(event) => openWithSuiteHandoff(event, item.externalHref!)}>
-                <span className="sidebar-nav-icon">{item.icon}</span>
-                <span>{item.label}</span>
-              </a>
-            ) : (
-              <NavLink to={item.to} end={item.end}>
-                <span className="sidebar-nav-icon">{item.icon}</span>
-                <span>{item.label}</span>
-              </NavLink>
-            )}
-          </li>
+        {NAV_ITEMS.filter((item) => !item.section).map((item) => (
+          <NavItemLink key={item.to} item={item} />
         ))}
+        {NAV_SECTIONS.map((section) => {
+          const items = NAV_ITEMS.filter((item) => item.section === section);
+          if (items.length === 0) return null;
+          return (
+            <Fragment key={section}>
+              <li className="sidebar-nav-section">{section}</li>
+              {items.map((item) => (
+                <NavItemLink key={item.to} item={item} />
+              ))}
+            </Fragment>
+          );
+        })}
       </ul>
     </div>
   );

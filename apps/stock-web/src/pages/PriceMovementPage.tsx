@@ -132,15 +132,15 @@ export function PriceMovementPage() {
   }, [movements, threshold]);
 
   if (loading) {
-    return <Card title="Supplier price movement"><Spinner label="Loading invoices…" /></Card>;
+    return <Card title="Supplier price changes"><Spinner label="Loading invoices…" /></Card>;
   }
   if (error) {
-    return <Card title="Supplier price movement"><p className="error-text">{error}</p></Card>;
+    return <Card title="Supplier price changes"><p className="error-text">{error}</p></Card>;
   }
 
   return (
     <Card
-      title="Supplier price movement"
+      title="Supplier price changes"
       subtitle={`Items where the unit cost has moved ≥${threshold}% in the last ${windowDays} days — direct input into repricing decisions.`}
     >
       <div className="price-movement-summary">
