@@ -218,6 +218,10 @@ function AuthenticatedApp() {
     ...(canManageChecks ? ([{ to: '/audits', label: 'Audits', end: true }] as HubTab[]) : []),
     { to: '/checklists/ipad', label: 'iPad runner' }
   ];
+  const issuesTabs: HubTab[] = [
+    { to: '/issues', label: 'Issues', end: true },
+    { to: '/incidents', label: 'Incidents' }
+  ];
   const handbookTabs: HubTab[] = [
     { to: '/handbook/guidelines', label: 'Guidelines' },
     { to: '/handbook/org-chart', label: 'Org chart' },
@@ -232,7 +236,7 @@ function AuthenticatedApp() {
       <ErrorBoundary>
         <Routes>
           <Route path="/" element={<DashboardPage />} />
-          <Route path="/issues" element={<IssuesListPage />} />
+          <Route path="/issues" element={<HubLayout tabs={issuesTabs}><IssuesListPage /></HubLayout>} />
           <Route path="/issues/new" element={<IssueCreatePage />} />
           <Route path="/issues/:id" element={<IssueDetailPage />} />
           <Route path="/issues/:id/edit" element={<IssueEditPage />} />
@@ -248,7 +252,7 @@ function AuthenticatedApp() {
           <Route path="/licenses" element={<Navigate to="/licences" replace />} />
           <Route path="/license" element={<Navigate to="/licences" replace />} />
           <Route path="/liquor" element={<Navigate to="/licences" replace />} />
-          <Route path="/incidents" element={<IncidentsPage />} />
+          <Route path="/incidents" element={<HubLayout tabs={issuesTabs}><IncidentsPage /></HubLayout>} />
           <Route path="/audits" element={<RequireRole minimum="MANAGER"><HubLayout tabs={checksTabs}><AuditsListPage /></HubLayout></RequireRole>} />
           <Route path="/audits/new" element={<RequireRole minimum="MANAGER"><AuditRunCreatePage /></RequireRole>} />
           <Route path="/audits/templates/new" element={<RequireRole minimum="MANAGER"><AuditTemplateCreatePage /></RequireRole>} />
