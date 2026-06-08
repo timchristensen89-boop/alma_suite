@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
@@ -18,7 +18,8 @@ import { WastagePage } from './pages/WastagePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
-import { NAV_ITEMS, NAV_SECTIONS, type NavItem } from './config/navigation';
+import { NAV_ITEMS, type NavItem } from './config/navigation';
+import { HubLayout, type HubTab } from './components/HubTabs';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { IconChevronDown, IconExternal } from './lib/icons';
@@ -26,6 +27,32 @@ import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
+
+// Tabs for each consolidated hub. Every tab is a real, deep-linkable route.
+const STOCK_COUNT_TABS: HubTab[] = [
+  { to: '/stocktake', label: 'Count' },
+  { to: '/wastage', label: 'Wastage' },
+  { to: '/transfers', label: 'Transfers' }
+];
+const PURCHASING_TABS: HubTab[] = [
+  { to: '/invoices', label: 'Invoices' },
+  { to: '/deliveries', label: 'Deliveries' },
+  { to: '/suppliers', label: 'Suppliers' },
+  { to: '/price-movement', label: 'Price changes' }
+];
+const RECIPE_TABS: HubTab[] = [
+  { to: '/recipes', label: 'Menu items', end: true },
+  { to: '/recipes/prep', label: 'Prep recipes' },
+  { to: '/recipes/margins', label: 'Margins' }
+];
+
+// True when the current path belongs to this nav item (its route or a hub tab).
+function navMatches(item: { to: string; match?: string[] }, pathname: string): boolean {
+  const candidates = [item.to, ...(item.match ?? [])];
+  return candidates.some((p) =>
+    p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)
+  );
+}
 
 function openWithSuiteHandoff(event: MouseEvent<HTMLAnchorElement>, href: string) {
   const handoff = (globalThis as typeof globalThis & {
@@ -42,7 +69,7 @@ function openWithSuiteHandoff(event: MouseEvent<HTMLAnchorElement>, href: string
   });
 }
 
-function NavItemLink({ item }: { item: NavItem }) {
+function NavItemLink({ item, pathname }: { item: NavItem; pathname: string }) {
   // External jump to another app — only render as a link when we have a URL.
   if (item.external) {
     if (!item.externalHref) {
@@ -67,7 +94,7 @@ function NavItemLink({ item }: { item: NavItem }) {
   }
   return (
     <li>
-      <NavLink to={item.to} end={item.end}>
+      <NavLink to={item.to} end={item.end} className={() => (navMatches(item, pathname) ? 'active' : undefined)}>
         <span className="sidebar-nav-icon">{item.icon}</span>
         <span>{item.label}</span>
       </NavLink>
@@ -106,21 +133,9 @@ function SidebarNav() {
         id="stock-mobile-nav"
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
-        {NAV_ITEMS.filter((item) => !item.section).map((item) => (
-          <NavItemLink key={item.to} item={item} />
+        {NAV_ITEMS.map((item) => (
+          <NavItemLink key={item.to} item={item} pathname={location.pathname} />
         ))}
-        {NAV_SECTIONS.map((section) => {
-          const items = NAV_ITEMS.filter((item) => item.section === section);
-          if (items.length === 0) return null;
-          return (
-            <Fragment key={section}>
-              <li className="sidebar-nav-section">{section}</li>
-              {items.map((item) => (
-                <NavItemLink key={item.to} item={item} />
-              ))}
-            </Fragment>
-          );
-        })}
       </ul>
     </div>
   );
@@ -129,11 +144,7 @@ function SidebarNav() {
 function currentPage(pathname: string) {
   const match = [...NAV_ITEMS]
     .sort((a, b) => b.to.length - a.to.length)
-    .find((item) =>
-      item.to === '/'
-        ? pathname === '/'
-        : pathname === item.to || pathname.startsWith(`${item.to}/`)
-    );
+    .find((item) => navMatches(item, pathname));
   if (match) return match;
   return {
     to: pathname,
@@ -150,6 +161,10 @@ function TopBarWithContext() {
   const { logout, user } = useAuth();
   useDocumentTitle(active.label);
 
+  // Prefer help for the exact sub-page (e.g. Deliveries inside the Purchasing
+  // hub); fall back to the hub's help.
+  const helpKey = STOCK_HELP[location.pathname] ? location.pathname : active.to;
+
   return (
     <TopBar
       title={active.label}
@@ -157,8 +172,8 @@ function TopBarWithContext() {
       right={
         user ? (
           <>
-            {STOCK_HELP[active.to] ? (
-              <HelpButton {...STOCK_HELP[active.to]!} layerId={`stock-help-${active.to}`} />
+            {STOCK_HELP[helpKey] ? (
+              <HelpButton {...STOCK_HELP[helpKey]!} layerId={`stock-help-${helpKey}`} />
             ) : null}
             <SuiteAppSwitcher currentApp="stock" apps={accessibleSuiteApps(user, suiteApps)} variant="topbar" />
             <SuiteInboxWidget
@@ -197,18 +212,28 @@ function StockAppShell() {
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/items" element={<ItemsPage />} />
-        <Route path="/stocktake" element={<StocktakePage />} />
-        <Route path="/transfers" element={<TransfersPage />} />
-        <Route path="/suppliers" element={<SuppliersPage />} />
-        <Route path="/invoices" element={<InvoicesPage />} />
-        <Route path="/deliveries" element={<DeliveriesPage />} />
-        <Route path="/wastage" element={<WastagePage />} />
         <Route path="/reorder" element={<ReorderNoticesPage />} />
-        <Route path="/recipes" element={<RecipesPage mode="item" />} />
-        <Route path="/dish-margins" element={<DishMarginPage />} />
-        <Route path="/price-movement" element={<PriceMovementPage />} />
-        <Route path="/production-recipes" element={<RecipesPage mode="production" />} />
         <Route path="/settings" element={<SettingsPage />} />
+
+        {/* Stock count hub */}
+        <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
+        <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
+        <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
+
+        {/* Purchasing hub */}
+        <Route path="/invoices" element={<HubLayout tabs={PURCHASING_TABS}><InvoicesPage /></HubLayout>} />
+        <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
+        <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
+        <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />
+
+        {/* Recipes hub */}
+        <Route path="/recipes" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="item" /></HubLayout>} />
+        <Route path="/recipes/prep" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="production" /></HubLayout>} />
+        <Route path="/recipes/margins" element={<HubLayout tabs={RECIPE_TABS}><DishMarginPage /></HubLayout>} />
+        {/* Old routes → keep bookmarks/deep-links working */}
+        <Route path="/production-recipes" element={<Navigate to="/recipes/prep" replace />} />
+        <Route path="/dish-margins" element={<Navigate to="/recipes/margins" replace />} />
+
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
       </AppAccessGate>

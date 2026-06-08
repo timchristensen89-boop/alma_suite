@@ -125,7 +125,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ],
     tips: ['Costs follow the latest item prices, so margins update as supplier prices move.']
   },
-  '/dish-margins': {
+  '/recipes/margins': {
     title: 'Dish margins',
     intro: 'Menu dishes ranked by cost, sale price and margin — red/amber flag the thin ones.',
     features: [
@@ -142,7 +142,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
       { name: 'Biggest movers', desc: 'Items with the largest increases bubble up.' }
     ]
   },
-  '/production-recipes': {
+  '/recipes/prep': {
     title: 'Prep recipes',
     intro: 'Batch / prep recipes that produce a yield you then use in other recipes.',
     features: [
