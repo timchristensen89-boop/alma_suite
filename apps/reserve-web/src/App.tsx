@@ -2493,7 +2493,20 @@ function FloorPlanSection({
   const [draggingReservationId, setDraggingReservationId] = useState<string | null>(null);
   const [dropTargetTableId, setDropTargetTableId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [snapToGrid, setSnapToGrid] = useState(true);
+  const [snapToGrid, setSnapToGrid] = useState<boolean>(() => {
+    try {
+      return Boolean(JSON.parse(window.localStorage.getItem('alma.reserve.snapToGrid') ?? 'true'));
+    } catch {
+      return true;
+    }
+  });
+  useEffect(() => {
+    try {
+      window.localStorage.setItem('alma.reserve.snapToGrid', JSON.stringify(snapToGrid));
+    } catch {
+      // ignore storage failures (private mode etc.)
+    }
+  }, [snapToGrid]);
   const canvasRef = useRef<HTMLDivElement | null>(null);
   const GRID_PCT = 2.5;
   const applySnap = (value: number) => (snapToGrid ? Math.round(value / GRID_PCT) * GRID_PCT : value);

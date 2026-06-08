@@ -1632,6 +1632,37 @@ export const reserveService = {
     const drinks = drinksIntentId ? await resolveDrinksFromPaymentIntent(drinksIntentId, venue) : null;
 
     const reservation = await prisma.$transaction(async (tx) => {
+      // Re-check capacity INSIDE the transaction, immediately before creating.
+      // The earlier listPublicSlots() check (above) is separated from this
+      // create by guest lookup + Stripe + drinks resolution — hundreds of ms
+      // during which a concurrent booking could claim the last seats. Repeating
+      // the capacity maths here, right before the insert, closes that window so
+      // two simultaneous bookings can't overbook the same slot.
+      const effectiveRuleId = cleanText(data.availabilityRuleId) ?? slot.availabilityRuleId;
+      const slotEnd = parseDate(slot.endsAt, 'Reservation end time');
+      if (effectiveRuleId) {
+        const rule = await tx.reserveAvailabilityRule.findUnique({ where: { id: effectiveRuleId } });
+        if (rule) {
+          const overlapping = await tx.reserveReservation.findMany({
+            where: {
+              venue,
+              status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] },
+              startsAt: { lt: slotEnd },
+              endsAt: { gt: startsAt }
+            },
+            select: { covers: true, availabilityRuleId: true, servicePeriod: true }
+          });
+          const reservedCovers = overlapping.reduce((sum, r) => {
+            if (r.availabilityRuleId && r.availabilityRuleId !== rule.id) return sum;
+            if (!r.availabilityRuleId && rule.servicePeriod && r.servicePeriod !== rule.servicePeriod) return sum;
+            return sum + r.covers;
+          }, 0);
+          if (rule.capacity - reservedCovers < data.partySize) {
+            throw new HttpError(409, 'That booking slot is no longer available.');
+          }
+        }
+      }
+
       const created = await tx.reserveReservation.create({
         data: {
           venue,
@@ -1732,6 +1763,25 @@ export const reserveService = {
   // notification is a future task; v1 is capture-only).
   async recordPublicWaitlist(input: unknown): Promise<ReservePublicWaitlistConfirmation> {
     const data = reservePublicWaitlistInputSchema.parse(input);
+    const venue = data.venue.trim();
+    // This is an unauthenticated public endpoint that persists a row, so
+    // validate the venue against the configured list — otherwise a caller can
+    // create orphaned waitlist entries for arbitrary venue names.
+    const settings = await prisma.appSettings.findUnique({
+      where: { id: 'singleton' },
+      select: { venues: true }
+    });
+    const knownVenues = Array.isArray(settings?.venues)
+      ? settings!.venues
+          .filter(
+            (v): v is { name: string } =>
+              typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
+          )
+          .map((v) => v.name)
+      : [];
+    if (!knownVenues.includes(venue)) {
+      throw new HttpError(404, 'Venue not found or not available for online booking.');
+    }
     const windowStartsAt = new Date(data.windowStartsAt);
     const windowEndsAt = new Date(data.windowEndsAt);
     if (Number.isNaN(windowStartsAt.getTime()) || Number.isNaN(windowEndsAt.getTime())) {
@@ -1742,7 +1792,7 @@ export const reserveService = {
     }
     const entry = await prisma.reserveWaitlistEntry.create({
       data: {
-        venue: data.venue.trim(),
+        venue,
         guestName: data.guestName.trim(),
         guestPhone: data.guestPhone.trim(),
         guestEmail: data.guestEmail?.trim().toLowerCase() || null,
@@ -2055,6 +2105,17 @@ export const reserveService = {
       metadata: { venue, source: 'reserve-drinks' }
     });
     const compact = lineItems.map((li) => ({ p: li.packageId, q: li.qty }));
+    // Stripe metadata values cap at 500 chars. We previously sliced to 480,
+    // which could truncate the JSON mid-string for large orders — producing
+    // invalid JSON that silently parsed to an empty array on redeem, dropping
+    // the prepaid drinks. Reject the order instead so nothing is silently lost.
+    const drinksItemsJson = JSON.stringify(compact);
+    if (drinksItemsJson.length > 480) {
+      throw new HttpError(
+        400,
+        'Too many drinks packages in one order. Please reduce the selection or split it across separate bookings.'
+      );
+    }
     const intent = await stripe.paymentIntents.create({
       amount: amountCents,
       currency: 'aud',
@@ -2067,7 +2128,7 @@ export const reserveService = {
       metadata: {
         venue,
         source: 'reserve-drinks',
-        drinksItems: JSON.stringify(compact).slice(0, 480)
+        drinksItems: drinksItemsJson
       }
     });
     if (!intent.client_secret) {
