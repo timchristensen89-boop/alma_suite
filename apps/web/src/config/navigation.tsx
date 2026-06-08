@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import type { BetaRole } from '../lib/rbac';
 import {
-  IconAudit,
   IconChecklist,
   IconDashboard,
   IconHandbook,
@@ -9,14 +8,12 @@ import {
   IconIssues,
   IconLicences,
   IconSettings,
-  IconStaff,
-  IconTemperature
+  IconStaff
 } from '../lib/icons';
 
-// Top-level nav sections, in display order. Overview sits above them with no
-// header (section omitted). Grouping turns a flat 10-item scan into ~5 labelled
-// clusters for a time-poor manager mid-service.
-export const NAV_SECTIONS = ['Checks', 'Issues & Incidents', 'Records & expiry', 'Handbook', 'Setup'] as const;
+// Multi-item groups get a section header; single hub items + the dashboard sit
+// headerless, in array order.
+export const NAV_SECTIONS = ['Issues & Incidents', 'Records & expiry'] as const;
 export type NavSection = (typeof NAV_SECTIONS)[number];
 
 export type NavItem = {
@@ -28,6 +25,8 @@ export type NavItem = {
   end?: boolean;
   minimumRole?: BetaRole;
   section?: NavSection;
+  /** Extra route prefixes that light this item up (hub sub-tabs). */
+  match?: string[];
 };
 
 export const NAV_ITEMS: NavItem[] = [
@@ -38,33 +37,16 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconDashboard />,
     end: true
   },
-
-  // ── Checks — the template → run → history family ──────────────────
   {
+    // Checks hub: Checklists / Temperatures / Audits as in-page tabs.
     to: '/checklists',
-    label: 'Checklists',
-    description: 'Opening/closing and operational checks',
+    label: 'Checks',
+    description: 'Checklists, temperature logs and audits',
     icon: <IconChecklist />,
-    section: 'Checks'
-  },
-  {
-    to: '/temperatures',
-    label: 'Temperatures',
-    description: 'Fridges, freezers, cool-room logs',
-    icon: <IconTemperature />,
-    minimumRole: 'MANAGER',
-    section: 'Checks'
-  },
-  {
-    to: '/audits',
-    label: 'Audits',
-    description: 'Health inspection & internal audits',
-    icon: <IconAudit />,
-    minimumRole: 'MANAGER',
-    section: 'Checks'
+    match: ['/temperatures', '/audits']
   },
 
-  // ── Issues & Incidents — track something that went wrong ──────────
+  // ── Issues & Incidents ────────────────────────────────────────────
   {
     to: '/issues',
     label: 'Issues',
@@ -80,7 +62,7 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'Issues & Incidents'
   },
 
-  // ── Records & expiry — watch these before they lapse ──────────────
+  // ── Records & expiry ──────────────────────────────────────────────
   {
     to: '/staff',
     label: 'Staff certificates',
@@ -98,23 +80,18 @@ export const NAV_ITEMS: NavItem[] = [
     section: 'Records & expiry'
   },
 
-  // ── Handbook — reference content ──────────────────────────────────
   {
     to: '/handbook',
     label: 'Handbook',
     description: 'Staff guidance and venue procedures',
-    icon: <IconHandbook />,
-    section: 'Handbook'
+    icon: <IconHandbook />
   },
-
-  // ── Setup — off-app admin ─────────────────────────────────────────
   {
     to: '/admin',
     label: 'Open Alma Admin',
     description: 'Suite setup, access and health — opens the Admin app',
     icon: <IconSettings />,
-    minimumRole: 'ADMIN',
-    section: 'Setup'
+    minimumRole: 'ADMIN'
   }
 ];
 
