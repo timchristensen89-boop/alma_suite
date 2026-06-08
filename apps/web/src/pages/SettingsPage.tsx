@@ -15,7 +15,7 @@ import { IconArrowRight, IconHandbook, IconPlus, IconRefresh } from '../lib/icon
 
 type Venue = AppSettingsPayload['venues'][number];
 
-type Tab = 'org' | 'venues' | 'integrations' | 'notifications' | 'handbook' | 'account';
+type Tab = 'org' | 'venues' | 'integrations' | 'notifications' | 'tips' | 'handbook' | 'account';
 type SettingsFeedback = { message: string | null; tone: 'success' | 'error' };
 
 const TABS: { key: Tab; label: string; adminOnly?: boolean }[] = [
@@ -23,6 +23,7 @@ const TABS: { key: Tab; label: string; adminOnly?: boolean }[] = [
   { key: 'venues', label: 'Venues', adminOnly: true },
   { key: 'integrations', label: 'Integrations', adminOnly: true },
   { key: 'notifications', label: 'Notifications', adminOnly: true },
+  { key: 'tips', label: 'Tip payments', adminOnly: true },
   { key: 'handbook', label: 'Handbook', adminOnly: true },
   { key: 'account', label: 'My account' }
 ];
@@ -207,6 +208,9 @@ export function SettingsPage() {
       ) : null}
       {tab === 'notifications' && user?.isAdmin ? (
         <NotificationsTab settings={settings} onSave={save} feedback={feedbackFor('notifications')} />
+      ) : null}
+      {tab === 'tips' && user?.isAdmin ? (
+        <TipPaymentsTab settings={settings} onSave={save} feedback={feedbackFor('tips')} />
       ) : null}
       {tab === 'handbook' && user?.isAdmin ? <HandbookTab /> : null}
       {tab === 'account' ? <AccountTab /> : null}
@@ -476,6 +480,133 @@ function IntegrationsTab({
           <Button type="submit">Save</Button>
           <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
         </div>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
+/* ---------- Tip payments (ABA) ---------- */
+function TipPaymentsTab({
+  settings,
+  onSave,
+  feedback
+}: {
+  settings: AppSettingsPayload;
+  onSave: (patch: Partial<AppSettingsPayload>, target: string) => void;
+  feedback?: SettingsFeedback;
+}) {
+  const aba = settings.tipsAbaSettings ?? {
+    financialInstitution: '',
+    userName: '',
+    userId: '',
+    remitterName: '',
+    description: '',
+    traceBsb: '',
+    traceAccount: '',
+    configured: false
+  };
+  const [financialInstitution, setFinancialInstitution] = useState(aba.financialInstitution ?? '');
+  const [userName, setUserName] = useState(aba.userName ?? '');
+  const [userId, setUserId] = useState(aba.userId ?? '');
+  const [remitterName, setRemitterName] = useState(aba.remitterName ?? '');
+  const [description, setDescription] = useState(aba.description || 'ALMA TIPS');
+  const [traceBsb, setTraceBsb] = useState(aba.traceBsb ?? '');
+  // Account comes back masked; we keep that masked value in the field and only
+  // send it back if the admin types a new one (the server ignores masked echoes).
+  const [traceAccount, setTraceAccount] = useState(aba.traceAccount ?? '');
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    onSave(
+      {
+        tipsAbaSettings: {
+          financialInstitution: financialInstitution.trim(),
+          userName: userName.trim(),
+          userId: userId.trim(),
+          remitterName: remitterName.trim(),
+          description: description.trim(),
+          traceBsb: traceBsb.trim(),
+          traceAccount: traceAccount.trim()
+        }
+        // The update schema's tipsAbaSettings input differs from the payload
+        // type (no `configured`, account masked), so cast for the patch.
+      } as unknown as Partial<AppSettingsPayload>,
+      'tips'
+    );
+  }
+
+  return (
+    <div className="page-stack compact">
+      <Card
+        title="Tip payments (ABA bank file)"
+        subtitle="Your business bank details for the direct-entry (ABA) file used to pay staff tips"
+        action={
+          <Badge tone={aba.configured ? 'positive' : 'warning'} dot>
+            {aba.configured ? 'Configured' : 'Not configured'}
+          </Badge>
+        }
+      >
+        <p className="subtle" style={{ marginTop: 0 }}>
+          These are your business's own banking details, used as the header/trace record of the ABA file your
+          bank ingests. They are stored securely and the account number is masked when shown.
+        </p>
+        <form className="page-stack compact" onSubmit={submit}>
+          <div className="admin-grid two">
+            <Input
+              label="Financial institution"
+              value={financialInstitution}
+              onChange={(e) => setFinancialInstitution(e.currentTarget.value)}
+              placeholder="e.g. WBC, ANZ, CBA, NAB"
+              hint="3-letter abbreviation of the bank that processes the file."
+            />
+            <Input
+              label="APCA user ID"
+              value={userId}
+              onChange={(e) => setUserId(e.currentTarget.value)}
+              placeholder="6 digits"
+              hint="The 6-digit direct-entry user ID your bank issued."
+            />
+            <Input
+              label="User name"
+              value={userName}
+              onChange={(e) => setUserName(e.currentTarget.value)}
+              placeholder="Registered direct-entry name"
+              hint="The name registered with your bank for direct entry."
+            />
+            <Input
+              label="Remitter name"
+              value={remitterName}
+              onChange={(e) => setRemitterName(e.currentTarget.value)}
+              placeholder="Shows on staff statements"
+              hint="What staff see on their bank statement. Defaults to the user name."
+            />
+            <Input
+              label="Trace BSB"
+              value={traceBsb}
+              onChange={(e) => setTraceBsb(e.currentTarget.value)}
+              placeholder="000-000"
+              hint="Your business account BSB (branch code)."
+            />
+            <Input
+              label="Trace account number"
+              value={traceAccount}
+              onChange={(e) => setTraceAccount(e.currentTarget.value)}
+              placeholder="Your business account"
+              hint="Leave the masked value to keep it. Type a new number to replace."
+            />
+            <Input
+              label="Lodgement description"
+              value={description}
+              onChange={(e) => setDescription(e.currentTarget.value)}
+              placeholder="ALMA TIPS"
+              hint="Short description shown on the bank file (max ~12 chars)."
+            />
+          </div>
+          <div className="inline-actions">
+            <Button type="submit">Save</Button>
+            <ActionFeedback message={feedback?.message} tone={feedback?.tone} />
+          </div>
         </form>
       </Card>
     </div>

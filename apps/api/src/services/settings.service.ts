@@ -4,11 +4,69 @@ import {
   appSettingsUpdateSchema,
   normaliseOnboardingSettings,
   normaliseStaffDefaults,
-  type AppSettingsPayload
+  type AppSettingsPayload,
+  type TipsAbaSettings
 } from '@alma/shared';
 
 const SINGLETON_ID = 'singleton';
 const DEFAULT_GOVEE_BASE_URL = 'https://openapi.api.govee.com';
+
+// Mask a bank account number so the GET response never exposes it in full —
+// only the last 3 digits, mirroring how the Govee key is masked.
+function maskAbaAccount(value: string): string {
+  const digits = value.replace(/\s+/g, '');
+  if (!digits) return '';
+  if (digits.length <= 3) return '•••';
+  return `•••• ${digits.slice(-3)}`;
+}
+
+function abaRecord(raw: unknown): Record<string, string> {
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, string>) : {};
+}
+
+function toAbaPayload(raw: unknown): TipsAbaSettings {
+  const o = abaRecord(raw);
+  const financialInstitution = String(o.financialInstitution ?? '');
+  const userName = String(o.userName ?? '');
+  const userId = String(o.userId ?? '');
+  const remitterName = String(o.remitterName ?? '');
+  const description = String(o.description ?? '');
+  const traceBsb = String(o.traceBsb ?? '');
+  const traceAccount = String(o.traceAccount ?? '');
+  return {
+    financialInstitution,
+    userName,
+    userId,
+    remitterName,
+    description,
+    traceBsb,
+    traceAccount: maskAbaAccount(traceAccount),
+    configured: Boolean(financialInstitution && userName && userId && remitterName && traceBsb && traceAccount)
+  };
+}
+
+// Merge an incoming ABA patch onto the stored (full) values. Fields are only
+// changed when provided; the account number is ignored when it comes back
+// masked (contains •) so re-saving the form doesn't wipe the stored number.
+function mergeAbaSettings(
+  existingRaw: unknown,
+  incoming: Partial<Record<keyof TipsAbaSettings, string>>
+): Record<string, string> {
+  const out: Record<string, string> = { ...abaRecord(existingRaw) };
+  const set = (key: string, val: string | undefined, guardMasked = false) => {
+    if (val === undefined) return;
+    if (guardMasked && val.includes('•')) return;
+    out[key] = val.trim();
+  };
+  set('financialInstitution', incoming.financialInstitution);
+  set('userName', incoming.userName);
+  set('userId', incoming.userId);
+  set('remitterName', incoming.remitterName);
+  set('description', incoming.description);
+  set('traceBsb', incoming.traceBsb);
+  set('traceAccount', incoming.traceAccount, true);
+  return out;
+}
 
 function normaliseGoveeBaseUrl(value: string | null | undefined) {
   const raw = value?.trim() || DEFAULT_GOVEE_BASE_URL;
@@ -27,6 +85,7 @@ function toPayload(row: {
   handbookContent?: unknown;
   onboardingSettings?: unknown;
   staffDefaults?: unknown;
+  tipsAbaSettings?: unknown;
   goveeApiKey: string | null;
   goveeBaseUrl: string | null;
   notifyEmail: string | null;
@@ -73,7 +132,8 @@ function toPayload(row: {
     notifyEmail: row.notifyEmail,
     notifyOverdueIssues: row.notifyOverdueIssues,
     notifyExpiringStaff: row.notifyExpiringStaff,
-    notifyOutOfRangeTemp: row.notifyOutOfRangeTemp
+    notifyOutOfRangeTemp: row.notifyOutOfRangeTemp,
+    tipsAbaSettings: toAbaPayload(row.tipsAbaSettings)
   };
 }
 
@@ -96,7 +156,7 @@ export const settingsService = {
 
   async update(input: unknown): Promise<AppSettingsPayload> {
     const data = appSettingsUpdateSchema.parse(input);
-    await ensureSingleton();
+    const existing = await ensureSingleton();
 
     const updateData: Prisma.AppSettingsUpdateInput = {
       ...(data.orgName !== undefined && { orgName: data.orgName }),
@@ -120,7 +180,13 @@ export const settingsService = {
       ...(data.notifyEmail !== undefined && { notifyEmail: data.notifyEmail || null }),
       ...(data.notifyOverdueIssues !== undefined && { notifyOverdueIssues: data.notifyOverdueIssues }),
       ...(data.notifyExpiringStaff !== undefined && { notifyExpiringStaff: data.notifyExpiringStaff }),
-      ...(data.notifyOutOfRangeTemp !== undefined && { notifyOutOfRangeTemp: data.notifyOutOfRangeTemp })
+      ...(data.notifyOutOfRangeTemp !== undefined && { notifyOutOfRangeTemp: data.notifyOutOfRangeTemp }),
+      ...(data.tipsAbaSettings !== undefined && {
+        tipsAbaSettings: mergeAbaSettings(
+          (existing as { tipsAbaSettings?: unknown }).tipsAbaSettings,
+          data.tipsAbaSettings
+        ) as Prisma.InputJsonValue
+      })
     };
 
     const updated = await prisma.appSettings.update({

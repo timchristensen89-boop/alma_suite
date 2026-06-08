@@ -2003,6 +2003,9 @@ model AppSettings {
   onboardingSettings   Json     @default("{}")
   staffDefaults        Json     @default("{}")
   giftCardSettings     Json     @default("{}")
+  // ABA (direct-entry) bank-file details for paying staff tips, set in-app via
+  // Settings. Read by staff.service buildAbaConfig (with env-var fallback).
+  tipsAbaSettings      Json     @default("{}")
   // Loaded replacement tracking — stores LoadedCutoverCheck statuses + notes
   // keyed by check id, plus comparison data and free-text notes per section.
   // See loaded-replacement.service.ts for the shape.

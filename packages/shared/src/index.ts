@@ -1900,8 +1900,35 @@ export const appSettingsUpdateSchema = z.object({
   notifyEmail: z.string().email().optional().or(z.literal('')),
   notifyOverdueIssues: z.boolean().optional(),
   notifyExpiringStaff: z.boolean().optional(),
-  notifyOutOfRangeTemp: z.boolean().optional()
+  notifyOutOfRangeTemp: z.boolean().optional(),
+  // ABA (direct-entry) bank-file details for paying staff tips. The account
+  // number can be sent back masked (containing •) — the server ignores masked
+  // echoes so a save doesn't wipe the stored value.
+  tipsAbaSettings: z
+    .object({
+      financialInstitution: z.string().optional().or(z.literal('')),
+      userName: z.string().optional().or(z.literal('')),
+      userId: z.string().optional().or(z.literal('')),
+      remitterName: z.string().optional().or(z.literal('')),
+      description: z.string().optional().or(z.literal('')),
+      traceBsb: z.string().optional().or(z.literal('')),
+      traceAccount: z.string().optional().or(z.literal(''))
+    })
+    .optional()
 });
+
+export type TipsAbaSettings = {
+  financialInstitution: string;
+  userName: string;
+  userId: string;
+  remitterName: string;
+  description: string;
+  traceBsb: string;
+  // Returned masked (e.g. "•••• 123"); never the full account number.
+  traceAccount: string;
+  // True when every required field is present in storage.
+  configured: boolean;
+};
 
 export type AuthUser = {
   id: string;
@@ -1937,6 +1964,7 @@ export type AppSettingsPayload = {
   notifyOverdueIssues: boolean;
   notifyExpiringStaff: boolean;
   notifyOutOfRangeTemp: boolean;
+  tipsAbaSettings: TipsAbaSettings;
 };
 
 export type AdminSignalTone = 'positive' | 'warning' | 'danger' | 'info' | 'muted';

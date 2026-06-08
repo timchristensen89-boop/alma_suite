@@ -1514,28 +1514,55 @@ function abaRecord(parts: string[]) {
   return record;
 }
 
-function tipsAbaConfig() {
+async function tipsAbaConfig() {
+  // Prefer the in-app Settings value (AppSettings.tipsAbaSettings), falling back
+  // to env vars so existing deployments keep working.
+  const row = await prisma.appSettings.findUnique({
+    where: { id: 'singleton' },
+    select: { tipsAbaSettings: true }
+  });
+  const stored =
+    row?.tipsAbaSettings && typeof row.tipsAbaSettings === 'object' && !Array.isArray(row.tipsAbaSettings)
+      ? (row.tipsAbaSettings as Record<string, string>)
+      : {};
+  const pick = (key: string, ...envValues: (string | undefined)[]) => {
+    const fromStore = stored[key]?.trim();
+    if (fromStore) return fromStore;
+    for (const value of envValues) {
+      if (value && value.trim()) return value.trim();
+    }
+    return '';
+  };
+  const userName = pick('userName', process.env.TIPS_ABA_USER_NAME, process.env.ABA_USER_NAME);
   const config = {
-    financialInstitution: process.env.TIPS_ABA_FINANCIAL_INSTITUTION ?? process.env.ABA_FINANCIAL_INSTITUTION ?? '',
-    userName: process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
-    userId: process.env.TIPS_ABA_USER_ID ?? process.env.ABA_USER_ID ?? '',
-    description: process.env.TIPS_ABA_DESCRIPTION ?? 'ALMA TIPS',
-    remitterName: process.env.TIPS_ABA_REMITTER_NAME ?? process.env.ABA_REMITTER_NAME ?? process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
-    traceBsb: process.env.TIPS_ABA_TRACE_BSB ?? process.env.ABA_TRACE_BSB ?? '',
-    traceAccount: process.env.TIPS_ABA_TRACE_ACCOUNT ?? process.env.ABA_TRACE_ACCOUNT ?? ''
+    financialInstitution: pick(
+      'financialInstitution',
+      process.env.TIPS_ABA_FINANCIAL_INSTITUTION,
+      process.env.ABA_FINANCIAL_INSTITUTION
+    ),
+    userName,
+    userId: pick('userId', process.env.TIPS_ABA_USER_ID, process.env.ABA_USER_ID),
+    description: pick('description', process.env.TIPS_ABA_DESCRIPTION) || 'ALMA TIPS',
+    remitterName:
+      pick('remitterName', process.env.TIPS_ABA_REMITTER_NAME, process.env.ABA_REMITTER_NAME) || userName,
+    traceBsb: pick('traceBsb', process.env.TIPS_ABA_TRACE_BSB, process.env.ABA_TRACE_BSB),
+    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT)
   };
   const missing = [
-    ['TIPS_ABA_FINANCIAL_INSTITUTION', config.financialInstitution],
-    ['TIPS_ABA_USER_NAME', config.userName],
-    ['TIPS_ABA_USER_ID', config.userId],
-    ['TIPS_ABA_TRACE_BSB', config.traceBsb],
-    ['TIPS_ABA_TRACE_ACCOUNT', config.traceAccount],
-    ['TIPS_ABA_REMITTER_NAME', config.remitterName]
+    ['Financial institution', config.financialInstitution],
+    ['User name', config.userName],
+    ['User ID', config.userId],
+    ['Trace BSB', config.traceBsb],
+    ['Trace account', config.traceAccount],
+    ['Remitter name', config.remitterName]
   ]
     .filter(([, value]) => !String(value).trim())
     .map(([key]) => key);
   if (missing.length) {
-    throw new HttpError(400, `ABA export is not configured. Add ${missing.join(', ')}.`);
+    throw new HttpError(
+      400,
+      `ABA export is not configured. Set your tip-payment bank details in Settings → Tip payments (missing: ${missing.join(', ')}).`
+    );
   }
   const userId = normaliseDigits(config.userId);
   if (userId.length !== 6) throw new HttpError(400, 'TIPS_ABA_USER_ID must be 6 digits.');
@@ -1646,8 +1673,8 @@ function tipRunFilenamePart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
 }
 
-function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
-  const config = tipsAbaConfig();
+async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
+  const config = await tipsAbaConfig();
   const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 
