@@ -22,7 +22,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
-import { convertQuantityToCostUnit } from './units.js';
+import { convertBetweenUnits, convertQuantityToCostUnit } from './units.js';
 
 type RecipeRow = Prisma.RecipeGetPayload<{
   include: {
@@ -278,16 +278,27 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     if (batchCostCents === null || batchCostCents <= 0) warnings.push('Prep recipe batch cost is missing');
     if (!yieldQuantity || yieldQuantity <= 0) warnings.push('Prep recipe yield quantity is missing');
     if (quantity === null) warnings.push('Ingredient quantity is missing');
-    if (row.unit && row.subRecipe.yieldUnit && row.unit !== row.subRecipe.yieldUnit) {
-      warnings.push(`Unit ${row.unit} differs from prep recipe yield unit ${row.subRecipe.yieldUnit}; no conversion is applied`);
+
+    // Express the line quantity in the prep recipe's yield unit, so a per-yield
+    // cost applies correctly even when units differ (e.g. 200 mL used from a
+    // recipe that yields in L — previously mis-costed by 1000×).
+    let subCostQuantity = quantity;
+    if (quantity !== null) {
+      const converted = convertBetweenUnits(quantity, row.unit, row.subRecipe.yieldUnit);
+      if (converted === null) {
+        warnings.push(`Unit ${row.unit} can't convert to the prep recipe's yield unit ${row.subRecipe.yieldUnit}; cost not adjusted`);
+      } else {
+        subCostQuantity = converted;
+      }
     }
+
     const unitCostCents =
       batchCostCents !== null && yieldQuantity && yieldQuantity > 0
         ? batchCostCents / yieldQuantity
         : null;
     const lineCostCents =
-      unitCostCents !== null && quantity !== null
-        ? roundCents(unitCostCents * quantity * wasteMultiplier)
+      unitCostCents !== null && subCostQuantity !== null
+        ? roundCents(unitCostCents * subCostQuantity * wasteMultiplier)
         : null;
     return {
       lineId: row.id,

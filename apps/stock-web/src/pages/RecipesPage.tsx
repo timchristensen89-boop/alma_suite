@@ -161,6 +161,59 @@ function duplicateRecipeKey(recipe: Recipe) {
   ].join('|');
 }
 
+// Standard, convertible recipe units. Solids: Unit / kg / g. Liquids: Unit / L
+// / mL. "Unit" = one whole purchase unit, and the backend converts all of them
+// to a consistent cost (1 Unit = 1 kg = 1000 g for a 1 kg item, etc.).
+const SOLID_UNIT_OPTIONS = [
+  { label: 'Unit', value: 'unit' },
+  { label: 'kg', value: 'kg' },
+  { label: 'g', value: 'g' }
+];
+const LIQUID_UNIT_OPTIONS = [
+  { label: 'Unit', value: 'unit' },
+  { label: 'L', value: 'l' },
+  { label: 'mL', value: 'ml' }
+];
+const ALL_UNIT_OPTIONS = [...SOLID_UNIT_OPTIONS, { label: 'L', value: 'l' }, { label: 'mL', value: 'ml' }];
+
+function isLiquidUnit(u: string | null | undefined): boolean {
+  return ['ml', 'l', 'lt', 'ltr', 'litre', 'liter', 'litres', 'liters', 'millilitre', 'milliliter'].includes(
+    (u ?? '').trim().toLowerCase()
+  );
+}
+
+// Units offered for a recipe line, constrained to the linked item's (or prep
+// recipe's) solid-vs-liquid nature so staff pick from a consistent vocabulary
+// instead of typing free-form units that don't convert.
+function lineUnitOptions(
+  unit: string | undefined,
+  itemId: string | undefined,
+  subRecipeId: string | undefined,
+  items: StockItem[],
+  recipes: Recipe[]
+): { label: string; value: string }[] {
+  let base = ALL_UNIT_OPTIONS;
+  if (itemId) {
+    const item = items.find((i) => i.id === itemId);
+    if (item) {
+      const liquid =
+        isLiquidUnit(item.measureUnit) ||
+        (!item.measureUnit && (isLiquidUnit(item.countUnit) || isLiquidUnit(item.unit)));
+      base = liquid ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+    }
+  } else if (subRecipeId) {
+    const rec = recipes.find((r) => r.id === subRecipeId);
+    if (rec) base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+  }
+  // Keep an existing non-standard unit as an option so editing an old recipe
+  // doesn't silently change it; the user can switch to a standard one.
+  const cur = (unit ?? '').trim();
+  if (cur && !base.some((o) => o.value === cur.toLowerCase())) {
+    return [{ label: cur, value: cur }, ...base];
+  }
+  return base;
+}
+
 export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
   const isProductionMode = mode === 'production';
   useDocumentTitle(isProductionMode ? 'Production Recipes' : 'Item Recipes');
@@ -1311,9 +1364,9 @@ function RecipeForm({
           value={draft.yieldQuantity}
           onChange={(event) => update('yieldQuantity', event.currentTarget.value)}
         />
-        <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
+        <Select label="Yield unit" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} options={lineUnitOptions(draft.yieldUnit, undefined, undefined, items, recipes)} />
         <Input label="Portion size" type="number" min="0" step="0.01" placeholder="Servings (leave blank for 1)" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
-        <Input label="Portion unit" placeholder="portion, kg, L" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} />
+        <Select label="Portion unit" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} options={lineUnitOptions(draft.portionUnit, undefined, undefined, items, recipes)} />
         <Select
           label="Status"
           value={draft.status}
@@ -1347,8 +1400,8 @@ function RecipeForm({
             <Select label="Linked item" value={line.itemId} onChange={(event) => selectItem(index, event.currentTarget.value)} options={itemOptions} />
             <Select label="Production recipe" value={line.subRecipeId} onChange={(event) => selectProductionRecipe(index, event.currentTarget.value)} options={productionRecipeOptions} />
             <Input label="Ingredient" required value={line.ingredientName} onChange={(event) => updateLine(index, { ingredientName: event.currentTarget.value })} />
-            <Input label="Qty" type="number" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
-            <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
+            <Input label="Amount" type="number" step="0.01" className="recipe-amount-input" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
+            <Select label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} options={lineUnitOptions(line.unit, line.itemId, line.subRecipeId, items, recipes)} />
             <Input label="Manual cost" type="number" step="0.01" value={line.cost} onChange={(event) => updateLine(index, { cost: event.currentTarget.value })} />
             <Input label="Waste %" type="number" step="0.01" value={line.wastePercent} onChange={(event) => updateLine(index, { wastePercent: event.currentTarget.value })} />
             <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
@@ -1642,20 +1695,26 @@ function RecipeLinesTable({
                     type="number"
                     step="0.01"
                     min="0"
-                    className="recipe-line-input recipe-line-input-narrow"
+                    className="recipe-line-input recipe-amount-input"
                     value={draft.quantity}
                     onChange={(event) => updateDraft(index, { quantity: event.currentTarget.value })}
                     placeholder="0"
                   />
                 </td>
                 <td>
-                  <input
-                    type="text"
+                  <select
                     className="recipe-line-input recipe-line-input-narrow"
                     value={draft.unit}
                     onChange={(event) => updateDraft(index, { unit: event.currentTarget.value })}
-                    placeholder="ml"
-                  />
+                  >
+                    {lineUnitOptions(draft.unit, draft.itemId, draft.subRecipeId, items, allRecipes).map(
+                      (opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      )
+                    )}
+                  </select>
                 </td>
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
                 <td>

@@ -106,6 +106,14 @@ export function convertQuantityToCostUnit(
     return { quantity, via: 'same-unit' };
   }
 
+  // A generic count word ("Unit"/"each"/"portion") means one whole count unit
+  // of the item, whatever the item's count unit is actually named (bottle,
+  // punnet, each…). So "1 Unit" costs as 1 count unit — and pairs with the
+  // measure bridge below so Unit / kg / g (or Unit / L / mL) all agree.
+  if (from === 'each') {
+    return { quantity, via: 'same-unit' };
+  }
+
   // Line is in the purchase unit while cost is per count unit → use the item's
   // pack conversion (count units per purchase unit).
   if (
@@ -138,4 +146,25 @@ export function convertQuantityToCostUnit(
   }
 
   return { quantity, via: 'unknown' };
+}
+
+/**
+ * Convert a quantity between two standard units (Unit / kg / g / L / mL) for
+ * prep-recipe (sub-recipe) lines, where the line unit may differ from the prep
+ * recipe's yield unit. Same/unspecified units pass through; mL↔L and g↔kg
+ * convert via the metric family. Returns null when the two units are genuinely
+ * incompatible (e.g. "each" vs "L"), so the caller can warn and fall back to the
+ * raw quantity rather than mis-cost by a factor of 1000.
+ */
+export function convertBetweenUnits(
+  quantity: number,
+  fromUnit: string | null | undefined,
+  toUnit: string | null | undefined
+): number | null {
+  const from = normaliseUnit(fromUnit);
+  const to = normaliseUnit(toUnit);
+  if (!from || !to || from === to) return quantity;
+  const factor = measureFactor(from, to); // g↔kg, mL↔L
+  if (factor !== null) return quantity * factor;
+  return null;
 }

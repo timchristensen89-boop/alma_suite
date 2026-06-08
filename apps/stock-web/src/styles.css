@@ -1860,6 +1860,16 @@ html[data-theme='dark'] .price-movement-tile.is-positive strong { color: var(--t
   max-width: 80px;
 }
 
+/* Bigger amount box: staff enter quantities here a lot, so give it room.
+   Works whether the class lands on the <input> directly (table editor) or on
+   the @alma/ui Input wrapper (main recipe form). */
+.recipe-amount-input,
+.recipe-amount-input input {
+  min-width: 120px;
+  font-size: 15px;
+  padding: 9px 12px;
+}
+
 .recipe-line-delete {
   display: inline-grid;
   place-items: center;
