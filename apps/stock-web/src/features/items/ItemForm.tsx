@@ -28,6 +28,8 @@ type Draft = {
   unit: string;
   countUnit: string;
   conversionFactor: string;
+  measurePerCountUnit: string;
+  measureUnit: string;
   latestCostDollars: string;
   parLevel: string;
   reorderPoint: string;
@@ -64,6 +66,8 @@ function emptyDraft(): Draft {
     unit: 'ea',
     countUnit: 'ea',
     conversionFactor: '1',
+    measurePerCountUnit: '',
+    measureUnit: 'g',
     latestCostDollars: '',
     parLevel: '0',
     reorderPoint: '',
@@ -80,6 +84,8 @@ function draftFromItem(item: StockItem): Draft {
     unit: item.unit,
     countUnit: item.countUnit ?? item.unit,
     conversionFactor: String(item.conversionFactor ?? 1),
+    measurePerCountUnit: item.measurePerCountUnit == null ? '' : String(item.measurePerCountUnit),
+    measureUnit: item.measureUnit ?? 'g',
     latestCostDollars: centsToDollars(item.latestCostCents),
     parLevel: String(item.parLevel),
     reorderPoint: item.reorderPoint === null ? '' : String(item.reorderPoint),
@@ -184,6 +190,14 @@ export function ItemForm({
       draft.latestCostDollars.trim() === '' ? undefined : Number(draft.latestCostDollars);
     const reorderPoint =
       draft.reorderPoint === '' ? undefined : Number(draft.reorderPoint);
+    const measurePerCountUnit =
+      draft.measurePerCountUnit.trim() === '' ? undefined : Number(draft.measurePerCountUnit);
+    if (measurePerCountUnit !== undefined && (!Number.isFinite(measurePerCountUnit) || measurePerCountUnit <= 0)) {
+      setError('Measure per count unit must be greater than zero');
+      setFeedback('Measure per count unit must be greater than zero');
+      setFeedbackTone('error');
+      return;
+    }
     if (!Number.isFinite(conversionFactor) || conversionFactor <= 0) {
       setError('Units per purchase unit must be greater than zero');
       setFeedback('Units per purchase unit must be greater than zero');
@@ -216,6 +230,9 @@ export function ItemForm({
       unit: draft.unit.trim(),
       countUnit: draft.countUnit.trim(),
       conversionFactor,
+      ...(measurePerCountUnit !== undefined
+        ? { measurePerCountUnit, measureUnit: draft.measureUnit === 'ml' ? 'ml' : 'g' }
+        : {}),
       latestCostCents:
         latestCostDollars === undefined ? undefined : Math.round(latestCostDollars * 100),
       parLevel,
@@ -359,6 +376,28 @@ export function ItemForm({
           onChange={(event) => update('latestCostDollars', event.currentTarget.value)}
           placeholder="Optional"
           hint={`Calculated unit cost: ${formatCurrency(calculatedUnitCostCents)} / ${countUnit}`}
+        />
+      </div>
+
+      <div className="form-grid two">
+        <Input
+          label={`Measure per ${countUnit}`}
+          type="number"
+          step="0.01"
+          min="0"
+          value={draft.measurePerCountUnit}
+          onChange={(event) => update('measurePerCountUnit', event.currentTarget.value)}
+          placeholder="Optional"
+          hint={`How much one ${countUnit} weighs or holds — lets g/mL recipes cost this item. e.g. 1 punnet ≈ 250 g.`}
+        />
+        <Select
+          label="Measure unit"
+          value={draft.measureUnit}
+          onChange={(event) => update('measureUnit', event.currentTarget.value)}
+          options={[
+            { label: 'grams (g)', value: 'g' },
+            { label: 'millilitres (mL)', value: 'ml' }
+          ]}
         />
       </div>
 

@@ -21,14 +21,20 @@ export type CostUnitItem = {
   unit: string;
   countUnit: string | null;
   conversionFactor: number | null;
+  // Net measurable amount in one count/cost unit (e.g. a punnet ≈ 250 g), and
+  // the unit it's expressed in ('g' or 'ml'). Lets us cost a weight/volume
+  // recipe line against an item that is counted/costed by a count unit.
+  measurePerCountUnit?: number | null;
+  measureUnit?: string | null;
 };
 
 export type QuantityConversion = {
   // Quantity expressed in the item's cost unit.
   quantity: number;
   // How the conversion was resolved. 'unknown' means we could not convert and
-  // the raw quantity is returned unchanged (caller should warn).
-  via: 'same-unit' | 'pack' | 'measure' | 'unknown';
+  // the raw quantity is returned unchanged (caller should warn). 'measure-pack'
+  // bridged a weight/volume line to a count unit via measurePerCountUnit.
+  via: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'unknown';
 };
 
 function normaliseUnit(value: string | null | undefined): string {
@@ -116,6 +122,19 @@ export function convertQuantityToCostUnit(
   const factor = measureFactor(from, cost);
   if (factor !== null) {
     return { quantity: quantity * factor, via: 'measure' };
+  }
+
+  // Line is a weight/volume but the cost unit is a count unit (punnet, bunch,
+  // each…). Bridge via the item's declared measure-per-count-unit: express the
+  // line in the item's measure unit, then divide by how much one count unit
+  // holds to get the number of count units. e.g. 12 g ÷ (250 g / punnet) =
+  // 0.048 punnet.
+  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
+    const measure = normaliseUnit(item.measureUnit);
+    const toMeasure = measureFactor(from, measure); // line qty expressed in the item's measure unit
+    if (toMeasure !== null) {
+      return { quantity: (quantity * toMeasure) / item.measurePerCountUnit, via: 'measure-pack' };
+    }
   }
 
   return { quantity, via: 'unknown' };

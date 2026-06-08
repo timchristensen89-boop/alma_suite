@@ -5068,6 +5068,10 @@ export type StockItem = {
   countUnit: string | null;
   conversionFactor: number;
   countArea: string | null;
+  /** Net g/ml in one count unit (e.g. punnet ≈ 250 g) — bridges weight/volume recipe lines to count-unit items. */
+  measurePerCountUnit: number | null;
+  /** Unit measurePerCountUnit is expressed in: 'g' or 'ml'. */
+  measureUnit: string | null;
   latestCostCents: number | null;
   latestCostAt: string | null;
   onHand: number;
@@ -5405,6 +5409,11 @@ export const stockItemCreateInputSchema = z.object({
     z.coerce.number().positive('Units per purchase unit must be greater than zero').optional()
   ),
   countArea: z.string().optional().or(z.literal('')),
+  measurePerCountUnit: z.preprocess(
+    emptyStringToUndefined,
+    z.coerce.number().positive('Measure per count unit must be greater than zero').optional()
+  ),
+  measureUnit: z.enum(['g', 'ml']).optional().or(z.literal('')),
   latestCostCents: z.preprocess(
     emptyStringToUndefined,
     z.coerce.number().int().nonnegative('Latest purchase price cannot be negative').optional()

@@ -2339,6 +2339,8 @@ model StockItem {
   countUnit          String? // sale/count unit (e.g. each, ml, g) — defaults to unit when null
   conversionFactor   Float                     @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
   countArea          String? // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
+  measurePerCountUnit Float?  // net measurable amount in ONE count/cost unit, e.g. a punnet ≈ 250 (g). Bridges weight/volume recipe lines to count-unit items.
+  measureUnit        String?  // 'g' or 'ml' — the unit measurePerCountUnit is expressed in
   latestCostCents    Int? // most recent landed cost per purchase unit
   latestCostAt       DateTime? // when latestCostCents was last updated — drives staleness warnings
   onHand             Float                     @default(0)
