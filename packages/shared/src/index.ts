@@ -5699,6 +5699,14 @@ export type StockInvoiceRipResult = {
   warnings: string[];
 };
 
+/** Result of applying cost to every eligible matched line on one invoice. */
+export type StockInvoiceApplyAllCostsResult = {
+  appliedCount: number;
+  skippedCount: number;
+  skipped: Array<{ lineId: string; description: string; reason: string }>;
+  invoice: StockSupplierInvoice;
+};
+
 export const stockInvoiceImportInputSchema = z.object({
   source: z.string().min(1).default('XERO'),
   venue: z.string().optional().or(z.literal('')),

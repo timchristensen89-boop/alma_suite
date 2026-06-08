@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import type {
   StockMenuParRecommendation,
   StockMenuParRecommendationsPayload,
@@ -8,6 +8,8 @@ import type {
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { useAuth } from '../lib/auth';
+import { canManageStock } from '../lib/stockPermissions';
 
 function qty(value: number | null | undefined, unit?: string | null) {
   if (value === null || value === undefined) return '—';
@@ -52,6 +54,11 @@ export function ReorderNoticesPage() {
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
+  const [editingNoticeId, setEditingNoticeId] = useState<string | null>(null);
+  const [parDraft, setParDraft] = useState({ parLevel: '', reorderPoint: '' });
+  const [savingPar, setSavingPar] = useState(false);
+  const { user } = useAuth();
+  const canManage = canManageStock(user);
   const [orderLines, setOrderLines] = useState<OrderLine[]>([]);
   const [emailingSupplier, setEmailingSupplier] = useState<string | null>(null);
   const [emailResult, setEmailResult] = useState<StockSupplierOrderEmailResult | null>(null);
@@ -114,6 +121,37 @@ export function ReorderNoticesPage() {
       setError(err instanceof ApiError ? err.message : 'Could not update reorder notice.');
     } finally {
       setSavingId(null);
+    }
+  }
+
+  function startEditPar(notice: { id: string; parLevel: number | null; reorderPoint: number | null }) {
+    setEditingNoticeId(notice.id);
+    setParDraft({
+      parLevel: notice.parLevel == null ? '' : String(notice.parLevel),
+      reorderPoint: notice.reorderPoint == null ? '' : String(notice.reorderPoint)
+    });
+  }
+
+  // Edit the item's per-venue par + reorder point inline, then refresh — the
+  // notice clears itself if the new threshold puts the item back in range.
+  async function saveParEdit(notice: { stockItemId: string; venue: string }) {
+    setSavingPar(true);
+    try {
+      await api(`/api/items/${notice.stockItemId}/venue-stock`, {
+        method: 'PATCH',
+        body: JSON.stringify({
+          venue: notice.venue,
+          parLevel: parDraft.parLevel === '' ? 0 : Number(parDraft.parLevel),
+          reorderPoint: parDraft.reorderPoint === '' ? undefined : Number(parDraft.reorderPoint),
+          active: true
+        })
+      });
+      setEditingNoticeId(null);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not update par level.');
+    } finally {
+      setSavingPar(false);
     }
   }
 
@@ -215,7 +253,8 @@ export function ReorderNoticesPage() {
             {data.notices.map((notice) => {
               const low = data.lowStockItems.find((item) => item.id === notice.stockItemId && item.venue === notice.venue);
               return (
-                <div key={notice.id} className="stock-operation-row">
+                <Fragment key={notice.id}>
+                <div className="stock-operation-row">
                   <span>
                     <strong>{notice.stockItem?.name ?? 'Unknown item'}</strong>
                     <span className="subtle">{notice.venue} · {notice.message}</span>
@@ -224,10 +263,22 @@ export function ReorderNoticesPage() {
                   </span>
                   <span className="stock-operation-row-actions">
                     <Badge tone={low ? tone(low.stockStatus) : 'warning'}>{low?.suggestedAction ?? 'Below par'}</Badge>
+                    {canManage ? (
+                      <Button type="button" size="sm" variant="ghost" disabled={savingId === notice.id} onClick={() => startEditPar(notice)}>Edit par</Button>
+                    ) : null}
                     <Button type="button" size="sm" variant="secondary" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'RESOLVED')}>Mark replenished</Button>
                     <Button type="button" size="sm" variant="ghost" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'DISMISSED')}>Ignore</Button>
                   </span>
                 </div>
+                {editingNoticeId === notice.id ? (
+                  <div className="stock-operation-row" style={{ gap: 10, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                    <Input label={`Par level · ${notice.venue}`} type="number" min="0" step="0.01" value={parDraft.parLevel} onChange={(event) => { const v = event.currentTarget.value; setParDraft((d) => ({ ...d, parLevel: v })); }} />
+                    <Input label="Reorder point" type="number" min="0" step="0.01" value={parDraft.reorderPoint} onChange={(event) => { const v = event.currentTarget.value; setParDraft((d) => ({ ...d, reorderPoint: v })); }} placeholder="Optional" />
+                    <Button type="button" size="sm" disabled={savingPar} onClick={() => void saveParEdit(notice)}>{savingPar ? 'Saving…' : 'Save par'}</Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={savingPar} onClick={() => setEditingNoticeId(null)}>Cancel</Button>
+                  </div>
+                ) : null}
+                </Fragment>
               );
             })}
           </div>

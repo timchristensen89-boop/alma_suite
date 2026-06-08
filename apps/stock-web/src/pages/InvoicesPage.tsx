@@ -3,6 +3,7 @@ import type {
   StockCategory,
   StockInvoiceAssignee,
   StockInvoiceAssigneesPayload,
+  StockInvoiceApplyAllCostsResult,
   StockInvoiceImportResult,
   StockInvoiceRipResult,
   StockInvoiceTriageStatus,
@@ -597,6 +598,61 @@ export function InvoicesPage() {
     }
   }
 
+  async function applyAllCosts(invoice: StockSupplierInvoice) {
+    const target = `applyall:${invoice.id}`;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to apply invoice costs.', 'error');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: 'Apply cost for all matched lines?',
+      message:
+        'This updates the average cost of every matched stock item on this invoice from its line cost. Unmatched lines and lines with no cost are skipped. It does not change on-hand balances.',
+      confirmationText: 'APPLY COST'
+    });
+    if (!confirmed) return;
+
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const result = await api<StockInvoiceApplyAllCostsResult>(`/api/invoices/${invoice.id}/apply-all-costs`, {
+        method: 'POST',
+        body: JSON.stringify({ confirmationText: 'APPLY COST' })
+      });
+      setPayload((current) => {
+        if (!current) return current;
+        return {
+          invoices: current.invoices.map((inv) => (inv.id === result.invoice.id ? result.invoice : inv))
+        };
+      });
+      setItems((current) =>
+        current.map((item) => {
+          const line = (result.invoice.lines ?? []).find((l) => l.itemId === item.id && l.item);
+          return line
+            ? {
+                ...item,
+                avgCostCents: line.item?.avgCostCents ?? item.avgCostCents,
+                latestCostCents: line.item?.latestCostCents ?? line.unitAmountCents,
+                latestCostAt: line.item?.latestCostAt ?? new Date().toISOString()
+              }
+            : item;
+        })
+      );
+      const msg =
+        result.appliedCount === 0
+          ? result.skippedCount > 0
+            ? `Nothing applied — ${result.skippedCount} line${result.skippedCount === 1 ? '' : 's'} skipped (unmatched or no cost).`
+            : 'All matched costs were already applied.'
+          : `Applied ${result.appliedCount} cost${result.appliedCount === 1 ? '' : 's'}${result.skippedCount ? ` · ${result.skippedCount} skipped` : ''}.`;
+      showFeedback(target, msg, result.appliedCount === 0 ? 'info' : 'success');
+    } catch (err) {
+      showFeedback(target, err instanceof ApiError ? err.message : 'Could not apply costs', 'error');
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
   function startCreateFromLine(lineId: string) {
     setCreatingLineId(lineId);
   }
@@ -883,6 +939,7 @@ export function InvoicesPage() {
                 onDraftChange={updateLineDraft}
                 onSaveMatch={saveLineMatch}
                 onApplyCost={applyCost}
+                onApplyAllCosts={() => applyAllCosts(selectedInvoice)}
                 onStartCreate={startCreateFromLine}
                 onCancelCreate={cancelCreateFromLine}
                 onSubmitCreate={createItemFromLine}
@@ -1242,6 +1299,7 @@ type InvoiceLineReviewProps = {
   onDraftChange: (lineId: string, itemId: string) => void;
   onSaveMatch: (line: StockSupplierInvoiceLine) => Promise<void>;
   onApplyCost: (line: StockSupplierInvoiceLine) => Promise<void>;
+  onApplyAllCosts: () => Promise<void>;
   onStartCreate: (lineId: string) => void;
   onCancelCreate: () => void;
   onSubmitCreate: (line: StockSupplierInvoiceLine, fields: CreateItemFields) => Promise<void>;
@@ -1261,6 +1319,7 @@ function InvoiceLineReview({
   onDraftChange,
   onSaveMatch,
   onApplyCost,
+  onApplyAllCosts,
   onStartCreate,
   onCancelCreate,
   onSubmitCreate,
@@ -1277,8 +1336,30 @@ function InvoiceLineReview({
     );
   }
 
+  const applyAllTarget = `applyall:${invoice.id}`;
+  const eligibleCount = lines.filter((line) => line.itemId && line.unitAmountCents > 0 && !line.costAppliedAt).length;
+
   return (
     <div className="stock-invoice-lines">
+      <div className="toolbar-right" style={{ marginBottom: 4 }}>
+        <ActionFeedback
+          message={feedbackTarget === applyAllTarget ? feedbackMessage : null}
+          tone={feedbackTone}
+        />
+        <Button
+          type="button"
+          size="sm"
+          disabled={!canManage || eligibleCount === 0 || busyTarget === applyAllTarget}
+          title={canManage ? undefined : 'Manager access required'}
+          onClick={() => void onApplyAllCosts()}
+        >
+          {busyTarget === applyAllTarget
+            ? 'Applying…'
+            : eligibleCount > 0
+              ? `Apply all costs (${eligibleCount})`
+              : 'All costs applied'}
+        </Button>
+      </div>
       {lines.map((line) => {
         const matchTarget = `match:${line.id}`;
         const costTarget = `cost:${line.id}`;

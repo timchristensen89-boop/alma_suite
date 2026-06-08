@@ -10,6 +10,7 @@ import {
   stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
   type InvoiceExclusionRule,
+  type StockInvoiceApplyAllCostsResult,
   type StockInvoiceAssignee,
   type StockInvoiceAssigneesPayload,
   type StockInvoiceImportResult,
@@ -1132,6 +1133,55 @@ export const invoicesService = {
     });
 
     return toLinePayload(updated);
+  },
+
+  // Apply cost for every eligible matched line on one invoice in a single
+  // transaction — same per-line writes as applyLineCost, just batched. Lines
+  // that aren't matched / have no unit cost are skipped and reported; lines
+  // already applied are skipped silently (idempotent).
+  async applyInvoiceCosts(invoiceId: string): Promise<StockInvoiceApplyAllCostsResult> {
+    const invoice = await prisma.supplierInvoice.findUnique({
+      where: { id: invoiceId },
+      include: { lines: { include: { item: { select: lineItemSelect } } } }
+    });
+    if (!invoice) throw new HttpError(404, 'Invoice not found');
+
+    const skipped: StockInvoiceApplyAllCostsResult['skipped'] = [];
+    const eligible = invoice.lines.filter((line) => {
+      if (line.costAppliedAt) return false;
+      if (!line.itemId || !line.item) {
+        skipped.push({ lineId: line.id, description: line.description, reason: 'Not matched to a stock item' });
+        return false;
+      }
+      if (line.unitAmountCents <= 0) {
+        skipped.push({ lineId: line.id, description: line.description, reason: 'No unit cost on this line' });
+        return false;
+      }
+      return true;
+    });
+
+    if (eligible.length > 0) {
+      await prisma.$transaction(async (tx) => {
+        for (const line of eligible) {
+          await tx.stockItem.update({
+            where: { id: line.itemId! },
+            data: {
+              latestCostCents: line.unitAmountCents,
+              latestCostAt: new Date(),
+              avgCostCents: unitCostFromPurchaseCost(line.unitAmountCents, line.item!)
+            }
+          });
+          await tx.supplierInvoiceLine.update({ where: { id: line.id }, data: { costAppliedAt: new Date() } });
+        }
+      });
+    }
+
+    return {
+      appliedCount: eligible.length,
+      skippedCount: skipped.length,
+      skipped,
+      invoice: await getInvoicePayload(invoiceId)
+    };
   },
 
   get: getInvoicePayload

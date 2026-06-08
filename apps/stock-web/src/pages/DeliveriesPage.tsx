@@ -1,5 +1,5 @@
 import { ChangeEvent, FormEvent, useEffect, useRef, useState } from 'react';
-import type { StockDeliveryCheck, StockDeliveryCheckItem, StockDeliveryChecksPayload } from '@alma/shared';
+import type { StockDeliveryCheck, StockDeliveryCheckItem, StockDeliveryChecksPayload, StockInvoicesPayload, StockSupplierInvoice } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, Textarea } from '@alma/ui';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
@@ -134,6 +134,9 @@ export function DeliveriesPage() {
   const [data, setData] = useState<StockDeliveryChecksPayload | null>(null);
   const [selectedVenue, setSelectedVenue] = useState('');
   const [draft, setDraft] = useState({ supplierId: '', supplierName: '', invoiceNumber: '', deliveryDate: '', invoiceReference: '', notes: '', items: [emptyLine()] });
+  const [invoices, setInvoices] = useState<StockSupplierInvoice[]>([]);
+  const [prefillInvoiceId, setPrefillInvoiceId] = useState('');
+  const [prefilling, setPrefilling] = useState(false);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -235,7 +238,50 @@ export function DeliveriesPage() {
     void load();
   }, [selectedVenue]);
 
+  // Recent supplier invoices to prefill a goods-in checklist from. Non-fatal.
+  useEffect(() => {
+    let cancelled = false;
+    api<StockInvoicesPayload>('/api/invoices')
+      .then((payload) => { if (!cancelled) setInvoices(payload.invoices); })
+      .catch(() => { if (!cancelled) setInvoices([]); });
+    return () => { cancelled = true; };
+  }, []);
+
   const activeVenue = selectedVenue || data?.scope.venue || '';
+
+  // Prefill the create form from a matched supplier invoice: header + every
+  // line (linked stock item, description, expected qty, unit) so a goods-in
+  // check no longer re-keys what the invoice already imported.
+  async function prefillFromInvoice(invoiceId: string) {
+    setPrefillInvoiceId(invoiceId);
+    if (!invoiceId) return;
+    setPrefilling(true);
+    try {
+      const invoice = await api<StockSupplierInvoice>(`/api/invoices/${invoiceId}`);
+      const lines = (invoice.lines ?? []).filter((line) => line.description.trim() || line.itemId);
+      setDraft({
+        supplierId: invoice.supplierId ?? '',
+        supplierName: invoice.supplierName ?? '',
+        invoiceNumber: invoice.invoiceNumber ?? '',
+        deliveryDate: invoice.invoiceDate ? invoice.invoiceDate.slice(0, 10) : '',
+        invoiceReference: '',
+        notes: '',
+        items: lines.length
+          ? lines.map((line) => ({
+              ...emptyLine(),
+              stockItemId: line.itemId ?? '',
+              description: line.description,
+              expectedQuantity: line.quantity ? String(line.quantity) : '',
+              unit: line.item?.countUnit ?? line.item?.unit ?? line.unit ?? ''
+            }))
+          : [emptyLine()]
+      });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load that invoice.');
+    } finally {
+      setPrefilling(false);
+    }
+  }
   const venueOptions = [
     ...(data?.scope.admin ? [{ label: 'All venues', value: '' }] : []),
     ...(data?.venues ?? []).map((venue) => ({ label: venue, value: venue }))
@@ -277,6 +323,7 @@ export function DeliveriesPage() {
         })
       });
       setDraft({ supplierId: '', supplierName: '', invoiceNumber: '', deliveryDate: '', invoiceReference: '', notes: '', items: [emptyLine()] });
+      setPrefillInvoiceId('');
       await load(activeVenue);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not create delivery check.');
@@ -309,6 +356,21 @@ export function DeliveriesPage() {
       <div className="stock-operations-grid">
         <Card title="Create checklist" subtitle="Add expected and received quantities. Discrepancies stay visible after completion.">
           <form className="stock-operation-form" onSubmit={submit}>
+            <div className="stock-filter-toolbar">
+              <Select
+                label="Prefill from invoice"
+                value={prefillInvoiceId}
+                onChange={(event) => void prefillFromInvoice(event.currentTarget.value)}
+                options={[
+                  { label: prefilling ? 'Loading…' : 'Prefill from invoice…', value: '' },
+                  ...invoices.map((inv) => ({
+                    label: `${inv.supplierName} · ${inv.invoiceNumber ?? 'No #'}${inv.invoiceDate ? ` · ${inv.invoiceDate.slice(0, 10)}` : ''}`,
+                    value: inv.id
+                  }))
+                ]}
+                hint="Pulls the supplier and every line from a matched supplier invoice."
+              />
+            </div>
             <div className="stock-filter-toolbar">
               <Select
                 label="Supplier"

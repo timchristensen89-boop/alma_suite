@@ -162,3 +162,15 @@ invoicesRouter.post('/lines/:lineId/apply-cost', async (req, res, next) => {
     next(error);
   }
 });
+
+invoicesRouter.post('/:id/apply-all-costs', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    if (req.body?.confirmationText !== 'APPLY COST') {
+      throw new HttpError(400, 'Type APPLY COST to confirm invoice cost changes');
+    }
+    res.json(await invoicesService.applyInvoiceCosts(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
