@@ -35,7 +35,7 @@ type RecipeWithLinesRow = Prisma.RecipeGetPayload<{
   include: {
     lines: {
       include: {
-        item: { select: { id: true; name: true; unit: true; countUnit: true; conversionFactor: true; avgCostCents: true } };
+        item: { select: { id: true; name: true; unit: true; countUnit: true; conversionFactor: true; measurePerCountUnit: true; measureUnit: true; avgCostCents: true } };
         subRecipe: { select: { id: true; title: true; yieldQuantity: true; yieldUnit: true; estimatedCost: true; isPrepRecipe: true } };
       };
     };
@@ -380,7 +380,7 @@ async function findRecipeWithLines(id: string) {
     include: {
       lines: {
         include: {
-          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
+          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
       },
@@ -401,7 +401,7 @@ async function refreshRecipeEstimatedCost(id: string) {
     include: {
       lines: {
         include: {
-          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
+          item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
           subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
         }
       },
@@ -1003,7 +1003,7 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         },
@@ -1118,7 +1118,7 @@ export const recipesService = {
       include: {
         lines: {
           include: {
-            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, avgCostCents: true } },
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
             subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
           }
         },

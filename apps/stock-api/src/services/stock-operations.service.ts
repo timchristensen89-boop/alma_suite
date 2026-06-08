@@ -180,6 +180,8 @@ async function itemsForActor(actor?: AuthUser | null, venue?: string | null) {
     countUnit: row.countUnit,
     conversionFactor: row.conversionFactor,
     countArea: row.countArea,
+    measurePerCountUnit: row.measurePerCountUnit ?? null,
+    measureUnit: row.measureUnit ?? null,
     latestCostCents: row.latestCostCents,
     latestCostAt: row.latestCostAt?.toISOString() ?? null,
     onHand: row.onHand,

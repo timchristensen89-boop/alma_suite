@@ -100,6 +100,8 @@ function toItemPayload(row: StockItemRow): StockItem {
     countUnit: row.countUnit,
     conversionFactor: row.conversionFactor,
     countArea: row.countArea,
+    measurePerCountUnit: row.measurePerCountUnit ?? null,
+    measureUnit: row.measureUnit ?? null,
     latestCostCents: row.latestCostCents,
     latestCostAt: row.latestCostAt?.toISOString() ?? null,
     onHand: row.onHand,
@@ -717,6 +719,10 @@ export const itemsService = {
     const countUnit = normaliseOptionalText(data.countUnit);
     const countArea = normaliseOptionalText(data.countArea);
     const conversionFactor = normaliseConversionFactor(data.conversionFactor);
+    const measurePerCountUnit = normaliseOptionalNumber(data.measurePerCountUnit) ?? null;
+    const measureUnit =
+      (normaliseOptionalText(data.measureUnit) as 'g' | 'ml' | null) ??
+      (measurePerCountUnit !== null ? 'g' : null);
     const latestCostCents = normaliseOptionalNumber(data.latestCostCents);
     const avgCostCents =
       data.avgCostCents !== undefined
@@ -739,6 +745,8 @@ export const itemsService = {
           countUnit: countUnit ?? null,
           conversionFactor,
           countArea: countArea ?? null,
+          measurePerCountUnit,
+          measureUnit,
           latestCostCents: latestCostCents ?? null,
           latestCostAt: latestCostCents !== undefined ? new Date() : null,
           parLevel: data.parLevel,
@@ -810,6 +818,16 @@ export const itemsService = {
         ...(data.countUnit !== undefined && { countUnit: countUnit ?? null }),
         ...(data.conversionFactor !== undefined && { conversionFactor: nextConversionFactor }),
         ...(data.countArea !== undefined && { countArea: countArea ?? null }),
+        ...(data.measurePerCountUnit !== undefined && {
+          measurePerCountUnit: normaliseOptionalNumber(data.measurePerCountUnit) ?? null,
+          // default the measure unit to grams if a value is set without one
+          ...(data.measureUnit === undefined &&
+            normaliseOptionalNumber(data.measurePerCountUnit) != null &&
+            !existing.measureUnit && { measureUnit: 'g' })
+        }),
+        ...(data.measureUnit !== undefined && {
+          measureUnit: (normaliseOptionalText(data.measureUnit) as 'g' | 'ml' | null) ?? null
+        }),
         ...(data.latestCostCents !== undefined && {
           latestCostCents: nextLatestCostCents,
           latestCostAt: nextLatestCostCents !== null ? new Date() : null
