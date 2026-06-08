@@ -33,7 +33,7 @@ import { AuditsListPage } from './pages/audits/AuditsListPage';
 import { AuditRunCreatePage } from './pages/audits/AuditRunCreatePage';
 import { AuditRunDetailPage } from './pages/audits/AuditRunDetailPage';
 import { AuditTemplateCreatePage } from './pages/audits/AuditTemplateCreatePage';
-import { HandbookAdminPage, HandbookIndexPage } from './pages/handbook/HandbookIndexPage';
+import { HandbookAdminPage } from './pages/handbook/HandbookIndexPage';
 import { OrgChartPage } from './pages/handbook/OrgChartPage';
 import { GuidelinesPage } from './pages/handbook/GuidelinesPage';
 import { OnboardingPage as HandbookOnboardingPage } from './pages/handbook/OnboardingPage';
@@ -218,6 +218,12 @@ function AuthenticatedApp() {
     ...(canManageChecks ? ([{ to: '/audits', label: 'Audits', end: true }] as HubTab[]) : []),
     { to: '/checklists/ipad', label: 'iPad runner' }
   ];
+  const handbookTabs: HubTab[] = [
+    { to: '/handbook/guidelines', label: 'Guidelines' },
+    { to: '/handbook/org-chart', label: 'Org chart' },
+    { to: '/handbook/onboarding', label: 'Onboarding' },
+    { to: '/handbook/maintenance', label: 'Maintenance' }
+  ];
   return (
     <AppShell
       sidebar={<SidebarNav />}
@@ -247,11 +253,11 @@ function AuthenticatedApp() {
           <Route path="/audits/new" element={<RequireRole minimum="MANAGER"><AuditRunCreatePage /></RequireRole>} />
           <Route path="/audits/templates/new" element={<RequireRole minimum="MANAGER"><AuditTemplateCreatePage /></RequireRole>} />
           <Route path="/audits/:id" element={<RequireRole minimum="MANAGER"><AuditRunDetailPage /></RequireRole>} />
-          <Route path="/handbook" element={<HandbookIndexPage />} />
-          <Route path="/handbook/org-chart" element={<OrgChartPage />} />
-          <Route path="/handbook/guidelines" element={<GuidelinesPage />} />
-          <Route path="/handbook/onboarding" element={<HandbookOnboardingPage />} />
-          <Route path="/handbook/maintenance" element={<MaintenancePage />} />
+          <Route path="/handbook" element={<Navigate to="/handbook/guidelines" replace />} />
+          <Route path="/handbook/guidelines" element={<HubLayout tabs={handbookTabs}><GuidelinesPage /></HubLayout>} />
+          <Route path="/handbook/org-chart" element={<HubLayout tabs={handbookTabs}><OrgChartPage /></HubLayout>} />
+          <Route path="/handbook/onboarding" element={<HubLayout tabs={handbookTabs}><HandbookOnboardingPage /></HubLayout>} />
+          <Route path="/handbook/maintenance" element={<HubLayout tabs={handbookTabs}><MaintenancePage /></HubLayout>} />
           <Route path="/admin/handbook" element={<RequireRole minimum="ADMIN"><HandbookAdminPage /></RequireRole>} />
           <Route path="/icon-export" element={<RequireRole minimum="ADMIN"><IconExportPage /></RequireRole>} />
           {/* Admin moved out of Compliance into the dedicated admin app
