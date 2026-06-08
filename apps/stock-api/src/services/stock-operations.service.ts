@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  normaliseSupplierName,
   stockDeliveryCheckCreateInputSchema,
   stockDeliveryCheckUpdateInputSchema,
   stockReorderNoticeResolveInputSchema,
@@ -61,6 +62,21 @@ function dateOrNow(value?: string | null) {
 
 function textOrNull(value?: string | null) {
   return value?.trim() || null;
+}
+
+// Resolve a delivery's supplierId: use the explicit pick if present, otherwise
+// retroactively link a free-text supplier name to an existing supplier by its
+// canonical name so deliveries stop leaving orphan free-text vendors.
+async function resolveDeliverySupplierId(
+  supplierId: string | null | undefined,
+  supplierName: string | null | undefined
+): Promise<string | null> {
+  const explicit = textOrNull(supplierId ?? null);
+  if (explicit) return explicit;
+  const canonical = normaliseSupplierName(supplierName);
+  if (!canonical) return null;
+  const candidates = await prisma.supplier.findMany({ select: { id: true, name: true } });
+  return candidates.find((s) => normaliseSupplierName(s.name) === canonical)?.id ?? null;
 }
 
 function moneyImpactCents(quantity: number, avgCostCents: number | null | undefined) {
@@ -505,7 +521,7 @@ export const stockOperationsService = {
     if (!venue) throw new HttpError(400, 'Venue is required');
     const row = await prisma.stockDeliveryCheck.create({
       data: {
-        supplierId: textOrNull(data.supplierId),
+        supplierId: await resolveDeliverySupplierId(data.supplierId, data.supplierName),
         supplierName: data.supplierName.trim(),
         venue,
         invoiceNumber: textOrNull(data.invoiceNumber),
@@ -537,12 +553,21 @@ export const stockOperationsService = {
     const data = stockDeliveryCheckUpdateInputSchema.parse(input);
     const venue = data.venue ? actorVenueScope(actor, data.venue) : existing.venue;
     if (!venue) throw new HttpError(400, 'Venue is required');
+    // Re-resolve the supplier link whenever the id or the name changes, so a
+    // typed-in name retroactively links to an existing supplier record.
+    const resolvedSupplierId =
+      data.supplierId !== undefined || data.supplierName !== undefined
+        ? await resolveDeliverySupplierId(
+            data.supplierId !== undefined ? data.supplierId : existing.supplierId,
+            data.supplierName !== undefined ? data.supplierName : existing.supplierName
+          )
+        : undefined;
     const row = await prisma.$transaction(async (tx) => {
       if (data.items) await tx.stockDeliveryCheckItem.deleteMany({ where: { deliveryCheckId: id } });
       await tx.stockDeliveryCheck.update({
         where: { id },
         data: {
-          ...(data.supplierId !== undefined && { supplierId: textOrNull(data.supplierId) }),
+          ...(resolvedSupplierId !== undefined && { supplierId: resolvedSupplierId }),
           ...(data.supplierName !== undefined && { supplierName: data.supplierName.trim() }),
           ...(data.venue !== undefined && { venue }),
           ...(data.invoiceNumber !== undefined && { invoiceNumber: textOrNull(data.invoiceNumber) }),

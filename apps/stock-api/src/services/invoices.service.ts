@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   invoiceExclusionRuleInputSchema,
+  normaliseSupplierName,
   stockInvoiceDeleteInputSchema,
   stockInvoiceImportInputSchema,
   stockInvoiceLineRematchInputSchema,
@@ -365,28 +366,28 @@ async function ensureSupplier(
   supplierEmail: string | null
 ) {
   const name = supplierName.trim();
-  if (!name || name === 'Unknown supplier') return null;
+  const canonical = normaliseSupplierName(name);
+  if (!canonical) return null; // blank or the "Unknown supplier" sentinel
 
-  const existing = await tx.supplier.findFirst({
-    where: { name: { equals: name, mode: 'insensitive' } }
-  });
+  // Match on the canonical name (punctuation/whitespace-insensitive, same key
+  // the Xero importer uses) so "Food By Us" and "FoodByUs Pty Ltd" don't spawn
+  // a second row; fall back to an email match. The Supplier table is small, so
+  // fetch-and-match in JS instead of a punctuation-blind SQL equals.
+  const candidates = await tx.supplier.findMany({ select: { id: true, name: true, email: true } });
+  const email = supplierEmail?.trim().toLowerCase() || '';
+  const existing =
+    candidates.find((s) => normaliseSupplierName(s.name) === canonical) ??
+    (email ? candidates.find((s) => (s.email ?? '').trim().toLowerCase() === email) : undefined);
 
   if (existing) {
     if (supplierEmail && !existing.email) {
-      await tx.supplier.update({
-        where: { id: existing.id },
-        data: { email: supplierEmail }
-      });
+      await tx.supplier.update({ where: { id: existing.id }, data: { email: supplierEmail } });
     }
     return existing.id;
   }
 
   const created = await tx.supplier.create({
-    data: {
-      name,
-      email: supplierEmail,
-      status: 'ACTIVE'
-    }
+    data: { name, email: supplierEmail, status: 'ACTIVE' }
   });
   return created.id;
 }

@@ -5699,6 +5699,22 @@ export type StockInvoiceRipResult = {
   warnings: string[];
 };
 
+/**
+ * Canonical key for matching supplier names across every import path (Xero
+ * bills, stock invoice import, deliveries). Lowercase with punctuation and
+ * whitespace collapsed to single spaces — mirrors the Xero importer's matcher
+ * so all paths agree on what counts as the same supplier. Returns '' for the
+ * "Unknown supplier" sentinel and blanks (→ no supplier).
+ */
+export function normaliseSupplierName(value: unknown): string {
+  const canonical = String(value ?? '')
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+  return canonical === 'unknown supplier' ? '' : canonical;
+}
+
 /** Result of applying cost to every eligible matched line on one invoice. */
 export type StockInvoiceApplyAllCostsResult = {
   appliedCount: number;
