@@ -282,7 +282,7 @@ export function DishMarginPage() {
             ]}
           />
           <Select
-            label="Filter by tone"
+            label="Margin health"
             value={tone}
             onChange={(event) => setTone(event.currentTarget.value as 'all' | MarginTone)}
             options={[

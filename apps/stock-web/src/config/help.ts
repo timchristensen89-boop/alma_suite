@@ -104,7 +104,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     tips: ['Log waste promptly — it\'s the honest explanation for variance at the next count.']
   },
   '/reorder': {
-    title: 'Reorder notices',
+    title: 'Below par',
     intro: 'Items at or below their par / reorder point, ready to turn into an order.',
     features: [
       { name: 'Below par', desc: 'Anything under its reorder threshold is flagged here.' },
@@ -112,7 +112,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ]
   },
   '/recipes': {
-    title: 'Item Recipes',
+    title: 'Menu items',
     intro: 'Build a recipe from stock items; the cost rolls up from each ingredient automatically.',
     steps: [
       'Create a recipe and add ingredient lines from your items.',
@@ -135,7 +135,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     tips: ['Pair this with Price movement to catch dishes squeezed by rising ingredient costs.']
   },
   '/price-movement': {
-    title: 'Price movement',
+    title: 'Supplier price changes',
     intro: 'How supplier prices have changed over time, so cost creep doesn\'t go unnoticed.',
     features: [
       { name: 'Trend', desc: 'Per-item price history from invoice lines.' },
@@ -143,7 +143,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ]
   },
   '/production-recipes': {
-    title: 'Production Recipes',
+    title: 'Prep recipes',
     intro: 'Batch / prep recipes that produce a yield you then use in other recipes.',
     features: [
       { name: 'Output quantity', desc: 'How much the batch yields — costs spread across the yield.' },
@@ -151,7 +151,7 @@ export const STOCK_HELP: Record<string, HelpContent> = {
     ]
   },
   '/settings': {
-    title: 'Admin setup',
+    title: 'Setup',
     intro: 'Stock app configuration — categories, count areas, integrations and access.',
     features: [
       { name: 'Categories & areas', desc: 'The groupings used across items and stocktakes.' },

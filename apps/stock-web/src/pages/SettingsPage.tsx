@@ -15,7 +15,7 @@ import {
   Select,
   Spinner
 } from '@alma/ui';
-import { IconItems, IconRecipes, IconSettings } from '../lib/icons';
+import { IconItems, IconRecipes } from '../lib/icons';
 import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
@@ -55,7 +55,7 @@ function recipeDraftFromCategory(category: RecipeCategory): RecipeCategoryDraft 
 }
 
 export function SettingsPage() {
-  useDocumentTitle('Admin setup');
+  useDocumentTitle('Setup');
   const { user } = useAuth();
   const canManage = canManageStock(user);
 
@@ -316,7 +316,7 @@ export function SettingsPage() {
   return (
     <div className="page-stack">
       <Card
-        title="Stock admin setup"
+        title="Setup"
         subtitle="Category and recipe setup belongs here. Daily stock health, low-stock work, item edits and stocktake review stay in the operational Stock pages."
       >
         <p className="subtle">
@@ -593,18 +593,6 @@ export function SettingsPage() {
             })}
           </div>
         ) : null}
-      </CollapsibleCard>
-
-      <CollapsibleCard
-        title="Admin-owned settings"
-        description="Venue stock defaults, units of measure and account preferences are kept out of the daily stock workflow until they are fully wired."
-        badge="Admin-owned"
-      >
-        <EmptyState
-          icon={<IconSettings size={24} />}
-          title="Managed in Admin when ready"
-          description="Category settings above are available now. Venue defaults, preferred units, account preferences and dangerous setup tools stay disabled here so there are no dead setup actions."
-        />
       </CollapsibleCard>
 
       <InvoiceExclusionRulesCard canManage={canManage} />

@@ -698,8 +698,8 @@ export function InvoicesPage() {
       </div>
 
       <Card
-        title="Invoice ripper"
-        subtitle="Paste Xero invoice JSON, or plain invoice text, then review item matches before costs are applied."
+        title="Add invoices"
+        subtitle="Paste a Xero invoice or plain invoice text, then review item matches before costs are applied."
       >
         <div className="stock-invoice-import-grid">
           <Textarea
@@ -736,7 +736,7 @@ export function InvoicesPage() {
                 {busyTarget === 'invoice-import'
                   ? 'Importing...'
                   : canManage
-                    ? 'Rip / import'
+                    ? 'Paste & import'
                     : 'Manager required'}
               </Button>
               <ActionFeedback

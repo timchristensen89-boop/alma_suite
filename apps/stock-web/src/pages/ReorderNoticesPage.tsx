@@ -45,7 +45,7 @@ type OrderLine = {
 };
 
 export function ReorderNoticesPage() {
-  useDocumentTitle('Reorder notices');
+  useDocumentTitle('Below par');
   const [data, setData] = useState<StockReorderNoticesPayload | null>(null);
   const [recommendations, setRecommendations] = useState<StockMenuParRecommendationsPayload | null>(null);
   const [selectedVenue, setSelectedVenue] = useState('');
@@ -208,7 +208,7 @@ export function ReorderNoticesPage() {
       {error ? <EmptyState title="Reorder notices unavailable" description={error} /> : null}
       {loading ? <Spinner label="Loading reorder notices" /> : null}
 
-      <Card title="Current reorder list" subtitle="Resolve only when stock has been replenished; dismiss for one-off exceptions." padding="none">
+      <Card title="Below par" subtitle="Mark replenished only when stock has been restocked; ignore for one-off exceptions." padding="none">
         {!loading && !data?.notices.length ? <EmptyState title="No reorder notices" description="Items above par will keep this list clear." /> : null}
         {data?.notices.length ? (
           <div className="stock-mobile-list">
@@ -224,8 +224,8 @@ export function ReorderNoticesPage() {
                   </span>
                   <span className="stock-operation-row-actions">
                     <Badge tone={low ? tone(low.stockStatus) : 'warning'}>{low?.suggestedAction ?? 'Below par'}</Badge>
-                    <Button type="button" size="sm" variant="secondary" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'RESOLVED')}>Resolve</Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'DISMISSED')}>Dismiss</Button>
+                    <Button type="button" size="sm" variant="secondary" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'RESOLVED')}>Mark replenished</Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={savingId === notice.id} onClick={() => void updateNotice(notice.id, 'DISMISSED')}>Ignore</Button>
                   </span>
                 </div>
               );

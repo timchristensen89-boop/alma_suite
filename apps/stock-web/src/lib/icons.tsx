@@ -105,3 +105,67 @@ export const IconSettings = (props: IconProps) => (
     <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1A1.7 1.7 0 0 0 4.6 9a1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />
   </svg>
 );
+
+/** Wastage — a waste bin, for broken/spoiled stock. */
+export const IconWastage = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 7h16" />
+    <path d="M9 7V4h6v3" />
+    <path d="M6 7l1 13h10l1-13" />
+    <path d="M10 11v6M14 11v6" />
+  </svg>
+);
+
+/** Reorder — circular arrows for replenishment. */
+export const IconReorder = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+    <path d="M21 4v5h-5" />
+  </svg>
+);
+
+/** Deliveries — a box with an inbound (down) arrow for goods-in. */
+export const IconDeliveries = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 9l9-5 9 5v6l-9 5-9-5V9z" />
+    <path d="M3 9l9 5 9-5" />
+    <path d="M12 3v6" />
+  </svg>
+);
+
+/** Margins — a pie slice / percentage read for cost vs sell. */
+export const IconMargins = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 3v9l6.5 6.5" />
+    <circle cx="8.5" cy="8.5" r="0.6" fill="currentColor" />
+    <circle cx="15.5" cy="15.5" r="0.6" fill="currentColor" />
+  </svg>
+);
+
+/** Supplier price changes — a trend line with an up tick. */
+export const IconPriceChange = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 17l5-5 4 4 5-7" />
+    <path d="M17 9h4v4" />
+  </svg>
+);
+
+/** Prep / production recipes — a cooking pot. */
+export const IconPrep = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 10h16v4a5 5 0 0 1-5 5H9a5 5 0 0 1-5-5v-4z" />
+    <path d="M2 10h20" />
+    <path d="M9 7c0-1.5 1-1.5 1-3M14 7c0-1.5 1-1.5 1-3" />
+  </svg>
+);
+
+/** Square menu mapping — a four-cell grid (Square POS). */
+export const IconSquare = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="4" width="7" height="7" rx="1.5" />
+    <rect x="13" y="4" width="7" height="7" rx="1.5" />
+    <rect x="4" y="13" width="7" height="7" rx="1.5" />
+    <rect x="13" y="13" width="7" height="7" rx="1.5" />
+  </svg>
+);

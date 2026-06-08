@@ -41,7 +41,7 @@ function formatPercent(value: number | null | undefined) {
 }
 
 export function DashboardPage() {
-  useDocumentTitle('Overview');
+  useDocumentTitle('Dashboard');
   const [dashboard, setDashboard] = useState<StockDashboardPayload | null>(null);
   const [selectedVenue, setSelectedVenue] = useState('');
   const [loading, setLoading] = useState(true);
@@ -107,7 +107,7 @@ export function DashboardPage() {
         app="stock"
         appName="Stock"
         appIcon={<ProduceIcon />}
-        eyebrow="Inventory command"
+        eyebrow="Stock dashboard"
         description="Pantries, suppliers, and the orders board across both venues. Re-order suggestions update every hour."
         statusLabel={activeVenue ? activeVenue.toUpperCase() : 'All venues'}
         statusHint={(() => {
@@ -168,7 +168,7 @@ export function DashboardPage() {
         <Link to="/items" className="stat-card-link" aria-label="Open catalogue items">
           <StatCard
             icon={<IconItems size={18} />}
-            label="Catalogue items"
+            label="Items"
             value={loading ? '—' : String(dashboard?.summary.activeItems ?? 0)}
             hint={`${dashboard?.summary.categories ?? 0} categories`}
           />
@@ -257,10 +257,10 @@ export function DashboardPage() {
               />
             </div>
             <p className="subtle" style={{ marginTop: 12 }}>
-              Supplier price movement (30d): {cogs.priceMovement.increasedItems} item
+              Supplier price changes (30d): {cogs.priceMovement.increasedItems} item
               {cogs.priceMovement.increasedItems === 1 ? '' : 's'} up,{' '}
               {cogs.priceMovement.decreasedItems} down.{' '}
-              <Link to="/price-movement">View price movement →</Link>
+              <Link to="/price-movement">View price changes →</Link>
             </p>
           </>
         )}
