@@ -30,8 +30,9 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
 // Tabs for each consolidated hub. Every tab is a real, deep-linkable route.
 const ITEMS_TABS: HubTab[] = [
-  { to: '/items', label: 'Catalogue' },
-  { to: '/reorder', label: 'Below par' }
+  { to: '/items', label: 'Catalogue', end: true },
+  { to: '/reorder', label: 'Below par' },
+  { to: '/items/categories', label: 'Categories' }
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
@@ -47,7 +48,8 @@ const PURCHASING_TABS: HubTab[] = [
 const RECIPE_TABS: HubTab[] = [
   { to: '/recipes', label: 'Menu items', end: true },
   { to: '/recipes/prep', label: 'Prep recipes' },
-  { to: '/recipes/margins', label: 'Margins' }
+  { to: '/recipes/margins', label: 'Margins' },
+  { to: '/recipes/categories', label: 'Categories' }
 ];
 
 // True when the current path belongs to this nav item (its route or a hub tab).
@@ -220,6 +222,7 @@ function StockAppShell() {
         {/* Items hub */}
         <Route path="/items" element={<HubLayout tabs={ITEMS_TABS}><ItemsPage /></HubLayout>} />
         <Route path="/reorder" element={<HubLayout tabs={ITEMS_TABS}><ReorderNoticesPage /></HubLayout>} />
+        <Route path="/items/categories" element={<HubLayout tabs={ITEMS_TABS}><SettingsPage section="stock" /></HubLayout>} />
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
@@ -236,6 +239,7 @@ function StockAppShell() {
         <Route path="/recipes" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="item" /></HubLayout>} />
         <Route path="/recipes/prep" element={<HubLayout tabs={RECIPE_TABS}><RecipesPage mode="production" /></HubLayout>} />
         <Route path="/recipes/margins" element={<HubLayout tabs={RECIPE_TABS}><DishMarginPage /></HubLayout>} />
+        <Route path="/recipes/categories" element={<HubLayout tabs={RECIPE_TABS}><SettingsPage section="recipe" /></HubLayout>} />
         {/* Old routes → keep bookmarks/deep-links working */}
         <Route path="/production-recipes" element={<Navigate to="/recipes/prep" replace />} />
         <Route path="/dish-margins" element={<Navigate to="/recipes/margins" replace />} />
