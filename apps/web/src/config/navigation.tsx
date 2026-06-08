@@ -79,6 +79,12 @@ export const NAV_ITEMS: NavItem[] = [
     icon: <IconHandbook />
   },
   {
+    to: '/settings',
+    label: 'Settings',
+    description: 'My account and password — plus venue config for admins',
+    icon: <IconSettings />
+  },
+  {
     to: '/admin',
     label: 'Open Alma Admin',
     description: 'Suite setup, access and health — opens the Admin app',
