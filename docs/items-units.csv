@@ -1,0 +1,771 @@
+item,sku,category,unit,count_unit,conversion_factor,pack_size,pack_kind,current_unit,current_count_unit,latest_cost_cents
+CHEESE BLUE 100GM (Castello) EA (10),,Dairy & Eggs,each,each,1,,each,Unit,100g,
+CHEESE GOAT LOG 1KG (Meredith) EA (12),,Dairy & Eggs,each,each,1,,each,kg,,2750
+CHEESE HALOUMI 750GM (Cypriana) EA (5),,Dairy & Eggs,each,each,1,,each,Unit,g,
+CHEESE MOZZARELLA SHREDDED 2KG (Cheese King) EA (6),,Dairy & Eggs,each,each,1,,each,Unit,kg,2300
+CHEESE RICOTTA 500GM (Perfect) EA (6),,Dairy & Eggs,each,each,1,,each,g,,800
+COCONUT CREAM 560ML (Mae Ploy) EA (24),,Dry / Pantry,each,each,1,,each,ml,,350
+COCONUT MILK 400ML (Royal Line) EA (24),,Dry / Pantry,each,each,1,,each,ml,,170
+CONDENSED MILK 395GM (Nestle) EA (12),,Dairy & Eggs,each,each,1,,each,g,,400
+CREAM THICK FRESH 5LT (Dairy Farmers) EA (3),,Dairy & Eggs,each,each,1,,each,l,,3720
+EVAPORATED MILK CARNATION 340ML (Nestle) EA (18),,Dairy & Eggs,each,each,1,,each,ml,,360
+ICE CREAM CHOCOLATE 10LT (Everest) EA,,Frozen,each,each,1,,each,l,,2500
+2023 Maison Saint Aix Dry Rose 750ml (Case of 12),,Wine — Rosé,case,bottle,12,12,case,ml,,23200
+ALLSPICE WHOLE 350GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,1400
+BEANS BLACK DRY 1KG (Galaxy) EA (12),,Dry / Pantry,each,each,1,,each,kg,,500
+BEANS BUTTER TIN 400GM (Sandhurst) EA (24),,Dry / Pantry,each,each,1,,each,unit,g,
+FLOUR PLAIN 12.5KG (Manildra) EA,,Dry / Pantry,each,each,1,,each,kg,,1400
+FLOUR PLAIN 1KG (Manildra) EA,,Dry / Pantry,each,each,1,,each,kg,,250
+FLOUR TORTILLAS 12X91GM 12INCH (True Foods) EA (6),,Bakery,each,each,1,,each,units,,570
+LENTILS PUY FRENCH 1KG (Chefs Choice) EA,,Dry / Pantry,each,each,1,,each,kg,,650
+MASECA TORTILLA YELLOW CORN  FLOUR 1kg,,Bakery,each,each,1,,,kg,,590
+RICE BASMATI 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,300
+RICE JASMINE 1KG (Sunrice) EA (12),,Dry / Pantry,each,each,1,,each,kg,,350
+SUGAR CASTER 1KG (CSR) EA (12),,Dry / Pantry,each,each,1,,each,kg,,275
+SUGAR WHITE 1KG (CSR) EA (12),,Dry / Pantry,each,each,1,,each,kg,,260
+VANILLA BEAN PASTE ORGANIC TUBE 320GM (Queen) EA (10),,Herbs & Spices,each,each,1,,each,g,,3000
+White Corn Flour 2kg (MASA LISTA),,Dry / Pantry,each,each,1,,,kg,,990
+BEEF BRISKET POINT END,,Meat & Poultry,kg,kg,1,,,kg,,11440
+BEEF SHORT RIBS GRAINFED 3 RIB,,Meat & Poultry,kg,kg,1,,,kg,,5180
+CHICKEN NO. 15 FRESH,,Meat & Poultry,kg,kg,1,,,units,,1280
+CHICKEN THIGH FILLETS SKIN OFF,,Meat & Poultry,kg,kg,1,,,kg,,1850
+PORK BELLY BONELESS SKIN ON,,Meat & Poultry,kg,kg,1,,,kg,,2428
+PRAWN MEAT RAW VANNAMEI 31/40 700GM (Trading) EA (10),,Seafood,kg,kg,1,,each,g,,1800
+THIGH FILLET SKIN OFF (Pack of 5kg),,Meat & Poultry,kg,kg,1,,,kg,,6750
+YG BEEF CHUCK ROLL,,Meat & Poultry,kg,kg,1,,,kg,,12400
+12cm Yellow Corn Tortilla 4.5,,Bakery,each,each,1,,,units,,215
+2017 Geoff Merrill 'Jacko's' Shiraz (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,18300
+2019 Cà di Bruno Barbaresco DOCG (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,25542
+2019 Edmeades Zinfandel (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,3390
+2020 Giant Steps Syrah/Carignan/Grenache (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,10000
+2021 Cannonball Chardonnay (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,24225
+2021 Louis Jadot Bourgogne (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,48768
+2021 Villa Albergotti Chianti Superiore DOCG (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,10650
+2022 BenMarco Malbec (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,11850
+2022 BenMarco Valle de Uco (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,13758
+2022 Capa Single Vineyard Tempranillo (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,7650
+2022 Domaine Oudin Chablis (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,50616
+2022 Eperosa 'Magnolia 1941' Semillon (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,18000
+2022 Kendall Jackson 'Vintners Reserve' Chardonnay (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,13000
+2022 Loïc Mahe 'Sables & Schists' Chenin Blanc Savennieres (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,45581
+2022 Ramos Pinto Duas Quintas Tinto (Case of 6),,Wine — Red,case,bottle,6,6,case,units,,15096
+2022 Stephane Brocard Gevrey-Chambertin Vielles Vignes (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,57923
+2022 Teusner 'Wark Family' Shiraz (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,20340
+2022 Utopos Shiraz (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,24400
+2023 Bonnet & Cotton Beaujolais Rogue (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,42000
+2023 Giant Steps Sexton Vineyard Chardonnay (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,34188
+2023 Gotas de Mar Albarino (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,13000
+2023 Inama Vin Soave Classico Screwcap (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,10850
+2023 Ingram Road Chardonnay (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,14800
+2023 Louis Jadot Pouilly-Fuisse (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,78948
+2023 Mon Tout 'Heydays' Chardonnay -skin contact- (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,17600
+2023 Shut The Gate For Freedom Gewurtztraminer (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,17600
+2023 Te Mata 'Elston' Chardonnay (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,17395
+2023 Teusner The G Grenache (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,9400
+2023 Teusner 'Wark Family' Shiraz (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,16800
+2024 Badenhorst 'Secateurs' Chenin Blanc (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,21395
+2024 Giant Steps Rose (Case of 6),,Wine — Rosé,case,bottle,6,6,case,ml,,12900
+2024 i Lauri Pecorino D'Abruzzo (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,14094
+2024 Poggio Anima 'Uriel' Grillo (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,18312
+2024 R. Paulazzo Rose (Case of 12),,Wine — Rosé,case,bottle,12,12,case,ml,,12771
+2024 Shaw & Smith 'M3' Chardonnay (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,17907
+2024 Thorin 'Terres de Craie' Macon Villages (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,25896
+2024 Vanguardist 'Field' GSM (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,21628
+2024 Vinden 'Headcase' Semillon (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,24000
+2024 Yangarra Estate 'Circle' Shiraz (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,7902
+ABASOLO 750ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,11592
+ACHIOTE PASTE 1KG (El Yucateco) EA (15),,Oils & Condiments,each,each,1,,each,kg,,1400
+Agave Syrup Clear (4L),,Oils & Condiments,each,each,1,,,kg,,5670
+AGUAS MANSAS 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,6500
+AGUAS MANSAS 700ML - (CASE OF 6),,Spirits — Tequila & Mezcal,case,bottle,6,6,case,ml,,39000
+ALMOND BLANCHED WHOLE 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,1900
+ALMOND SLICE 1KG -flakes (Natures Secret) EA (10),,Dry / Pantry,each,each,1,,each,kg,,1900
+ALMOND SMOKED 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,1900
+AMARO MONTENEGRO 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4886
+APRENDIZ 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,13299
+ARETTE BLANCO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,6772
+ARETTE REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7994
+ARETTE SUAVE BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,12106
+A Rodda Tempranillo 2023 (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,25470
+Ascorbic Acid 600g - Red Spoon,,Dry / Pantry,each,each,1,,,g,,5350
+BALLANTINE'S SCOTCH 1000ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,6701
+Bananas Plantain Kg,,Produce,kg,kg,1,,,kg,,1050
+BARRAMUNDI FILLETS IMP 200/300 S/OFF 5KG (Trading) CTN,,Seafood,kg,kg,1,,,kg,,8700
+BARSOL PISCO 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,7029
+Bay Leaves Bunch,,Herbs & Spices,each,each,1,,,units,,214
+Beetroot Medium Kg,,Produce,kg,kg,1,,,kg,,380
+BICARB SODA 1KG (Krio Krush) EA,,Dry / Pantry,each,each,1,,each,kg,,600
+Briar Ridge 'BDX',,Wine — Red,bottle,bottle,1,,,ml,,1250
+Briar Ridge The Squire Chardonnay 2024 (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,13200
+BROCCOLINI box (12 bun),,Produce,each,each,1,,,units,,3600
+Broccolinni Box,,Produce,each,each,1,,,units,,3373
+BRUXO X 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7700
+Cabbage Each,,Produce,each,each,1,,each,units,,580
+Cabbage Red Each,,Produce,each,each,1,,each,units,,660
+CALLE 23 BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7724
+CALLE 23 REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8883
+Callebaut Chocolate White Callet 28% 2.5kg,,Desserts & Sweets,each,each,1,,,g,,10934
+CAPERS BABY 700GM (Sandhurst),,Oils & Condiments,each,each,1,,,g,,1150
+Capsicum Green Large Kg,,Produce,kg,kg,1,,,kg,,580
+Capsicum Red Large Kg,,Produce,kg,kg,1,,,kg,,580
+Caramelised Balsamic Vinegar 2.5L - Pukara Estate,,Oils & Condiments,each,each,1,,,g,,7475
+Carrots Dutch Box,,Produce,each,each,1,,,units,,5511
+Carrots Medium,,Produce,each,each,1,,,kg,,264
+Carrots Medium Kg,,Produce,kg,kg,1,,,kg,,225
+CASHEW PIECES 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,1200
+Cauliflower Each,,Produce,each,each,1,,each,units,,480
+Celery Bunch,,Produce,bunch,bunch,1,,,units,,477
+Chateau Domecq,,Wine — Red,bottle,bottle,1,,,ml,,1785
+Chateau La Grave Figeac,,Wine — Red,bottle,bottle,1,,,ml,,6980
+Chilli Jalapeno Kg,,Produce,kg,kg,1,,,kg,,1400
+Chilli Large Red,,Produce,each,each,1,,,kg,,2375
+Chilli Morita,,Produce,each,each,1,,,kg,,5000
+Chilli Poblano Kilo,,Produce,kg,kg,1,,,kg,,1750
+"Chilli,Shishito Pepper Kg",,Produce,kg,kg,1,,,kg,,5940
+CHIPOTLE CHILLIS A10 IN ADOBE SCE 3KG (Faro) EA (6),,Produce,each,each,1,,each,kg,,1850
+Chipotle Chillis in adobo sauce  2.8KG-SAN MARCOS,,Oils & Condiments,each,each,1,,,kg,,2030
+CHIPS 7MM SHOESTRING FRIES 5X3KG G/FREE (McCain) CTN,,Frozen,each,each,1,,,kg,,6700
+CHOCOLATE WHITE 2.5KG (Callebaut) EA (8),,Desserts & Sweets,each,each,1,,each,g,,12000
+CHORIZO DON'S,,Meat & Poultry,kg,kg,1,,,kg,,3950
+CINNAMON GROUND 400GM (Chefs Choice) EA,,Herbs & Spices,each,each,1,,each,g,,1100
+CINNAMON QUILL 200GM (Chefs Choice) EA,,Herbs & Spices,each,each,1,,each,g,,1000
+CLOVES GROUND 450GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,1300
+CLOVES WHOLE 350GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,2500
+COCONUT FLAKES 500GM (Natures Secret) EA (10),,Dry / Pantry,each,each,1,,each,g,,550
+CODIGO 1530 BLANCO ROSA 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10830
+Confetti Coriander 50 gram,,Produce,each,each,1,,,g,,800
+Continental Parsley Bunch,,Produce,bunch,bunch,1,,,units,,237
+Coriander Dozen,,Produce,dozen,dozen,1,,,units,,22
+CORIANDER SEED 250GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,800
+CORN KERNELS 425GM (Sandhurst),,Dry / Pantry,each,each,1,,,g,,200
+Corn Sweet Box,,Produce,each,each,1,,,units,,236
+CORONA BOTTLE - (CASE OF 24),,Beer & Cider,case,bottle,24,24,case,units,,6085
+CORONA EXTRA LOCAL BOTTLES - (CASE OF 24),,Beer & Cider,case,bottle,24,24,case,units,,6241
+CRANBERRIES DRIED 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,g,,1100
+Cuitlacoche- Corn Truffles- Monteblanco  420gr,,Dry / Pantry,each,each,1,,,units,,1065
+CUMIN GROUND 450GM (Chefs Choice) EA,,Herbs & Spices,each,each,1,,each,g,,800
+CUMIN SEEDS 450GM (Windsor Farm) EA,,Herbs & Spices,each,each,1,,each,g,,1100
+Cuvée Colette Rosé 2024 (Case of 6),,Wine — Rosé,case,bottle,6,6,case,ml,,10200
+DELI BACON STREAKY,,Meat & Poultry,kg,kg,1,,,kg,,5460
+DEL MAGUEY VIDA 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9061
+Dill,,Produce,each,each,1,,,units,,200
+Domaine Bouchard Corton Grand Cru,,Wine — Red,bottle,bottle,1,,,ml,,30000
+DON JULIO 1942 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,24247
+DON JULIO ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,13012
+DON JULIO BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,50010
+DON JULIO REPOSADO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10567
+Dulce de Leche 1.5L - Gelato Messina,,Frozen,each,each,1,,,l,,2400
+Eggplant Box,,Produce,each,each,1,,,units,,2280
+Eggplant Kg,,Produce,kg,kg,1,,,kg,,580
+Eggs 700g Free Range Dozen,,Dairy & Eggs,each,each,1,,,units,,880
+Eggs 700g Packet Dozen,,Dairy & Eggs,each,each,1,,,units,,500
+EL JIMADOR REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,5304
+EL JIMADOR REPOSADO 700ML - (CASE OF 6),,Spirits — Tequila & Mezcal,case,bottle,6,6,case,ml,,31826
+EL JOLGORIO ESPADIN (GREEN) 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,16106
+EL JOLGORIO MEXICANO (BROWN) 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,20693
+EL JOLGORIO PECHUGA (YELLOW) 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,29550
+EL JOLGORIO TEPEZTATE (BLUE) 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,27518
+EL JOLGORIO TOBASICHE (BLACK BROWN) 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,27328
+EL TEQUILENO 1959 ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,12766
+EL TEQUILENO 1959 PLATINUM 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8688
+EL TEQUILENO 1959 REPOSADO RARE 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,25887
+EL TEQUILENO 1959 RESERVA REPOSADO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8989
+EL TEQUILENO BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,4900
+EL TEQUILENO BLANCO 750ML - (CASE OF 12),,Spirits — Tequila & Mezcal,case,bottle,12,12,case,ml,,58800
+Fennel Each,,Produce,each,each,1,,each,units,,0
+FENNEL SEED 450GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,900
+FINEST CALL MANGO PUREE 1000ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,1512
+FIRST PRESS COFFEE MIXER 750ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,1722
+FIRST PRESS COFFEE MIXER 750ML - (CASE OF 6),,Non-Alcoholic & Mixers,case,bottle,6,6,case,ml,,10332
+G4 ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,17280
+G4 BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9550
+G4 REPOSADO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10883
+Garlic Peeled 1kg Bag,,Produce,each,each,1,,,kg,,580
+GARLIC POWDER 540GM (Windsor Farm) EA,,Herbs & Spices,each,each,1,,each,g,,900
+Giaconda 'Nantua Les Deux' Chardonnay,,Wine — White,bottle,bottle,1,,,ml,,8500
+GIFFARD AMARETTO 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4136
+GIFFARD COCONUT SYRUP 1000ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,12840
+GIFFARD COCONUT SYRUP 1000ML - (CASE OF 6),,Non-Alcoholic & Mixers,case,bottle,6,6,case,ml,,11760
+GIFFARD ROSE SYRUP 1L BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,14235
+GIFFARD STRAWBERRY 1000ML BOTTLE,,Produce,each,each,1,,,ml,,2136
+GIFFARD VANILLA SYRUP 1L - (CASE OF 6),,Non-Alcoholic & Mixers,case,bottle,6,6,case,ml,,12840
+GRACIAS A DIOS ESPADIN 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8748
+GRAN CENTENARIO ANEJO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8276
+HAZELNUT KERNALS S/ON 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,3700
+HAZELNUT ROASTED 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,2600
+HEAPS NORMAL CAN - (CASE OF 24),,Beer & Cider,case,can,24,24,case,units,,5321
+HERRADURA AGAVE NECTAR 473ML BOTTLE,,Oils & Condiments,each,each,1,,,ml,,13488
+HERRADURA AGAVE NECTAR 473ML - (CASE OF 12),,Oils & Condiments,case,each,12,12,case,ml,,13488
+HERRADURA ANEJO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9173
+HERRADURA PLATA 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7282
+HERRADURA REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8433
+HERRADURA SELECCION SUPREMA 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,49624
+HERRADURA ULTRA 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,11847
+Hominy Corn 3kg Carey,,Dry / Pantry,each,each,1,,,kg,,1495
+HONEY PURE 3KG (Wild Flower) EA (4),,Oils & Condiments,each,each,1,,each,kg,,2030
+ILEGAL ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,14906
+ILEGAL JOVEN 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9578
+ILEGAL REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,11586
+JACK DANIELS 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,5182
+LAGRIMAS DE DOLORES JOVEN 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10883
+La Violetta 'Up!' Shiraz,,Wine — Red,bottle,bottle,1,,,ml,,2400
+Lemon,,Produce,each,each,1,,,units,,0
+Lemon Oil,,Oils & Condiments,each,each,1,,,ml,,1100
+Lettuce Baby Gem 20s Box,,Produce,each,each,1,,,units,,3800
+Lettuce Iceberg Each,,Produce,each,each,1,,each,units,,225
+LICOR 43 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,5161
+LYRES AGAVE BLANCO 700ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,21114
+MARJORAM bunch,,Produce,bunch,bunch,1,,,units,,260
+MAYONNAISE WHOLE EGG 10KG (Birch & Waite) EA,,Oils & Condiments,each,each,1,,each,kg,,9200
+MAYONNAISE WHOLE EGG 15KG (Birch & Waite) EA,,Oils & Condiments,each,each,1,,each,kg,,11700
+Mesculin Gold Mix 1.5kg Box,,Produce,each,each,1,,,g,,2800
+Mexican Oregano - 250g,,Herbs & Spices,each,each,1,,,g,,1770
+MILAGRO SILVER 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,6515
+MIXED BERRIES WHOLE FROZEN 1KG (Harvestime) EA (10),,Frozen,each,each,1,,each,kg,,950
+MODELO ESPECIAL - (CASE OF 24),,Beer & Cider,case,bottle,24,24,case,units,,6737
+MODUS CERVEZA CAN - (CASE OF 12),,Beer & Cider,case,can,12,12,case,units,,2981
+Mushrooms Shitaki Punnet 500gm,,Produce,punnet,punnet,1,,,g,,0
+MUSTARD DIJON 215GM (Maille) EA (6),,Oils & Condiments,each,each,1,,each,g,,600
+NECTAR AGAVE ORGANIC 4LT (Chefs Choice) EA (2),,Oils & Condiments,each,each,1,,each,g,,4800
+NUESTRA SOLEDAD LA CAMPANIA EJUTLA 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8883
+NUESTRA SOLEDAD LACHIGUI 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9772
+NUESTRA SOLEDAD SAN BALTAZAR 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8883
+NUESTRA SOLEDAD SAN LUIS DEL RIO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8883
+NUESTRA SOLEDAD SANTIAGO MATATLAN 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8550
+NV Laurent Perrier Brut Rose (Case of 6),,Wine — Sparkling,case,bottle,6,6,case,ml,,77916
+NV Laurent Perrier La Cuvee (Case of 6),,Wine — Sparkling,case,bottle,6,6,case,ml,,38604
+NV Serenello Prosecco (Case of 6),,Wine — Sparkling,case,bottle,6,6,case,ml,,8500
+OIL OLIVE POMACE 4L (Trading),,Oils & Condiments,each,each,1,,,l,,2600
+OIL OLIVE PURE 4L (Zeno) EA,,Oils & Condiments,each,each,1,,each,l,,6200
+OLD FORESTER 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,4998
+OLIVES PITTED GREEN 2KG (Riviana) EA (6),,Oils & Condiments,each,each,1,,each,kg,,1950
+PALM HEART JAR 400GM (Latin Deli) EA (24),,Oils & Condiments,each,each,1,,each,g,,600
+PAPRIKA SMOKED 500GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,1200
+PARMESAN GRANA WEDGE 14 X 200GM (Zanetti) CTN,,Dairy & Eggs,case,each,14,14,case,g,,11600
+PASOTE BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,12439
+PATRON ANEJO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9071
+PATRON EL CIELO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,14319
+PATRON REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7441
+PATRON SILVER 700 ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,6787
+PATRON XO CAFE 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,8766
+Paxton 'Elizabeth Jean' Shiraz,,Wine — Red,bottle,bottle,1,,,ml,,7160
+PEANUTS ROASTED SALTED 1KG (Galaxy) EA (12),,Dry / Pantry,each,each,1,,each,kg,,800
+"PEPITAS, PUMPKIN SEED 1KG (Galaxy) EA (12)",,Produce,each,each,1,,each,g,,1200
+PEPPER BLACK CRACKED RESTAURANT 400GM (Windsor Farm) EA,,Herbs & Spices,each,each,1,,each,g,,1400
+PEPPER CORNS BLACK WHOLE 500GM (Windsor Farm) EA,,Herbs & Spices,each,each,1,,each,g,,1550
+PISTACHIO NUT KERNAL 1KG (Natures Secret) EA (12),,Dry / Pantry,each,each,1,,each,kg,,4450
+PISTACHIO PASTE 1KG EA,,Desserts & Sweets,each,each,1,,each,kg,,12600
+POLENTA 1KG (Galaxy) EA (12),,Dry / Pantry,each,each,1,,each,kg,,350
+Pol Roger Brut Rose,,Wine — Sparkling,bottle,bottle,1,,,ml,,16500
+Potatoes Cocktail Kg,,Produce,kg,kg,1,,,kg,,550
+QUIQUIRIQUI 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7859
+Radish Bunch,,Produce,bunch,bunch,1,,,g,,283
+Rockford 'Basket Press' Shiraz 2004,,Wine — Red,bottle,bottle,1,,,ml,,32500
+Rockford Basket Press Shiraz 2017,,Wine — Red,bottle,bottle,1,,,ml,,18500
+Rockford Basket Press Shiraz 2018,,Wine — Red,bottle,bottle,1,,,ml,,21000
+RON SANTIAGO DE CUBA BLANCA 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,4650
+ROSE WATER 330ML,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,495
+ROSSO ANTICO 750ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,2069
+Sabi Wabi 'Sugi' Semillon,,Wine — White,bottle,bottle,1,,,ml,,2365
+SALT COD FILLETS 1KG + R/W (Fresh),,Dry / Pantry,each,each,1,,,kg,,2100
+SALT ROCK COARSE 10KG (Olssons) EA,,Dry / Pantry,each,each,1,,each,kg,,950
+SALT TABLE 14KG (Olssons) CTN,,Dry / Pantry,each,each,1,,,kg,,1400
+SAMMY PIQUANT JETSETTER 700ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,17970
+Sandrone Le Vigne Barolo,,Wine — Red,bottle,bottle,1,,,ml,,36000
+SAUCE PEPPER RED TABASCO 350ML (Tabasco) EA (12),,Oils & Condiments,each,each,1,,each,ml,,1750
+SCALLOPS 10/20 CHINA R/OFF 1KG (Trading) EA (10),,Seafood,kg,kg,1,,each,kg,,4400
+SCALLOPS IQF 10/20 R/OFF 1KG (Shark Bay),,Seafood,kg,kg,1,,,kg,,8200
+SEA SALT FLAKES 6KG (Olssons) CTN,,Dry / Pantry,each,each,1,,,kg,,6550
+SESAME SEED WHITE 1KG (Galaxy) EA (12),,Dry / Pantry,each,each,1,,each,kg,,900
+Shallots Golden Peeled 1kg Bag,,Produce,each,each,1,,,kg,,1568
+SIETE LEGUAS BLANCO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,11328
+SIETE MISTERIOS DOBA YEJ 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8281
+STRANGELOVE LEMON SQUASH - (CASE OF 24),,Non-Alcoholic & Mixers,case,each,24,24,case,units,,5768
+STRANGELOVE VERY MANDARIN - (CASE OF 24),,Non-Alcoholic & Mixers,case,each,24,24,case,units,,5768
+STRANGELOVE YUZU SODA - (CASE OF 24),,Non-Alcoholic & Mixers,case,each,24,24,case,units,,5768
+Strawberries Extra Lge Punnet,,Produce,punnet,punnet,1,,,units,,450
+SUPASAWA 700ML - (CASE OF 6),,Non-Alcoholic & Mixers,case,bottle,6,6,case,ml,,14826
+TAMARIND CONCENTRATE 1LT (Mae Ploy) EA (12),,Oils & Condiments,each,each,1,,each,ml,,600
+TAPATIO BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9637
+TERRALTA BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9439
+Teusner Righteous FG Shiraz,,Wine — Red,bottle,bottle,1,,,ml,,14000
+THOQUINO CACACHA 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,5987
+Thyme Bunch,,Produce,bunch,bunch,1,,,units,,238
+THYME LEAVES 200GM (Natures Secret) EA,,Herbs & Spices,each,each,1,,each,g,,800
+Tolpuddle Chardonnay,,Wine — White,bottle,bottle,1,,,ml,,10000
+Torbreck 'The Factor' Shiraz,,Wine — Red,bottle,bottle,1,,,ml,,13500
+TROMBA ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10025
+TROMBA REPOSADO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8447
+Vandal 'Gonzo Combat Rouge' Red Blend,,Wine — Red,bottle,bottle,1,,,ml,,1777
+Vandal Gonzo Militia White Blend 750mL,,Wine — White,bottle,bottle,1,,,ml,,1779
+VINEGAR SHERRY 500ML (Chefs Choice),,Oils & Condiments,each,each,1,,,ml,,800
+VINEGAR WHITE 4LT (Edlyn) EA (3),,Oils & Condiments,each,each,1,,each,l,,430
+VINEGAR WHITE 5LT (Menu Master) EA (3),,Oils & Condiments,each,each,1,,each,l,,750
+VOK CREME DE CACAO WHITE 500ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,2323
+VOK CREME DE CACAO WHITE 500ML - (CASE OF 6),,Liqueurs & Aperitifs,case,bottle,6,6,case,ml,,13938
+VOLANS BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9999
+VOLANS EXTRA ANEJO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,19299
+Water,,Non-Alcoholic & Mixers,each,each,1,,,ml,,0
+Watermelon Juice (1 x 5L),,Non-Alcoholic & Mixers,L,L,1,1,case,ml,,3000
+Wedge Cerveza Keg,,Beer & Cider,keg,keg,1,,,ml,,27000
+Wendouree Cabernet Malbec,,Wine — Red,bottle,bottle,1,,,ml,,25000
+Whole dried Ancho Chilli 1kg,,Dry / Pantry,each,each,1,,,kg,,4500
+Whole Dried Arbol Chilli 75GRS,,Dry / Pantry,each,each,1,,,g,,412
+Whole dried Cascabel Chilli 1kg,,Dry / Pantry,each,each,1,,,g,,10700
+Whole dried Guajillo (Mirasol) Chilli 1kg,,Dry / Pantry,each,each,1,,,kg,,4815
+Whole dried Pasilla Chilli 1kg,,Dry / Pantry,each,each,1,,,kg,,4500
+WONTON EGG WRAPPER 300GM (Mc Yee Noodles) EA,,Dry / Pantry,each,each,1,,each,g,,300
+WOODFORD RESERVE 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,5772
+Zucchini Medium,,Produce,each,each,1,,,kg,,361
+Apple Juice 2 Litre Bottle,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,700
+Apples Granny Smith kg,,Produce,kg,kg,1,,,kg,,0
+ARTICHOKE JERUSALEM box (5kg),,Produce,each,each,1,,,kg,,9240
+Avocadoes Hass Tray,,Produce,each,each,1,,,units,,3550
+Basil Bunch,,Produce,bunch,bunch,1,,,1,,380
+CAPI GRAPEFRUIT SODA - (CASE OF 12),,Non-Alcoholic & Mixers,case,each,12,12,case,ml,,4495
+Coriander Bunch,,Produce,bunch,bunch,1,,,1,,238
+Cucumber Quks Punnet,,Produce,punnet,punnet,1,,,g,,380
+Cucumber Telegraph Each,,Produce,each,each,1,,each,units,,200
+FINEST CALL PASSIONFRUIT PUREE 1L BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,1512
+Forage Fresh Mix (100 gram),,Produce,each,each,1,,,g,,950
+GIFFARD GREEN APPLE SYRUP 1000ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,2140
+Grapefruit Juice 2 Litre Bottle,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,750
+Grapefruit Ruby Kg,,Produce,kg,kg,1,,,kg,,380
+Lime Juice (1 x 5L),,Non-Alcoholic & Mixers,L,L,1,1,case,ml,,7000
+Limes Volume Box,,Produce,each,each,1,,,kg,,5950
+LYRES TRIPLE SEC 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,3519
+OIL VEGETABLE 20LT (Trading) EA,,Oils & Condiments,each,each,1,,each,l,,5400
+ONION POWDER 500GM (Galaxy) EA,,Herbs & Spices,each,each,1,,each,g,,900
+Onions Brown Med-Lge 10kg Bag,,Produce,each,each,1,,,kg,,1950
+ONION SPANISH kg,,Produce,kg,kg,1,,,kg,,560
+Onions Spanish Large Bag,,Produce,each,each,1,,,kg,,3200
+Oranges Large Kg,,Produce,kg,kg,1,,,kg,,380
+Pineapples Each,,Produce,each,each,1,,each,kg,,580
+Pineapples Topless Each,,Produce,each,each,1,,each,units,,750
+Potatoes Brushed Kg,,Produce,kg,kg,1,,,kg,,238
+Spicy Pineapple Margarita Keg 20L,,Spirits — Tequila & Mezcal,L,L,1,,,ml,,0
+Spring Onion Bunch,,Produce,bunch,bunch,1,,,units,,266
+TOMATILLOS A10 GREEN TOMATO (Faro) EA (6),,Produce,each,each,1,,each,units,,1350
+TOMATO box LRG (10kg),,Produce,each,each,1,,,kg,,6480
+TOMATO CHERRY 400GM (Chefs Choice) EA (12),,Produce,each,each,1,,each,g,,220
+Tomatoes Large Box,,Produce,each,each,1,,,kg,,3550
+Tomatoes Medley 200 Punnets,,Produce,punnet,punnet,1,,,g,,350
+TOMATO PASSATA 720ml (Mazza Pomodoro) EA (12),,Oils & Condiments,each,each,1,,each,ml,,260
+TOMATO PASTE 500GM (Leggos) EA (6),,Oils & Condiments,each,each,1,,each,g,,445
+TOMATO PEELED PELATI A9 2.5KG (Mutti) EA (6),,Produce,each,each,1,,each,kg,,1130
+BATLOW APPLE CIDER CAN - (CASE OF 24),,Beer & Cider,case,can,24,24,case,units,units,0
+BUTTER UNSALTED 1KG (Devondale),,Dairy & Eggs,each,each,1,,,kg,,1650
+BUTTER UNSALTED 500GM Devondale,,Dairy & Eggs,each,each,1,,,g,,850
+FORTALEZA REPOSADO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,12745
+Freshwater Brewing Keg,,Beer & Cider,keg,keg,1,,,l,,30250
+GIFFARD FALERNUM 1000ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,2140
+MILK LONG LIFE UHT 1LT (Devondale) EA (10),,Dairy & Eggs,each,each,1,,each,l,,265
+Oasis Pale Ale,,Beer & Cider,bottle,bottle,1,,,units,,313
+Secrets Hazy Pale Keg,,Beer & Cider,keg,keg,1,,,ml,,27000
+STRANGELOVE DOUBLE GINGER BEER - (CASE OF 24),,Non-Alcoholic & Mixers,case,each,24,24,case,units,,6241
+VINEGAR APPLE CIDER 5LT (PGF) EA (2),,Oils & Condiments,each,each,1,,each,l,,2100
+2024 Domaine Christian Salmon Sancerre AC (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,42576
+Billecart Salmon Rose,,Wine — Rosé,bottle,bottle,1,,,ml,,15500
+KINGFISH FILLET S/OFF SASHIMI GRADE 1KG S.A FARMED (Hiramasa),,Seafood,kg,kg,1,,,kg,,6990
+"KINGFISH WHOLE FARMED 3-4KG SASHIMI GRADE R/W S.A (Hiramasa). Ordered: 3 KG, Supplied Qty: 5.4 KG, Reason for adjustment: Random Weight",,Seafood,kg,kg,1,,,3kg,,21330
+OCTOPUS HANDS IMPORTED 1KG (Trading) EA (10),,Seafood,kg,kg,1,,each,kg,,2100
+PRAWN CUTLETS RAW NATURAL 21/25 1KG VANNAMEI IMP (Trading) EA (10),,Seafood,kg,kg,1,,each,kg,,2250
+SALMON FILLET S/ON TASI SASHIMI 1.5-2KG  (Huon),,Seafood,kg,kg,1,,,kg,,3450
+SALMON FILLETS S/OFF TASI SASHIMI 1.5-2KG R/W (Huon),,Seafood,kg,kg,1,,,kg,,4290
+SNAPPER WHOLE PLATE SIZE 700-900GM NZ R/W (Fresh),,Seafood,kg,kg,1,,,kg,,2050
+2023 Nick Spencer Gruner Veltliner (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,24324
+APEROL APERITIF 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,2996
+BELVEDERE PURE VODKA : 700 ml,,Spirits — Other,bottle,bottle,1,,,ml,,6196
+BREADCRUMBS JAPANESE PANKO YELLOW 1KG (Natures Secret) EA (6),,Bakery,each,each,1,,each,kg,,625
+CAMPARI 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,3865
+FORTALEZA BLANCO 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,ml,11200
+FOUR PILLARS RARE DRY GIN 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,6333
+GIFFARD GINGER SYRUP 1000ML BOTTLE,,Non-Alcoholic & Mixers,bottle,bottle,1,,,ml,,2140
+GIFFARD MANDARIN LIQUEUR 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4936
+GIFFARD MARASCHINO LIQUEUR 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4136
+GIFFARD VIOLETTE 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4136
+Ginger kg,,Produce,kg,kg,1,,,kg,,0
+JAMESON IRISH WHISKEY 1000ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,7754
+KATUN GIN 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,8550
+LYRES WHITE CANE SPIRIT 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,20442
+MADRE MEZCAL ENSAMBLE 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8986
+MADRE MEZCAL ESPADIN 750ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,8394
+Manly Spirits Bulk 20Ltr Australian Dry Gin 1 x 20ltr Drum,,Spirits — Other,L,L,1,1,case,ml,,132000
+MASSENEZ BIRDSEYE CHILLI 700ML BOTTLE,,Liqueurs & Aperitifs,bottle,bottle,1,,,ml,,4909
+MEZCAL VERDE MOMENTO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7636
+OCHO PLATA 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,9732
+OCHO REPOSADO 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,10428
+OIL OLIVE EXTRA VIRGIN 4LT (Natures Secret),,Oils & Condiments,each,each,1,,,g,,4900
+PECAN NUT 1KG (Trumps),,Dry / Pantry,each,each,1,,,g,,3100
+Rum,,Spirits — Other,bottle,bottle,1,,,ml,,40482
+SAN COSME MEZCAL 700ML BOTTLE,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,ml,,7872
+Triple SEC 20L - 20% ABV,,Liqueurs & Aperitifs,L,L,1,,,l,,68000
+TSEC 20L (NoSugar) - 20L - 20% ABV,,Liqueurs & Aperitifs,L,L,1,,,ml,,68000
+VODKA ONE 700ML BOTTLE,,Spirits — Other,bottle,bottle,1,,,ml,,3849
+2015 Geoff Merrill Reserve Cabernet Sauvignon (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,17304
+2020 Nielson Pinot Noir (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,36000
+2021 Domaine Schlumberger Saering Grand Cru Alsace (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,28512
+2022 Atlas 'Eden Valley' Riesling (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,9200
+2022 Helen's Hill 'The Smuggler' Pinot Noir (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,18054
+2022 Utopos Cabernet Sauvignon (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,24400
+2022 Weingut Huls Riesling (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,12642
+2023 Catalina Sounds 'Sound of White' Sauvignon Blanc (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,9460
+2023 Gilbert Sauvignon Blanc (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,1775
+2023 Greystone Pinot Gris (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,17190
+2023 Haddow & Dineen 'Private Universe' Pinot Noir (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,2833
+2023 Red Claw Pinot Noir (Case of 6),,Wine — Red,case,bottle,6,6,case,ml,,15326
+2024 Domaine Thompson Explorer Pinot Noir (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,24100
+2024 El Desperado Pinot Noir (Case of 12),,Wine — Red,case,bottle,12,12,case,ml,,14796
+2024 Frogmore Creek Riesling (Case of 6),,Wine — White,case,bottle,6,6,case,ml,,9840
+2024 Grosset Polish Hill Riesling (Case of 12),,Wine — White,case,bottle,12,12,case,ml,,59988
+Novum Pinot Noir,,Wine — Red,bottle,bottle,1,,,ml,,4615
+Surco 2.7 Cabernet Sauvignon,,Wine — Red,bottle,bottle,1,,,ml,,2635
+VINEGAR RICE WINE 250ML (Obento) EA (6),,Oils & Condiments,each,each,1,,each,ml,,400
+VINEGAR WHITE WINE 500ML (PGF) EA,,Oils & Condiments,each,each,1,,each,ml,,500
+White Cooking Wine 15L - Elegre,,Oils & Condiments,each,each,1,,,l,,4375
+Yalumba 'The Reserve' Cabernet Sauvignon,,Wine — Red,bottle,bottle,1,,,ml,,18000
+Agave Syrup,,Oils & Condiments,each,each,1,,,L,L,5673
+Aguas Mansas,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,6505
+Alipus San Baltazar,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Alipus San Juan,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,7473
+Allspice,,Herbs & Spices,each,each,1,,,350 Grams,350 Grams,1400
+Alquimia Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Amaro Montenegro,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,4885
+Aperol,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,2996
+Apple Juice,,Non-Alcoholic & Mixers,each,each,1,,,2 L,2 L,665
+Aprendiz Ensamble Mezcal,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,13300
+Arette Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Arette Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Arette Reposado Los Primos Edition,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Arette Suave Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+ArteNom 1579,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Artichokes Jerusalem Box,,Produce,each,each,1,,,Kilo,Kilo,
+Ascorbic Acid,,Dry / Pantry,each,each,1,,,600 Grams,600 Grams,
+Atlas Eden Valley Riesling,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Avocadoes Hass,,Produce,each,each,1,,,5 KG,5 KG,3298
+Badenhorst Secateurs Chenin Blanc,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Ballantines Scotch,,Spirits — Other,bottle,bottle,1,,,1000 mL,1000 mL,
+Balter Cerveza,,Beer & Cider,bottle,bottle,1,,,Each,Each,228
+Barramundi Fillets,,Seafood,kg,kg,1,,,Kilo,Kilo,1740
+Barsol Pisco,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,7020
+Batanga Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,6100
+Batanga Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,6951
+Batlow Cloudy Cider,,Beer & Cider,bottle,bottle,1,,,Each,Each,307
+Beans Black Dry,,Dry / Pantry,each,each,1,,,Kilo,Kilo,493
+Beans Butter,,Dry / Pantry,each,each,1,,,Each,Each,
+Beef Chuck Roll,,Meat & Poultry,kg,kg,1,,,Each,Each,
+Beef Flank Steak,,Meat & Poultry,kg,kg,1,,,Kilo,Kilo,2862
+Beef Short Ribs Grainfed 3rib,,Meat & Poultry,kg,kg,1,,,Kilo,Kilo,2677
+Belvedere Vodka,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,6196
+BenMarco Valle de Uco Malbec,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,2522
+Bonnet & Cotton Beaujolais Rouge,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Breadcrumbs Panko,,Bakery,each,each,1,,,Kilo,Kilo,624
+Brookies Mac,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Bruxo No. 4,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,9020
+Butter Unsalted,,Dairy & Eggs,each,each,1,,,Kilo,Kilo,1650
+Cabbage,,Produce,each,each,1,,,Each,Each,424
+Cabbage Red,,Produce,each,each,1,,,Each,Each,471
+Calle 23 Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Calle 23 Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,7720
+Calle 23 Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,8880
+Campari Aperitif,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,3869
+Cannonball Cabernet Sauvignon,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Capa Tempranillo,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,1509
+Capi Ginger Beer,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,197
+Capi Sparkling Grapefruit,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,197
+Captain Morgan,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Cascahuin Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Cascahuin Extra Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Cascahuin Plata 48%,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Cascahuin Tahona Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Catalina Sounds Sound of White Sauvignon Blanc,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2034
+Cauli fl ower,,Produce,each,each,1,,,Each,Each,641
+Celeriac,,Produce,each,each,1,,,Each,Each,
+Chambord,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Chartreuse Green,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,10020
+Cheese Goat,,Dairy & Eggs,each,each,1,,,Kilo,Kilo,2757
+Cheese Halloumi,,Dairy & Eggs,each,each,1,,,750 Grams,750 Grams,1700
+Cheese Mozzarella Shredded,,Dairy & Eggs,each,each,1,,,Kilo,Kilo,1150
+Cheese Ricotta Salata,,Dairy & Eggs,each,each,1,,,700 Grams,700 Grams,1700
+Chicken Thigh Fillet Skin Off,,Meat & Poultry,kg,kg,1,,,Kilo,Kilo,1820
+Chilli Choptle in Adobo,,Oils & Condiments,each,each,1,,,3 KG,3 KG,1846
+Chilli Guajillo Dried,,Dry / Pantry,each,each,1,,,kg,kg,4824
+Chilli Habenero,,Produce,each,each,1,,,Kilo,Kilo,
+Chilli Habenero Kg,,Produce,kg,kg,1,,,1 KG,1 KG,
+Chilli Jalapeno,,Produce,each,each,1,,,Kilo,Kilo,1413
+Chilli Poblano,,Produce,each,each,1,,,Kilo,Kilo,
+Chips Shoestring Fries,,Frozen,each,each,1,,,Kilo,Kilo,447
+Cinnamon Ground,,Herbs & Spices,each,each,1,,,400 Grams,400 Grams,1100
+Cinnamon Quill,,Herbs & Spices,each,each,1,,,200 Grams,200 Grams,
+Clase Azul Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Coconut Cream,,Dry / Pantry,each,each,1,,,560 mL,560 mL,350
+Coconut Flakes,,Dry / Pantry,each,each,1,,,500 Grams,500 Grams,551
+Coconut Milk,,Dry / Pantry,each,each,1,,,400 mL,400 mL,
+Codigo 1530 Rosa,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Cointreau 1L,,Liqueurs & Aperitifs,bottle,bottle,1,,,each,,
+Coriander Ground,,Produce,each,each,1,,,400 Grams,400 Grams,
+Corona Extra Beer,,Beer & Cider,bottle,bottle,1,,,Each,Each,260
+Corralejo Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Corralejo Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,6817
+Cream Thickened,,Dairy & Eggs,each,each,1,,,Litre,Litre,773
+Cucumber Quks,,Produce,each,each,1,,,Punnet,Punnet,330
+Cucumber Telegraph,,Produce,each,each,1,,,Each,Each,238
+Cumin Ground,,Herbs & Spices,each,each,1,,,450 Grams,450 Grams,1105
+DELI CHORIZO RODRIGUEZ,,Meat & Poultry,kg,kg,1,,,kg,kg,1980
+Del Maguey Minero,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,14080
+Del Maguey Vida,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,9060
+Dill Bunch,,Produce,bunch,bunch,1,,,Bunch,Bunch,238
+Dolin Dry Vermouth,,Liqueurs & Aperitifs,bottle,bottle,1,,,750 mL,750 mL,2270
+Domaine Thomson Explorer Pinot Noir,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,2331
+Don Fulano Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,12280
+Don Fulano Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,9720
+Don Julio 1942,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Don Julio Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Don Julio Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,8340
+Don Julio Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Eggs Dozen,,Dairy & Eggs,each,each,1,,,Each,Each,673
+El Desperado Pinot Noir,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,1234
+El Jolgorio Arroqueno (Black Red),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Cuishe (Purple),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Espadin (Green),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Jabali (Black Tan),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Madrecuishe (Pink),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Mexicano (Brown),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Pechuga (Black Yellow),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Pechuga (Yellow),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Sierrudo (Black Green),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Tepeztate (Blue),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Tobasiche (Black Brown),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Todos Santos Arroqueno (Neon Pink),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Jolgorio Todos Santos Tobasiche (Neon Orange),,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tequileno 1959 Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tequileno 1959 Platinum,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tequileno 1959 Reposado Gran Reserva,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,9000
+El Tequileno 1959 Reposado Rare,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tequileno Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,4900
+El Tequileno Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,5895
+El Tesoro Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tesoro Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+El Tesoro Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Eperosa Magnolia Semillon,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Fee Brothers Grapefruit Bitters,,Non-Alcoholic & Mixers,each,each,1,,,150 mL,150 mL,2218
+First Press Black Cold Drip Coffee Mixer,,Non-Alcoholic & Mixers,each,each,1,,,750 mL,750 mL,1722
+Flour Plain,,Dry / Pantry,each,each,1,,,Kilo,Kilo,114
+Flower Edible Elder,,Produce,each,each,1,,,Punnet,Punnet,
+Flower Edible Marigold,,Produce,each,each,1,,,Punnet,Punnet,989
+Flower Edible Viola,,Produce,each,each,1,,,Punnet,Punnet,
+Flowers Edible Phlox,,Produce,each,each,1,,,Punnet,Punnet,
+Fords Gin,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Fortaleza Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Fortaleza Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Fortaleza Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Four Pillars Rare Dry Gin,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Frankly Bob Skinsy,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2100
+Fresh Mix Forage 100g,,Produce,each,each,1,,,each,,
+Freshwater Brewing Hazy Pale Keg,,Beer & Cider,keg,keg,1,,,50 L,50 L,27000
+Freshwater Brewing Wedge Cerveza Keg,,Beer & Cider,keg,keg,1,,,50 L,50 L,27000
+Frogmore Creek Riesling,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2116
+G4 Añejo Tequila,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+G4 Blanco Tequila,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+G4 Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Garlic Peeled Bag,,Produce,each,each,1,,,Kilo,Kilo,627
+Garlic Powder,,Herbs & Spices,each,each,1,,,540 Grams,540 Grams,901
+Gentiane de Lure,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,3640
+Geoff Merrill Jacko's Shiraz,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Geoff Merrill Reserve Cabernet Sauvignon,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,2483
+Giffard Amaretto,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Giffard Coconut Syrup,,Non-Alcoholic & Mixers,each,each,1,,,1000 mL,1000 mL,1973
+Giffard Falernum Syrup 1000ml,,Non-Alcoholic & Mixers,bottle,bottle,1,,,each,,2380
+Giffard Ginger Syrup,,Non-Alcoholic & Mixers,each,each,1,,,1000 mL,1000 mL,2294
+Giffard Green Apple Syrup,,Non-Alcoholic & Mixers,each,each,1,,,1000 mL,1000 mL,2313
+Giffard Mandarin Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,4867
+Giffard Maraschino Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Giffard Rose Syrup 1000ml,,Non-Alcoholic & Mixers,bottle,bottle,1,,,each,,2120
+Giffard Vanilla Syrup,,Non-Alcoholic & Mixers,each,each,1,,,1000 mL,1000 mL,2110
+Giffard Violette Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Glen fi ddich 12yo Whiskey,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,7380
+Gotas de Mar Albarino,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2515
+Gran Centenario Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Grapefruit Juice,,Non-Alcoholic & Mixers,each,each,1,,,2 L,2 L,713
+Grapefruit Ruby,,Produce,each,each,1,,,Kilo,Kilo,
+Grey Goose,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Greystone Pinot Gris 2024,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,1925
+Greywacke Sauvignon Blanc,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2096
+Heaps Normal Another Lager,,Beer & Cider,bottle,bottle,1,,,Each,Each,222
+Heaps Normal Quiet XPA,,Beer & Cider,bottle,bottle,1,,,Each,Each,222
+Helen's Hill The Smuggler Pinot Noir,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Hendricks Gin,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,6960
+Herradura Agave Nectar,,Oils & Condiments,each,each,1,,,478 mL,478 mL,1124
+Herradura Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Herradura Plata,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Herradura Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Herradura Seleccion Suprema Extra Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Herradura Ultra,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Honey,,Oils & Condiments,each,each,1,,,1 KG,1 KG,678
+Ice Cream Chocolate,,Frozen,each,each,1,,,Litre,Litre,250
+i Lauri AVALOS Pecorino,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2226
+Ilegal Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Inama Soave Classico,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Ingram Road Chardonnay,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,1432
+Jack Daniels,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,5180
+Jameson Irish Whiskey,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,7760
+Kendall Jackson Vintners Reserve Chardonnay,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Koch Ancestral Espadin,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Koch Arroqueno,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,8460
+Koch Artesenal Espadin,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Koch Mexicano,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,8460
+Koch Tepeztate,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,9360
+La Belle Colette Rose,,Wine — Rosé,bottle,bottle,1,,,750 mL,750 mL,1964
+La Fee Absinthe,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Lagrimas de Delores,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,10880
+Large Red Capsicum,,Produce,each,each,1,,,Kilo,Kilo,715
+Lark Hill Roxanne,,Wine — Sparkling,bottle,bottle,1,,,750 mL,750 mL,
+Laurent Perrier La Cuvee Champagne,,Wine — Sparkling,bottle,bottle,1,,,750 mL,750 mL,6595
+Lemons Large,,Produce,each,each,1,,,Kilo,Kilo,
+Lettuce Baby Gem Box,,Produce,each,each,1,,,Each,Each,179
+Lettuce Iceberg,,Produce,each,each,1,,,Each,Each,
+Licor 43,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,5227
+Lime Juice,,Non-Alcoholic & Mixers,each,each,1,,,Litre,Litre,1400
+Limes,,Produce,each,each,1,,,Kilo,Kilo,3374
+Los Siete Misterios Doba-Yej,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,8280
+Lyres Agave Blanco,,Non-Alcoholic & Mixers,each,each,1,,,700 mL,700 mL,3133
+Lyres Orange Sec,,Non-Alcoholic & Mixers,each,each,1,,,700 mL,700 mL,2976
+Lyres White Cane,,Non-Alcoholic & Mixers,can,can,1,,,700 mL,700 mL,2926
+Manly Spirits Coffee Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,3687
+Manly Spirits Dry Gin,,Spirits — Other,bottle,bottle,1,,,L,L,5471
+Manly Spirits Triple Sec,,Liqueurs & Aperitifs,bottle,bottle,1,,,L,L,3875
+Manly Spirits Triple Sec No Sugar,,Liqueurs & Aperitifs,bottle,bottle,1,,,L,L,3837
+Manly Spirits Vodka,,Spirits — Other,bottle,bottle,1,,,L,L,4803
+Marionette Blue Curacao,,Liqueurs & Aperitifs,bottle,bottle,1,,,500 mL,500 mL,4511
+Massenez Birdseye Chili Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,4842
+Massenez Creme de Peche,,Liqueurs & Aperitifs,bottle,bottle,1,,,5 L,5 L,
+Massenez Elder fl ower Liqueur,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,4180
+Massenez Pomme Verte,,Liqueurs & Aperitifs,bottle,bottle,1,,,5 L,5 L,
+Mayonnaise Whole Egg,,Oils & Condiments,each,each,1,,,Kilo,Kilo,920
+Medley Tomatoes,,Produce,each,each,1,,,200 Grams,200 Grams,
+Merlet Creme de Mure,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Mesculin Gold Mix Box,,Produce,each,each,1,,,Kilo,Kilo,
+Mesculin Greens Mix,,Produce,each,each,1,,,kg,kg,1759
+Mezcal Machetazo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Mezcal Verde,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,7660
+Midnight Mixers Classic Dry Tonic,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,163
+Midnight Mixers Soda Water,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,163
+Milagro Silver,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,6515
+Milk,,Dairy & Eggs,each,each,1,,,2 L,2 L,
+Milk Condensed,,Dairy & Eggs,each,each,1,,,395 Grams,395 Grams,400
+Mint Bunch,,Produce,bunch,bunch,1,,,Bunch,Bunch,
+Mixed Berries Frozen,,Frozen,each,each,1,,,Kilo,Kilo,951
+Modelo Especial,,Beer & Cider,bottle,bottle,1,,,Each,Each,281
+Modus Operandi Cerveza,,Beer & Cider,bottle,bottle,1,,,Each,Each,
+Moments of Clarity Riesling,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,1354
+Monte fi li Chianti Classico,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Mustard Dijon,,Oils & Condiments,each,each,1,,,215 Grams,215 Grams,450
+Never Never Dark Series Mediterranean Gin,,Spirits — Other,bottle,bottle,1,,,500 mL,500 mL,5640
+Nuestra Soledad La Campania Ejutla,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,8880
+Nuestra Soledad San Baltazar,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,8880
+Nuestra Soledad San Luis del Rio,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,8880
+Nuestra Soledad Santiago Matatlan,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Nut Hazelnut Roasted,,Dry / Pantry,each,each,1,,,Kilo,Kilo,2846
+Nut Pistachio Kernel,,Dry / Pantry,each,each,1,,,Kilo,Kilo,
+Nut Walnut,,Dry / Pantry,each,each,1,,,Kilo,Kilo,1977
+Ocho Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Ocho Extra Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Ocho Plata,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Ocho Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Oil Canola Spray,,Oils & Condiments,each,each,1,,,450 Grams,450 Grams,450
+Oil Grapeseed,,Oils & Condiments,each,each,1,,,Litre,Litre,1201
+Oil Olive Extra Virgin,,Oils & Condiments,each,each,1,,,Litre,Litre,1227
+Oil Olive Pomace,,Oils & Condiments,each,each,1,,,Litre,Litre,650
+Oil Vegetable,,Oils & Condiments,each,each,1,,,Litre,Litre,294
+Okar,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,
+Onion Fried,,Dry / Pantry,each,each,1,,,1 KG,1 KG,
+Onion Powder,,Herbs & Spices,each,each,1,,,500 Grams,500 Grams,895
+Onions Brown,,Produce,each,each,1,,,Kilo,Kilo,171
+Onions Spanish,,Produce,each,each,1,,,Kilo,Kilo,2802
+Oranges Large,,Produce,each,each,1,,,Kilo,Kilo,428
+Oregano Mexican 250gm,,Herbs & Spices,each,each,1,,,each,,1763
+Origen Raiz Cenizo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Origen Raiz Chacaleno,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,12000
+Origen Raiz Madrecuishe,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Origen Raiz Pechuga,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Origen Raiz Sotol,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,8640
+Paprika Smoked,,Herbs & Spices,each,each,1,,,500 Grams,500 Grams,1201
+Parrot Fish Fillets,,Seafood,kg,kg,1,,,Kilo,Kilo,2789
+Pasote Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Patron Anejo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Patron El Cielo,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Patron Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Patron Silver,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,6780
+Patron XO Cafe,,Liqueurs & Aperitifs,bottle,bottle,1,,,700 mL,700 mL,8767
+Peanuts Roasted,,Dry / Pantry,each,each,1,,,1 KG,1 KG,
+Pears Nashi,,Produce,each,each,1,,,Kilo,Kilo,707
+Pepita Seeds,,Dry / Pantry,each,each,1,,,Kilo,Kilo,1207
+Pepper Black Cracked,,Herbs & Spices,each,each,1,,,400 Grams,400 Grams,1401
+Peppercorns Black Whole,,Herbs & Spices,each,each,1,,,500 Grams,500 Grams,0
+Petite Bouche Bulls Blood,,Produce,each,each,1,,,Punnet,Punnet,
+Petite Bouche Chervil,,Produce,each,each,1,,,Punnet,Punnet,
+Petite Bouche Red Elk,,Produce,each,each,1,,,Punnet,Punnet,
+Petite Bouche Upperland Cress,,Produce,each,each,1,,,Punnet,Punnet,
+Petite Bouche Watercress,,Produce,each,each,1,,,Punnet,Punnet,
+Pineapples,,Produce,each,each,1,,,Each,Each,546
+Prawn Meat Raw,,Seafood,kg,kg,1,,,700 Grams,700 Grams,1800
+Quiquiriqui,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Raicilla Las Perlas,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,11540
+Rice Basmati,,Dry / Pantry,each,each,1,,,Kilo,Kilo,300
+Ron Santiago de Cuba 8yo,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Ron Santiago de Cuba Carta Blanca,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,4647
+Rosso Antico Sweet Vermouth,,Liqueurs & Aperitifs,bottle,bottle,1,,,750 mL,750 mL,2065
+R. Paulazzo Rose,,Wine — Rosé,bottle,bottle,1,,,750 mL,750 mL,916
+Sabi Wabi Pet Nat,,Wine — Sparkling,bottle,bottle,1,,,750 mL,750 mL,
+Salmon Fillet Sashimi Skin On,,Seafood,kg,kg,1,,,Kilo,Kilo,3749
+Salt Flakes,,Dry / Pantry,each,each,1,,,Kilo,Kilo,
+Salt Rock Coarse,,Dry / Pantry,each,each,1,,,Kilo,Kilo,
+Salt Table,,Dry / Pantry,each,each,1,,,Kilo,Kilo,100
+Sammy Piquant The Jetsetter,,Non-Alcoholic & Mixers,each,each,1,,,700 mL,700 mL,2995
+San Cosme Mezcal,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,7880
+Sea Salt Flakes,,Dry / Pantry,each,each,1,,,2 KG,2 KG,
+Serenello Prosecco,,Wine — Sparkling,bottle,bottle,1,,,750 mL,750 mL,1615
+Sesame Seed White,,Dry / Pantry,each,each,1,,,1 KG,1 KG,900
+Shallots Golden Peeled,,Produce,each,each,1,,,1 KG,1 KG,
+Shut The Gate For Freedom Gewurztraminer,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Siete Leguas Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Sour Cream Light,,Dairy & Eggs,each,each,1,,,Litre,Litre,
+Stephane Brocard Macon Villages,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,2789
+Strangelove Double Ginger Beer,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,266
+Strangelove Lemon Squash,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,265
+Strangelove Very Mandarin,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,240
+Strangelove Yuzu Soda,,Non-Alcoholic & Mixers,each,each,1,,,Each,Each,264
+Strawberries Large Punnet,,Produce,punnet,punnet,1,,,Punnet,Punnet,518
+Sugar Brown,,Dry / Pantry,each,each,1,,,Kilo,Kilo,406
+Sugar Caster,,Dry / Pantry,each,each,1,,,Kilo,Kilo,275
+Supasawa,,Non-Alcoholic & Mixers,each,each,1,,,700 mL,700 mL,2468
+Tapatio Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Tapatio Reposado,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,10480
+Tarragon Bunch,,Produce,bunch,bunch,1,,,Bunch,Bunch,
+Terralta Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,750 mL,750 mL,
+Teusner Avatar GSM,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,2451
+Teusner Wark Family Shiraz,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,1383
+Thoquino Cachaca,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
+Thyme Dried,,Dry / Pantry,each,each,1,,,1 KG,1 KG,4000
+Tomatillos Green Can,,Produce,each,each,1,,,4 KG,4 KG,1350
+Tomatoes,,Produce,each,each,1,,,Kilo,Kilo,4176
+Tomatoes Cherry,,Produce,each,each,1,,,Punnet,Punnet,330
+Tomato Ketchup 1L,,Oils & Condiments,each,each,1,,,each,,
+Tortilla Corn,,Bakery,each,each,1,,,Each,Each,17
+Tortilla Flour 12inch,,Bakery,each,each,1,,,Each,Each,48
+Tres Agaves Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Tromba Blanco,,Spirits — Tequila & Mezcal,bottle,bottle,1,,,700 mL,700 mL,
+Vanguardist Field GSM,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,
+Vanilla Bean Paste,,Herbs & Spices,each,each,1,,,320 Grams,320 Grams,3013
+Villa Albergotti Chianti Superiore,,Wine — Red,bottle,bottle,1,,,750 mL,750 mL,2061
+Vinegar Apple Cider,,Oils & Condiments,each,each,1,,,2 L,2 L,480
+Vinegar White,,Oils & Condiments,each,each,1,,,Litre,Litre,108
+Vinegar White Wine,,Oils & Condiments,each,each,1,,,4 L,4 L,1040
+Vodka One,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,3850
+Vok Creme de Cacao Blanco,,Liqueurs & Aperitifs,bottle,bottle,1,,,500 mL,500 mL,2326
+Wakame,,Produce,each,each,1,,,500 Grams,500 Grams,
+Watermelon juice,,Non-Alcoholic & Mixers,each,each,1,,,Litre,Litre,696
+Weingut Huls Riesling,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Winmark Rusty's Run Chardonnay,,Wine — White,bottle,bottle,1,,,750 mL,750 mL,
+Wonton Egg Wrapper,,Dry / Pantry,each,each,1,,,300 Grams,300 Grams,300
+Woodford Reserve Bourbon,,Spirits — Other,bottle,bottle,1,,,700 mL,700 mL,
