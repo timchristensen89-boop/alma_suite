@@ -159,7 +159,7 @@ export function StaffPage() {
     <div className="page-stack">
       <PageHeader
         eyebrow="Staff compliance"
-        title="Staff document register"
+        title="Staff certificates"
         description="View staff from the Staff app and maintain RSA, FSS, First Aid, training, and certificate records for compliance."
         actions={
           <>

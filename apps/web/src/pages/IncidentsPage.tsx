@@ -42,7 +42,7 @@ export function IncidentsPage() {
 
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({
-    createIssue: true,
+    createIssue: false,
     incidentType: 'First Aid',
     location: '',
     occurredAt: new Date().toISOString().slice(0, 16),
@@ -83,7 +83,7 @@ export function IncidentsPage() {
       });
 
       setForm({
-        createIssue: true,
+        createIssue: false,
         incidentType: 'First Aid',
         location: '',
         occurredAt: new Date().toISOString().slice(0, 16),

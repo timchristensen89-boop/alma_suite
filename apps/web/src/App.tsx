@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import {
   Navigate,
   NavLink,
@@ -43,7 +43,7 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
-import { NAV_ITEMS, navItemsForRole } from './config/navigation';
+import { NAV_ITEMS, NAV_SECTIONS, navItemsForRole } from './config/navigation';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { canAdmin, canManage, type BetaRole } from './lib/rbac';
@@ -103,8 +103,7 @@ function SidebarNav() {
         id="compliance-mobile-nav"
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
-        <li className="sidebar-nav-section">Compliance</li>
-        {navItems.map((item) => (
+        {navItems.filter((item) => !item.section).map((item) => (
           <li key={item.to}>
             <NavLink to={item.to} end={item.end}>
               <span className="sidebar-nav-icon">{item.icon}</span>
@@ -112,6 +111,23 @@ function SidebarNav() {
             </NavLink>
           </li>
         ))}
+        {NAV_SECTIONS.map((section) => {
+          const items = navItems.filter((item) => item.section === section);
+          if (items.length === 0) return null;
+          return (
+            <Fragment key={section}>
+              <li className="sidebar-nav-section">{section}</li>
+              {items.map((item) => (
+                <li key={item.to}>
+                  <NavLink to={item.to} end={item.end}>
+                    <span className="sidebar-nav-icon">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </NavLink>
+                </li>
+              ))}
+            </Fragment>
+          );
+        })}
       </ul>
     </div>
   );
