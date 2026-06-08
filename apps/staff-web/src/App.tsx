@@ -441,6 +441,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     icon: <IconWallet />
   },
   {
+    to: '/my-pay',
+    label: 'My pay',
+    description: 'Your pay rate, employment type and setup',
+    icon: <IconBriefcase />
+  },
+  {
     to: '/compliance',
     label: 'My compliance',
     description: 'My documents, training and reminders',
@@ -8838,6 +8844,8 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState(() => toDateInput(new Date()));
+  // Optional manager note captured per pending request when approving/declining.
+  const [leaveNotes, setLeaveNotes] = useState<Record<string, string>>({});
 
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const venueOptions = [
@@ -8961,12 +8969,18 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`leave:${item.id}:${status}`);
+    const note = leaveNotes[item.id]?.trim();
     try {
       await api<StaffLeaveRequest>(`/api/staff/leave/${item.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, ...(note ? { managerNote: note } : {}) })
       });
       setMessage(`Leave ${status.toLowerCase()}.`);
+      setLeaveNotes((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
       await loadLeave();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not update leave.');
@@ -9120,6 +9134,14 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
                 <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
                 {item.status === 'PENDING' ? (
                   <>
+                    <Input
+                      label=""
+                      placeholder="Note (optional)"
+                      value={leaveNotes[item.id] ?? ''}
+                      onChange={(event) =>
+                        setLeaveNotes((prev) => ({ ...prev, [item.id]: event.currentTarget.value }))
+                      }
+                    />
                     <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void changeStatus(item, 'APPROVED')}>
                       Approve
                     </Button>
@@ -11138,7 +11160,20 @@ function RosterPage({
                   </p>
                   <div className="roster-forecast-metrics roster-forecast-metrics-compact">
                     <div>
-                      <span>Forecast sales</span>
+                      <span>
+                        Forecast sales
+                        {dailyForecastTotalCents === 0 &&
+                        parseMoneyCents(forecastSales) === 0 &&
+                        historicalForecastSalesCents > 0 ? (
+                          <span
+                            className="subtle"
+                            style={{ marginLeft: 6, fontWeight: 400 }}
+                            title="No manual forecast entered — using the baseline from previous years."
+                          >
+                            (historical)
+                          </span>
+                        ) : null}
+                      </span>
                       <strong>{formatCents(forecastSalesCents)}</strong>
                     </div>
                     <div>
@@ -13772,6 +13807,172 @@ function StaffMemberTipsPage() {
   );
 }
 
+type MyPaySnapshot = {
+  firstName: string;
+  lastName: string;
+  venue: string | null;
+  roleTitle: string;
+  employmentStatus: string;
+  employmentType: string | null;
+  payProfile: {
+    awardName: string;
+    awardClassification: string;
+    employmentType: string;
+    payMode: string;
+    ordinaryHourlyRateCents: number;
+    casualLoadedHourlyRateCents: number | null;
+    manualFullTimePayAmountCents: number | null;
+    manualFullTimePayFrequency: string | null;
+    cashHourlyRateCents: number | null;
+    payUpdatedAt: string | null;
+  } | null;
+  hasBankAccount: boolean;
+  hasTaxFileNumber: boolean;
+};
+
+function employmentTypeLabel(value: string | null | undefined) {
+  switch (value) {
+    case 'CASUAL':
+      return 'Casual';
+    case 'PART_TIME':
+      return 'Part-time';
+    case 'FULL_TIME':
+      return 'Full-time';
+    default:
+      return value || '—';
+  }
+}
+
+// A staff member's read-only view of their own pay rate and employment setup.
+// Backed by GET /api/staff/me/pay, which returns only the caller's data and
+// never bank/TFN numbers (only "on file" flags).
+function StaffMemberPayPage() {
+  const [data, setData] = useState<MyPaySnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setData(await api<MyPaySnapshot>('/api/staff/me/pay'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your pay details.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pp = data?.payProfile ?? null;
+  const headline = pp
+    ? pp.payMode === 'CASH' && pp.cashHourlyRateCents
+      ? { label: 'Cash rate', value: `${formatCents(pp.cashHourlyRateCents)}/hr` }
+      : pp.manualFullTimePayAmountCents
+        ? {
+            label: pp.manualFullTimePayFrequency === 'ANNUAL_SALARY' ? 'Annual salary' : 'Full-time rate',
+            value: formatCents(pp.manualFullTimePayAmountCents)
+          }
+        : pp.casualLoadedHourlyRateCents
+          ? { label: 'Loaded rate', value: `${formatCents(pp.casualLoadedHourlyRateCents)}/hr` }
+          : { label: 'Ordinary rate', value: `${formatCents(pp.ordinaryHourlyRateCents)}/hr` }
+    : null;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="My pay"
+        title="My pay & details"
+        description="Your current pay rate and employment setup. Ask a manager to update any of these."
+        actions={
+          <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="stats-grid">
+        <StatCard
+          label={headline?.label ?? 'Pay rate'}
+          value={headline?.value ?? '—'}
+          hint="Your current rate"
+          loading={loading}
+        />
+        <StatCard
+          label="Employment type"
+          value={employmentTypeLabel(data?.employmentType)}
+          hint={data?.roleTitle || 'Your role'}
+          loading={loading}
+        />
+      </div>
+
+      {message ? <p className="error-text">{message}</p> : null}
+      {loading ? <Spinner label="Loading your pay details..." /> : null}
+
+      {!loading && !pp ? (
+        <EmptyState
+          title="Pay details not set up yet"
+          description="Your pay rate and employment type haven't been configured. Ask your manager to set up your pay profile."
+        />
+      ) : null}
+
+      {pp ? (
+        <Card title="Pay details" subtitle="Set by your manager in the Staff app.">
+          <div className="staff-detail-list">
+            <div className="staff-expiry-row">
+              <span><strong>Award</strong><span className="subtle">{pp.awardName}</span></span>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Classification</strong><span className="subtle">{pp.awardClassification}</span></span>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Ordinary rate</strong><span className="subtle">{formatCents(pp.ordinaryHourlyRateCents)}/hr</span></span>
+            </div>
+            {pp.casualLoadedHourlyRateCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>Casual loaded rate</strong><span className="subtle">{formatCents(pp.casualLoadedHourlyRateCents)}/hr (includes casual loading)</span></span>
+              </div>
+            ) : null}
+            {pp.manualFullTimePayAmountCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>{pp.manualFullTimePayFrequency === 'ANNUAL_SALARY' ? 'Annual salary' : 'Full-time rate'}</strong><span className="subtle">{formatCents(pp.manualFullTimePayAmountCents)}</span></span>
+              </div>
+            ) : null}
+            {pp.payMode === 'CASH' && pp.cashHourlyRateCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>Cash rate</strong><span className="subtle">{formatCents(pp.cashHourlyRateCents)}/hr</span></span>
+              </div>
+            ) : null}
+            {pp.payUpdatedAt ? (
+              <div className="staff-expiry-row">
+                <span><strong>Last updated</strong><span className="subtle">{new Date(pp.payUpdatedAt).toLocaleDateString()}</span></span>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
+      {data ? (
+        <Card title="Payment setup" subtitle="Whether your details are on file. Numbers are hidden for security — see a manager to update.">
+          <div className="staff-detail-list">
+            <div className="staff-expiry-row">
+              <span><strong>Bank account</strong><span className="subtle">{data.hasBankAccount ? 'On file' : 'Not on file — give your manager your bank details'}</span></span>
+              <Badge tone={data.hasBankAccount ? 'positive' : 'warning'}>{data.hasBankAccount ? '✓' : 'Missing'}</Badge>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Tax file number</strong><span className="subtle">{data.hasTaxFileNumber ? 'On file' : 'Not provided — complete a TFN declaration with your manager'}</span></span>
+              <Badge tone={data.hasTaxFileNumber ? 'positive' : 'warning'}>{data.hasTaxFileNumber ? '✓' : 'Missing'}</Badge>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+    </div>
+  );
+}
+
 // Venue Readiness (#20/#21) — green/amber/red checklist status for today.
 // Built on the existing ChecklistRun data; the API method is
 // /api/checklists/today-readiness?date=&venue=.
@@ -15039,12 +15240,25 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
           </div>
         ) : null}
         <div className="form-grid">
-          <Select
-            label="Staff member"
-            value={staffProfileId}
-            onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-            options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
-          />
+          {isManagerView ? (
+            <Select
+              label="Staff member"
+              value={staffProfileId}
+              onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+              options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
+            />
+          ) : (
+            <Input
+              label="Staff member"
+              value={
+                selectedMember
+                  ? `${selectedMember.firstName} ${selectedMember.lastName}`
+                  : `${timesheetsViewer?.firstName ?? ''} ${timesheetsViewer?.lastName ?? ''}`.trim() || 'You'
+              }
+              readOnly
+              hint="You can only submit timesheets for yourself."
+            />
+          )}
           <Input label="Date" type="date" value={workDate} onChange={(event) => setWorkDate(event.currentTarget.value)} />
           <Input label="Clock in" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
           <Input label="Clock out" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
@@ -16516,6 +16730,7 @@ function StaffShell() {
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<StaffMemberTipsPage />} />
+          <Route path="/my-pay" element={<StaffMemberPayPage />} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={<Navigate to="/" replace />} />
           <Route path="/admin" element={<Navigate to="/" replace />} />

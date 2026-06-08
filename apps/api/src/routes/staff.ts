@@ -763,6 +763,49 @@ staffRouter.get('/tips/me', async (req, res, next) => {
   }
 });
 
+// A staff member's own pay & employment snapshot. Distinct from the
+// manager-facing profile (which redactManagerOnlyPay nulls for STAFF): this
+// returns ONLY the authenticated caller's pay rates and employment basics.
+// Banking and tax file numbers are NEVER returned — only a boolean "on file"
+// flag — so a staffer can confirm they're set up for pay without exposing PII.
+staffRouter.get('/me/pay', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    const profile = await staffService.getById(req.user.id);
+    const pp = profile.payProfile;
+    res.json({
+      firstName: profile.firstName,
+      lastName: profile.lastName,
+      venue: profile.venue,
+      roleTitle: profile.roleTitle,
+      employmentStatus: profile.employmentStatus,
+      employmentType: pp?.employmentType ?? profile.employmentType ?? null,
+      payProfile: pp
+        ? {
+            awardName: pp.awardName,
+            awardClassification: pp.awardClassification,
+            employmentType: pp.employmentType,
+            payMode: pp.payMode,
+            ordinaryHourlyRateCents: pp.ordinaryHourlyRateCents,
+            casualLoadedHourlyRateCents: pp.casualLoadedHourlyRateCents,
+            manualFullTimePayAmountCents: pp.manualFullTimePayAmountCents,
+            manualFullTimePayFrequency: pp.manualFullTimePayFrequency,
+            cashHourlyRateCents: pp.cashHourlyRateCents,
+            payUpdatedAt: pp.payUpdatedAt
+          }
+        : null,
+      // Setup status only — never the actual numbers.
+      hasBankAccount: Boolean(profile.bankAccountNumber),
+      hasTaxFileNumber: Boolean(profile.taxFileNumber)
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/tips', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.getTipsSummary({
