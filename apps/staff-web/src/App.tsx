@@ -7781,7 +7781,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
 
   const staffOptions = [
     { label: 'Select staff', value: '' },
-    ...staff.map((member) => ({
+    ...sortStaffForSelect(staff).map((member) => ({
       label: `${member.firstName} ${member.lastName}`,
       value: member.id
     }))
@@ -8220,6 +8220,22 @@ function staffLabel(member?: Pick<StaffProfile, 'firstName' | 'lastName' | 'role
   return `${member.firstName} ${member.lastName} · ${member.roleTitle}${member.venue ? ` · ${member.venue}` : ''}`;
 }
 
+// Order staff for dropdowns: active first, then everyone else, each group A→Z by
+// name. Keeps the people you pick most (current staff) at the top of every
+// selector while still listing past staff below for historical entries.
+function sortStaffForSelect<T extends { firstName?: string; lastName?: string; employmentStatus?: string }>(
+  list: T[]
+): T[] {
+  return [...list].sort((a, b) => {
+    const aActive = a.employmentStatus === 'ACTIVE' ? 0 : 1;
+    const bActive = b.employmentStatus === 'ACTIVE' ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return `${a.firstName ?? ''} ${a.lastName ?? ''}`
+      .trim()
+      .localeCompare(`${b.firstName ?? ''} ${b.lastName ?? ''}`.trim(), undefined, { sensitivity: 'base' });
+  });
+}
+
 function HrOverviewPage({ records, loading }: { records: StaffHrRecord[]; loading: boolean }) {
   const attentionItems = records.filter((record) =>
     record.status === 'RE_REQUESTED' ||
@@ -8309,8 +8325,7 @@ function HrSectionPage({
 
   const staffOptions = [
     { label: 'Choose staff', value: '' },
-    ...staff
-      .filter((member) => member.employmentStatus !== 'ARCHIVED')
+    ...sortStaffForSelect(staff.filter((member) => member.employmentStatus !== 'ARCHIVED'))
       .map((member) => ({ label: staffLabel(member), value: member.id }))
   ];
   const filterStaffOptions = [{ label: 'All staff', value: '' }, ...staffOptions.slice(1)];
@@ -8854,14 +8869,14 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   ];
   const staffOptions = [
     { label: 'All staff', value: '' },
-    ...activeStaff.map((member) => ({
+    ...sortStaffForSelect(activeStaff).map((member) => ({
       label: `${member.firstName} ${member.lastName}`,
       value: member.id
     }))
   ];
   const recordStaffOptions = [
     { label: 'Choose staff', value: '' },
-    ...activeStaff.map((member) => ({
+    ...sortStaffForSelect(activeStaff).map((member) => ({
       label: `${member.firstName} ${member.lastName} · ${member.venue || 'No venue'}`,
       value: member.id
     }))
@@ -11342,7 +11357,7 @@ function RosterPage({
                   label="Team member"
                   value={staffProfileId}
                   onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-                  options={activeStaff.map((member) => ({
+                  options={sortStaffForSelect(activeStaff).map((member) => ({
                     label: `${member.firstName} ${member.lastName}`,
                     value: member.id
                   }))}
@@ -15245,7 +15260,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               label="Staff member"
               value={staffProfileId}
               onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-              options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
+              options={sortStaffForSelect(staff).map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
             />
           ) : (
             <Input
