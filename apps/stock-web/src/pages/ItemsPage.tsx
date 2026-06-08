@@ -618,13 +618,11 @@ export function ItemsPage() {
         </td>
         <td>
           <span className="cell-stack">
-            <span>{formatOptionalQuantity(item.venueStock?.onHand, effectiveUnit(item))}</span>
+            <span>{formatOptionalQuantity(item.totalOnHand ?? item.venueStock?.onHand ?? item.onHand, effectiveUnit(item))}</span>
             <span className="subtle">
-              {item.venueStock
-                ? activeVenue
-                : activeVenue
-                  ? 'No venue setup'
-                  : 'Choose a venue for local levels'}
+              {activeVenue && item.venueStock
+                ? `both venues · ${formatOptionalQuantity(item.venueStock.onHand, effectiveUnit(item))} at ${activeVenue}`
+                : 'both venues combined'}
             </span>
           </span>
         </td>

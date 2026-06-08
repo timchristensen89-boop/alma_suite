@@ -383,11 +383,22 @@ export const itemsService = {
       ? new Map(venueStockItems.filter((row) => row.venue === venue).map((row) => [row.stockItemId, row]))
       : new Map<string, VenueStockItemRow>();
 
+    // Combined on-hand across EVERY venue (unscoped), so the items list can show
+    // a single total instead of just the selected venue's holding.
+    const totalsRaw = await prisma.venueStockItem.groupBy({
+      by: ['stockItemId'],
+      _sum: { onHand: true }
+    });
+    const totalOnHandByItem = new Map(totalsRaw.map((row) => [row.stockItemId, row._sum.onHand ?? 0]));
+
     return {
       items: items.map((item) => {
         const payload = toItemPayload(item);
+        const totalOnHand = totalOnHandByItem.get(item.id) ?? item.onHand;
         const venueStock = scopedVenueStockByItemId.get(item.id);
-        return venueStock ? { ...payload, venueStock: toVenueStockPayload(venueStock) } : payload;
+        return venueStock
+          ? { ...payload, totalOnHand, venueStock: toVenueStockPayload(venueStock) }
+          : { ...payload, totalOnHand };
       }),
       categories: categories.map(toCategoryPayload),
       venueStockItems: venueStockItems.map(toVenueStockPayload),

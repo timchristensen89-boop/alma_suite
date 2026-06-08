@@ -5079,6 +5079,8 @@ export type StockItem = {
   createdAt: string;
   updatedAt: string;
   venueStock?: VenueStockItem | null;
+  /** On hand summed across every venue (combined total). */
+  totalOnHand?: number | null;
 };
 
 export type VenueStockItem = {
