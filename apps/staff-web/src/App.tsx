@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { HubLayout, type HubTab } from './components/HubTabs';
 import type {
   AppSettingsPayload,
   AlmaAppId,
@@ -302,21 +303,9 @@ const NAV_ITEMS = [
     end: true
   },
   {
-    to: '/brief',
-    label: 'Daily brief',
-    description: 'Your day in 10 seconds — sales, wages, approvals, heads-ups',
-    icon: <IconDashboard />
-  },
-  {
-    to: '/readiness',
-    label: 'Readiness',
-    description: 'Today’s opening, service and closing checklists at a glance',
-    icon: <IconChecklist />
-  },
-  {
     to: '/manager',
-    label: 'Manager Today',
-    description: 'Today’s staff, clock sessions, bookings and exceptions',
+    label: 'Today',
+    description: 'Staff, clock sessions, bookings, daily brief and readiness',
     icon: <IconDashboard />
   },
   {
@@ -397,6 +386,14 @@ const NAV_ITEMS = [
     description: 'Announcements, group chats, and messaging permissions',
     icon: <IconMail />
   }
+];
+
+// Manager "Today" hub tabs — the manager dashboard, daily brief and venue
+// readiness were three separate overview screens; they're now one hub.
+const TODAY_TABS: HubTab[] = [
+  { to: '/manager', label: 'Today', end: true },
+  { to: '/brief', label: 'Daily brief' },
+  { to: '/readiness', label: 'Readiness' }
 ];
 
 const STAFF_MEMBER_NAV_ITEMS = [
@@ -16528,9 +16525,9 @@ function StaffShell() {
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
-          <Route path="/brief" element={<ManagerDailyBriefPage staff={staff} />} />
-          <Route path="/readiness" element={<VenueReadinessPage staff={staff} />} />
-          <Route path="/manager" element={<ManagerDashboardPage staff={staff} />} />
+          <Route path="/brief" element={<HubLayout tabs={TODAY_TABS}><ManagerDailyBriefPage staff={staff} /></HubLayout>} />
+          <Route path="/readiness" element={<HubLayout tabs={TODAY_TABS}><VenueReadinessPage staff={staff} /></HubLayout>} />
+          <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} /></HubLayout>} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/profiles" element={<StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/invites" element={<InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} />} />
