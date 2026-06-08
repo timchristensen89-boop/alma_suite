@@ -29,6 +29,10 @@ import { AuthProvider, useAuth } from './lib/auth';
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
 // Tabs for each consolidated hub. Every tab is a real, deep-linkable route.
+const ITEMS_TABS: HubTab[] = [
+  { to: '/items', label: 'Catalogue' },
+  { to: '/reorder', label: 'Below par' }
+];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
   { to: '/wastage', label: 'Wastage' },
@@ -211,9 +215,11 @@ function StockAppShell() {
       <AppAccessGate user={user} appId="STOCK" appName="Stock" apps={suiteApps}>
       <Routes>
         <Route path="/" element={<DashboardPage />} />
-        <Route path="/items" element={<ItemsPage />} />
-        <Route path="/reorder" element={<ReorderNoticesPage />} />
         <Route path="/settings" element={<SettingsPage />} />
+
+        {/* Items hub */}
+        <Route path="/items" element={<HubLayout tabs={ITEMS_TABS}><ItemsPage /></HubLayout>} />
+        <Route path="/reorder" element={<HubLayout tabs={ITEMS_TABS}><ReorderNoticesPage /></HubLayout>} />
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />

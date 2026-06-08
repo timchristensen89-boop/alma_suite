@@ -173,7 +173,7 @@ export function DashboardPage() {
             hint={`${dashboard?.summary.categories ?? 0} categories`}
           />
         </Link>
-        <Link to="/items" className="stat-card-link" aria-label="Open low stock items">
+        <Link to="/reorder" className="stat-card-link" aria-label="Open below-par list">
           <StatCard
             icon={<IconStocktake size={18} />}
             label="Low stock"
@@ -205,74 +205,13 @@ export function DashboardPage() {
         </Link>
       </div>
 
-      <Card
-        title="Cost of Goods"
-        subtitle="Last 30 days. Theoretical (sold × recipe cost) vs Actual (supplier purchases)."
-      >
-        {!cogs ? (
-          <Spinner label="Loading cost of goods" />
-        ) : cogs.dishMargin.mappedRecipes === 0 ? (
-          <EmptyState
-            icon={<IconRecipes size={24} />}
-            title="No Square sales mapped to recipes yet"
-            description="Theoretical COGS needs dishes mapped to Square items. Map recipes to Square sales (Dish Margins) to see theoretical cost and variance. Actual purchases are still shown below."
-          />
-        ) : (
-          <>
-            <div className="stat-grid">
-              <StatCard
-                icon={<IconRecipes size={18} />}
-                label="Theoretical COGS"
-                value={formatMoney(cogs.theoreticalCogsCents)}
-                hint={
-                  cogs.cogsPercentOfSales != null
-                    ? `${formatPercent(cogs.cogsPercentOfSales)} of ${formatMoney(cogs.netSalesCents)} sales`
-                    : `${cogs.dishMargin.mappedRecipes} dishes mapped`
-                }
-              />
-              <StatCard
-                icon={<IconInvoices size={18} />}
-                label="Actual COGS"
-                value={formatMoney(cogs.actualCogsCents)}
-                hint="Supplier purchases in window"
-              />
-              <StatCard
-                icon={<IconSuppliers size={18} />}
-                label="Variance"
-                value={formatMoney(cogs.varianceCents)}
-                hint={cogs.variancePercent != null ? `${formatPercent(cogs.variancePercent)} vs theoretical` : 'Actual − theoretical'}
-                tone={
-                  cogs.variancePercent == null
-                    ? 'neutral'
-                    : Math.abs(cogs.variancePercent) > 15
-                      ? 'warning'
-                      : 'positive'
-                }
-              />
-              <StatCard
-                icon={<IconItems size={18} />}
-                label="Avg dish margin"
-                value={cogs.dishMargin.avgMarginPercent != null ? formatPercent(cogs.dishMargin.avgMarginPercent) : '—'}
-                hint={`${cogs.dishMargin.unmappedRecipes} dishes with no sales`}
-              />
-            </div>
-            <p className="subtle" style={{ marginTop: 12 }}>
-              Supplier price changes (30d): {cogs.priceMovement.increasedItems} item
-              {cogs.priceMovement.increasedItems === 1 ? '' : 's'} up,{' '}
-              {cogs.priceMovement.decreasedItems} down.{' '}
-              <Link to="/price-movement">View price changes →</Link>
-            </p>
-          </>
-        )}
-      </Card>
-
       <div className="stock-dashboard-grid">
         <Card
           title="Needs attention"
           subtitle="Low-stock and out-of-stock items, sorted by most recent change."
           action={
-            <Link className="btn btn-ghost btn-sm" to="/items">
-              View items
+            <Link className="btn btn-ghost btn-sm" to="/reorder">
+              View below par
             </Link>
           }
           padding="none"
@@ -368,6 +307,67 @@ export function DashboardPage() {
           </div>
         </Card>
       </div>
+
+      <Card
+        title="Cost of Goods"
+        subtitle="Last 30 days. Theoretical (sold × recipe cost) vs Actual (supplier purchases)."
+      >
+        {!cogs ? (
+          <Spinner label="Loading cost of goods" />
+        ) : cogs.dishMargin.mappedRecipes === 0 ? (
+          <EmptyState
+            icon={<IconRecipes size={24} />}
+            title="No Square sales mapped to recipes yet"
+            description="Theoretical COGS needs dishes mapped to Square items. Map recipes to Square sales under Recipes → Margins to see theoretical cost and variance. Actual purchases are still shown below."
+          />
+        ) : (
+          <>
+            <div className="stat-grid">
+              <StatCard
+                icon={<IconRecipes size={18} />}
+                label="Theoretical COGS"
+                value={formatMoney(cogs.theoreticalCogsCents)}
+                hint={
+                  cogs.cogsPercentOfSales != null
+                    ? `${formatPercent(cogs.cogsPercentOfSales)} of ${formatMoney(cogs.netSalesCents)} sales`
+                    : `${cogs.dishMargin.mappedRecipes} dishes mapped`
+                }
+              />
+              <StatCard
+                icon={<IconInvoices size={18} />}
+                label="Actual COGS"
+                value={formatMoney(cogs.actualCogsCents)}
+                hint="Supplier purchases in window"
+              />
+              <StatCard
+                icon={<IconSuppliers size={18} />}
+                label="Variance"
+                value={formatMoney(cogs.varianceCents)}
+                hint={cogs.variancePercent != null ? `${formatPercent(cogs.variancePercent)} vs theoretical` : 'Actual − theoretical'}
+                tone={
+                  cogs.variancePercent == null
+                    ? 'neutral'
+                    : Math.abs(cogs.variancePercent) > 15
+                      ? 'warning'
+                      : 'positive'
+                }
+              />
+              <StatCard
+                icon={<IconItems size={18} />}
+                label="Avg dish margin"
+                value={cogs.dishMargin.avgMarginPercent != null ? formatPercent(cogs.dishMargin.avgMarginPercent) : '—'}
+                hint={`${cogs.dishMargin.unmappedRecipes} dishes with no sales`}
+              />
+            </div>
+            <p className="subtle" style={{ marginTop: 12 }}>
+              Supplier price changes (30d): {cogs.priceMovement.increasedItems} item
+              {cogs.priceMovement.increasedItems === 1 ? '' : 's'} up,{' '}
+              {cogs.priceMovement.decreasedItems} down.{' '}
+              <Link to="/price-movement">View price changes →</Link>
+            </p>
+          </>
+        )}
+      </Card>
 
       <Card title="Fast paths" subtitle="Jump into the stock tools without hunting through the menu.">
         <div className="stock-dashboard-links">

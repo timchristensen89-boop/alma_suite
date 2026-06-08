@@ -15,6 +15,7 @@ import type {
 } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconInvoices } from '../lib/icons';
+import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
@@ -1363,6 +1364,8 @@ function InvoiceLineReview({
           </section>
         );
       })}
+
+      <InvoiceExclusionRulesCard canManage={canManage} />
     </div>
   );
 }

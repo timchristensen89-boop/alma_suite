@@ -379,10 +379,10 @@ export function StocktakePage() {
       return;
     }
     const confirmed = confirmDangerousAction({
-      title: `Approve "${stocktake.name}"?`,
+      title: `Apply "${stocktake.name}" to stock?`,
       message:
-        'This creates InventoryMovement ledger records and updates item balances inside that transaction. It cannot be run twice.',
-      confirmationText: 'APPROVE LEDGER'
+        'This locks in the count: it updates item balances and records the movement. It cannot be run twice.',
+      confirmationText: 'APPLY COUNT'
     });
     if (!confirmed) return;
 
@@ -551,10 +551,10 @@ export function StocktakePage() {
       return;
     }
     const confirmed = confirmDangerousAction({
-      title: `Approve ${targets.length} stocktake${targets.length === 1 ? '' : 's'} to the ledger?`,
+      title: `Apply ${targets.length} stocktake${targets.length === 1 ? '' : 's'} to stock?`,
       message:
-        'Each posts InventoryMovement ledger records and updates item balances. This cannot be run twice and is not bulk-reversible.',
-      confirmationText: 'APPROVE LEDGER'
+        'Each one locks in its count: it updates item balances and records the movements. This cannot be run twice and is not bulk-reversible.',
+      confirmationText: 'APPLY COUNT'
     });
     if (!confirmed) return;
     setBulkBusy('approve');
@@ -685,7 +685,7 @@ export function StocktakePage() {
                         title={canManageReview ? undefined : 'Manager access required'}
                         onClick={() => void applyStocktake(stocktake)}
                       >
-                        {applyingId === stocktake.id ? 'Approving…' : 'Approve ledger adjustment'}
+                        {applyingId === stocktake.id ? 'Approving…' : 'Apply count to stock'}
                       </Button>
                       <Button
                         type="button"
@@ -900,7 +900,7 @@ export function StocktakePage() {
                                     {applyingId === stocktake.id
                                       ? 'Approving…'
                                       : canManageReview
-                                        ? 'Approve ledger adjustment'
+                                        ? 'Apply count to stock'
                                         : 'Manager required'}
                                   </Button>
                                 ) : null}
@@ -1107,7 +1107,6 @@ function StocktakeForm({
             <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
             <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
             <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
-            <Input label="Value cents" type="number" step="1" value={line.stockValueCents} onChange={(event) => updateLine(index, { stockValueCents: event.currentTarget.value })} />
             <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
               Remove
             </Button>

@@ -4,7 +4,6 @@ import {
   IconInvoices,
   IconItems,
   IconRecipes,
-  IconReorder,
   IconSettings,
   IconSquare,
   IconStocktake
@@ -47,14 +46,9 @@ export const NAV_ITEMS: NavItem[] = [
   {
     to: '/items',
     label: 'Items',
-    description: 'Product catalogue, categories, pars',
-    icon: <IconItems />
-  },
-  {
-    to: '/reorder',
-    label: 'Below par',
-    description: 'Items under par that need reordering',
-    icon: <IconReorder />
+    description: 'Catalogue, categories, pars and below-par list',
+    icon: <IconItems />,
+    match: ['/reorder']
   },
   {
     to: '/invoices',
