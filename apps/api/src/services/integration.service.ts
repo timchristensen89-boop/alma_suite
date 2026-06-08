@@ -5772,6 +5772,7 @@ export const integrationService = {
     let totalImported = 0;
     let totalTimesheets = 0;
     let totalSkipped = 0;
+    let totalDeduped = 0;
 
     for (const tenant of targets) {
       let tenantImported = 0;
@@ -5893,6 +5894,41 @@ export const integrationService = {
             };
           });
 
+          // Exclude any day-row that exactly duplicates a timesheet already on
+          // file from another source — a Deputy sync or a manually entered shift
+          // for the same staff member, same day and same worked hours. This stops
+          // the Xero import from doubling shifts that were already recorded.
+          // Because we also delete this import's own prior rows below, simply
+          // re-running the import cleans up earlier duplicates too.
+          const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+          const workedHours = (inAt: Date, outAt: Date, breakMin: number) =>
+            Math.round((((outAt.getTime() - inAt.getTime()) / 3_600_000) - (breakMin ?? 0) / 60) * 100) / 100;
+          const existingShifts = await prisma.timesheet.findMany({
+            where: {
+              staffProfileId: profile.id,
+              workDate: { in: rows.map((r) => r.workDate) },
+              // Compare only against rows NOT created by this Xero importer.
+              xeroImportKey: null
+            },
+            select: { workDate: true, clockInAt: true, clockOutAt: true, breakMinutes: true }
+          });
+          const existingShiftKeys = new Set(
+            existingShifts
+              .filter((e) => e.clockInAt && e.clockOutAt)
+              .map(
+                (e) =>
+                  `${dayKey(e.workDate)}|${workedHours(e.clockInAt as Date, e.clockOutAt as Date, e.breakMinutes ?? 0)}`
+              )
+          );
+          const dedupedRows = rows.filter((r) => {
+            const key = `${dayKey(r.workDate)}|${workedHours(r.clockInAt, r.clockOutAt, r.breakMinutes)}`;
+            if (existingShiftKeys.has(key)) {
+              totalDeduped++;
+              return false;
+            }
+            return true;
+          });
+
           // Replace this timesheet's prior import rows (handles edited/removed
           // days), then insert. Only ever touches rows with this xeroImportKey
           // prefix — never Deputy/manual/export-origin rows.
@@ -5900,12 +5936,12 @@ export const integrationService = {
             prisma.timesheet.deleteMany({
               where: { xeroImportKey: { startsWith: `${tenant.id}:${summary.TimesheetID}:` } }
             }),
-            prisma.timesheet.createMany({ data: rows })
+            prisma.timesheet.createMany({ data: dedupedRows })
           ]);
 
           matchedStaffIds.add(profile.id);
-          tenantImported += rows.length;
-          totalImported += rows.length;
+          tenantImported += dedupedRows.length;
+          totalImported += dedupedRows.length;
         }
       } catch (error) {
         tenantError = safeErrorMessage(error);
@@ -5935,16 +5971,23 @@ export const integrationService = {
       throw new HttpError(502, `Xero timesheet import failed: ${errorMessages.join(' | ')}`);
     }
 
+    if (totalDeduped > 0) {
+      warnings.push(
+        `${totalDeduped} day-row(s) skipped as exact duplicates of existing Deputy or manually entered timesheets.`
+      );
+    }
+
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
       eventType: 'DATA_IMPORTED',
-      summary: `Xero timesheets synced: ${totalImported} day-rows for ${matchedStaffIds.size} staff across ${tenantResults.length} tenant(s).`,
+      summary: `Xero timesheets synced: ${totalImported} day-rows for ${matchedStaffIds.size} staff across ${tenantResults.length} tenant(s)${totalDeduped > 0 ? `; ${totalDeduped} duplicate(s) skipped` : ''}.`,
       actor,
       metadata: {
         imported: totalImported,
         staffMatched: matchedStaffIds.size,
         timesheetCount: totalTimesheets,
+        deduped: totalDeduped,
         notMatched: unmatched.length
       }
     });

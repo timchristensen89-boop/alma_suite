@@ -15232,6 +15232,45 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  async function importFromXero() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('import-xero');
+    try {
+      const result = await api<{ imported?: number; staffMatched?: number; warnings?: string[] }>(
+        '/api/integrations/xero/sync-timesheets',
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      const extra = result.warnings?.length ? ` ${result.warnings.join(' ')}` : '';
+      setMessage(`Imported ${result.imported ?? 0} day-rows from Xero for ${result.staffMatched ?? 0} staff.${extra}`);
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import from Xero.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importFromDeputy() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('import-deputy');
+    try {
+      const result = await api<{ timesheets?: { created?: number; updated?: number } }>(
+        '/api/integrations/deputy/sync-timesheets',
+        { method: 'POST' }
+      );
+      const created = result.timesheets?.created ?? 0;
+      const updated = result.timesheets?.updated ?? 0;
+      setMessage(`Imported from Deputy: ${created} new, ${updated} updated.`);
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import from Deputy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderSubmitFields() {
     return (
       <>
@@ -15429,6 +15468,12 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         </Button>
         {isManagerView ? (
           <div className="toolbar-right">
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void importFromDeputy()}>
+              Import from Deputy
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void importFromXero()}>
+              Import from Xero
+            </Button>
             <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
               Preview CSV
             </Button>
@@ -15441,6 +15486,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
           </div>
         ) : null}
       </div>
+      {isManagerView && (messageTarget === 'import-xero' || messageTarget === 'import-deputy') && message ? (
+        <ActionFeedback message={message} tone={message.includes('Could') ? 'error' : 'success'} />
+      ) : null}
 
       {/* Week selector — same editorial style as the roster board, sitting
           between the toolbar and the approval queue. */}
