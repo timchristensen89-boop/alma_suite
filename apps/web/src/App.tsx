@@ -43,7 +43,8 @@ import { NotFoundPage } from './pages/NotFoundPage';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
-import { NAV_ITEMS, NAV_SECTIONS, navItemsForRole } from './config/navigation';
+import { NAV_ITEMS, navItemsForRole } from './config/navigation';
+import { HubLayout, type HubTab } from './components/HubTabs';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { canAdmin, canManage, type BetaRole } from './lib/rbac';
@@ -103,33 +104,41 @@ function SidebarNav() {
         id="compliance-mobile-nav"
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
-        {navItems.filter((item) => !item.section).map((item) => (
-          <li key={item.to}>
-            <NavLink to={item.to} end={item.end}>
-              <span className="sidebar-nav-icon">{item.icon}</span>
-              <span>{item.label}</span>
-            </NavLink>
-          </li>
-        ))}
-        {NAV_SECTIONS.map((section) => {
-          const items = navItems.filter((item) => item.section === section);
-          if (items.length === 0) return null;
-          return (
-            <Fragment key={section}>
-              <li className="sidebar-nav-section">{section}</li>
-              {items.map((item) => (
-                <li key={item.to}>
-                  <NavLink to={item.to} end={item.end}>
+        {(() => {
+          let lastSection: string | undefined;
+          return navItems.map((item) => {
+            const header =
+              item.section && item.section !== lastSection ? (
+                <li key={`sec:${item.section}`} className="sidebar-nav-section">{item.section}</li>
+              ) : null;
+            lastSection = item.section;
+            return (
+              <Fragment key={item.to}>
+                {header}
+                <li>
+                  <NavLink
+                    to={item.to}
+                    end={item.end}
+                    className={() => (navMatches(item, location.pathname) ? 'active' : undefined)}
+                  >
                     <span className="sidebar-nav-icon">{item.icon}</span>
                     <span>{item.label}</span>
                   </NavLink>
                 </li>
-              ))}
-            </Fragment>
-          );
-        })}
+              </Fragment>
+            );
+          });
+        })()}
       </ul>
     </div>
+  );
+}
+
+// True when the current path belongs to this nav item (its route or a hub tab).
+function navMatches(item: { to: string; match?: string[] }, pathname: string): boolean {
+  const candidates = [item.to, ...(item.match ?? [])];
+  return candidates.some((p) =>
+    p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)
   );
 }
 
@@ -138,14 +147,10 @@ function currentPage(pathname: string, navItems = NAV_ITEMS) {
     pathname === item.to || pathname.startsWith(`${item.to}/`)
   );
   if (secondaryMatch) return secondaryMatch;
-  // longest-prefix match
+  // longest-prefix match (incl. hub sub-tabs via match[])
   const match = [...navItems]
     .sort((a, b) => b.to.length - a.to.length)
-    .find((item) =>
-      item.to === '/'
-        ? pathname === '/'
-        : pathname === item.to || pathname.startsWith(`${item.to}/`)
-    );
+    .find((item) => navMatches(item, pathname));
   if (match) return match;
   return {
     to: pathname,
@@ -203,6 +208,16 @@ function TopBarWithContext() {
 }
 
 function AuthenticatedApp() {
+  const { user } = useAuth();
+  const canManageChecks = canManage(user);
+  // Checks hub tabs — Temperatures & Audits are manager-only, so staff only see
+  // the Checklists + iPad runner tabs.
+  const checksTabs: HubTab[] = [
+    { to: '/checklists', label: 'Checklists', end: true },
+    ...(canManageChecks ? ([{ to: '/temperatures', label: 'Temperatures' }] as HubTab[]) : []),
+    ...(canManageChecks ? ([{ to: '/audits', label: 'Audits', end: true }] as HubTab[]) : []),
+    { to: '/checklists/ipad', label: 'iPad runner' }
+  ];
   return (
     <AppShell
       sidebar={<SidebarNav />}
@@ -215,20 +230,20 @@ function AuthenticatedApp() {
           <Route path="/issues/new" element={<IssueCreatePage />} />
           <Route path="/issues/:id" element={<IssueDetailPage />} />
           <Route path="/issues/:id/edit" element={<IssueEditPage />} />
-          <Route path="/checklists" element={<ChecklistsListPage />} />
+          <Route path="/checklists" element={<HubLayout tabs={checksTabs}><ChecklistsListPage /></HubLayout>} />
           <Route path="/checklists/new" element={<ChecklistRunCreatePage />} />
           <Route path="/checklists/ipad" element={<ChecklistIpadPage />} />
           <Route path="/checklists/templates/new" element={<RequireRole minimum="MANAGER"><ChecklistTemplateEditPage /></RequireRole>} />
           <Route path="/checklists/templates/:id/edit" element={<RequireRole minimum="MANAGER"><ChecklistTemplateEditPage /></RequireRole>} />
           <Route path="/checklists/runs/:id" element={<ChecklistRunDetailPage />} />
           <Route path="/staff" element={<RequireRole minimum="MANAGER"><StaffPage /></RequireRole>} />
-          <Route path="/temperatures" element={<RequireRole minimum="MANAGER"><TemperaturesPage /></RequireRole>} />
+          <Route path="/temperatures" element={<RequireRole minimum="MANAGER"><HubLayout tabs={checksTabs}><TemperaturesPage /></HubLayout></RequireRole>} />
           <Route path="/licences" element={<RequireRole minimum="MANAGER"><LiquorPage /></RequireRole>} />
           <Route path="/licenses" element={<Navigate to="/licences" replace />} />
           <Route path="/license" element={<Navigate to="/licences" replace />} />
           <Route path="/liquor" element={<Navigate to="/licences" replace />} />
           <Route path="/incidents" element={<IncidentsPage />} />
-          <Route path="/audits" element={<RequireRole minimum="MANAGER"><AuditsListPage /></RequireRole>} />
+          <Route path="/audits" element={<RequireRole minimum="MANAGER"><HubLayout tabs={checksTabs}><AuditsListPage /></HubLayout></RequireRole>} />
           <Route path="/audits/new" element={<RequireRole minimum="MANAGER"><AuditRunCreatePage /></RequireRole>} />
           <Route path="/audits/templates/new" element={<RequireRole minimum="MANAGER"><AuditTemplateCreatePage /></RequireRole>} />
           <Route path="/audits/:id" element={<RequireRole minimum="MANAGER"><AuditRunDetailPage /></RequireRole>} />
