@@ -132,6 +132,9 @@ type WageRow = {
   projectedCostCents: number;
   approvedCostCents: number;
   rateCents: number;
+  // > 0 when the staffer is salaried — their cost is this weekly salary
+  // (× period weeks), not hours × rate.
+  salariedWeeklyCents: number;
   tipsCents: number;
   exportedCount: number;
   approvedCount: number;
@@ -771,6 +774,52 @@ function staffName(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
   return `${member.firstName} ${member.lastName}`.trim();
 }
 
+// Salaried full-timers are paid a fixed weekly salary, NOT an hourly rate — so
+// their cost must never be hours × rate (that turns a $90k salary into $90k/hr).
+// This mirrors the server costing engine (apps/api/src/lib/staff-pay-rates.ts):
+// salaried staff cost their weekly salary; everyone else is hourly.
+const FULL_TIME_WEEKLY_HOURS = 45;
+
+function isFullTimeEmploymentType(type: string | null | undefined): boolean {
+  const v = (type ?? '').toUpperCase().replace(/[\s-]/g, '_');
+  return v === 'FULL_TIME' || v === 'FULLTIME' || v === 'PERMANENT_FULL_TIME';
+}
+
+// Annual salary (cents) if the staffer is a salaried full-timer, else null.
+function salariedAnnualCents(staff: StaffProfile): number | null {
+  const pp = staff.payProfile;
+  if (pp && (pp.payMode === 'MANUAL_FULL_TIME' || isFullTimeEmploymentType(pp.employmentType))) {
+    const amount = pp.manualFullTimePayAmountCents;
+    if (amount) {
+      const freq = (pp.manualFullTimePayFrequency ?? '').toUpperCase();
+      if (freq === 'HOURLY_FULL_TIME') return null; // actually paid hourly
+      return freq === 'WEEKLY' ? amount * 52
+        : freq === 'FORTNIGHTLY' ? amount * 26
+        : freq === 'MONTHLY' ? amount * 12
+        : amount; // ANNUAL (default)
+    }
+  }
+  // Guard: a "rate" this high is almost certainly an annual salary typed into the
+  // hourly field (e.g. $90,000). Treat it as a salary so it isn't × hours.
+  const raw = staff.trainingPayRateCents ?? staff.payRateCents ?? 0;
+  if (raw >= 150_000) return raw; // ≥ $1,500/hr is not a real hourly rate
+  return null;
+}
+
+// Resolve a staffer's hourly-equivalent rate and (for salaried staff) their
+// weekly salary. salariedWeeklyCents is 0 for genuine hourly staff.
+function resolvedWage(staff: StaffProfile | undefined): { rateCents: number; salariedWeeklyCents: number } {
+  if (!staff) return { rateCents: 0, salariedWeeklyCents: 0 };
+  const annual = salariedAnnualCents(staff);
+  if (annual != null) {
+    return {
+      rateCents: Math.round(annual / 52 / FULL_TIME_WEEKLY_HOURS),
+      salariedWeeklyCents: Math.round(annual / 52)
+    };
+  }
+  return { rateCents: staff.trainingPayRateCents ?? staff.payRateCents ?? 0, salariedWeeklyCents: 0 };
+}
+
 function ReportsUserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   if (!user) return null;
   return <SuiteSignOutButton onClick={() => void onLogout()} />;
@@ -1241,12 +1290,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   );
 
   const wageRows = useMemo<WageRow[]>(() => {
+    // Number of weeks the report covers — salaried staff cost their salary per week.
+    const periodWeeks = Math.max(1, Math.round((weekEnd.getTime() - weekStart.getTime()) / (7 * 86_400_000)));
     const rows = new Map<string, WageRow>();
     for (const timesheet of data.timesheets) {
       const staff = staffById.get(timesheet.staffProfileId);
-      const rateCents = staff?.trainingPayRateCents ?? staff?.payRateCents ?? 0;
+      const { rateCents, salariedWeeklyCents } = resolvedWage(staff);
       const hours = timesheetHours(timesheet);
-      const costCents = Math.round(hours * rateCents);
       const existing =
         rows.get(timesheet.staffProfileId) ??
         {
@@ -1262,6 +1312,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           projectedCostCents: 0,
           approvedCostCents: 0,
           rateCents,
+          salariedWeeklyCents,
           tipsCents: tipsByStaffId.get(timesheet.staffProfileId) ?? 0,
           exportedCount: 0,
           approvedCount: 0,
@@ -1269,10 +1320,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         };
 
       existing.hours += hours;
-      existing.projectedCostCents += costCents;
       if (timesheet.status === 'APPROVED' || timesheet.status === 'EXPORTED') {
         existing.approvedHours += hours;
-        existing.approvedCostCents += costCents;
         if (timesheet.paymentMethod === 'CASH') {
           existing.cashHours += hours;
           if (!timesheet.cashPaidAt) existing.cashPaidMissingCount += 1;
@@ -1284,8 +1333,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
       rows.set(timesheet.staffProfileId, existing);
     }
+    // Cost each row once hours are tallied: salaried staff cost their weekly salary
+    // regardless of hours; hourly staff cost hours × rate.
+    for (const row of rows.values()) {
+      if (row.salariedWeeklyCents > 0) {
+        const cost = Math.round(row.salariedWeeklyCents * periodWeeks);
+        row.projectedCostCents = cost;
+        row.approvedCostCents = cost;
+      } else {
+        row.projectedCostCents = Math.round(row.hours * row.rateCents);
+        row.approvedCostCents = Math.round(row.approvedHours * row.rateCents);
+      }
+    }
     return Array.from(rows.values()).sort((a, b) => b.projectedCostCents - a.projectedCostCents);
-  }, [data.timesheets, staffById, tipsByStaffId]);
+  }, [data.timesheets, staffById, tipsByStaffId, weekStart, weekEnd]);
 
   const wageTotals = wageRows.reduce(
     (total, row) => ({
@@ -1494,7 +1555,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   const averageRateCents = useMemo(() => {
     const rates = activeStaff
-      .map((member) => member.trainingPayRateCents ?? member.payRateCents ?? 0)
+      .map((member) => resolvedWage(member).rateCents)
       .filter((rate) => rate > 0);
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
@@ -1512,7 +1573,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const planned = shifts.reduce(
         (total, shift) => {
           const member = staffById.get(shift.staffProfileId);
-          const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+          const rateCents = resolvedWage(member).rateCents || averageRateCents;
           const hours = rosterShiftHours(shift);
           total.hours += hours;
           total.costCents += Math.round(hours * rateCents);
@@ -2837,7 +2898,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     { key: 'role', label: 'Role', sortValue: (r) => r.roleTitle, render: (r) => r.roleTitle },
                     { key: 'hours', label: 'Total hrs', align: 'right', sortValue: (r) => r.hours, render: (r) => r.hours.toFixed(2) },
                     { key: 'apprHours', label: 'Appr. hrs', align: 'right', sortValue: (r) => r.approvedHours, render: (r) => r.approvedHours.toFixed(2) },
-                    { key: 'rate', label: 'Rate', align: 'right', sortValue: (r) => r.rateCents, render: (r) => (r.rateCents ? formatCurrency(r.rateCents) : <span className="subtle">—</span>) },
+                    { key: 'rate', label: 'Rate', align: 'right', sortValue: (r) => r.rateCents, render: (r) => (r.rateCents ? (r.salariedWeeklyCents > 0 ? <span>{formatCurrency(r.rateCents)} <span className="subtle">/hr · salary</span></span> : formatCurrency(r.rateCents)) : <span className="subtle">—</span>) },
                     { key: 'projected', label: 'Projected wages', align: 'right', sortValue: (r) => r.projectedCostCents, render: (r) => formatCurrency(r.projectedCostCents) },
                     { key: 'approved', label: 'Approved wages', align: 'right', sortValue: (r) => r.approvedCostCents, render: (r) => formatCurrency(r.approvedCostCents) },
                     { key: 'tips', label: 'Tips', align: 'right', sortValue: (r) => r.tipsCents, render: (r) => (r.tipsCents ? formatCurrency(r.tipsCents) : <span className="subtle">—</span>) },
