@@ -964,6 +964,17 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The segment is re-scoped to the campaign's venue on save. Warn if that
+    // changes the audience the segment was built for, rather than doing it silently.
+    if (segmentForm.venue && campaignForm.venue && segmentForm.venue !== campaignForm.venue) {
+      if (
+        !window.confirm(
+          `This segment was built for "${segmentForm.venue}", but the campaign targets "${campaignForm.venue}". Saving will re-scope the audience to "${campaignForm.venue}". Continue?`
+        )
+      ) {
+        return;
+      }
+    }
     try {
       await api<MarketingCampaign>('/api/marketing/campaigns', {
         method: 'POST',
@@ -1128,6 +1139,15 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function saveAutomation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (segmentForm.venue && automationForm.venue && segmentForm.venue !== automationForm.venue) {
+      if (
+        !window.confirm(
+          `This segment was built for "${segmentForm.venue}", but the automation targets "${automationForm.venue}". Saving will re-scope the audience to "${automationForm.venue}". Continue?`
+        )
+      ) {
+        return;
+      }
+    }
     try {
       await api<MarketingAutomation>('/api/marketing/automations', {
         method: 'POST',
@@ -1727,7 +1747,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                           <Select label="Venue" value={contentPostForm.venue} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
                           <Select label="Pillar" value={contentPostForm.contentPillar} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, contentPillar: el.value })); }} options={CONTENT_PILLARS.map((value) => ({ label: prettyLabel(value), value }))} />
                           <Input label="Title" required value={contentPostForm.title} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, title: el.value })); }} />
-                          <Input label="Schedule" type="datetime-local" value={contentPostForm.scheduledAt} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, scheduledAt: el.value })); }} />
+                          <Input label="Schedule" type="datetime-local" min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} value={contentPostForm.scheduledAt} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, scheduledAt: el.value })); }} />
                         </div>
                         <Textarea label="Caption" rows={5} required value={contentPostForm.caption} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, caption: el.value })); }} />
                         <Select label="Attach asset" value={contentPostForm.assetId} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, assetId: el.value })); }} options={[{ label: 'No asset attached', value: '' }, ...contentAssets.map((asset) => ({ label: `${asset.title} · ${asset.assetType}`, value: asset.id }))]} />

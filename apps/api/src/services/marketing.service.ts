@@ -767,7 +767,9 @@ async function loadGuestsForSegment(
     },
     include: guestInclude(),
     orderBy: [{ lastVisitAt: 'desc' }, { updatedAt: 'desc' }],
-    take: 500
+    // Raised from 500 so segments aren't silently truncated for these venue
+    // sizes. TODO: paginate for audiences beyond 5000 opted-in guests.
+    take: 5000
   });
 
   let filteredGuests = guests.filter((guest) => {
