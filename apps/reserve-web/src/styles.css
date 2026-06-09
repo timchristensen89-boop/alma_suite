@@ -2010,6 +2010,9 @@
   font-family: "Avenir LT Std", "Manrope", ui-sans-serif, -apple-system, "Segoe UI", sans-serif;
   display: flex;
   flex-direction: column;
+  /* Belt-and-suspenders: the booking widget should never scroll the page
+     sideways on mobile. The inner calendar keeps its own overflow-x: auto. */
+  overflow-x: hidden;
 }
 
 .alma-booking-page * { box-sizing: border-box; }
@@ -2107,6 +2110,14 @@
 .alma-booking-card {
   width: 100%;
   max-width: 580px;
+  /* Grid item: without an explicit min-width the default `auto` minimum
+     refuses to shrink below the content's intrinsic width. On mobile the
+     layout collapses to a single column, so that would push the card (and
+     the page) wider than the viewport — the date strip, venue boxes, and
+     primary button bled off the right edge. min-width: 0 lets the card
+     track the column and keeps the inner calendar's horizontal scroll
+     contained. */
+  min-width: 0;
   justify-self: end;
   padding: 28px 30px 30px;
   background: #FFFFFF;
