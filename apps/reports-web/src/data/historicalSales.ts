@@ -16,6 +16,23 @@ const tradingDayByDateDay: Record<number, TradingDay | null> = {
   6: 'saturday'
 };
 
+// Weekdays (0=Sun … 6=Sat) each venue does NOT trade. Everyone is closed Monday;
+// Alma Avalon is also closed Tuesday. Used to zero out historical baselines and
+// suppress forecast bars on days a venue is shut, so the daily sales trend never
+// shows trade on a closed day.
+const closedWeekdaysByVenue: Record<HistoricalVenueKey, number[]> = {
+  'Alma Avalon': [1, 2],
+  'St Alma': [1]
+};
+
+// Whether a venue trades on the given date. Unknown venues are assumed open so
+// we never hide real data for a venue we don't have a closure model for.
+export function isVenueOpenOnDate(venue: string, date: Date): boolean {
+  const venueKey = normaliseHistoricalVenue(venue);
+  if (!venueKey) return true;
+  return !closedWeekdaysByVenue[venueKey].includes(date.getDay());
+}
+
 export const historicalSalesByVenue: HistoricalSalesTable = {
   'Alma Avalon': {
     0: { tuesday: 5724.61, wednesday: 4592.2, thursday: 6666.11, friday: 9234.82, saturday: 11732.47, sunday: 7690.97 },
@@ -58,6 +75,9 @@ export function historicalSalesForDate(venue: string, date: Date) {
   const venueKey = normaliseHistoricalVenue(venue);
   const tradingDay = tradingDayByDateDay[date.getDay()];
   if (!venueKey || !tradingDay) return 0;
+  // No historical baseline on a day the venue doesn't trade (e.g. Avalon Tuesday),
+  // even if the legacy table carries a figure for it.
+  if (closedWeekdaysByVenue[venueKey].includes(date.getDay())) return 0;
   return historicalSalesByVenue[venueKey][date.getMonth()]?.[tradingDay] ?? 0;
 }
 

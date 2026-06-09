@@ -60,7 +60,7 @@ import {
   stockApi
 } from './lib/api';
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
-import { historicalSalesForWeek, normaliseHistoricalVenue } from './data/historicalSales';
+import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { BarChart, Donut, HBars, TrendLine, CHART_COLORS, CHART_PALETTE } from './components/Charts';
 
 type SuiteSummary = {
@@ -331,6 +331,17 @@ function addDays(date: Date, days: number) {
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+// Calendar date (YYYY-MM-DD) in LOCAL time. Use this when matching a local-midnight
+// day against sales whose serviceDate is stored as UTC-midnight of the venue's date:
+// isoDate() on a local-midnight date can roll back a day in +UTC timezones (Sydney),
+// shifting actuals onto the wrong day; localIsoDate keeps the calendar day intact.
+function localIsoDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // Period presets for the top-of-report week control. Each preset resolves to a
@@ -1008,6 +1019,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     loadJsonDraft<Record<string, ForecastInput>>(REPORTS_FORECAST_STORAGE_KEY, {})
   );
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  // Per-venue prime-cost target % set by admins in Admin → Wage forecasts.
+  const [primeTargets, setPrimeTargets] = useState<Record<string, number>>({});
   // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
   const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; primeCostPercent: number | null; wagePercent: number | null; cogsPercent: number | null; salesCents: number }>>([]);
   // 8-week forecast vs actual history for the sales section chart.
@@ -1171,8 +1184,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     void (async () => {
       try {
-        const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number }> }>('/api/settings');
+        const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number; targetPrimeCostPercent?: number }> }>('/api/settings');
         const next: Record<string, ForecastInput> = {};
+        const primes: Record<string, number> = {};
         for (const venue of settings.venues ?? []) {
           if (typeof venue.weeklyForecastSalesCents === 'number' || typeof venue.targetWagePercent === 'number') {
             next[venue.name] = {
@@ -1180,9 +1194,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               targetWagePercent: typeof venue.targetWagePercent === 'number' ? String(venue.targetWagePercent) : '32'
             };
           }
+          if (typeof venue.targetPrimeCostPercent === 'number') {
+            primes[venue.name] = venue.targetPrimeCostPercent;
+          }
         }
         if (Object.keys(next).length > 0) {
           setForecastInputs((current) => ({ ...current, ...next }));
+        }
+        if (Object.keys(primes).length > 0) {
+          setPrimeTargets(primes);
         }
       } catch {
         /* fallback to localStorage values already loaded */
@@ -1639,7 +1659,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const actualSalesCents = entries.reduce((sum, entry) => sum + entry.salesCents, 0);
       const actualDates = new Set(entries.map((entry) => isoDate(new Date(entry.serviceDate))));
       const actualHistoricalCents = historical.days
-        .filter((day) => actualDates.has(isoDate(day.date)))
+        .filter((day) => actualDates.has(localIsoDate(day.date)))
         .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
       const historicalSalesCents = Math.round(historical.total * 100);
       const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
@@ -1677,7 +1697,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const salesDailyRows = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
-      const dateKey = isoDate(date);
+      // Match the local calendar day against each actual's stored date. serviceDate
+      // is UTC-midnight of the venue's local date, so its UTC slice IS the local
+      // calendar day; the row date is local-midnight, so it must use localIsoDate
+      // (plain isoDate would roll back a day in Sydney and shift actuals one day).
+      const dateKey = localIsoDate(date);
       return {
         date,
         venues: salesReportVenues.map((venue) => {
@@ -2055,14 +2079,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           {(() => {
+            // Prime-cost target: the average of the admin-set per-venue targets
+            // (this overview is org-wide), falling back to the 60% default.
+            const primeCostTarget = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 60;
+            })();
             const variancePct = primeTotals?.primeCostPercent != null
-              ? primeTotals.primeCostPercent - 60
+              ? primeTotals.primeCostPercent - primeCostTarget
               : null;
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
               if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
               if (variancePct != null && variancePct > 5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the 60% target.`;
+                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
               }
               if (variancePct != null && variancePct < -5) {
                 return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
@@ -2545,18 +2575,30 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div key={isoDate(day.date)} className="sales-daily-row">
                   <span>{day.date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>
                   <div>
-                    {day.venues.map((row) => (
-                      <div key={row.venue} className="sales-daily-bar-row">
-                        <small>{row.venue}</small>
-                        <div className="sales-horizontal-track">
-                          <div className="sales-horizontal-bar is-actual" style={{ width: `${Math.max(4, (row.actualSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                    {day.venues.map((row) => {
+                      // A venue that doesn't trade this weekday (e.g. Avalon Tuesday)
+                      // shows "Closed" rather than a phantom forecast bar — unless a
+                      // real sale was imported (a one-off), which we still surface.
+                      const closed = !isVenueOpenOnDate(row.venue, day.date) && row.actualSalesCents === 0;
+                      return (
+                        <div key={row.venue} className="sales-daily-bar-row">
+                          <small>{row.venue}</small>
+                          {closed ? (
+                            <span className="subtle" style={{ gridColumn: '2 / -1' }}>Closed</span>
+                          ) : (
+                            <>
+                              <div className="sales-horizontal-track">
+                                <div className="sales-horizontal-bar is-actual" style={{ width: `${Math.max(4, (row.actualSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                              </div>
+                              <div className="sales-horizontal-track">
+                                <div className="sales-horizontal-bar is-forecast" style={{ width: `${Math.max(4, (row.forecastSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                              </div>
+                              <strong>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : formatCurrency(row.forecastSalesCents)}</strong>
+                            </>
+                          )}
                         </div>
-                        <div className="sales-horizontal-track">
-                          <div className="sales-horizontal-bar is-forecast" style={{ width: `${Math.max(4, (row.forecastSalesCents / salesDailyMaxCents) * 100)}%` }} />
-                        </div>
-                        <strong>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : formatCurrency(row.forecastSalesCents)}</strong>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
