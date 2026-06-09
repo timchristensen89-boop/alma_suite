@@ -90,6 +90,22 @@ integrationsRouter.get('/meta/connect', async (req, res, next) => {
   }
 });
 
+integrationsRouter.post('/meta/connect', async (req, res, next) => {
+  try {
+    res.json(await integrationService.startMetaConnect(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/meta/disconnect', async (req, res, next) => {
+  try {
+    res.json(await integrationService.disconnectMeta(req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/square/connect', async (req, res, next) => {
   try {
     const payload = await integrationService.startConnect('square', req.user!, req.query.account);

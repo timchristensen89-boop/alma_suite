@@ -2266,10 +2266,15 @@ export type HomeOperationalSummary = {
 };
 
 export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';
+export type AdminMetaConnectedPage = {
+  id: string;
+  name: string;
+  instagramUsername: string | null;
+};
 export type AdminMetaIntegrationStatus = {
   provider: 'meta';
   label: string;
-  status: 'NOT_CONFIGURED' | 'READY_TO_CONNECT' | 'CALLBACK_RECEIVED' | 'TOKEN_STORAGE_PENDING';
+  status: 'NOT_CONFIGURED' | 'READY_TO_CONNECT' | 'CALLBACK_RECEIVED' | 'TOKEN_STORAGE_PENDING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
   configured: boolean;
   canConnect: boolean;
   connectBlockedReason: string | null;
@@ -2281,6 +2286,14 @@ export type AdminMetaIntegrationStatus = {
   checklist: Array<{ label: string; status: 'done' | 'required' | 'not_configured'; detail: string }>;
   deauthorizeCallbackConfigured: boolean;
   dataDeletionCallbackConfigured: boolean;
+  // Live connection state (present once the OAuth handshake has stored a token).
+  connected: boolean;
+  connectedAt: string | null;
+  accountName: string | null;
+  pages: AdminMetaConnectedPage[];
+  grantedScopes: string[];
+  tokenExpiresAt: string | null;
+  lastError: string | null;
 };
 export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';

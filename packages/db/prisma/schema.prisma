@@ -366,6 +366,7 @@ enum IntegrationProvider {
   SQUARE
   XERO
   DEPUTY
+  META
 }
 
 enum IntegrationConnectionStatus {

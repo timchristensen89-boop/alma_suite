@@ -201,7 +201,7 @@ export function IntegrationHealthPage() {
     }
   }, [load]);
 
-  const connectProvider = useCallback(async (provider: 'deputy' | 'xero') => {
+  const connectProvider = useCallback(async (provider: 'deputy' | 'xero' | 'meta') => {
     setBusyKey(provider);
     setMessage(null);
     try {
@@ -216,6 +216,24 @@ export function IntegrationHealthPage() {
 
   const connectDeputy = useCallback(() => connectProvider('deputy'), [connectProvider]);
   const connectXero = useCallback(() => connectProvider('xero'), [connectProvider]);
+  const connectMeta = useCallback(() => connectProvider('meta'), [connectProvider]);
+
+  const disconnectMeta = useCallback(async () => {
+    if (!window.confirm('Disconnect Meta? Posting, messaging and insights will stop until you reconnect.')) return;
+    setBusyKey('meta');
+    setMessage(null);
+    try {
+      await api('/api/integrations/meta/disconnect', { method: 'POST' });
+      setMessage('Meta disconnected.');
+      setTone('success');
+      await load();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Could not disconnect Meta');
+      setTone('error');
+    } finally {
+      setBusyKey(null);
+    }
+  }, [load]);
 
   const tiles = useMemo<Tile[]>(() => {
     if (!data) return [];
@@ -316,19 +334,26 @@ export function IntegrationHealthPage() {
     // Meta (Facebook + Instagram)
     if (data.meta) {
       const m = data.meta;
-      const isConnected = m.status === 'CALLBACK_RECEIVED';
-      const isReady = m.status === 'READY_TO_CONNECT';
-      const tone: Tone = isConnected ? 'positive' : isReady ? 'warning' : 'muted';
+      const connected = m.connected;
+      const hasError = Boolean(m.lastError);
+      const igHandles = m.pages.map((p) => p.instagramUsername).filter(Boolean) as string[];
+      const detail = connected
+        ? [m.accountName, m.pages.length ? `${m.pages.length} page${m.pages.length === 1 ? '' : 's'}` : null, igHandles.length ? `IG ${igHandles.map((h) => `@${h}`).join(', ')}` : null]
+            .filter(Boolean)
+            .join(' · ')
+        : m.connectBlockedReason ?? `Redirect: ${m.redirectUri}`;
       out.push({
         id: 'meta',
         name: 'Meta (Facebook + Instagram)',
-        provider: 'Social posts, ads, audience targeting',
-        status: isConnected ? 'Connected' : isReady ? 'Setup required' : 'Not configured',
-        tone,
-        lastSyncAt: null,
-        lastError: null,
-        detail: m.allowedDomains?.[0] ?? null,
-        canResync: false
+        provider: 'Posts, messaging, insights',
+        status: statusLabel(connected, hasError, m.configured),
+        tone: statusTone(connected, hasError, m.configured),
+        lastSyncAt: connected ? m.connectedAt : null,
+        lastError: m.lastError,
+        detail,
+        canResync: m.configured,
+        actionLabel: connected ? 'Disconnect' : 'Connect',
+        resyncAction: connected ? disconnectMeta : m.configured ? connectMeta : undefined
       });
     }
 
@@ -392,7 +417,7 @@ export function IntegrationHealthPage() {
     }
 
     return out;
-  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, backfillSquare, backfillXero, backfillDeputy]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, connectMeta, disconnectMeta, backfillSquare, backfillXero, backfillDeputy]);
 
   const counts = useMemo(() => {
     const total = tiles.length;

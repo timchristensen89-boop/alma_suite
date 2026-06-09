@@ -4,6 +4,7 @@ import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { z } from 'zod';
 import type {
+  AdminMetaConnectedPage,
   AdminMetaIntegrationStatus,
   AuthUser,
   IntegrationConnectResponse,
@@ -75,12 +76,21 @@ const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 const META_SCOPES = [
+  // Pages — list, read engagement, manage metadata, publish posts, manage comments
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
+  'pages_manage_posts',
+  'pages_manage_engagement',
   'pages_messaging',
+  'read_insights',
+  'business_management',
+  // Instagram — basic profile, publish content, manage comments/insights/messages
   'instagram_basic',
-  'business_management'
+  'instagram_content_publish',
+  'instagram_manage_comments',
+  'instagram_manage_insights',
+  'instagram_manage_messages'
 ];
 
 const META_ALLOWED_DOMAINS = [
@@ -181,6 +191,19 @@ function verifyMetaState(state: string) {
     return parsed.provider === 'meta' && typeof parsed.exp === 'number' && parsed.exp > Date.now();
   } catch {
     return false;
+  }
+}
+
+// Verified read of the signed Meta state → the actor who started the connect, so
+// the stored connection records who linked it. Returns null on any tamper/expiry.
+function readMetaState(state: string): { actorId: string | null } | null {
+  if (!verifyMetaState(state)) return null;
+  try {
+    const [payload] = state.split('.');
+    const parsed = JSON.parse(base64UrlDecode(payload!)) as { actorId?: unknown };
+    return { actorId: typeof parsed.actorId === 'string' ? parsed.actorId : null };
+  } catch {
+    return null;
   }
 }
 
@@ -341,6 +364,101 @@ function metaConfig() {
   };
 }
 
+type MetaPageAsset = {
+  id: string;
+  name: string;
+  instagramId: string | null;
+  instagramUsername: string | null;
+};
+
+// Exchange the OAuth code for a short-lived user token, then upgrade it to a
+// long-lived (~60 day) token. Long-lived user tokens are what page tokens are
+// derived from, so this is what we persist.
+async function exchangeMetaToken(code: string): Promise<{ accessToken: string; expiresIn: number }> {
+  const cfg = metaConfig();
+  const version = cfg.graphVersion;
+  const shortUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+  shortUrl.searchParams.set('client_id', env.integrations.meta.appId);
+  shortUrl.searchParams.set('client_secret', env.integrations.meta.appSecret);
+  shortUrl.searchParams.set('redirect_uri', cfg.redirectUri);
+  shortUrl.searchParams.set('code', code);
+  const shortRes = await fetch(shortUrl.toString());
+  if (!shortRes.ok) {
+    const detail = await shortRes.text().catch(() => '');
+    throw new HttpError(502, `Meta token exchange failed (${shortRes.status}): ${detail.slice(0, 200)}`);
+  }
+  const shortJson = (await shortRes.json()) as { access_token?: string };
+  if (!shortJson.access_token) throw new HttpError(502, 'Meta did not return an access token.');
+
+  const longUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+  longUrl.searchParams.set('grant_type', 'fb_exchange_token');
+  longUrl.searchParams.set('client_id', env.integrations.meta.appId);
+  longUrl.searchParams.set('client_secret', env.integrations.meta.appSecret);
+  longUrl.searchParams.set('fb_exchange_token', shortJson.access_token);
+  const longRes = await fetch(longUrl.toString());
+  if (!longRes.ok) {
+    const detail = await longRes.text().catch(() => '');
+    throw new HttpError(502, `Meta long-lived token exchange failed (${longRes.status}): ${detail.slice(0, 200)}`);
+  }
+  const longJson = (await longRes.json()) as { access_token?: string; expires_in?: number };
+  if (!longJson.access_token) throw new HttpError(502, 'Meta did not return a long-lived token.');
+  // Long-lived user tokens last ~60 days; default if Meta omits expires_in.
+  return { accessToken: longJson.access_token, expiresIn: longJson.expires_in ?? 60 * 24 * 60 * 60 };
+}
+
+// With a (long-lived) user token, read the linked Pages + their Instagram
+// business accounts, the user's identity, and the permissions actually granted.
+async function fetchMetaAssets(userToken: string): Promise<{
+  userId: string | null;
+  userName: string | null;
+  pages: MetaPageAsset[];
+  grantedScopes: string[];
+}> {
+  const version = metaConfig().graphVersion;
+  const graphGet = async (path: string, params: Record<string, string>) => {
+    const url = new URL(`https://graph.facebook.com/${version}/${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    url.searchParams.set('access_token', userToken);
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new HttpError(502, `Meta Graph ${path} failed (${res.status}): ${detail.slice(0, 160)}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  };
+
+  const me = await graphGet('me', { fields: 'id,name' }).catch(() => ({} as Record<string, unknown>));
+  const accounts = await graphGet('me/accounts', {
+    fields: 'id,name,instagram_business_account{id,username}'
+  }).catch(() => ({ data: [] }));
+  const permissions = await graphGet('me/permissions', {}).catch(() => ({ data: [] }));
+
+  const pages: MetaPageAsset[] = Array.isArray((accounts as { data?: unknown }).data)
+    ? ((accounts as { data: Array<Record<string, unknown>> }).data).map((p) => {
+        const ig = p.instagram_business_account as { id?: string; username?: string } | undefined;
+        return {
+          id: String(p.id ?? ''),
+          name: String(p.name ?? ''),
+          instagramId: ig?.id ? String(ig.id) : null,
+          instagramUsername: ig?.username ? String(ig.username) : null
+        };
+      }).filter((p) => p.id)
+    : [];
+
+  const grantedScopes: string[] = Array.isArray((permissions as { data?: unknown }).data)
+    ? ((permissions as { data: Array<{ permission?: string; status?: string }> }).data)
+        .filter((perm) => perm.status === 'granted' && typeof perm.permission === 'string')
+        .map((perm) => perm.permission as string)
+    : [];
+
+  return {
+    userId: typeof me.id === 'string' ? me.id : null,
+    userName: typeof me.name === 'string' ? me.name : null,
+    pages,
+    grantedScopes
+  };
+}
+
 async function connectionSelect(provider: Provider, accountKey?: SquareAccountKey) {
   const where: Prisma.IntegrationConnectionWhereInput = { provider, scopeType: 'BUSINESS' };
   if (provider === 'SQUARE' && accountKey) {
@@ -416,7 +534,7 @@ async function safeResponseDetails(response: Response) {
 }
 
 async function recordEvent(input: {
-  provider: Provider;
+  provider: Provider | 'META';
   connectionId?: string | null;
   eventType: string;
   summary: string;
@@ -2258,15 +2376,39 @@ async function recordSquareCallbackFailure(input: {
   });
 }
 
-function metaStatus(): AdminMetaIntegrationStatus {
+async function metaStatus(): Promise<AdminMetaIntegrationStatus> {
   const config = metaConfig();
-  const status = config.configured ? 'READY_TO_CONNECT' : 'NOT_CONFIGURED';
+  const connection = await prisma.integrationConnection.findFirst({
+    where: { provider: 'META', scopeType: 'BUSINESS' },
+    orderBy: { updatedAt: 'desc' }
+  });
+  const connected = connection?.status === 'CONNECTED' && Boolean(connection.tokenEncrypted);
+  const meta = (connection?.metadata ?? {}) as { pages?: unknown };
+  const pages: AdminMetaConnectedPage[] = Array.isArray(meta.pages)
+    ? (meta.pages as Array<Record<string, unknown>>).map((p) => ({
+        id: String(p.id ?? ''),
+        name: String(p.name ?? ''),
+        instagramUsername: typeof p.instagramUsername === 'string' ? p.instagramUsername : null
+      }))
+    : [];
+  const grantedScopes = Array.isArray(connection?.scopes) ? (connection!.scopes as unknown[]).map(String) : [];
+
+  const status: AdminMetaIntegrationStatus['status'] = connected
+    ? 'CONNECTED'
+    : connection?.status === 'ERROR'
+      ? 'ERROR'
+      : connection?.status === 'NOT_CONNECTED' && connection?.disconnectedAt
+        ? 'DISCONNECTED'
+        : config.configured
+          ? 'READY_TO_CONNECT'
+          : 'NOT_CONFIGURED';
+
   return {
     provider: 'meta',
     label: 'Meta / Facebook / Instagram',
     status,
     configured: config.configured,
-    canConnect: config.configured,
+    canConnect: config.configured && !connected,
     connectBlockedReason: config.configured ? null : `Missing ${config.missingEnvVars.join(', ')}.`,
     redirectUri: config.redirectUri,
     authorizationUrl: null,
@@ -2301,7 +2443,14 @@ function metaStatus(): AdminMetaIntegrationStatus {
       }
     ],
     deauthorizeCallbackConfigured: false,
-    dataDeletionCallbackConfigured: false
+    dataDeletionCallbackConfigured: false,
+    connected,
+    connectedAt: connected && connection?.connectedAt ? connection.connectedAt.toISOString() : null,
+    accountName: connection?.providerAccountName ?? null,
+    pages,
+    grantedScopes,
+    tokenExpiresAt: connection?.tokenExpiresAt ? connection.tokenExpiresAt.toISOString() : null,
+    lastError: connection?.lastError ?? null
   };
 }
 
@@ -2541,7 +2690,8 @@ export const integrationService = {
     const code = typeof query.code === 'string' ? query.code : '';
     const state = typeof query.state === 'string' ? query.state : '';
 
-    if (!state || !verifyMetaState(state)) {
+    const stateData = state ? readMetaState(state) : null;
+    if (!stateData) {
       return frontendAdminRedirect({
         integration: 'meta',
         status: 'invalid_state'
@@ -2563,11 +2713,84 @@ export const integrationService = {
       });
     }
 
-    return frontendAdminRedirect({
-      integration: 'meta',
-      status: 'callback_received',
-      next: 'store_token_secret_reference'
+    try {
+      const { accessToken, expiresIn } = await exchangeMetaToken(code);
+      const assets = await fetchMetaAssets(accessToken);
+      const primaryPage = assets.pages[0] ?? null;
+      const existing = await prisma.integrationConnection.findFirst({
+        where: { provider: 'META', scopeType: 'BUSINESS' },
+        orderBy: { updatedAt: 'desc' }
+      });
+      const data = {
+        status: 'CONNECTED' as const,
+        connectedAt: new Date(),
+        disconnectedAt: null,
+        lastError: null,
+        providerAccountId: assets.userId ?? primaryPage?.id ?? null,
+        providerAccountName: primaryPage?.name ?? assets.userName ?? 'Meta account',
+        scopes: assets.grantedScopes.length ? assets.grantedScopes : META_SCOPES,
+        tokenEncrypted: encryptIntegrationSecret(accessToken),
+        refreshTokenEncrypted: null,
+        tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+        metadata: {
+          userId: assets.userId,
+          userName: assets.userName,
+          pages: assets.pages,
+          requestedScopes: META_SCOPES
+        } as Prisma.InputJsonValue,
+        updatedByUserId: stateData.actorId
+      };
+      const connection = await prisma.integrationConnection.upsert({
+        where: { id: existing?.id ?? '__new_meta_connection__' },
+        update: data,
+        create: { provider: 'META', scopeType: 'BUSINESS', ...data }
+      });
+      await prisma.integrationSyncRun.create({
+        data: { provider: 'META', connectionId: connection.id, syncType: 'OAUTH_CALLBACK', status: 'SUCCESS', finishedAt: new Date() }
+      });
+      await recordEvent({
+        provider: 'META',
+        connectionId: connection.id,
+        eventType: 'CONNECTED',
+        summary: `Meta connected — ${assets.pages.length} page(s)${primaryPage ? ` incl. ${primaryPage.name}` : ''}.`,
+        metadata: { pageCount: assets.pages.length, grantedScopes: assets.grantedScopes }
+      });
+      return frontendAdminRedirect({ integration: 'meta', status: 'connected' });
+    } catch (err) {
+      return frontendAdminRedirect({
+        integration: 'meta',
+        status: 'failed',
+        reason: err instanceof HttpError ? err.message : 'meta_token_exchange_failed'
+      });
+    }
+  },
+
+  async disconnectMeta(actor: AuthUser) {
+    const existing = await prisma.integrationConnection.findFirst({
+      where: { provider: 'META', scopeType: 'BUSINESS' },
+      orderBy: { updatedAt: 'desc' }
     });
+    if (!existing) return { provider: 'meta' as const, disconnected: false };
+    await prisma.integrationConnection.update({
+      where: { id: existing.id },
+      data: {
+        status: 'NOT_CONNECTED',
+        disconnectedAt: new Date(),
+        tokenEncrypted: null,
+        refreshTokenEncrypted: null,
+        tokenExpiresAt: null,
+        lastError: null,
+        updatedByUserId: actor.id
+      }
+    });
+    await recordEvent({
+      provider: 'META',
+      connectionId: existing.id,
+      eventType: 'DISCONNECTED',
+      summary: 'Meta disconnected by admin.',
+      actor
+    });
+    return { provider: 'meta' as const, disconnected: true };
   },
 
   async status(): Promise<IntegrationStatusPayload> {
@@ -2590,7 +2813,7 @@ export const integrationService = {
       xero,
       deputy,
       xeroScheduledImport,
-      meta: metaStatus(),
+      meta: await metaStatus(),
       latestSyncRuns: syncRuns,
       tokenStorage: integrationTokenEncryptionStatus()
     };
