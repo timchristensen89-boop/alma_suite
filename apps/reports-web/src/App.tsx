@@ -199,6 +199,7 @@ type ReportNavItem = {
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
+const REPORTS_MENU_FILTERS_STORAGE_KEY = 'alma.reports.menu-filters.v1';
 const REPORT_NAV_ITEMS: ReportNavItem[] = [
   {
     id: 'overview',
@@ -967,10 +968,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     () => PERIOD_PRESETS.find((preset) => preset.key === periodPreset)?.label ?? 'This week',
     [periodPreset]
   );
-  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>('all');
-  const [menuVenue, setMenuVenue] = useState('');
-  const [menuCategory, setMenuCategory] = useState('');
-  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>('all');
+  // Menu Engineering filters persist across refreshes (like the forecast inputs)
+  // so an analyst doesn't re-pick account/venue/category/mapping every visit.
+  const storedMenuFilters = loadJsonDraft<{
+    accountKey?: 'all' | 'primary' | 'secondary';
+    venue?: string;
+    category?: string;
+    mappingStatus?: 'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost';
+  }>(REPORTS_MENU_FILTERS_STORAGE_KEY, {});
+  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>(storedMenuFilters.accountKey ?? 'all');
+  const [menuVenue, setMenuVenue] = useState(storedMenuFilters.venue ?? '');
+  const [menuCategory, setMenuCategory] = useState(storedMenuFilters.category ?? '');
+  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>(storedMenuFilters.mappingStatus ?? 'all');
+  // Sales section: optionally isolate a single venue's per-venue panels.
+  const [salesVenue, setSalesVenue] = useState('');
   const [menuGroupByRecipe, setMenuGroupByRecipe] = useState(false);
   const [data, setData] = useState<ReportsData>({
     overview: null,
@@ -1182,6 +1193,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     window.localStorage.setItem(REPORTS_FORECAST_STORAGE_KEY, JSON.stringify(forecastInputs));
   }, [forecastInputs]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      REPORTS_MENU_FILTERS_STORAGE_KEY,
+      JSON.stringify({ accountKey: menuAccountKey, venue: menuVenue, category: menuCategory, mappingStatus: menuMappingStatus })
+    );
+  }, [menuAccountKey, menuVenue, menuCategory, menuMappingStatus]);
 
   const activeStaff = data.staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const staffById = useMemo(() => new Map(activeStaff.map((member) => [member.id, member])), [activeStaff]);
@@ -2442,8 +2460,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <p className="report-warning-text">Historical sales history is missing for {missingHistoryCount} venue{missingHistoryCount === 1 ? '' : 's'}, so trend percentage and historical reset may be unavailable there.</p>
           ) : null}
 
+          {salesReportVenues.length > 1 ? (
+            <div className="report-filter-row">
+              <Select
+                label="Show venue"
+                value={salesVenue}
+                onChange={(event) => setSalesVenue(event.currentTarget.value)}
+                options={[{ label: 'All venues', value: '' }, ...salesReportVenues.map((venue) => ({ label: venue, value: venue }))]}
+              />
+            </div>
+          ) : null}
+
           <div className="sales-venue-grid">
-            {salesTrendRows.map((row) => {
+            {(salesVenue ? salesTrendRows.filter((row) => row.venue === salesVenue) : salesTrendRows).map((row) => {
               const trendLabel = row.trendPercent === null ? 'No trend' : `${row.trendPercent >= 0 ? '+' : ''}${row.trendPercent.toFixed(1)}%`;
               const trendTone = row.trendPercent === null ? 'neutral' : row.trendPercent >= 0 ? 'positive' : 'warning';
               const varianceTone = row.forecastVarianceCents >= 0 ? 'positive' : 'warning';
