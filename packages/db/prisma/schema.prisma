@@ -2015,6 +2015,10 @@ model AppSettings {
   // that steps up over time, so it's admin-editable rather than hardcoded. Read
   // by the costing engine (staff-pay-rates) to bake super into every costed hour.
   superGuaranteePercent Float   @default(12)
+  // Concurrency claim for the marketing-automation runner — set to NOW() while a
+  // run is in progress so a scheduler retry / overlapping invocation no-ops.
+  // Reclaimable after 1h in case a run crashed mid-flight.
+  marketingAutomationRunAt DateTime?
   goveeApiKey          String?
   goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
   notifyEmail          String?

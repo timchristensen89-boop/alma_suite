@@ -1194,6 +1194,22 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
     }
   }
 
+  async function installStarterAutomations() {
+    if (!window.confirm('Add the starter automation library (First Visit, Cancellation, No Show, Re-engagement, Birthday, VIP Winback) for this venue? They install switched OFF so you can review the copy before turning them on.')) {
+      return;
+    }
+    try {
+      const result = await api<{ installed: number; skipped: number; total: number }>('/api/marketing/automations/install-library', {
+        method: 'POST',
+        body: JSON.stringify({ venue: automationForm.venue })
+      });
+      setSuccess('automation', `Installed ${result.installed} starter automation${result.installed === 1 ? '' : 's'}${result.skipped ? ` (${result.skipped} already existed)` : ''}. Review the copy, then switch them on.`);
+      await load();
+    } catch (error) {
+      setError('automation', error, 'Could not install the starter automations.');
+    }
+  }
+
   async function simulateAutomation(automationId: string) {
     try {
       const result = await api<{ message: string; guestCount: number }>('/api/marketing/automations/' + automationId + '/simulate', {
@@ -2275,7 +2291,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
             {isActiveSection('/automations') ? (
             <section id="automations" className="marketing-page-section">
-              <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
+              <Card
+                title="Automations"
+                subtitle="Trigger-based emails that send automatically. Install the starter library to get the visit-lifecycle set in one click."
+                action={<Button type="button" variant="secondary" onClick={() => void installStarterAutomations()}>Install starter automations</Button>}
+              >
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">
                   <Select label="Venue" value={automationForm.venue} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
