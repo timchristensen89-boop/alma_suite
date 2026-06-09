@@ -197,6 +197,36 @@ function ItemImportPanel() {
               </tbody>
             </table>
           </details>
+          {(() => {
+            // Every row needing attention (warning / error / skipped), regardless
+            // of position — so issues past row 50 aren't hidden before commit.
+            const flagged = preview.rows.filter((row) => row.warnings.length > 0 || row.action === 'error' || (row.reason && row.action === 'skip'));
+            if (flagged.length === 0) return null;
+            return (
+              <details open style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#9A3A2E' }}>
+                  All {flagged.length} flagged row{flagged.length === 1 ? '' : 's'} (warnings / errors / skipped)
+                </summary>
+                <table className="stocktake-variance-table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr><th>Row</th><th>Name</th><th>Action</th><th>Warnings / reason</th></tr>
+                  </thead>
+                  <tbody>
+                    {flagged.map((row) => (
+                      <tr key={`flagged-${row.csvRow}`}>
+                        <td>{row.csvRow}</td>
+                        <td>{row.name}</td>
+                        <td>
+                          <Badge tone={row.action === 'error' ? 'danger' : row.action === 'skip' ? 'warning' : 'info'}>{row.action}</Badge>
+                        </td>
+                        <td style={{ color: '#9A3A2E', fontSize: 11 }}>{row.warnings.join(', ') || row.reason || ''}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            );
+          })()}
         </div>
       ) : null}
       {message ? <ActionFeedback message={message} tone={tone} /> : null}
