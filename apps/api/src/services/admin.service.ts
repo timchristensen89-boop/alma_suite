@@ -269,23 +269,34 @@ export const adminService = {
     const end = parseReportDate(query.end, addDays(start, 7), 'Costing end date');
     if (end <= start) throw new HttpError(400, 'Costing end date must be after the start date.');
     const venueFilter = query.venue?.trim() || null;
-    // Reject an unknown venue filter with a clear error instead of silently
-    // returning an empty report. Lenient: only enforced when venues are
-    // configured, so data drift never hard-blocks the report.
+    // Reject a venue filter that is a genuine typo (matches neither a configured
+    // venue NOR any venue actually present in costing data) with a clear error,
+    // instead of silently returning an empty report. The allow-list is the UNION
+    // of configured venues and the free-text venue names on staff/timesheet/
+    // roster records — the same universe the reports-web dropdown suggests — so a
+    // real venue whose name has drifted from Settings (rename/casing) still
+    // resolves to its data rather than being falsely rejected.
     if (venueFilter) {
-      const settingsRow = await prisma.appSettings.findUnique({
-        where: { id: 'singleton' },
-        select: { venues: true }
-      });
-      const knownVenues = Array.isArray(settingsRow?.venues)
-        ? settingsRow!.venues
-            .filter(
-              (v): v is { name: string } =>
-                typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
-            )
-            .map((v) => v.name)
-        : [];
-      if (knownVenues.length && !knownVenues.includes(venueFilter)) {
+      const [settingsRow, profileVenues, timesheetVenues, rosterVenues] = await Promise.all([
+        prisma.appSettings.findUnique({ where: { id: 'singleton' }, select: { venues: true } }),
+        prisma.staffProfile.findMany({ where: { venue: { not: null } }, distinct: ['venue'], select: { venue: true } }),
+        prisma.timesheet.findMany({ where: { venue: { not: null } }, distinct: ['venue'], select: { venue: true } }),
+        prisma.rosterShift.findMany({ where: { venue: { not: null } }, distinct: ['venue'], select: { venue: true } })
+      ]);
+      const knownVenues = new Set<string>();
+      if (Array.isArray(settingsRow?.venues)) {
+        for (const v of settingsRow!.venues) {
+          if (typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string') {
+            const name = (v as { name: string }).name.trim();
+            if (name) knownVenues.add(name);
+          }
+        }
+      }
+      for (const row of [...profileVenues, ...timesheetVenues, ...rosterVenues]) {
+        const name = row.venue?.trim();
+        if (name) knownVenues.add(name);
+      }
+      if (knownVenues.size && !knownVenues.has(venueFilter)) {
         throw new HttpError(400, `Unknown venue "${venueFilter}".`);
       }
     }
