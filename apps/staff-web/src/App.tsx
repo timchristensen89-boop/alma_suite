@@ -294,6 +294,8 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
   ]
 };
 
+// Consolidated manager nav: fewer top-level items, each a hub that groups the
+// related screens as in-page tabs (matching the Stock and Compliance apps).
 const NAV_ITEMS = [
   {
     to: '/',
@@ -303,88 +305,49 @@ const NAV_ITEMS = [
     end: true
   },
   {
+    // Today hub: dashboard, daily brief, readiness, and the manager's own clock.
     to: '/manager',
     label: 'Today',
-    description: 'Staff, clock sessions, bookings, daily brief and readiness',
-    icon: <IconDashboard />
+    description: 'Daily brief, readiness, clock and the day at a glance',
+    icon: <IconDashboard />,
+    match: ['/brief', '/readiness', '/clock']
   },
   {
-    to: '/clock',
-    label: 'Clock',
-    description: 'My clock in, out and breaks',
-    icon: <IconClock />
-  },
-  {
-    to: '/profiles',
-    label: 'Profiles',
-    description: 'Full staff profiles, permissions, documents, and tasks',
-    icon: <IconFileText />
-  },
-  {
-    to: '/invites',
-    label: 'Invites',
-    description: 'Staff onboarding links',
-    icon: <IconUserPlus />
-  },
-  {
-    to: '/approvals',
-    label: 'Approvals',
-    description: 'Review onboarding documents',
-    icon: <IconBadgeCheck />
-  },
-  {
+    // Roster & pay hub: roster, leave, timesheets and tips — the scheduling and
+    // labour-cost workflow in one place.
     to: '/roster',
-    label: 'Roster',
-    description: 'Roster board foundation',
-    icon: <IconCalendarClock />
+    label: 'Roster & pay',
+    description: 'Roster, leave, timesheets and tips',
+    icon: <IconCalendarClock />,
+    match: ['/leave', '/timesheets', '/tips']
   },
   {
-    to: '/leave',
-    label: 'Leave',
-    description: 'Manager leave calendar',
-    icon: <IconCalendarCheck />
+    // People hub: profiles, invites, approvals and HR records.
+    to: '/profiles',
+    label: 'People',
+    description: 'Profiles, onboarding invites, approvals and HR records',
+    icon: <IconFileText />,
+    match: ['/invites', '/approvals', '/hr', '/staff']
   },
   {
+    // Compliance & training hub: certifications and the Academy.
     to: '/compliance',
     label: 'Compliance',
-    description: 'Staff compliance reminders',
-    icon: <IconFileLock />
-  },
-  {
-    to: '/hr',
-    label: 'HR',
-    description: 'Restricted employment records',
-    icon: <IconBriefcase />
-  },
-  {
-    to: '/academy',
-    label: 'Academy',
-    description: 'Modules, levels and pay rules',
-    icon: <CapIcon />
-  },
-  {
-    to: '/timesheets',
-    label: 'Timesheets',
-    description: 'Submit, approve, export',
-    icon: <IconClock />
-  },
-  {
-    to: '/tips',
-    label: 'Tips',
-    description: 'Cash tips and payout runs',
-    icon: <IconWallet />
-  },
-  {
-    to: '/settings',
-    label: 'Staff settings',
-    description: 'Staff defaults, onboarding and access',
-    icon: <GearIcon />
+    description: 'Staff compliance reminders and Academy training',
+    icon: <IconFileLock />,
+    match: ['/academy']
   },
   {
     to: 'https://alma-comms.web.app',
     label: 'Comms',
     description: 'Announcements, group chats, and messaging permissions',
     icon: <IconMail />
+  },
+  {
+    to: '/settings',
+    label: 'Staff settings',
+    description: 'Staff defaults, onboarding and access',
+    icon: <GearIcon />
   }
 ];
 
@@ -393,8 +356,36 @@ const NAV_ITEMS = [
 const TODAY_TABS: HubTab[] = [
   { to: '/manager', label: 'Today', end: true },
   { to: '/brief', label: 'Daily brief' },
-  { to: '/readiness', label: 'Readiness' }
+  { to: '/readiness', label: 'Readiness' },
+  { to: '/clock', label: 'Clock' }
 ];
+
+// Roster & pay hub — roster, leave, timesheets and tips all share the week
+// selector and form the labour-cost workflow.
+const ROSTER_PAY_TABS: HubTab[] = [
+  { to: '/roster', label: 'Roster' },
+  { to: '/leave', label: 'Leave' },
+  { to: '/timesheets', label: 'Timesheets' },
+  { to: '/tips', label: 'Tips' }
+];
+
+// People hub — profiles, onboarding invites and approvals. HR is appended at
+// render time only when the viewer has HR access.
+const PEOPLE_TABS_BASE: HubTab[] = [
+  { to: '/profiles', label: 'Profiles', end: true },
+  { to: '/invites', label: 'Invites' },
+  { to: '/approvals', label: 'Approvals' }
+];
+
+const COMPLIANCE_TABS: HubTab[] = [
+  { to: '/compliance', label: 'Compliance', end: true },
+  { to: '/academy', label: 'Academy' }
+];
+
+// HR is access-gated, so only show it as a People tab when the viewer can open it.
+function peopleTabsFor(canOpenHr: boolean): HubTab[] {
+  return canOpenHr ? [...PEOPLE_TABS_BASE, { to: '/hr', label: 'HR' }] : PEOPLE_TABS_BASE;
+}
 
 const STAFF_MEMBER_NAV_ITEMS = [
   {
@@ -809,13 +800,20 @@ function TopBarWithContext() {
   );
 }
 
+// A nav item is active for its own route AND any hub sub-route listed in match[]
+// (e.g. the "Roster & pay" hub lights up on /leave, /timesheets, /tips).
+function staffNavMatches(item: { to: string; match?: string[] }, pathname: string): boolean {
+  const candidates = [item.to, ...(item.match ?? [])];
+  return candidates.some((p) =>
+    p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)
+  );
+}
+
 function currentPage(pathname: string, items = NAV_ITEMS) {
   return (
     [...items]
       .sort((a, b) => b.to.length - a.to.length)
-      .find((item) =>
-        item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)
-      ) ?? {
+      .find((item) => staffNavMatches(item, pathname)) ?? {
       to: pathname,
       label: 'Page not found',
       description: "The URL didn't match any section",
@@ -864,7 +862,13 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
                 <span>{item.label}</span>
               </a>
             ) : (
-              <NavLink to={item.to} end={item.end} aria-label={item.label} title={item.label}>
+              <NavLink
+                to={item.to}
+                end={item.end}
+                className={() => (staffNavMatches(item, location.pathname) ? 'active' : undefined)}
+                aria-label={item.label}
+                title={item.label}
+              >
                 <span className="sidebar-nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
               </NavLink>
@@ -16811,24 +16815,24 @@ function StaffShell() {
           <Route path="/brief" element={<HubLayout tabs={TODAY_TABS}><ManagerDailyBriefPage staff={staff} /></HubLayout>} />
           <Route path="/readiness" element={<HubLayout tabs={TODAY_TABS}><VenueReadinessPage staff={staff} /></HubLayout>} />
           <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} /></HubLayout>} />
-          <Route path="/clock" element={<StaffMemberClockPage />} />
-          <Route path="/profiles" element={<StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
-          <Route path="/invites" element={<InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} />} />
-          <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
+          <Route path="/clock" element={<HubLayout tabs={TODAY_TABS}><StaffMemberClockPage /></HubLayout>} />
+          <Route path="/profiles" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} /></HubLayout>} />
+          <Route path="/invites" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} /></HubLayout>} />
+          <Route path="/approvals" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><ApprovalsPage staff={staff} reload={reload} /></HubLayout>} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<Navigate to="/profiles" replace />} />
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
-          <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
-          <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
-          <Route path="/compliance" element={<StaffMemberCompliancePage />} />
-          <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
+          <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
+          <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
+          <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
+          <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
-          <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
-          <Route path="/tips" element={<TipsPage staff={staff} />} />
+          <Route path="/timesheets" element={<HubLayout tabs={ROSTER_PAY_TABS}><TimesheetsPage staff={staff} roster={roster} /></HubLayout>} />
+          <Route path="/tips" element={<HubLayout tabs={ROSTER_PAY_TABS}><TipsPage staff={staff} /></HubLayout>} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
-          <Route path="/hr" element={canOpenHr ? <HrOverviewPage records={hrRecords} loading={hrLoading} /> : <Navigate to="/" replace />} />
+          <Route path="/hr" element={canOpenHr ? <HubLayout tabs={peopleTabsFor(canOpenHr)}><HrOverviewPage records={hrRecords} loading={hrLoading} /></HubLayout> : <Navigate to="/" replace />} />
           <Route path="/hr/contracts" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="CONTRACT" mode="contracts" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/warnings" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="WARNING" mode="warnings" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/pay-changes" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="PAY_CHANGE" mode="pay-changes" loading={hrLoading} reload={loadHrRecords} canManage={canManagePayChangeHr} canApprove={canApprovePayChangeHr} currentUserId={currentUserId} /> : <Navigate to="/" replace />} />
