@@ -140,6 +140,20 @@ async function validAccessToken(connection: IntegrationConnection) {
   };
 }
 
+// Deputy's 5xx responses are its own incident page ("...please be patient as we
+// fix the problem") — surface those as a clear, de-noised "their side" message so
+// a Deputy outage doesn't read like an Alma bug. 4xx keeps the raw detail, since
+// that usually means our request needs fixing.
+function deputyHttpError(verb: string, path: string, status: number, detail: string): HttpError {
+  if (status >= 500) {
+    return new HttpError(
+      502,
+      `Deputy server error (${status}) on ${verb} ${path} — this is on Deputy's end, not Alma. We retried ${MAX_FETCH_RETRIES + 1}× automatically; their API is still failing, so try the sync again in a few minutes.`
+    );
+  }
+  return new HttpError(status, `Deputy ${verb} ${path} (${status}): ${detail.slice(0, 240)}`);
+}
+
 async function apiGet<T>(connection: IntegrationConnection, path: string): Promise<T> {
   let current = await validAccessToken(connection);
   const endpoint = deputyEndpointFromConnection(current.connection);
@@ -154,7 +168,7 @@ async function apiGet<T>(connection: IntegrationConnection, path: string): Promi
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy GET ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('GET', path, response.status, detail);
   }
   return (await response.json()) as T;
 }
@@ -182,7 +196,7 @@ async function apiPost<T>(connection: IntegrationConnection, path: string, body:
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy POST ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('POST', path, response.status, detail);
   }
   return (await response.json()) as T;
 }
@@ -199,7 +213,7 @@ async function apiGetBytes(connection: IntegrationConnection, path: string) {
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy file ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('file', path, response.status, detail);
   }
   return {
     bytes: Buffer.from(await response.arrayBuffer()),
