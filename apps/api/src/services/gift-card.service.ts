@@ -851,6 +851,7 @@ export const giftCardService = {
     // Friendly pre-checks (non-authoritative — the atomic update below is the
     // real guard against concurrent redemptions).
     if (card.status !== 'ACTIVE') throw new HttpError(400, `Gift card is ${card.status.replace('_', ' ').toLowerCase()}`);
+    if (card.expiresAt && card.expiresAt < new Date()) throw new HttpError(400, 'Gift card has expired');
     if (card.balanceCents < data.amountCents) throw new HttpError(400, 'Gift card balance is too low');
 
     const updated = await prisma.$transaction(async (tx) => {
@@ -891,6 +892,7 @@ export const giftCardService = {
     const card = await findCardByCode(code);
     if (card.status === 'CANCELLED') throw new HttpError(400, 'Gift card is already cancelled');
     if (card.status === 'EXPIRED') throw new HttpError(400, 'Gift card is expired');
+    if (card.status === 'REDEEMED') throw new HttpError(400, 'Gift card is fully redeemed and cannot be cancelled');
 
     const updated = await prisma.giftCard.update({
       where: { id: card.id },

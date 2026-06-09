@@ -644,10 +644,10 @@ function SidebarNav() {
 // refreshes so an unsent campaign / unsaved post isn't lost. Merges the stored
 // value over the current defaults so newly-added fields still get a default.
 function usePersistentState<T>(key: string, initial: () => T) {
-  const [state, setState] = useState<T>(() => {
+  const read = (k: string): T => {
     if (typeof window === 'undefined') return initial();
     try {
-      const raw = window.localStorage.getItem(key);
+      const raw = window.localStorage.getItem(k);
       if (raw) {
         const parsed = JSON.parse(raw);
         const base = initial();
@@ -660,7 +660,18 @@ function usePersistentState<T>(key: string, initial: () => T) {
       /* ignore corrupt/blocked storage */
     }
     return initial();
-  });
+  };
+  const [state, setState] = useState<T>(() => read(key));
+  // When the scope key changes (e.g. the venue filter switches), load that
+  // scope's own stored draft instead of carrying the previous venue's draft
+  // over — which previously risked sending one venue's content under another.
+  // This is React's documented "reset state when a prop changes" pattern; it
+  // runs during render so the save effect below sees the new value (no race).
+  const [scopeKey, setScopeKey] = useState(key);
+  if (scopeKey !== key) {
+    setScopeKey(key);
+    setState(read(key));
+  }
   useEffect(() => {
     try {
       window.localStorage.setItem(key, JSON.stringify(state));
@@ -702,12 +713,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const venueParam = venueFilter === ALL_VENUES ? '' : venueFilter;
   const defaultVenue = venueParam || user.venue || KNOWN_VENUES[0]!;
   const [tagForm, setTagForm] = useState<TagForm>(() => defaultTagForm(defaultVenue));
-  const [segmentForm, setSegmentForm] = usePersistentState<SegmentBuilder>('alma.marketing.segmentForm', () => defaultSegmentBuilder(venueFilter));
-  const [templateForm, setTemplateForm] = usePersistentState<TemplateForm>('alma.marketing.templateForm', () => defaultTemplateForm(defaultVenue));
-  const [campaignForm, setCampaignForm] = usePersistentState<CampaignForm>('alma.marketing.campaignForm', () => defaultCampaignForm(defaultVenue));
-  const [automationForm, setAutomationForm] = usePersistentState<AutomationForm>('alma.marketing.automationForm', () => defaultAutomationForm(defaultVenue));
+  const [segmentForm, setSegmentForm] = usePersistentState<SegmentBuilder>(`alma.marketing.segmentForm:${venueFilter}`, () => defaultSegmentBuilder(venueFilter));
+  const [templateForm, setTemplateForm] = usePersistentState<TemplateForm>(`alma.marketing.templateForm:${defaultVenue}`, () => defaultTemplateForm(defaultVenue));
+  const [campaignForm, setCampaignForm] = usePersistentState<CampaignForm>(`alma.marketing.campaignForm:${defaultVenue}`, () => defaultCampaignForm(defaultVenue));
+  const [automationForm, setAutomationForm] = usePersistentState<AutomationForm>(`alma.marketing.automationForm:${defaultVenue}`, () => defaultAutomationForm(defaultVenue));
   const [contentAssetForm, setContentAssetForm] = useState<ContentAssetForm>(() => defaultContentAssetForm(defaultVenue));
-  const [contentPostForm, setContentPostForm] = usePersistentState<ContentPostForm>('alma.marketing.contentPostForm', () => defaultContentPostForm(defaultVenue));
+  const [contentPostForm, setContentPostForm] = usePersistentState<ContentPostForm>(`alma.marketing.contentPostForm:${defaultVenue}`, () => defaultContentPostForm(defaultVenue));
 
   const tags = overview?.tags ?? [];
   const templates = overview?.templates ?? [];

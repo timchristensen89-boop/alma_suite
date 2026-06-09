@@ -1718,12 +1718,27 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     event.preventDefault();
     setMessage(null);
     setMessageTarget('redeem');
+    const amountCents = Math.round(Number(amount) * 100);
+    if (!amountCents || amountCents <= 0) {
+      setMessage('Enter an amount to redeem.');
+      return;
+    }
+    const newBalance = card ? card.balanceCents - amountCents : null;
+    if (
+      !window.confirm(
+        `Redeem ${formatCents(amountCents)} from ${card?.code ?? 'this card'}?` +
+          (newBalance != null ? ` New balance will be ${formatCents(newBalance)}.` : '') +
+          ' This cannot be undone.'
+      )
+    ) {
+      return;
+    }
     try {
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
         body: JSON.stringify({
           code,
-          amountCents: Math.round(Number(amount) * 100),
+          amountCents,
           venue,
           notes
         })
@@ -1742,6 +1757,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   async function cancelCard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!card) return;
+    if (!window.confirm(`Cancel gift card ${card.code}? This permanently voids any remaining balance and cannot be undone.`)) {
+      return;
+    }
     setMessage(null);
     setMessageTarget('cancel');
     try {
