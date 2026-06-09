@@ -21,6 +21,7 @@ import type {
   StocktakesSummary,
   Timesheet
 } from '@alma/shared';
+import { defaultCasualRateCents } from '@alma/shared';
 import {
   AlmaHomeBubble,
   AlmaPill,
@@ -817,7 +818,14 @@ function resolvedWage(staff: StaffProfile | undefined): { rateCents: number; sal
       salariedWeeklyCents: Math.round(annual / 52)
     };
   }
-  return { rateCents: staff.trainingPayRateCents ?? staff.payRateCents ?? 0, salariedWeeklyCents: 0 };
+  const rawRate = staff.trainingPayRateCents ?? staff.payRateCents ?? 0;
+  if (rawRate === 0) {
+    // A casual with no rate set defaults to the Restaurant Award Level 2 casual
+    // rate, so they're never costed at $0.
+    const isCasual = staff.payProfile?.employmentType === 'CASUAL' || /casual/i.test(staff.employmentType ?? '');
+    if (isCasual) return { rateCents: defaultCasualRateCents(), salariedWeeklyCents: 0 };
+  }
+  return { rateCents: rawRate, salariedWeeklyCents: 0 };
 }
 
 function ReportsUserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {

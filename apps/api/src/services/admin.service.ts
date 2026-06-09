@@ -308,6 +308,7 @@ export const adminService = {
       lastName: true,
       roleTitle: true,
       venue: true,
+      employmentType: true,
       payRateCents: true,
       trainingPayRateCents: true,
       payProfile: {
