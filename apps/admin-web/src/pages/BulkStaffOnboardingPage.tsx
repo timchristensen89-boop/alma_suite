@@ -21,10 +21,42 @@ Jordan,Lee,jordan@example.com,Bartender,Alma Avalon,Starts next Monday
 Sam,Patel,sam@example.com,Floor,St Alma,Casual cover
 `;
 
+// Split one CSV line, honouring double-quoted fields (which may contain commas)
+// and escaped quotes (""). Keeps a value like "Smith, Jr" intact.
+function splitCsvLine(line: string): string[] {
+  const out: string[] = [];
+  let cur = '';
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i += 1) {
+    const ch = line[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (line[i + 1] === '"') {
+          cur += '"';
+          i += 1;
+        } else {
+          inQuotes = false;
+        }
+      } else {
+        cur += ch;
+      }
+    } else if (ch === '"') {
+      inQuotes = true;
+    } else if (ch === ',') {
+      out.push(cur);
+      cur = '';
+    } else {
+      cur += ch;
+    }
+  }
+  out.push(cur);
+  return out;
+}
+
 function parseCsv(text: string): ParsedRow[] {
   const lines = text.trim().split(/\r?\n/);
   if (lines.length < 2) return [];
-  const headerLine = lines[0]!.split(',').map((h) => h.trim().toLowerCase());
+  const headerLine = splitCsvLine(lines[0]!).map((h) => h.trim().toLowerCase());
   const colIndex = (name: string) => headerLine.indexOf(name);
   const idxFirst = colIndex('firstname');
   const idxLast = colIndex('lastname');
@@ -34,8 +66,7 @@ function parseCsv(text: string): ParsedRow[] {
   const idxNote = colIndex('note');
 
   return lines.slice(1).map((rawLine, i) => {
-    // very simple CSV parse — handles unquoted commas; quoting not supported.
-    const cells = rawLine.split(',');
+    const cells = splitCsvLine(rawLine);
     const get = (idx: number) => (idx >= 0 ? (cells[idx] ?? '').trim() : '');
     const firstName = get(idxFirst);
     const lastName = get(idxLast);

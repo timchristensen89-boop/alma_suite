@@ -45,6 +45,28 @@ function toAbaPayload(raw: unknown): TipsAbaSettings {
   };
 }
 
+// Merge incoming venues onto the stored ones, matched by name. A field that
+// isn't provided keeps its prior value, so blanking a wage forecast/target in
+// the form never silently wipes it — the admin must enter an explicit 0 to
+// clear it. Venues absent from the incoming list are dropped (deletion), and
+// new venues are added as-is.
+function mergeVenues(
+  existingRaw: unknown,
+  incoming: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const prevList = Array.isArray(existingRaw)
+    ? (existingRaw.filter((v) => v && typeof v === 'object' && !Array.isArray(v)) as Array<Record<string, unknown>>)
+    : [];
+  const prevByName = new Map(
+    prevList.filter((v) => typeof v.name === 'string').map((v) => [v.name as string, v])
+  );
+  return incoming.map((v) => {
+    const prev = typeof v.name === 'string' ? prevByName.get(v.name) : undefined;
+    // Provided keys win; keys omitted from the patch fall back to the prior value.
+    return prev ? { ...prev, ...v } : v;
+  });
+}
+
 // Merge an incoming ABA patch onto the stored (full) values. Fields are only
 // changed when provided; the account number is ignored when it comes back
 // masked (contains •) so re-saving the form doesn't wipe the stored number.
@@ -163,7 +185,12 @@ export const settingsService = {
       ...(data.primaryContactName !== undefined && { primaryContactName: data.primaryContactName || null }),
       ...(data.primaryContactEmail !== undefined && { primaryContactEmail: data.primaryContactEmail || null }),
       ...(data.primaryContactPhone !== undefined && { primaryContactPhone: data.primaryContactPhone || null }),
-      ...(data.venues !== undefined && { venues: data.venues }),
+      ...(data.venues !== undefined && {
+        venues: mergeVenues(
+          (existing as { venues?: unknown }).venues,
+          data.venues as Array<Record<string, unknown>>
+        ) as Prisma.InputJsonValue
+      }),
       ...(data.handbookContent !== undefined && {
         handbookContent: data.handbookContent as Prisma.InputJsonValue
       }),

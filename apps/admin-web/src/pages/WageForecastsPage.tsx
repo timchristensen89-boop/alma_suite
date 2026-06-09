@@ -121,7 +121,7 @@ export function WageForecastsPage() {
     <div className="admin-page-stack">
       <Card
         title="Wage forecasts"
-        subtitle="Weekly sales forecast and target wage % per venue. These feed the Reports app's wage budget, variance, and roster planning."
+        subtitle="Weekly sales forecast and target wage % per venue. These feed the Reports app's wage budget, variance, and roster planning. Leave a field blank to keep its current value; enter 0 to clear it."
         action={<Button type="button" onClick={() => void saveAll()} disabled={saving}>{saving ? 'Saving...' : 'Save all'}</Button>}
       >
         {venues.length === 0 ? (
