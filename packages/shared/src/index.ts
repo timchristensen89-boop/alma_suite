@@ -1902,8 +1902,12 @@ export const appSettingsUpdateSchema = z.object({
     address: z.string().optional().or(z.literal('')),
     phone: z.string().optional().or(z.literal('')),
     weeklyForecastSalesCents: z.number().int().nonnegative().optional(),
-    targetWagePercent: z.number().min(0).max(100).optional()
+    targetWagePercent: z.number().min(0).max(100).optional(),
+    targetPrimeCostPercent: z.number().min(0).max(100).optional()
   })).optional(),
+  // Superannuation guarantee rate as a percent (12 = 12%). National rate that
+  // steps up over time, so it's editable rather than hardcoded in the costing engine.
+  superGuaranteePercent: z.number().min(0).max(30).optional(),
   handbookContent: z.record(z.string(), z.unknown()).optional(),
   onboardingSettings: onboardingSettingsInputSchema.optional(),
   staffDefaults: staffDefaultsInputSchema.optional(),
@@ -1966,7 +1970,9 @@ export type AppSettingsPayload = {
   primaryContactName: string | null;
   primaryContactEmail: string | null;
   primaryContactPhone: string | null;
-  venues: Array<{ name: string; address?: string; phone?: string; weeklyForecastSalesCents?: number; targetWagePercent?: number }>;
+  venues: Array<{ name: string; address?: string; phone?: string; weeklyForecastSalesCents?: number; targetWagePercent?: number; targetPrimeCostPercent?: number }>;
+  // Superannuation guarantee rate as a percent (12 = 12%); feeds the costing engine.
+  superGuaranteePercent: number;
   handbookContent: Record<string, unknown>;
   onboardingSettings: OnboardingSettings;
   staffDefaults: StaffDefaults;

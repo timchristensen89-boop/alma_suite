@@ -1,7 +1,7 @@
 import { prisma } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
-import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
 import {
   salesActualImportSchema,
   salesActualQuerySchema,
@@ -32,6 +32,7 @@ import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
+import { configuredSuperRateFraction } from './settings.service.js';
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
@@ -723,7 +724,8 @@ function escapeHtml(value: string): string {
 }
 
 async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
-  const [timesheets, activeStaff] = await Promise.all([
+  const superRate = await configuredSuperRateFraction();
+  const [timesheets, salariedStaff] = await Promise.all([
     prisma.timesheet.findMany({
       where: {
         workDate: { gte: start, lt: end },
@@ -733,32 +735,65 @@ async function recapWageCents(venue: string | null, start: Date, end: Date): Pro
       },
       include: { staffProfile: { select: staffPayRateSelect } }
     }),
-    // Active salaried staff are paid their full weekly salary regardless of
-    // timesheets, so they're added below (scoped to their home venue when filtered).
+    // All active salaried staff regardless of home venue — their full weekly
+    // salary is split across venues by rostered hours below (salaried staff
+    // rarely clock in, so roster is the reliable venue signal).
     prisma.staffProfile.findMany({
       where: {
         accountType: 'HUMAN',
         mergedIntoStaffProfileId: null,
         employmentStatus: 'ACTIVE',
-        payProfile: { isNot: null },
-        ...(venue ? { venue } : {})
+        payProfile: { isNot: null }
       },
-      select: staffPayRateSelect
+      select: { id: true, venue: true, ...staffPayRateSelect }
     })
   ]);
   const weekHours = new Map<string, number>();
   let cents = 0;
   for (const entry of timesheets) {
     const hours = workedHours(entry);
-    const rate = staffCostingRate(entry.staffProfile);
+    const rate = staffCostingRate(entry.staffProfile, superRate);
     const split = splitOvertimeHours(weekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
     // Salaried: only overtime is hour-costed; their weekly salary is added below.
     cents += rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
   }
-  // Full weekly salary + super for every active salaried full-timer, every week.
+  // Full weekly salary + super for every active salaried full-timer, every week,
+  // attributed to this venue by the fraction of their rostered hours worked here
+  // (full salary when venue is null / org-wide).
   const periodWeeks = Math.max(0, (end.getTime() - start.getTime()) / (7 * 86_400_000));
-  for (const profile of activeStaff) {
-    cents += Math.round(weeklyFixedCostCents(staffCostingRate(profile)) * periodWeeks);
+  const salariedIds = salariedStaff.map((p) => p.id);
+  const rosterHoursByStaffVenue = new Map<string, Map<string, number>>();
+  if (salariedIds.length > 0) {
+    const shifts = await prisma.rosterShift.findMany({
+      where: {
+        startsAt: { lt: end },
+        endsAt: { gt: start },
+        status: { not: 'CANCELLED' },
+        staffProfileId: { in: salariedIds },
+        staffProfile: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
+      },
+      select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
+    });
+    for (const shift of shifts) {
+      const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
+      const h = rosterHours(shift);
+      const m = rosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
+      m.set(v, (m.get(v) ?? 0) + h);
+      rosterHoursByStaffVenue.set(shift.staffProfileId, m);
+    }
+  }
+  for (const profile of salariedStaff) {
+    const fixedForPeriod = Math.round(weeklyFixedCostCents(staffCostingRate(profile, superRate)) * periodWeeks);
+    if (fixedForPeriod <= 0) continue;
+    const allocations = salariedVenueAllocations(
+      rosterHoursByStaffVenue.get(profile.id) ?? new Map<string, number>(),
+      profile.venue?.trim() || 'Unassigned'
+    );
+    const fraction = venue
+      ? allocations.filter((a) => a.venue === venue).reduce((sum, a) => sum + a.fraction, 0)
+      : 1;
+    if (fraction <= 0) continue;
+    cents += Math.round(fixedForPeriod * fraction);
   }
   return cents;
 }
@@ -924,6 +959,7 @@ export const reportsService = {
     const end = parseDate(data.end, 'Prime cost end date');
     if (end <= start) throw new HttpError(400, 'Prime cost end date must be after the start date');
     const venue = actorVenueScope(actor, data.venue);
+    const superRate = await configuredSuperRateFraction();
 
     const [salesEntries, timesheets, rosterShifts, invoiceLines, wastageRows, activeStaff] = await Promise.all([
       prisma.salesActualEntry.findMany({
@@ -961,17 +997,17 @@ export const reportsService = {
       prisma.stockWastageRecord.findMany({
         where: { wastedAt: { gte: start, lt: end }, ...(venue ? { venue } : {}) }
       }),
-      // Active salaried staff — paid their full weekly salary regardless of
-      // timesheets, added per venue below (scoped to home venue when filtered).
+      // All active salaried staff regardless of home venue — their full weekly
+      // salary is split across venue rows below by rostered hours (salaried staff
+      // rarely clock in, so roster is the reliable venue signal).
       prisma.staffProfile.findMany({
         where: {
           accountType: 'HUMAN',
           mergedIntoStaffProfileId: null,
           employmentStatus: 'ACTIVE',
-          payProfile: { isNot: null },
-          ...(venue ? { venue } : {})
+          payProfile: { isNot: null }
         },
-        select: { venue: true, ...staffPayRateSelect }
+        select: { id: true, venue: true, ...staffPayRateSelect }
       })
     ]);
 
@@ -1016,7 +1052,7 @@ export const reportsService = {
     for (const entry of timesheets) {
       const row = rowFor(entry.venue || entry.staffProfile.venue);
       const hours = workedHours(entry);
-      const rate = staffCostingRate(entry.staffProfile);
+      const rate = staffCostingRate(entry.staffProfile, superRate);
       const split = splitOvertimeHours(actualWeekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
       // Salaried: only overtime is hour-costed; their weekly salary is added below.
       const cost = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
@@ -1027,21 +1063,54 @@ export const reportsService = {
     for (const shift of rosterShifts) {
       const row = rowFor(shift.venue || shift.staffProfile.venue);
       const hours = rosterHours(shift);
-      const rate = staffCostingRate(shift.staffProfile);
+      const rate = staffCostingRate(shift.staffProfile, superRate);
       const split = splitOvertimeHours(scheduledWeekHours, shift.staffProfileId, shift.startsAt, hours, rate.appliesOvertime);
       row.rosterHours += hours;
       row.rosterWageEstimateCents += rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
     }
     // Salaried full-timers: full weekly salary + super every week, regardless of
-    // timesheets — attributed to their home venue (the report is venue-grouped).
+    // timesheets — split across venue rows by rostered hours (salaried staff
+    // rarely clock in), falling back to their home venue when never rostered.
+    // The split needs each staffer's roster across ALL venues (so the fraction is
+    // right even in a venue-filtered report), hence a dedicated unscoped query.
     const primePeriodWeeks = Math.max(0, (end.getTime() - start.getTime()) / (7 * 86_400_000));
+    const salariedIds = activeStaff.map((p) => p.id);
+    const salariedRosterHoursByStaffVenue = new Map<string, Map<string, number>>();
+    if (salariedIds.length > 0) {
+      const salariedShifts = await prisma.rosterShift.findMany({
+        where: {
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
+          staffProfileId: { in: salariedIds },
+          staffProfile: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
+        },
+        select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
+      });
+      for (const shift of salariedShifts) {
+        const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
+        const h = rosterHours(shift);
+        const m = salariedRosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
+        m.set(v, (m.get(v) ?? 0) + h);
+        salariedRosterHoursByStaffVenue.set(shift.staffProfileId, m);
+      }
+    }
     for (const profile of activeStaff) {
-      const fixed = Math.round(weeklyFixedCostCents(staffCostingRate(profile)) * primePeriodWeeks);
+      const fixed = Math.round(weeklyFixedCostCents(staffCostingRate(profile, superRate)) * primePeriodWeeks);
       if (fixed <= 0) continue;
-      const row = rowFor(profile.venue);
-      row.wageCents += fixed;
-      row.approvedWageCents += fixed;
-      row.rosterWageEstimateCents += fixed;
+      const allocations = salariedVenueAllocations(
+        salariedRosterHoursByStaffVenue.get(profile.id) ?? new Map<string, number>(),
+        profile.venue?.trim() || 'Unassigned'
+      );
+      const applied = venue ? allocations.filter((a) => a.venue === venue) : allocations;
+      for (const alloc of applied) {
+        const cents = Math.round(fixed * alloc.fraction);
+        if (cents <= 0) continue;
+        const row = rowFor(alloc.venue);
+        row.wageCents += cents;
+        row.approvedWageCents += cents;
+        row.rosterWageEstimateCents += cents;
+      }
     }
     for (const line of invoiceLines) rowFor(line.invoice.venue).invoiceCogsCents += Math.max(0, line.lineAmountCents);
     for (const wastage of wastageRows) rowFor(wastage.venue).wastageCents += Math.max(0, wastage.costImpactCents ?? 0);

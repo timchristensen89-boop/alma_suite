@@ -104,6 +104,7 @@ function toPayload(row: {
   primaryContactEmail: string | null;
   primaryContactPhone: string | null;
   venues: unknown;
+  superGuaranteePercent?: number;
   handbookContent?: unknown;
   onboardingSettings?: unknown;
   staffDefaults?: unknown;
@@ -124,6 +125,7 @@ function toPayload(row: {
         phone?: string;
         weeklyForecastSalesCents?: number;
         targetWagePercent?: number;
+        targetPrimeCostPercent?: number;
       } => typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string')
       .map((v) => ({
         name: v.name,
@@ -134,6 +136,9 @@ function toPayload(row: {
           : {}),
         ...(typeof v.targetWagePercent === 'number' && Number.isFinite(v.targetWagePercent)
           ? { targetWagePercent: Math.min(100, Math.max(0, v.targetWagePercent)) }
+          : {}),
+        ...(typeof v.targetPrimeCostPercent === 'number' && Number.isFinite(v.targetPrimeCostPercent)
+          ? { targetPrimeCostPercent: Math.min(100, Math.max(0, v.targetPrimeCostPercent)) }
           : {})
       }));
   }
@@ -145,6 +150,7 @@ function toPayload(row: {
     primaryContactEmail: row.primaryContactEmail,
     primaryContactPhone: row.primaryContactPhone,
     venues,
+    superGuaranteePercent: typeof row.superGuaranteePercent === 'number' ? row.superGuaranteePercent : 12,
     handbookContent: row.handbookContent && typeof row.handbookContent === 'object' ? (row.handbookContent as Record<string, unknown>) : {},
     onboardingSettings: normaliseOnboardingSettings(row.onboardingSettings),
     staffDefaults: normaliseStaffDefaults(row.staffDefaults),
@@ -162,6 +168,18 @@ function toPayload(row: {
 function maskKey(key: string) {
   if (key.length <= 8) return '••••';
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
+// The admin-configured super guarantee rate as a FRACTION (0.12 = 12%) for the
+// costing engine. Falls back to the legacy 12% when unset, so costing never
+// breaks if the row predates the column.
+export async function configuredSuperRateFraction(): Promise<number> {
+  const row = await prisma.appSettings.findUnique({
+    where: { id: SINGLETON_ID },
+    select: { superGuaranteePercent: true }
+  });
+  const pct = typeof row?.superGuaranteePercent === 'number' ? row.superGuaranteePercent : 12;
+  return Math.min(30, Math.max(0, pct)) / 100;
 }
 
 async function ensureSingleton() {
@@ -190,6 +208,9 @@ export const settingsService = {
           (existing as { venues?: unknown }).venues,
           data.venues as Array<Record<string, unknown>>
         ) as Prisma.InputJsonValue
+      }),
+      ...(data.superGuaranteePercent !== undefined && {
+        superGuaranteePercent: Math.min(30, Math.max(0, data.superGuaranteePercent))
       }),
       ...(data.handbookContent !== undefined && {
         handbookContent: data.handbookContent as Prisma.InputJsonValue

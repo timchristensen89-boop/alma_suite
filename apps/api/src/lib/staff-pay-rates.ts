@@ -48,16 +48,18 @@ export type StaffCostingRate = {
   source: string;
 };
 
-function withSuper(cents: number): number {
-  return Math.round(cents * (1 + SUPER_GUARANTEE_RATE));
-}
-
 function isFullTimeType(employmentType: string | null | undefined): boolean {
   const value = (employmentType ?? '').toUpperCase().replace(/[\s-]/g, '_');
   return value === 'FULL_TIME' || value === 'FULLTIME' || value === 'PERMANENT_FULL_TIME';
 }
 
-export function staffCostingRate(profile: StaffCostProfile): StaffCostingRate {
+// `superRate` is a fraction (0.12 = 12%). Defaults to the legacy constant so any
+// caller that hasn't loaded the admin-configured rate keeps the prior behaviour.
+export function staffCostingRate(
+  profile: StaffCostProfile,
+  superRate: number = SUPER_GUARANTEE_RATE
+): StaffCostingRate {
+  const withSuper = (cents: number): number => Math.round(cents * (1 + superRate));
   const flat = (cents: number, source: string): StaffCostingRate => {
     const rate = withSuper(cents);
     return { ordinaryRateCents: rate, overtimeRateCents: null, appliesOvertime: false, rateCents: rate, source };
@@ -168,4 +170,25 @@ export function costForRate(rate: StaffCostingRate, split: { ordinary: number; o
 export function weeklyFixedCostCents(rate: StaffCostingRate): number {
   if (!rate.appliesOvertime || !rate.ordinaryRateCents) return 0;
   return Math.round(rate.ordinaryRateCents * FULL_TIME_ORDINARY_WEEKLY_HOURS);
+}
+
+// How a salaried staffer's fixed weekly salary splits across venues. Salaried
+// managers rarely clock in (timesheets are unreliable for them), so we attribute
+// their cost by where they're ROSTERED. Pass the staffer's rostered hours per
+// venue over the period; the salary is split in proportion to those hours. When
+// they have no roster shifts at all, the whole cost falls to their home venue.
+export function salariedVenueAllocations(
+  rosterHoursByVenue: Map<string, number>,
+  homeVenue: string
+): Array<{ venue: string; fraction: number }> {
+  let total = 0;
+  for (const h of rosterHoursByVenue.values()) total += h > 0 ? h : 0;
+  if (total > 0) {
+    const out: Array<{ venue: string; fraction: number }> = [];
+    for (const [venue, h] of rosterHoursByVenue) {
+      if (h > 0) out.push({ venue, fraction: h / total });
+    }
+    return out;
+  }
+  return [{ venue: homeVenue, fraction: 1 }];
 }

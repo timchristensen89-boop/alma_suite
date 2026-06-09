@@ -9,11 +9,13 @@ type VenueForecast = {
   phone?: string;
   weeklyForecastSalesCents?: number;
   targetWagePercent?: number;
+  targetPrimeCostPercent?: number;
 };
 
 type DraftRow = {
   weeklyForecastInput: string;
   targetWagePercentInput: string;
+  targetPrimeCostPercentInput: string;
 };
 
 function formatMoney(cents: number | undefined) {
@@ -44,6 +46,7 @@ export function WageForecastsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [tone, setTone] = useState<'success' | 'error'>('success');
   const [draft, setDraft] = useState<Record<string, DraftRow>>({});
+  const [superInput, setSuperInput] = useState('12');
 
   useEffect(() => {
     void (async () => {
@@ -51,11 +54,13 @@ export function WageForecastsPage() {
       try {
         const next = await api<AppSettingsPayload>('/api/settings');
         setSettings(next);
+        setSuperInput(next.superGuaranteePercent != null ? String(next.superGuaranteePercent) : '12');
         const initial: Record<string, DraftRow> = {};
         for (const venue of next.venues as VenueForecast[]) {
           initial[venue.name] = {
             weeklyForecastInput: formatMoney(venue.weeklyForecastSalesCents),
-            targetWagePercentInput: venue.targetWagePercent != null ? String(venue.targetWagePercent) : '32'
+            targetWagePercentInput: venue.targetWagePercent != null ? String(venue.targetWagePercent) : '32',
+            targetPrimeCostPercentInput: venue.targetPrimeCostPercent != null ? String(venue.targetPrimeCostPercent) : ''
           };
         }
         setDraft(initial);
@@ -79,17 +84,23 @@ export function WageForecastsPage() {
         const row = draft[venue.name];
         const cents = row ? parseMoneyToCents(row.weeklyForecastInput) : null;
         const pct = row ? parsePercent(row.targetWagePercentInput) : null;
+        const primePct = row ? parsePercent(row.targetPrimeCostPercentInput) : null;
         return {
           name: venue.name,
           address: venue.address ?? '',
           phone: venue.phone ?? '',
           ...(cents != null ? { weeklyForecastSalesCents: cents } : {}),
-          ...(pct != null ? { targetWagePercent: pct } : {})
+          ...(pct != null ? { targetWagePercent: pct } : {}),
+          ...(primePct != null ? { targetPrimeCostPercent: primePct } : {})
         };
       });
+      const superPct = parsePercent(superInput);
       const next = await api<AppSettingsPayload>('/api/settings', {
         method: 'PATCH',
-        body: JSON.stringify({ venues: updatedVenues })
+        body: JSON.stringify({
+          venues: updatedVenues,
+          ...(superPct != null ? { superGuaranteePercent: superPct } : {})
+        })
       });
       setSettings(next);
       setMessage('Wage forecasts saved. Reports will use these values immediately.');
@@ -105,7 +116,7 @@ export function WageForecastsPage() {
   function updateDraft(name: string, patch: Partial<DraftRow>) {
     setDraft((current) => ({
       ...current,
-      [name]: { ...(current[name] ?? { weeklyForecastInput: '', targetWagePercentInput: '32' }), ...patch }
+      [name]: { ...(current[name] ?? { weeklyForecastInput: '', targetWagePercentInput: '32', targetPrimeCostPercentInput: '' }), ...patch }
     }));
   }
 
@@ -132,12 +143,17 @@ export function WageForecastsPage() {
         ) : (
           <div className="wage-forecasts-grid">
             {venues.map((venue) => {
-              const row = draft[venue.name] ?? { weeklyForecastInput: '', targetWagePercentInput: '32' };
+              const row = draft[venue.name] ?? { weeklyForecastInput: '', targetWagePercentInput: '32', targetPrimeCostPercentInput: '' };
               const previewCents = parseMoneyToCents(row.weeklyForecastInput);
               const previewPct = parsePercent(row.targetWagePercentInput);
               const previewBudgetCents =
                 previewCents != null && previewPct != null
                   ? Math.round(previewCents * (previewPct / 100))
+                  : null;
+              const previewPrimePct = parsePercent(row.targetPrimeCostPercentInput);
+              const previewPrimeCents =
+                previewCents != null && previewPrimePct != null
+                  ? Math.round(previewCents * (previewPrimePct / 100))
                   : null;
               return (
                 <div key={venue.name} className="wage-forecast-row">
@@ -172,6 +188,23 @@ export function WageForecastsPage() {
                       <span className="subtle">Default: 32% (adjust per venue based on historical actuals)</span>
                     </div>
                   </div>
+                  <div className="form-grid two" style={{ marginTop: 8 }}>
+                    <div>
+                      <Input
+                        label="Target prime cost %"
+                        value={row.targetPrimeCostPercentInput}
+                        onChange={(event) => updateDraft(venue.name, { targetPrimeCostPercentInput: event.currentTarget.value })}
+                        placeholder="e.g. 60"
+                        type="text"
+                        inputMode="decimal"
+                      />
+                      <span className="subtle">
+                        Wages + COGS target as a % of sales. Reports flags variance against this.
+                        {previewPrimeCents != null ? <> Target ≈ <strong>${formatMoney(previewPrimeCents)}</strong>/wk.</> : null}
+                      </span>
+                    </div>
+                    <div />
+                  </div>
                 </div>
               );
             })}
@@ -179,6 +212,26 @@ export function WageForecastsPage() {
         )}
 
         <ActionFeedback message={message} tone={tone} />
+      </Card>
+
+      <Card
+        title="Superannuation guarantee"
+        subtitle="The employer super rate baked into every costed hour across Staff costing and Prime cost. A single national rate that steps up over time — update it here when the legislated rate changes. Saved with 'Save all' above."
+      >
+        <div className="form-grid two">
+          <div>
+            <Input
+              label="Super guarantee %"
+              value={superInput}
+              onChange={(event) => setSuperInput(event.currentTarget.value)}
+              placeholder="12"
+              type="text"
+              inputMode="decimal"
+            />
+            <span className="subtle">Currently 12% (from 1 July 2025). Applies to all venues and future costing calculations.</span>
+          </div>
+          <div />
+        </div>
       </Card>
 
       <Card title="How this is used" padding="tight">

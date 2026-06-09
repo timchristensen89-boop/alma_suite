@@ -21,9 +21,9 @@ import {
 import { env } from '../env.js';
 import { integrationService } from './integration.service.js';
 import { mailService } from './mail.service.js';
-import { settingsService } from './settings.service.js';
+import { settingsService, configuredSuperRateFraction } from './settings.service.js';
 import { HttpError } from '../lib/http.js';
-import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, FULL_TIME_ORDINARY_WEEKLY_HOURS } from '../lib/staff-pay-rates.js';
+import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, FULL_TIME_ORDINARY_WEEKLY_HOURS } from '../lib/staff-pay-rates.js';
 
 const APP_LABELS: Record<AlmaAppId, string> = {
   COMPLIANCE: 'Compliance',
@@ -300,6 +300,8 @@ export const adminService = {
         throw new HttpError(400, `Unknown venue "${venueFilter}".`);
       }
     }
+    // Admin-configured super guarantee rate (fraction) baked into every costed hour.
+    const superRate = await configuredSuperRateFraction();
     const staffSelect = {
       id: true,
       firstName: true,
@@ -413,7 +415,7 @@ export const adminService = {
     const staffFor = (profile: typeof timesheets[number]['staffProfile'], entryVenue: string) => {
       const venue = entryVenue || profile.venue?.trim() || 'Unassigned';
       const roleTitle = profile.roleTitle?.trim() || 'Unassigned role';
-      const rate = staffCostingRate(profile);
+      const rate = staffCostingRate(profile, superRate);
       const key = `${profile.id}|${venue}`;
       const row = byStaff.get(key) ?? {
         ...emptyCostingRow(),
@@ -433,7 +435,7 @@ export const adminService = {
       const venue = entry.venue?.trim() || entry.staffProfile.venue?.trim() || 'Unassigned';
       const area = entry.area?.trim() || 'Unassigned area';
       const roleTitle = entry.roleTitle?.trim() || entry.staffProfile.roleTitle?.trim() || 'Unassigned role';
-      const rate = staffCostingRate(entry.staffProfile);
+      const rate = staffCostingRate(entry.staffProfile, superRate);
       const hours = hoursBetween(entry.clockInAt, entry.clockOutAt, entry.breakMinutes);
       const split = splitOvertimeHours(actualWeekHours, entry.staffProfileId, entry.workDate, hours, rate.appliesOvertime);
       // Salaried staff: ordinary hours are covered by their fixed weekly salary
@@ -455,7 +457,7 @@ export const adminService = {
       const venue = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
       const area = shift.area?.trim() || 'Unassigned area';
       const roleTitle = shift.roleTitle?.trim() || shift.staffProfile.roleTitle?.trim() || 'Unassigned role';
-      const rate = staffCostingRate(shift.staffProfile);
+      const rate = staffCostingRate(shift.staffProfile, superRate);
       const hours = hoursBetween(shift.startsAt, shift.endsAt, shift.breakMinutes);
       const split = splitOvertimeHours(scheduledWeekHours, shift.staffProfileId, shift.startsAt, hours, rate.appliesOvertime);
       const cost = rate.appliesOvertime ? costForRate({ ...rate, ordinaryRateCents: 0 }, split) : costForRate(rate, split);
@@ -472,10 +474,11 @@ export const adminService = {
 
     // ── Salaried full-timers: full weekly salary + super, every week ──────────
     // A salaried staffer costs their fixed weekly salary regardless of (or even
-    // without) timesheets, so add it across the period — split across the venues
-    // they worked by hours, defaulting to their home venue. Overtime past 45h/wk
-    // is already costed from timesheets above; ordinary hours are covered here.
-    const salariedStaff = activeStaff.filter((profile) => weeklyFixedCostCents(staffCostingRate(profile)) > 0);
+    // without) timesheets, so add it across the period — split across venues by
+    // their ROSTERED hours (salaried staff rarely clock in), defaulting to their
+    // home venue when they have no roster. Overtime past 45h/wk is already costed
+    // from timesheets above; ordinary hours are covered here.
+    const salariedStaff = activeStaff.filter((profile) => weeklyFixedCostCents(staffCostingRate(profile, superRate)) > 0);
     if (salariedStaff.length > 0) {
       const periodDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
       const periodWeeks = periodDays / 7;
@@ -483,43 +486,43 @@ export const adminService = {
       for (let d = new Date(start); d < end; d = addDays(d, 1)) dayKeys.push(isoDate(d));
 
       const salariedIds = salariedStaff.map((profile) => profile.id);
-      const allVenueSheets = await prisma.timesheet.findMany({
+      // Salaried managers rarely fill timesheets, so attribute their cost by where
+      // they're ROSTERED across the whole period (all venues, unfiltered) — that's
+      // the reliable signal of where they actually work.
+      const allVenueShifts = await prisma.rosterShift.findMany({
         where: {
-          workDate: { gte: start, lt: end },
-          status: { not: 'REJECTED' },
+          startsAt: { lt: end },
+          endsAt: { gt: start },
+          status: { not: 'CANCELLED' },
           staffProfileId: { in: salariedIds },
           staffProfile: { accountType: 'HUMAN', mergedIntoStaffProfileId: null }
         },
         select: {
           staffProfileId: true,
           venue: true,
-          clockInAt: true,
-          clockOutAt: true,
+          startsAt: true,
+          endsAt: true,
           breakMinutes: true,
           staffProfile: { select: { venue: true } }
         }
       });
       const hoursByStaffVenue = new Map<string, Map<string, number>>();
-      for (const ts of allVenueSheets) {
-        const v = ts.venue?.trim() || ts.staffProfile.venue?.trim() || 'Unassigned';
-        const h = hoursBetween(ts.clockInAt, ts.clockOutAt, ts.breakMinutes);
-        const m = hoursByStaffVenue.get(ts.staffProfileId) ?? new Map<string, number>();
+      for (const shift of allVenueShifts) {
+        const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
+        const h = hoursBetween(shift.startsAt, shift.endsAt, shift.breakMinutes);
+        const m = hoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
         m.set(v, (m.get(v) ?? 0) + h);
-        hoursByStaffVenue.set(ts.staffProfileId, m);
+        hoursByStaffVenue.set(shift.staffProfileId, m);
       }
 
       for (const profile of salariedStaff) {
-        const rate = staffCostingRate(profile);
+        const rate = staffCostingRate(profile, superRate);
         const fixedForPeriod = Math.round(weeklyFixedCostCents(rate) * periodWeeks);
         if (fixedForPeriod <= 0) continue;
-        const hv = hoursByStaffVenue.get(profile.id);
-        const totalHours = hv ? Array.from(hv.values()).reduce((a, b) => a + b, 0) : 0;
-        const allocations: Array<{ venue: string; fraction: number }> = [];
-        if (hv && totalHours > 0) {
-          for (const [v, h] of hv) allocations.push({ venue: v, fraction: h / totalHours });
-        } else {
-          allocations.push({ venue: profile.venue?.trim() || 'Unassigned', fraction: 1 });
-        }
+        const allocations = salariedVenueAllocations(
+          hoursByStaffVenue.get(profile.id) ?? new Map<string, number>(),
+          profile.venue?.trim() || 'Unassigned'
+        );
         const applied = venueFilter ? allocations.filter((a) => a.venue === venueFilter) : allocations;
         for (const alloc of applied) {
           const cents = Math.round(fixedForPeriod * alloc.fraction);
