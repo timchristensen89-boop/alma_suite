@@ -696,7 +696,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [guestDetail, setGuestDetail] = useState<MarketingGuestDetail | null>(null);
   const [segmentPreview, setSegmentPreview] = useState<MarketingSegmentPreviewPayload | null>(null);
+  const [isLoadingSegmentPreview, setIsLoadingSegmentPreview] = useState(false);
   const [campaignPreview, setCampaignPreview] = useState<CampaignPreviewResult | null>(null);
+  const [loadingCampaignId, setLoadingCampaignId] = useState<string | null>(null);
   const [contentDashboard, setContentDashboard] = useState<MarketingContentDashboardSummary | null>(null);
   const [contentAssets, setContentAssets] = useState<MarketingContentAsset[]>([]);
   const [contentPosts, setContentPosts] = useState<MarketingContentPost[]>([]);
@@ -931,6 +933,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function previewSegment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsLoadingSegmentPreview(true);
     try {
       const preview = await api<MarketingSegmentPreviewPayload>('/api/marketing/segments/preview', {
         method: 'POST',
@@ -944,6 +947,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess('segment', 'Segment preview refreshed.');
     } catch (error) {
       setError('segment', error, 'Could not preview segment.');
+    } finally {
+      setIsLoadingSegmentPreview(false);
     }
   }
 
@@ -1000,6 +1005,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   }
 
   async function previewCampaignRecipients(campaignId: string) {
+    setLoadingCampaignId(campaignId);
     try {
       const preview = await api<CampaignPreviewResult>(`/api/marketing/campaigns/${campaignId}/preview-recipients`, {
         method: 'POST'
@@ -1008,10 +1014,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess(`campaign-preview:${campaignId}`, 'Recipient preview refreshed.');
     } catch (error) {
       setError(`campaign-preview:${campaignId}`, error, 'Could not preview recipients.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
   async function simulateCampaign(campaignId: string) {
+    setLoadingCampaignId(campaignId);
     try {
       const preview = await api<CampaignPreviewResult>(`/api/marketing/campaigns/${campaignId}/simulate-send`, {
         method: 'POST'
@@ -1021,6 +1030,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       await load();
     } catch (error) {
       setError(`campaign-simulate:${campaignId}`, error, 'Could not simulate campaign.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1033,6 +1044,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setError(`campaign-test:${campaignId}`, new Error('Enter a valid email.'), 'Enter a valid email.');
       return;
     }
+    setLoadingCampaignId(campaignId);
     try {
       const result = await api<{ message: string; delivered: boolean }>(`/api/marketing/campaigns/${campaignId}/test-send`, {
         method: 'POST',
@@ -1046,6 +1058,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       await load();
     } catch (error) {
       setError(`campaign-test:${campaignId}`, error, 'Could not send the test email.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1072,6 +1086,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setError(`campaign-live:${campaign.id}`, new Error('Cancelled'), 'Live send cancelled.');
       return;
     }
+    setLoadingCampaignId(campaign.id);
     try {
       const result = await api<{ message: string; sent: number; failed: number; skipped: number }>(`/api/marketing/campaigns/${campaign.id}/live-send`, {
         method: 'POST',
@@ -1100,6 +1115,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
         }
       }
       setError(`campaign-live:${campaign.id}`, error, 'Could not send live.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1139,6 +1156,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function saveAutomation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!automationForm.emailTemplateId) {
+      setError('automation', new Error('Select an email template before saving.'), 'Select an email template before saving.');
+      return;
+    }
     if (segmentForm.venue && automationForm.venue && segmentForm.venue !== automationForm.venue) {
       if (
         !window.confirm(
@@ -2036,7 +2057,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <Select label="Venue" value={tagForm.venue} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
                         <Select label="Type" value={tagForm.type} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, type: el.value as GuestTagType })); }} options={TAG_TYPES.map((value) => ({ label: value, value }))} />
                         <Input label="Tag name" required value={tagForm.name} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, name: el.value })); }} />
-                        <Input label="Colour" value={tagForm.color} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, color: el.value })); }} />
+                        <Input label="Colour" type="color" value={tagForm.color} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, color: el.value })); }} />
                       </div>
                       <Textarea label="Description" rows={2} value={tagForm.description} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, description: el.value })); }} />
                       <div className="toolbar-right">
@@ -2088,9 +2109,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       </div>
                       <div className="toolbar-right">
                         <ActionFeedback message={feedback.target === 'segment' ? feedback.message : null} tone={feedback.tone} />
-                        <Button type="submit">Preview segment</Button>
+                        <Button type="submit" disabled={isLoadingSegmentPreview}>Preview segment</Button>
                       </div>
                     </form>
+                    {isLoadingSegmentPreview ? <Spinner label="Previewing segment..." /> : null}
                     {segmentPreview ? (
                       <div className="marketing-stack">
                         <div className="marketing-summary-card">
@@ -2210,13 +2232,18 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     })()}
                     <strong>{campaign.name}</strong>
                     <span>{campaign.channel} · {campaign.status} · {campaign.recipients.length} recipients</span>
+                    {!campaign.simulatedAt && !campaign.sentAt ? (
+                      <div className="marketing-badges">
+                        <Badge tone="warning">Needs test send</Badge>
+                      </div>
+                    ) : null}
                     <div className="marketing-badges">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)}>Preview</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)} disabled={loadingCampaignId === campaign.id}>Preview</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void issueGiftCardsForCampaign(campaign.id)}>🎁 Issue gift cards</Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)}>📧 Test send</Button>
-                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={!campaign.simulatedAt || Boolean(campaign.sentAt)}>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>Simulate send</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>📧 Test send</Button>
+                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={loadingCampaignId === campaign.id || !campaign.simulatedAt || Boolean(campaign.sentAt)}>
                         {campaign.sentAt ? 'Sent ✓' : 'Send live'}
                       </Button>
                     </div>
@@ -2274,6 +2301,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 />
               ) : null}
               <div className="marketing-stack">
+                {automations.length === 0 ? (
+                  <EmptyState title="No automations yet" description="Create an automation to trigger messages based on guest events." />
+                ) : null}
                 {automations.slice(0, 5).map((automation) => {
                   const metric = automationMetrics.find((m) => m.automationId === automation.id);
                   const lastRunRelative = metric?.lastRunAt
