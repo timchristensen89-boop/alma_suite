@@ -1106,7 +1106,7 @@ export const adminService = {
       return { sent: false, reason: !recipient ? 'no recipient configured' : 'mail provider not configured', weekLabel };
     }
 
-    await mailService.sendAlert({
+    const sendResult = await mailService.sendAlert({
       to: recipient,
       subject: `[Alma weekly summary] Week of ${weekLabel}`,
       title: 'Alma weekly summary',
@@ -1115,6 +1115,16 @@ export const adminService = {
       ctaUrl: 'https://alma-reports.web.app/',
       ctaLabel: 'Open reports'
     });
+
+    // Don't claim success if the provider skipped or failed — surface the reason
+    // so the admin knows the email didn't actually go out.
+    if (sendResult.status !== 'sent') {
+      return {
+        sent: false,
+        reason: sendResult.status === 'failed' ? sendResult.reason : sendResult.reason || 'mail provider did not send',
+        weekLabel
+      };
+    }
 
     return { sent: true, recipient, weekLabel, overdueIssues, expiringRecords, openLicences: openLicences.length };
   },

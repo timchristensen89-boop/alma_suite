@@ -3668,6 +3668,11 @@ export const integrationService = {
     if (!existing) throw new HttpError(404, 'Square menu mapping not found.');
     const almaRecipeId = data.almaRecipeId === '' ? null : data.almaRecipeId ?? existing.almaRecipeId;
     const stockItemId = data.stockItemId === '' ? null : data.stockItemId ?? existing.stockItemId;
+    // A Square item maps to a recipe OR a stock item — never both, which would
+    // be ambiguous for sales attribution and costing.
+    if (almaRecipeId && stockItemId) {
+      throw new HttpError(400, 'Map this Square item to a recipe OR a stock item, not both.');
+    }
     if (almaRecipeId) {
       const recipe = await prisma.recipe.findUnique({ where: { id: almaRecipeId }, select: { id: true, venue: true } });
       if (!recipe) throw new HttpError(400, 'Selected Alma recipe was not found.');

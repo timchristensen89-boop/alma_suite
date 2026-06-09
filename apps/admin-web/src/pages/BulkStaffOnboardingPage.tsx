@@ -63,6 +63,9 @@ export function BulkStaffOnboardingPage() {
 
   async function runImport() {
     if (validRows.length === 0) return;
+    if (!window.confirm(`Create onboarding invites for ${validRows.length} staff member${validRows.length === 1 ? '' : 's'}? This sends invites and can't be undone in bulk.`)) {
+      return;
+    }
     setRunning(true);
     setMessage(null);
     const initial: ResultRow[] = parsed.map((row) => ({
