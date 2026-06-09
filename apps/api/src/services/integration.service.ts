@@ -75,19 +75,20 @@ const XERO_SCOPES = [
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// Scoped to MESSAGING + INSIGHTS only. Publishing (pages_manage_posts /
+// instagram_content_publish) is intentionally NOT requested — social posts are
+// scheduled in Adobe Express, so Alma never needs the heavier publishing App Review.
 const META_SCOPES = [
-  // Pages — list, read engagement, manage metadata, publish posts, manage comments
+  // Pages — list, read engagement, manage metadata + comments, messaging, insights
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
-  'pages_manage_posts',
   'pages_manage_engagement',
   'pages_messaging',
   'read_insights',
   'business_management',
-  // Instagram — basic profile, publish content, manage comments/insights/messages
+  // Instagram — basic profile, manage comments/insights/messages (no publishing)
   'instagram_basic',
-  'instagram_content_publish',
   'instagram_manage_comments',
   'instagram_manage_insights',
   'instagram_manage_messages'
