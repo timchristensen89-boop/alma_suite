@@ -65,6 +65,9 @@ function useTaskSummary(authed: boolean) {
 function useVenueSnapshot(venueId: string | undefined) {
   const [snapshot, setSnapshot] = useState<LiveSnapshot | null>(null);
   const [loading, setLoading] = useState(false);
+  // True when the most recent refresh failed, so the header can flag that the
+  // figures aren't live rather than silently showing stale numbers.
+  const [stale, setStale] = useState(false);
 
   useEffect(() => {
     if (!venueId) return;
@@ -74,8 +77,10 @@ function useVenueSnapshot(venueId: string | undefined) {
       try {
         const path = `/api/public/venue-snapshot${venueName ? `?venue=${encodeURIComponent(venueName)}` : ''}`;
         setSnapshot(await api<LiveSnapshot>(path));
+        setStale(false);
       } catch {
-        /* silent — iPad shows last-known values */
+        // Keep last-known values on screen, but mark them as not live.
+        setStale(true);
       } finally {
         setLoading(false);
       }
@@ -86,7 +91,7 @@ function useVenueSnapshot(venueId: string | undefined) {
     return () => window.clearInterval(id);
   }, [venueId]);
 
-  return { snapshot, loading };
+  return { snapshot, loading, stale };
 }
 
 type PermissionKey =
@@ -288,7 +293,7 @@ function VenueSelectPage({ auth, onRequestStaffPin, onSwitchStaff }: PageShellPr
 function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: PageShellProps) {
   const { venueId } = useParams();
   const venue = venueById(venueId);
-  const { snapshot } = useVenueSnapshot(venueId);
+  const { snapshot, stale: snapshotStale } = useVenueSnapshot(venueId);
   const taskSummary = useTaskSummary(Boolean(auth.staff));
   if (!venue) return <Navigate to="/venue" replace />;
 
@@ -333,7 +338,9 @@ function VenueHomePage({ auth, onRequestStaffPin, onSwitchStaff, requirePin }: P
           </div>
         </div>
         {lastUpdated ? (
-          <p className="ipad-live-updated">Live data · last refreshed {lastUpdated}</p>
+          <p className="ipad-live-updated">
+            {snapshotStale ? 'Not live · showing last-known data' : `Live data · last refreshed ${lastUpdated}`}
+          </p>
         ) : null}
 
         <div className="stats-grid">
