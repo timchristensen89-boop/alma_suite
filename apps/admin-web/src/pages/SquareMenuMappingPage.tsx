@@ -299,6 +299,11 @@ export function SquareMenuMappingPage() {
                       label: `${recipe.title}${recipe.venue ? ` · ${recipe.venue}` : ''} · ${recipeCost(recipe.estimatedCost)}`
                     }))}
                   />
+                  {selectedRecipes[mapping.id] ? (
+                    <small className="subtle">
+                      Saving sets this recipe&apos;s Alma sale price to the Square price ({money(mapping.priceMoneyAmount)}).
+                    </small>
+                  ) : null}
                 </div>
                 <div className="field">
                   <span>Stock item fallback</span>

@@ -7962,8 +7962,13 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
             }}
           >
             <Input label="Module title" required value={moduleDraft.title} onChange={(event) => updateModuleDraft('title', event.currentTarget.value)} />
+            <datalist id="academy-categories">
+              {Array.from(new Set(modules.map((module) => module.category).filter((c): c is string => Boolean(c)))).map((category) => (
+                <option key={category} value={category} />
+              ))}
+            </datalist>
             <div className="form-grid three">
-              <Input label="Category" value={moduleDraft.category} onChange={(event) => updateModuleDraft('category', event.currentTarget.value)} />
+              <Input label="Category" list="academy-categories" value={moduleDraft.category} onChange={(event) => updateModuleDraft('category', event.currentTarget.value)} />
               <Input label="Level" type="number" min="1" value={moduleDraft.level} onChange={(event) => updateModuleDraft('level', event.currentTarget.value)} />
               <Input label="Minutes" type="number" min="1" value={moduleDraft.estimatedMinutes} onChange={(event) => updateModuleDraft('estimatedMinutes', event.currentTarget.value)} />
             </div>
