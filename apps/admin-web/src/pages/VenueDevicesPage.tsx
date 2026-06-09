@@ -56,9 +56,13 @@ export function VenueDevicesPage() {
 
   async function submit(event: FormEvent) {
     event.preventDefault();
-    setSaving(true);
     setError(null);
     setFeedback(null);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())) {
+      setError('Email must be a valid address.');
+      return;
+    }
+    setSaving(true);
     try {
       await api('/api/admin/venue-devices', {
         method: 'POST',
@@ -152,9 +156,11 @@ export function VenueDevicesPage() {
               placeholder="Alma Avalon"
               required
             />
-            <datalist id="venue-device-venues">
-              {venues.map((venue) => <option key={venue} value={venue} />)}
-            </datalist>
+            {venues.length > 0 && (
+              <datalist id="venue-device-venues">
+                {venues.map((venue) => <option key={venue} value={venue} />)}
+              </datalist>
+            )}
             <div className="admin-form-actions">
               <Button type="submit" disabled={saving}>{saving ? 'Creating...' : 'Create account'}</Button>
             </div>

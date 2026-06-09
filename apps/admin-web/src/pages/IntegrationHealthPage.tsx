@@ -492,6 +492,12 @@ export function IntegrationHealthPage() {
                 <div>
                   <strong>{run.provider.toUpperCase()}</strong>
                   <span className="subtle">{run.syncType} · {run.recordsImported + run.recordsUpdated} records</span>
+                  {run.status === 'ERROR' && run.errorSummary ? (
+                    <details className="subtle" style={{ marginTop: 4 }}>
+                      <summary style={{ cursor: 'pointer' }}>Error details</summary>
+                      <span style={{ color: '#9A3A2E', fontSize: 11, whiteSpace: 'pre-wrap' }}>{run.errorSummary}</span>
+                    </details>
+                  ) : null}
                 </div>
                 <Badge tone={run.status === 'SUCCESS' ? 'positive' : run.status === 'ERROR' ? 'danger' : 'info'}>
                   {run.status}

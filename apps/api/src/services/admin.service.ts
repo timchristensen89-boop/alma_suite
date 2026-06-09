@@ -269,6 +269,26 @@ export const adminService = {
     const end = parseReportDate(query.end, addDays(start, 7), 'Costing end date');
     if (end <= start) throw new HttpError(400, 'Costing end date must be after the start date.');
     const venueFilter = query.venue?.trim() || null;
+    // Reject an unknown venue filter with a clear error instead of silently
+    // returning an empty report. Lenient: only enforced when venues are
+    // configured, so data drift never hard-blocks the report.
+    if (venueFilter) {
+      const settingsRow = await prisma.appSettings.findUnique({
+        where: { id: 'singleton' },
+        select: { venues: true }
+      });
+      const knownVenues = Array.isArray(settingsRow?.venues)
+        ? settingsRow!.venues
+            .filter(
+              (v): v is { name: string } =>
+                typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string'
+            )
+            .map((v) => v.name)
+        : [];
+      if (knownVenues.length && !knownVenues.includes(venueFilter)) {
+        throw new HttpError(400, `Unknown venue "${venueFilter}".`);
+      }
+    }
     const staffSelect = {
       id: true,
       firstName: true,

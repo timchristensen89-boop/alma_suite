@@ -135,7 +135,12 @@ adminRouter.get('/exports/:kind', async (req, res, next) => {
       req.user
     );
     res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    // RFC 5987: provide both a plain filename and a UTF-8 encoded form so any
+    // non-ASCII characters survive without breaking the header.
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`
+    );
     res.send(csv);
   } catch (error) {
     next(error);

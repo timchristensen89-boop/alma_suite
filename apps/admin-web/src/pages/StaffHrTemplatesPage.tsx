@@ -265,6 +265,10 @@ export function StaffHrTemplatesPage() {
 
   async function saveTemplate(event: FormEvent) {
     event.preventDefault();
+    if (!form.body.trim()) {
+      setError('Template body cannot be empty.');
+      return;
+    }
     setSaving(true);
     setMessage(null);
     setError(null);
@@ -390,7 +394,7 @@ export function StaffHrTemplatesPage() {
                 options={TEMPLATE_STATUSES.map((status) => ({ label: status, value: status }))}
               />
             </div>
-            <Textarea label="Template body" rows={18} value={form.body} onChange={(event) => updateForm('body', event.currentTarget.value)} />
+            <Textarea label="Template body" rows={18} value={form.body} onChange={(event) => updateForm('body', event.currentTarget.value)} required />
             <Textarea label="Variables" rows={6} value={form.variablesText} onChange={(event) => updateForm('variablesText', event.currentTarget.value)} />
 
             <div className="page-stack compact">

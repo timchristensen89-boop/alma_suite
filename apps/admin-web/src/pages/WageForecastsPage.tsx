@@ -18,7 +18,7 @@ type DraftRow = {
 
 function formatMoney(cents: number | undefined) {
   if (cents == null || !Number.isFinite(cents)) return '';
-  return (cents / 100).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  return (cents / 100).toLocaleString(undefined, { maximumFractionDigits: 2 });
 }
 
 function parseMoneyToCents(input: string): number | null {
@@ -160,14 +160,17 @@ export function WageForecastsPage() {
                       type="text"
                       inputMode="decimal"
                     />
-                    <Input
-                      label="Target wage %"
-                      value={row.targetWagePercentInput}
-                      onChange={(event) => updateDraft(venue.name, { targetWagePercentInput: event.currentTarget.value })}
-                      placeholder="32"
-                      type="text"
-                      inputMode="decimal"
-                    />
+                    <div>
+                      <Input
+                        label="Target wage %"
+                        value={row.targetWagePercentInput}
+                        onChange={(event) => updateDraft(venue.name, { targetWagePercentInput: event.currentTarget.value })}
+                        placeholder="32%"
+                        type="text"
+                        inputMode="decimal"
+                      />
+                      <span className="subtle">Default: 32% (adjust per venue based on historical actuals)</span>
+                    </div>
                   </div>
                 </div>
               );

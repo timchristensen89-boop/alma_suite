@@ -106,6 +106,7 @@ export function BulkStaffOnboardingPage() {
     }));
     setResults(initial);
 
+    const preflight = initial.filter((row) => row.status === 'error').length;
     let sent = 0;
     let failed = 0;
     for (let i = 0; i < initial.length; i += 1) {
@@ -136,11 +137,14 @@ export function BulkStaffOnboardingPage() {
       setResults([...initial]);
     }
     setRunning(false);
-    if (failed === 0) {
+    if (failed === 0 && preflight === 0) {
       setMessage(`Created ${sent} invitation${sent === 1 ? '' : 's'}. They'll show up in Staff > Invites.`);
       setTone('success');
     } else {
-      setMessage(`Sent ${sent}, ${failed} failed. See the row-level errors below.`);
+      const segments = [`Sent ${sent}`];
+      if (failed > 0) segments.push(`${failed} API failure${failed === 1 ? '' : 's'}`);
+      if (preflight > 0) segments.push(`${preflight} validation error${preflight === 1 ? '' : 's'}`);
+      setMessage(`${segments.join(', ')}. See the row-level errors below.`);
       setTone('error');
     }
   }
