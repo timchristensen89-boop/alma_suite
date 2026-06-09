@@ -1761,6 +1761,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   function moveWeek(days: number) {
     setSelectedWeekStart(isoDate(addDays(weekStart, days)));
+    // Manual week navigation no longer matches the chosen preset; reset the
+    // label so the period button doesn't show a stale value like "Last month".
+    setPeriodPreset('this-week');
   }
 
   // Apply a top-of-report period preset. Aligns the week-shaped reports to the
@@ -2330,7 +2333,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
-              <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+              <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Xero bills not matched — check Stock recipes' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
               <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
@@ -2509,17 +2512,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       value={forecastInputs[row.venue]?.sales ?? ''}
                       placeholder={centsInput(row.historicalSalesCents) || 'Set in Admin'}
                       readOnly
+                      title="Managed in Admin → Wage forecasts and synced here for consistency."
                       onChange={() => {}}
                     />
                     <Input
                       label="Target wage %"
                       value={forecastInputs[row.venue]?.targetWagePercent ?? '32'}
                       readOnly
+                      title="Managed in Admin → Wage forecasts and synced here for consistency."
                       onChange={() => {}}
                     />
                   </div>
-                  <p className="subtle" style={{ marginTop: 0 }}>
-                    Edit these values in <a href="https://alma-suite-admin.web.app/wage-forecasts" target="_blank" rel="noreferrer">Admin → Wage forecasts</a>.
+                  <p className="report-callout subtle" style={{ marginTop: 0 }}>
+                    These forecasts are <strong>Admin-managed</strong> and synced here so every report stays consistent. Edit them in <a href="https://alma-suite-admin.web.app/wage-forecasts" target="_blank" rel="noreferrer">Admin → Wage forecasts</a>.
                   </p>
 
                   <div className="sales-mini-metrics">
@@ -2642,6 +2647,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rows={data.actualSales.entries}
                   rowKey={(entry) => entry.id}
                   defaultSortKey="date"
+                  initialRowLimit={10}
                   columns={[
                     { key: 'date', label: 'Date', sortValue: (e) => e.serviceDate, render: (e) => new Date(e.serviceDate).toLocaleDateString() },
                     { key: 'venue', label: 'Venue', sortValue: (e) => e.venue, render: (e) => e.venue },
@@ -2782,6 +2788,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rows={wageRows}
                   rowKey={(row) => row.staffProfileId}
                   defaultSortKey="payroll"
+                  initialRowLimit={10}
                   columns={[
                     { key: 'staff', label: 'Staff', sortValue: (r) => r.name, render: (r) => <strong>{r.name}</strong> },
                     { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
@@ -3247,28 +3254,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 padding="none"
               >
                 <div className="table-scroll">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>Component</th>
-                        <th>Menu</th>
-                        <th>Venue</th>
-                        <th style={{ textAlign: 'right' }}>Units · 30d</th>
-                        <th>Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {missing.map((m, i) => (
-                        <tr key={`${m.itemName}|${m.venue}|${i}`}>
-                          <td><strong>{m.itemName}</strong></td>
-                          <td>{m.menu}</td>
-                          <td>{m.venue}</td>
-                          <td style={{ textAlign: 'right' }}>{Math.round(m.units).toLocaleString()}</td>
-                          <td><Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <SortableTable
+                    rows={missing}
+                    rowKey={(m, i) => `${m.itemName}|${m.venue}|${i}`}
+                    defaultSortKey="units"
+                    defaultSortDir="desc"
+                    columns={[
+                      { key: 'component', label: 'Component', sortValue: (m) => m.itemName, render: (m) => <strong>{m.itemName}</strong> },
+                      { key: 'menu', label: 'Menu', sortValue: (m) => m.menu, render: (m) => m.menu },
+                      { key: 'venue', label: 'Venue', sortValue: (m) => m.venue, render: (m) => m.venue },
+                      { key: 'units', label: 'Units · 30d', align: 'right', sortValue: (m) => m.units, render: (m) => Math.round(m.units).toLocaleString() },
+                      { key: 'type', label: 'Type', sortValue: (m) => m.type, render: (m) => <Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge> }
+                    ]}
+                  />
                 </div>
               </Card>
             );
@@ -3322,7 +3320,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             );
           })()}
 
-          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete." padding="none">
+          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete. Click any mapped row to preview the linked recipe." padding="none">
             <div className="reports-filter-grid">
               <Select
                 label="Square account"
