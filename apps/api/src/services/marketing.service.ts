@@ -672,7 +672,9 @@ async function recalculateAutoTagsForGuests(guestIds: string[]) {
 }
 
 function renderMergeFields(template: string, guest: GuestRow, venueName: string) {
-  const firstName = guest.firstName || 'guest';
+  // Escape the guest-controlled name so a value like "<img onerror=…>" can't
+  // inject markup into the rendered email/preview.
+  const firstName = escapeHtml(guest.firstName || 'guest');
   const bookingLink = `${process.env.RESERVE_WEB_URL ?? 'http://localhost:5177'}/widget?venue=${encodeURIComponent(venueName)}`;
   const unsubscribeLink = `${process.env.MARKETING_WEB_URL ?? 'http://localhost:5178'}/preferences?guest=${guest.id}`;
   return template
@@ -3110,6 +3112,11 @@ export const marketingService = {
     const data = marketingAutomationInputSchema.parse(input);
     const venue = actorVenueScope(actor, data.venue, 'Marketing');
     if (!venue) throw new HttpError(400, 'Automation venue is required');
+    // An active automation with no email template can never send — block it at
+    // creation rather than letting it sit active-but-inert.
+    if (data.active && !cleanText(data.emailTemplateId)) {
+      throw new HttpError(400, 'Choose an email template before activating an automation.');
+    }
     const automation = await prisma.marketingAutomation.create({
       data: {
         venue,

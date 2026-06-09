@@ -781,7 +781,10 @@ async function recapPeriod(venue: string | null, start: Date, end: Date, label: 
     recapWageCents(venue, start, end),
     prisma.supplierInvoice.aggregate({ where: { invoiceDate: { gte: start, lt: end }, status: { not: 'DRAFT' }, ...(venue ? { venue } : {}) }, _sum: { totalCents: true } }),
     recapStockValueCents(venue, start),
-    recapStockValueCents(venue, new Date(end.getTime() - 1))
+    // Closing stock uses the period end boundary itself (lte: end) so a stocktake
+    // taken at the boundary — this period's closing count, which is also next
+    // period's opening — is included rather than excluded by an off-by-1ms.
+    recapStockValueCents(venue, end)
   ]);
   const salesCents = salesAgg._sum.salesCents ?? 0;
   const purchasesCents = purchasesAgg._sum.totalCents ?? 0;
