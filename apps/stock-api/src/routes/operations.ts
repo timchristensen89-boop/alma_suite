@@ -20,6 +20,22 @@ operationsRouter.post('/wastage', async (req, res, next) => {
   }
 });
 
+operationsRouter.get('/staff-usage', async (req, res, next) => {
+  try {
+    res.json(await stockOperationsService.listStaffUsage(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+operationsRouter.post('/staff-usage', async (req, res, next) => {
+  try {
+    res.status(201).json(await stockOperationsService.createStaffUsage(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 operationsRouter.get('/deliveries', async (req, res, next) => {
   try {
     res.json(await stockOperationsService.listDeliveries(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));

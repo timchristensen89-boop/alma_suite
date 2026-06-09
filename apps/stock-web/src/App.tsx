@@ -15,6 +15,7 @@ import { PriceMovementPage } from './pages/PriceMovementPage';
 import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WastagePage } from './pages/WastagePage';
+import { StaffUsagePage } from './pages/StaffUsagePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
@@ -37,6 +38,7 @@ const ITEMS_TABS: HubTab[] = [
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
   { to: '/wastage', label: 'Wastage' },
+  { to: '/staff-usage', label: 'Staff usage' },
   { to: '/transfers', label: 'Transfers' }
 ];
 const PURCHASING_TABS: HubTab[] = [
@@ -227,6 +229,7 @@ function StockAppShell() {
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
         <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
+        <Route path="/staff-usage" element={<HubLayout tabs={STOCK_COUNT_TABS}><StaffUsagePage /></HubLayout>} />
         <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
 
         {/* Purchasing hub */}

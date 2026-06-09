@@ -84,8 +84,20 @@ export const stockWastageReasonSchema = z.enum([
   'RETURNED',
   'EXPIRED',
   'STAFF_MEAL',
-  'OTHER'
+  'OTHER',
+  // Staff usage categories — surfaced in the dedicated "Staff usage" area, not
+  // the wastage list. Stored on the same record so they deduct venue stock at
+  // cost the same way wastage does.
+  'STAFF_FOOD',
+  'STAFF_DRINK',
+  'PERSONAL_USE'
 ]);
+
+// The reasons that represent staff/personal consumption rather than wastage.
+// Used to split the two areas: the Wastage list excludes these, the Staff usage
+// list includes only these.
+export const STOCK_STAFF_USAGE_REASONS = ['STAFF_FOOD', 'STAFF_DRINK', 'PERSONAL_USE'] as const;
+export type StockStaffUsageCategory = (typeof STOCK_STAFF_USAGE_REASONS)[number];
 export const stockDeliveryCheckStatusSchema = z.enum(['DRAFT', 'IN_REVIEW', 'COMPLETED', 'DISCREPANCY']);
 export const stockReorderNoticeStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMISSED']);
 export const stockInvoiceMatchingStatusSchema = z.enum([
@@ -5368,6 +5380,21 @@ export const stockWastageCreateInputSchema = z.object({
   note: z.string().optional().or(z.literal('')),
   wastedAt: z.string().optional().or(z.literal(''))
 });
+
+// Staff/personal consumption: staff food, staff drinks, or stock taken for
+// personal use. Recorded against venue stock at cost (same engine as wastage)
+// so it comes off the stocktake instead of looking like loss.
+export const stockStaffUsageCreateInputSchema = z.object({
+  stockItemId: z.string().min(1, 'Select a stock item'),
+  venue: z.string().min(1, 'Venue is required'),
+  quantity: z.coerce.number().positive('Quantity must be greater than zero'),
+  unit: z.string().min(1, 'Unit is required'),
+  category: z.enum(['STAFF_FOOD', 'STAFF_DRINK', 'PERSONAL_USE']),
+  staffName: z.string().optional().or(z.literal('')),
+  note: z.string().optional().or(z.literal('')),
+  usedAt: z.string().optional().or(z.literal(''))
+});
+export type StockStaffUsageCreateInput = z.infer<typeof stockStaffUsageCreateInputSchema>;
 
 export const stockDeliveryCheckItemInputSchema = z.object({
   stockItemId: z.string().optional().or(z.literal('')),
