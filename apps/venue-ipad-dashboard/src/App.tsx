@@ -831,6 +831,7 @@ export function App() {
           intent={pinIntent.intent}
           onClose={() => setPinIntent(null)}
           onSubmit={handlePinSubmit}
+          onRefresh={auth.refresh}
         />
       ) : null}
     </>

@@ -7,7 +7,7 @@
 //
 // Two views: a list of today's open runs, and a single run's items.
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ChecklistItemResult, ChecklistRun } from '@alma/shared';
 import { api, messageForError } from '../api';
@@ -38,6 +38,9 @@ export function ChecklistsPage({ venue, auth, onRequestStaffPin, onSwitchStaff }
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  // Synchronous lock so rapid consecutive taps can't both pass the guard
+  // before React has processed the setSavingItemId state update.
+  const savingItemRef = useRef<string | null>(null);
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
@@ -70,7 +73,8 @@ export function ChecklistsPage({ venue, auth, onRequestStaffPin, onSwitchStaff }
 
   const setItemResult = useCallback(
     async (itemId: string, result: ChecklistItemResult) => {
-      if (!activeRun || savingItemId) return;
+      if (!activeRun || savingItemRef.current) return;
+      savingItemRef.current = itemId;
       setSavingItemId(itemId);
       // Optimistic update.
       const prev = activeRun;
@@ -88,10 +92,11 @@ export function ChecklistsPage({ venue, auth, onRequestStaffPin, onSwitchStaff }
         setActiveRun(prev);
         setError(messageForError(e, 'Could not save that item.'));
       } finally {
+        savingItemRef.current = null;
         setSavingItemId(null);
       }
     },
-    [activeRun, savingItemId]
+    [activeRun]
   );
 
   const activeProgress = useMemo(
@@ -115,7 +120,13 @@ export function ChecklistsPage({ venue, auth, onRequestStaffPin, onSwitchStaff }
                 </p>
                 <h2>{activeRun.template.name}</h2>
               </div>
-              <button type="button" className="button secondary" onClick={() => setActiveRun(null)}>
+              <button
+                type="button"
+                className="button secondary"
+                onClick={() => setActiveRun(null)}
+                disabled={savingItemId !== null}
+                title={savingItemId !== null ? 'Checklist saving, please wait' : undefined}
+              >
                 Back
               </button>
             </div>

@@ -109,7 +109,20 @@ export function AppShell({
             <button
               type="button"
               className="button secondary settings-signout"
-              onClick={() => void auth.signOutDevice()}
+              onClick={() => {
+                // Staffless sessions are safe to exit. When a staff member is
+                // signed in they may have unsaved stocktake drafts, so confirm
+                // before signing the whole device out.
+                if (
+                  auth.staff &&
+                  !window.confirm(
+                    'Sign out device?\n\nAny unsaved stocktake drafts will be lost. Are you sure?'
+                  )
+                ) {
+                  return;
+                }
+                void auth.signOutDevice();
+              }}
             >
               Sign out device
             </button>

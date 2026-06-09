@@ -35,6 +35,19 @@ function normaliseCode(raw: string): string {
   return raw.trim().toUpperCase();
 }
 
+// Keep only digits and a single decimal point, capped at 2 decimal places.
+// Visual-only $ prefix lives in the markup, so it never appears in the value.
+function sanitiseAmount(raw: string): string {
+  let cleaned = raw.replace(/[^0-9.]/g, '');
+  const firstDot = cleaned.indexOf('.');
+  if (firstDot !== -1) {
+    const intPart = cleaned.slice(0, firstDot);
+    const decPart = cleaned.slice(firstDot + 1).replace(/\./g, '').slice(0, 2);
+    cleaned = `${intPart}.${decPart}`;
+  }
+  return cleaned;
+}
+
 export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchStaff }: Props) {
   const venueApiName = VENUE_API_NAMES[venue.id] ?? null;
 
@@ -44,6 +57,7 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
   const [loading, setLoading] = useState(false);
   const [redeeming, setRedeeming] = useState(false);
   const [error, setError] = useState('');
+  const [amountError, setAmountError] = useState('');
   const [managerRequired, setManagerRequired] = useState(false);
   const [success, setSuccess] = useState<{ redeemed: number; balance: number } | null>(null);
 
@@ -52,6 +66,7 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
     setCard(null);
     setAmount('');
     setError('');
+    setAmountError('');
     setManagerRequired(false);
     setSuccess(null);
   }, []);
@@ -75,6 +90,8 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
         setManagerRequired(true);
       } else if (e instanceof ApiRequestError && e.status === 404) {
         setError('No gift card found for that code, or its payment is unconfirmed.');
+      } else if (e instanceof ApiRequestError && e.status >= 500) {
+        setError('Network error — tap Look up to try again.');
       } else {
         setError(messageForError(e, 'Could not look up that gift card.'));
       }
@@ -96,6 +113,7 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
     }
     setRedeeming(true);
     setError('');
+    setAmountError('');
     try {
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
@@ -234,7 +252,19 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
                       className="gift-amount-input"
                       value={amount}
                       placeholder="0.00"
-                      onChange={(e) => setAmount(e.currentTarget.value)}
+                      onChange={(e) => {
+                        setAmountError('');
+                        setAmount(sanitiseAmount(e.currentTarget.value));
+                      }}
+                      onBlur={() => {
+                        if (amount === '') return;
+                        const value = Number(amount);
+                        if (!Number.isFinite(value) || value <= 0) {
+                          setAmountError('Enter a valid amount.');
+                          return;
+                        }
+                        setAmount(value.toFixed(2));
+                      }}
                       disabled={redeeming}
                     />
                     <button
@@ -247,6 +277,7 @@ export function GiftCardRedeemPage({ venue, auth, onRequestStaffPin, onSwitchSta
                     </button>
                   </div>
                 </label>
+                {amountError ? <p className="device-signin-error">{amountError}</p> : null}
                 {error ? <p className="device-signin-error">{error}</p> : null}
                 <button
                   type="button"

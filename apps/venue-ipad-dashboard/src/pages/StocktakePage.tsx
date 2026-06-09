@@ -22,7 +22,7 @@
 // - CSV export action
 // - Start-new-session button (manager-only path; safer to add with submit)
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { Stocktake, StocktakeLine, StocktakeWithLines, StocktakesPayload } from '@alma/shared';
 import { api, ApiRequestError, messageForError } from '../api';
@@ -112,7 +112,11 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
 
   // ---------- Load + open a session ----------
 
+  // Remember the last session id so the error view can offer a Retry.
+  const lastSessionId = useRef<string | null>(null);
+
   const openSession = useCallback(async (id: string) => {
+    lastSessionId.current = id;
     setSessionLoading(true);
     setSessionError('');
     setSession(null);
@@ -241,7 +245,14 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
             </p>
           </div>
 
-          {listError ? <p className="device-signin-error">{listError}</p> : null}
+          {listError ? (
+            <div className="stock-error-row">
+              <p className="device-signin-error">{listError}</p>
+              <button type="button" className="button secondary" onClick={() => void loadList()}>
+                Retry
+              </button>
+            </div>
+          ) : null}
           {listLoading && !list ? (
             <p className="preview-eyebrow">Loading…</p>
           ) : (
@@ -267,9 +278,20 @@ export function StocktakePage({ venue, auth, onRequestStaffPin, onSwitchStaff }:
       return wrap(
         <section className="page-stack">
           <p className="device-signin-error">{sessionError || 'Stocktake not available.'}</p>
-          <button type="button" className="button secondary" onClick={() => setView('list')}>
-            Back to stocktake list
-          </button>
+          <div className="stock-error-actions">
+            {lastSessionId.current ? (
+              <button
+                type="button"
+                className="button"
+                onClick={() => void openSession(lastSessionId.current as string)}
+              >
+                Retry
+              </button>
+            ) : null}
+            <button type="button" className="button secondary" onClick={() => setView('list')}>
+              Back to stocktake list
+            </button>
+          </div>
         </section>
       );
     }

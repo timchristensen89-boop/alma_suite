@@ -132,12 +132,20 @@ export function TasksPage({ venue, auth, onRequestStaffPin, onSwitchStaff }: Pro
       setTasks((current) => (current ? current.filter((t) => t.id !== task.id) : current));
       try {
         await api<AlmaTask>(`/api/tasks/${task.id}/${kind}`, { method: 'POST' });
-        // Reload to refresh the summary counts too.
-        await load();
       } catch (e) {
-        // Rollback on failure.
+        // The action itself failed — roll the row back and surface the error.
         setTasks(prev);
         setError(messageForError(e, `Could not ${kind} task.`));
+        setActioningId(null);
+        return;
+      }
+      // The action succeeded; the optimistic removal stands. Refresh to update
+      // the summary counts, but a reload failure must NOT roll back the row or
+      // show a misleading "could not action" error — the 60s poll will recover.
+      try {
+        await load();
+      } catch {
+        // Ignore: the action is already committed server-side.
       } finally {
         setActioningId(null);
       }

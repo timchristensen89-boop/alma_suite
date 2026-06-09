@@ -827,6 +827,14 @@ a {
   border-radius: var(--radius-sm);
 }
 
+.pin-empty p {
+  margin: 0;
+}
+
+.pin-empty .button {
+  margin-top: 14px;
+}
+
 /* PIN entry */
 .pin-entry {
   display: flex;
@@ -993,6 +1001,23 @@ a {
   border-radius: var(--radius);
   position: sticky;
   bottom: 0;
+}
+
+.stock-error-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.stock-error-row .device-signin-error {
+  flex: 1 1 auto;
+}
+
+.stock-error-actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
 }
 
 .stock-save-row .button {
