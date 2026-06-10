@@ -942,7 +942,20 @@ function StaffHome({
   );
   const lightweightDeputyProfiles = staff.filter(isDeputyImportedProfile);
   const staffForReadiness = activeStaff.filter((member) => !isUnallocatedProfile(member));
-  const missingPayRate = staffForReadiness.filter((member) => !member.payRateCents && !member.trainingPayRateCents);
+  const missingPayRate = staffForReadiness.filter((member) => {
+    if (member.payRateCents || member.trainingPayRateCents) return false;
+    // An award pay profile that's been explicitly configured counts as having a rate,
+    // even when the legacy payRateCents column is null. A system-defaulted profile
+    // (e.g. casual with no rate → Award Level 2 fallback) still gets flagged so the
+    // manager confirms the real rate.
+    const profile = member.payProfile;
+    if (profile && !profile.isDefaulted && (
+      (profile.ordinaryHourlyRateCents ?? 0) > 0 ||
+      (profile.casualLoadedHourlyRateCents ?? 0) > 0 ||
+      (profile.manualFullTimePayAmountCents ?? 0) > 0
+    )) return false;
+    return true;
+  });
   const missingPayType = staffForReadiness.filter((member) => !member.payType);
   const pendingRecords = staff.flatMap((member) => member.records.filter((record) => record.status === 'PENDING'));
   const duplicateProfileGroups = duplicateStaffProfileGroups(staffForReadiness);
@@ -3641,6 +3654,30 @@ function StaffProfileWorkspacePage({
     }
   }
 
+  async function setKioskPin() {
+    if (!canManageProfileAccess) return;
+    const entered = window.prompt(`Set a shared-device kiosk PIN for ${staffFullName(member)} (4 to 6 digits). They use this to switch into their account on a venue iPad.`);
+    if (entered === null) return;
+    const pin = entered.trim();
+    if (!/^\d{4,6}$/.test(pin)) {
+      setMessageTarget('pin');
+      setMessage('PIN must be 4 to 6 digits.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('pin');
+    try {
+      await api(`/api/staff/${member.id}/pin/reset`, { method: 'POST', body: JSON.stringify({ pin }) });
+      await reload();
+      setMessage(`Kiosk PIN set for ${staffFullName(member)}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not set the kiosk PIN.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
     setProfileDraft((current) => ({ ...current, [key]: value }));
   }
@@ -4419,6 +4456,17 @@ function StaffProfileWorkspacePage({
             { label: 'Last updated', value: profileDate(member.pinUpdatedAt) },
             { label: 'Account type', value: member.accountType.replaceAll('_', ' ') }
           ]} />
+          {canManageProfileAccess && member.accountType === 'HUMAN' ? (
+            <div className="staff-profile-actions">
+              <Button type="button" variant="secondary" onClick={setKioskPin} disabled={saving}>
+                {member.pinUpdatedAt ? 'Reset kiosk PIN' : 'Set kiosk PIN'}
+              </Button>
+              {!member.pinUpdatedAt ? (
+                <p className="subtle">No PIN set yet — this person can’t switch into their account on a shared venue iPad until you set one.</p>
+              ) : null}
+            </div>
+          ) : null}
+          {message && messageTarget === 'pin' ? <p className="subtle">{message}</p> : null}
           <details className="staff-profile-collapsible">
             <summary>Device security notes</summary>
             <p className="subtle">PINs are managed through the staff PIN reset/change flow. Venue device accounts cannot use this profile workspace to access staff documents, payroll, or HR settings.</p>
@@ -16101,6 +16149,45 @@ type OnboardingContext = {
   onboardingSettings: OnboardingSettings;
 };
 
+// Fields we deliberately never write to localStorage — tax file number, bank details
+// and the chosen password are sensitive, and `documents` is re-derived from settings.
+const NON_PERSISTED_ONBOARDING_KEYS = ['taxFileNumber', 'bankBsb', 'bankAccountNumber', 'password', 'documents'];
+
+function readOnboardingDraft(key: string | null): Record<string, unknown> | null {
+  if (!key || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingDraft(key: string | null, draft: Record<string, unknown>): void {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    const safe: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(draft)) {
+      if (NON_PERSISTED_ONBOARDING_KEYS.includes(field)) continue;
+      safe[field] = value;
+    }
+    window.localStorage.setItem(key, JSON.stringify(safe));
+  } catch {
+    // Storage can be unavailable (private mode / quota) — losing draft persistence is non-fatal.
+  }
+}
+
+function clearOnboardingDraft(key: string | null): void {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
+
 function PublicOnboardingPage() {
   const { token } = useParams();
   const [context, setContext] = useState<OnboardingContext | null>(null);
@@ -16148,6 +16235,9 @@ function PublicOnboardingPage() {
     documents: onboardingDocumentsFromSettings(DEFAULT_ONBOARDING_SETTINGS)
   });
 
+  const draftStorageKey = token ? `alma-onboarding-draft-${token}` : null;
+  const draftHydratedRef = useRef(false);
+
   useEffect(() => {
     async function load() {
       if (!token) return;
@@ -16157,23 +16247,35 @@ function PublicOnboardingPage() {
         const next = await api<OnboardingContext>(`/api/staff/invites/by-token/${token}`);
         const onboardingSettings = normaliseOnboardingSettings(next.onboardingSettings);
         setContext({ ...next, onboardingSettings });
+        // Restore any in-progress, non-sensitive answers this person entered earlier on
+        // this device (sensitive fields like TFN/bank/password are never persisted).
+        const saved = readOnboardingDraft(draftStorageKey);
         setDraft((current) => ({
           ...current,
+          ...(saved ?? {}),
           firstName: next.firstName,
           lastName: next.lastName,
           roleTitle: next.roleTitle,
-          email: next.email ?? '',
+          email: next.email ?? (typeof saved?.email === 'string' ? saved.email : ''),
           venue: next.venue,
           documents: onboardingDocumentsFromSettings(onboardingSettings, current.documents)
         }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load invite');
       } finally {
+        draftHydratedRef.current = true;
         setLoading(false);
       }
     }
     void load();
   }, [token]);
+
+  // Save progress as the person types, but only after the initial hydrate so we never
+  // clobber the restored draft with the empty starting state.
+  useEffect(() => {
+    if (!draftHydratedRef.current || !draftStorageKey || completed) return;
+    writeOnboardingDraft(draftStorageKey, draft);
+  }, [draft, draftStorageKey, completed]);
 
   function update<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -16307,6 +16409,7 @@ function PublicOnboardingPage() {
             }))
         })
       });
+      clearOnboardingDraft(draftStorageKey);
       setCompleted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not complete onboarding');
