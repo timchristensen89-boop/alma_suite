@@ -82,6 +82,7 @@ export function AppShell({
               <Link to={`/venue/${venue.id}/stocktake`}>Stocktake</Link>
               <Link to={`/venue/${venue.id}/bookings`}>Bookings</Link>
               <Link to={`/venue/${venue.id}/checklists`}>Checklists</Link>
+              <Link to={`/venue/${venue.id}/log-issue`}>Log an issue</Link>
               <Link to={`/venue/${venue.id}/handover`}>Handover</Link>
               <Link to={`/venue/${venue.id}/roster`}>Roster</Link>
               <Link to={`/venue/${venue.id}/tasks`}>Tasks</Link>

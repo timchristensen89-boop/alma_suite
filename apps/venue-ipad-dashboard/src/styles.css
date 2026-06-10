@@ -1380,6 +1380,38 @@ a {
   color: var(--color-muted);
 }
 
+/* Generic controls used by the Log-an-issue form. */
+.gift-field > input,
+.gift-field > textarea,
+.gift-field > select {
+  width: 100%;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  background: var(--color-surface-muted);
+  font-size: 18px;
+  font-family: inherit;
+  color: var(--color-text);
+}
+
+.gift-field > input:focus,
+.gift-field > textarea:focus,
+.gift-field > select:focus {
+  outline: none;
+  border-color: var(--color-accent);
+}
+
+.issue-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.form-error {
+  color: var(--color-danger, #c0392b);
+  font-weight: 700;
+}
+
 .gift-code-row,
 .gift-amount-row {
   display: flex;

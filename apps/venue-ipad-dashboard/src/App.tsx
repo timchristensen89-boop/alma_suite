@@ -13,6 +13,7 @@ import {
 } from './shell';
 import { ChecklistsPage } from './pages/ChecklistsPage';
 import { GiftCardRedeemPage } from './pages/GiftCardRedeemPage';
+import { LogIssuePage } from './pages/LogIssuePage';
 import { StocktakePage } from './pages/StocktakePage';
 import { TasksPage } from './pages/TasksPage';
 
@@ -102,6 +103,7 @@ type PermissionKey =
   | 'stocktake.run'
   | 'handover.post'
   | 'roster.view'
+  | 'issues.log'
   | 'help.view'
   | 'settings.view';
 
@@ -129,6 +131,7 @@ const PERMISSION_REQUIRES_STAFF: Record<PermissionKey, boolean> = {
   'stocktake.run': true,
   'bookings.view': false,
   'roster.view': false,
+  'issues.log': true,
   'help.view': false,
   'settings.view': true
 };
@@ -234,6 +237,15 @@ function toolsForVenue(venue: Venue, taskSummary: AlmaTasksSummary | null = null
           : (taskSummary?.outstandingTotal ?? venue.openTasks) > 5
             ? 'warning'
             : 'neutral',
+      status: 'pilot'
+    },
+    {
+      id: 'log-issue',
+      title: 'Log an issue',
+      description: 'Fridge alarm, breakage or hazard — straight into Compliance.',
+      route: `/venue/${venue.id}/log-issue`,
+      permission: 'issues.log',
+      tone: 'warning',
       status: 'pilot'
     },
     {
@@ -754,6 +766,13 @@ function ChecklistsRoute(props: Omit<PageShellProps, 'requirePin'>) {
   return <ChecklistsPage venue={venue} {...props} />;
 }
 
+function LogIssueRoute(props: Omit<PageShellProps, 'requirePin'>) {
+  const { venueId } = useParams();
+  const venue = venueById(venueId);
+  if (!venue) return <Navigate to="/venue" replace />;
+  return <LogIssuePage venue={venue} {...props} />;
+}
+
 export function App() {
   const auth = useAuth();
   const navigate = useNavigate();
@@ -812,6 +831,7 @@ export function App() {
         <Route path="/venue" element={<VenueSelectPage {...shellProps} />} />
         <Route path="/venue/:venueId" element={<VenueHomePage {...shellProps} />} />
         <Route path="/venue/:venueId/checklists" element={<ChecklistsRoute {...shellProps} />} />
+        <Route path="/venue/:venueId/log-issue" element={<LogIssueRoute {...shellProps} />} />
         <Route path="/venue/:venueId/gift-cards" element={<GiftCardRoute {...shellProps} />} />
         <Route path="/venue/:venueId/tasks" element={<TasksRoute {...shellProps} />} />
         <Route
