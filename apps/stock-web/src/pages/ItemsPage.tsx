@@ -3,6 +3,7 @@ import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useStickyVenue } from '../hooks/useStickyVenue';
 import { ApiError, api } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
@@ -241,7 +242,7 @@ export function ItemsPage() {
   const [bulkVenueActive, setBulkVenueActive] = useState<'' | 'active' | 'inactive'>('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [selectedVenue, setSelectedVenue] = useState('');
+  const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [viewMode, setViewMode] = useState<ItemViewMode>('category');
 
   useEffect(() => {

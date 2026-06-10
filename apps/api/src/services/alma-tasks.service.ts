@@ -82,12 +82,44 @@ function taskInclude() {
 
 type DbAlmaTask = Prisma.AlmaTaskGetPayload<{ include: ReturnType<typeof taskInclude> }>;
 
+// Suite app base URLs, mirroring notifications.service's APP_URLS, so a task
+// can deep-link back to the surface that raised it.
+const TASK_APP_URLS: Record<AlmaTaskSourceApp, string> = {
+  HOME: process.env.HOME_WEB_URL ?? 'https://alma-home.web.app',
+  STAFF: process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app',
+  STOCK: process.env.STOCK_WEB_URL ?? 'https://alma-stock-v18.web.app',
+  COMPLIANCE: process.env.COMPLIANCE_WEB_URL ?? process.env.FRONTEND_URL ?? 'https://alma-compliance.web.app',
+  RESERVE: process.env.RESERVE_WEB_URL ?? 'https://alma-reserve.web.app',
+  MARKETING: process.env.MARKETING_WEB_URL ?? 'https://alma-marketing.web.app',
+  GIFTCARDS: process.env.GIFTCARDS_WEB_URL ?? 'https://alma-giftcards.web.app',
+  REPORTS: process.env.REPORTS_WEB_URL ?? 'https://alma-reports.web.app',
+  ADMIN: process.env.ADMIN_WEB_URL ?? 'https://alma-suite-admin.web.app',
+  COMMS: process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app'
+};
+
+// Deep-link a task to the record that raised it. Known source types route to
+// the right page; anything else lands on the owning app's home so the row is
+// still actionable rather than inert.
+function taskLink(row: DbAlmaTask): string | null {
+  const base = TASK_APP_URLS[row.sourceApp]?.replace(/\/+$/, '');
+  if (!base) return null;
+  switch (`${row.sourceApp}:${row.sourceRefType}`) {
+    case 'COMPLIANCE:issue':
+      return `${base}/issues`;
+    case 'STAFF:leave':
+      return `${base}/leave`;
+    default:
+      return base;
+  }
+}
+
 function toAlmaTask(row: DbAlmaTask): AlmaTask {
   return {
     id: row.id,
     sourceApp: row.sourceApp,
     sourceRefType: row.sourceRefType,
     sourceRefId: row.sourceRefId,
+    link: taskLink(row),
     venue: row.venue,
     title: row.title,
     description: row.description,

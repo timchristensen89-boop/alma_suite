@@ -3,6 +3,7 @@ import type { StockItem, StockWastagePayload, StockWastageReason } from '@alma/s
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useStickyVenue } from '../hooks/useStickyVenue';
 import { ApiError, api } from '../lib/api';
 
 const REASONS: Array<{ label: string; value: StockWastageReason }> = [
@@ -32,7 +33,7 @@ function itemUnit(item: StockItem | undefined) {
 export function WastagePage() {
   useDocumentTitle('Wastage');
   const [data, setData] = useState<StockWastagePayload | null>(null);
-  const [selectedVenue, setSelectedVenue] = useState('');
+  const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [draft, setDraft] = useState({ stockItemId: '', quantity: '', unit: '', reason: 'SPOILED' as StockWastageReason, note: '', wastedAt: '' });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);

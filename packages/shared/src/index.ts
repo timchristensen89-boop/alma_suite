@@ -6479,6 +6479,7 @@ export type AlmaTask = {
   sourceApp: AlmaTaskSourceApp;
   sourceRefType: string | null;
   sourceRefId: string | null;
+  link: string | null;
   venue: string | null;
   title: string;
   description: string | null;

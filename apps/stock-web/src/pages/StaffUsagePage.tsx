@@ -3,6 +3,7 @@ import type { StockItem, StockStaffUsageCategory, StockWastagePayload } from '@a
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { StockItemPicker } from '../components/StockItemPicker';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useStickyVenue } from '../hooks/useStickyVenue';
 import { ApiError, api } from '../lib/api';
 
 const CATEGORIES: Array<{ label: string; value: StockStaffUsageCategory }> = [
@@ -31,7 +32,7 @@ function itemUnit(item: StockItem | undefined) {
 export function StaffUsagePage() {
   useDocumentTitle('Staff usage');
   const [data, setData] = useState<StockWastagePayload | null>(null);
-  const [selectedVenue, setSelectedVenue] = useState('');
+  const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [draft, setDraft] = useState({
     stockItemId: '',
     quantity: '',
