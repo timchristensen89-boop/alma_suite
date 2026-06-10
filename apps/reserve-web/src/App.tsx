@@ -2074,7 +2074,7 @@ function WaitlistSection({
                   {entry.status !== 'NOTIFIED' ? (
                     <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'NOTIFIED')}>Notify</Button>
                   ) : null}
-                  <Button type="button" size="sm" disabled={busy} onClick={() => updateStatus(entry.id, 'BOOKED')}>Seated</Button>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => updateStatus(entry.id, 'BOOKED')} title="Seats the party now and adds them to the live floor as a walk-in cover">Seat now</Button>
                   <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'EXPIRED')}>Left</Button>
                   <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={() => updateStatus(entry.id, 'CANCELLED')}>Cancel</Button>
                 </div>

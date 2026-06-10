@@ -255,6 +255,17 @@ function startOfDay(value: Date) {
   return date;
 }
 
+// Best-effort service period for a walk-in seated right now, based on the
+// Sydney wall-clock hour. Cosmetic/reporting only — the floor doesn't gate on it.
+function servicePeriodForInstant(value: Date): ReserveServicePeriod {
+  const hour = Number(
+    new Intl.DateTimeFormat('en-AU', { timeZone: 'Australia/Sydney', hour: '2-digit', hour12: false }).format(value)
+  );
+  if (!Number.isFinite(hour) || hour < 11) return 'BREAKFAST';
+  if (hour < 16) return 'LUNCH';
+  return 'DINNER';
+}
+
 function endOfDay(value: Date) {
   const date = startOfDay(value);
   date.setDate(date.getDate() + 1);
@@ -1921,7 +1932,53 @@ export const reserveService = {
     }
     if (data.notes !== undefined) patch.notes = data.notes?.trim() || null;
     if (data.matchedReservationId !== undefined) patch.matchedReservationId = data.matchedReservationId || null;
-    const entry = await prisma.reserveWaitlistEntry.update({ where: { id }, data: patch });
+
+    // Seating a waitlist/walk-in party (status -> BOOKED) with no reservation
+    // linked yet creates a live SEATED reservation, so the party lands on the
+    // floor plan and counts toward covers instead of just vanishing from the queue.
+    const shouldSeatWalkIn =
+      data.status === 'BOOKED' &&
+      !existing.matchedReservationId &&
+      !patch.matchedReservationId;
+
+    const entry = await prisma.$transaction(async (tx) => {
+      if (shouldSeatWalkIn) {
+        const now = new Date();
+        const nameParts = (existing.guestName || '').trim().split(/\s+/).filter(Boolean);
+        const guest = await findOrCreateGuestForVenue(tx, existing.venue, {
+          venue: existing.venue,
+          firstName: nameParts[0] || 'Walk-in',
+          lastName: nameParts.slice(1).join(' ') || 'guest',
+          email: existing.guestEmail ?? '',
+          phone: existing.guestPhone ?? '',
+          tags: [],
+          marketingOptIn: false,
+          source: 'walk-in'
+        });
+        const reservationRow = await tx.reserveReservation.create({
+          data: {
+            venue: existing.venue,
+            serviceDate: startOfDay(now),
+            servicePeriod: servicePeriodForInstant(now),
+            startsAt: now,
+            endsAt: new Date(now.getTime() + 120 * 60_000),
+            covers: existing.partySize,
+            status: 'SEATED',
+            source: 'walk-in',
+            guestId: guest.id,
+            guestName: existing.guestName,
+            guestEmail: existing.guestEmail,
+            guestPhone: existing.guestPhone,
+            notes: existing.notes,
+            marketingOptIn: false,
+            createdById: actor.id,
+            seatedAt: now
+          }
+        });
+        patch.matchedReservationId = reservationRow.id;
+      }
+      return tx.reserveWaitlistEntry.update({ where: { id }, data: patch });
+    });
     return {
       id: entry.id,
       venue: entry.venue,
