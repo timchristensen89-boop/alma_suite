@@ -2477,6 +2477,13 @@ function ServiceBoard({
                   {selectedOrder.lineItems.length === 0 ? <li className="is-more">{selectedOrder.itemCount} item{selectedOrder.itemCount === 1 ? '' : 's'}</li> : null}
                 </ul>
               </div>
+            ) : squareOrders.length > 0 ? (
+              <div className="service-panel-tab service-panel-tab--empty">
+                <div className="service-panel-tab-head">
+                  <span className="service-panel-call-label">Open tab · Square</span>
+                </div>
+                <p className="subtle">No open Square tab on this table yet. It appears here once a check is opened on the POS.</p>
+              </div>
             ) : null}
           </aside>
         ) : (
