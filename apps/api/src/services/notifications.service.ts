@@ -330,8 +330,10 @@ export const notificationsService = {
       }
 
       // One alert per failed provider (latest error) so the feed doesn't repeat.
+      // Admin-only: the Open link goes to Admin → Integration Health, which a
+      // non-admin manager can't load (it would 403).
       const seenProviders = new Set<string>();
-      for (const run of failedSyncRuns) {
+      for (const run of actor.isAdmin ? failedSyncRuns : []) {
         if (seenProviders.has(run.provider)) continue;
         seenProviders.add(run.provider);
         notifications.push(notification({

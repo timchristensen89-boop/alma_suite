@@ -131,7 +131,9 @@ export async function authMiddleware(
   const payload = parseSessionToken(cookieToken) ?? parseSessionToken(bearerToken(req) ?? undefined);
 
   if (payload) {
-    const sessionUser = await authService.getById(payload.userId);
+    // getSessionUser drops archived (offboarded) humans, so a terminated person's
+    // open session stops resolving — they're logged out on their next request.
+    const sessionUser = await authService.getSessionUser(payload.userId);
     if (sessionUser) {
       req.user = sessionUser;
       if (sessionUser.accountType === 'VENUE_DEVICE') {

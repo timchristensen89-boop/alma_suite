@@ -47,7 +47,9 @@ authRouter.post('/handoff/consume', async (req, res, next) => {
     const token = typeof req.body?.token === 'string' ? req.body.token : '';
     const payload = parseSuiteHandoffToken(token);
     if (!payload) throw new HttpError(401, 'Suite sign-in link expired. Please sign in again.');
-    const user = await authService.getById(payload.userId);
+    // getSessionUser so an offboarded (archived) human can't mint a fresh session
+    // via a still-valid handoff link.
+    const user = await authService.getSessionUser(payload.userId);
     if (!user) throw new HttpError(401, 'Suite sign-in user not found.');
     const sessionToken = createSessionToken(user.id);
     setSessionCookie(res, sessionToken);

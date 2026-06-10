@@ -242,6 +242,11 @@ export const authService = {
     if (profile.accountType === 'VENUE_DEVICE' && profile.employmentStatus !== 'ACTIVE') {
       throw new HttpError(401, 'Email or password is incorrect');
     }
+    // A terminated (archived) human can no longer sign in. Generic message so we
+    // don't leak that the account exists.
+    if (profile.accountType === 'HUMAN' && profile.employmentStatus === 'ARCHIVED') {
+      throw new HttpError(401, 'Email or password is incorrect');
+    }
 
     const ok = await bcrypt.compare(password, profile.passwordHash);
     if (!ok) {
@@ -259,6 +264,25 @@ export const authService = {
   async getById(userId: string): Promise<AuthUser | null> {
     const profile = await prisma.staffProfile.findUnique({
       where: { id: userId },
+      include: {
+        appAccess: {
+          select: { appId: true, status: true, role: true, permissions: true }
+        }
+      }
+    });
+    if (!profile) return null;
+    return toAuthUser(profile);
+  },
+
+  // Session resolver: returns the user UNLESS it's an archived (terminated)
+  // human — so an open web session dies the moment they're offboarded. Device
+  // accounts and active/on-leave humans keep their session.
+  async getSessionUser(userId: string): Promise<AuthUser | null> {
+    const profile = await prisma.staffProfile.findFirst({
+      where: {
+        id: userId,
+        OR: [{ accountType: { not: 'HUMAN' } }, { employmentStatus: { not: 'ARCHIVED' } }]
+      },
       include: {
         appAccess: {
           select: { appId: true, status: true, role: true, permissions: true }

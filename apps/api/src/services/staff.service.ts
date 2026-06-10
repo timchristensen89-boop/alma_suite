@@ -2139,7 +2139,14 @@ export const staffService = {
       where: { id },
       data: {
         employmentStatus: 'ARCHIVED',
-        notes: [existing.notes, `Archived ${new Date().toISOString()} during staff beta testing.`]
+        // Offboarding must actually revoke access: clear the login password + kiosk
+        // PIN and disable every app-access grant, so a terminated staffer can no
+        // longer sign into any suite app or clock in. (login() + the session lookup
+        // also now reject archived humans, killing any open session.)
+        passwordHash: null,
+        pinHash: null,
+        appAccess: { updateMany: { where: {}, data: { status: 'DISABLED' } } },
+        notes: [existing.notes, `Archived ${new Date().toISOString()} — access revoked (password, PIN, app access).`]
           .filter(Boolean)
           .join('\n')
       }
