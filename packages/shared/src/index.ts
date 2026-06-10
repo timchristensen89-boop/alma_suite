@@ -3915,6 +3915,12 @@ export type ReserveReservation = {
   drinksRedeemedAt: string | null;
   seatedAt: string | null;
   serviceStage: ReserveServiceStage | null;
+  hasCardOnFile: boolean;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  noShowFeeAmountCents: number | null;
+  noShowFeeChargedAt: string | null;
+  noShowFeeError: string | null;
   createdAt: string;
   updatedAt: string;
   guest: ReserveGuest;

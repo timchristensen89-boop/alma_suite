@@ -14,6 +14,7 @@ import type {
   ReservePublicWidgetConfig,
   ReserveReservation,
   ReserveReservationStatus,
+  ReserveNoShowChargeResult,
   ReserveServicePeriod,
   ReserveTable,
   ReserveTableCall,
@@ -309,6 +310,7 @@ type BookingRowProps = {
   feedback: FeedbackState;
   onStatus: (status: ReserveReservationStatus) => void;
   onRedeemDrinks?: () => void;
+  onChargeNoShow?: () => void;
 };
 
 function statusPillKind(status: ReserveReservationStatus): { label: string; kind: 'success' | 'warn' | 'danger' | 'info' | 'neutral' } {
@@ -335,7 +337,7 @@ function dietaryTone(text: string): 'allergy' | 'diet' | 'occasion' | 'neutral' 
   return 'neutral';
 }
 
-function BookingRow({ reservation, feedback, onStatus, onRedeemDrinks }: BookingRowProps) {
+function BookingRow({ reservation, feedback, onStatus, onRedeemDrinks, onChargeNoShow }: BookingRowProps) {
   const status = statusPillKind(reservation.status);
   const guestName = reservation.guestName || fullName(reservation.guest);
   const note = reservation.specialRequests || reservation.notes;
@@ -381,6 +383,20 @@ function BookingRow({ reservation, feedback, onStatus, onRedeemDrinks }: Booking
               🍸 Drinks ${((reservation.drinksTotalCents ?? 0) / 100).toFixed(2)}{reservation.drinksRedeemedAt ? ' · served' : ' · prepaid'}
             </span>
           ) : null}
+          {reservation.noShowFeeChargedAt ? (
+            <span className="alma-booking-chip alma-booking-chip--drinks is-served">
+              💳 No-show fee ${((reservation.noShowFeeAmountCents ?? 0) / 100).toFixed(2)} charged
+            </span>
+          ) : reservation.hasCardOnFile && reservation.status !== 'CANCELLED' ? (
+            <span className="alma-booking-chip alma-booking-chip--occasion">
+              💳 Card on file{reservation.cardBrand ? ` · ${reservation.cardBrand}` : ''}{reservation.cardLast4 ? ` ••${reservation.cardLast4}` : ''}
+            </span>
+          ) : null}
+          {reservation.noShowFeeError && !reservation.noShowFeeChargedAt ? (
+            <span className="alma-booking-chip alma-booking-chip--allergy">
+              ⚠ No-show charge failed
+            </span>
+          ) : null}
         </div>
         {reservation.internalNotes ? (
           <div className="alma-booking-note">&ldquo;{reservation.internalNotes}&rdquo;</div>
@@ -422,6 +438,11 @@ function BookingRow({ reservation, feedback, onStatus, onRedeemDrinks }: Booking
         {reservation.drinksPaidAt && onRedeemDrinks ? (
           <button type="button" className="alma-booking-ghost" onClick={onRedeemDrinks}>
             {reservation.drinksRedeemedAt ? 'Undo drinks' : 'Drinks served'}
+          </button>
+        ) : null}
+        {reservation.status === 'NO_SHOW' && !reservation.noShowFeeChargedAt && reservation.hasCardOnFile && onChargeNoShow ? (
+          <button type="button" className="alma-booking-ghost" onClick={onChargeNoShow}>
+            {reservation.noShowFeeError ? 'Retry no-show fee' : 'Charge no-show fee'}
           </button>
         ) : null}
       </div>
@@ -3347,6 +3368,27 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
     }
   }
 
+  async function chargeNoShow(reservation: ReserveReservation) {
+    const guest = reservation.guestName || fullName(reservation.guest) || 'this guest';
+    if (!window.confirm(`Charge the no-show fee to ${guest}'s card on file? They'll be charged the venue's standard no-show fee for a party of ${reservation.covers}.`)) return;
+    try {
+      const result = await api<ReserveNoShowChargeResult>(`/api/reserve/reservations/${reservation.id}/charge-no-show`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      if (result.status === 'succeeded') {
+        setSuccess(`reservation:${reservation.id}`, `No-show fee of $${(result.amountCents / 100).toFixed(2)} charged.`);
+      } else if (result.status === 'requires_action') {
+        setError(`reservation:${reservation.id}`, null, 'The card needs extra verification — the charge could not be completed automatically.');
+      } else {
+        setError(`reservation:${reservation.id}`, null, result.errorMessage || 'The no-show charge was declined.');
+      }
+      await load();
+    } catch (error) {
+      setError(`reservation:${reservation.id}`, error, 'Could not charge the no-show fee.');
+    }
+  }
+
   async function saveRule(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     try {
@@ -3780,6 +3822,7 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                                     feedback={feedback}
                                     onStatus={(status) => void updateReservationStatus(reservation, status)}
                                     onRedeemDrinks={() => void redeemDrinksFor(reservation.id)}
+                                    onChargeNoShow={() => void chargeNoShow(reservation)}
                                   />
                                 ))}
                               </div>
@@ -3812,6 +3855,8 @@ function ReserveWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () => 
                                 reservation={reservation}
                                 feedback={feedback}
                                 onStatus={(status) => void updateReservationStatus(reservation, status)}
+                                onRedeemDrinks={() => void redeemDrinksFor(reservation.id)}
+                                onChargeNoShow={() => void chargeNoShow(reservation)}
                               />
                             ))}
                           </div>
