@@ -2087,7 +2087,16 @@ async function xeroGetJson<T>(
   }
 
   if (!response.ok) {
-    throw new HttpError(502, 'Xero request failed.', await safeResponseDetails(response));
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    // Surface Xero's own status + error body (e.g. a 403 "Forbidden" when the
+    // payroll scope wasn't granted) instead of a generic message — otherwise
+    // the real cause is invisible to anyone debugging a failed sync.
+    throw new HttpError(
+      502,
+      `Xero request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
   }
 
   return {
@@ -5953,6 +5962,23 @@ export const integrationService = {
         : [];
     if (targets.length === 0) {
       throw new HttpError(409, 'No Xero tenants are connected.');
+    }
+
+    // A Xero connection authorised before payroll access was added carries a
+    // token that can't read the Payroll API, so every call 403s with an opaque
+    // error. If we recorded the granted scopes and payroll isn't among them,
+    // fail fast with an actionable message instead of a cryptic Xero 403.
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0) {
+      const missingPayrollScopes = ['payroll.employees.read', 'payroll.timesheets.read'].filter(
+        (scope) => !grantedScopes.includes(scope)
+      );
+      if (missingPayrollScopes.length > 0) {
+        throw new HttpError(
+          409,
+          'Your Xero connection was authorised before payroll access was enabled, so it can’t read timesheets. Disconnect Xero and reconnect it (you’ll be asked to grant payroll access), then run the import again.'
+        );
+      }
     }
 
     const lookbackDays = clampLimit(input.lookbackDays, 35, 120);
