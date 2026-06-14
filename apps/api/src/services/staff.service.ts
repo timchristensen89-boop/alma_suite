@@ -72,6 +72,8 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
@@ -1411,10 +1413,6 @@ function shiftConfirmationFor(
 
 function lateThreshold(shiftStart: Date) {
   return new Date(shiftStart.getTime() + 10 * 60 * 1000);
-}
-
-function staffRateCents(profile: { payRateCents: number | null; trainingPayRateCents: number | null } | null | undefined) {
-  return profile?.trainingPayRateCents ?? profile?.payRateCents ?? 0;
 }
 
 function csvCell(value: unknown) {
@@ -3889,8 +3887,7 @@ export const staffService = {
               roleTitle: true,
               venue: true,
               email: true,
-              payRateCents: true,
-              trainingPayRateCents: true
+              ...staffPayRateSelect
             }
           }
         }
@@ -3931,8 +3928,8 @@ export const staffService = {
         include: {
           staffProfile: {
             select: {
-              payRateCents: true,
-              trainingPayRateCents: true
+              venue: true,
+              ...staffPayRateSelect
             }
           }
         }
@@ -3958,6 +3955,16 @@ export const staffService = {
       }, new Map<string, number>())
     ).map(([entryVenue, salesCents]) => ({ venue: entryVenue, salesCents }));
 
+    // Live "today" wages use the same canonical hourly rate as the reports —
+    // award/payProfile rate, casual default, salaried ÷45h equivalent, all with
+    // super on top — so the dashboard figure no longer reads ~12%+ light vs the
+    // Staff Costing / Prime Cost / Monthly Recap reports. (Overtime and the full
+    // salaried weekly salary are period concepts the reports add; a single live
+    // day costs salaried staff at their ordinary hourly equivalent.)
+    const superRate = await configuredSuperRateFraction();
+    const liveRateCents = (profile: Parameters<typeof staffCostingRate>[0]) =>
+      staffCostingRate(profile, superRate).ordinaryRateCents ?? 0;
+
     const wagesByVenueMap = new Map<string, {
       venue: string;
       actualWageCents: number;
@@ -3977,7 +3984,7 @@ export const staffService = {
       };
       const hours = liveTimesheetHours(entry, now);
       current.actualHours += hours;
-      current.actualWageCents += Math.round(hours * staffRateCents(entry.staffProfile));
+      current.actualWageCents += Math.round(hours * liveRateCents(entry.staffProfile));
       wagesByVenueMap.set(entryVenue, current);
     }
 
@@ -3992,7 +3999,7 @@ export const staffService = {
       };
       const hours = shiftHours(shift);
       current.rosterHours += hours;
-      current.rosterWageCents += Math.round(hours * staffRateCents(shift.staffProfile));
+      current.rosterWageCents += Math.round(hours * liveRateCents(shift.staffProfile));
       wagesByVenueMap.set(shiftVenue, current);
     }
 
