@@ -3611,8 +3611,15 @@ export type ReportsPrimeCostVenueRow = {
   approvedWageCents: number;
   rosterWageEstimateCents: number;
   cogsCents: number;
+  // invoiceCogsCents / wastageCents are informational context only — COGS is the
+  // canonical opening + purchases − closing figure, NOT their sum.
   invoiceCogsCents: number;
   wastageCents: number;
+  purchasesCents: number;
+  openingStockCents: number;
+  closingStockCents: number;
+  cogsSource: 'stock_bounded' | 'purchases_only';
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated';
   primeCostCents: number;
   wagePercent: number | null;
   cogsPercent: number | null;
@@ -3683,7 +3690,7 @@ export type ReportsPrimeCostPayload = {
   sources: {
     sales: 'actual_sales_import' | 'missing';
     wages: 'timesheet_actuals' | 'roster_estimate' | 'missing';
-    cogs: 'supplier_invoice_lines' | 'supplier_invoice_lines_plus_wastage' | 'wastage_only' | 'missing';
+    cogs: 'stock_bounded' | 'purchases_only' | 'missing';
   };
   warnings: string[];
 };

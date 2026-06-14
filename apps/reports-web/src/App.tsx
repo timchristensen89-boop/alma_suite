@@ -2115,6 +2115,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           cogsCents: venueRows.reduce((sum, v) => sum + v.cogsCents, 0),
           invoiceCogsCents: venueRows.reduce((sum, v) => sum + v.invoiceCogsCents, 0),
           wastageCents: venueRows.reduce((sum, v) => sum + v.wastageCents, 0),
+          purchasesCents: venueRows.reduce((sum, v) => sum + v.purchasesCents, 0),
+          openingStockCents: venueRows.reduce((sum, v) => sum + v.openingStockCents, 0),
+          closingStockCents: venueRows.reduce((sum, v) => sum + v.closingStockCents, 0),
+          cogsSource: 'purchases_only' as const,
+          cogsQuality: 'estimated' as const,
           primeCostCents: venueRows.reduce((sum, v) => sum + v.primeCostCents, 0),
           wagePercent: (() => {
             const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
@@ -3008,10 +3013,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Supplier invoices not matched' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
             <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales`} loading={loading} />
-            <StatCard label="Invoice COGS" value={formatCurrency(primeTotals?.invoiceCogsCents ?? 0)} hint="Matched supplier invoice lines" loading={loading} />
-            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage impact" loading={loading} />
+            <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
+            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
           </div>
 
           <div className="report-chart-grid">

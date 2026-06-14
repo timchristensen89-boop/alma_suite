@@ -1,4 +1,4 @@
-import { prisma } from '@alma/db';
+import { prisma, computeActualCogs, type ActualCogs } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import { staffCostingRate, splitOvertimeHours, costForRate, weeklyFixedCostCents, salariedVenueAllocations, staffPayRateSelect } from '../lib/staff-pay-rates.js';
@@ -798,41 +798,17 @@ async function recapWageCents(venue: string | null, start: Date, end: Date): Pro
   return cents;
 }
 
-// Total value of the latest finalised stocktake on or before `at`.
-async function recapStockValueCents(venue: string | null, at: Date): Promise<number | null> {
-  const stocktake = await prisma.stocktake.findFirst({
-    where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, ...(venue ? { venue } : {}) },
-    orderBy: { countedAt: 'desc' },
-    select: { id: true }
-  });
-  if (!stocktake) return null;
-  const agg = await prisma.stocktakeLine.aggregate({ where: { stocktakeId: stocktake.id }, _sum: { stockValueCents: true } });
-  return agg._sum.stockValueCents ?? 0;
-}
-
 async function recapPeriod(venue: string | null, start: Date, end: Date, label: string): Promise<MonthlyRecapPeriod> {
-  const [salesAgg, wageCents, purchasesAgg, openingStock, closingStock] = await Promise.all([
+  // COGS comes from the suite-wide canonical helper (ex-GST, finalised stock
+  // purchases, stocktake-bounded with a purchases-only fallback) so the Recap
+  // agrees with the Stock dashboard and Prime Cost report to the cent.
+  const [salesAgg, wageCents, cogs] = await Promise.all([
     prisma.salesActualEntry.aggregate({ where: { serviceDate: { gte: start, lt: end }, ...(venue ? { venue } : {}) }, _sum: { salesCents: true } }),
     recapWageCents(venue, start, end),
-    prisma.supplierInvoice.aggregate({ where: { invoiceDate: { gte: start, lt: end }, status: { not: 'DRAFT' }, ...(venue ? { venue } : {}) }, _sum: { totalCents: true } }),
-    recapStockValueCents(venue, start),
-    // Closing stock uses the period end boundary itself (lte: end) so a stocktake
-    // taken at the boundary — this period's closing count, which is also next
-    // period's opening — is included rather than excluded by an off-by-1ms.
-    recapStockValueCents(venue, end)
+    computeActualCogs({ venue, start, end })
   ]);
   const salesCents = salesAgg._sum.salesCents ?? 0;
-  const purchasesCents = purchasesAgg._sum.totalCents ?? 0;
-  const openingStockCents = openingStock ?? 0;
-  const closingStockCents = closingStock ?? 0;
-  let stockQuality: MonthlyRecapStockQuality = 'complete';
-  let cogsCents: number;
-  if (openingStock != null && closingStock != null) {
-    cogsCents = Math.max(0, openingStockCents + purchasesCents - closingStockCents);
-  } else {
-    stockQuality = openingStock == null && closingStock == null ? 'estimated' : openingStock == null ? 'missing_opening' : 'missing_closing';
-    cogsCents = purchasesCents; // fall back to purchases when no stocktake bounds the period
-  }
+  const { cogsCents, purchasesCents, openingStockCents, closingStockCents, quality: stockQuality } = cogs;
   const primeCostCents = wageCents + cogsCents;
   const pct = (n: number) => (salesCents > 0 ? Math.round((n / salesCents) * 1000) / 10 : null);
   return {
@@ -1112,12 +1088,54 @@ export const reportsService = {
         row.rosterWageEstimateCents += cents;
       }
     }
+    // invoiceCogsCents / wastageCents stay populated as informational context
+    // (what was invoiced, what was wasted) — but COGS itself comes from the
+    // canonical helper, NOT their sum, so Prime Cost agrees with the Recap and
+    // Stock dashboard to the cent.
     for (const line of invoiceLines) rowFor(line.invoice.venue).invoiceCogsCents += Math.max(0, line.lineAmountCents);
     for (const wastage of wastageRows) rowFor(wastage.venue).wastageCents += Math.max(0, wastage.costImpactCents ?? 0);
 
+    // Canonical COGS per venue. Real venues query their own tag; any residual
+    // (untagged invoices) is folded into 'Unassigned' so the per-venue rows
+    // still sum to the suite-wide canonical total.
+    const rowKeys = Array.from(rows.keys());
+    const realVenueKeys = rowKeys.filter((key) => key !== 'Unassigned');
+    const [allVenuesCogs, ...realVenueCogs] = await Promise.all([
+      computeActualCogs({ venue: venue ?? null, start, end }),
+      ...realVenueKeys.map((key) => computeActualCogs({ venue: key, start, end }))
+    ]);
+    const cogsByVenue = new Map<string, ActualCogs>();
+    let realCogsSum = 0;
+    let realPurchasesSum = 0;
+    realVenueKeys.forEach((key, index) => {
+      const cogs = realVenueCogs[index];
+      if (!cogs) return;
+      cogsByVenue.set(key, cogs);
+      realCogsSum += cogs.cogsCents;
+      realPurchasesSum += cogs.purchasesCents;
+    });
+    if (rows.has('Unassigned')) {
+      cogsByVenue.set('Unassigned', {
+        cogsCents: Math.max(0, allVenuesCogs.cogsCents - realCogsSum),
+        purchasesCents: Math.max(0, allVenuesCogs.purchasesCents - realPurchasesSum),
+        openingStockCents: 0,
+        closingStockCents: 0,
+        openingStockAvailable: false,
+        closingStockAvailable: false,
+        source: 'purchases_only',
+        quality: 'estimated'
+      });
+    }
+    const cogsFor = (key: string): ActualCogs =>
+      cogsByVenue.get(key) ?? {
+        cogsCents: 0, purchasesCents: 0, openingStockCents: 0, closingStockCents: 0,
+        openingStockAvailable: false, closingStockAvailable: false, source: 'purchases_only', quality: 'estimated'
+      };
+
     const venues = Array.from(rows.values()).map((row) => {
       const wageCents = row.wageCents || row.rosterWageEstimateCents;
-      const cogsCents = row.invoiceCogsCents + row.wastageCents;
+      const cogs = cogsFor(row.venue);
+      const cogsCents = cogs.cogsCents;
       const primeCostCents = wageCents + cogsCents;
       return {
         venue: row.venue,
@@ -1128,6 +1146,11 @@ export const reportsService = {
         cogsCents,
         invoiceCogsCents: row.invoiceCogsCents,
         wastageCents: row.wastageCents,
+        purchasesCents: cogs.purchasesCents,
+        openingStockCents: cogs.openingStockCents,
+        closingStockCents: cogs.closingStockCents,
+        cogsSource: cogs.source,
+        cogsQuality: cogs.quality,
         primeCostCents,
         wagePercent: pct(wageCents, row.salesCents),
         cogsPercent: pct(cogsCents, row.salesCents),
@@ -1147,6 +1170,9 @@ export const reportsService = {
       cogsCents: total.cogsCents + row.cogsCents,
       invoiceCogsCents: total.invoiceCogsCents + row.invoiceCogsCents,
       wastageCents: total.wastageCents + row.wastageCents,
+      purchasesCents: total.purchasesCents + row.purchasesCents,
+      openingStockCents: total.openingStockCents + row.openingStockCents,
+      closingStockCents: total.closingStockCents + row.closingStockCents,
       primeCostCents: total.primeCostCents + row.primeCostCents,
       timesheetHours: total.timesheetHours + row.timesheetHours,
       rosterHours: total.rosterHours + row.rosterHours,
@@ -1159,6 +1185,9 @@ export const reportsService = {
       cogsCents: 0,
       invoiceCogsCents: 0,
       wastageCents: 0,
+      purchasesCents: 0,
+      openingStockCents: 0,
+      closingStockCents: 0,
       primeCostCents: 0,
       timesheetHours: 0,
       rosterHours: 0,
@@ -1175,6 +1204,8 @@ export const reportsService = {
       period: { start: start.toISOString(), end: end.toISOString() },
       totals: {
         ...totalBase,
+        cogsSource: allVenuesCogs.source,
+        cogsQuality: allVenuesCogs.quality,
         wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
         cogsPercent: pct(totalBase.cogsCents, totalBase.salesCents),
         primeCostPercent: pct(totalBase.primeCostCents, totalBase.salesCents),
@@ -1186,16 +1217,13 @@ export const reportsService = {
       sources: {
         sales: salesEntries.length ? 'actual_sales_import' : 'missing',
         wages: timesheets.length ? 'timesheet_actuals' : rosterShifts.length ? 'roster_estimate' : 'missing',
-        cogs: invoiceLines.length && wastageRows.length
-          ? 'supplier_invoice_lines_plus_wastage'
-          : invoiceLines.length
-            ? 'supplier_invoice_lines'
-            : wastageRows.length
-              ? 'wastage_only'
-              : 'missing'
+        // COGS now uses the suite-wide canonical figure, not invoice lines.
+        cogs: totalBase.salesCents === 0 && allVenuesCogs.cogsCents === 0 ? 'missing' : allVenuesCogs.source
       },
       warnings: [
-        ...(invoiceLines.length ? ['COGS is based on supplier invoice lines matched to stock items in the selected period.'] : ['COGS is missing until supplier invoice lines are imported and matched to stock items.']),
+        allVenuesCogs.source === 'stock_bounded'
+          ? 'COGS is the canonical figure: opening stock + ex-GST purchases − closing stock for the period.'
+          : 'COGS is estimated from ex-GST purchases only — lock an opening and closing stocktake at the period boundaries for a true opening + purchases − closing figure.',
         ...(timesheets.length ? ['Wages use current timesheet hours and staff pay rates. Approved wages are shown separately.'] : ['No timesheets found; roster wage estimate is used only when roster shifts exist.']),
         ...(salesEntries.length ? [] : ['Sales are missing for the selected period, so wage %, COGS %, and prime cost % are not shown.'])
       ]

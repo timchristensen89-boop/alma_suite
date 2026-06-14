@@ -1,5 +1,5 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, computeActualCogs } from '@alma/db';
 import {
   recipeBulkDeleteInputSchema,
   recipeCategoryCreateInputSchema,
@@ -619,21 +619,15 @@ export const recipesService = {
       }
     }
 
-    // Actual COGS = supplier purchases in the window (venue-scoped, excluding
-    // non-stock "no item" triaged documents).
-    const since = new Date();
+    // Actual COGS comes from the suite-wide canonical helper (ex-GST, finalised
+    // stock purchases, stocktake-bounded with a purchases-only fallback) so this
+    // dashboard agrees with the Reports Prime Cost and Monthly Recap for the same
+    // period instead of using its own formula.
+    const windowEnd = new Date();
+    const since = new Date(windowEnd);
     since.setDate(since.getDate() - lookbackDays);
-    const purchaseAgg = await prisma.supplierInvoice.aggregate({
-      // Ex-GST subtotal so it compares apples-to-apples with the ex-GST
-      // recipe cost. Falls back to total when a subtotal wasn't parsed.
-      _sum: { subtotalCents: true, totalCents: true },
-      where: {
-        triageStatus: { not: 'NO_ITEM' },
-        invoiceDate: { gte: since },
-        ...(venue ? { venue } : {})
-      }
-    });
-    const actualCogsCents = purchaseAgg._sum.subtotalCents || purchaseAgg._sum.totalCents || 0;
+    const actualCogs = await computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd });
+    const actualCogsCents = actualCogs.cogsCents;
 
     const varianceCents = actualCogsCents - theoreticalCogsCents;
     const variancePercent =
