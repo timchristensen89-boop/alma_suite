@@ -5990,14 +5990,34 @@ export const integrationService = {
 
     const staffProfiles = await prisma.staffProfile.findMany({
       where: { mergedIntoStaffProfileId: null },
-      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true }
+      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true, employmentStatus: true }
     });
+    // Archived/terminated duplicates would otherwise make a current employee's
+    // name (or shared email) "ambiguous" and silently skip them. Prefer the live
+    // profile when several share a key.
+    const INACTIVE_STATUSES = new Set(['ARCHIVED', 'TERMINATED', 'INACTIVE']);
+    const isActiveProfile = (p: (typeof staffProfiles)[number]) =>
+      !INACTIVE_STATUSES.has((p.employmentStatus ?? '').toUpperCase());
+    // From several candidates sharing a match key, pick the one obvious profile:
+    // a lone candidate, else the single active one. Genuinely ambiguous → skip.
+    const resolveProfile = (candidates: typeof staffProfiles): (typeof staffProfiles)[number] | undefined => {
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length === 0) return undefined;
+      const active = candidates.filter(isActiveProfile);
+      return active.length === 1 ? active[0] : undefined;
+    };
+
     const byXeroId = new Map(
       staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
     );
-    const byEmail = new Map(
-      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
-    );
+    const byEmail = new Map<string, typeof staffProfiles>();
+    for (const p of staffProfiles) {
+      if (!p.email) continue;
+      const k = p.email.toLowerCase();
+      const list = byEmail.get(k) ?? [];
+      list.push(p);
+      byEmail.set(k, list);
+    }
     const nameKey = (first: string, last: string) =>
       `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
     const byName = new Map<string, typeof staffProfiles>();
@@ -6077,10 +6097,11 @@ export const integrationService = {
 
           const emp = employeesById.get(summary.EmployeeID);
           const nameList = emp ? byName.get(nameKey(emp.FirstName, emp.LastName)) ?? [] : [];
+          const emailList = emp?.Email ? byEmail.get(emp.Email.toLowerCase()) ?? [] : [];
           const profile =
             byXeroId.get(summary.EmployeeID.toLowerCase()) ??
-            (emp?.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
-            (nameList.length === 1 ? nameList[0] : undefined);
+            resolveProfile(emailList) ??
+            resolveProfile(nameList);
 
           if (!profile) {
             const key = `${tenant.id}:${summary.EmployeeID}`;
