@@ -6616,7 +6616,7 @@ export const integrationService = {
   // Square accounts (St Alma + Avalon). Runs the per-account backfill above with
   // the scheduler actor so it can be triggered as a job without a signed-in user.
   // Idempotent — importSquareSales upserts, so re-running is safe.
-  async runScheduledSquareBackfill(input: Record<string, unknown> = {}) {
+  async runScheduledSquareBackfill(input: Record<string, unknown> = {}, actor: AuthUser = integrationSchedulerActor) {
     const accountInput = optionalText(input.account);
     const accounts = accountInput ? [normaliseSquareAccountKey(accountInput)] : SQUARE_ACCOUNT_KEYS;
     const days = clampLimit(input.days, 400, 400);
@@ -6632,7 +6632,7 @@ export const integrationService = {
         });
         continue;
       }
-      const result = await integrationService.backfillSquareSales({ days, account: accountKey }, integrationSchedulerActor);
+      const result = await integrationService.backfillSquareSales({ days, account: accountKey }, actor);
       accountResults.push({ ...result, label: squareAccountConfig(accountKey).label, status: 'synced' as const });
     }
     return {

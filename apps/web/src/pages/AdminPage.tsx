@@ -304,6 +304,16 @@ const DATA_IMPORTS = [
     appHref: 'https://alma-reports.web.app'
   },
   {
+    key: 'sales-backfill',
+    title: 'Backfill sales history',
+    body: 'One-off: pull up to 13 months of Square sales for BOTH accounts (St Alma + Avalon) into Reports, so YTD reflects the full year. Run this after both Square accounts are connected. It can take a few minutes and is safe to re-run — if it times out, just run it again to finish.',
+    surface: 'Reports',
+    provider: 'square' as const,
+    runEndpoint: '/api/integrations/square/backfill',
+    runLabel: 'Backfill 12 months',
+    appHref: 'https://alma-reports.web.app'
+  },
+  {
     key: 'invoice',
     title: 'Invoice imports',
     body: 'Xero supplier bills import costs and supplier pricing.',

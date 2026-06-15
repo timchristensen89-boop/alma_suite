@@ -331,7 +331,12 @@ integrationsRouter.post('/square/backfill', async (req, res, next) => {
   try {
     const days = typeof req.body?.days === 'number' ? req.body.days : undefined;
     const account = req.query.account ?? req.body?.account ?? null;
-    res.json(await integrationService.backfillSquareSales({ days, account: typeof account === 'string' ? account : null }, req.user!));
+    // Runs across BOTH Square accounts by default (Avalon history was never
+    // backfilled when this defaulted to primary only).
+    res.json(await integrationService.runScheduledSquareBackfill(
+      { days, account: typeof account === 'string' ? account : null },
+      req.user!
+    ));
   } catch (error) {
     next(error);
   }
