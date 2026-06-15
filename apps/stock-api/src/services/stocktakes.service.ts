@@ -32,6 +32,13 @@ type LineCostItem = {
 // Value a stocktake line server-side: counted quantity (converted into the
 // item's cost unit) × the item's average cost. Client-supplied values are NOT
 // trusted. Lines with no linked item or no cost basis are left unvalued (null).
+//
+// Refuse-to-mis-value: if the counted unit can't be converted to the item's
+// cost unit (`via: 'unknown'`), we return null rather than multiplying the raw
+// counted quantity by the cost. Doing the latter is exactly what blows a single
+// line up to an absurd value (e.g. costing 750 mL of wine at the per-bottle
+// price). An unvalued line is honest; a silently mis-valued one corrupts the
+// whole stocktake — and through it, COGS. Mirrors recipe `costForLine`.
 function stocktakeLineValueCents(
   countedQty: number | null | undefined,
   unit: string | null | undefined,
@@ -40,7 +47,10 @@ function stocktakeLineValueCents(
   if (!item || item.avgCostCents === null || countedQty === null || countedQty === undefined) {
     return null;
   }
-  const { quantity } = convertQuantityToCostUnit(countedQty, unit ?? null, item);
+  const { quantity, via } = convertQuantityToCostUnit(countedQty, unit ?? null, item);
+  if (via === 'unknown') {
+    return null;
+  }
   return Math.round(item.avgCostCents * quantity);
 }
 

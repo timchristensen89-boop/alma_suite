@@ -72,6 +72,49 @@ function parseCostToCents(text: string): number | null {
   return n === null ? null : Math.round(n * 100);
 }
 
+// ─── Outlier guard for imported line values ───────────────────────
+// Loaded's `value` column is trusted verbatim, but a single mis-keyed or
+// mis-unit line (e.g. a value of $492,498 where it should be $4,924) silently
+// corrupts the whole session — and through it, closing stock and COGS. We don't
+// reject the value; we flag lines that are implausibly large so a human checks
+// them BEFORE committing the import.
+
+// A single stocktake line worth this much is almost always a unit/typo error
+// for a hospitality venue — flag it on its own merit.
+const LINE_VALUE_ABSOLUTE_CEILING_CENTS = 25_000_00;
+// …or a line that towers over the rest of its own session: this many times the
+// session's median line value, and at least this large in absolute terms.
+const LINE_VALUE_OUTLIER_MULTIPLE = 30;
+const LINE_VALUE_OUTLIER_FLOOR_CENTS = 2_000_00;
+
+function medianCents(values: number[]): number {
+  if (values.length === 0) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 0 ? Math.round((sorted[mid - 1]! + sorted[mid]!) / 2) : sorted[mid]!;
+}
+
+// Returns a human reason if this line's value looks suspect against its session,
+// otherwise null. `median` is the session's median positive line value.
+function suspectValueReason(valueCents: number | null, median: number): string | null {
+  if (valueCents === null || valueCents <= 0) return null;
+  if (valueCents >= LINE_VALUE_ABSOLUTE_CEILING_CENTS) {
+    return `Value ${money(valueCents)} is very high for one line — check the unit and value.`;
+  }
+  if (
+    median > 0 &&
+    valueCents >= LINE_VALUE_OUTLIER_FLOOR_CENTS &&
+    valueCents >= median * LINE_VALUE_OUTLIER_MULTIPLE
+  ) {
+    return `Value ${money(valueCents)} is ${Math.round(valueCents / median)}× the typical line in this count — check it.`;
+  }
+  return null;
+}
+
+function money(cents: number): string {
+  return `$${(cents / 100).toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
 // Loaded sometimes stores cost as cents already (rare). When the
 // dollar interpretation gives a suspiciously small per-unit cost
 // for an item with a sensible quantity, the import is fine — we
@@ -267,6 +310,7 @@ export const loadedImportService = {
         unit: string | null;
         valueCents: number | null;
         costCents: number | null;
+        suspectReason: string | null;
       }>;
     };
     const groups = new Map<string, SessionGroup>();
@@ -299,10 +343,24 @@ export const loadedImportService = {
         quantity,
         unit,
         valueCents,
-        costCents
+        costCents,
+        suspectReason: null
       });
       groups.set(key, existing);
     });
+
+    // Second pass: flag implausibly large line values against each session's own
+    // distribution so a human reviews them before committing the import.
+    let flaggedValueLines = 0;
+    for (const session of groups.values()) {
+      const median = medianCents(
+        session.lines.map((line) => line.valueCents ?? 0).filter((value) => value > 0)
+      );
+      for (const line of session.lines) {
+        line.suspectReason = suspectValueReason(line.valueCents, median);
+        if (line.suspectReason) flaggedValueLines += 1;
+      }
+    }
 
     return {
       sessions: Array.from(groups.values()).sort((a, b) => a.date.localeCompare(b.date)),
@@ -310,7 +368,8 @@ export const loadedImportService = {
         totalRows: rows.length,
         matchedItems: matched,
         unmatchedItems: unmatched,
-        sessionCount: groups.size
+        sessionCount: groups.size,
+        flaggedValueLines
       }
     };
   },
