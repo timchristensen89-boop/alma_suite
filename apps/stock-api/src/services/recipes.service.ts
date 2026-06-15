@@ -231,16 +231,22 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     // and no conversion can be resolved — otherwise we'd silently mis-cost.
     const conversion =
       quantity !== null ? convertQuantityToCostUnit(quantity, row.unit, row.item) : null;
-    if (
+    // A genuinely unconvertible unit must NOT be costed off the raw quantity —
+    // that silently fabricates a wrong number (e.g. "2 kg" of a per-each item
+    // costed as 2 each). Refuse to cost the line and tell the user exactly what
+    // to set, so the recipe shows "cost unavailable" rather than a bad figure.
+    const conversionFailed = Boolean(
       quantity !== null &&
       conversion?.via === 'unknown' &&
       row.unit &&
       stockCostUnit &&
       row.unit !== stockCostUnit
-    ) {
-      warnings.push(`Unit ${row.unit} differs from stock item cost unit ${stockCostUnit} and no conversion is known; cost not adjusted`);
+    );
+    if (conversionFailed) {
+      warnings.push(`Can't convert “${row.unit}” to this item's cost unit (“${stockCostUnit}”). Fix it on the item: set the pack size (how many ${stockCostUnit} per ${row.item.unit}) or the measure-per-unit (e.g. grams/ml in one ${stockCostUnit}), or enter this line in ${stockCostUnit}. This line is not counted in the cost until then.`);
     }
-    const costQuantity = conversion?.quantity ?? quantity;
+    // Null when the unit can't convert — never fall back to the raw quantity.
+    const costQuantity = conversionFailed ? null : (conversion?.quantity ?? quantity);
     const unitCostCents = row.item.avgCostCents;
     const lineCostCents =
       unitCostCents !== null && costQuantity !== null
@@ -282,11 +288,14 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     // Express the line quantity in the prep recipe's yield unit, so a per-yield
     // cost applies correctly even when units differ (e.g. 200 mL used from a
     // recipe that yields in L — previously mis-costed by 1000×).
-    let subCostQuantity = quantity;
+    let subCostQuantity: number | null = quantity;
     if (quantity !== null) {
       const converted = convertBetweenUnits(quantity, row.unit, row.subRecipe.yieldUnit);
       if (converted === null) {
-        warnings.push(`Unit ${row.unit} can't convert to the prep recipe's yield unit ${row.subRecipe.yieldUnit}; cost not adjusted`);
+        // Don't cost off the raw quantity when the unit can't convert — that
+        // mis-costs by up to 1000× (e.g. mL against an L yield).
+        warnings.push(`Can't convert “${row.unit}” to the prep recipe's yield unit (“${row.subRecipe.yieldUnit}”). Enter this line in ${row.subRecipe.yieldUnit} or a compatible metric unit. This line is not counted in the cost until then.`);
+        subCostQuantity = null;
       } else {
         subCostQuantity = converted;
       }

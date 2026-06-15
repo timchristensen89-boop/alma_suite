@@ -1101,6 +1101,17 @@ tbody tr.row-detail:hover {
   border-collapse: collapse;
 }
 
+.recipe-lines-table tr.recipe-line-has-warning > td {
+  border-top: 1px solid var(--color-danger, #c0392b);
+}
+
+.recipe-line-warning-detail > td {
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--color-danger, #c0392b);
+}
+
 .recipe-lines-table thead th {
   font-size: 11px;
   text-transform: uppercase;

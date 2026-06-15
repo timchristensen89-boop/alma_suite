@@ -1656,8 +1656,10 @@ function RecipeLinesTable({
           {drafts.map((draft, index) => {
             const persistedLine = detail.lines[index];
             const costLine = persistedLine ? costLines.get(persistedLine.id) : null;
+            const lineWarnings = costLine?.warnings ?? [];
             return (
-              <tr key={persistedLine?.id ?? `draft-${index}`}>
+              <Fragment key={persistedLine?.id ?? `draft-${index}`}>
+              <tr className={lineWarnings.length ? 'recipe-line-has-warning' : ''}>
                 <td>{index + 1}</td>
                 <td>
                   <input
@@ -1734,6 +1736,13 @@ function RecipeLinesTable({
                   </button>
                 </td>
               </tr>
+              {lineWarnings.length ? (
+                <tr className="recipe-line-warning-detail">
+                  <td />
+                  <td colSpan={8}>{lineWarnings.join(' ')}</td>
+                </tr>
+              ) : null}
+              </Fragment>
             );
           })}
         </tbody>
