@@ -935,7 +935,9 @@ function StaffHome({
   reload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
-  const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
+  // Readiness/active set excludes ALL terminated staff (archived, terminated,
+  // inactive…), not just ARCHIVED — so warnings only ever flag current staff.
+  const activeStaff = staff.filter((member) => !isTerminatedStaffProfile(member));
   const pending = staff.filter((member) => member.employmentStatus === 'PENDING');
   const withStaffAccess = staff.filter((member) =>
     member.appAccess.some((access) => access.appId === 'STAFF' && access.status === 'ENABLED')
@@ -1480,6 +1482,84 @@ function StaffProfilesPage({
     }
   }
 
+  const renderStaffRow = (member: StaffProfile) => {
+    const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
+    const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
+    const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
+    return (
+      <div key={member.id} className="staff-list-button">
+        <button type="button" className="staff-list-main" onClick={() => openProfile(member.id)}>
+          <span>
+            <strong>
+              {member.firstName} {member.lastName}
+            </strong>
+            <span className="subtle" style={{ display: 'block' }}>
+              {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
+            </span>
+            {uploadedDocuments ? <span className="subtle" style={{ display: 'block' }}>{uploadedDocuments} uploaded document{uploadedDocuments === 1 ? '' : 's'} in profile</span> : null}
+            {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
+          </span>
+        </button>
+        <span className="staff-row-actions">
+          {uploadedRsa ? <Badge tone="positive">RSA uploaded</Badge> : null}
+          {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
+          {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
+          <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+          {isDeputyImportedProfile(member) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={reonboardingId === member.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                void reonboardLightweightProfile(member);
+              }}
+            >
+              {reonboardingId === member.id ? 'Sending...' : 'Re-onboard'}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'documents');
+            }}
+          >
+            Documents
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'personal');
+            }}
+          >
+            Profile
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'payroll');
+            }}
+          >
+            Payroll
+          </Button>
+        </span>
+      </div>
+    );
+  };
+
+  const currentRows = visibleStaff.filter((member) => !isTerminatedStaffProfile(member));
+  const terminatedRows = visibleStaff.filter(isTerminatedStaffProfile);
+
   return (
     <div className="page-stack staff-settings-page">
       <PageHeader
@@ -1543,80 +1623,18 @@ function StaffProfilesPage({
               description="Choose another status filter to see more profiles."
             />
           ) : null}
-          {visibleStaff.map((member) => {
-            const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
-            const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
-            const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
-            return (
-              <div key={member.id} className="staff-list-button">
-                <button type="button" className="staff-list-main" onClick={() => openProfile(member.id)}>
-                  <span>
-                    <strong>
-                      {member.firstName} {member.lastName}
-                    </strong>
-                    <span className="subtle" style={{ display: 'block' }}>
-                      {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
-                    </span>
-                    {uploadedDocuments ? <span className="subtle" style={{ display: 'block' }}>{uploadedDocuments} uploaded document{uploadedDocuments === 1 ? '' : 's'} in profile</span> : null}
-                    {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
-                  </span>
-                </button>
-                <span className="staff-row-actions">
-                  {uploadedRsa ? <Badge tone="positive">RSA uploaded</Badge> : null}
-                  {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
-                  {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
-                  <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
-                  {isDeputyImportedProfile(member) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={reonboardingId === member.id}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void reonboardLightweightProfile(member);
-                      }}
-                    >
-                      {reonboardingId === member.id ? 'Sending...' : 'Re-onboard'}
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'documents');
-                    }}
-                  >
-                    Documents
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'personal');
-                    }}
-                  >
-                    Profile
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'payroll');
-                    }}
-                  >
-                    Payroll
-                  </Button>
-                </span>
-              </div>
-            );
-          })}
+          {currentRows.length > 0 ? (
+            <>
+              {terminatedRows.length > 0 ? <div className="staff-list-section-head">Current staff</div> : null}
+              {currentRows.map(renderStaffRow)}
+            </>
+          ) : null}
+          {terminatedRows.length > 0 ? (
+            <>
+              <div className="staff-list-section-head">Terminated staff</div>
+              {terminatedRows.map(renderStaffRow)}
+            </>
+          ) : null}
         </div>
       </Card>
 
