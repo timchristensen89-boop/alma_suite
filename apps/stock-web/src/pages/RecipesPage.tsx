@@ -182,6 +182,29 @@ function isLiquidUnit(u: string | null | undefined): boolean {
   );
 }
 
+const MASS_UNITS = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilograms', 'kilo'];
+const VOLUME_UNITS = ['ml', 'cl', 'dl', 'l', 'litre', 'litres', 'liter', 'liters', 'millilitre', 'milliliter'];
+const inFamily = (unit: string | null | undefined, family: string[]) =>
+  family.includes((unit ?? '').trim().toLowerCase());
+
+// Only the units that will ACTUALLY convert for this item, mirroring the backend
+// engine: 'Unit' (= 1 cost unit) always works; the metric family works when the
+// cost unit is metric OR a measure-per-unit bridge is set; a count-unit item
+// with no measure bridge offers ONLY 'Unit', so you can't pick g/mL that fails.
+function convertibleUnitOptionsForItem(item: StockItem): { label: string; value: string }[] {
+  const costUnit = item.countUnit ?? item.unit;
+  const measureUnit = item.measureUnit;
+  const hasMeasureBridge = Boolean(item.measurePerCountUnit && item.measurePerCountUnit > 0 && measureUnit);
+  if (inFamily(costUnit, MASS_UNITS) || (hasMeasureBridge && inFamily(measureUnit, MASS_UNITS))) {
+    return SOLID_UNIT_OPTIONS; // Unit / kg / g
+  }
+  if (inFamily(costUnit, VOLUME_UNITS) || (hasMeasureBridge && inFamily(measureUnit, VOLUME_UNITS))) {
+    return LIQUID_UNIT_OPTIONS; // Unit / L / mL
+  }
+  // Counted/each item with no weight/volume bridge — only whole units convert.
+  return [{ label: 'Unit', value: 'unit' }];
+}
+
 // Units offered for a recipe line, constrained to the linked item's (or prep
 // recipe's) solid-vs-liquid nature so staff pick from a consistent vocabulary
 // instead of typing free-form units that don't convert.
@@ -196,10 +219,7 @@ function lineUnitOptions(
   if (itemId) {
     const item = items.find((i) => i.id === itemId);
     if (item) {
-      const liquid =
-        isLiquidUnit(item.measureUnit) ||
-        (!item.measureUnit && (isLiquidUnit(item.countUnit) || isLiquidUnit(item.unit)));
-      base = liquid ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+      base = convertibleUnitOptionsForItem(item);
     }
   } else if (subRecipeId) {
     const rec = recipes.find((r) => r.id === subRecipeId);
