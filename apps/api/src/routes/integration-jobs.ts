@@ -46,6 +46,16 @@ integrationJobsRouter.post('/square/sync', async (req, res, next) => {
   }
 });
 
+// One-off historical Square sales backfill across both accounts (the live sync
+// only keeps a rolling window). Body: { days?, account? }. Idempotent.
+integrationJobsRouter.post('/square/backfill', async (req, res, next) => {
+  try {
+    res.json(await integrationService.runScheduledSquareBackfill(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Cron entrypoint: generate today's checklist runs from every template.
 // Point Cloud Scheduler at POST /api/integration-jobs/checklists/auto-schedule
 // with the scheduler secret (this router is secret-guarded above and mounted

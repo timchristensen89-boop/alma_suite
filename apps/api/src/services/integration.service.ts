@@ -6537,7 +6537,9 @@ export const integrationService = {
    *   arbitrary historical roster windows.
    */
   async backfillSquareSales(input: { days?: number; account?: string | null } = {}, actor: AuthUser) {
-    const days = clampLimit(input.days, 90, 90);
+    // Up to ~13 months so a full financial year can be backfilled in one pass
+    // (the live sync only keeps a rolling window, so YTD reads low without this).
+    const days = clampLimit(input.days, 90, 400);
     const chunkDays = 7;
     const accountKey = input.account ?? 'primary';
 
@@ -6607,6 +6609,38 @@ export const integrationService = {
       itemRows,
       totalSalesCents,
       warnings
+    };
+  },
+
+  // Secret-guarded entrypoint for a one-off historical backfill across BOTH
+  // Square accounts (St Alma + Avalon). Runs the per-account backfill above with
+  // the scheduler actor so it can be triggered as a job without a signed-in user.
+  // Idempotent — importSquareSales upserts, so re-running is safe.
+  async runScheduledSquareBackfill(input: Record<string, unknown> = {}) {
+    const accountInput = optionalText(input.account);
+    const accounts = accountInput ? [normaliseSquareAccountKey(accountInput)] : SQUARE_ACCOUNT_KEYS;
+    const days = clampLimit(input.days, 400, 400);
+    const accountResults: Array<Record<string, unknown>> = [];
+    for (const accountKey of accounts) {
+      const status = await providerStatus('SQUARE', accountKey);
+      if (!status.connected) {
+        accountResults.push({
+          account: accountKey,
+          label: squareAccountConfig(accountKey).label,
+          status: 'skipped' as const,
+          message: status.connectBlockedReason ?? `${squareAccountConfig(accountKey).label} Square is not connected — reconnect it, then re-run the backfill for this account.`
+        });
+        continue;
+      }
+      const result = await integrationService.backfillSquareSales({ days, account: accountKey }, integrationSchedulerActor);
+      accountResults.push({ ...result, label: squareAccountConfig(accountKey).label, status: 'synced' as const });
+    }
+    return {
+      provider: 'square' as const,
+      mode: 'backfill' as const,
+      generatedAt: new Date().toISOString(),
+      days,
+      accounts: accountResults
     };
   },
 
