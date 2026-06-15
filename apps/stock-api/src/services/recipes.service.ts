@@ -430,6 +430,45 @@ async function refreshRecipeEstimatedCost(id: string) {
   });
 }
 
+// Recompute stored estimatedCost for every recipe affected by a change to the
+// given stock items' costs — directly (a recipe that uses the item) and then
+// up the prep-recipe chain (recipes that use those recipes as ingredients), so
+// nested costs stay current. Called after supplier-bill costs are applied, so
+// recipe costs and theoretical COGS never go stale. Idempotent + best-effort.
+export async function recomputeRecipeCostsForItems(itemIds: string[]): Promise<{ recipesRefreshed: number }> {
+  const uniqueItemIds = [...new Set(itemIds.filter(Boolean))];
+  if (uniqueItemIds.length === 0) return { recipesRefreshed: 0 };
+
+  const directLines = await prisma.recipeLine.findMany({
+    where: { itemId: { in: uniqueItemIds } },
+    select: { recipeId: true },
+    distinct: ['recipeId']
+  });
+
+  const seen = new Set<string>();
+  let frontier = directLines.map((line) => line.recipeId);
+  let depth = 0;
+  // Cap the cascade depth as a guard against a (mis-configured) prep-recipe cycle.
+  while (frontier.length > 0 && depth < 8) {
+    const next = new Set<string>();
+    for (const recipeId of frontier) {
+      if (seen.has(recipeId)) continue;
+      seen.add(recipeId);
+      await refreshRecipeEstimatedCost(recipeId).catch(() => undefined);
+      const dependents = await prisma.recipeLine.findMany({
+        where: { subRecipeId: recipeId },
+        select: { recipeId: true },
+        distinct: ['recipeId']
+      });
+      dependents.forEach((dependent) => next.add(dependent.recipeId));
+    }
+    frontier = [...next].filter((id) => !seen.has(id));
+    depth += 1;
+  }
+
+  return { recipesRefreshed: seen.size };
+}
+
 async function recipeCountMapByCategory() {
   const rows = await prisma.recipe.groupBy({
     by: ['category'],

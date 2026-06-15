@@ -24,6 +24,7 @@ import {
   type StockSupplierInvoiceLine
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { recomputeRecipeCostsForItems } from './recipes.service.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -1133,6 +1134,9 @@ export const invoicesService = {
       });
     });
 
+    // Keep recipe costs (and theoretical COGS) current now this item's cost moved.
+    await recomputeRecipeCostsForItems([matchedItemId]).catch(() => undefined);
+
     return toLinePayload(updated);
   },
 
@@ -1175,6 +1179,8 @@ export const invoicesService = {
           await tx.supplierInvoiceLine.update({ where: { id: line.id }, data: { costAppliedAt: new Date() } });
         }
       });
+      // Recompute recipe costs for every item whose cost just changed.
+      await recomputeRecipeCostsForItems(eligible.map((line) => line.itemId!)).catch(() => undefined);
     }
 
     return {
