@@ -1490,6 +1490,9 @@ function RecipeLinesTable({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Live cost preview computed from the unsaved drafts so cost + per-line
+  // warnings update as you type, without saving. Null = show the saved cost.
+  const [livePreview, setLivePreview] = useState<RecipeCostPayload | null>(null);
 
   // Re-sync drafts when the underlying recipe changes (e.g. after save+reload
   // or when switching expanded rows)
@@ -1497,8 +1500,47 @@ function RecipeLinesTable({
     setDrafts(detail.lines.map(lineToDraft));
     setDirty(false);
     setMessage(null);
+    setLivePreview(null);
   }, [detail.id, detail.lines]);
 
+  // Debounced live cost-as-you-type: recost the unsaved draft on every edit.
+  useEffect(() => {
+    if (!dirty) {
+      setLivePreview(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const preview = await api<RecipeCostPayload>('/api/recipes/cost-preview', {
+          method: 'POST',
+          body: JSON.stringify({
+            yieldQuantity: detail.yieldQuantity,
+            yieldUnit: detail.yieldUnit,
+            portionSize: detail.portionSize,
+            portionUnit: detail.portionUnit,
+            salePriceCents: detail.salePriceCents,
+            isPrepRecipe: detail.isPrepRecipe,
+            estimatedCost: detail.estimatedCost,
+            lines: drafts.map((draft) => ({
+              ingredientName: draft.ingredientName,
+              quantity: draft.quantity === '' ? null : Number(draft.quantity),
+              unit: draft.unit,
+              wastePercent: draft.wastePercent === '' ? null : Number(draft.wastePercent),
+              itemId: draft.itemId || null,
+              subRecipeId: draft.subRecipeId || null
+            }))
+          })
+        });
+        setLivePreview(preview);
+      } catch {
+        /* keep the last preview on a transient error */
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [drafts, dirty, detail.id, detail.yieldQuantity, detail.yieldUnit, detail.portionSize, detail.portionUnit, detail.salePriceCents, detail.isPrepRecipe, detail.estimatedCost]);
+
+  const effectiveCost = livePreview ?? cost;
+  const usingLivePreview = livePreview !== null;
   const costLines = new Map((cost?.lines ?? []).map((line) => [line.lineId, line]));
 
   const itemOptions = useMemo(
@@ -1624,13 +1666,14 @@ function RecipeLinesTable({
 
   return (
     <div className="recipe-lines">
-      <RecipeCostSummary cost={cost} />
-      {cost?.warnings.length ? (
+      <RecipeCostSummary cost={effectiveCost} />
+      {usingLivePreview ? <p className="recipe-costing-note">Live preview — costs update as you edit. Save to store.</p> : null}
+      {effectiveCost?.warnings.length ? (
         <div className="recipe-cost-warnings">
-          {cost.warnings.slice(0, 5).map((warning) => (
+          {effectiveCost.warnings.slice(0, 5).map((warning) => (
             <Badge key={warning} tone="warning">{warning}</Badge>
           ))}
-          {cost.warnings.length > 5 ? <Badge tone="muted">+{cost.warnings.length - 5} more</Badge> : null}
+          {effectiveCost.warnings.length > 5 ? <Badge tone="muted">+{effectiveCost.warnings.length - 5} more</Badge> : null}
         </div>
       ) : null}
       {drafts.some((draft) => draft.subRecipeId) ? (
@@ -1655,7 +1698,13 @@ function RecipeLinesTable({
         <tbody>
           {drafts.map((draft, index) => {
             const persistedLine = detail.lines[index];
-            const costLine = persistedLine ? costLines.get(persistedLine.id) : null;
+            // Live-preview lines come back in draft order (no persisted id), so
+            // match by index; saved lines match by their persisted id.
+            const costLine = usingLivePreview
+              ? effectiveCost?.lines[index] ?? null
+              : persistedLine
+                ? costLines.get(persistedLine.id) ?? null
+                : null;
             const lineWarnings = costLine?.warnings ?? [];
             return (
               <Fragment key={persistedLine?.id ?? `draft-${index}`}>

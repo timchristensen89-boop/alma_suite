@@ -93,6 +93,15 @@ recipesRouter.get('/:id/cost', async (req, res, next) => {
   }
 });
 
+// Live cost preview for an unsaved recipe draft (builder cost-as-you-type).
+recipesRouter.post('/cost-preview', async (req, res, next) => {
+  try {
+    res.json(await recipesService.costPreview(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Rule 1: cost-sanity check. Returns warnings if a recipe's estimated
 // cost looks "stupidly expensive" (likely a unit / conversion mistake).
 // The recipe detail UI surfaces this above the line list.

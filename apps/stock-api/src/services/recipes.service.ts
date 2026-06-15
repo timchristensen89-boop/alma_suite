@@ -961,6 +961,73 @@ export const recipesService = {
     return calculateRecipeCost(row);
   },
 
+  // Cost an UNSAVED recipe draft so the builder can show cost + per-line warnings
+  // live as the user types, without saving. Resolves linked items/prep-recipes
+  // from the ids in the draft, then runs the same costing as the saved endpoint.
+  async costPreview(input: unknown): Promise<RecipeCostPayload> {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const rawLines = Array.isArray(body.lines) ? (body.lines as Array<Record<string, unknown>>) : [];
+    const num = (value: unknown): number | null => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : null;
+      return parsed !== null && Number.isFinite(parsed) ? parsed : null;
+    };
+    const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+    const optId = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null);
+
+    const itemIds = [...new Set(rawLines.map((line) => optId(line.itemId)).filter((id): id is string => Boolean(id)))];
+    const subRecipeIds = [...new Set(rawLines.map((line) => optId(line.subRecipeId)).filter((id): id is string => Boolean(id)))];
+
+    const [items, subRecipes] = await Promise.all([
+      itemIds.length
+        ? prisma.stockItem.findMany({
+            where: { id: { in: itemIds } },
+            select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true }
+          })
+        : Promise.resolve([]),
+      subRecipeIds.length
+        ? prisma.recipe.findMany({
+            where: { id: { in: subRecipeIds } },
+            select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true }
+          })
+        : Promise.resolve([])
+    ]);
+    const itemMap = new Map(items.map((item) => [item.id, item]));
+    const subMap = new Map(subRecipes.map((recipe) => [recipe.id, recipe]));
+
+    const lines = rawLines.map((line, index) => {
+      const itemId = optId(line.itemId);
+      const subRecipeId = optId(line.subRecipeId);
+      return {
+        id: `preview-${index}`,
+        position: index,
+        ingredientName: str(line.ingredientName) || `Line ${index + 1}`,
+        quantity: num(line.quantity),
+        unit: str(line.unit) || null,
+        wastePercent: num(line.wastePercent) ?? 0,
+        cost: num(line.cost),
+        itemId,
+        subRecipeId,
+        item: itemId ? itemMap.get(itemId) ?? null : null,
+        subRecipe: subRecipeId ? subMap.get(subRecipeId) ?? null : null
+      };
+    });
+
+    const pseudoRow = {
+      id: 'preview',
+      yieldQuantity: num(body.yieldQuantity),
+      yieldUnit: str(body.yieldUnit) || null,
+      portionSize: num(body.portionSize),
+      portionUnit: str(body.portionUnit) || null,
+      salePriceCents: num(body.salePriceCents),
+      isPrepRecipe: Boolean(body.isPrepRecipe),
+      estimatedCost: num(body.estimatedCost),
+      lines,
+      venuePrices: []
+    } as unknown as RecipeWithLinesRow;
+
+    return calculateRecipeCost(pseudoRow);
+  },
+
   async ingredientOptions(): Promise<{ options: RecipeIngredientOption[] }> {
     const [items, prepRecipes] = await Promise.all([
       prisma.stockItem.findMany({
