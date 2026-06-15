@@ -1,4 +1,5 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
@@ -245,6 +246,7 @@ export function ItemsPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [viewMode, setViewMode] = useState<ItemViewMode>('category');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     let cancelled = false;
@@ -274,6 +276,21 @@ export function ItemsPage() {
       cancelled = true;
     };
   }, [selectedVenue, reloadKey]);
+
+  // Deep-link from the Costing health worklist (?edit=<id>) — open that item in
+  // edit once items have loaded, then drop the param so refresh doesn't re-open.
+  useEffect(() => {
+    if (!canManage || !data) return;
+    const editId = searchParams.get('edit');
+    if (!editId) return;
+    const target = data.items.find((item) => item.id === editId);
+    if (target) {
+      setForm({ mode: 'edit', item: target });
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
+    }
+  }, [canManage, data, searchParams, setSearchParams]);
 
   const activeVenue = selectedVenue || data?.scope?.venue || '';
 

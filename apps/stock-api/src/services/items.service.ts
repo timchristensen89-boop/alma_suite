@@ -16,9 +16,13 @@ import {
   type StockLowStockItem,
   type StocktakeReviewItem,
   type VenueStockItem,
+  type StockConfigHealthIssue,
+  type StockConfigHealthItem,
+  type StockConfigHealthPayload,
   type AuthUser
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { convertQuantityToCostUnit } from './units.js';
 
 type StockItemRow = Prisma.StockItemGetPayload<{
   include: { category: { select: { id: true; name: true } } };
@@ -1054,6 +1058,126 @@ export const itemsService = {
       countAreas: areas,
       problemItems,
       _scope: { venue: actorVenueScope(actor) }
+    };
+  },
+
+  // Costing-trust health: which active items are silently mis-configured so they
+  // cost $0 or wrong in recipes and stock value. Unlike the generic hygiene
+  // report, this only flags issues that actually corrupt money, ranks them by
+  // impact (recipes affected, then on-hand value), and names the recipes that
+  // break — so the gap that quietly zeroed a figure becomes a fix-it worklist.
+  async configHealth(options: { staleDays?: number } = {}): Promise<StockConfigHealthPayload> {
+    const items = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      include: {
+        category: { select: { name: true } },
+        recipeLines: {
+          select: { quantity: true, unit: true, recipe: { select: { id: true, title: true } } }
+        }
+      }
+    });
+
+    const staleDays = options.staleDays ?? 180;
+    const staleCutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
+
+    const flagged: StockConfigHealthItem[] = [];
+    for (const item of items) {
+      const issues: StockConfigHealthIssue[] = [];
+      const costUnit = item.countUnit ?? item.unit;
+      const recipeIds = new Set(item.recipeLines.map((line) => line.recipe.id));
+      const recipeCount = recipeIds.size;
+
+      // 1. No average cost → reads as $0 wherever it's used.
+      if (item.avgCostCents === null) {
+        issues.push({
+          code: 'no-avg-cost',
+          severity: recipeCount > 0 ? 'error' : 'warn',
+          message:
+            recipeCount > 0
+              ? `No average cost yet — the ${recipeCount} recipe${recipeCount === 1 ? '' : 's'} using this item cost it at $0. Receive it on an invoice or set an average cost.`
+              : item.latestCostCents !== null
+                ? 'A latest cost is set but no average cost — recipes and stock value still read $0. Receive it on an invoice to set the average.'
+                : 'No cost on record — counts as $0 in stock value. Receive it on an invoice or set a cost.'
+        });
+      }
+
+      // 2. Recipe lines whose unit can't convert to this item's cost unit — the
+      //    exact case that used to mis-cost. Name the recipes to fix.
+      const mismatchRecipes = new Map<string, string>();
+      for (const line of item.recipeLines) {
+        if (line.quantity === null || line.quantity === undefined) continue;
+        const { via } = convertQuantityToCostUnit(line.quantity, line.unit, item);
+        if (via === 'unknown') mismatchRecipes.set(line.recipe.id, line.recipe.title);
+      }
+      if (mismatchRecipes.size > 0) {
+        const titles = Array.from(mismatchRecipes.values());
+        const shown = titles.slice(0, 3).join(', ');
+        const extra = titles.length > 3 ? ` +${titles.length - 3} more` : '';
+        issues.push({
+          code: 'recipe-unit-mismatch',
+          severity: 'error',
+          message: `A recipe unit can't convert to this item's cost unit (“${costUnit}”) in: ${shown}${extra}. Set a pack size or measure-per-unit on this item, or fix the recipe line's unit — until then those lines cost $0.`
+        });
+      }
+
+      // 3. Measure bridge half-configured (one of the pair set without the other).
+      const hasMeasureAmount = item.measurePerCountUnit !== null && item.measurePerCountUnit !== undefined;
+      const hasMeasureUnit = Boolean(item.measureUnit && item.measureUnit.trim());
+      if (hasMeasureAmount !== hasMeasureUnit) {
+        issues.push({
+          code: 'measure-half-set',
+          severity: 'warn',
+          message: hasMeasureAmount
+            ? `Measure-per-unit amount is set but its unit (g or mL) isn't — the bridge won't work until both are set.`
+            : `Measure unit is set but the amount (e.g. how many ${item.measureUnit} in one ${costUnit}) isn't — set the amount to enable it.`
+        });
+      }
+
+      // 4. Stale cost — the figure is real but old, so margins drift quietly.
+      if (item.avgCostCents !== null && item.latestCostAt && item.latestCostAt < staleCutoff) {
+        const ageDays = Math.round((Date.now() - item.latestCostAt.getTime()) / (24 * 60 * 60 * 1000));
+        issues.push({
+          code: 'stale-cost',
+          severity: 'warn',
+          message: `Cost hasn't been updated in ${ageDays} days — margins may be drifting. Re-import a recent invoice for this item.`
+        });
+      }
+
+      if (issues.length === 0) continue;
+
+      const onHandValueCents = item.avgCostCents !== null ? Math.round(item.onHand * item.avgCostCents) : null;
+      flagged.push({
+        id: item.id,
+        name: item.name,
+        categoryName: item.category?.name ?? null,
+        unit: item.unit,
+        countUnit: item.countUnit,
+        recipeCount,
+        onHand: item.onHand,
+        onHandValueCents,
+        topSeverity: issues.some((issue) => issue.severity === 'error') ? 'error' : 'warn',
+        issues
+      });
+    }
+
+    // Worst first: errors before warnings, then most recipes affected, then most
+    // on-hand value at stake, then name.
+    flagged.sort((a, b) => {
+      if (a.topSeverity !== b.topSeverity) return a.topSeverity === 'error' ? -1 : 1;
+      if (a.recipeCount !== b.recipeCount) return b.recipeCount - a.recipeCount;
+      const av = a.onHandValueCents ?? 0;
+      const bv = b.onHandValueCents ?? 0;
+      if (av !== bv) return bv - av;
+      return a.name.localeCompare(b.name);
+    });
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totalActiveItems: items.length,
+      flaggedCount: flagged.length,
+      errorItemCount: flagged.filter((item) => item.topSeverity === 'error').length,
+      warnItemCount: flagged.filter((item) => item.topSeverity === 'warn').length,
+      items: flagged.slice(0, 300)
     };
   }
 };

@@ -5964,6 +5964,7 @@ export type RecipeCostLine = {
   unitCostCents: number | null;
   lineCostCents: number | null;
   warnings: string[];
+  trace?: RecipeCostLineTrace;
 };
 
 export type RecipeCostPayload = {
@@ -5980,6 +5981,56 @@ export type RecipeCostPayload = {
   missingCostCount: number;
   warnings: string[];
   lines: RecipeCostLine[];
+};
+
+// ─── Item config health ──────────────────────────────────────────
+// Surfaces stock items that are silently mis-configured for costing, so the
+// gaps that quietly make recipes/stock value read $0 (or wrong) become a
+// fix-it worklist instead of a mystery in the reports.
+export type StockConfigHealthIssueCode =
+  | 'no-avg-cost'
+  | 'recipe-unit-mismatch'
+  | 'measure-half-set'
+  | 'stale-cost';
+
+export type StockConfigHealthIssue = {
+  code: StockConfigHealthIssueCode;
+  severity: 'error' | 'warn';
+  message: string;
+};
+
+export type StockConfigHealthItem = {
+  id: string;
+  name: string;
+  categoryName: string | null;
+  unit: string;
+  countUnit: string | null;
+  recipeCount: number;
+  onHand: number;
+  onHandValueCents: number | null;
+  topSeverity: 'error' | 'warn';
+  issues: StockConfigHealthIssue[];
+};
+
+export type StockConfigHealthPayload = {
+  generatedAt: string;
+  totalActiveItems: number;
+  flaggedCount: number;
+  errorItemCount: number;
+  warnItemCount: number;
+  items: StockConfigHealthItem[];
+};
+
+export type RecipeCostLineTrace = {
+  // Per-cost-unit price and where it came from (e.g. "Average stock cost").
+  costUnitLabel: string | null;
+  costSource: string | null;
+  // Line quantity expressed in the item's cost unit, and how that conversion
+  // was resolved (human label, e.g. "2 case → 24 bottle (pack ×12)").
+  convertedQuantity: number | null;
+  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'none' | 'unknown';
+  conversionLabel: string | null;
+  wasteMultiplier: number;
 };
 
 export type RecipeIngredientOption = {

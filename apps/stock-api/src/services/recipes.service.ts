@@ -15,6 +15,7 @@ import {
   type RecipeCategory,
   type RecipeCategoryKind,
   type RecipeCostLine,
+  type RecipeCostLineTrace,
   type RecipeCostPayload,
   type RecipeIngredientOption,
   type RecipeLine,
@@ -93,6 +94,35 @@ function centsToDollars(value: number | null | undefined) {
 
 function roundCents(value: number) {
   return Math.round(value);
+}
+
+// Trim a converted quantity to a readable precision for the cost trace.
+function tidyQty(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+// Human label for how a stock-item line's quantity was converted to its cost
+// unit — the "show the working" line under each costed ingredient.
+function stockConversionLabel(
+  quantity: number,
+  fromUnit: string | null,
+  convertedQuantity: number,
+  costUnit: string | null,
+  via: RecipeCostLineTrace['conversionMethod']
+): string | null {
+  if (via === 'same-unit' || via === 'none') return null;
+  const from = `${tidyQty(quantity)} ${fromUnit ?? ''}`.trim();
+  const to = `${tidyQty(convertedQuantity)} ${costUnit ?? ''}`.trim();
+  const note =
+    via === 'pack'
+      ? ' (pack size)'
+      : via === 'measure'
+        ? ' (metric)'
+        : via === 'measure-pack'
+          ? ' (measure bridge)'
+          : '';
+  return `${from} → ${to}${note}`;
 }
 
 function inferRecipeCategoryKind(
@@ -256,6 +286,18 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       unitCostCents !== null && costQuantity !== null
         ? roundCents(unitCostCents * costQuantity * wasteMultiplier)
         : null;
+    const via = (conversion?.via ?? 'none') as RecipeCostLineTrace['conversionMethod'];
+    const trace: RecipeCostLineTrace = {
+      costUnitLabel: stockCostUnit,
+      costSource: 'Average stock cost',
+      convertedQuantity: costQuantity,
+      conversionMethod: conversionFailed ? 'unknown' : via,
+      conversionLabel:
+        costQuantity !== null && quantity !== null
+          ? stockConversionLabel(quantity, row.unit, costQuantity, stockCostUnit, via)
+          : null,
+      wasteMultiplier
+    };
     return {
       lineId: row.id,
       ingredientName: row.ingredientName,
@@ -265,7 +307,8 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       source: lineCostCents === null ? 'MISSING' : 'STOCK_ITEM',
       unitCostCents,
       lineCostCents,
-      warnings
+      warnings,
+      trace
     };
   }
 
@@ -313,6 +356,23 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       unitCostCents !== null && subCostQuantity !== null
         ? roundCents(unitCostCents * subCostQuantity * wasteMultiplier)
         : null;
+    const yieldUnit = row.subRecipe.yieldUnit;
+    const batchDollars = centsToDollars(batchCostCents);
+    const prepCostSource =
+      batchDollars !== null && yieldQuantity && yieldQuantity > 0
+        ? `Prep batch $${batchDollars.toFixed(2)} ÷ ${tidyQty(yieldQuantity)} ${yieldUnit ?? ''}`.trim()
+        : 'Prep batch ÷ yield';
+    const trace: RecipeCostLineTrace = {
+      costUnitLabel: yieldUnit,
+      costSource: prepCostSource,
+      convertedQuantity: subCostQuantity,
+      conversionMethod: 'prep-yield',
+      conversionLabel:
+        subCostQuantity !== null && quantity !== null && yieldUnit && row.unit && row.unit !== yieldUnit
+          ? `${tidyQty(quantity)} ${row.unit} → ${tidyQty(subCostQuantity)} ${yieldUnit}`
+          : null,
+      wasteMultiplier
+    };
     return {
       lineId: row.id,
       ingredientName: row.ingredientName,
@@ -322,7 +382,8 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       source: lineCostCents === null ? 'MISSING' : 'PREP_RECIPE',
       unitCostCents: unitCostCents === null ? null : roundCents(unitCostCents),
       lineCostCents,
-      warnings
+      warnings,
+      trace
     };
   }
 
@@ -337,7 +398,17 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     source: manualCostCents === null ? 'MISSING' : 'MANUAL',
     unitCostCents: null,
     lineCostCents: manualCostCents,
-    warnings
+    warnings,
+    trace: manualCostCents === null
+      ? undefined
+      : {
+          costUnitLabel: row.unit,
+          costSource: 'Manual line cost',
+          convertedQuantity: null,
+          conversionMethod: 'none',
+          conversionLabel: null,
+          wasteMultiplier: 1
+        }
   };
 }
 

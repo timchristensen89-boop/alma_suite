@@ -1202,6 +1202,14 @@ tbody tr.row-detail:hover {
   color: var(--color-danger, #c0392b);
 }
 
+.recipe-line-trace-detail > td {
+  padding: 2px 8px 7px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
 .recipe-lines-table thead th {
   font-size: 11px;
   text-transform: uppercase;
@@ -2330,6 +2338,29 @@ html[data-theme='dark'] {
 .loaded-import-flag-item { font-weight: 600; font-size: 13px; color: var(--color-text); }
 .loaded-import-flag-where { font-weight: 400; color: var(--color-text-muted); }
 .loaded-import-flag-reason { font-size: 12.5px; color: var(--tone-warning-fg, #92400e); }
+
+/* ── Costing health worklist ──────────────────────────────────────────── */
+.config-health-error { margin: 0 0 12px; color: #9A3A2E; font-size: 13px; }
+.config-health-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.config-health-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.config-health-row {
+  display: grid; gap: 8px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-left-width: 4px; border-radius: 11px; background: var(--color-surface);
+}
+.config-health-row.is-error { border-left-color: var(--tone-danger-border, #D9805F); }
+.config-health-row.is-warn { border-left-color: var(--tone-warning-border, #E4C58A); }
+.config-health-row-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 14px; }
+.config-health-row-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.config-health-row-name { font-weight: 600; font-size: 14.5px; color: var(--color-text); text-decoration: none; }
+.config-health-row-name:hover { text-decoration: underline; }
+.config-health-row-cat { font-size: 12px; color: var(--color-text-muted); }
+.config-health-row-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; }
+.config-health-issues { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.config-health-issue { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--color-text); line-height: 1.45; }
+.config-health-issue > span { padding-top: 1px; }
+.config-health-row-actions { display: flex; justify-content: flex-end; }
+.config-health-fix { font-size: 12.5px; font-weight: 600; color: var(--color-accent, #7A5C3E); text-decoration: none; }
+.config-health-fix:hover { text-decoration: underline; }
 
 /* ── Inter-venue transfers ────────────────────────────────────────────── */
 .transfer-arrow { align-self: center; font-size: 18px; color: var(--color-text-muted); padding: 0 2px; }

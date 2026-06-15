@@ -4,6 +4,7 @@ import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitc
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
+import { ConfigHealthPage } from './pages/ConfigHealthPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { TransfersPage } from './pages/TransfersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
@@ -33,6 +34,7 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ITEMS_TABS: HubTab[] = [
   { to: '/items', label: 'Catalogue', end: true },
   { to: '/reorder', label: 'Below par' },
+  { to: '/items/health', label: 'Costing health' },
   { to: '/items/categories', label: 'Categories' }
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
@@ -223,6 +225,7 @@ function StockAppShell() {
 
         {/* Items hub */}
         <Route path="/items" element={<HubLayout tabs={ITEMS_TABS}><ItemsPage /></HubLayout>} />
+        <Route path="/items/health" element={<HubLayout tabs={ITEMS_TABS}><ConfigHealthPage /></HubLayout>} />
         <Route path="/reorder" element={<HubLayout tabs={ITEMS_TABS}><ReorderNoticesPage /></HubLayout>} />
         <Route path="/items/categories" element={<HubLayout tabs={ITEMS_TABS}><SettingsPage section="stock" /></HubLayout>} />
 

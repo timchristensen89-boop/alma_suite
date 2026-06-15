@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type {
   Recipe,
   RecipeCreateInput,
+  RecipeCostLine,
   RecipeCostPayload,
   RecipeLineInput,
   RecipeUpdateInput,
@@ -127,6 +128,31 @@ function formatCurrencyCents(value: number | null | undefined) {
 
 function stockCostUnit(item: StockItem) {
   return item.countUnit ?? item.unit;
+}
+
+function tidyQtyText(value: number) {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+// "Show the working" line for a costed ingredient: how the per-cost-unit price
+// and the converted quantity multiply out to the line cost. Returns null when
+// there isn't a meaningful trace (e.g. uncosted lines — the warning explains).
+function costTraceText(line: RecipeCostLine | null): string | null {
+  const trace = line?.trace;
+  if (!trace || line.lineCostCents === null) return null;
+  const parts: string[] = [];
+  if (trace.conversionLabel) parts.push(trace.conversionLabel);
+  if (trace.convertedQuantity !== null && line.unitCostCents !== null) {
+    const unit = trace.costUnitLabel ? ` ${trace.costUnitLabel}` : '';
+    let calc = `${tidyQtyText(trace.convertedQuantity)}${unit} × ${formatCurrencyCents(line.unitCostCents)}/${(trace.costUnitLabel ?? 'unit')}`;
+    if (trace.wasteMultiplier > 1) calc += ` × ${trace.wasteMultiplier.toFixed(2)} waste`;
+    calc += ` = ${formatCurrencyCents(line.lineCostCents)}`;
+    parts.push(calc);
+  } else if (line.source === 'MANUAL') {
+    parts.push(`${formatCurrencyCents(line.lineCostCents)} entered manually`);
+  }
+  if (trace.costSource) parts.push(trace.costSource);
+  return parts.length ? parts.join('  ·  ') : null;
 }
 
 function formatPercent(value: number | null | undefined) {
@@ -1815,6 +1841,12 @@ function RecipeLinesTable({
                 <tr className="recipe-line-warning-detail">
                   <td />
                   <td colSpan={8}>{lineWarnings.join(' ')}</td>
+                </tr>
+              ) : null}
+              {!lineWarnings.length && costTraceText(costLine) ? (
+                <tr className="recipe-line-trace-detail">
+                  <td />
+                  <td colSpan={8}>{costTraceText(costLine)}</td>
                 </tr>
               ) : null}
               </Fragment>
