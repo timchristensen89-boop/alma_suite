@@ -1211,6 +1211,58 @@ tbody tr.row-detail:hover {
   color: var(--color-text-muted);
 }
 
+.stocktake-valuation-check {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.stocktake-valuation-check.is-suspect {
+  border-color: var(--color-danger, #c0392b);
+}
+
+.stocktake-valuation-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.stocktake-valuation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.stocktake-valuation-list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.stocktake-valuation-list > li.is-suspect {
+  color: var(--color-danger, #c0392b);
+  font-weight: 700;
+}
+
+.stocktake-valuation-flag {
+  font-weight: 700;
+}
+
+.stocktake-valuation-num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
 .stocktake-variance-summary {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));

@@ -1158,6 +1158,25 @@ function StocktakeLinesTable({
     groups.set(key, list);
   }
 
+  // Valuation check — surface the lines driving the stocktake value so a
+  // mis-valued line (usually a unit/cost setup error blowing one line up by
+  // ~1000×) is obvious instead of buried in a collapsed group.
+  const valuedLines = detail.lines
+    .map((line) => ({
+      id: line.id,
+      label: line.label,
+      itemName: line.item?.name ?? null,
+      value: line.stockValueCents ?? 0,
+      countedQty: normalQuantity(line.countedQty),
+      unit: line.unit ?? line.item?.unit ?? null
+    }))
+    .filter((line) => line.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const totalValuedCents = valuedLines.reduce((sum, line) => sum + line.value, 0);
+  const topValuedLines = valuedLines.slice(0, 5);
+  const suspectShareThreshold = 0.25;
+  const hasSuspectLine = totalValuedCents > 0 && topValuedLines.some((line) => line.value / totalValuedCents >= suspectShareThreshold);
+
   return (
     <div className="recipe-lines">
       {summary.linkedLines > 0 ? (
@@ -1186,6 +1205,39 @@ function StocktakeLinesTable({
       ) : (
         <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
       )}
+      {totalValuedCents > 0 ? (
+        <div className={`stocktake-valuation-check${hasSuspectLine ? ' is-suspect' : ''}`}>
+          <div className="stocktake-valuation-head">
+            <span>Top value lines</span>
+            <strong>{formatCurrency(totalValuedCents)} total</strong>
+          </div>
+          <ul className="stocktake-valuation-list">
+            {topValuedLines.map((line) => {
+              const share = totalValuedCents > 0 ? line.value / totalValuedCents : 0;
+              const suspect = share >= suspectShareThreshold;
+              return (
+                <li key={line.id} className={suspect ? 'is-suspect' : ''}>
+                  <span className="stocktake-valuation-name">
+                    {line.itemName ?? line.label}
+                    {suspect ? <span className="stocktake-valuation-flag"> ⚠ check unit/cost</span> : null}
+                  </span>
+                  <span className="stocktake-valuation-num">
+                    {formatCurrency(line.value)} · {(share * 100).toFixed(0)}%
+                    {line.countedQty !== null ? ` · counted ${formatQuantity(line.countedQty, line.unit)}` : ''}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {hasSuspectLine ? (
+            <p className="subtle">
+              One line driving most of the value is almost always a unit/cost setup error — e.g. a spirit counted in mL
+              but costed per bottle (×1000), or a wrong pack size. Open that item and check its count unit, cost unit and
+              average cost.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
       <div className="stocktake-groups-toolbar">
         <span className="subtle">{groups.size} categor{groups.size === 1 ? 'y' : 'ies'}</span>
         <button
