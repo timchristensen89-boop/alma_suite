@@ -28,7 +28,7 @@ export type CogsSource = 'stock_bounded' | 'purchases_only';
 
 // 'complete' = both stocktake bounds present. The others say which bound was
 // missing, so callers can surface "COGS is estimated" honestly.
-export type CogsQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing';
+export type CogsQuality = 'complete' | 'estimated' | 'missing_opening' | 'missing_closing' | 'closing_implausible';
 
 export type ActualCogs = {
   cogsCents: number;
@@ -106,8 +106,27 @@ export async function computeActualCogs(params: {
   const closingStockCents = closing ?? 0;
 
   if (opening != null && closing != null) {
+    const rawCogsCents = openingStockCents + purchasesCents - closingStockCents;
+    // Closing stock can't exceed what was on hand plus everything bought —
+    // a negative COGS means the latest stocktake is mis-valued (almost always a
+    // unit/pack error blowing up one high-value line). Don't silently clamp to
+    // $0, which reads as "no cost of goods"; fall back to purchases and flag it
+    // (the opening/closing values are still returned so callers can warn with
+    // the actual figures).
+    if (rawCogsCents < 0) {
+      return {
+        cogsCents: purchasesCents,
+        purchasesCents,
+        openingStockCents,
+        closingStockCents,
+        openingStockAvailable: true,
+        closingStockAvailable: true,
+        source: 'purchases_only',
+        quality: 'closing_implausible'
+      };
+    }
     return {
-      cogsCents: Math.max(0, openingStockCents + purchasesCents - closingStockCents),
+      cogsCents: rawCogsCents,
       purchasesCents,
       openingStockCents,
       closingStockCents,

@@ -851,7 +851,13 @@ function recapRecommendations(
       }
     }
   }
-  if (month.stockQuality !== 'complete') {
+  if (month.stockQuality === 'closing_implausible') {
+    recs.push({
+      tone: 'danger',
+      title: `Closing stock ${recapMoney(month.closingStockCents)} exceeds opening + purchases`,
+      detail: `Closing stock can't be more than opening stock (${recapMoney(month.openingStockCents)}) plus purchases (${recapMoney(month.purchasesCents)}), so the latest stocktake is mis-valued — almost always a unit/pack error on one high-value line (e.g. a spirit counted in mL but costed per bottle). COGS is shown from purchases only until the stocktake is corrected. Open the latest stocktake and check its highest-value lines.`
+    });
+  } else if (month.stockQuality !== 'complete') {
     recs.push({ tone: 'info', title: 'COGS is estimated (no stocktake bounds)', detail: 'No locked stocktake found at the period boundaries, so COGS uses purchases only. Lock an opening and closing stocktake for a true opening + purchases − closing figure.' });
   }
   return recs;

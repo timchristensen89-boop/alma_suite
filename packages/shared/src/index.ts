@@ -3619,7 +3619,7 @@ export type ReportsPrimeCostVenueRow = {
   openingStockCents: number;
   closingStockCents: number;
   cogsSource: 'stock_bounded' | 'purchases_only';
-  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated';
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
   primeCostCents: number;
   wagePercent: number | null;
   cogsPercent: number | null;
@@ -3640,7 +3640,7 @@ export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchem
   to: z.string().email()
 });
 
-export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated';
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
 
 export type MonthlyRecapPeriod = {
   label: string;
