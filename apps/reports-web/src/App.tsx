@@ -2064,6 +2064,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
     // Weekly Snapshot (editorial dashboard from the design)
     const salesCentsForRange = primeTotals?.salesCents ?? 0;
+    // Actual purchase COGS lags within an in-progress week (bills arrive after
+    // the stock is sold), so for the weekly snapshot fall back to THEORETICAL
+    // food cost — recipe cost × Square units sold — which is available live.
+    // The Monthly Recap / Prime Cost reports keep the canonical actual COGS.
+    const actualCogsCentsForRange = primeTotals?.cogsCents ?? 0;
+    const theoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
+    const theoreticalFoodCostPct = data.menuProfitability?.totals.foodCostPercent ?? null;
+    const overviewCogsIsActual = actualCogsCentsForRange > 0;
+    const overviewCogsCents = overviewCogsIsActual ? actualCogsCentsForRange : (theoreticalCogsCents ?? 0);
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
     const noShowsForRange = data.overview?.reserve.noShows ?? 0;
@@ -2431,13 +2440,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
           <div className="stats-grid report-metric-grid">
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
-              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
+              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : 'ex-GST net · Square Net Sales'} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
               <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
-              <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Xero bills not matched — check Stock recipes' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+              <StatCard
+                label="COGS"
+                value={formatCurrency(overviewCogsCents)}
+                hint={overviewCogsIsActual
+                  ? `${formatPercent(primeTotals?.cogsPercent)} of sales · actual`
+                  : theoreticalCogsCents != null
+                    ? `${formatPercent(theoreticalFoodCostPct)} of sales · theoretical (recipe × sales)`
+                    : 'Map Square items to recipes in Stock to see food cost'}
+                loading={loading}
+              />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
               <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
