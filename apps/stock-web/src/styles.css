@@ -1096,6 +1096,96 @@ tbody tr.row-detail:hover {
   gap: 8px;
 }
 
+.stock-portions-card {
+  margin-top: 12px;
+}
+
+.portions-builder {
+  display: grid;
+  gap: 10px;
+}
+
+.portions-head {
+  display: grid;
+  gap: 2px;
+}
+
+.portions-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.portions-tree-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+  position: relative;
+}
+
+.portions-tree-row::before {
+  content: '↳';
+  color: var(--color-muted, #999);
+  margin-right: 2px;
+}
+
+.portions-tree-name {
+  font-weight: 600;
+}
+
+.portions-tree-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text-muted, #666);
+  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.portions-add {
+  display: grid;
+  gap: 8px;
+}
+
+.portions-draft-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.portions-unit-select {
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text);
+}
+
+.portions-remove {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-muted, #999);
+}
+
+.portions-add-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .recipe-lines-table {
   width: 100%;
   border-collapse: collapse;

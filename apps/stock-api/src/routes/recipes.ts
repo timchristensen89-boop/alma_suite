@@ -102,6 +102,27 @@ recipesRouter.post('/cost-preview', async (req, res, next) => {
   }
 });
 
+// Portioned products ("serves"): a parent (stock item or bulk recipe) and its
+// child sellable recipes.
+recipesRouter.get('/portion-tree', async (req, res, next) => {
+  try {
+    const parentType = req.query.parentType === 'recipe' ? 'recipe' : 'item';
+    const parentId = String(req.query.parentId ?? '');
+    res.json(await recipesService.portionTree(parentType, parentId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+recipesRouter.post('/portions', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await recipesService.createPortions(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Rule 1: cost-sanity check. Returns warnings if a recipe's estimated
 // cost looks "stupidly expensive" (likely a unit / conversion mistake).
 // The recipe detail UI surfaces this above the line list.

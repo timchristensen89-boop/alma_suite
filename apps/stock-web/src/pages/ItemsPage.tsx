@@ -9,6 +9,7 @@ import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 import { ItemForm } from '../features/items/ItemForm';
+import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
 
 const UNCATEGORISED_FILTER = '__uncategorised';
 
@@ -797,6 +798,9 @@ export function ItemsPage() {
                 description="Select a venue to edit local par, reorder and active settings for this catalogue item."
               />
             )}
+            <div className="card stock-portions-card">
+              <PortionsBuilder parentType="item" parentId={form.item.id} canManage={canManage} />
+            </div>
           </div>
         ) : loading ? (
           <Spinner label="Loading items" />

@@ -18,6 +18,7 @@ import { ApiError, api } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
+import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
 
 type FormState =
   | { mode: 'closed' }
@@ -719,6 +720,11 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                       void load();
                     }}
                   />
+                ) : null}
+                {detail && detail.id === recipe.id && detail.isPrepRecipe ? (
+                  <div className="card stock-portions-card">
+                    <PortionsBuilder parentType="recipe" parentId={detail.id} canManage={canManage} />
+                  </div>
                 ) : null}
               </td>
             </tr>

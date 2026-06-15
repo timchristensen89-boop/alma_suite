@@ -6084,6 +6084,52 @@ export type RecipeVenuePriceInput = z.infer<typeof recipeVenuePriceInputSchema>;
 export type RecipeBulkDeleteInput = z.infer<typeof recipeBulkDeleteInputSchema>;
 
 /* ------------------------------------------------------------------------- */
+/* Portioned products ("serves") — a parent (a stock item like a bottle/keg/   */
+/* case, or a bulk production recipe) yields child sellable recipes (glasses,   */
+/* schooners, bottles, single cocktails), each a 1-line recipe linking the      */
+/* parent at a portion size and costed from it.                                 */
+/* ------------------------------------------------------------------------- */
+export const portionParentTypeSchema = z.enum(['item', 'recipe']);
+export type PortionParentType = z.infer<typeof portionParentTypeSchema>;
+
+export const recipePortionInputSchema = z.object({
+  name: z.string().min(2, 'Name is required'),
+  quantity: z.coerce.number().positive('Portion size must be greater than 0'),
+  unit: z.string().min(1, 'Choose a unit'),
+  salePriceCents: z.coerce.number().int().nonnegative().optional(),
+  wastePercent: z.coerce.number().min(0).max(100).optional()
+});
+
+export const recipePortionsCreateInputSchema = z.object({
+  parentType: portionParentTypeSchema,
+  parentId: z.string().min(1),
+  portions: z.array(recipePortionInputSchema).min(1, 'Add at least one serve')
+});
+
+export type RecipePortionInput = z.infer<typeof recipePortionInputSchema>;
+export type RecipePortionsCreateInput = z.infer<typeof recipePortionsCreateInputSchema>;
+
+export type PortionChild = {
+  recipeId: string;
+  title: string;
+  portionLabel: string | null;
+  salePriceCents: number | null;
+  costPerPortionCents: number | null;
+  foodCostPercent: number | null;
+  grossProfitCents: number | null;
+  squareMapped: boolean;
+  warnings: string[];
+};
+
+export type PortionTreePayload = {
+  parentType: PortionParentType;
+  parentId: string;
+  parentLabel: string;
+  parentUnitKind: 'volume' | 'mass' | 'count';
+  children: PortionChild[];
+};
+
+/* ------------------------------------------------------------------------- */
 /* Stocktakes                                                                 */
 /* ------------------------------------------------------------------------- */
 

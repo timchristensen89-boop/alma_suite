@@ -6,6 +6,10 @@ import {
   recipeCategoryUpdateInputSchema,
   recipeCreateInputSchema,
   recipeUpdateInputSchema,
+  recipePortionsCreateInputSchema,
+  type PortionChild,
+  type PortionParentType,
+  type PortionTreePayload,
   type Recipe,
   type RecipeActualSales,
   type RecipeCategory,
@@ -577,6 +581,24 @@ async function listRecipeCategories(syncFromRecipes: boolean) {
   return rows.map((row) => toRecipeCategoryPayload(row, counts.get(row.name) ?? 0));
 }
 
+const VOLUME_UNIT_TOKENS = ['ml', 'cl', 'dl', 'l', 'litre', 'litres', 'liter', 'liters', 'millilitre', 'milliliter'];
+const MASS_UNIT_TOKENS = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilograms', 'kilo'];
+function unitKindOf(unit: string | null | undefined): 'volume' | 'mass' | 'count' {
+  const u = (unit ?? '').trim().toLowerCase();
+  if (VOLUME_UNIT_TOKENS.includes(u)) return 'volume';
+  if (MASS_UNIT_TOKENS.includes(u)) return 'mass';
+  return 'count';
+}
+// What kind of portion unit a parent item yields: a measure-per-unit bridge or a
+// metric cost unit means weight/volume; otherwise it's counted (each).
+function stockItemUnitKind(item: { unit: string; countUnit: string | null; measureUnit: string | null; measurePerCountUnit: number | null }): 'volume' | 'mass' | 'count' {
+  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
+    const kind = unitKindOf(item.measureUnit);
+    if (kind !== 'count') return kind;
+  }
+  return unitKindOf(item.countUnit ?? item.unit);
+}
+
 export const recipesService = {
   // Full recipe-book CSV export — every recipe with its type, category, venue,
   // portion/yield, sale price, estimated cost, line count and ingredient list.
@@ -1026,6 +1048,112 @@ export const recipesService = {
     } as unknown as RecipeWithLinesRow;
 
     return calculateRecipeCost(pseudoRow);
+  },
+
+  // The parent → child "serves" tree: child recipes that draw a portion from this
+  // parent (a stock item bottle/keg/case, or a bulk production recipe), each
+  // costed from the parent so you see cost + margin per serve.
+  async portionTree(parentType: PortionParentType, parentId: string): Promise<PortionTreePayload> {
+    let parentLabel = '';
+    let parentUnitKind: 'volume' | 'mass' | 'count' = 'count';
+    if (parentType === 'item') {
+      const item = await prisma.stockItem.findUnique({
+        where: { id: parentId },
+        select: { name: true, unit: true, countUnit: true, measureUnit: true, measurePerCountUnit: true }
+      });
+      if (!item) throw new HttpError(404, 'Stock item not found');
+      parentLabel = item.name;
+      parentUnitKind = stockItemUnitKind(item);
+    } else {
+      const recipe = await prisma.recipe.findUnique({ where: { id: parentId }, select: { title: true, yieldUnit: true } });
+      if (!recipe) throw new HttpError(404, 'Recipe not found');
+      parentLabel = recipe.title;
+      parentUnitKind = unitKindOf(recipe.yieldUnit);
+    }
+
+    const rows = await prisma.recipe.findMany({
+      where: parentType === 'recipe' ? { lines: { some: { subRecipeId: parentId } } } : { lines: { some: { itemId: parentId } } },
+      include: {
+        lines: {
+          include: {
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
+          }
+        },
+        venuePrices: { select: { venue: true, salePriceCents: true } },
+        squareMenuMappings: { where: { status: { in: ['MAPPED', 'CONFIRMED'] } }, select: { id: true } }
+      },
+      orderBy: { title: 'asc' }
+    });
+
+    const children: PortionChild[] = rows.map((row) => {
+      const cost = calculateRecipeCost(row as unknown as RecipeWithLinesRow);
+      const portionLine = row.lines.find((line) => (parentType === 'recipe' ? line.subRecipeId === parentId : line.itemId === parentId));
+      const portionLabel = portionLine && portionLine.quantity != null
+        ? `${portionLine.quantity} ${portionLine.unit ?? ''}`.trim()
+        : null;
+      return {
+        recipeId: row.id,
+        title: row.title,
+        portionLabel,
+        salePriceCents: row.salePriceCents,
+        costPerPortionCents: cost.costPerPortionCents,
+        foodCostPercent: cost.foodCostPercent,
+        grossProfitCents: cost.grossProfitCents,
+        squareMapped: row.squareMenuMappings.length > 0,
+        warnings: cost.warnings
+      };
+    });
+
+    return { parentType, parentId, parentLabel, parentUnitKind, children };
+  },
+
+  // Create one sellable child recipe per portion, each a single line drawing the
+  // portion from the parent. Costs auto-derive; a Square sold-item match is
+  // attached for review (same as a normal recipe create). Returns the new tree.
+  async createPortions(input: unknown): Promise<PortionTreePayload> {
+    const data = recipePortionsCreateInputSchema.parse(input);
+    let parentName = '';
+    if (data.parentType === 'item') {
+      const item = await prisma.stockItem.findUnique({ where: { id: data.parentId }, select: { name: true } });
+      if (!item) throw new HttpError(404, 'Stock item not found');
+      parentName = item.name;
+    } else {
+      const recipe = await prisma.recipe.findUnique({ where: { id: data.parentId }, select: { title: true } });
+      if (!recipe) throw new HttpError(404, 'Recipe not found');
+      parentName = recipe.title;
+    }
+
+    for (const portion of data.portions) {
+      const created = await prisma.recipe.create({
+        data: {
+          title: portion.name.trim(),
+          isPrepRecipe: false,
+          status: 'ACTIVE',
+          estimatedCost: 0,
+          salePriceCents: portion.salePriceCents ?? null,
+          portionSize: 1,
+          portionUnit: 'serve',
+          yieldQuantity: 1,
+          yieldUnit: 'serve',
+          lines: {
+            create: [{
+              position: 1,
+              ingredientName: parentName,
+              quantity: portion.quantity,
+              unit: portion.unit,
+              wastePercent: portion.wastePercent ?? 0,
+              itemId: data.parentType === 'item' ? data.parentId : null,
+              subRecipeId: data.parentType === 'recipe' ? data.parentId : null
+            }]
+          }
+        }
+      });
+      await refreshRecipeEstimatedCost(created.id).catch(() => undefined);
+      await attachMatchesForReview(created.id, created.title).catch(() => undefined);
+    }
+
+    return recipesService.portionTree(data.parentType, data.parentId);
   },
 
   async ingredientOptions(): Promise<{ options: RecipeIngredientOption[] }> {
