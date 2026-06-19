@@ -439,6 +439,25 @@ export const stockOperationsService = {
     };
   },
 
+  /**
+   * Wastage for reporting (suite prime-cost): date-ranged, ALL reasons, uncapped.
+   * Distinct from listWastage (which excludes staff-usage reasons + caps at 100
+   * for the operations UI). Minimal projection — the report only sums by venue.
+   */
+  async listWastageForReport(params: { venue?: string | null; from?: string | null; to?: string | null }) {
+    const wastedAt: Prisma.DateTimeFilter = {};
+    if (params.from) wastedAt.gte = new Date(params.from);
+    if (params.to) wastedAt.lt = new Date(params.to);
+    const hasRange = params.from != null || params.to != null;
+    return prisma.stockWastageRecord.findMany({
+      where: {
+        ...(hasRange ? { wastedAt } : {}),
+        ...(params.venue ? { venue: params.venue } : {})
+      },
+      select: { venue: true, costImpactCents: true, wastedAt: true }
+    });
+  },
+
   async listStaffUsage(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockWastagePayload> {
     const venue = actorVenueScope(actor, requestedVenue);
     const [records, items, venues] = await Promise.all([

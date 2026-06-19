@@ -18,6 +18,7 @@ import { prisma } from '@alma/db';
 // stock-api's real read services (what GET /api/items, /summary, /recipes call):
 import { itemsService } from '../../stock-api/src/services/items.service.js';
 import { recipesService } from '../../stock-api/src/services/recipes.service.js';
+import { stockOperationsService } from '../../stock-api/src/services/stock-operations.service.js';
 
 const isLow = (i: any) => {
   const threshold = i.reorderPoint ?? i.parLevel;
@@ -80,7 +81,24 @@ async function main() {
   assert.deepEqual(recB, recA, 'recipe cost rows differ between prisma and stock-api');
   console.log(`#10 recipe cost rows: ${recA.length} (identical in both paths) ✅`);
 
-  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2 + reports #10 match flag-OFF on real data');
+  // ---- reports #8: wastage in a date range (prime-cost) ----
+  const from = '2026-06-01T00:00:00.000Z';
+  const to = '2026-07-01T00:00:00.000Z';
+  const wNorm = (w: any) => ({ venue: String(w.venue), costImpactCents: w.costImpactCents == null ? null : Number(w.costImpactCents) });
+  const wSort = (x: any, y: any) => x.venue.localeCompare(y.venue) || (x.costImpactCents ?? 0) - (y.costImpactCents ?? 0);
+  const wA = (await prisma.stockWastageRecord.findMany({
+    where: { wastedAt: { gte: new Date(from), lt: new Date(to) } },
+    select: { venue: true, costImpactCents: true }
+  })).map(wNorm).sort(wSort);
+  const wB = (await stockOperationsService.listWastageForReport({ from, to })).map(wNorm).sort(wSort);
+  assert.deepEqual(wB, wA, 'wastage rows differ between prisma and stock-api report feed');
+  const sum = (rows: any[]) => rows.reduce((s, w) => s + Math.max(0, w.costImpactCents ?? 0), 0);
+  assert.equal(sum(wB), sum(wA), 'wastage cost sum differs');
+  // sanity: the out-of-range May row must be excluded; the STAFF_MEAL row must be INCLUDED
+  assert.equal(wA.length, 2, `expected 2 in-range wastage rows (May excluded), got ${wA.length}`);
+  console.log(`#8 wastage rows in range: ${wA.length}, cost sum ${sum(wA)}c (identical; STAFF_MEAL kept, May excluded) ✅`);
+
+  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2/#8/#10 match flag-OFF on real data');
   await prisma.$disconnect();
 }
 

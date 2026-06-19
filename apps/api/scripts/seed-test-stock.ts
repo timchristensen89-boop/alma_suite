@@ -25,9 +25,24 @@ async function main() {
     ]
   });
 
+  // wastage records for the date-ranged reporting reroute (#8).
+  // Includes a STAFF_MEAL reason (report must NOT exclude it) and one out-of-range row.
+  const tom = await prisma.stockItem.findFirst({ where: { sku: 'TEST-TOM' } });
+  if (tom) {
+    await prisma.stockWastageRecord.deleteMany({ where: { note: 'TEST-WASTE' } });
+    await prisma.stockWastageRecord.createMany({
+      data: [
+        { stockItemId: tom.id, venue: 'Main', quantity: 1, unit: 'kg', reason: 'SPOILAGE', note: 'TEST-WASTE', wastedAt: new Date('2026-06-10T00:00:00Z'), costImpactCents: 500 },
+        { stockItemId: tom.id, venue: 'Main', quantity: 2, unit: 'kg', reason: 'STAFF_MEAL', note: 'TEST-WASTE', wastedAt: new Date('2026-06-11T00:00:00Z'), costImpactCents: 300 },
+        { stockItemId: tom.id, venue: 'Annex', quantity: 1, unit: 'kg', reason: 'SPOILAGE', note: 'TEST-WASTE', wastedAt: new Date('2026-05-01T00:00:00Z'), costImpactCents: 999 }
+      ]
+    });
+  }
+
   const counts = await prisma.stockItem.groupBy({ by: ['status'], _count: true });
   const recipeCount = await prisma.recipe.count();
-  console.log('seeded test stock:', JSON.stringify(counts), 'recipes:', recipeCount);
+  const wasteCount = await prisma.stockWastageRecord.count({ where: { note: 'TEST-WASTE' } });
+  console.log('seeded test stock:', JSON.stringify(counts), 'recipes:', recipeCount, 'wastage:', wasteCount);
   await prisma.$disconnect();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

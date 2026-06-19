@@ -100,6 +100,22 @@ export const stockReads = {
       yieldQuantity: r.yieldQuantity == null ? null : Number(r.yieldQuantity),
       portionSize: r.portionSize == null ? null : Number(r.portionSize)
     }));
+  },
+
+  /**
+   * Wastage in a date range for prime-cost — replaces
+   * `prisma.stockWastageRecord.findMany({ where: { wastedAt: { gte, lt }, venue } })`.
+   * Uses the dedicated /operations/wastage-report feed (all reasons, uncapped).
+   */
+  async wastageInRange(
+    params: { venue?: string; from?: string; to?: string },
+    opts?: StockClientOptions
+  ): Promise<WastageRow[]> {
+    const rows = await stockClient.wastageReport(params, opts);
+    return (rows ?? []).map((r) => ({
+      venue: String(r.venue),
+      costImpactCents: r.costImpactCents == null ? null : Number(r.costImpactCents)
+    }));
   }
 };
 
@@ -108,6 +124,11 @@ export interface RecipeCostRow {
   estimatedCost: number;
   yieldQuantity: number | null;
   portionSize: number | null;
+}
+
+export interface WastageRow {
+  venue: string;
+  costImpactCents: number | null;
 }
 
 export type StockReads = typeof stockReads;

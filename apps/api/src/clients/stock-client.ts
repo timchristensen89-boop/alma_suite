@@ -174,9 +174,18 @@ export const stockClient = {
     return request<unknown[]>('/api/suppliers', {}, opts);
   },
 
-  /** GET /api/operations/wastage — wastage records (reports). */
-  listWastage(params: { venue?: string; from?: string; to?: string } = {}, opts?: StockClientOptions) {
-    return request<unknown[]>('/api/operations/wastage', params, opts);
+  /** GET /api/operations/wastage — operations UI list (excludes staff reasons, capped). */
+  listWastage(params: { venue?: string } = {}, opts?: StockClientOptions) {
+    return request<unknown>('/api/operations/wastage', params, opts);
+  },
+
+  /** GET /api/operations/wastage-report?from=&to=&venue= — reporting feed: date-ranged, all reasons, uncapped. */
+  wastageReport(params: { venue?: string; from?: string; to?: string } = {}, opts?: StockClientOptions) {
+    return request<Array<{ venue: string; costImpactCents: number | null; wastedAt: string }>>(
+      '/api/operations/wastage-report',
+      params,
+      opts
+    );
   }
 };
 

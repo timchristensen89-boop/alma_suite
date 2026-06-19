@@ -978,9 +978,12 @@ export const reportsService = {
         },
         include: { invoice: { select: { venue: true } } }
       }),
-      prisma.stockWastageRecord.findMany({
-        where: { wastedAt: { gte: start, lt: end }, ...(venue ? { venue } : {}) }
-      }),
+      // Stock-forward: wastage in range for prime-cost. Default-OFF = original query.
+      useStockApiReads
+        ? stockReads.wastageInRange({ venue: venue || undefined, from: start.toISOString(), to: end.toISOString() })
+        : prisma.stockWastageRecord.findMany({
+            where: { wastedAt: { gte: start, lt: end }, ...(venue ? { venue } : {}) }
+          }),
       // All active salaried staff regardless of home venue — their full weekly
       // salary is split across venue rows below by rostered hours (salaried staff
       // rarely clock in, so roster is the reliable venue signal).

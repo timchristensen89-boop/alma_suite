@@ -37,7 +37,7 @@ Legend — Risk: 🟢 clean fetch · 🟡 shape/aggregation to verify · 🔴 ne
 ## Progress
 - ✅ **#2 catalogue count** — wired (`stockReads.activeItemCount()` → `/items/summary.activeItems`), flag-gated default-off. **Live parity PASS** (3 == 3).
 - ✅ **#10 recipe costs** — wired (`stockReads.recipeCosts()` → `/recipes.recipes`), flag-gated default-off. **Live parity PASS** (rows identical).
-- ⏸ **#8 wastage — PARKED (endpoint mismatch).** `/operations/wastage` (`listWastage`) excludes staff-usage reasons, caps at 100, and has no date range; the report wants a date-ranged, unfiltered, uncapped set. Needs a dedicated reporting endpoint (`GET /operations/wastage?from=&to=&all=1`) before it can be rerouted. Not forced.
+- ✅ **#8 wastage — DONE.** Added a dedicated stock-api endpoint `GET /operations/wastage-report?from=&to=&venue=` (date-ranged, all reasons, uncapped) since `listWastage` excluded staff reasons + capped at 100. Wired via `stockReads.wastageInRange()`, flag-gated default-off. **Live parity PASS** (2 in-range rows, 800c, STAFF_MEAL kept + May excluded).
 - Remaining 🟡/🔴 (#1,3,4,5,6,7,9,11,12,13) per table below — next.
 
 Both verified via `apps/api/scripts/verify-dashboard-stock-parity.ts` on embedded Postgres. Prisma branches retained (guard still lists these lines by design until flags flip).
