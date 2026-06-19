@@ -19,6 +19,9 @@ import { prisma } from '@alma/db';
 import { itemsService } from '../../stock-api/src/services/items.service.js';
 import { recipesService } from '../../stock-api/src/services/recipes.service.js';
 import { stockOperationsService } from '../../stock-api/src/services/stock-operations.service.js';
+import { stocktakesService } from '../../stock-api/src/services/stocktakes.service.js';
+// the suite report (flag is OFF here, so this runs its ORIGINAL prisma path):
+import { reportsService } from '../src/services/reports.service.js';
 
 const isLow = (i: any) => {
   const threshold = i.reorderPoint ?? i.parLevel;
@@ -98,7 +101,19 @@ async function main() {
   assert.equal(wA.length, 2, `expected 2 in-range wastage rows (May excluded), got ${wA.length}`);
   console.log(`#8 wastage rows in range: ${wA.length}, cost sum ${sum(wA)}c (identical; STAFF_MEAL kept, May excluded) ✅`);
 
-  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2/#8/#10 match flag-OFF on real data');
+  // ---- reports #11-13: per-venue stocktake status (report's own output vs ported stock-api) ----
+  const stripGen = (o: any) => ({ staleDays: o.staleDays, venues: [...o.venues].sort((x, y) => x.venue.localeCompare(y.venue)) });
+  const reportStatus = await reportsService.stocktakeStatus({ isAdmin: true } as any); // flag OFF → original prisma path
+  const apiStatus = await stocktakesService.venueStatus({ venue: null });
+  assert.deepEqual(stripGen(apiStatus), stripGen(reportStatus), 'stocktake venue-status differs (report vs stock-api)');
+  const main = apiStatus.venues.find((v: any) => v.venue === 'Main');
+  const annex = apiStatus.venues.find((v: any) => v.venue === 'Annex');
+  assert.equal(main?.latestLocked?.stockValueCents, 3000, 'Main locked value should be 3000');
+  assert.equal(main?.quality, 'good', 'Main should be good (fresh lock)');
+  assert.equal(annex?.quality, 'partial', 'Annex should be partial (submitted, no lock)');
+  console.log(`#11-13 stocktake status: ${apiStatus.venues.length} venues, Main locked=3000c/good, Annex=partial (identical) ✅`);
+
+  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2/#8/#10/#11-13 match flag-OFF on real data');
   await prisma.$disconnect();
 }
 

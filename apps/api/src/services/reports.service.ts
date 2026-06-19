@@ -1871,6 +1871,10 @@ export const reportsService = {
 
   async stocktakeStatus(actor: AuthUser) {
     const venue = actorVenueScope(actor);
+    // Stock-forward: delegate to stock-api (logic ported there). Default-OFF below.
+    if (useStockApiReads) {
+      return stockReads.venueStocktakeStatus({ venue: venue || undefined });
+    }
     const venues = venue
       ? [venue]
       : Array.from(new Set((await prisma.stocktake.findMany({ where: { venue: { not: null } }, select: { venue: true }, distinct: ['venue'] })).map((s) => s.venue!).filter(Boolean)));

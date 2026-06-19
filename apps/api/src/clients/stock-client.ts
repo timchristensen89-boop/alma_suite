@@ -159,6 +159,11 @@ export const stockClient = {
     return request<unknown>('/api/stocktake/review', {}, opts);
   },
 
+  /** GET /api/stocktake/venue-status?venue= — per-venue stocktake status (reports). */
+  stocktakeVenueStatus(params: { venue?: string } = {}, opts?: StockClientOptions) {
+    return request<unknown>('/api/stocktake/venue-status', { venue: params.venue }, opts);
+  },
+
   /** GET /api/stocktake/:id — one stocktake (with lines). */
   getStocktake(id: string, opts?: StockClientOptions) {
     return request<unknown>(`/api/stocktake/${encodeURIComponent(id)}`, {}, opts);

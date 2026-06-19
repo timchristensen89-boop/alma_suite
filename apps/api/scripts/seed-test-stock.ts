@@ -39,10 +39,25 @@ async function main() {
     });
   }
 
+  // stocktakes for the per-venue status reroute (#11-13):
+  // Main = fresh LOCKED with line values (→ good); Annex = SUBMITTED only (→ partial).
+  await prisma.stocktake.deleteMany({ where: { legacyId: { startsWith: 'TEST-ST' } } });
+  await prisma.stocktake.create({
+    data: {
+      legacyId: 'TEST-ST1', name: 'Main Lock', venue: 'Main', status: 'LOCKED',
+      countedAt: new Date(), lockedAt: new Date(),
+      lines: { create: [ { label: 'L1', position: 0, stockValueCents: 1000 }, { label: 'L2', position: 1, stockValueCents: 2000 } ] }
+    }
+  });
+  await prisma.stocktake.create({
+    data: { legacyId: 'TEST-ST2', name: 'Annex Sub', venue: 'Annex', status: 'SUBMITTED', countedAt: new Date() }
+  });
+
   const counts = await prisma.stockItem.groupBy({ by: ['status'], _count: true });
   const recipeCount = await prisma.recipe.count();
   const wasteCount = await prisma.stockWastageRecord.count({ where: { note: 'TEST-WASTE' } });
-  console.log('seeded test stock:', JSON.stringify(counts), 'recipes:', recipeCount, 'wastage:', wasteCount);
+  const stCount = await prisma.stocktake.count({ where: { legacyId: { startsWith: 'TEST-ST' } } });
+  console.log('seeded test stock:', JSON.stringify(counts), 'recipes:', recipeCount, 'wastage:', wasteCount, 'stocktakes:', stCount);
   await prisma.$disconnect();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

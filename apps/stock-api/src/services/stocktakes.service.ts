@@ -524,6 +524,81 @@ export const stocktakesService = {
     };
   },
 
+  /**
+   * Per-venue stocktake status (suite reports). Ported verbatim from the suite's
+   * reports.service.stocktakeStatus so the suite can delegate here instead of
+   * reading stocktake tables directly. `venue` optional: one venue, else all.
+   */
+  async venueStatus(params: { venue?: string | null } = {}) {
+    const requested = params.venue?.trim() || null;
+    const venues = requested
+      ? [requested]
+      : Array.from(
+          new Set(
+            (
+              await prisma.stocktake.findMany({
+                where: { venue: { not: null } },
+                select: { venue: true },
+                distinct: ['venue']
+              })
+            )
+              .map((s) => s.venue!)
+              .filter(Boolean)
+          )
+        );
+
+    const STALE_DAYS = 14;
+    const staleCutoff = new Date(Date.now() - STALE_DAYS * 24 * 60 * 60 * 1000);
+
+    const venueStatuses = await Promise.all(
+      venues.map(async (v) => {
+        const latestLocked = await prisma.stocktake.findFirst({
+          where: { venue: v, status: 'LOCKED' },
+          orderBy: [{ countedAt: 'desc' }],
+          include: { _count: { select: { lines: true } }, lines: { select: { stockValueCents: true } } }
+        });
+        const latestAny = await prisma.stocktake.findFirst({
+          where: { venue: v },
+          orderBy: [{ countedAt: 'desc' }],
+          select: { id: true, status: true, countedAt: true, name: true }
+        });
+        const stockValueCents = latestLocked?.lines.reduce((sum, line) => sum + (line.stockValueCents ?? 0), 0) ?? null;
+        const stale = latestLocked ? latestLocked.countedAt < staleCutoff : true;
+        return {
+          venue: v,
+          latestLocked: latestLocked
+            ? {
+                id: latestLocked.id,
+                name: latestLocked.name,
+                countedAt: latestLocked.countedAt.toISOString(),
+                lockedAt: latestLocked.lockedAt?.toISOString() ?? null,
+                lineCount: latestLocked._count.lines,
+                stockValueCents,
+                stale
+              }
+            : null,
+          latestAny: latestAny
+            ? {
+                id: latestAny.id,
+                name: latestAny.name,
+                status: latestAny.status,
+                countedAt: latestAny.countedAt.toISOString()
+              }
+            : null,
+          quality: latestLocked
+            ? stale
+              ? 'partial'
+              : 'good'
+            : latestAny && (latestAny.status === 'SUBMITTED' || latestAny.status === 'REVIEWED')
+              ? 'partial'
+              : 'poor'
+        };
+      })
+    );
+
+    return { generatedAt: new Date().toISOString(), staleDays: STALE_DAYS, venues: venueStatuses };
+  },
+
   async get(id: string, actor?: AuthUser | null): Promise<StocktakeWithLines> {
     return loadStocktakeWithVenueOnHand(id, actor);
   },

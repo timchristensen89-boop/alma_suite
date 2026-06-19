@@ -116,8 +116,39 @@ export const stockReads = {
       venue: String(r.venue),
       costImpactCents: r.costImpactCents == null ? null : Number(r.costImpactCents)
     }));
+  },
+
+  /**
+   * Per-venue stocktake status — replaces reports.service.stocktakeStatus's
+   * direct stocktake reads. The computation is ported into stock-api; this is a
+   * passthrough of /stocktake/venue-status.
+   */
+  async venueStocktakeStatus(
+    params: { venue?: string } = {},
+    opts?: StockClientOptions
+  ): Promise<VenueStocktakeStatusPayload> {
+    return (await stockClient.stocktakeVenueStatus(params, opts)) as VenueStocktakeStatusPayload;
   }
 };
+
+export interface VenueStocktakeStatusPayload {
+  generatedAt: string;
+  staleDays: number;
+  venues: Array<{
+    venue: string;
+    latestLocked: {
+      id: string;
+      name: string | null;
+      countedAt: string;
+      lockedAt: string | null;
+      lineCount: number;
+      stockValueCents: number | null;
+      stale: boolean;
+    } | null;
+    latestAny: { id: string; name: string | null; status: string; countedAt: string } | null;
+    quality: string;
+  }>;
+}
 
 export interface RecipeCostRow {
   id: string;

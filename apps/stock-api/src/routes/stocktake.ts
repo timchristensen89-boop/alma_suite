@@ -29,6 +29,15 @@ stocktakeRouter.get('/review', async (req, res, next) => {
   }
 });
 
+// Per-venue status for suite reports (registered before '/:id').
+stocktakeRouter.get('/venue-status', async (req, res, next) => {
+  try {
+    res.json(await stocktakesService.venueStatus({ venue: typeof req.query.venue === 'string' ? req.query.venue : null }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 stocktakeRouter.post('/:id/apply', async (req, res, next) => {
   try {
     requireStockManager(req.user);

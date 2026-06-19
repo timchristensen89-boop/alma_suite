@@ -38,7 +38,10 @@ Legend — Risk: 🟢 clean fetch · 🟡 shape/aggregation to verify · 🔴 ne
 - ✅ **#2 catalogue count** — wired (`stockReads.activeItemCount()` → `/items/summary.activeItems`), flag-gated default-off. **Live parity PASS** (3 == 3).
 - ✅ **#10 recipe costs** — wired (`stockReads.recipeCosts()` → `/recipes.recipes`), flag-gated default-off. **Live parity PASS** (rows identical).
 - ✅ **#8 wastage — DONE.** Added a dedicated stock-api endpoint `GET /operations/wastage-report?from=&to=&venue=` (date-ranged, all reasons, uncapped) since `listWastage` excluded staff reasons + capped at 100. Wired via `stockReads.wastageInRange()`, flag-gated default-off. **Live parity PASS** (2 in-range rows, 800c, STAFF_MEAL kept + May excluded).
-- Remaining 🟡/🔴 (#1,3,4,5,6,7,9,11,12,13) per table below — next.
+- ✅ **#11–13 stocktake status — DONE.** Ported the per-venue status computation into stock-api (`stocktakesService.venueStatus` + `GET /stocktake/venue-status`); the report's `stocktakeStatus` delegates when flag on. **Live parity PASS** (report output == ported output: 2 venues, Main locked=3000c/good, Annex=partial).
+- Remaining 🟡/🔴 (#1,3,4,5,6,7,9) per table below — next.
+
+**Tally: 5 done (dashboard + #2,#8,#10,#11–13), 7 to go.** Verified end-to-end on embedded Postgres via `verify-dashboard-stock-parity.ts`.
 
 Both verified via `apps/api/scripts/verify-dashboard-stock-parity.ts` on embedded Postgres. Prisma branches retained (guard still lists these lines by design until flags flip).
 
