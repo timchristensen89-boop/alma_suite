@@ -53,6 +53,31 @@ async function main() {
     data: { legacyId: 'TEST-ST2', name: 'Annex Sub', venue: 'Annex', status: 'SUBMITTED', countedAt: new Date() }
   });
 
+  // venue stock rows (#3 low/out-of-stock) + a SUBMITTED Main stocktake with
+  // item-linked lines (#5 review cards, #6 variance, #1 venue on-hand lookup).
+  const items = await prisma.stockItem.findMany({ where: { sku: { startsWith: 'TEST-' } } });
+  const bySku: Record<string, string> = Object.fromEntries(items.map((i) => [i.sku!, i.id]));
+  await prisma.venueStockItem.deleteMany({ where: { stockItemId: { in: items.map((i) => i.id) } } });
+  await prisma.venueStockItem.createMany({
+    data: [
+      { venue: 'Main', stockItemId: bySku['TEST-TOM'], onHand: 2, parLevel: 10, reorderPoint: 5, active: true },
+      { venue: 'Main', stockItemId: bySku['TEST-OIL'], onHand: 0, parLevel: 4, reorderPoint: 2, active: true },
+      { venue: 'Main', stockItemId: bySku['TEST-SLT'], onHand: 8, parLevel: 3, reorderPoint: 1, active: true }
+    ]
+  });
+  await prisma.stocktake.create({
+    data: {
+      legacyId: 'TEST-ST3', name: 'Main Review', venue: 'Main', status: 'SUBMITTED',
+      countedAt: new Date(), submittedAt: new Date(),
+      lines: {
+        create: [
+          { label: 'Tom', position: 0, itemId: bySku['TEST-TOM'], countedQty: 5, stockValueCents: 500 },
+          { label: 'Oil', position: 1, itemId: bySku['TEST-OIL'], countedQty: 1, stockValueCents: 200 }
+        ]
+      }
+    }
+  });
+
   const counts = await prisma.stockItem.groupBy({ by: ['status'], _count: true });
   const recipeCount = await prisma.recipe.count();
   const wasteCount = await prisma.stockWastageRecord.count({ where: { note: 'TEST-WASTE' } });

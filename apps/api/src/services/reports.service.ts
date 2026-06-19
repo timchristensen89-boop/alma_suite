@@ -442,6 +442,11 @@ async function buildStockSummary(
   start: Date
 ): Promise<ReportsStockSummary> {
   const venue = actorVenueScope(actor, requestedVenue);
+  // Stock-forward: the whole stock-summary computation is ported to stock-api.
+  // Default-OFF runs the original Prisma block below unchanged.
+  if (useStockApiReads) {
+    return stockReads.stockSummary({ venue, since: start.toISOString() });
+  }
   const scope = stocktakeScope(actor, requestedVenue);
   const [
     activeCatalogueItems,
@@ -450,10 +455,7 @@ async function buildStockSummary(
     recentlySubmittedStocktakes,
     highestVarianceRows
   ] = await Promise.all([
-    // Stock-forward: ACTIVE catalogue count. Default-OFF = original query.
-    useStockApiReads
-      ? stockReads.activeItemCount()
-      : prisma.stockItem.count({ where: { status: 'ACTIVE' } }),
+    prisma.stockItem.count({ where: { status: 'ACTIVE' } }),
     prisma.venueStockItem.findMany({
       where: {
         ...(venue ? { venue } : {}),

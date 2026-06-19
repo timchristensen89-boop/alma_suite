@@ -20,6 +20,7 @@ import { itemsService } from '../../stock-api/src/services/items.service.js';
 import { recipesService } from '../../stock-api/src/services/recipes.service.js';
 import { stockOperationsService } from '../../stock-api/src/services/stock-operations.service.js';
 import { stocktakesService } from '../../stock-api/src/services/stocktakes.service.js';
+import { stockReportsService } from '../../stock-api/src/services/stock-reports.service.js';
 // the suite report (flag is OFF here, so this runs its ORIGINAL prisma path):
 import { reportsService } from '../src/services/reports.service.js';
 
@@ -113,7 +114,17 @@ async function main() {
   assert.equal(annex?.quality, 'partial', 'Annex should be partial (submitted, no lock)');
   console.log(`#11-13 stocktake status: ${apiStatus.venues.length} venues, Main locked=3000c/good, Annex=partial (identical) ✅`);
 
-  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2/#8/#10/#11-13 match flag-OFF on real data');
+  // ---- reports #1/#3/#4/#5/#6: whole buildStockSummary (report's own output vs ported stock-api) ----
+  const reportSummary = await reportsService.stock({}, { isAdmin: true } as any); // flag OFF → original prisma
+  const sinceISO = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const apiSummary = await stockReportsService.buildStockSummary({ venue: null, sinceISO });
+  assert.deepEqual(apiSummary, reportSummary, 'buildStockSummary differs (report vs ported stock-api)');
+  assert.equal(apiSummary.lowStockCount, 2, 'expected 2 low-stock (Tomatoes+Oil)');
+  assert.equal(apiSummary.outOfStockCount, 1, 'expected 1 out-of-stock (Oil)');
+  assert.ok(apiSummary.highestVarianceLines.length >= 2, 'expected variance lines from Main Review');
+  console.log(`#1/3/4/5/6 stock summary: low=${apiSummary.lowStockCount} out=${apiSummary.outOfStockCount} variance=${apiSummary.highestVarianceLines.length} review=${apiSummary.recentlySubmittedStocktakes.length} (full object identical) ✅`);
+
+  console.log('LIVE PARITY OK ✅ — dashboard + reports #1/#2/#3/#4/#5/#6/#8/#10/#11-13 match flag-OFF on real data');
   await prisma.$disconnect();
 }
 

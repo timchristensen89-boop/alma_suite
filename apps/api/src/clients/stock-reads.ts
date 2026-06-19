@@ -20,6 +20,7 @@
  * is enabled for that read.
  */
 import { stockClient, type StockClientOptions } from './stock-client.js';
+import type { ReportsStockSummary } from '@alma/shared';
 
 /** Global rollout flag. Off by default — current Prisma paths stay in effect. */
 export const useStockApiReads =
@@ -128,6 +129,22 @@ export const stockReads = {
     opts?: StockClientOptions
   ): Promise<VenueStocktakeStatusPayload> {
     return (await stockClient.stocktakeVenueStatus(params, opts)) as VenueStocktakeStatusPayload;
+  },
+
+  /**
+   * Full stock summary block — replaces reports.service.buildStockSummary's direct
+   * reads (#1 venue on-hand, #3 low/out-of-stock, #4 ready-for-review count,
+   * #5 recently-submitted review cards, #6 highest variance). Computation ported
+   * into stock-api; this is a passthrough of /stocktake/stock-summary.
+   */
+  async stockSummary(
+    params: { venue?: string | null; since: string },
+    opts?: StockClientOptions
+  ): Promise<ReportsStockSummary> {
+    return (await stockClient.stockSummary(
+      { venue: params.venue || undefined, since: params.since },
+      opts
+    )) as ReportsStockSummary;
   }
 };
 
