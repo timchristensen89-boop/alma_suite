@@ -196,6 +196,15 @@ export const stockClient = {
       params,
       opts
     );
+  },
+
+  /** GET /api/invoices/cogs-lines?from=&to=&venue= — item-linked invoice lines for prime-cost COGS. */
+  cogsLines(params: { venue?: string; from?: string; to?: string } = {}, opts?: StockClientOptions) {
+    return request<Array<{ venue: string | null; lineAmountCents: number }>>(
+      '/api/invoices/cogs-lines',
+      params,
+      opts
+    );
   }
 };
 

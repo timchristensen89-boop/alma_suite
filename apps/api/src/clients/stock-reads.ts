@@ -145,6 +145,22 @@ export const stockReads = {
       { venue: params.venue || undefined, since: params.since },
       opts
     )) as ReportsStockSummary;
+  },
+
+  /**
+   * COGS invoice lines in a date range — replaces the prime-cost
+   * `prisma.supplierInvoiceLine.findMany(... invoice in range)` read (#7).
+   * Re-nests to the consumer's `{ invoice: { venue }, lineAmountCents }` shape.
+   */
+  async cogsLinesInRange(
+    params: { venue?: string; from?: string; to?: string },
+    opts?: StockClientOptions
+  ): Promise<Array<{ invoice: { venue: string | null }; lineAmountCents: number }>> {
+    const rows = await stockClient.cogsLines(params, opts);
+    return (rows ?? []).map((r) => ({
+      invoice: { venue: r.venue ?? null },
+      lineAmountCents: Number(r.lineAmountCents ?? 0)
+    }));
   }
 };
 

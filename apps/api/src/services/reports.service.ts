@@ -970,16 +970,19 @@ export const reportsService = {
         },
         include: { staffProfile: { select: { venue: true, ...staffPayRateSelect } } }
       }),
-      prisma.supplierInvoiceLine.findMany({
-        where: {
-          itemId: { not: null },
-          invoice: {
-            invoiceDate: { gte: start, lt: end },
-            ...(venue ? { venue } : {})
-          }
-        },
-        include: { invoice: { select: { venue: true } } }
-      }),
+      // Stock-forward: COGS invoice lines for prime-cost. Default-OFF = original.
+      useStockApiReads
+        ? stockReads.cogsLinesInRange({ venue: venue || undefined, from: start.toISOString(), to: end.toISOString() })
+        : prisma.supplierInvoiceLine.findMany({
+            where: {
+              itemId: { not: null },
+              invoice: {
+                invoiceDate: { gte: start, lt: end },
+                ...(venue ? { venue } : {})
+              }
+            },
+            include: { invoice: { select: { venue: true } } }
+          }),
       // Stock-forward: wastage in range for prime-cost. Default-OFF = original query.
       useStockApiReads
         ? stockReads.wastageInRange({ venue: venue || undefined, from: start.toISOString(), to: end.toISOString() })

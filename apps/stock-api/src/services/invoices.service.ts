@@ -558,6 +558,29 @@ function findMatchingExclusionRule(
 }
 
 export const invoicesService = {
+  /**
+   * COGS invoice lines for suite prime-cost reporting (reports read #7).
+   * Item-linked lines whose invoice falls in the date range; minimal projection
+   * (the report sums lineAmountCents by invoice venue).
+   */
+  async listCogsLinesForReport(params: { venue?: string | null; from?: string | null; to?: string | null }) {
+    const invoiceDate: { gte?: Date; lt?: Date } = {};
+    if (params.from) invoiceDate.gte = new Date(params.from);
+    if (params.to) invoiceDate.lt = new Date(params.to);
+    const hasRange = params.from != null || params.to != null;
+    const rows = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        itemId: { not: null },
+        invoice: {
+          ...(hasRange ? { invoiceDate } : {}),
+          ...(params.venue ? { venue: params.venue } : {})
+        }
+      },
+      select: { lineAmountCents: true, invoice: { select: { venue: true } } }
+    });
+    return rows.map((r) => ({ venue: r.invoice.venue, lineAmountCents: r.lineAmountCents }));
+  },
+
   async listExclusionRules(): Promise<InvoiceExclusionRule[]> {
     const rows = await prisma.invoiceExclusionRule.findMany({ orderBy: { createdAt: 'asc' } });
     return rows.map((row) => ({

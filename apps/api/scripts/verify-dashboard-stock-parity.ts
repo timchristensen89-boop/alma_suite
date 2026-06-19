@@ -21,6 +21,7 @@ import { recipesService } from '../../stock-api/src/services/recipes.service.js'
 import { stockOperationsService } from '../../stock-api/src/services/stock-operations.service.js';
 import { stocktakesService } from '../../stock-api/src/services/stocktakes.service.js';
 import { stockReportsService } from '../../stock-api/src/services/stock-reports.service.js';
+import { invoicesService } from '../../stock-api/src/services/invoices.service.js';
 // the suite report (flag is OFF here, so this runs its ORIGINAL prisma path):
 import { reportsService } from '../src/services/reports.service.js';
 
@@ -124,7 +125,21 @@ async function main() {
   assert.ok(apiSummary.highestVarianceLines.length >= 2, 'expected variance lines from Main Review');
   console.log(`#1/3/4/5/6 stock summary: low=${apiSummary.lowStockCount} out=${apiSummary.outOfStockCount} variance=${apiSummary.highestVarianceLines.length} review=${apiSummary.recentlySubmittedStocktakes.length} (full object identical) ✅`);
 
-  console.log('LIVE PARITY OK ✅ — dashboard + reports #1/#2/#3/#4/#5/#6/#8/#10/#11-13 match flag-OFF on real data');
+  // ---- reports #7: COGS invoice lines in range (prime-cost) ----
+  const cNorm = (r: any) => ({ venue: r.invoice ? (r.invoice.venue ?? null) : (r.venue ?? null), lineAmountCents: Number(r.lineAmountCents ?? 0) });
+  const cSort = (x: any, y: any) => String(x.venue).localeCompare(String(y.venue)) || x.lineAmountCents - y.lineAmountCents;
+  const cogsA = (await prisma.supplierInvoiceLine.findMany({
+    where: { itemId: { not: null }, invoice: { invoiceDate: { gte: new Date(from), lt: new Date(to) } } },
+    select: { lineAmountCents: true, invoice: { select: { venue: true } } }
+  })).map(cNorm).sort(cSort);
+  const cogsB = (await invoicesService.listCogsLinesForReport({ from, to })).map(cNorm).sort(cSort);
+  assert.deepEqual(cogsB, cogsA, 'COGS lines differ between prisma and stock-api');
+  const csum = (rows: any[]) => rows.reduce((s, r) => s + Math.max(0, r.lineAmountCents), 0);
+  assert.equal(cogsA.length, 2, `expected 2 in-range item-linked lines (no-item + May excluded), got ${cogsA.length}`);
+  assert.equal(csum(cogsA), 4000, `expected COGS sum 4000c, got ${csum(cogsA)}`);
+  console.log(`#7 COGS lines in range: ${cogsA.length}, sum ${csum(cogsA)}c (identical; no-item + out-of-range excluded) ✅`);
+
+  console.log('LIVE PARITY OK ✅ — dashboard + reports #1-#6, #7, #8, #10, #11-13 match flag-OFF on real data');
   await prisma.$disconnect();
 }
 

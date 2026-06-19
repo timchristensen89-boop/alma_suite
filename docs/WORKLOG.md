@@ -51,6 +51,21 @@ of anything uncertain/risky that was isolated and skipped rather than blocking.
 
 ---
 
+## Session 2026-06-20 — reports.service stock reads sealed (flag-gated + live-verified)
+
+Rerouted the reports.service stock reads behind `USE_STOCK_API_READS` (default-off
+= original Prisma), each proven on the embedded Postgres via
+`verify-dashboard-stock-parity.ts`:
+- #2 catalogue count, #10 recipe costs — existing endpoints.
+- #8 wastage — new `GET /operations/wastage-report` (date-ranged, all reasons, uncapped).
+- #11–13 stocktake status — ported to `stocktakesService.venueStatus` + `GET /stocktake/venue-status`.
+- #1/#3/#4/#5/#6 — whole `buildStockSummary` ported to `stockReportsService.buildStockSummary` + `GET /stocktake/stock-summary`; report delegates. Full `ReportsStockSummary` deep-equals.
+- #7 COGS lines — new `GET /invoices/cogs-lines`.
+
+**12 of 13 reports stock reads rerouted + verified; #9 (Square mapping) parked as integration-domain.**
+All flag-gated default-off; Prisma branches retained (guard holds at 72 by design).
+stock-api + apps/api typecheck clean throughout. Commits: 583b72b, dacfea0, 4cdf455, 1c170ad, + this.
+
 ## PARKED (isolated, not blocking — revisit before merging to main)
 
 1. **staff-api real auth** — skeleton uses a permissive dev pass-through

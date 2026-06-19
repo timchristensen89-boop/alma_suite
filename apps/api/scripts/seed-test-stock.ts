@@ -78,6 +78,26 @@ async function main() {
     }
   });
 
+  // supplier invoices for prime-cost COGS (#7): one in-range (with a no-item line
+  // that must be excluded) + one out-of-range (must be excluded).
+  await prisma.supplierInvoice.deleteMany({ where: { invoiceKey: { startsWith: 'TEST-INV' } } });
+  await prisma.supplierInvoice.create({
+    data: {
+      invoiceKey: 'TEST-INV1', supplierName: 'Test Supplier', venue: 'Main', invoiceDate: new Date('2026-06-15T00:00:00Z'), status: 'APPROVED',
+      lines: { create: [
+        { lineNumber: 1, lineKey: 'TEST-INV1-1', description: 'Tomatoes', itemId: bySku['TEST-TOM'], lineAmountCents: 1500 },
+        { lineNumber: 2, lineKey: 'TEST-INV1-2', description: 'Oil', itemId: bySku['TEST-OIL'], lineAmountCents: 2500 },
+        { lineNumber: 3, lineKey: 'TEST-INV1-3', description: 'NoItem', lineAmountCents: 9999 }
+      ] }
+    }
+  });
+  await prisma.supplierInvoice.create({
+    data: {
+      invoiceKey: 'TEST-INV2', supplierName: 'Test Supplier', venue: 'Main', invoiceDate: new Date('2026-05-01T00:00:00Z'), status: 'APPROVED',
+      lines: { create: [ { lineNumber: 1, lineKey: 'TEST-INV2-1', description: 'Old', itemId: bySku['TEST-TOM'], lineAmountCents: 7777 } ] }
+    }
+  });
+
   const counts = await prisma.stockItem.groupBy({ by: ['status'], _count: true });
   const recipeCount = await prisma.recipe.count();
   const wasteCount = await prisma.stockWastageRecord.count({ where: { note: 'TEST-WASTE' } });
