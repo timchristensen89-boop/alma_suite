@@ -29,6 +29,7 @@ import {
   type StocktakeReviewItem
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
@@ -449,9 +450,10 @@ async function buildStockSummary(
     recentlySubmittedStocktakes,
     highestVarianceRows
   ] = await Promise.all([
-    prisma.stockItem.count({
-      where: { status: 'ACTIVE' }
-    }),
+    // Stock-forward: ACTIVE catalogue count. Default-OFF = original query.
+    useStockApiReads
+      ? stockReads.activeItemCount()
+      : prisma.stockItem.count({ where: { status: 'ACTIVE' } }),
     prisma.venueStockItem.findMany({
       where: {
         ...(venue ? { venue } : {}),
@@ -1512,9 +1514,12 @@ export const reportsService = {
         },
         select: { venue: true, itemName: true, quantity: true, netSalesCents: true, recipeId: true }
       }),
-      prisma.recipe.findMany({
-        select: { id: true, estimatedCost: true, yieldQuantity: true, portionSize: true }
-      })
+      // Stock-forward: recipe cost inputs for per-portion COGS. Default-OFF = original.
+      useStockApiReads
+        ? stockReads.recipeCosts()
+        : prisma.recipe.findMany({
+            select: { id: true, estimatedCost: true, yieldQuantity: true, portionSize: true }
+          })
     ]);
 
     // Per-portion cost (cents): a component is one portion of its recipe, not

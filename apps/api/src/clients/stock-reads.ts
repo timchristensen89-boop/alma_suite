@@ -73,7 +73,41 @@ export const stockReads = {
   /** Stocktakes — replaces `prisma.stocktake.findMany(...)`. */
   stocktakes(opts?: StockClientOptions) {
     return stockClient.listStocktakes(opts);
+  },
+
+  /**
+   * Count of ACTIVE catalogue items — replaces
+   * `prisma.stockItem.count({ where: { status: 'ACTIVE' } })` (reports stock summary).
+   * Uses /api/items/summary's `activeItems` (a global, non-venue-scoped count,
+   * matching the report's query).
+   */
+  async activeItemCount(opts?: StockClientOptions): Promise<number> {
+    const summary = (await stockClient.itemsSummary({}, opts)) as { activeItems?: number };
+    return Number(summary?.activeItems ?? 0);
+  },
+
+  /**
+   * Recipe cost inputs — replaces
+   * `prisma.recipe.findMany({ select: { id, estimatedCost, yieldQuantity, portionSize } })`
+   * (reports per-portion COGS). Nullable fields preserved as null.
+   */
+  async recipeCosts(opts?: StockClientOptions): Promise<RecipeCostRow[]> {
+    const payload = (await stockClient.listRecipes({}, opts)) as { recipes?: Array<Record<string, any>> };
+    const recipes = Array.isArray(payload?.recipes) ? payload.recipes : [];
+    return recipes.map((r) => ({
+      id: String(r.id),
+      estimatedCost: Number(r.estimatedCost ?? 0),
+      yieldQuantity: r.yieldQuantity == null ? null : Number(r.yieldQuantity),
+      portionSize: r.portionSize == null ? null : Number(r.portionSize)
+    }));
   }
 };
+
+export interface RecipeCostRow {
+  id: string;
+  estimatedCost: number;
+  yieldQuantity: number | null;
+  portionSize: number | null;
+}
 
 export type StockReads = typeof stockReads;

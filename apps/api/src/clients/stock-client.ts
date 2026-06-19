@@ -112,9 +112,16 @@ export const stockClient = {
     return request<{ items: unknown[]; [key: string]: unknown }>('/api/items', { venue: params.venue }, opts);
   },
 
-  /** GET /api/recipes?withSales= — recipes, optionally with N-day sales lookback. */
+  /**
+   * GET /api/recipes?withSales= — recipes, optionally with N-day sales lookback.
+   * Returns an object `{ recipes, categories, recipeCategories }` — callers want `.recipes`.
+   */
   listRecipes(params: { withSalesLookbackDays?: number } = {}, opts?: StockClientOptions) {
-    return request<unknown[]>('/api/recipes', { withSales: params.withSalesLookbackDays }, opts);
+    return request<{ recipes: unknown[]; [key: string]: unknown }>(
+      '/api/recipes',
+      { withSales: params.withSalesLookbackDays },
+      opts
+    );
   },
 
   /** GET /api/recipes/:id */

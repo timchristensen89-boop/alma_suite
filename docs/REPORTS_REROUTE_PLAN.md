@@ -34,6 +34,14 @@ Legend — Risk: 🟢 clean fetch · 🟡 shape/aggregation to verify · 🔴 ne
 3. **🟡 review cluster (#3,#4,#5)** via `lowStock()` + `stocktakeReview()`.
 4. **🔴 last / needs new endpoints:** #1 on-hand map, #6 cross-take variance, #7 COGS raw lines, #9 Square mapping.
 
+## Progress
+- ✅ **#2 catalogue count** — wired (`stockReads.activeItemCount()` → `/items/summary.activeItems`), flag-gated default-off. **Live parity PASS** (3 == 3).
+- ✅ **#10 recipe costs** — wired (`stockReads.recipeCosts()` → `/recipes.recipes`), flag-gated default-off. **Live parity PASS** (rows identical).
+- ⏸ **#8 wastage — PARKED (endpoint mismatch).** `/operations/wastage` (`listWastage`) excludes staff-usage reasons, caps at 100, and has no date range; the report wants a date-ranged, unfiltered, uncapped set. Needs a dedicated reporting endpoint (`GET /operations/wastage?from=&to=&all=1`) before it can be rerouted. Not forced.
+- Remaining 🟡/🔴 (#1,3,4,5,6,7,9,11,12,13) per table below — next.
+
+Both verified via `apps/api/scripts/verify-dashboard-stock-parity.ts` on embedded Postgres. Prisma branches retained (guard still lists these lines by design until flags flip).
+
 ## Per-site procedure (same as MIGRATION_RECIPE)
 For each row: confirm the endpoint returns the consumed fields → add/normalize in
 `stock-reads.ts` → wire the call site behind `useStockApiReads` (keep the Prisma

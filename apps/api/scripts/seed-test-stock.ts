@@ -16,8 +16,18 @@ async function main() {
       { sku: 'TEST-OLD', name: 'Discontinued', unit: 'ea', onHand: 0, parLevel: 5, reorderPoint: 2, status: 'ARCHIVED', categoryId: cat.id }
     ]
   });
+  // recipes for the recipe-cost reroute test
+  await prisma.recipe.deleteMany({ where: { legacyId: { startsWith: 'TEST-R' } } });
+  await prisma.recipe.createMany({
+    data: [
+      { legacyId: 'TEST-R1', title: 'Marinara (test)', estimatedCost: 3.5, yieldQuantity: 4, portionSize: 1 },
+      { legacyId: 'TEST-R2', title: 'Dressing (test)', estimatedCost: 0, yieldQuantity: null, portionSize: null }
+    ]
+  });
+
   const counts = await prisma.stockItem.groupBy({ by: ['status'], _count: true });
-  console.log('seeded test stock:', JSON.stringify(counts));
+  const recipeCount = await prisma.recipe.count();
+  console.log('seeded test stock:', JSON.stringify(counts), 'recipes:', recipeCount);
   await prisma.$disconnect();
 }
 main().catch((e) => { console.error(e); process.exit(1); });

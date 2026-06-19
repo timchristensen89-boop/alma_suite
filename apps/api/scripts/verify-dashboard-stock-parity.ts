@@ -15,8 +15,9 @@
  */
 import assert from 'node:assert';
 import { prisma } from '@alma/db';
-// stock-api's real read service (the thing GET /api/items calls):
+// stock-api's real read services (what GET /api/items, /summary, /recipes call):
 import { itemsService } from '../../stock-api/src/services/items.service.js';
+import { recipesService } from '../../stock-api/src/services/recipes.service.js';
 
 const isLow = (i: any) => {
   const threshold = i.reorderPoint ?? i.parLevel;
@@ -56,9 +57,30 @@ async function main() {
   const lowA = a.filter(isLow).map((i) => i.id).sort();
   const lowB = b.filter(isLow).map((i) => i.id).sort();
   assert.deepEqual(lowB, lowA, `low-stock set differs: A=${lowA} B=${lowB}`);
-
   console.log(`low-stock count: ${lowA.length} (identical in both paths)`);
-  console.log('LIVE PARITY OK ✅ — flag-ON returns the same items + low-stock as flag-OFF on real data');
+
+  // ---- reports #2: ACTIVE catalogue count ----
+  const countA = await prisma.stockItem.count({ where: { status: 'ACTIVE' } });
+  const summary: any = await itemsService.summary(null, null);
+  const countB = Number(summary.activeItems ?? 0);
+  assert.equal(countB, countA, `active count differs: A=${countA} B=${countB}`);
+  console.log(`#2 active catalogue count: ${countA} (api=${countB}) ✅`);
+
+  // ---- reports #10: recipe cost inputs ----
+  const recNorm = (r: any) => ({
+    id: String(r.id),
+    estimatedCost: Number(r.estimatedCost ?? 0),
+    yieldQuantity: r.yieldQuantity == null ? null : Number(r.yieldQuantity),
+    portionSize: r.portionSize == null ? null : Number(r.portionSize)
+  });
+  const recA = (await prisma.recipe.findMany({ select: { id: true, estimatedCost: true, yieldQuantity: true, portionSize: true } }))
+    .map(recNorm).sort((x, y) => x.id.localeCompare(y.id));
+  const recPayload: any = await recipesService.list({ withSalesLookbackDays: null });
+  const recB = (recPayload.recipes ?? []).map(recNorm).sort((x: any, y: any) => x.id.localeCompare(y.id));
+  assert.deepEqual(recB, recA, 'recipe cost rows differ between prisma and stock-api');
+  console.log(`#10 recipe cost rows: ${recA.length} (identical in both paths) ✅`);
+
+  console.log('LIVE PARITY OK ✅ — dashboard items + reports #2 + reports #10 match flag-OFF on real data');
   await prisma.$disconnect();
 }
 
