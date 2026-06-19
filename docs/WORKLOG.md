@@ -79,12 +79,20 @@ of anything uncertain/risky that was isolated and skipped rather than blocking.
 8. **Pre-existing `any`s in `packages/db/src/govee.ts`** — surface only when the
    Prisma client isn't generated; not introduced by this work.
 9. **Live reroute of `staff.service.ts` manager-dashboard stockItem read —
-   ✅ WIRED (flag-gated), awaiting your runtime verification.** Default-OFF runs
-   the original Prisma query unchanged (typecheck ✅). Flag-ON
-   (`USE_STOCK_API_READS=1` + `STOCK_API_TOKEN`) sources from stock-api via
-   `stockReads.activeItems()`, normalized to the dashboard's exact shape. Verify
-   per `docs/MIGRATION_RECIPE.md` → "First reroute wired". The Prisma branch is
-   retained until you confirm parity, so the guard still lists this line (by design).
+   ✅ WIRED + VERIFIED.** Default-OFF runs the original Prisma query unchanged
+   (typecheck ✅). Flag-ON sources from stock-api via `stockReads.activeItems()`.
+   Verified two ways, no production data needed:
+   - `apps/api/scripts/verify-stock-reads.ts` — HTTP+token+normalization against a
+     fake stock-api: ARCHIVED filtered, fields mapped, picks `onHand` not
+     `totalOnHand`, low-stock matches. **PASS.**
+   - `apps/api/scripts/verify-dashboard-stock-parity.ts` — LIVE on an embedded
+     userspace Postgres (migrated + seeded with test stock): the dashboard's
+     Prisma query and stock-api's `itemsService.list` return the **identical**
+     normalized item set and low-stock result (3 active, low-stock 2). **PASS.**
+   How the live DB was run here (sandbox has no docker/root): `embedded-postgres`
+   npm pkg → `initdb`/`pg_ctl` on :5438 → `prisma migrate deploy` → seed. The
+   Prisma branch is retained pending your shadow-run on real venue data, so the
+   guard still lists this line (by design).
 10. **Service-to-service auth — PARKED.** The flag-ON path uses an interim
     `STOCK_API_TOKEN` env for shadow testing. A proper suite→stock-api handoff
     (so it works without a manual token) is still to do.
