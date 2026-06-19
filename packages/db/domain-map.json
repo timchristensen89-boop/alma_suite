@@ -1,0 +1,92 @@
+{
+  "_comment": "Domain ownership map for the stock-forward refactor. Generated from schema.prisma. 'home' = which deployable owns the model after separation. stays-in-suite=true means the model remains in the main suite DB/app; false means it migrates to the extracted workforce engine.",
+  "version": 1,
+  "domains": {
+    "stock": { "label": "Stock (anchor)", "home": "suite", "app": "stock-api/stock-web" },
+    "compliance": { "label": "Compliance", "home": "suite", "app": "api/web" },
+    "people-core": { "label": "People core (identity, roles, certs)", "home": "suite", "app": "api/web" },
+    "workforce": { "label": "Workforce engine (extracts)", "home": "workforce", "app": "staff-api/staff-web (new)" },
+    "bridge": { "label": "Shift-task bridge", "home": "suite", "app": "api/web" },
+    "reserve": { "label": "Reserve", "home": "suite", "app": "api/reserve-web" },
+    "marketing": { "label": "Marketing", "home": "suite", "app": "api/marketing-web" },
+    "giftcards": { "label": "Gift cards", "home": "suite", "app": "api/giftcards-web" },
+    "comms": { "label": "Comms & collaboration", "home": "suite", "app": "api/comms-web" },
+    "integrations": { "label": "Integrations / platform", "home": "suite", "app": "api" },
+    "shared": { "label": "Shared / tenant", "home": "suite", "app": "api" }
+  },
+  "appOwnership": {
+    "_comment": "Which domains each app is allowed to access directly via Prisma. Anything else is a boundary violation (warn mode for now). 'allowAll' apps are migration/seed scripts that legitimately touch everything.",
+    "apps/stock-api": ["stock", "compliance", "comms", "shared", "people-core", "integrations"],
+    "apps/stock-web": [],
+    "apps/staff-api": ["workforce", "bridge", "people-core", "shared", "comms"],
+    "apps/staff-web": [],
+    "apps/api": ["compliance", "people-core", "workforce", "bridge", "reserve", "marketing", "giftcards", "comms", "integrations", "shared"],
+    "apps/web": [],
+    "apps/reports-web": [],
+    "packages/db": ["allowAll"]
+  },
+  "models": {
+    "StockCategory": "stock", "StockItem": "stock", "StockTransfer": "stock", "VenueStockItem": "stock",
+    "StockWastageRecord": "stock", "StockDeliveryCheck": "stock", "StockDeliveryCheckItem": "stock",
+    "StockReorderNotice": "stock", "Stocktake": "stock", "StocktakeLine": "stock", "InventoryMovement": "stock",
+    "Recipe": "stock", "RecipeCategory": "stock", "RecipeLine": "stock", "RecipeVenuePrice": "stock",
+    "Supplier": "stock", "SupplierInvoice": "stock", "SupplierInvoiceLine": "stock", "InvoiceExclusionRule": "stock",
+    "SquareCatalogItem": "stock", "SquareMenuRecipeMapping": "stock",
+
+    "Issue": "compliance", "IssueEvidence": "compliance", "IssueAreaRule": "compliance",
+    "IssueCategoryOption": "compliance", "IssueActivity": "compliance", "ChecklistTemplate": "compliance",
+    "ChecklistItemTemplate": "compliance", "ChecklistRun": "compliance", "ChecklistItem": "compliance",
+    "AuditTemplate": "compliance", "AuditTemplateSection": "compliance", "AuditRun": "compliance",
+    "AuditFinding": "compliance", "IncidentReport": "compliance", "IncidentPerson": "compliance",
+    "TemperatureAsset": "compliance", "TemperatureIntegration": "compliance", "TemperatureSensor": "compliance",
+    "TemperatureLog": "compliance", "LiquorLicence": "compliance",
+
+    "StaffProfile": "people-core", "StaffRoleTemplate": "people-core", "StaffRoleTemplateAccess": "people-core",
+    "StaffAppAccess": "people-core", "StaffInvite": "people-core", "StaffPasswordResetToken": "people-core",
+    "StaffComplianceRecord": "people-core", "StaffDocumentReview": "people-core",
+    "StaffTrainingRecord": "people-core", "TrainingModule": "people-core",
+
+    "RosterShift": "workforce", "RosterForecastSnapshot": "workforce", "StaffClockSession": "workforce",
+    "StaffClockEvent": "workforce", "Timesheet": "workforce", "StaffTipCashEntry": "workforce",
+    "StaffTipCardEntry": "workforce", "StaffTipManualHoursEntry": "workforce", "StaffTipPaymentRun": "workforce",
+    "StaffTipPaymentRunLine": "workforce", "StaffPayProfile": "workforce", "TrainingLevelPayRule": "workforce",
+    "StaffLeaveRequest": "workforce", "StaffHrRecord": "workforce", "StaffHrDocumentTemplate": "workforce",
+    "StaffManagerNote": "workforce", "StaffManagementEvent": "workforce", "StaffShiftConfirmation": "workforce",
+    "SalesActualEntry": "workforce", "SalesItemActualEntry": "workforce",
+
+    "ShiftTaskRule": "bridge", "ShiftTaskAssignment": "bridge",
+
+    "ReserveGuest": "reserve", "ReserveTable": "reserve", "ReserveTableCall": "reserve",
+    "ReserveDrinkPackage": "reserve", "ReserveArea": "reserve", "ReserveReservation": "reserve",
+    "ReserveAvailabilityRule": "reserve", "ReserveBlackout": "reserve", "ReserveWaitlistEntry": "reserve",
+    "GoogleReserveIntegrationSetting": "reserve", "GuestTag": "reserve", "GuestTagAssignment": "reserve",
+
+    "MarketingContact": "marketing", "MarketingSegment": "marketing", "MarketingCampaign": "marketing",
+    "MarketingCampaignRecipient": "marketing", "MarketingEmailTemplate": "marketing",
+    "MarketingAutomation": "marketing", "MarketingAutomationRun": "marketing", "MarketingContentAsset": "marketing",
+    "MarketingContentPost": "marketing", "MarketingContentPostAsset": "marketing",
+    "MarketingSocialAccount": "marketing", "MarketingContentPublishAttempt": "marketing",
+
+    "GiftCard": "giftcards", "GiftCardPromoCode": "giftcards", "GiftCardRedemption": "giftcards",
+
+    "CommsThread": "comms", "CommsMessage": "comms", "CommsRecipient": "comms", "CommsAttachment": "comms",
+    "CommsLink": "comms", "CommsAlertRule": "comms", "CommsAlertEvent": "comms", "SuiteAnnouncement": "comms",
+    "SuiteChatChannel": "comms", "SuiteChatMessage": "comms", "NotificationMutePreference": "comms",
+    "NotificationRead": "comms",
+
+    "IntegrationConnection": "integrations", "IntegrationSyncRun": "integrations",
+    "IntegrationOAuthState": "integrations", "IntegrationEvent": "integrations",
+    "IntegrationWebhookEvent": "integrations",
+
+    "Venue": "shared", "AppSettings": "shared", "AlmaTask": "shared"
+  },
+  "seams": [
+    { "from": "SupplierInvoice.triagedByStaffProfileId", "to": "StaffProfile", "type": "stays", "note": "target in suite" },
+    { "from": "SupplierInvoice.assignedToStaffProfileId", "to": "StaffProfile", "type": "stays", "note": "target in suite" },
+    { "from": "AlmaTask.ownerStaffProfileId", "to": "StaffProfile", "type": "stays", "note": "target in suite" },
+    { "from": "ShiftTaskAssignment.rosterShiftId", "to": "RosterShift", "type": "soft-ref", "note": "resolve via workforce API; already SetNull" },
+    { "from": "ShiftTaskAssignment.stocktakeId", "to": "Stocktake", "type": "stays", "note": "both in suite" },
+    { "from": "SalesItemActualEntry.recipeId", "to": "Recipe", "type": "soft-ref", "note": "workforce stores recipeId as value; resolve via stock API" },
+    { "from": "*.staffProfileId (all workforce tables)", "to": "StaffProfile", "type": "soft-ref-or-mirror", "note": "the key seam: person identity stays in suite" }
+  ]
+}

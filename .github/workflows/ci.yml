@@ -46,6 +46,21 @@ jobs:
       - name: Typecheck all packages
         run: pnpm typecheck
 
+  domain-boundaries:
+    name: Domain boundary guard (warn)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # Reports cross-domain DB access (suite ↔ stock ↔ workforce) for the
+      # stock-forward separation. WARN mode: informational, never fails the
+      # build. Flip to `--strict` once the runtime worklist reaches zero.
+      - name: Check domain boundaries
+        run: node scripts/check-domain-boundaries.mjs
+
   # Vite production builds need real-looking https URLs in VITE_* env vars
   # (apps/web/.env.production etc.) — those are deploy-time concerns, not
   # CI concerns, so we don't run `pnpm build` here. Re-add as a job once

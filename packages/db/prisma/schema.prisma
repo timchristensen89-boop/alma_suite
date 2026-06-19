@@ -424,6 +424,7 @@ enum SuiteChatChannelType {
   DIRECT
 }
 
+// @domain: compliance | home: suite
 model Issue {
   id              String           @id @default(cuid())
   legacyId        String?          @unique
@@ -446,6 +447,7 @@ model Issue {
   incidentLinks   IncidentReport[]
 }
 
+// @domain: compliance | home: suite
 model IssueEvidence {
   id        String   @id @default(cuid())
   legacyId  String?  @unique
@@ -461,6 +463,7 @@ model IssueEvidence {
 // Area → default responsible person. When an issue is created/assigned to an
 // area, it is auto-assigned to this person (Issue.assignee is free text, so we
 // store the display name to match). Managed in Admin → Compliance settings.
+// @domain: compliance | home: suite
 model IssueAreaRule {
   id        String   @id @default(cuid())
   area      String   @unique
@@ -471,6 +474,7 @@ model IssueAreaRule {
 
 // Admin-managed list of issue categories. Staff pick from these in the
 // issue form (free-text only when none are configured).
+// @domain: compliance | home: suite
 model IssueCategoryOption {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -478,6 +482,7 @@ model IssueCategoryOption {
   updatedAt DateTime @updatedAt
 }
 
+// @domain: compliance | home: suite
 model IssueActivity {
   id        String   @id @default(cuid())
   legacyId  String?  @unique
@@ -489,6 +494,7 @@ model IssueActivity {
   issue     Issue    @relation(fields: [issueId], references: [id], onDelete: Cascade)
 }
 
+// @domain: compliance | home: suite
 model ChecklistTemplate {
   id                   String                  @id @default(cuid())
   legacyId             String?                 @unique
@@ -502,6 +508,7 @@ model ChecklistTemplate {
   updatedAt            DateTime                @updatedAt
 }
 
+// @domain: compliance | home: suite
 model ChecklistItemTemplate {
   id          String            @id @default(cuid())
   legacyId    String?           @unique
@@ -512,6 +519,7 @@ model ChecklistItemTemplate {
   template    ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
 
+// @domain: compliance | home: suite
 model ChecklistRun {
   id                   String                @id @default(cuid())
   legacyId             String?               @unique
@@ -528,6 +536,7 @@ model ChecklistRun {
   updatedAt            DateTime              @updatedAt
 }
 
+// @domain: compliance | home: suite
 model ChecklistItem {
   id             String              @id @default(cuid())
   legacyId       String?             @unique
@@ -543,6 +552,7 @@ model ChecklistItem {
   linkedIssue    Issue?              @relation(fields: [linkedIssueId], references: [id])
 }
 
+// @domain: compliance | home: suite
 model AuditTemplate {
   id        String                 @id @default(cuid())
   legacyId  String?                @unique
@@ -553,6 +563,7 @@ model AuditTemplate {
   updatedAt DateTime               @updatedAt
 }
 
+// @domain: compliance | home: suite
 model AuditTemplateSection {
   id          String        @id @default(cuid())
   legacyId    String?       @unique
@@ -563,6 +574,7 @@ model AuditTemplateSection {
   template    AuditTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
 }
 
+// @domain: compliance | home: suite
 model AuditRun {
   id         String         @id @default(cuid())
   legacyId   String?        @unique
@@ -577,6 +589,7 @@ model AuditRun {
   updatedAt  DateTime       @updatedAt
 }
 
+// @domain: compliance | home: suite
 model AuditFinding {
   id            String   @id @default(cuid())
   legacyId      String?  @unique
@@ -589,6 +602,7 @@ model AuditFinding {
   linkedIssue   Issue?   @relation(fields: [linkedIssueId], references: [id])
 }
 
+// @domain: people-core | home: suite
 model StaffProfile {
   id                           String                     @id @default(cuid())
   firstName                    String
@@ -680,6 +694,7 @@ model StaffProfile {
   @@index([xeroEmployeeId])
 }
 
+// @domain: people-core | home: suite
 model StaffRoleTemplate {
   id            String                    @id @default(cuid())
   name          String                    @unique
@@ -696,6 +711,7 @@ model StaffRoleTemplate {
   @@index([venue])
 }
 
+// @domain: people-core | home: suite
 model StaffRoleTemplateAccess {
   id             String               @id @default(cuid())
   roleTemplateId String
@@ -711,6 +727,7 @@ model StaffRoleTemplateAccess {
   @@index([appId, status])
 }
 
+// @domain: workforce | home: workforce
 model StaffManagerNote {
   id             String       @id @default(cuid())
   staffProfileId String
@@ -725,6 +742,7 @@ model StaffManagerNote {
   @@index([createdById])
 }
 
+// @domain: workforce | home: workforce
 model StaffPayProfile {
   id                           String       @id @default(cuid())
   staffProfileId               String       @unique
@@ -755,6 +773,7 @@ model StaffPayProfile {
   @@index([payUpdatedAt])
 }
 
+// @domain: workforce | home: workforce
 model StaffManagementEvent {
   id             String       @id @default(cuid())
   staffProfileId String
@@ -771,6 +790,7 @@ model StaffManagementEvent {
   @@index([eventType, createdAt])
 }
 
+// @domain: workforce | home: workforce
 model StaffHrRecord {
   id             String       @id @default(cuid())
   staffProfileId String
@@ -799,6 +819,7 @@ model StaffHrRecord {
   @@index([followUpDate])
 }
 
+// @domain: workforce | home: workforce
 model StaffHrDocumentTemplate {
   id              String   @id @default(cuid())
   name            String
@@ -817,6 +838,7 @@ model StaffHrDocumentTemplate {
   @@index([updatedAt])
 }
 
+// @domain: workforce | home: workforce
 model StaffLeaveRequest {
   id                String       @id @default(cuid())
   staffProfileId    String
@@ -838,6 +860,7 @@ model StaffLeaveRequest {
   @@index([startDate, endDate])
 }
 
+// @domain: people-core | home: suite
 model StaffPasswordResetToken {
   id               String       @id @default(cuid())
   staffProfileId   String
@@ -856,6 +879,7 @@ model StaffPasswordResetToken {
   @@index([expiresAt])
 }
 
+// @domain: people-core | home: suite
 model StaffAppAccess {
   id             String               @id @default(cuid())
   staffProfileId String
@@ -872,6 +896,7 @@ model StaffAppAccess {
   @@index([appId, status])
 }
 
+// @domain: comms | home: suite
 model SuiteAnnouncement {
   id            String     @id @default(cuid())
   title         String
@@ -896,6 +921,7 @@ model SuiteAnnouncement {
   @@index([deletedAt])
 }
 
+// @domain: comms | home: suite
 model SuiteChatChannel {
   id                    String               @id @default(cuid())
   name                  String
@@ -919,6 +945,7 @@ model SuiteChatChannel {
   @@index([groupKey])
 }
 
+// @domain: comms | home: suite
 model SuiteChatMessage {
   id            String               @id @default(cuid())
   channelId     String?
@@ -946,6 +973,7 @@ model SuiteChatMessage {
   @@index([deletedAt])
 }
 
+// @domain: people-core | home: suite
 model TrainingModule {
   id               String                @id @default(cuid())
   title            String
@@ -962,6 +990,7 @@ model TrainingModule {
   @@index([category])
 }
 
+// @domain: workforce | home: workforce
 model TrainingLevelPayRule {
   id           String   @id @default(cuid())
   level        Int      @unique
@@ -972,6 +1001,7 @@ model TrainingLevelPayRule {
   updatedAt    DateTime @updatedAt
 }
 
+// @domain: people-core | home: suite
 model StaffTrainingRecord {
   id             String              @id @default(cuid())
   staffProfileId String
@@ -995,6 +1025,7 @@ model StaffTrainingRecord {
   @@index([moduleId, status])
 }
 
+// @domain: workforce | home: workforce
 model RosterShift {
   id                   String                   @id @default(cuid())
   staffProfileId       String
@@ -1017,6 +1048,7 @@ model RosterShift {
   @@index([startsAt, endsAt])
 }
 
+// @domain: bridge | home: suite
 model ShiftTaskRule {
   id                  String                    @id @default(cuid())
   name                String
@@ -1046,6 +1078,7 @@ model ShiftTaskRule {
   @@index([checklistTemplateId])
 }
 
+// @domain: bridge | home: suite
 model ShiftTaskAssignment {
   id                  String                    @id @default(cuid())
   assignmentKey       String                    @unique
@@ -1079,6 +1112,7 @@ model ShiftTaskAssignment {
   @@index([stocktakeId])
 }
 
+// @domain: workforce | home: workforce
 model StaffShiftConfirmation {
   id             String       @id @default(cuid())
   rosterShiftId  String
@@ -1096,6 +1130,7 @@ model StaffShiftConfirmation {
   @@index([rosterShiftId, confirmedAt])
 }
 
+// @domain: workforce | home: workforce
 model StaffClockSession {
   id                      String                  @id @default(cuid())
   staffProfileId          String
@@ -1123,6 +1158,7 @@ model StaffClockSession {
   @@index([rosterShiftId])
 }
 
+// @domain: workforce | home: workforce
 model StaffClockEvent {
   id             String              @id @default(cuid())
   sessionId      String
@@ -1143,6 +1179,7 @@ model StaffClockEvent {
   @@index([eventType, occurredAt])
 }
 
+// @domain: workforce | home: workforce
 model RosterForecastSnapshot {
   id                 String   @id @default(cuid())
   weekStart          DateTime
@@ -1167,6 +1204,7 @@ model RosterForecastSnapshot {
   @@index([venue, weekStart])
 }
 
+// @domain: workforce | home: workforce
 model SalesActualEntry {
   id           String   @id @default(cuid())
   venue        String
@@ -1184,6 +1222,7 @@ model SalesActualEntry {
   @@index([venue, serviceDate])
 }
 
+// @domain: workforce | home: workforce
 model SalesItemActualEntry {
   id              String   @id @default(cuid())
   venue           String
@@ -1219,6 +1258,7 @@ model SalesItemActualEntry {
   @@index([itemName])
 }
 
+// @domain: reserve | home: suite
 model ReserveGuest {
   id                  String                       @id @default(cuid())
   venue               String?
@@ -1256,6 +1296,7 @@ model ReserveGuest {
   @@index([phone])
 }
 
+// @domain: reserve | home: suite
 model ReserveTable {
   id           String               @id @default(cuid())
   venue        String
@@ -1301,6 +1342,7 @@ enum ReserveTableCallStatus {
 // A "table call" raised from the live service map — any host/floor staff can
 // send one (water, clear, check, needs attention, or a custom note) and it
 // shows to all staff on the board until acknowledged / resolved.
+// @domain: reserve | home: suite
 model ReserveTableCall {
   id                 String                 @id @default(cuid())
   venue              String
@@ -1322,6 +1364,7 @@ model ReserveTableCall {
 
 // Admin-defined drinks packages a guest can pre-pay for at booking,
 // redeemed on arrival (e.g. "Welcome Prosecco", "Cocktail on arrival").
+// @domain: reserve | home: suite
 model ReserveDrinkPackage {
   id          String   @id @default(cuid())
   venue       String
@@ -1341,6 +1384,7 @@ model ReserveDrinkPackage {
 // St Alma: Dining Room / Bar Counter / Kitchen Counter). Drives the area
 // picker in the booking flow, the table editor's area dropdown, and the
 // floor-plan area filter. Admin-editable; deactivate via isActive (no delete).
+// @domain: reserve | home: suite
 model ReserveArea {
   id        String   @id @default(cuid())
   venue     String
@@ -1354,6 +1398,7 @@ model ReserveArea {
   @@index([venue, isActive, sortOrder])
 }
 
+// @domain: reserve | home: suite
 model ReserveReservation {
   id                       String                   @id @default(cuid())
   venue                    String
@@ -1418,6 +1463,7 @@ model ReserveReservation {
   @@index([availabilityRuleId])
 }
 
+// @domain: reserve | home: suite
 model ReserveAvailabilityRule {
   id                     String                @id @default(cuid())
   venue                  String
@@ -1442,6 +1488,7 @@ model ReserveAvailabilityRule {
   @@index([venue, onlineEnabled])
 }
 
+// @domain: reserve | home: suite
 model ReserveBlackout {
   id        String   @id @default(cuid())
   venue     String
@@ -1463,6 +1510,7 @@ enum ReserveWaitlistStatus {
   CANCELLED
 }
 
+// @domain: reserve | home: suite
 model ReserveWaitlistEntry {
   id                   String                @id @default(cuid())
   venue                String
@@ -1486,6 +1534,7 @@ model ReserveWaitlistEntry {
   @@index([status, createdAt])
 }
 
+// @domain: reserve | home: suite
 model GoogleReserveIntegrationSetting {
   id                String                         @id @default(cuid())
   venue             String                         @unique
@@ -1498,6 +1547,7 @@ model GoogleReserveIntegrationSetting {
   updatedAt         DateTime                       @updatedAt
 }
 
+// @domain: reserve | home: suite
 model GuestTag {
   id             String               @id @default(cuid())
   venue          String?
@@ -1516,6 +1566,7 @@ model GuestTag {
   @@index([type])
 }
 
+// @domain: reserve | home: suite
 model GuestTagAssignment {
   id                String                   @id @default(cuid())
   guestId           String
@@ -1532,6 +1583,7 @@ model GuestTagAssignment {
   @@index([source])
 }
 
+// @domain: marketing | home: suite
 model MarketingContact {
   id             String                       @id @default(cuid())
   firstName      String
@@ -1560,6 +1612,7 @@ model MarketingContact {
   @@index([source])
 }
 
+// @domain: marketing | home: suite
 model MarketingSegment {
   id          String   @id @default(cuid())
   name        String
@@ -1574,6 +1627,7 @@ model MarketingSegment {
   @@index([isActive])
 }
 
+// @domain: marketing | home: suite
 model MarketingCampaign {
   id                String                       @id @default(cuid())
   venue             String?
@@ -1599,6 +1653,7 @@ model MarketingCampaign {
   @@index([scheduledFor])
 }
 
+// @domain: marketing | home: suite
 model MarketingCampaignRecipient {
   id         String            @id @default(cuid())
   campaignId String
@@ -1623,6 +1678,7 @@ model MarketingCampaignRecipient {
   @@index([status])
 }
 
+// @domain: marketing | home: suite
 model MarketingEmailTemplate {
   id               String                       @id @default(cuid())
   venue            String?
@@ -1640,6 +1696,7 @@ model MarketingEmailTemplate {
   @@index([venue, status])
 }
 
+// @domain: marketing | home: suite
 model MarketingAutomation {
   id                String                         @id @default(cuid())
   venue             String
@@ -1658,6 +1715,7 @@ model MarketingAutomation {
   @@index([triggerType])
 }
 
+// @domain: marketing | home: suite
 model MarketingAutomationRun {
   id            String                       @id @default(cuid())
   automationId  String
@@ -1676,6 +1734,7 @@ model MarketingAutomationRun {
   @@index([reservationId])
 }
 
+// @domain: marketing | home: suite
 model MarketingContentAsset {
   id                String                               @id @default(cuid())
   venue             String
@@ -1705,6 +1764,7 @@ model MarketingContentAsset {
   @@index([assetType])
 }
 
+// @domain: marketing | home: suite
 model MarketingContentPost {
   id                String                           @id @default(cuid())
   venue             String
@@ -1732,6 +1792,7 @@ model MarketingContentPost {
   @@index([campaignId])
 }
 
+// @domain: marketing | home: suite
 model MarketingContentPostAsset {
   id        String                @id @default(cuid())
   postId    String
@@ -1746,6 +1807,7 @@ model MarketingContentPostAsset {
   @@index([assetId])
 }
 
+// @domain: marketing | home: suite
 model MarketingSocialAccount {
   id                String                           @id @default(cuid())
   venue             String
@@ -1767,6 +1829,7 @@ model MarketingSocialAccount {
   @@index([platform, status])
 }
 
+// @domain: marketing | home: suite
 model MarketingContentPublishAttempt {
   id              String                        @id @default(cuid())
   postId          String
@@ -1788,6 +1851,7 @@ model MarketingContentPublishAttempt {
   @@index([mode, status])
 }
 
+// @domain: giftcards | home: suite
 model GiftCard {
   id                      String               @id @default(cuid())
   code                    String               @unique
@@ -1830,6 +1894,7 @@ model GiftCard {
   @@index([testMode])
 }
 
+// @domain: giftcards | home: suite
 model GiftCardPromoCode {
   id             String                    @id @default(cuid())
   code           String                    @unique
@@ -1851,6 +1916,7 @@ model GiftCardPromoCode {
   @@index([createdAt])
 }
 
+// @domain: giftcards | home: suite
 model GiftCardRedemption {
   id           String                   @id @default(cuid())
   giftCardId   String
@@ -1868,6 +1934,7 @@ model GiftCardRedemption {
   @@index([venue])
 }
 
+// @domain: workforce | home: workforce
 model Timesheet {
   id                 String          @id @default(cuid())
   deputyTimesheetId  String?         @unique
@@ -1910,6 +1977,7 @@ model Timesheet {
   @@index([xeroExportBatchId])
 }
 
+// @domain: workforce | home: workforce
 model StaffTipCashEntry {
   id          String   @id @default(cuid())
   venue       String
@@ -1923,6 +1991,7 @@ model StaffTipCashEntry {
   @@index([serviceDate])
 }
 
+// @domain: workforce | home: workforce
 model StaffTipCardEntry {
   id          String   @id @default(cuid())
   venue       String
@@ -1940,6 +2009,7 @@ model StaffTipCardEntry {
   @@index([source])
 }
 
+// @domain: workforce | home: workforce
 model StaffTipManualHoursEntry {
   id             String       @id @default(cuid())
   staffProfileId String
@@ -1956,6 +2026,7 @@ model StaffTipManualHoursEntry {
   @@index([venue, weekStart])
 }
 
+// @domain: workforce | home: workforce
 model StaffTipPaymentRun {
   id           String                   @id @default(cuid())
   venue        String
@@ -1973,6 +2044,7 @@ model StaffTipPaymentRun {
   @@index([venue, weekStart, weekEnd])
 }
 
+// @domain: workforce | home: workforce
 model StaffTipPaymentRunLine {
   id              String             @id @default(cuid())
   paymentRunId    String
@@ -1993,6 +2065,7 @@ model StaffTipPaymentRunLine {
   @@index([paymentRunId])
 }
 
+// @domain: shared | home: suite
 model AppSettings {
   id                   String   @id @default("singleton")
   orgName              String   @default("Alma Hospitality")
@@ -2029,6 +2102,7 @@ model AppSettings {
   updatedAt            DateTime @updatedAt
 }
 
+// @domain: people-core | home: suite
 model StaffInvite {
   id             String    @id @default(cuid())
   token          String    @unique
@@ -2043,6 +2117,7 @@ model StaffInvite {
   @@index([token])
 }
 
+// @domain: people-core | home: suite
 model StaffComplianceRecord {
   id                String            @id @default(cuid())
   staffProfileId    String
@@ -2073,6 +2148,7 @@ model StaffComplianceRecord {
   @@index([requestedById])
 }
 
+// @domain: people-core | home: suite
 model StaffDocumentReview {
   id                     String          @id @default(cuid())
   recordType             StaffRecordType @default(RSA)
@@ -2099,6 +2175,7 @@ model StaffDocumentReview {
   @@index([recordType, status])
 }
 
+// @domain: compliance | home: suite
 model IncidentReport {
   id                String           @id @default(cuid())
   title             String
@@ -2121,6 +2198,7 @@ model IncidentReport {
   people            IncidentPerson[]
 }
 
+// @domain: compliance | home: suite
 model IncidentPerson {
   id               String         @id @default(cuid())
   incidentReportId String
@@ -2134,6 +2212,7 @@ model IncidentPerson {
   incidentReport   IncidentReport @relation(fields: [incidentReportId], references: [id], onDelete: Cascade)
 }
 
+// @domain: compliance | home: suite
 model TemperatureAsset {
   id                  String                 @id @default(cuid())
   name                String
@@ -2156,6 +2235,7 @@ model TemperatureAsset {
   logs                TemperatureLog[]
 }
 
+// @domain: compliance | home: suite
 model TemperatureIntegration {
   id           String              @id @default(cuid())
   provider     String
@@ -2171,6 +2251,7 @@ model TemperatureIntegration {
   @@unique([provider])
 }
 
+// @domain: integrations | home: suite
 model IntegrationConnection {
   id                    String                      @id @default(cuid())
   provider              IntegrationProvider
@@ -2203,6 +2284,7 @@ model IntegrationConnection {
   @@index([updatedAt])
 }
 
+// @domain: integrations | home: suite
 model IntegrationSyncRun {
   id              String                 @id @default(cuid())
   connectionId    String?
@@ -2220,6 +2302,7 @@ model IntegrationSyncRun {
   @@index([connectionId, startedAt])
 }
 
+// @domain: integrations | home: suite
 model IntegrationOAuthState {
   id              String              @id @default(cuid())
   provider        IntegrationProvider
@@ -2233,6 +2316,7 @@ model IntegrationOAuthState {
   @@index([provider, expiresAt])
 }
 
+// @domain: integrations | home: suite
 model IntegrationEvent {
   id              String                 @id @default(cuid())
   connectionId    String?
@@ -2249,6 +2333,7 @@ model IntegrationEvent {
   @@index([connectionId, createdAt])
 }
 
+// @domain: integrations | home: suite
 model IntegrationWebhookEvent {
   id                String                        @id @default(cuid())
   connectionId      String?
@@ -2271,6 +2356,7 @@ model IntegrationWebhookEvent {
   @@index([provider, eventType, receivedAt])
 }
 
+// @domain: compliance | home: suite
 model TemperatureSensor {
   id               String                 @id @default(cuid())
   integrationId    String
@@ -2291,6 +2377,7 @@ model TemperatureSensor {
   @@index([integrationId, externalSensorId])
 }
 
+// @domain: compliance | home: suite
 model TemperatureLog {
   id                String               @id @default(cuid())
   assetId           String
@@ -2308,6 +2395,7 @@ model TemperatureLog {
   @@index([assetId, recordedAt])
 }
 
+// @domain: compliance | home: suite
 model LiquorLicence {
   id            String              @id @default(cuid())
   venue         String
@@ -2331,6 +2419,7 @@ model LiquorLicence {
   @@index([expiryDate])
 }
 
+// @domain: stock | home: suite
 model StockCategory {
   id          String      @id @default(cuid())
   legacyId    String?     @unique
@@ -2341,6 +2430,7 @@ model StockCategory {
   items       StockItem[]
 }
 
+// @domain: stock | home: suite
 model StockItem {
   id                 String                    @id @default(cuid())
   legacyId           String?                   @unique
@@ -2384,6 +2474,7 @@ model StockItem {
 // Manager/admin-initiated movement of stock between venues. Adjusts each
 // venue's VenueStockItem.onHand so the next stocktake variance is correct;
 // total company stock is unchanged.
+// @domain: stock | home: suite
 model StockTransfer {
   id              String    @id @default(cuid())
   stockItemId     String
@@ -2405,6 +2496,7 @@ model StockTransfer {
   @@index([toVenue, createdAt])
 }
 
+// @domain: stock | home: suite
 model VenueStockItem {
   id           String    @id @default(cuid())
   venue        String
@@ -2426,6 +2518,7 @@ model VenueStockItem {
   @@index([updatedAt])
 }
 
+// @domain: stock | home: suite
 model StockWastageRecord {
   id              String              @id @default(cuid())
   stockItemId     String
@@ -2448,6 +2541,7 @@ model StockWastageRecord {
   @@index([reason])
 }
 
+// @domain: stock | home: suite
 model StockDeliveryCheck {
   id               String                   @id @default(cuid())
   supplierId       String?
@@ -2471,6 +2565,7 @@ model StockDeliveryCheck {
   @@index([invoiceNumber])
 }
 
+// @domain: stock | home: suite
 model StockDeliveryCheckItem {
   id                String              @id @default(cuid())
   deliveryCheckId   String
@@ -2495,6 +2590,7 @@ model StockDeliveryCheckItem {
   @@index([discrepancy])
 }
 
+// @domain: stock | home: suite
 model StockReorderNotice {
   id              String    @id @default(cuid())
   stockItemId     String
@@ -2519,6 +2615,7 @@ model StockReorderNotice {
   @@index([stockItemId])
 }
 
+// @domain: stock | home: suite
 model Stocktake {
   id                   String                @id @default(cuid())
   legacyId             String?               @unique
@@ -2554,6 +2651,7 @@ model Stocktake {
   @@index([lockedAt])
 }
 
+// @domain: stock | home: suite
 model StocktakeLine {
   id              String              @id @default(cuid())
   legacyId        String?             @unique
@@ -2578,6 +2676,7 @@ model StocktakeLine {
   @@index([itemId])
 }
 
+// @domain: stock | home: suite
 model InventoryMovement {
   id                        String                  @id @default(cuid())
   itemId                    String
@@ -2606,6 +2705,7 @@ model InventoryMovement {
   @@index([sourceDeliveryCheckItemId])
 }
 
+// @domain: stock | home: suite
 model Recipe {
   id                 String                    @id @default(cuid())
   legacyId           String?                   @unique
@@ -2637,6 +2737,7 @@ model Recipe {
   @@index([status])
 }
 
+// @domain: stock | home: suite
 model RecipeVenuePrice {
   id             String   @id @default(cuid())
   recipeId       String
@@ -2651,6 +2752,7 @@ model RecipeVenuePrice {
   @@index([venue])
 }
 
+// @domain: stock | home: suite
 model SquareCatalogItem {
   id                 String   @id @default(cuid())
   accountKey         String
@@ -2676,6 +2778,7 @@ model SquareCatalogItem {
   @@index([syncedAt])
 }
 
+// @domain: stock | home: suite
 model SquareMenuRecipeMapping {
   id                  String     @id @default(cuid())
   accountKey          String
@@ -2707,6 +2810,7 @@ model SquareMenuRecipeMapping {
   @@index([squareItemName])
 }
 
+// @domain: stock | home: suite
 model RecipeCategory {
   id          String   @id @default(cuid())
   name        String   @unique
@@ -2718,6 +2822,7 @@ model RecipeCategory {
   @@index([kind])
 }
 
+// @domain: stock | home: suite
 model RecipeLine {
   id             String     @id @default(cuid())
   legacyId       String?    @unique
@@ -2741,6 +2846,7 @@ model RecipeLine {
   @@index([subRecipeId])
 }
 
+// @domain: stock | home: suite
 model Supplier {
   id             String               @id @default(cuid())
   legacyId       String?              @unique
@@ -2763,6 +2869,7 @@ model Supplier {
   @@index([name])
 }
 
+// @domain: stock | home: suite
 model SupplierInvoice {
   id                       String                @id @default(cuid())
   source                   String                @default("XERO")
@@ -2805,6 +2912,7 @@ model SupplierInvoice {
   @@index([assignedToStaffProfileId])
 }
 
+// @domain: stock | home: suite
 model SupplierInvoiceLine {
   id                String          @id @default(cuid())
   supplierInvoiceId String
@@ -2836,6 +2944,7 @@ model SupplierInvoiceLine {
   @@index([itemCode])
 }
 
+// @domain: shared | home: suite
 model Venue {
   id        String   @id @default(cuid())
   name      String   @unique
@@ -2888,6 +2997,7 @@ enum CommsRecipientMode {
   CUSTOM_EMAILS
 }
 
+// @domain: comms | home: suite
 model CommsThread {
   id          String              @id @default(cuid())
   subject     String
@@ -2909,6 +3019,7 @@ model CommsThread {
   @@index([archivedAt])
 }
 
+// @domain: comms | home: suite
 model CommsMessage {
   id          String    @id @default(cuid())
   threadId    String
@@ -2923,6 +3034,7 @@ model CommsMessage {
   @@index([threadId, createdAt])
 }
 
+// @domain: comms | home: suite
 model CommsRecipient {
   id             String    @id @default(cuid())
   threadId       String
@@ -2943,6 +3055,7 @@ model CommsRecipient {
   @@index([actionRequired, dueAt])
 }
 
+// @domain: comms | home: suite
 model CommsAttachment {
   id           String   @id @default(cuid())
   messageId    String
@@ -2956,6 +3069,7 @@ model CommsAttachment {
   @@index([messageId])
 }
 
+// @domain: comms | home: suite
 model CommsLink {
   id         String @id @default(cuid())
   threadId   String
@@ -2968,6 +3082,7 @@ model CommsLink {
   @@index([entityType, entityId])
 }
 
+// @domain: comms | home: suite
 model CommsAlertRule {
   id              String             @id @default(cuid())
   name            String
@@ -2987,6 +3102,7 @@ model CommsAlertRule {
   @@index([venue])
 }
 
+// @domain: comms | home: suite
 model CommsAlertEvent {
   id             String             @id @default(cuid())
   ruleId         String?
@@ -3058,6 +3174,7 @@ enum AlmaTaskSourceApp {
   COMMS
 }
 
+// @domain: shared | home: suite
 model AlmaTask {
   id String @id @default(cuid())
 
@@ -3121,6 +3238,7 @@ model AlmaTask {
 // standalone table (staffProfileId is the AuthUser id; no FK so staff
 // archival/merge never blocks on it) with a unique pair so a category
 // can't be muted twice for the same user.
+// @domain: comms | home: suite
 model NotificationMutePreference {
   id             String   @id @default(cuid())
   staffProfileId String
@@ -3137,6 +3255,7 @@ model NotificationMutePreference {
 // Server-side so read state syncs across every app in the suite — reading an
 // alert in one app marks it read everywhere. No FK (staffProfileId is the
 // AuthUser id) so staff archival/merge never blocks on it.
+// @domain: comms | home: suite
 model NotificationRead {
   id             String   @id @default(cuid())
   staffProfileId String
@@ -3152,6 +3271,7 @@ model NotificationRead {
 // list of conditions; ALL conditions in a rule must match an invoice for
 // it to be excluded, and ANY matching rule excludes the invoice.
 // conditions = [{ field: 'title'|'body'|'supplier'|'invoiceNumber', value }]
+// @domain: stock | home: suite
 model InvoiceExclusionRule {
   id         String   @id @default(cuid())
   name       String
