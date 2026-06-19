@@ -56,12 +56,16 @@ async function request<T>(
   const timeout = setTimeout(() => controller.abort(), opts.timeoutMs ?? 10_000);
   const signal = opts.signal ?? controller.signal;
 
+  // Service-to-service auth: explicit token wins, else fall back to a configured
+  // STOCK_API_TOKEN env (used for shadow testing the flag-ON read path).
+  const token = opts.authToken ?? process.env.STOCK_API_TOKEN;
+
   try {
     const res = await fetch(url.toString(), {
       method: 'GET',
       headers: {
         accept: 'application/json',
-        ...(opts.authToken ? { authorization: `Bearer ${opts.authToken}` } : {})
+        ...(token ? { authorization: `Bearer ${token}` } : {})
       },
       signal
     });
@@ -99,9 +103,13 @@ function safeJson(text: string): unknown {
 export const stockClient = {
   baseUrl: STOCK_API_URL,
 
-  /** GET /api/items?venue= — items catalogue, optionally scoped to a venue slug. */
+  /**
+   * GET /api/items?venue= — items catalogue, optionally scoped to a venue slug.
+   * NOTE: stock-api returns an object `{ items, categories, venueStockItems, ... }`,
+   * not a bare array. Callers want `.items`.
+   */
   listItems(params: { venue?: string } = {}, opts?: StockClientOptions) {
-    return request<unknown[]>('/api/items', { venue: params.venue }, opts);
+    return request<{ items: unknown[]; [key: string]: unknown }>('/api/items', { venue: params.venue }, opts);
   },
 
   /** GET /api/recipes?withSales= — recipes, optionally with N-day sales lookback. */

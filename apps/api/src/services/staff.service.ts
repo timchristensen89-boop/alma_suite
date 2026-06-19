@@ -73,6 +73,7 @@ import type {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
@@ -3934,11 +3935,17 @@ export const staffService = {
           }
         }
       }),
-      prisma.stockItem.findMany({
-        where: { status: 'ACTIVE' },
-        include: { category: { select: { name: true } } },
-        orderBy: [{ name: 'asc' }]
-      }),
+      // Stock-forward separation: manager dashboard's low-stock widget reads
+      // ACTIVE items. Default-OFF path is the original Prisma query (unchanged).
+      // With USE_STOCK_API_READS=1 the same data comes from stock-api instead.
+      // See docs/MIGRATION_RECIPE.md.
+      useStockApiReads
+        ? stockReads.activeItems()
+        : prisma.stockItem.findMany({
+            where: { status: 'ACTIVE' },
+            include: { category: { select: { name: true } } },
+            orderBy: [{ name: 'asc' }]
+          }),
       prisma.issue.findMany({
         where: { status: { in: [...activeIssueStatuses] } },
         orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],

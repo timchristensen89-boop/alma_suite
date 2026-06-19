@@ -78,9 +78,13 @@ of anything uncertain/risky that was isolated and skipped rather than blocking.
    instance on request.
 8. **Pre-existing `any`s in `packages/db/src/govee.ts`** — surface only when the
    Prisma client isn't generated; not introduced by this work.
-9. **Live reroute of `staff.service.ts:3937` stockItem read — PARKED.** It sits
-   inside a `Promise.all` feeding the manager dashboard; the stock-api item shape
-   differs from the raw Prisma row, and verifying the flag-ON path needs the
-   integrated stack (api + stock-api + DB) running. Infrastructure is ready
-   (adapter + flag + recipe); wiring is a verified one-liner once a running stack
-   is available. See `docs/MIGRATION_RECIPE.md`.
+9. **Live reroute of `staff.service.ts` manager-dashboard stockItem read —
+   ✅ WIRED (flag-gated), awaiting your runtime verification.** Default-OFF runs
+   the original Prisma query unchanged (typecheck ✅). Flag-ON
+   (`USE_STOCK_API_READS=1` + `STOCK_API_TOKEN`) sources from stock-api via
+   `stockReads.activeItems()`, normalized to the dashboard's exact shape. Verify
+   per `docs/MIGRATION_RECIPE.md` → "First reroute wired". The Prisma branch is
+   retained until you confirm parity, so the guard still lists this line (by design).
+10. **Service-to-service auth — PARKED.** The flag-ON path uses an interim
+    `STOCK_API_TOKEN` env for shadow testing. A proper suite→stock-api handoff
+    (so it works without a manual token) is still to do.

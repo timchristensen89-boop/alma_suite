@@ -25,12 +25,44 @@ import { stockClient, type StockClientOptions } from './stock-client.js';
 export const useStockApiReads =
   process.env.USE_STOCK_API_READS === '1' || process.env.USE_STOCK_API_READS === 'true';
 
+/**
+ * The exact item shape the manager dashboard consumes (staff.service
+ * getManagerDashboard → lowStock). Normalizing to this guarantees the flag-ON
+ * path is byte-compatible with the existing Prisma read regardless of stock-api
+ * payload drift.
+ */
+export interface StockItemForDashboard {
+  id: string;
+  name: string;
+  unit: string;
+  onHand: number;
+  parLevel: number;
+  reorderPoint: number;
+  category: { name: string } | null;
+}
+
 export const stockReads = {
-  /** Active items with category — replaces `prisma.stockItem.findMany({where:{status:'ACTIVE'}})`. */
-  async activeItems(opts?: StockClientOptions): Promise<unknown[]> {
-    const items = (await stockClient.listItems({}, opts)) as Array<Record<string, unknown>>;
-    // stock-api may already scope to ACTIVE; filter defensively until shapes are unified.
-    return items.filter((i) => i?.status === undefined || i?.status === 'ACTIVE');
+  /**
+   * Active items normalized for the manager dashboard — replaces
+   * `prisma.stockItem.findMany({ where: { status: 'ACTIVE' }, include: { category } })`.
+   * Reads `payload.items` from GET /api/items and keeps only ACTIVE rows.
+   */
+  async activeItems(opts?: StockClientOptions): Promise<StockItemForDashboard[]> {
+    const payload = (await stockClient.listItems({}, opts)) as {
+      items?: Array<Record<string, any>>;
+    };
+    const items = Array.isArray(payload?.items) ? payload.items : [];
+    return items
+      .filter((i) => i?.status === undefined || i?.status === 'ACTIVE')
+      .map((i) => ({
+        id: String(i.id),
+        name: String(i.name ?? ''),
+        unit: String(i.unit ?? ''),
+        onHand: Number(i.onHand ?? 0),
+        parLevel: Number(i.parLevel ?? 0),
+        reorderPoint: Number(i.reorderPoint ?? 0),
+        category: i.category ? { name: String(i.category.name ?? '') } : null
+      }));
   },
 
   /** Cost-of-goods for a venue/window — replaces direct invoice/recipe COGS reads. */

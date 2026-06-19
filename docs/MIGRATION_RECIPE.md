@@ -35,6 +35,36 @@ const items = useStockApiReads
    diff the new result against the old Prisma result on one venue for a week.
 7. **Flip** once diffs are clean; later delete the Prisma branch.
 
+## ✅ First reroute wired — manager dashboard low-stock (staff.service.ts)
+
+`getManagerDashboard`'s ACTIVE-items read is now flag-gated. **Default-off = the
+original Prisma query, unchanged.** To verify the new path against your stack:
+
+```bash
+# 1. Run stock-api (serves the items the suite will now read)
+pnpm dev:stock-api                      # http://localhost:3019
+
+# 2. Get a stock-api bearer token (log into Stock in the browser and copy the
+#    session/handoff token, or mint one). Then run the suite API with:
+USE_STOCK_API_READS=1 \
+STOCK_API_URL=http://localhost:3019 \
+STOCK_API_TOKEN=<valid-stock-api-token> \
+pnpm dev:api
+
+# 3. Open the Manager Dashboard. The "low stock" widget + lowStockItems count
+#    now come from stock-api. Compare against a run WITHOUT the flag — the list
+#    and count should be identical.
+```
+
+What to check: same items, same order, same low-stock count. `onHand` matches
+because both paths use the global `StockItem.onHand` field (stock-api's
+`totalOnHand` is deliberately ignored). If they match on one venue for a few
+days, this read is safe to flip on permanently and the Prisma branch can go.
+
+> Service-to-service auth (so the suite can call stock-api without a manual
+> token) is still PARKED — see WORKLOG #1. `STOCK_API_TOKEN` is the interim
+> shadow-testing hook.
+
 ## Current worklist (runtime reads, from the guard)
 | Call site | Models | Notes |
 |---|---|---|
