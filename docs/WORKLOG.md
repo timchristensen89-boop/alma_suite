@@ -64,7 +64,13 @@ Rerouted the reports.service stock reads behind `USE_STOCK_API_READS` (default-o
 
 **12 of 13 reports stock reads rerouted + verified; #9 (Square mapping) parked as integration-domain.**
 All flag-gated default-off; Prisma branches retained (guard holds at 72 by design).
-stock-api + apps/api typecheck clean throughout. Commits: 583b72b, dacfea0, 4cdf455, 1c170ad, + this.
+stock-api + apps/api typecheck clean throughout. Commits: 583b72b, dacfea0, 4cdf455, 1c170ad, f69bd11.
+
+### Write paths assessed (docs/WRITE_PATHS.md) — NOT blind-rerouted (writes aren't shadow-diffable)
+- Established the write-verification methodology: state-snapshot (reset→OLD→snapshot→reset→NEW→snapshot→deepEqual), since you can't run a write twice and diff.
+- **loaded-import** — the suite's service is a DIVERGED older copy of stock-api's (stock-api adds outlier detection + richer preview). `verify-write-import.ts` PROVES both commit **identical items** for clean data → the delegate is data-safe. NOT yet rerouted: blocked on a product/UI decision (stock-api's richer preview shape; ideally move the import UI to stock-web). Parked with plan.
+- **integration.service** (Square/Xero sync) — 14 writes + 24 reads across 27 transactions, interleaved (can't split reads). Needs stock-api WRITE endpoints (square-catalog, xero-suppliers, xero-bills) owning their transactions; integration keeps the fetching. Largest remaining piece; parked as a dedicated effort. Also unblocks reports #9.
+- No suite production code changed this step (docs + write-parity harness only); guard still 72.
 
 ## PARKED (isolated, not blocking — revisit before merging to main)
 
