@@ -127,9 +127,29 @@ export const stockClient = {
     return request<unknown>('/api/recipes/cost-of-goods', { venue: params.venue, days: params.days }, opts);
   },
 
+  /** GET /api/items/low-stock?venue= — purpose-built low/out-of-stock list (reports stock-snapshot). */
+  lowStock(params: { venue?: string } = {}, opts?: StockClientOptions) {
+    return request<unknown>('/api/items/low-stock', { venue: params.venue }, opts);
+  },
+
+  /** GET /api/items/summary?venue= — catalogue counts/aggregates (active item count, etc.). */
+  itemsSummary(params: { venue?: string } = {}, opts?: StockClientOptions) {
+    return request<unknown>('/api/items/summary', { venue: params.venue }, opts);
+  },
+
   /** GET /api/stocktake — stocktakes for the acting user's scope. */
   listStocktakes(opts?: StockClientOptions) {
     return request<unknown[]>('/api/stocktake', {}, opts);
+  },
+
+  /** GET /api/stocktake/summary — stocktake status summary per venue. */
+  stocktakeSummary(opts?: StockClientOptions) {
+    return request<unknown>('/api/stocktake/summary', {}, opts);
+  },
+
+  /** GET /api/stocktake/review — stocktakes ready for review (+ variance rows). */
+  stocktakeReview(opts?: StockClientOptions) {
+    return request<unknown>('/api/stocktake/review', {}, opts);
   },
 
   /** GET /api/stocktake/:id — one stocktake (with lines). */
