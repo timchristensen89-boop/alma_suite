@@ -720,8 +720,11 @@ export const giftCardService = {
         pending: 0,
         redeemed: giftCards.filter((card) => card.status === 'REDEEMED' && !card.testMode).length,
         test,
+        // Liability triad (live cards only): issued = original face value,
+        // outstanding = remaining redeemable balance, redeemed = drawn down.
         activeBalanceCents: totals._sum.balanceCents ?? 0,
-        soldValueCents: totals._sum.initialValueCents ?? 0
+        soldValueCents: totals._sum.initialValueCents ?? 0,
+        redeemedValueCents: Math.max(0, (totals._sum.initialValueCents ?? 0) - (totals._sum.balanceCents ?? 0))
       }
     };
   },
@@ -805,9 +808,11 @@ export const giftCardService = {
     }
 
     const settings = await getGiftCardSettings();
-    // Physical cards don't expire by default — operators can apply a custom
-    // expiry later via the card detail page if their state requires it.
-    const expiresAt: Date | null = null;
+    // Every Alma gift card carries the legal minimum 3-year expiry — including
+    // physical counter cards — matching online purchases. This is a condition of
+    // the gift-card exemption, so it's applied uniformly, never left open-ended.
+    const expiresAt = new Date();
+    expiresAt.setFullYear(expiresAt.getFullYear() + 3);
 
     const card = await prisma.giftCard.create({
       data: {

@@ -4411,6 +4411,7 @@ export type GiftCardOverview = {
     test: number;
     activeBalanceCents: number;
     soldValueCents: number;
+    redeemedValueCents: number;
   };
 };
 
