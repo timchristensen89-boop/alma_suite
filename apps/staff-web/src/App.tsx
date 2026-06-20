@@ -98,6 +98,12 @@ import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, createSuiteHandoffUrl } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
+import {
+  startOfWeek, addDays, shiftTimeRange, moveDateKeepingTime, sameDay,
+  isDateInRange, rangesOverlap, timeOf, toDateInput, toTimeInput,
+  isExpiringSoon, formatRange, shiftHours, roundHours, uniqueValues,
+  initials, timesheetHours, formatCents
+} from './lib/datetime';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, SETTINGS_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import {
   IconBadgeCheck,
@@ -12031,91 +12037,7 @@ function weekDays(reference: Date, length = 7) {
   });
 }
 
-function startOfWeek(reference: Date) {
-  const start = new Date(reference);
-  start.setHours(0, 0, 0, 0);
-  const day = start.getDay();
-  start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
-  return start;
-}
-
-function addDays(reference: Date, days: number) {
-  const date = new Date(reference);
-  date.setDate(reference.getDate() + days);
-  return date;
-}
-
-function shiftTimeRange(date: string, startTime: string, endTime: string) {
-  if (!date || !startTime || !endTime) return null;
-  const startsAt = new Date(`${date}T${startTime}:00`);
-  const endsAt = new Date(`${date}T${endTime}:00`);
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return null;
-  if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1);
-  return { startsAt, endsAt };
-}
-
-function moveDateKeepingTime(value: string, targetDay: Date) {
-  const source = new Date(value);
-  const next = new Date(targetDay);
-  next.setHours(source.getHours(), source.getMinutes(), source.getSeconds(), source.getMilliseconds());
-  return next;
-}
-
-function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function isDateInRange(value: Date, start: Date, end: Date) {
-  const time = value.getTime();
-  return !Number.isNaN(time) && time >= start.getTime() && time < end.getTime();
-}
-
-function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
-  return startA < endB && startB < endA;
-}
-
-function timeOf(value: string) {
-  const d = new Date(value);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  const suffix = h < 12 ? 'am' : 'pm';
-  const hour = h % 12 || 12;
-  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
-}
-
-function toDateInput(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function toTimeInput(value: Date) {
-  return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
-}
-
-function isExpiringSoon(iso: string) {
-  const expiry = new Date(iso);
-  if (Number.isNaN(expiry.getTime())) return false;
-  const now = new Date();
-  const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  return expiry <= soon && expiry >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-}
-
-function formatRange(start: Date, end: Date) {
-  return `${start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })}`;
-}
-
-function shiftHours(shift: RosterShift) {
-  const startsAt = new Date(shift.startsAt).getTime();
-  const endsAt = new Date(shift.endsAt).getTime();
-  if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt <= startsAt) return 0;
-  return (endsAt - startsAt) / 36e5;
-}
+// Pure date/time/format helpers moved to ./lib/datetime (staff-web breakup).
 
 // Any "hourly rate" above $200/hr is bad data — almost always an annual salary
 // that's landed in an hourly field. The roster forecast clamps to this so one
@@ -12220,13 +12142,6 @@ function countRosterOverlaps(shifts: RosterShift[]) {
   return conflicts;
 }
 
-function roundHours(hours: number) {
-  return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
-}
-
-function uniqueValues(values: string[]) {
-  return [...new Set(values.filter(Boolean))];
-}
 
 function rosterClosedDaysScopeKey(weekStart: Date, boardDays: number, venue: string) {
   return `${toDateInput(weekStart)}:${boardDays}:${normaliseRosterAreaName(venue)}`;
@@ -12351,9 +12266,6 @@ function areaStyle(area: string): CSSProperties {
   } as CSSProperties;
 }
 
-function initials(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
-  return `${member.firstName?.[0] ?? ''}${member.lastName?.[0] ?? ''}`.toUpperCase() || 'A';
-}
 
 function statusTone(status: RosterShift['status']) {
   switch (status) {
@@ -15818,12 +15730,6 @@ function timesheetTone(status: Timesheet['status']) {
   }
 }
 
-function timesheetHours(entry: Timesheet) {
-  const startsAt = new Date(entry.clockInAt).getTime();
-  const endsAt = new Date(entry.clockOutAt).getTime();
-  if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt <= startsAt) return 0;
-  return Math.max(0, (endsAt - startsAt) / 36e5 - entry.breakMinutes / 60);
-}
 
 function downloadTextFile(filename: string, contents: string, type = 'text/csv') {
   const blob = new Blob([contents], { type });
@@ -16146,13 +16052,6 @@ function formatDateTime(value: string) {
   });
 }
 
-function formatCents(value: number | null | undefined) {
-  if (value === null || value === undefined) return 'No rate';
-  return (value / 100).toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'AUD'
-  });
-}
 
 type OnboardingContext = {
   token: string;
