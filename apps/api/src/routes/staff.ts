@@ -908,6 +908,15 @@ staffRouter.delete('/tips/manual-hours/:id', requireManager, async (req, res, ne
   }
 });
 
+// Import the tip-week hours basis from Deputy timesheets (writes manual-hours).
+staffRouter.post('/tips/deputy-import', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.importDeputyTipsHours(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.delete('/profiles/:id', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.delete(String(req.params.id), req.user));

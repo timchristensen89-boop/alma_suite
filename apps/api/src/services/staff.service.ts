@@ -5174,7 +5174,12 @@ export const staffService = {
       approvedHours: number;
     }>();
 
+    // A manual-hours entry (incl. a Deputy import) is the authoritative hours
+    // for that person/week — skip their timesheet rows so the two don't
+    // double-count in the pool.
+    const manualStaffIds = new Set(manualHoursEntries.map((entry) => entry.staffProfileId));
     for (const timesheet of timesheets) {
+      if (manualStaffIds.has(timesheet.staffProfileId)) continue;
       const hours = timesheetHours(timesheet);
       if (hours <= 0) continue;
       const existing = byStaff.get(timesheet.staffProfileId) ?? {
@@ -5311,6 +5316,60 @@ export const staffService = {
   async deleteManualHoursEntry(id: string) {
     await prisma.staffTipManualHoursEntry.delete({ where: { id } });
     return { deleted: true };
+  },
+
+  // Pull the hours basis for a tip week from Deputy timesheets (identified by
+  // deputyTimesheetId) and write them as the week's manual-hours entries, so the
+  // tip pool splits by Deputy hours without anyone re-typing them. Idempotent
+  // (upsert per staff/venue/week); manager can still adjust afterwards.
+  async importDeputyTipsHours(input: unknown) {
+    const data = tipsQuerySchema.parse(input);
+    const startDate = parseDate(data.start, 'Tips start date');
+    const endDate = parseDate(data.end, 'Tips end date');
+    const timesheets = await prisma.timesheet.findMany({
+      where: {
+        deputyTimesheetId: { not: null },
+        workDate: { gte: startDate, lt: endDate },
+        ...(data.venue ? { venue: data.venue } : {})
+      },
+      include: { staffProfile: { select: { firstName: true, lastName: true, venue: true } } }
+    });
+
+    const byKey = new Map<string, { staffProfileId: string; venue: string; name: string; hours: number }>();
+    for (const ts of timesheets) {
+      const hours = timesheetHours(ts);
+      if (hours <= 0) continue;
+      const venue = data.venue || ts.venue || ts.staffProfile.venue || 'All venues';
+      const key = `${ts.staffProfileId}|${venue}`;
+      const row = byKey.get(key) ?? {
+        staffProfileId: ts.staffProfileId,
+        venue,
+        name: `${ts.staffProfile.firstName} ${ts.staffProfile.lastName}`.trim(),
+        hours: 0
+      };
+      row.hours += hours;
+      byKey.set(key, row);
+    }
+
+    const rows = Array.from(byKey.values()).map((r) => ({ ...r, hours: Math.round(r.hours * 100) / 100 }));
+    if (rows.length > 0) {
+      await prisma.$transaction(
+        rows.map((row) =>
+          prisma.staffTipManualHoursEntry.upsert({
+            where: { staffProfileId_venue_weekStart: { staffProfileId: row.staffProfileId, venue: row.venue, weekStart: startDate } },
+            create: { staffProfileId: row.staffProfileId, venue: row.venue, weekStart: startDate, hours: row.hours, notes: 'Imported from Deputy timesheets' },
+            update: { hours: row.hours, notes: 'Imported from Deputy timesheets' }
+          })
+        )
+      );
+    }
+
+    return {
+      imported: rows.length,
+      timesheetRows: timesheets.length,
+      totalHours: Math.round(rows.reduce((sum, r) => sum + r.hours, 0) * 100) / 100,
+      staff: rows.map((r) => ({ staffProfileId: r.staffProfileId, name: r.name, hours: r.hours }))
+    };
   },
 
   async saveTipsCashEntry(input: unknown) {

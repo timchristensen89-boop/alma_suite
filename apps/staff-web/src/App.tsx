@@ -13060,6 +13060,28 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function importDeputyHours() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('deputy-import');
+    try {
+      const result = await api<{ imported: number; timesheetRows: number; totalHours: number }>('/api/staff/tips/deputy-import', {
+        method: 'POST',
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue })
+      });
+      setMessage(
+        result.imported
+          ? `Imported Deputy hours for ${result.imported} staff (${result.totalHours}h from ${result.timesheetRows} timesheet rows). Adjust below if needed.`
+          : 'No Deputy timesheets found for this week — run the Deputy sync (Admin → Integrations) first, then re-import.'
+      );
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import Deputy hours.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteManualHoursEntry(id: string) {
     setSaving(true);
     setMessage(null);
@@ -13555,8 +13577,20 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       </TipsSection>
 
       {/* Manual staff hours */}
-      <TipsSection title="Manual staff hours" summary={`${summary?.manualHoursEntries.length ?? 0} manual entries`}>
-        <Card title="Manually add staff hours" subtitle="Add a staff member to the tips allocation pool for this week — useful when they have no approved timesheets.">
+      <TipsSection title="Hours for allocation" summary={`${summary?.manualHoursEntries.length ?? 0} manual entries`}>
+        <Card
+          title="Hours for allocation"
+          subtitle="The tip pool splits by hours. Import the week's hours straight from Deputy timesheets, or add a staff member by hand."
+          action={
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => void importDeputyHours()}>
+              {saving && messageTarget === 'deputy-import' ? 'Importing…' : 'Import hours from Deputy'}
+            </Button>
+          }
+        >
+          <ActionFeedback
+            message={messageTarget === 'deputy-import' ? message : null}
+            tone={message?.includes('Could') || message?.includes('No Deputy') ? 'error' : 'success'}
+          />
           <div className="form-grid three">
             <Select
               label="Staff member"
