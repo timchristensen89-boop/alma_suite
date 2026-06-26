@@ -398,7 +398,11 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
       s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
       s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
     },
-    join: ['EmployeeInfo', 'OperationalUnitInfo']
+    // Roster/Timesheet join on the *Object names (EmployeeObject/
+    // OperationalUnitObject); the *Info names are response _DPMetaData keys, not
+    // valid joins on these resources — passing them makes Deputy 500. The Object
+    // joins still populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo} below.
+    join: ['EmployeeObject', 'OperationalUnitObject']
   });
 
   // Clear previously-imported shifts in this window before re-creating them.
@@ -922,7 +926,11 @@ export async function syncTimesheets(
       s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
       s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
     },
-    join: ['EmployeeInfo', 'OperationalUnitInfo']
+    // Roster/Timesheet join on the *Object names (EmployeeObject/
+    // OperationalUnitObject); the *Info names are response _DPMetaData keys, not
+    // valid joins on these resources — passing them makes Deputy 500. The Object
+    // joins still populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo} below.
+    join: ['EmployeeObject', 'OperationalUnitObject']
   });
 
   let created = 0;
