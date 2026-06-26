@@ -999,36 +999,27 @@ export async function syncTimesheets(
     s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
     s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
   };
+  // Unlike Roster, the Timesheet resource's EmployeeObject/OperationalUnitObject
+  // joins do NOT reliably populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo}
+  // — the embed comes back empty, so every row failed name-matching and was
+  // skipped as "No matching staff profile". Build id-maps up front and resolve
+  // the employee/area/venue by id (ts.Employee / ts.OperationalUnit) instead.
+  // The maps double as the no-joins fallback when Deputy 500s the joined query.
+  const maps = await deputyLookupMaps(connection);
   let sheets: DeputyTimesheet[];
   try {
     sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
       search: timesheetSearch,
-      // Roster/Timesheet join on the *Object names (EmployeeObject/
-      // OperationalUnitObject); the *Info names are response _DPMetaData keys,
-      // not valid joins on these resources. The Object joins populate
-      // _DPMetaData.{EmployeeInfo,OperationalUnitInfo} read below.
       join: ['EmployeeObject', 'OperationalUnitObject']
     });
   } catch (error) {
     if (!(error instanceof HttpError && error.statusCode >= 500)) throw error;
-    // Joined query is down on Deputy's side — refetch join-free and rebuild the
-    // employee/area/venue metadata from id-maps so the sync still completes.
-    const maps = await deputyLookupMaps(connection);
+    // Joined query is down on Deputy's side — refetch join-free; the id-maps
+    // below fill the employee/area/venue regardless of the embed.
     const raw = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
       search: timesheetSearch
     });
-    sheets = (Array.isArray(raw) ? raw : []).map((s) => ({
-      ...s,
-      _DPMetaData: {
-        ...(s._DPMetaData ?? {}),
-        EmployeeInfo:
-          (s.Employee != null ? maps.employeeById.get(s.Employee) : undefined) ??
-          s._DPMetaData?.EmployeeInfo,
-        OperationalUnitInfo:
-          (s.OperationalUnit != null ? maps.opUnitById.get(s.OperationalUnit) : undefined) ??
-          s._DPMetaData?.OperationalUnitInfo
-      }
-    }));
+    sheets = Array.isArray(raw) ? raw : [];
   }
 
   let created = 0;
@@ -1060,13 +1051,17 @@ export async function syncTimesheets(
       continue;
     }
 
-    const employeeInfo = ts._DPMetaData?.EmployeeInfo ?? {};
-    const opUnitInfo = ts._DPMetaData?.OperationalUnitInfo ?? {};
-    const firstName = employeeInfo.FirstName?.trim() ?? '';
-    const lastName = employeeInfo.LastName?.trim() ?? '';
-    const email = normaliseEmail(employeeInfo.Email);
-    const area = normaliseArea(opUnitInfo.OperationalUnitName);
-    const venue = normaliseVenue(opUnitInfo.CompanyName);
+    // Prefer the joined embed, but fall back to the id-maps (the Timesheet embed
+    // is routinely empty — see note above), so the employee/area/venue resolve.
+    const embedEmp = ts._DPMetaData?.EmployeeInfo ?? {};
+    const mapEmp = ts.Employee != null ? maps.employeeById.get(ts.Employee) : undefined;
+    const embedOu = ts._DPMetaData?.OperationalUnitInfo ?? {};
+    const mapOu = ts.OperationalUnit != null ? maps.opUnitById.get(ts.OperationalUnit) : undefined;
+    const firstName = (embedEmp.FirstName ?? mapEmp?.FirstName ?? '').trim();
+    const lastName = (embedEmp.LastName ?? mapEmp?.LastName ?? '').trim();
+    const email = normaliseEmail(embedEmp.Email ?? mapEmp?.Email);
+    const area = normaliseArea(embedOu.OperationalUnitName ?? mapOu?.OperationalUnitName);
+    const venue = normaliseVenue(embedOu.CompanyName ?? mapOu?.CompanyName);
 
     // Actuals must attach to a real person — never create placeholder staff.
     let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
@@ -1148,6 +1143,20 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
     try { documents = await syncDocuments(connection); } catch (error) { failures.push(`documents: ${reason(error)}`); }
     try { roster = await syncRoster(connection); } catch (error) { failures.push(`roster: ${reason(error)}`); }
     try { timesheets = await syncTimesheets(connection); } catch (error) { failures.push(`timesheets: ${reason(error)}`); }
+
+    console.log(
+      `[deputy] sync(all) results — employees:${employees?.created ?? '–'}/${employees?.updated ?? '–'} ` +
+        `roster:${roster?.shiftsCreated ?? '–'} timesheets:${timesheets?.created ?? '–'}/${timesheets?.updated ?? '–'} ` +
+        `(read ${timesheets?.rowsRead ?? '–'}, skipped ${timesheets?.skipped?.length ?? '–'}) ` +
+        `failures:[${failures.join(' • ')}]`
+    );
+    if (timesheets?.skipped?.length) {
+      const reasons = timesheets.skipped.reduce<Record<string, number>>((acc, s) => {
+        acc[s.reason] = (acc[s.reason] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log(`[deputy] timesheet skips: ${JSON.stringify(reasons)}`);
+    }
 
     const allFailed = failures.length === 4;
     await markSyncRun(connection, trigger, allFailed ? 'ERROR' : 'SUCCESS', {

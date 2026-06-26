@@ -5351,6 +5351,22 @@ export const staffService = {
       byKey.set(key, row);
     }
 
+    if (timesheets.length === 0) {
+      // Nothing matched — surface why: how many Deputy timesheets exist at all in
+      // the window (ignoring venue) and which venues they carry, so a venue-name
+      // mismatch is obvious in the logs instead of a silent "0 found".
+      const anyInWindow = await prisma.timesheet.findMany({
+        where: { deputyTimesheetId: { not: null }, workDate: { gte: startDate, lt: endDate } },
+        select: { venue: true }
+      });
+      const venues = Array.from(new Set(anyInWindow.map((t) => t.venue ?? '∅')));
+      console.log(
+        `[tips] deputy-import: 0 matched for venue=${JSON.stringify(data.venue ?? null)} ` +
+          `window ${startDate.toISOString()}..${endDate.toISOString()}; ` +
+          `${anyInWindow.length} deputy timesheets in window across venues [${venues.join(', ')}]`
+      );
+    }
+
     const rows = Array.from(byKey.values()).map((r) => ({ ...r, hours: Math.round(r.hours * 100) / 100 }));
     if (rows.length > 0) {
       await prisma.$transaction(
