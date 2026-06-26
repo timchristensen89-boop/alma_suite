@@ -5155,6 +5155,31 @@ export const staffService = {
       })
     ]);
 
+    if (paidRuns.length > 0) {
+      // Provenance of the locked run(s) shown as "Approved tip run" — so a stale
+      // or wrong-venue lock surfacing under this week is visible in the logs.
+      console.log(
+        `[tips] summary venue=${JSON.stringify(data.venue ?? null)} ` +
+          `week ${startDate.toISOString().slice(0, 10)}..${endDate.toISOString().slice(0, 10)}: ` +
+          `${paidRuns.length} locked run(s) — ` +
+          paidRuns
+            .map(
+              (r) =>
+                `{id:${r.id} venue:${JSON.stringify(r.venue)} wk:${r.weekStart
+                  .toISOString()
+                  .slice(0, 10)}..${r.weekEnd.toISOString().slice(0, 10)} paidAt:${r.paidAt
+                  .toISOString()
+                  .slice(0, 10)} lines:${r.lines.length} [${r.lines
+                  .map(
+                    (l) =>
+                      `${l.staffProfile.firstName} ${l.staffProfile.lastName}/${l.staffProfile.venue ?? '∅'}=${l.hours}h`
+                  )
+                  .join(', ')}]}`
+            )
+            .join(' ')
+      );
+    }
+
     const cashTipsCents = cashEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const squareTipsCents = cardEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const tipPoolCents = cashTipsCents + squareTipsCents;
@@ -5284,6 +5309,26 @@ export const staffService = {
   async deleteTipCashEntry(id: string) {
     await prisma.staffTipCashEntry.delete({ where: { id } });
     return { deleted: true };
+  },
+
+  // Unlock/remove an approved tip run so the week can be reviewed and re-approved
+  // from corrected data. Reports read the locked run as the payroll source, so a
+  // bad snapshot (wrong staff/venue/hours) can only be fixed by removing it.
+  // Lines cascade-delete with the run.
+  async deleteTipsRun(id: string) {
+    const run = await prisma.staffTipPaymentRun.findUnique({
+      where: { id },
+      select: { id: true, venue: true, weekStart: true, weekEnd: true, lines: { select: { id: true } } }
+    });
+    if (!run) throw new HttpError(404, 'Tip run not found');
+    await prisma.staffTipPaymentRun.delete({ where: { id } });
+    return {
+      deleted: true,
+      venue: run.venue,
+      weekStart: run.weekStart.toISOString(),
+      weekEnd: run.weekEnd.toISOString(),
+      removedLines: run.lines.length
+    };
   },
 
   async deleteTipCardEntry(id: string) {

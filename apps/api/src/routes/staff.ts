@@ -868,6 +868,16 @@ staffRouter.post('/tips/mark-paid', requireManager, async (req, res, next) => {
   }
 });
 
+// Unlock a previously-approved tip run so it can be rebuilt from corrected data
+// (the only way to fix a bad locked snapshot — Reports reads the locked run).
+staffRouter.delete('/tips/run/:id', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.deleteTipsRun(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.delete('/tips/cash/:id', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.deleteTipCashEntry(String(req.params.id)));

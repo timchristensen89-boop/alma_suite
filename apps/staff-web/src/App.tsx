@@ -13241,6 +13241,32 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function removeLockedRun() {
+    const run = summary?.paidRuns?.[0];
+    if (!run) return;
+    setMessageTarget('paid');
+    if (
+      !window.confirm(
+        `Remove the approved tip run for ${venue} (week of ${formatRange(weekStart, weekEnd)})?\n\n` +
+          `This unlocks the week so you can review and re-approve it from corrected data. ` +
+          `Reports will no longer use the old snapshot. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await api<{ removedLines: number }>(`/api/staff/tips/run/${run.id}`, { method: 'DELETE' });
+      setMessage(`Approved tip run removed (${result.removedLines} staff). Review the week and re-approve when ready.`);
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove the approved tip run.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function downloadTipsTemplate() {
     downloadTextFile(
       `alma-card-tips-template-${venue || 'venue'}-${toDateInput(weekStart)}.csv`,
@@ -13714,7 +13740,16 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {lockedRows.length ? (
         <TipsSection title="Approved tip run" summary={`${lockedRows.length} staff locked for payroll`}>
-          <Card title="Approved tip run" subtitle="This locked run is the source Reports uses for payroll tips." padding="none">
+          <Card
+            title="Approved tip run"
+            subtitle="This locked run is the source Reports uses for payroll tips."
+            padding="none"
+            action={
+              <Button type="button" variant="secondary" disabled={saving} onClick={() => void removeLockedRun()}>
+                {saving && messageTarget === 'paid' ? 'Removing…' : 'Remove locked run'}
+              </Button>
+            }
+          >
             <div className="table-card tips-table">
               <table>
                 <thead>
