@@ -146,6 +146,9 @@ async function validAccessToken(connection: IntegrationConnection) {
 // that usually means our request needs fixing.
 function deputyHttpError(verb: string, path: string, status: number, detail: string): HttpError {
   if (status >= 500) {
+    // Deputy's 5xx body usually carries the real reason (bad join/field). Log it
+    // so a recurring "server error" we can actually act on isn't hidden as "their end".
+    console.error(`[deputy] ${verb} ${path} -> ${status} body: ${detail.slice(0, 600)}`);
     return new HttpError(
       502,
       `Deputy server error (${status}) on ${verb} ${path} — this is on Deputy's end, not Alma. We retried ${MAX_FETCH_RETRIES + 1}× automatically; their API is still failing, so try the sync again in a few minutes.`
@@ -387,23 +390,94 @@ type RosterSyncOptions = {
   lookforwardDays?: number;
 };
 
+// Deputy intermittently 500s on *joined* QUERY calls — its generic incident
+// message ("internal error… please be patient"), not a query bug: the same call
+// succeeds minutes later, and the failing resource moves run to run. syncEmployees
+// already dodges this with a no-joins retry; roster + timesheets can't simply
+// drop the join because they read the joined _DPMetaData (employee name/email,
+// area, venue). So on a 5xx we refetch the rows without joins and rebuild that
+// metadata from id-maps of the Employee, OperationalUnit and Company resources
+// — each fetched join-free, so each dodges the same incident independently.
+type DeputyLookupMaps = {
+  employeeById: Map<number, { FirstName?: string; LastName?: string; Email?: string }>;
+  opUnitById: Map<number, { OperationalUnitName?: string; CompanyName?: string }>;
+};
+
+async function deputyLookupMaps(connection: IntegrationConnection): Promise<DeputyLookupMaps> {
+  const [employees, opUnits, companies] = await Promise.all([
+    apiPost<DeputyEmployee[]>(connection, '/resource/Employee/QUERY', { max: 500 }),
+    apiPost<Array<{ Id: number; OperationalUnitName?: string; Company?: number }>>(
+      connection,
+      '/resource/OperationalUnit/QUERY',
+      { max: 500 }
+    ),
+    apiPost<Array<{ Id: number; CompanyName?: string }>>(connection, '/resource/Company/QUERY', {
+      max: 200
+    })
+  ]);
+  const companyName = new Map<number, string>();
+  for (const c of Array.isArray(companies) ? companies : []) {
+    if (c?.Id != null) companyName.set(c.Id, c.CompanyName ?? '');
+  }
+  const employeeById: DeputyLookupMaps['employeeById'] = new Map();
+  for (const e of Array.isArray(employees) ? employees : []) {
+    if (e?.Id != null) {
+      employeeById.set(e.Id, { FirstName: e.FirstName, LastName: e.LastName, Email: e.Email });
+    }
+  }
+  const opUnitById: DeputyLookupMaps['opUnitById'] = new Map();
+  for (const o of Array.isArray(opUnits) ? opUnits : []) {
+    if (o?.Id != null) {
+      opUnitById.set(o.Id, {
+        OperationalUnitName: o.OperationalUnitName,
+        CompanyName: o.Company != null ? companyName.get(o.Company) : undefined
+      });
+    }
+  }
+  return { employeeById, opUnitById };
+}
+
 export async function syncRoster(connection: IntegrationConnection, options: RosterSyncOptions = {}) {
   const lookbackDays = options.lookbackDays ?? 7;
   const lookforwardDays = options.lookforwardDays ?? 14;
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const shifts = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
-    search: {
-      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-    },
-    // Roster/Timesheet join on the *Object names (EmployeeObject/
-    // OperationalUnitObject); the *Info names are response _DPMetaData keys, not
-    // valid joins on these resources — passing them makes Deputy 500. The Object
-    // joins still populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo} below.
-    join: ['EmployeeObject', 'OperationalUnitObject']
-  });
+  const rosterSearch = {
+    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+  };
+  let shifts: DeputyRosterShift[];
+  try {
+    shifts = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
+      search: rosterSearch,
+      // Roster/Timesheet join on the *Object names (EmployeeObject/
+      // OperationalUnitObject); the *Info names are response _DPMetaData keys,
+      // not valid joins on these resources. The Object joins populate
+      // _DPMetaData.{EmployeeInfo,OperationalUnitInfo} read below.
+      join: ['EmployeeObject', 'OperationalUnitObject']
+    });
+  } catch (error) {
+    if (!(error instanceof HttpError && error.statusCode >= 500)) throw error;
+    // Joined query is down on Deputy's side — refetch join-free and rebuild the
+    // employee/area/venue metadata from id-maps so the sync still completes.
+    const maps = await deputyLookupMaps(connection);
+    const raw = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
+      search: rosterSearch
+    });
+    shifts = (Array.isArray(raw) ? raw : []).map((s) => ({
+      ...s,
+      _DPMetaData: {
+        ...(s._DPMetaData ?? {}),
+        EmployeeInfo:
+          (s.Employee != null ? maps.employeeById.get(s.Employee) : undefined) ??
+          s._DPMetaData?.EmployeeInfo,
+        OperationalUnitInfo:
+          (s.OperationalUnit != null ? maps.opUnitById.get(s.OperationalUnit) : undefined) ??
+          s._DPMetaData?.OperationalUnitInfo
+      }
+    }));
+  }
 
   // Clear previously-imported shifts in this window before re-creating them.
   // Match on startsAt only — the Deputy query filters by StartTime, so every
@@ -921,17 +995,41 @@ export async function syncTimesheets(
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
-    search: {
-      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-    },
-    // Roster/Timesheet join on the *Object names (EmployeeObject/
-    // OperationalUnitObject); the *Info names are response _DPMetaData keys, not
-    // valid joins on these resources — passing them makes Deputy 500. The Object
-    // joins still populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo} below.
-    join: ['EmployeeObject', 'OperationalUnitObject']
-  });
+  const timesheetSearch = {
+    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+  };
+  let sheets: DeputyTimesheet[];
+  try {
+    sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+      search: timesheetSearch,
+      // Roster/Timesheet join on the *Object names (EmployeeObject/
+      // OperationalUnitObject); the *Info names are response _DPMetaData keys,
+      // not valid joins on these resources. The Object joins populate
+      // _DPMetaData.{EmployeeInfo,OperationalUnitInfo} read below.
+      join: ['EmployeeObject', 'OperationalUnitObject']
+    });
+  } catch (error) {
+    if (!(error instanceof HttpError && error.statusCode >= 500)) throw error;
+    // Joined query is down on Deputy's side — refetch join-free and rebuild the
+    // employee/area/venue metadata from id-maps so the sync still completes.
+    const maps = await deputyLookupMaps(connection);
+    const raw = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+      search: timesheetSearch
+    });
+    sheets = (Array.isArray(raw) ? raw : []).map((s) => ({
+      ...s,
+      _DPMetaData: {
+        ...(s._DPMetaData ?? {}),
+        EmployeeInfo:
+          (s.Employee != null ? maps.employeeById.get(s.Employee) : undefined) ??
+          s._DPMetaData?.EmployeeInfo,
+        OperationalUnitInfo:
+          (s.OperationalUnit != null ? maps.opUnitById.get(s.OperationalUnit) : undefined) ??
+          s._DPMetaData?.OperationalUnitInfo
+      }
+    }));
+  }
 
   let created = 0;
   let updated = 0;
