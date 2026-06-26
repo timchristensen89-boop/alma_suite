@@ -226,7 +226,14 @@ async function connectedDeputyConnection(): Promise<IntegrationConnection> {
     where: { provider: 'DEPUTY', scopeType: 'BUSINESS' },
     orderBy: { updatedAt: 'desc' }
   });
-  if (!connection || connection.status !== 'CONNECTED') {
+  // Gate on whether we still hold a usable OAuth grant, NOT on the cached status.
+  // A failed sync flips status→ERROR (markSyncRun), so hard-blocking here on
+  // status!=='CONNECTED' self-locked the scheduler: one transient Deputy failure
+  // meant every later run 409'd before even trying, and it could never recover
+  // without a human reconnecting. A deliberate disconnect clears the tokens, so
+  // the token check below still blocks that; an ERROR connection that still holds
+  // tokens is retried, and a successful run flips status back to CONNECTED.
+  if (!connection || (!connection.tokenEncrypted && !connection.refreshTokenEncrypted)) {
     throw new HttpError(409, 'Deputy is not connected. Connect it from admin > integrations.');
   }
   return connection;
