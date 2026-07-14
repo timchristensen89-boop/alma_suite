@@ -5142,12 +5142,10 @@
 }
 
 @media (max-width: 1200px) {
-  .deputy-roster-layout,
-  .deputy-roster-layout.is-side-collapsed {
-    grid-template-columns: 1fr;
-  }
-
-  .roster-right-rail,
+  /* Keep the staff rail beside the grid — it is only ~164px wide and must
+     stay reachable while writing rosters. The board itself scrolls
+     horizontally inside .roster-board-shell, so two columns still fit here.
+     True stacking only happens at the 960px mobile breakpoint. */
   .deputy-shift-editor {
     position: static;
     max-height: none;
