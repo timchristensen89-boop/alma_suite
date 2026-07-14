@@ -3469,7 +3469,7 @@ export function AdminPage({
               <a
                 key={item.kind}
                 className="admin-link-card"
-                href={`/api/admin/exports/${item.kind}`}
+                href={apiUrl(`/api/admin/exports/${item.kind}`)}
               >
                 <span>
                   <strong>{item.label}</strong>

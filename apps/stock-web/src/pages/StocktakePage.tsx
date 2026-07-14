@@ -17,7 +17,7 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, apiUrl } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -406,7 +406,7 @@ export function StocktakePage() {
     setError(null);
     try {
       const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch(`/api/stocktake/${stocktake.id}/export.csv`, {
+      const res = await fetch(apiUrl(`/api/stocktake/${stocktake.id}/export.csv`), {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         credentials: 'include'
       });

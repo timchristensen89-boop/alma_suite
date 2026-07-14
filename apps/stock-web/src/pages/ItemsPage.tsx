@@ -5,7 +5,7 @@ import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } fro
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useStickyVenue } from '../hooks/useStickyVenue';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, apiUrl } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -525,7 +525,7 @@ export function ItemsPage() {
     setError(null);
     try {
       const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch('/api/items/export.csv', {
+      const res = await fetch(apiUrl('/api/items/export.csv'), {
         headers: token ? { Authorization: `Bearer ${token}` } : undefined,
         credentials: 'include'
       });

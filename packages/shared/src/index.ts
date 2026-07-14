@@ -6397,7 +6397,9 @@ export const stocktakeLineInputSchema = z.object({
   countedQty: z.coerce.number().nullable(),
   unit: z.string().optional().or(z.literal('')),
   location: z.string().optional().or(z.literal('')),
-  stockValueCents: z.coerce.number().int().nonnegative().optional(),
+  // Can be negative: lines are prefilled from system on-hand, which goes
+  // negative between counts when sales/wastage deductions overshoot.
+  stockValueCents: z.coerce.number().int().optional(),
   notes: z.string().optional().or(z.literal(''))
 });
 

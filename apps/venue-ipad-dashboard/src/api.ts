@@ -5,6 +5,8 @@
 // are sent on every request so the venue device session + staff PIN session
 // follow the user without manual token handling.
 
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/+$/, '');
+
 function normalisePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
@@ -30,7 +32,7 @@ export async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json');
   }
 
-  const response = await fetch(normalisePath(path), {
+  const response = await fetch(`${API_BASE}${normalisePath(path)}`, {
     credentials: 'include',
     ...init,
     headers
