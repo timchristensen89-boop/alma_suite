@@ -11180,14 +11180,30 @@ function RosterPage({
                                   {shift.status === 'PUBLISHED' ? 'Live' : shift.status.toLowerCase()}
                                 </em>
                               </span>
-                              <span className="deputy-shift-person">{viewMode === 'team' ? shift.area || shift.roleTitle || 'Shift' : `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}</span>
-                              <small>
-                                {isUnallocatedProfile(shift.staffProfile)
-                                  ? 'Unallocated'
-                                  : shift.breakMinutes
-                                    ? `${shift.breakMinutes}m break`
-                                    : shift.status}
-                              </small>
+                              {isUnallocatedProfile(shift.staffProfile) ? (
+                                <>
+                                  <span className="deputy-shift-person deputy-shift-needs-staff">Needs staff</span>
+                                  <small className="deputy-shift-assign-hint">+ Assign</small>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="deputy-shift-person">
+                                    {viewMode === 'team' ? (
+                                      shift.area || shift.roleTitle || 'Shift'
+                                    ) : (
+                                      <>
+                                        {shift.staffProfile ? (
+                                          <span className="deputy-shift-avatar" aria-hidden>{staffInitials(shift.staffProfile)}</span>
+                                        ) : null}
+                                        {`${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}
+                                      </>
+                                    )}
+                                  </span>
+                                  <small>
+                                    {shift.breakMinutes ? `${shift.breakMinutes}m break` : shift.status}
+                                  </small>
+                                </>
+                              )}
                             </span>
                           )) : null}
                         </button>
@@ -11357,6 +11373,42 @@ function RosterPage({
                 <Card
                   className="roster-side-card"
                 >
+                  {(() => {
+                    // Roster Redesign 1C: "Needs filling" queue — every unallocated
+                    // shift this week as a prioritised, one-tap list.
+                    const openShifts = visibleRoster
+                      .filter((shift) => isUnallocatedProfile(shift.staffProfile) && shift.status !== 'CANCELLED')
+                      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+                    if (!openShifts.length) return null;
+                    return (
+                      <div className="roster-fill-queue">
+                        <div className="roster-fill-queue-head">
+                          <strong>Needs filling</strong>
+                          <span>{openShifts.length} shift{openShifts.length === 1 ? '' : 's'}</span>
+                        </div>
+                        {openShifts.map((shift) => (
+                          <button
+                            key={shift.id}
+                            type="button"
+                            className="roster-fill-queue-card"
+                            style={areaStyle(shift.area || '')}
+                            onClick={() => startEditShift(shift)}
+                          >
+                            <span className="roster-fill-queue-meta">
+                              <span className="dot" aria-hidden />
+                              <strong>{shift.area || shift.roleTitle || 'Shift'}</strong>
+                              <small>
+                                {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}
+                                {' · '}
+                                {timeOf(shift.startsAt)}–{timeOf(shift.endsAt)}
+                              </small>
+                            </span>
+                            <span className="roster-fill-queue-assign">Assign</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   <div className="roster-side-staff-list">
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
                       const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
@@ -12241,17 +12293,20 @@ function mergeRosterAreas(settings: RosterAreaSettings, rosterAreas: string[]) {
 }
 
 const AREA_THEMES: Record<string, { bg: string; border: string; text: string }> = {
-  bar: { bg: '#eef2ff', border: '#4f46e5', text: '#312e81' },
-  'floor day': { bg: '#e0f2fe', border: '#0284c7', text: '#075985' },
-  'floor night': { bg: '#ecfdf5', border: '#059669', text: '#064e3b' },
-  floor: { bg: '#ecfdf5', border: '#059669', text: '#064e3b' },
-  kitchen: { bg: '#fff7ed', border: '#ea580c', text: '#7c2d12' },
-  management: { bg: '#f5f3ff', border: '#7c3aed', text: '#4c1d95' },
-  'host / floor manager': { bg: '#fefce8', border: '#ca8a04', text: '#713f12' },
-  'avalon manager': { bg: '#f5f3ff', border: '#7c3aed', text: '#4c1d95' },
-  events: { bg: '#fdf2f8', border: '#db2777', text: '#831843' },
-  training: { bg: '#eff6ff', border: '#2563eb', text: '#1e3a8a' }
+  // Alma design-system role palette (Roster Redesign 1A)
+  bar: { bg: '#F7E4D8', border: '#9A3A2E', text: '#6E2419' },
+  'floor day': { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  'floor night': { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  floor: { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  kitchen: { bg: '#EFE7E4', border: '#684A4A', text: '#5E4444' },
+  management: { bg: '#DFE7DF', border: '#1F3524', text: '#1F3524' },
+  'host / floor manager': { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' },
+  host: { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' },
+  'avalon manager': { bg: '#DFE7DF', border: '#1F3524', text: '#1F3524' },
+  events: { bg: '#F6E5CC', border: '#B5772F', text: '#6F4915' },
+  training: { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' }
 };
+
 
 function areaStyle(area: string): CSSProperties {
   const theme = AREA_THEMES[area.trim().toLowerCase()] ?? {

@@ -4897,15 +4897,14 @@
   flex-direction: column;
   gap: 2px;
   min-width: 0;
-  padding: 6px 8px 6px 11px;
-  border: 1px solid var(--color-border);
+  padding: 7px 9px 7px 10px;
+  border: 1px solid transparent;
   border-left: 3px solid var(--shift-border, var(--color-text));
-  border-radius: 6px;
-  /* Flat paper-cream surface; the only saturated colour is the 3px left
-     stripe taken from the area theme. Reads like a NYer page, not a
-     kanban. */
-  background: var(--color-surface, #F8F6F1);
-  color: var(--color-text);
+  border-radius: 8px;
+  /* Roster Redesign 1A: soft role-tinted fill with the area accent as the
+     3px stripe; text takes the role tone. */
+  background: var(--shift-bg, var(--color-surface, #F8F6F1));
+  color: var(--shift-text, var(--color-text));
   cursor: grab;
   transition: background 120ms ease, border-color 120ms ease, transform 100ms ease;
 }
@@ -4942,8 +4941,42 @@
 }
 
 .deputy-shift-card.is-unallocated {
-  border-left-style: dashed;
-  background: rgba(178, 121, 53, 0.08);
+  /* 1A "Needs staff": loud amber dashed exception. */
+  border: 1.5px dashed #B5772F;
+  border-radius: 8px;
+  background: #FBF1DF;
+  color: #6F4915;
+}
+
+.deputy-shift-needs-staff {
+  color: #B5772F;
+  font-weight: 700;
+}
+
+.deputy-shift-assign-hint {
+  color: #B5772F;
+  font-weight: 800;
+  font-size: 9.5px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.deputy-shift-avatar {
+  width: 20px;
+  height: 20px;
+  min-width: 20px;
+  border-radius: 9999px;
+  background: #fff;
+  border: 1.5px solid var(--shift-border, var(--color-text));
+  color: var(--shift-border, var(--color-text));
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  margin-right: 6px;
+  vertical-align: middle;
 }
 
 .deputy-shift-card strong {
@@ -7734,3 +7767,105 @@ html[data-theme='dark'] .hr-expiry-row.is-warning .hr-expiry-when {
 .hub-tab-icon { display: inline-flex; opacity: 0.85; }
 .hub-tab-icon svg { width: 15px; height: 15px; }
 html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #fff); }
+
+/* ── Roster Redesign 1C: "Needs filling" queue in the right rail ────── */
+.roster-fill-queue {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.roster-fill-queue-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.roster-fill-queue-head strong {
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--color-text);
+}
+
+.roster-fill-queue-head span {
+  font-size: 10.5px;
+  font-weight: 800;
+  color: #6F4915;
+  background: #F6E5CC;
+  padding: 3px 9px;
+  border-radius: 9999px;
+}
+
+.roster-fill-queue-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 10px;
+  background: var(--color-surface, #fff);
+  cursor: pointer;
+  text-align: left;
+  transition: border-color 120ms ease, background 120ms ease;
+}
+
+.roster-fill-queue-card:hover {
+  border-color: var(--shift-border, var(--color-text));
+  background: var(--color-elevated, #fff);
+}
+
+.roster-fill-queue-meta {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.roster-fill-queue-meta .dot {
+  position: absolute;
+  width: 0;
+  height: 0;
+}
+
+.roster-fill-queue-meta strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--shift-text, var(--color-text));
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.roster-fill-queue-meta strong::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  min-width: 8px;
+  border-radius: 2px;
+  background: var(--shift-border, var(--color-text));
+}
+
+.roster-fill-queue-meta small {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.roster-fill-queue-assign {
+  font-size: 9.5px;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #fff;
+  background: var(--alma-forest-deep, #1F3524);
+  border-radius: 9999px;
+  padding: 6px 11px;
+  white-space: nowrap;
+}
