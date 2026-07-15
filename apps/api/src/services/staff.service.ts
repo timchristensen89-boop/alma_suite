@@ -1513,17 +1513,28 @@ function abaRecord(parts: string[]) {
   return record;
 }
 
-async function tipsAbaConfig() {
+async function tipsAbaConfig(venue?: string | null) {
   // Prefer the in-app Settings value (AppSettings.tipsAbaSettings), falling back
   // to env vars so existing deployments keep working.
   const row = await prisma.appSettings.findUnique({
     where: { id: 'singleton' },
     select: { tipsAbaSettings: true }
   });
-  const stored =
+  const flat =
     row?.tipsAbaSettings && typeof row.tipsAbaSettings === 'object' && !Array.isArray(row.tipsAbaSettings)
-      ? (row.tipsAbaSettings as Record<string, string>)
+      ? (row.tipsAbaSettings as Record<string, unknown>)
       : {};
+  // Per-venue override: the venues are separate legal entities with separate
+  // bank accounts, so tipsAbaSettings.venues["<venue>"] layers over the flat
+  // defaults when exporting that venue's run.
+  const venueRecord =
+    venue && flat.venues && typeof flat.venues === 'object' && !Array.isArray(flat.venues)
+      ? ((flat.venues as Record<string, unknown>)[venue] as Record<string, string> | undefined)
+      : undefined;
+  const stored: Record<string, string> = {
+    ...(flat as Record<string, string>),
+    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {})
+  };
   const pick = (key: string, ...envValues: (string | undefined)[]) => {
     const fromStore = stored[key]?.trim();
     if (fromStore) return fromStore;
@@ -1673,7 +1684,7 @@ function tipRunFilenamePart(value: string) {
 }
 
 async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
-  const config = await tipsAbaConfig();
+  const config = await tipsAbaConfig(run.venue);
   const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 

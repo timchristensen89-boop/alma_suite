@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { HubLayout, type HubTab } from './components/HubTabs';
+import { HubLayout, useHubTabBadge, type HubTab } from './components/HubTabs';
 import type {
   AppSettingsPayload,
   AlmaAppId,
@@ -8916,6 +8916,34 @@ function leaveStatusLabel(value: StaffLeaveStatus) {
   return LEAVE_STATUS_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
+// Roster & pay Turn 2: "6 days · 2 weeks out" meta line for leave request cards.
+function leaveRequestMeta(item: StaffLeaveRequest) {
+  const start = new Date(item.startDate);
+  const end = new Date(item.endDate);
+  const today = new Date();
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  const lead = Math.round((start.getTime() - today.getTime()) / 86400000);
+  let when: string;
+  if (lead > 13) when = `${Math.round(lead / 7)} weeks out`;
+  else if (lead > 1) when = `${lead} days out`;
+  else if (lead === 1) when = 'starts tomorrow';
+  else if (lead === 0) when = 'starts today';
+  else if (end.getTime() >= today.getTime()) when = 'away now';
+  else when = 'in the past';
+  return `${days} day${days === 1 ? '' : 's'} · ${when}`;
+}
+
+// Leave-type pill accent (annual=info, sick=danger, personal=warn, unpaid/other=neutral).
+function leaveTypePillClass(type: StaffLeaveType) {
+  if (type === 'ANNUAL') return 'is-annual';
+  if (type === 'SICK') return 'is-sick';
+  if (type === 'PERSONAL') return 'is-personal';
+  return 'is-neutral';
+}
+
 function leaveOverlapsDay(leave: StaffLeaveRequest, day: Date) {
   const start = new Date(leave.startDate);
   const end = new Date(leave.endDate);
@@ -8967,6 +8995,10 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const calendarEnd = useMemo(() => addDays(calendarStart, 42), [calendarStart]);
   const approvedCount = leave.filter((item) => item.status === 'APPROVED').length;
   const pendingCount = leave.filter((item) => item.status === 'PENDING').length;
+  const pendingLeave = leave.filter((item) => item.status === 'PENDING');
+  const resolvedLeave = leave.filter((item) => item.status !== 'PENDING');
+  // Roster & pay Turn 2: surface the pending count on the hub's Leave tab.
+  useHubTabBadge('/leave', pendingCount);
   const selectedDayDate = useMemo(() => new Date(`${selectedDay}T00:00:00`), [selectedDay]);
   const selectedDayLeave = leave.filter((item) => leaveOverlapsDay(item, selectedDayDate));
 
@@ -9210,55 +9242,99 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
         </aside>
       </div>
 
-      <Card title="Leave list" subtitle="Mobile-friendly list with review actions.">
-        <div className="staff-expiry-list">
-          {loading ? <Spinner label="Loading leave…" /> : null}
-          {!loading && leave.length === 0 ? (
-            <EmptyState title="No leave in this range" description="Record leave when a staff member is away, or adjust the filters." />
-          ) : null}
-          {leave.map((item) => (
-            <div key={item.id} className="staff-expiry-row">
-              <span>
-                <strong>{item.staffProfile ? `${item.staffProfile.firstName} ${item.staffProfile.lastName}` : 'Staff member'}</strong>
-                <span className="subtle">
-                  {leaveTypeLabel(item.type)} · {formatRange(new Date(item.startDate), new Date(item.endDate))} · {item.staffProfile?.venue || 'No venue'}
-                </span>
-                {item.notes ? <span>{item.notes}</span> : null}
-                {item.managerNote ? <span className="subtle">Manager note: {item.managerNote}</span> : null}
-              </span>
-              <span className="invite-row-actions">
-                <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
-                {item.status === 'PENDING' ? (
-                  <>
-                    <Input
-                      label=""
-                      placeholder="Note (optional)"
-                      value={leaveNotes[item.id] ?? ''}
-                      onChange={(event) =>
-                        setLeaveNotes((prev) => ({ ...prev, [item.id]: event.currentTarget.value }))
-                      }
-                    />
-                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void changeStatus(item, 'APPROVED')}>
-                      Approve
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'DECLINED')}>
-                      Decline
-                    </Button>
-                  </>
-                ) : null}
-                {item.status !== 'CANCELLED' ? (
-                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'CANCELLED')}>
-                    Cancel
-                  </Button>
-                ) : null}
-                <ActionFeedback
-                  message={messageTarget?.startsWith(`leave:${item.id}:`) ? message : null}
-                  tone={message?.includes('Could') ? 'error' : 'success'}
-                />
-              </span>
-            </div>
-          ))}
-        </div>
+      <Card title="Leave requests" subtitle="Review pending requests first — resolved history stays below.">
+        {loading ? <Spinner label="Loading leave…" /> : null}
+        {!loading && leave.length === 0 ? (
+          <EmptyState title="No leave in this range" description="Record leave when a staff member is away, or adjust the filters." />
+        ) : null}
+        {leave.length > 0 ? (
+          <div className="leave-request-groups">
+            {(
+              [
+                { key: 'pending', label: `Pending · ${pendingLeave.length}`, items: pendingLeave },
+                { key: 'resolved', label: 'Resolved', items: resolvedLeave }
+              ] as const
+            ).map((group) =>
+              group.key === 'resolved' && group.items.length === 0 ? null : (
+                <section key={group.key} className="leave-request-group">
+                  <h4 className="leave-request-group-label">{group.label}</h4>
+                  {group.key === 'pending' && group.items.length === 0 ? (
+                    <div className="leave-request-empty">All caught up. Nothing waiting on you.</div>
+                  ) : null}
+                  {group.items.map((item) => {
+                    const member = item.staffProfile;
+                    const resolved = item.status !== 'PENDING';
+                    return (
+                      <article
+                        key={item.id}
+                        className={`leave-request-card${resolved ? ` is-resolved is-${item.status.toLowerCase()}` : ''}`}
+                        style={areaStyle(member?.roleTitle ?? '')}
+                      >
+                        <span className="leave-request-avatar" aria-hidden>
+                          {member ? staffInitials(member) : 'SP'}
+                        </span>
+                        <div className="leave-request-main">
+                          <div className="leave-request-topline">
+                            <strong>{member ? `${member.firstName} ${member.lastName}` : 'Staff member'}</strong>
+                            <span className={`leave-type-pill ${leaveTypePillClass(item.type)}`}>{leaveTypeLabel(item.type)}</span>
+                            <span className="leave-request-role">{[member?.roleTitle, member?.venue].filter(Boolean).join(' · ') || 'No venue'}</span>
+                          </div>
+                          <div className="leave-request-range">{formatRange(new Date(item.startDate), new Date(item.endDate))}</div>
+                          <div className="leave-request-meta">{leaveRequestMeta(item)}</div>
+                          {item.notes ? <p className="leave-request-note">“{item.notes}”</p> : null}
+                          {item.managerNote ? <p className="leave-request-manager-note">Manager note: {item.managerNote}</p> : null}
+                        </div>
+                        <div className="leave-request-actions">
+                          {item.status === 'PENDING' ? (
+                            <>
+                              <Input
+                                label=""
+                                placeholder="Note (optional)"
+                                value={leaveNotes[item.id] ?? ''}
+                                onChange={(event) =>
+                                  setLeaveNotes((prev) => ({ ...prev, [item.id]: event.currentTarget.value }))
+                                }
+                              />
+                              <div className="leave-request-buttons">
+                                <button
+                                  type="button"
+                                  className="leave-action-btn is-decline"
+                                  disabled={saving}
+                                  onClick={() => void changeStatus(item, 'DECLINED')}
+                                >
+                                  Decline
+                                </button>
+                                <button
+                                  type="button"
+                                  className="leave-action-btn is-approve"
+                                  disabled={saving}
+                                  onClick={() => void changeStatus(item, 'APPROVED')}
+                                >
+                                  Approve
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <span className={`leave-resolved-pill is-${item.status.toLowerCase()}`}>{leaveStatusLabel(item.status)}</span>
+                          )}
+                          {item.status !== 'CANCELLED' ? (
+                            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'CANCELLED')}>
+                              Cancel
+                            </Button>
+                          ) : null}
+                          <ActionFeedback
+                            message={messageTarget?.startsWith(`leave:${item.id}:`) ? message : null}
+                            tone={message?.includes('Could') ? 'error' : 'success'}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              )
+            )}
+          </div>
+        ) : null}
       </Card>
     </div>
   );
@@ -13393,6 +13469,33 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
+      {/* Roster & pay Turn 2: hero stat row — the week's pool at a glance. */}
+      <div className="tips-hero-row">
+        <div className="tips-hero-card is-primary">
+          <span className="tips-hero-label">Total pool</span>
+          <span className="tips-hero-value">{loading ? '…' : formatCents(summary?.tipPoolCents ?? 0)}</span>
+          <span className="tips-hero-sub">
+            Cash + card · {summary?.tradingDays ?? 0} trading day{summary?.tradingDays === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="tips-hero-card">
+          <span className="tips-hero-label">Card tips</span>
+          <span className="tips-hero-value">
+            {loading ? '…' : formatCents(Math.max(0, (summary?.tipPoolCents ?? 0) - (summary?.cashTipsCents ?? 0)))}
+          </span>
+          <span className="tips-hero-sub">
+            {summary?.cardEntries.length ?? 0} imported entr{(summary?.cardEntries.length ?? 0) === 1 ? 'y' : 'ies'}
+          </span>
+        </div>
+        <div className="tips-hero-card">
+          <span className="tips-hero-label">Cash tips</span>
+          <span className="tips-hero-value">{loading ? '…' : formatCents(summary?.cashTipsCents ?? 0)}</span>
+          <span className="tips-hero-sub">
+            {summary?.cashEntries.length ?? 0} day{(summary?.cashEntries.length ?? 0) === 1 ? '' : 's'} entered
+          </span>
+        </div>
+      </div>
+
       {/* Venue + breakage controls live just below the week selector. */}
       <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
         <Card padding="tight">
@@ -13406,7 +13509,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       {/* Summary stats */}
       <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
         <div className="stats-grid">
-          <StatCard label="Gross tips" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card · ${summary?.tradingDays ?? 0} trading day${summary?.tradingDays === 1 ? '' : 's'}`} loading={loading} />
           <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
           <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
           <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
@@ -13706,6 +13808,50 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           ) : null}
         </Card>
       </TipsSection>
+
+      {/* Roster & pay Turn 2: distribution overview — proportional bars in each
+          staff member's role accent colour. Adjustments still happen below. */}
+      {reviewedRows.length ? (
+        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)}h pooled`}>
+          <div className="tips-distribution-card">
+            <header className="tips-distribution-head">
+              <h3>Distribution</h3>
+              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)}h pooled</span>
+            </header>
+            <div className="tips-distribution-rows">
+              {(() => {
+                const maxCents = Math.max(1, ...reviewedRows.map((row) => row.finalAmountCents));
+                return reviewedRows.map((row) => {
+                  const member = staff.find((candidate) => candidate.id === row.staffProfileId);
+                  const roleTitle = row.roleTitle ?? member?.roleTitle ?? 'Team member';
+                  return (
+                    <div
+                      key={row.staffProfileId}
+                      className={`tips-distribution-row${row.excluded ? ' is-excluded' : ''}`}
+                      style={areaStyle(roleTitle)}
+                    >
+                      <span className="tips-distribution-avatar" aria-hidden>
+                        {member
+                          ? staffInitials(member)
+                          : (row.name.split(' ').map((part) => part[0] ?? '').slice(0, 2).join('') || 'SP').toUpperCase()}
+                      </span>
+                      <span className="tips-distribution-who">
+                        <strong>{row.name}</strong>
+                        <small>{roleTitle}</small>
+                      </span>
+                      <span className="tips-distribution-bar">
+                        <span style={{ width: `${Math.max(2, Math.round((row.finalAmountCents / maxCents) * 100))}%` }} />
+                      </span>
+                      <span className="tips-distribution-hours">{row.approvedHours.toFixed(1)}h</span>
+                      <span className="tips-distribution-amount">{formatCents(row.finalAmountCents)}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </TipsSection>
+      ) : null}
 
       {/* Payroll status + entitlements */}
       <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
@@ -15087,6 +15233,24 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     [timesheets]
   );
 
+  // Roster & pay Turn 2: surface the needs-review count on the hub's Timesheets tab.
+  useHubTabBadge('/timesheets', overallCounts.submitted);
+
+  // Roster & pay Turn 2: rostered hours per staff member inside the current
+  // range, from the roster prop the page already receives (no new API calls).
+  const rosteredHoursByStaff = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const shift of roster) {
+      if (!shift.staffProfileId || shift.status === 'CANCELLED') continue;
+      const startsAt = new Date(shift.startsAt);
+      const endsAt = new Date(shift.endsAt);
+      if (endsAt.getTime() <= rangeStart.getTime() || startsAt.getTime() >= rangeEnd.getTime()) continue;
+      const hours = Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 3600000 - (shift.breakMinutes ?? 0) / 60);
+      map.set(shift.staffProfileId, (map.get(shift.staffProfileId) ?? 0) + hours);
+    }
+    return map;
+  }, [roster, rangeStart, rangeEnd]);
+
   // Groups filtered to the current explorer selection (shown in the detail pane).
   const visibleGroups = useMemo(() => {
     const filtered = timesheets.filter((entry) => {
@@ -15643,6 +15807,170 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
 
       {(messageTarget === 'preview' || messageTarget === 'export' || messageTarget === 'push') && message ? (
         <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
+      ) : null}
+
+      {/* Roster & pay Turn 2: week review table — at-a-glance rostered vs worked
+          per staff member, with per-staff and bulk approval (existing endpoints). */}
+      {!loading && timesheets.length > 0 ? (
+        <div className="ts-review">
+          <div className="pay-section-head">
+            <div className="pay-section-head-text">
+              <h3 className="pay-section-title">Week review</h3>
+              <p className="pay-section-note">
+                {overallCounts.submitted > 0
+                  ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
+                  : 'All clear.'}
+              </p>
+            </div>
+            {isManagerView && overallCounts.submitted > 0 ? (
+              <button
+                type="button"
+                className="pay-head-approve-btn"
+                disabled={saving}
+                onClick={() =>
+                  void approveGroup(
+                    timesheets
+                      .filter((entry) => entry.status === 'SUBMITTED' || entry.status === 'REJECTED')
+                      .map((entry) => entry.id)
+                  )
+                }
+              >
+                Approve {overallCounts.submitted} flagged
+              </button>
+            ) : null}
+          </div>
+          <div className="ts-review-card">
+            <table className="ts-review-table">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th className="is-num">Rostered</th>
+                  <th className="is-num">Worked</th>
+                  <th className="is-num">Variance</th>
+                  <th>Flag</th>
+                  <th className="is-status">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allGroups.map((group) => {
+                  const rostered = rosteredHoursByStaff.get(group.id);
+                  const worked = group.totalHours;
+                  const variance = rostered === undefined ? null : worked - rostered;
+                  const drift = group.entries
+                    .map((entry) => computeClockDrift(entry, clockSessions))
+                    .find((result) => result && result.severity !== 'ok');
+                  const award = checkAwardCompliance(group.member);
+                  const flag = drift
+                    ? `Drift ${drift.driftHours >= 0 ? '+' : ''}${drift.driftHours.toFixed(1)}h`
+                    : award.status === 'below'
+                      ? 'Award rate'
+                      : group.submittedIds.length
+                        ? 'Needs review'
+                        : null;
+                  const restingStatus = group.entries[0]?.status ?? '';
+                  return (
+                    <tr key={group.id}>
+                      <td>
+                        <span className="ts-review-staff" style={areaStyle(group.roleTitle || '')}>
+                          <span className="ts-review-avatar" aria-hidden>
+                            {group.member ? staffInitials(group.member) : (group.name[0] ?? 'A').toUpperCase()}
+                          </span>
+                          <span className="ts-review-who">
+                            <strong>{group.name}</strong>
+                            <small>{[group.roleTitle, group.venue].filter(Boolean).join(' · ') || 'No venue set'}</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : `${roundHours(rostered)}h`}</td>
+                      <td className="is-num ts-review-worked">{roundHours(worked)}h</td>
+                      <td
+                        className={`is-num ts-review-variance ${
+                          variance === null || Math.abs(variance) < 0.05 ? 'is-zero' : variance > 0 ? 'is-pos' : 'is-neg'
+                        }`}
+                      >
+                        {variance === null
+                          ? '—'
+                          : Math.abs(variance) < 0.05
+                            ? '0.0'
+                            : `${variance > 0 ? '+' : '-'}${Math.abs(variance).toFixed(1)}`}
+                      </td>
+                      <td>
+                        {flag ? (
+                          <span className="ts-review-flag">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                              <circle cx="12" cy="12" r="9" />
+                              <polyline points="12 7 12 12 15.5 14" />
+                            </svg>
+                            {flag}
+                          </span>
+                        ) : (
+                          <span className="ts-review-noflag">—</span>
+                        )}
+                      </td>
+                      <td className="is-status">
+                        {isManagerView && group.submittedIds.length ? (
+                          <button
+                            type="button"
+                            className="ts-approve-btn"
+                            disabled={saving}
+                            onClick={() => void approveGroup(group.submittedIds)}
+                          >
+                            Approve
+                          </button>
+                        ) : group.submittedIds.length ? (
+                          <span className="ts-status-pill is-pending">Submitted</span>
+                        ) : group.approvedCount ? (
+                          <span className="ts-status-pill is-approved">Approved</span>
+                        ) : (
+                          <span className="ts-status-pill is-neutral">
+                            {restingStatus ? restingStatus.charAt(0) + restingStatus.slice(1).toLowerCase() : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                {(() => {
+                  const totals = allGroups.reduce(
+                    (acc, group) => {
+                      const rostered = rosteredHoursByStaff.get(group.id);
+                      acc.worked += group.totalHours;
+                      if (rostered !== undefined) {
+                        acc.rostered += rostered;
+                        acc.variance += group.totalHours - rostered;
+                        acc.hasRostered = true;
+                      }
+                      return acc;
+                    },
+                    { rostered: 0, worked: 0, variance: 0, hasRostered: false }
+                  );
+                  return (
+                    <tr>
+                      <td>Week total</td>
+                      <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
+                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>
+                      <td
+                        className={`is-num ts-review-variance ${
+                          !totals.hasRostered || Math.abs(totals.variance) < 0.05 ? 'is-zero' : totals.variance > 0 ? 'is-pos' : 'is-neg'
+                        }`}
+                      >
+                        {!totals.hasRostered
+                          ? '—'
+                          : Math.abs(totals.variance) < 0.05
+                            ? '0.0'
+                            : `${totals.variance > 0 ? '+' : '-'}${Math.abs(totals.variance).toFixed(1)}`}
+                      </td>
+                      <td />
+                      <td />
+                    </tr>
+                  );
+                })()}
+              </tfoot>
+            </table>
+          </div>
+        </div>
       ) : null}
 
       {showSubmitModal ? (
