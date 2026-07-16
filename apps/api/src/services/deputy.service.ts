@@ -82,10 +82,19 @@ async function fetchWithRetry(makeRequest: () => Promise<Response>): Promise<Res
 }
 
 async function refreshConnection(connection: IntegrationConnection) {
-  if (!connection.refreshTokenEncrypted) {
+  // Re-read the LATEST stored refresh token before using it. Deputy rotates the
+  // refresh token on every refresh (single-use) and revokes the whole grant if
+  // an already-used token is presented again. A multi-resource "all" run refreshes
+  // several times in sequence off one captured connection object — without this
+  // re-read, sub-sync #2 would reuse sub-sync #1's spent token, tripping Deputy's
+  // reuse detection and killing the connection. Reading the current DB value means
+  // each refresh rotates the freshest token (A→B→C…) instead of reusing A.
+  const fresh = await prisma.integrationConnection.findUnique({ where: { id: connection.id } });
+  const refreshTokenEncrypted = fresh?.refreshTokenEncrypted ?? connection.refreshTokenEncrypted;
+  if (!refreshTokenEncrypted) {
     throw new HttpError(409, 'Deputy refresh token missing — please reconnect.');
   }
-  const refreshToken = decryptIntegrationSecret(connection.refreshTokenEncrypted);
+  const refreshToken = decryptIntegrationSecret(refreshTokenEncrypted);
   const endpoint = deputyEndpointFromConnection(connection);
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
@@ -499,6 +508,21 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
   const skipped: Array<{ id: number; reason: string }> = [];
   const staffCandidates = await loadStaffCandidates();
 
+  // Deputy's joined Roster/QUERY intermittently returns 200 with an EMPTY
+  // EmployeeInfo embed (distinct from the 5xx case the catch above handles) —
+  // which made every shift fall through to an "Unallocated" placeholder because
+  // the name read blank. Lazily build the employee id-map and resolve the name
+  // from shift.Employee whenever the embed is blank, so staff matching no longer
+  // depends on the flaky embed being populated.
+  let employeeById: DeputyLookupMaps['employeeById'] | null = null;
+  const resolveEmployeeInfo = async (shift: DeputyRosterShift) => {
+    const embed = shift._DPMetaData?.EmployeeInfo;
+    if (embed?.FirstName?.trim() || embed?.LastName?.trim()) return embed;
+    if (shift.Employee == null) return embed ?? {};
+    if (!employeeById) employeeById = (await deputyLookupMaps(connection)).employeeById;
+    return employeeById.get(shift.Employee) ?? embed ?? {};
+  };
+
   for (const shift of Array.isArray(shifts) ? shifts : []) {
     const startsAt = new Date(shift.StartTime * 1000);
     const endsAt = new Date(shift.EndTime * 1000);
@@ -511,7 +535,7 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
       continue;
     }
 
-    const employeeInfo = shift._DPMetaData?.EmployeeInfo ?? {};
+    const employeeInfo = (await resolveEmployeeInfo(shift)) ?? {};
     const opUnitInfo = shift._DPMetaData?.OperationalUnitInfo ?? {};
     const firstName = employeeInfo.FirstName?.trim() ?? '';
     const lastName = employeeInfo.LastName?.trim() ?? '';
