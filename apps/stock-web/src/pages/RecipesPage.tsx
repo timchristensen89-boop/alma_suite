@@ -15,7 +15,8 @@ import type {
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api, apiUrl } from '../lib/api';
+import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -296,21 +297,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     setExportingRecipes(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch(apiUrl('/api/recipes/export.csv'), {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'alma-recipes.csv';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv('/api/recipes/export.csv', 'alma-recipes.csv');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export recipes CSV');
     } finally {

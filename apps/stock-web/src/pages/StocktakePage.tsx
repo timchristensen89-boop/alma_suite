@@ -18,7 +18,8 @@ import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCa
 import { StockItemPicker } from '../components/StockItemPicker';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api, apiUrl } from '../lib/api';
+import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -409,21 +410,10 @@ export function StocktakePage() {
   async function downloadStocktakeCsv(stocktake: Stocktake) {
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch(apiUrl(`/api/stocktake/${stocktake.id}/export.csv`), {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv(
+        `/api/stocktake/${stocktake.id}/export.csv`,
+        `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export stocktake CSV');
     }

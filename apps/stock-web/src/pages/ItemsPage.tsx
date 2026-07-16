@@ -5,7 +5,8 @@ import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } fro
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { useStickyVenue } from '../hooks/useStickyVenue';
-import { ApiError, api, apiUrl } from '../lib/api';
+import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -524,21 +525,7 @@ export function ItemsPage() {
     setExportingItems(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch(apiUrl('/api/items/export.csv'), {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'alma-stock-items.csv';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv('/api/items/export.csv', 'alma-stock-items.csv');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export items CSV');
     } finally {

@@ -34,6 +34,7 @@ const lineItemSelect = {
   unit: true,
   countUnit: true,
   conversionFactor: true,
+  onHand: true,
   latestCostCents: true,
   latestCostAt: true,
   avgCostCents: true
@@ -125,6 +126,26 @@ function normaliseMatchText(value: unknown) {
 
 function unitCostFromPurchaseCost(purchaseCostCents: number, item: Pick<MatchItemRow, 'conversionFactor'>) {
   return Math.round(purchaseCostCents / Math.max(item.conversionFactor || 1, 1));
+}
+
+// Weighted moving average cost: blend the item's existing avg cost with this
+// purchase, weighted by current on-hand vs quantity received. Falls back to the
+// new unit cost when there's no reliable history to blend (no on-hand, no prior
+// avg, or no received qty) — so it's never wilder than plain last-price, but
+// smooths price swings when stock is already on the shelf. countUnits = purchase
+// quantity × conversionFactor (the item's cost/count unit).
+function weightedAverageCostCents(params: {
+  onHand: number | null | undefined;
+  currentAvgCents: number | null | undefined;
+  receivedCountUnits: number;
+  newUnitCostCents: number;
+}): number {
+  const onHand = params.onHand ?? 0;
+  const oldAvg = params.currentAvgCents ?? 0;
+  const received = params.receivedCountUnits;
+  if (onHand <= 0 || oldAvg <= 0 || received <= 0) return params.newUnitCostCents;
+  const blended = (onHand * oldAvg + received * params.newUnitCostCents) / (onHand + received);
+  return Math.round(blended);
 }
 
 function toLookupRecord(value: unknown): JsonRecord {
@@ -1147,7 +1168,12 @@ export const invoicesService = {
         data: {
           latestCostCents: existing.unitAmountCents,
           latestCostAt: new Date(),
-          avgCostCents: unitCostFromPurchaseCost(existing.unitAmountCents, matchedItem)
+          avgCostCents: weightedAverageCostCents({
+            onHand: matchedItem.onHand,
+            currentAvgCents: matchedItem.avgCostCents,
+            receivedCountUnits: existing.quantity * Math.max(matchedItem.conversionFactor || 1, 1),
+            newUnitCostCents: unitCostFromPurchaseCost(existing.unitAmountCents, matchedItem)
+          })
         }
       });
       return tx.supplierInvoiceLine.update({
@@ -1196,7 +1222,12 @@ export const invoicesService = {
             data: {
               latestCostCents: line.unitAmountCents,
               latestCostAt: new Date(),
-              avgCostCents: unitCostFromPurchaseCost(line.unitAmountCents, line.item!)
+              avgCostCents: weightedAverageCostCents({
+                onHand: line.item!.onHand,
+                currentAvgCents: line.item!.avgCostCents,
+                receivedCountUnits: line.quantity * Math.max(line.item!.conversionFactor || 1, 1),
+                newUnitCostCents: unitCostFromPurchaseCost(line.unitAmountCents, line.item!)
+              })
             }
           });
           await tx.supplierInvoiceLine.update({ where: { id: line.id }, data: { costAppliedAt: new Date() } });

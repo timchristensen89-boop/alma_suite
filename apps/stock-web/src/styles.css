@@ -2494,3 +2494,173 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   text-transform: uppercase;
   color: var(--color-text-muted, #5a6b58);
 }
+
+/* ── Menu-engineering quadrant ── */
+.menu-quadrant {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.menu-quadrant-caption {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.menu-quadrant-caption strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--color-text);
+}
+
+.menu-quadrant-caption span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.menu-quadrant-caption small.subtle {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0.85;
+}
+
+.menu-quadrant-clear {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent, #9a3a2e);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.menu-quadrant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.menu-quadrant-cell {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.menu-quadrant-cell:hover {
+  transform: translateY(-1px);
+}
+
+.menu-quadrant-cell strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.menu-quadrant-name {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.menu-quadrant-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Classic quadrant colours: Star=green, Plow-horse=amber, Puzzle=blue, Dog=red. */
+.menu-quadrant-cell.is-star {
+  border-left-color: #4f6b47;
+  background: rgba(79, 107, 71, 0.08);
+}
+.menu-quadrant-cell.is-star strong,
+.menu-quadrant-cell.is-star .menu-quadrant-name { color: #2f4129; }
+
+.menu-quadrant-cell.is-plow {
+  border-left-color: #b5772f;
+  background: rgba(181, 119, 47, 0.1);
+}
+.menu-quadrant-cell.is-plow strong,
+.menu-quadrant-cell.is-plow .menu-quadrant-name { color: #6f4915; }
+
+.menu-quadrant-cell.is-puzzle {
+  border-left-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.menu-quadrant-cell.is-puzzle strong,
+.menu-quadrant-cell.is-puzzle .menu-quadrant-name { color: #1d4ed8; }
+
+.menu-quadrant-cell.is-dog {
+  border-left-color: #6e2419;
+  background: rgba(110, 36, 25, 0.08);
+}
+.menu-quadrant-cell.is-dog strong,
+.menu-quadrant-cell.is-dog .menu-quadrant-name { color: #6e2419; }
+
+.menu-quadrant-cell.is-active {
+  box-shadow: 0 0 0 2px currentColor inset;
+}
+.menu-quadrant-cell.is-star.is-active { box-shadow: 0 0 0 2px #4f6b47 inset; }
+.menu-quadrant-cell.is-plow.is-active { box-shadow: 0 0 0 2px #b5772f inset; }
+.menu-quadrant-cell.is-puzzle.is-active { box-shadow: 0 0 0 2px #2563eb inset; }
+.menu-quadrant-cell.is-dog.is-active { box-shadow: 0 0 0 2px #6e2419 inset; }
+
+/* Widen the dish table to fit the added "Menu class" column (append-only
+   override of the 9-column grid; mobile collapse re-declared afterwards so it
+   still wins under the media query). */
+.dish-margin-row {
+  grid-template-columns:
+    minmax(180px, 2.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr)
+    minmax(110px, 1.1fr) minmax(80px, 0.8fr) minmax(100px, 1fr) minmax(100px, 1fr)
+    minmax(120px, 1.15fr) minmax(110px, 1fr);
+}
+
+@media (max-width: 900px) {
+  .dish-margin-row,
+  .dish-margin-row.dish-margin-head {
+    grid-template-columns: 1fr 1fr;
+  }
+  .menu-quadrant-caption .menu-quadrant-clear {
+    margin-left: 0;
+  }
+}
+
+/* ── Stocktake mobile count polish (phone counting on the floor) ──── */
+@media (max-width: 720px) {
+  .stocktake-count-line {
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+  }
+  /* Bigger, thumb-friendly quantity field — the one you touch most while counting */
+  .stocktake-count-line input[type='number'] {
+    font-size: 17px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .stocktake-count-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--color-bg, #fff);
+    padding: 8px 0;
+  }
+  .stocktake-count-progress {
+    width: 100%;
+  }
+}

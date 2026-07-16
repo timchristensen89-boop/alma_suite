@@ -32,6 +32,67 @@ type EnrichedRecipe = Recipe & {
   hasVenueOverride: boolean;
 };
 
+// ── Menu-engineering quadrant ───────────────────────────────────────────
+// Classic 2×2: popularity (units sold) vs margin, split at the medians of the
+// dishes currently shown. Computed entirely client-side from loaded rows.
+type Quadrant = 'star' | 'plow' | 'puzzle' | 'dog';
+
+type ClassifiedRecipe = EnrichedRecipe & { quadrant: Quadrant | null };
+
+// Star=green, Plow-horse=amber, Puzzle=blue, Dog=red — reuse the shared Badge tones.
+const QUADRANT_META: Record<
+  Quadrant,
+  { label: string; tone: 'positive' | 'warning' | 'info' | 'danger'; hint: string }
+> = {
+  star: { label: 'Star', tone: 'positive', hint: 'Popular · High margin' },
+  plow: { label: 'Plow-horse', tone: 'warning', hint: 'Popular · Low margin' },
+  puzzle: { label: 'Puzzle', tone: 'info', hint: 'Quiet · High margin' },
+  dog: { label: 'Dog', tone: 'danger', hint: 'Quiet · Low margin' }
+};
+
+// 2×2 matrix reading order: popularity high on the top row, margin rising left→right.
+const QUADRANT_MATRIX: Quadrant[] = ['plow', 'star', 'dog', 'puzzle'];
+const QUADRANT_SORT_RANK: Record<Quadrant, number> = { star: 0, plow: 1, puzzle: 2, dog: 3 };
+
+// Median of a numeric list (null when empty). Guards indexed access for
+// the repo's strict noUncheckedIndexedAccess.
+function median(values: number[]): number | null {
+  if (values.length === 0) return null;
+  const sorted = [...values].sort((a, b) => a - b);
+  const mid = Math.floor(sorted.length / 2);
+  if (sorted.length % 2 === 1) return sorted[mid] ?? null;
+  const lo = sorted[mid - 1];
+  const hi = sorted[mid];
+  if (lo == null || hi == null) return null;
+  return (lo + hi) / 2;
+}
+
+// Popularity axis = units sold in the window. Only meaningful when the dish is
+// mapped to Square; unmapped dishes can't be placed on the matrix.
+function popularityValue(r: EnrichedRecipe): number | null {
+  const sales = r.actualSales;
+  if (!sales || !sales.hasMapping) return null;
+  return sales.quantitySold;
+}
+
+// Classify one dish against the median split lines. Needs both a popularity and
+// a margin reading, otherwise it stays unclassified (null).
+function classifyQuadrant(
+  r: EnrichedRecipe,
+  popMedian: number | null,
+  marginMedian: number | null
+): Quadrant | null {
+  if (popMedian == null || marginMedian == null) return null;
+  const pop = popularityValue(r);
+  if (pop == null || r.marginPercent == null) return null;
+  const highPop = pop >= popMedian;
+  const highMargin = r.marginPercent >= marginMedian;
+  if (highPop && highMargin) return 'star';
+  if (highPop) return 'plow';
+  if (highMargin) return 'puzzle';
+  return 'dog';
+}
+
 const LOOKBACK_OPTIONS: Array<{ label: string; value: number }> = [
   { label: 'Last 7 days', value: 7 },
   { label: 'Last 30 days', value: 30 },
@@ -48,6 +109,7 @@ type DishSortKey =
   | 'sold'
   | 'revenue'
   | 'contribution'
+  | 'quadrant'
   | 'status';
 
 const DISH_COLUMNS: Array<{ key: DishSortKey; label: string }> = [
@@ -59,12 +121,13 @@ const DISH_COLUMNS: Array<{ key: DishSortKey; label: string }> = [
   { key: 'sold', label: 'Sold' },
   { key: 'revenue', label: 'Revenue' },
   { key: 'contribution', label: 'Contribution' },
+  { key: 'quadrant', label: 'Menu class' },
   { key: 'status', label: 'Status' }
 ];
 
 // Sort value per column. Returns null for "no data" so those rows sort last
 // regardless of direction.
-function dishSortValue(r: EnrichedRecipe, key: DishSortKey): string | number | null {
+function dishSortValue(r: ClassifiedRecipe, key: DishSortKey): string | number | null {
   switch (key) {
     case 'title':
       return r.title.toLowerCase();
@@ -83,6 +146,8 @@ function dishSortValue(r: EnrichedRecipe, key: DishSortKey): string | number | n
       return r.actualSales && r.actualSales.quantitySold > 0 ? r.actualSales.netSalesCents : null;
     case 'contribution':
       return r.contributionCents;
+    case 'quadrant':
+      return r.quadrant != null ? QUADRANT_SORT_RANK[r.quadrant] : null;
     default:
       return null;
   }
@@ -105,6 +170,7 @@ export function DishMarginPage() {
   const [error, setError] = useState<string | null>(null);
   const [venueFilter, setVenueFilter] = useState('all');
   const [tone, setTone] = useState<'all' | MarginTone>('all');
+  const [quadrantFilter, setQuadrantFilter] = useState<'all' | Quadrant>('all');
   const [search, setSearch] = useState('');
   const [lookbackDays, setLookbackDays] = useState<number>(30);
   // Quick view/edit popup — holds the id of the recipe being inspected.
@@ -185,7 +251,10 @@ export function DishMarginPage() {
 
   const venues = useMemo(() => Array.from(new Set(enriched.map((r) => r.venue).filter(Boolean))) as string[], [enriched]);
 
-  const filtered = useMemo(() => {
+  // Venue + margin-health + search filtered population — the "menu" we classify.
+  // The quadrant filter is applied afterwards so the medians (and the summary
+  // counts) stay stable when you drill into a single quadrant.
+  const searched = useMemo(() => {
     const term = search.trim().toLowerCase();
     return enriched
       .filter((r) => venueFilter === 'all' || r.venue === venueFilter)
@@ -194,7 +263,38 @@ export function DishMarginPage() {
         const { tone: rowTone } = classifyMargin(r.marginPercent);
         return rowTone === tone;
       })
-      .filter((r) => !term || r.title.toLowerCase().includes(term))
+      .filter((r) => !term || r.title.toLowerCase().includes(term));
+  }, [enriched, venueFilter, tone, search]);
+
+  // Median split lines across the shown dishes: popularity (units sold) and
+  // margin %. Computed client-side from the loaded rows — no extra API calls.
+  const { popMedian, marginMedian } = useMemo(() => {
+    const pops: number[] = [];
+    const margins: number[] = [];
+    for (const r of searched) {
+      const pop = popularityValue(r);
+      if (pop != null) pops.push(pop);
+      if (r.marginPercent != null) margins.push(r.marginPercent);
+    }
+    return { popMedian: median(pops), marginMedian: median(margins) };
+  }, [searched]);
+
+  const classified = useMemo<ClassifiedRecipe[]>(
+    () => searched.map((r) => ({ ...r, quadrant: classifyQuadrant(r, popMedian, marginMedian) })),
+    [searched, popMedian, marginMedian]
+  );
+
+  const quadrantCounts = useMemo(() => {
+    const counts: Record<Quadrant, number> = { star: 0, plow: 0, puzzle: 0, dog: 0 };
+    for (const r of classified) {
+      if (r.quadrant) counts[r.quadrant] += 1;
+    }
+    return counts;
+  }, [classified]);
+
+  const filtered = useMemo(() => {
+    return classified
+      .filter((r) => quadrantFilter === 'all' || r.quadrant === quadrantFilter)
       .sort((a, b) => {
         const av = dishSortValue(a, sortKey);
         const bv = dishSortValue(b, sortKey);
@@ -208,7 +308,7 @@ export function DishMarginPage() {
             : (av as number) - (bv as number);
         return sortDir === 'asc' ? cmp : -cmp;
       });
-  }, [enriched, venueFilter, tone, search, sortKey, sortDir]);
+  }, [classified, quadrantFilter, sortKey, sortDir]);
 
   const summary = useMemo(() => {
     const totals = { positive: 0, warning: 0, danger: 0, muted: 0 };
@@ -264,6 +364,54 @@ export function DishMarginPage() {
             <span>Average margin</span>
           </div>
         </div>
+
+        {(() => {
+          const total =
+            quadrantCounts.star + quadrantCounts.plow + quadrantCounts.puzzle + quadrantCounts.dog;
+          if (total === 0) return null;
+          return (
+            <div className="menu-quadrant">
+              <div className="menu-quadrant-caption">
+                <strong>Menu engineering</strong>
+                <span>
+                  {quadrantCounts.star} Stars · {quadrantCounts.plow} Plow-horses ·{' '}
+                  {quadrantCounts.puzzle} Puzzles · {quadrantCounts.dog} Dogs
+                </span>
+                <small className="subtle">
+                  Split at the median of units sold and margin across the shown dishes
+                </small>
+                {quadrantFilter !== 'all' ? (
+                  <button
+                    type="button"
+                    className="menu-quadrant-clear"
+                    onClick={() => setQuadrantFilter('all')}
+                  >
+                    Show all
+                  </button>
+                ) : null}
+              </div>
+              <div className="menu-quadrant-grid">
+                {QUADRANT_MATRIX.map((q) => {
+                  const meta = QUADRANT_META[q];
+                  const active = quadrantFilter === q;
+                  return (
+                    <button
+                      key={q}
+                      type="button"
+                      className={`menu-quadrant-cell is-${q} ${active ? 'is-active' : ''}`.trim()}
+                      aria-pressed={active}
+                      onClick={() => setQuadrantFilter((cur) => (cur === q ? 'all' : q))}
+                    >
+                      <strong>{quadrantCounts[q]}</strong>
+                      <span className="menu-quadrant-name">{meta.label}</span>
+                      <span className="menu-quadrant-hint">{meta.hint}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
 
         <div className="dish-margin-filters">
           <Input
@@ -389,6 +537,15 @@ export function DishMarginPage() {
                   <span>{soldDisplay}</span>
                   <span>{sales && sales.quantitySold > 0 ? formatMoney(sales.netSalesCents) : '—'}</span>
                   <span>{formatMoney(r.contributionCents)}</span>
+                  <span>
+                    {r.quadrant ? (
+                      <Badge tone={QUADRANT_META[r.quadrant].tone}>
+                        {QUADRANT_META[r.quadrant].label}
+                      </Badge>
+                    ) : (
+                      <small className="dish-margin-no-mapping">—</small>
+                    )}
+                  </span>
                   <span><Badge tone={meta.tone}>{meta.label}</Badge></span>
                 </div>
               );
