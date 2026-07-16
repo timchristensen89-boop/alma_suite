@@ -2464,6 +2464,8 @@ model StockItem {
   reorderNotices     StockReorderNotice[]
   squareMenuMappings SquareMenuRecipeMapping[]
   transfers          StockTransfer[]
+  purchaseOrderLines PurchaseOrderLine[]
+  priceListItems     SupplierPriceListItem[]
 
   @@index([categoryId])
   @@index([status])
@@ -2864,9 +2866,83 @@ model Supplier {
   updatedAt      DateTime             @updatedAt
   invoices       SupplierInvoice[]
   deliveryChecks StockDeliveryCheck[]
+  purchaseOrders PurchaseOrder[]
+  priceListItems SupplierPriceListItem[]
 
   @@index([status])
   @@index([name])
+}
+
+// @domain: stock | home: suite
+// Purchase-order lifecycle: order → send → receive → 3-way match against the
+// invoice. Closes the loop that "orders are just emails" left open.
+enum PurchaseOrderStatus {
+  DRAFT
+  SENT
+  PARTIALLY_RECEIVED
+  RECEIVED
+  MATCHED
+  CANCELLED
+}
+
+model PurchaseOrder {
+  id             String              @id @default(cuid())
+  supplierId     String?
+  supplierName   String
+  venue          String?
+  reference      String?
+  status         PurchaseOrderStatus @default(DRAFT)
+  orderedAt      DateTime?
+  expectedAt     DateTime?
+  receivedAt     DateTime?
+  notes          String?
+  subtotalCents  Int                 @default(0)
+  matchedInvoiceId String?
+  createdById    String?
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+  supplier       Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  matchedInvoice SupplierInvoice?    @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+  lines          PurchaseOrderLine[]
+
+  @@index([supplierId])
+  @@index([venue, status])
+  @@index([status])
+}
+
+model PurchaseOrderLine {
+  id               String        @id @default(cuid())
+  purchaseOrderId  String
+  stockItemId      String?
+  description      String
+  orderedQuantity  Float
+  receivedQuantity Float?
+  unit             String?
+  unitCostCents    Int           @default(0)
+  lineTotalCents   Int           @default(0)
+  purchaseOrder    PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
+  stockItem        StockItem?    @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+
+  @@index([purchaseOrderId])
+  @@index([stockItemId])
+}
+
+model SupplierPriceListItem {
+  id            String     @id @default(cuid())
+  supplierId    String
+  stockItemId   String?
+  description   String
+  unit          String?
+  unitCostCents Int
+  effectiveAt   DateTime   @default(now())
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+  supplier      Supplier   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  stockItem     StockItem? @relation(fields: [stockItemId], references: [id], onDelete: SetNull)
+
+  @@unique([supplierId, stockItemId])
+  @@index([supplierId])
+  @@index([stockItemId])
 }
 
 // @domain: stock | home: suite
@@ -2902,6 +2978,7 @@ model SupplierInvoice {
   triagedBy                StaffProfile?         @relation("SupplierInvoiceTriagedBy", fields: [triagedByStaffProfileId], references: [id], onDelete: SetNull)
   assignedTo               StaffProfile?         @relation("SupplierInvoiceAssignedTo", fields: [assignedToStaffProfileId], references: [id], onDelete: SetNull)
   lines                    SupplierInvoiceLine[]
+  matchedPurchaseOrders    PurchaseOrder[]
 
   @@unique([source, invoiceKey])
   @@index([venue, invoiceDate])
