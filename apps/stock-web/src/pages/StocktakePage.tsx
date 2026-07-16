@@ -1179,6 +1179,24 @@ function StocktakeForm({
   );
 }
 
+// Response shape from GET /api/stocktake/:id/variance (the expected-vs-counted
+// usage analytic). Typed inline — the endpoint has no shared type yet.
+type UsageVarianceRow = {
+  lineId: string;
+  label: string;
+  itemId: string | null;
+  unit: string | null;
+  currentQty: number | null;
+  expectedQty: number | null;
+  expectedVarianceQty: number | null;
+  expectedVarianceValueCents: number | null;
+  theoreticalUsageQty: number | null;
+};
+type UsageVarianceReport = {
+  summary: { expectedAvailable: boolean; unexplainedShrinkageValueCents: number | null };
+  rows: UsageVarianceRow[];
+};
+
 function StocktakeLinesTable({
   detail,
   canManageReview,
@@ -1197,9 +1215,31 @@ function StocktakeLinesTable({
       else next.add(key);
       return next;
     });
+  // Expected-vs-counted usage variance from the API (the theoretical-depletion
+  // analytic): what the shelf should hold given deliveries, wastage and sales.
+  const [usageVariance, setUsageVariance] = useState<UsageVarianceReport | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const report = await api<UsageVarianceReport>(`/api/stocktake/${detail.id}/variance`);
+        if (!cancelled) setUsageVariance(report);
+      } catch {
+        /* silent — expected-variance is informational */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id]);
+
   if (detail.lines.length === 0) return <p className="subtle">This stocktake has no recorded lines.</p>;
 
   const summary = varianceSummary(detail);
+  const shrinkageRows = (usageVariance?.rows ?? [])
+    .filter((row) => row.expectedVarianceValueCents !== null && row.expectedVarianceValueCents < 0)
+    .sort((a, b) => (a.expectedVarianceValueCents ?? 0) - (b.expectedVarianceValueCents ?? 0))
+    .slice(0, 8);
   const groups = new Map<string, typeof detail.lines>();
   for (const line of detail.lines) {
     const key = line.location ?? 'Other';
@@ -1255,6 +1295,33 @@ function StocktakeLinesTable({
       ) : (
         <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
       )}
+      {usageVariance?.summary.expectedAvailable ? (
+        <div className={`stocktake-shrinkage${(usageVariance.summary.unexplainedShrinkageValueCents ?? 0) < 0 ? ' is-loss' : ''}`}>
+          <div className="stocktake-shrinkage-head">
+            <span>Usage variance · counted vs expected</span>
+            <strong>{formatCurrency(usageVariance.summary.unexplainedShrinkageValueCents ?? 0)} unexplained</strong>
+          </div>
+          <p className="subtle">
+            Expected = last count + deliveries − wastage − theoretical sales usage. Lines below expected are stock you
+            counted short of what should be on the shelf — the real, unexplained loss.
+          </p>
+          {shrinkageRows.length ? (
+            <ul className="stocktake-shrinkage-list">
+              {shrinkageRows.map((row) => (
+                <li key={row.lineId}>
+                  <span className="stocktake-shrinkage-name">{row.label}</span>
+                  <span className="stocktake-shrinkage-qty">
+                    counted {formatQuantity(row.currentQty, row.unit)} · expected {formatQuantity(row.expectedQty, row.unit)}
+                  </span>
+                  <strong>{formatCurrency(row.expectedVarianceValueCents ?? 0)}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="subtle">No unexplained shortfalls — counted stock matches expected usage.</p>
+          )}
+        </div>
+      ) : null}
       {totalValuedCents > 0 ? (
         <div className={`stocktake-valuation-check${hasSuspectLine ? ' is-suspect' : ''}`}>
           <div className="stocktake-valuation-head">

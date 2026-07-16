@@ -483,6 +483,83 @@ function toStocktakeReviewPayload(
   };
 }
 
+// Theoretical ingredient usage over a window, exploded from Square item-sales
+// through recipe BOMs (+ one level of prep sub-recipe). Returns count-unit
+// quantities per stock item. Unconvertible line units are skipped (never
+// mis-counted), mirroring recipe costing's refuse-to-mis-value rule. This is
+// the depletion basis for expected-vs-counted variance — computed on demand,
+// so live on-hand is never mutated by sales (no drift, no double-count).
+const usageItemSelect = {
+  id: true,
+  unit: true,
+  countUnit: true,
+  conversionFactor: true,
+  measurePerCountUnit: true,
+  measureUnit: true
+} satisfies Prisma.StockItemSelect;
+
+async function theoreticalUsageByItem(
+  venue: string | null,
+  from: Date,
+  to: Date
+): Promise<Map<string, number>> {
+  const sales = await prisma.salesItemActualEntry.groupBy({
+    by: ['recipeId'],
+    where: {
+      serviceDate: { gte: from, lte: to },
+      ...(venue ? { venue } : {}),
+      recipeId: { not: null }
+    },
+    _sum: { quantity: true }
+  });
+  const soldByRecipe = new Map<string, number>();
+  for (const row of sales) {
+    if (row.recipeId) soldByRecipe.set(row.recipeId, row._sum.quantity ?? 0);
+  }
+  if (soldByRecipe.size === 0) return new Map();
+
+  const recipes = await prisma.recipe.findMany({
+    where: { id: { in: [...soldByRecipe.keys()] } },
+    include: {
+      lines: {
+        include: {
+          item: { select: usageItemSelect },
+          subRecipe: { include: { lines: { include: { item: { select: usageItemSelect } } } } }
+        }
+      }
+    }
+  });
+
+  const usage = new Map<string, number>();
+  const add = (itemId: string, qty: number) => {
+    if (!Number.isFinite(qty) || qty <= 0) return;
+    usage.set(itemId, (usage.get(itemId) ?? 0) + qty);
+  };
+
+  for (const recipe of recipes) {
+    const sold = soldByRecipe.get(recipe.id) ?? 0;
+    if (sold <= 0) continue;
+    for (const line of recipe.lines) {
+      const waste = 1 + Math.max(0, line.wastePercent ?? 0) / 100;
+      if (line.itemId && line.item) {
+        const conv = convertQuantityToCostUnit(line.quantity ?? 0, line.unit, line.item);
+        if (conv.via !== 'unknown') add(line.itemId, sold * conv.quantity * waste);
+      } else if (line.subRecipeId && line.subRecipe) {
+        const yieldQty = line.subRecipe.yieldQuantity && line.subRecipe.yieldQuantity > 0 ? line.subRecipe.yieldQuantity : 1;
+        const perSale = line.quantity ? line.quantity / yieldQty : 0;
+        if (perSale <= 0) continue;
+        for (const subLine of line.subRecipe.lines) {
+          if (!subLine.itemId || !subLine.item) continue;
+          const subWaste = 1 + Math.max(0, subLine.wastePercent ?? 0) / 100;
+          const conv = convertQuantityToCostUnit(subLine.quantity ?? 0, subLine.unit, subLine.item);
+          if (conv.via !== 'unknown') add(subLine.itemId, sold * perSale * conv.quantity * subWaste * waste);
+        }
+      }
+    }
+  }
+  return usage;
+}
+
 export const stocktakesService = {
   async list(actor?: AuthUser | null): Promise<StocktakesPayload> {
     const stocktakes = await prisma.stocktake.findMany({
@@ -1326,11 +1403,43 @@ export const stocktakesService = {
       }
     }
 
+    // Expected-on-hand since the previous locked count, per item:
+    //   expected = opening count + (deliveries − wastage from the ledger)
+    //              − theoretical sales usage (recipe BOM × Square units)
+    // counted − expected = the real, unexplained shrinkage/loss. Only computable
+    // when a previous locked count anchors the opening balance.
+    const usageByItem = previous
+      ? await theoreticalUsageByItem(target.venue ?? null, previous.countedAt, target.countedAt)
+      : new Map<string, number>();
+    const ledgerByItem = new Map<string, number>();
+    if (previous) {
+      const venue = target.venue ?? null;
+      const movements = await prisma.inventoryMovement.findMany({
+        where: {
+          movementType: { in: ['DELIVERY_RECEIPT', 'WASTAGE'] },
+          createdAt: { gt: previous.countedAt, lte: target.countedAt },
+          ...(venue
+            ? {
+                OR: [
+                  { sourceWastage: { venue } },
+                  { sourceDeliveryCheckItem: { deliveryCheck: { venue } } }
+                ]
+              }
+            : {})
+        },
+        select: { itemId: true, quantityDelta: true }
+      });
+      for (const movement of movements) {
+        ledgerByItem.set(movement.itemId, (ledgerByItem.get(movement.itemId) ?? 0) + movement.quantityDelta);
+      }
+    }
+
     const HIGH_VARIANCE_THRESHOLD = 0.2; // ±20% qty change flags as high
     let highVarianceCount = 0;
     let missingCount = 0;
     let zeroCount = 0;
     let newItemCount = 0;
+    let unexplainedShrinkageValueCents = 0;
 
     const rows = target.lines.map((line) => {
       const prev = line.itemId ? previousByItemId.get(line.itemId) : undefined;
@@ -1341,6 +1450,21 @@ export const stocktakesService = {
       const variancePct = prev !== undefined && prev.qty > 0 && line.countedQty !== null
         ? (line.countedQty - prev.qty) / prev.qty
         : null;
+
+      // Expected-vs-counted: what the shelf *should* hold given usage + movements.
+      const theoreticalUsageQty = line.itemId ? usageByItem.get(line.itemId) ?? 0 : 0;
+      const ledgerDelta = line.itemId ? ledgerByItem.get(line.itemId) ?? 0 : 0;
+      const expectedQty = prev !== undefined ? prev.qty + ledgerDelta - theoreticalUsageQty : null;
+      const expectedVarianceQty =
+        expectedQty !== null && line.countedQty !== null ? line.countedQty - expectedQty : null;
+      const countUnitCostCents = line.item?.avgCostCents ?? null;
+      const expectedVarianceValueCents =
+        expectedVarianceQty !== null && countUnitCostCents !== null
+          ? Math.round(expectedVarianceQty * countUnitCostCents)
+          : null;
+      if (expectedVarianceValueCents !== null && expectedVarianceValueCents < 0) {
+        unexplainedShrinkageValueCents += expectedVarianceValueCents;
+      }
 
       const isMissing = line.countedQty === null || Number.isNaN(line.countedQty);
       const isZero = line.countedQty === 0;
@@ -1372,7 +1496,11 @@ export const stocktakesService = {
           newItem: isNew,
           highVariance: isHighVariance
         },
-        latestCostCents: line.item?.latestCostCents ?? line.item?.avgCostCents ?? null
+        latestCostCents: line.item?.latestCostCents ?? line.item?.avgCostCents ?? null,
+        theoreticalUsageQty: prev !== undefined && line.itemId ? theoreticalUsageQty : null,
+        expectedQty,
+        expectedVarianceQty,
+        expectedVarianceValueCents
       };
     });
 
@@ -1391,7 +1519,11 @@ export const stocktakesService = {
         missing: missingCount,
         zero: zeroCount,
         newItems: newItemCount,
-        highVarianceThresholdPct: HIGH_VARIANCE_THRESHOLD * 100
+        highVarianceThresholdPct: HIGH_VARIANCE_THRESHOLD * 100,
+        // Expected-vs-counted: total value of unexplained loss (counted below
+        // expected). null when no previous locked count anchors the period.
+        expectedAvailable: previous !== null,
+        unexplainedShrinkageValueCents: previous !== null ? unexplainedShrinkageValueCents : null
       },
       // Worst variances first so the manager sees the most surprising lines.
       rows: rows.sort((a, b) => {

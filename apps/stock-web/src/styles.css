@@ -2664,3 +2664,78 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
     width: 100%;
   }
 }
+
+/* ── Stocktake usage variance / shrinkage panel (Phase 3) ────────── */
+.stocktake-shrinkage {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid #4f6b47;
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+}
+.stocktake-shrinkage.is-loss {
+  border-left-color: #9a3a2e;
+}
+.stocktake-shrinkage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stocktake-shrinkage-head span {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #5a6b58);
+}
+.stocktake-shrinkage-head strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: #2f4129;
+}
+.stocktake-shrinkage.is-loss .stocktake-shrinkage-head strong {
+  color: #9a3a2e;
+}
+.stocktake-shrinkage-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.stocktake-shrinkage-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--color-surface-muted, #f4f6f2);
+}
+.stocktake-shrinkage-name {
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stocktake-shrinkage-qty {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #5a6b58);
+}
+.stocktake-shrinkage-list strong {
+  text-align: right;
+  font-weight: 800;
+  font-size: 13px;
+  color: #9a3a2e;
+}
+@media (max-width: 720px) {
+  .stocktake-shrinkage-list li {
+    grid-template-columns: 1fr auto;
+  }
+  .stocktake-shrinkage-qty {
+    grid-column: 1 / -1;
+  }
+}
