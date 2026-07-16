@@ -15,6 +15,7 @@ import type {
 } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
+import { StockItemPicker } from '../components/StockItemPicker';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api, apiUrl } from '../lib/api';
@@ -167,22 +168,25 @@ function varianceSummary(detail: StocktakeWithLines) {
   );
 }
 
-function emptyLine(item?: StockItem): LineDraft {
+// blind=true seeds a line WITHOUT the expected on-hand in the qty field, so the
+// counter records what they actually see rather than being nudged to the system
+// number. Value is left blank too — it is recomputed on apply from the count.
+function emptyLine(item?: StockItem, blind = true): LineDraft {
   const onHand = item ? effectiveItemOnHand(item) : 0;
   const unitCostCents = item ? stockUnitCostCents(item) : null;
   const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
   return {
     itemId: item?.id ?? '',
     label: item?.name ?? '',
-    countedQty: item ? String(onHand) : '0',
+    countedQty: blind ? '' : item ? String(onHand) : '0',
     unit: item ? stockCountUnit(item) : '',
     location: item?.category?.name ?? '',
-    stockValueCents: value === '' ? '' : String(value),
+    stockValueCents: blind ? '' : value === '' ? '' : String(value),
     notes: ''
   };
 }
 
-function emptyDraft(items: StockItem[]): StocktakeDraft {
+function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
   return {
     name: `Stocktake ${new Date().toLocaleDateString()}`,
     venue: '',
@@ -190,7 +194,7 @@ function emptyDraft(items: StockItem[]): StocktakeDraft {
     countedAt: formatDateTimeInput(new Date().toISOString()),
     status: 'IN_PROGRESS',
     notes: '',
-    lines: items.filter((item) => item.status === 'ACTIVE').map(emptyLine)
+    lines: items.filter((item) => item.status === 'ACTIVE').map((item) => emptyLine(item, blind))
   };
 }
 
@@ -985,20 +989,43 @@ function StocktakeForm({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<StocktakeDraft>(() =>
-    initial ? draftFromStocktake(initial) : emptyDraft(items)
+    initial ? draftFromStocktake(initial) : emptyDraft(items, mode === 'create')
   );
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
   const [feedbackTarget, setFeedbackTarget] = useState<'draft' | 'review'>('draft');
+  // Blind count (best practice: don't show the expected number while counting)
+  // defaults on for new counts. Walk-by-area orders entry by physical location.
+  const [blind, setBlind] = useState(mode === 'create');
+  const [walkByArea, setWalkByArea] = useState(false);
 
-  const itemOptions = useMemo(
-    () => [
-      { label: 'Unlinked count line', value: '' },
-      ...items.map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
-    ],
-    [items]
-  );
+  const countedCount = draft.lines.filter((line) => line.countedQty.trim() !== '').length;
+  const progressPct = draft.lines.length ? Math.round((countedCount / draft.lines.length) * 100) : 0;
+
+  const orderedIndices = useMemo(() => {
+    const idx = draft.lines.map((_, i) => i);
+    if (!walkByArea) return idx;
+    return idx.sort((a, b) =>
+      (draft.lines[a]?.location || 'ZZZ').localeCompare(draft.lines[b]?.location || 'ZZZ')
+    );
+  }, [draft.lines, walkByArea]);
+
+  function toggleBlind(next: boolean) {
+    setBlind(next);
+    setDraft((current) => ({
+      ...current,
+      lines: current.lines.map((line) => {
+        if (!line.itemId) return line;
+        const item = items.find((candidate) => candidate.id === line.itemId);
+        if (!item) return line;
+        if (next) return { ...line, countedQty: '', stockValueCents: '' };
+        if (line.countedQty.trim() !== '') return line; // never clobber a real count
+        const seeded = emptyLine(item, false);
+        return { ...line, countedQty: seeded.countedQty, stockValueCents: seeded.stockValueCents };
+      })
+    }));
+  }
 
   function update<K extends keyof StocktakeDraft>(key: K, value: StocktakeDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -1093,25 +1120,58 @@ function StocktakeForm({
       </div>
 
       <div className="stocktake-count-toolbar">
-        <strong>{draft.lines.length} count lines</strong>
-        <Button type="button" variant="secondary" size="sm" onClick={() => update('lines', [...draft.lines, emptyLine()])}>
-          Add line
-        </Button>
+        <div className="stocktake-count-progress">
+          <strong>{countedCount} / {draft.lines.length} counted</strong>
+          <div className="stocktake-progress-track" aria-hidden>
+            <div className="stocktake-progress-bar" style={{ width: `${progressPct}%` }} />
+          </div>
+          <span className="subtle">{progressPct}%</span>
+        </div>
+        <div className="stocktake-count-toggles">
+          <label className="stocktake-toggle" title="Hide the expected on-hand while counting — record what you actually see.">
+            <input type="checkbox" checked={blind} onChange={(event) => toggleBlind(event.currentTarget.checked)} />
+            Blind count
+          </label>
+          <label className="stocktake-toggle" title="Order the count lines by location so you can count one area at a time.">
+            <input type="checkbox" checked={walkByArea} onChange={(event) => setWalkByArea(event.currentTarget.checked)} />
+            Walk by area
+          </label>
+          <Button type="button" variant="secondary" size="sm" onClick={() => update('lines', [...draft.lines, emptyLine(undefined, blind)])}>
+            Add line
+          </Button>
+        </div>
       </div>
 
       <div className="stocktake-count-lines">
-        {draft.lines.map((line, index) => (
-          <div key={index} className="stocktake-count-line">
-            <Select label="Item" value={line.itemId} onChange={(event) => selectLineItem(index, event.currentTarget.value)} options={itemOptions} />
-            <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
-            <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
-            <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-            <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
-            <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
-              Remove
-            </Button>
-          </div>
-        ))}
+        {orderedIndices.map((index, displayPos) => {
+          const line = draft.lines[index];
+          if (!line) return null;
+          const prevIdx = displayPos > 0 ? orderedIndices[displayPos - 1] : undefined;
+          const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
+          const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
+          return (
+            <div key={index}>
+              {showAreaHeader ? (
+                <div className="stocktake-area-header">{line.location || 'No location'}</div>
+              ) : null}
+              <div className="stocktake-count-line">
+                <StockItemPicker
+                  label="Item"
+                  items={items}
+                  value={line.itemId}
+                  onChange={(itemId) => selectLineItem(index, itemId)}
+                />
+                <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
+                <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
+                <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
+                <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
+                <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
+                  Remove
+                </Button>
+              </div>
+            </div>
+          );
+        })}
       </div>
 
       <p className="subtle">Submitting sends this count for review. It does not update stock balances.</p>

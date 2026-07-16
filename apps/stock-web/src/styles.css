@@ -2433,3 +2433,64 @@ html[data-theme='dark'] .stock-bulk-edit-title { color: var(--color-text); }
 .hub-tab-icon { display: inline-flex; opacity: 0.85; }
 .hub-tab-icon svg { width: 15px; height: 15px; }
 html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #fff); }
+
+/* ── Stocktake Phase 1: progress, count toggles, area walking ─────── */
+.stocktake-count-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+.stocktake-count-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  flex: 1;
+}
+.stocktake-progress-track {
+  flex: 1;
+  max-width: 260px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(31, 53, 36, 0.12);
+  overflow: hidden;
+}
+.stocktake-progress-bar {
+  height: 100%;
+  border-radius: 9999px;
+  background: #4f6b47;
+  transition: width 200ms ease;
+}
+.stocktake-count-toggles {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.stocktake-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text, #1f3524);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stocktake-toggle input {
+  cursor: pointer;
+}
+.stocktake-area-header {
+  margin: 14px 0 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--color-surface-muted, #eef2ea);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #5a6b58);
+}
