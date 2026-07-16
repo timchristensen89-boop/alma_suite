@@ -1557,6 +1557,23 @@ tbody tr.row-detail:hover {
   width: 34px;
   text-align: center;
 }
+
+/* Inline link from a stocktake line / top-value row to the item's edit form. */
+.stocktake-item-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-accent, #684a4a);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.stocktake-item-link:hover {
+  text-decoration: none;
+}
 .recipe-lines-table tr.is-selected td {
   background: color-mix(in srgb, var(--color-accent, #684a4a) 10%, transparent);
 }

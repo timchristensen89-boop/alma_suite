@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
   StockItem,
@@ -1290,6 +1291,8 @@ function StocktakeLinesTable({
   canManageReview: boolean;
   onChanged: () => void;
 }) {
+  const navigate = useNavigate();
+  const openItem = (itemId: string) => navigate(`/items?edit=${itemId}`);
   // Category groups start collapsed; `expanded` holds the ones the user opened.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const toggleGroup = (key: string) =>
@@ -1412,6 +1415,7 @@ function StocktakeLinesTable({
     .map((line) => ({
       id: line.id,
       label: line.label,
+      itemId: line.itemId ?? null,
       itemName: line.item?.name ?? null,
       value: line.stockValueCents ?? 0,
       countedQty: normalQuantity(line.countedQty),
@@ -1492,7 +1496,13 @@ function StocktakeLinesTable({
               return (
                 <li key={line.id} className={suspect ? 'is-suspect' : ''}>
                   <span className="stocktake-valuation-name">
-                    {line.itemName ?? line.label}
+                    {line.itemId ? (
+                      <button type="button" className="stocktake-item-link" onClick={() => openItem(line.itemId!)} title="Open item details to fix its unit/cost">
+                        {line.itemName ?? line.label}
+                      </button>
+                    ) : (
+                      line.itemName ?? line.label
+                    )}
                     {suspect ? <span className="stocktake-valuation-flag"> ⚠ check unit/cost</span> : null}
                   </span>
                   <span className="stocktake-valuation-num">
@@ -1605,7 +1615,13 @@ function StocktakeLinesTable({
                     ) : null}
                     <td>
                       <span className="cell-stack">
-                        <strong>{line.label}</strong>
+                        {line.itemId ? (
+                          <button type="button" className="stocktake-item-link" onClick={() => openItem(line.itemId!)} title="Open item details to fix its unit/cost">
+                            {line.label}
+                          </button>
+                        ) : (
+                          <strong>{line.label}</strong>
+                        )}
                         <span className="subtle">{line.item ? `Linked to ${line.item.name}` : 'Unlinked count'}</span>
                       </span>
                     </td>
