@@ -10,6 +10,7 @@ import { TransfersPage } from './pages/TransfersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
+import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
 import { RecipesPage } from './pages/RecipesPage';
 import { DishMarginPage } from './pages/DishMarginPage';
 import { PriceMovementPage } from './pages/PriceMovementPage';
@@ -45,6 +46,7 @@ const STOCK_COUNT_TABS: HubTab[] = [
 ];
 const PURCHASING_TABS: HubTab[] = [
   { to: '/invoices', label: 'Invoices' },
+  { to: '/purchase-orders', label: 'Purchase orders' },
   { to: '/deliveries', label: 'Deliveries' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/price-movement', label: 'Price changes' }
@@ -237,6 +239,7 @@ function StockAppShell() {
 
         {/* Purchasing hub */}
         <Route path="/invoices" element={<HubLayout tabs={PURCHASING_TABS}><InvoicesPage /></HubLayout>} />
+        <Route path="/purchase-orders" element={<HubLayout tabs={PURCHASING_TABS}><PurchaseOrdersPage /></HubLayout>} />
         <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
         <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
         <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />
