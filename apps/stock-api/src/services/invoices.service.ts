@@ -539,7 +539,11 @@ function exclusionMatchFields(invoice: NormalisedInvoice): Record<ExclusionField
     .join(' ')
     .toLowerCase();
   return {
-    title: (invoice.sourceFileName ?? '').toLowerCase(),
+    // Xero-synced invoices carry no sourceFileName — their visible "title" is
+    // the invoiceNumber (e.g. "St Alma Square and Other Fees on 13 June 2026").
+    // A rule written against "title" must match that, so fold both in; otherwise
+    // title-based rules silently match an empty string and never fire.
+    title: `${invoice.sourceFileName ?? ''} ${invoice.invoiceNumber ?? ''}`.trim().toLowerCase(),
     body: bodyText,
     supplier: (invoice.supplierName ?? '').toLowerCase(),
     invoiceNumber: (invoice.invoiceNumber ?? '').toLowerCase()
