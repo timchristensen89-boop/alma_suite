@@ -127,6 +127,67 @@ function stockUnitCostCents(item: StockItem) {
   return item.avgCostCents;
 }
 
+// Client mirror of the API's convertQuantityToCostUnit. Enough to estimate a
+// line's dollar value live while counting, so a wrong unit (mL vs bottle, g vs
+// each) shows up as a wildly off figure before the count is ever submitted. The
+// server recomputes the authoritative value on save; this is display-only.
+function normUnit(value: string | null | undefined): string {
+  const s = (value ?? '').trim().toLowerCase();
+  if (['each', 'ea', 'unit', 'units', 'portion', 'portions'].includes(s)) return 'each';
+  if (['litre', 'litres', 'liter', 'liters', 'l'].includes(s)) return 'l';
+  if (['millilitre', 'millilitres', 'milliliter', 'ml'].includes(s)) return 'ml';
+  if (['kilogram', 'kilograms', 'kg'].includes(s)) return 'kg';
+  if (['gram', 'grams', 'g'].includes(s)) return 'g';
+  return s;
+}
+function metricFactor(from: string, to: string): number | null {
+  if (from === to) return 1;
+  if (from === 'l' && to === 'ml') return 1000;
+  if (from === 'ml' && to === 'l') return 1 / 1000;
+  if (from === 'kg' && to === 'g') return 1000;
+  if (from === 'g' && to === 'kg') return 1 / 1000;
+  return null;
+}
+function convertToCountUnitClient(qty: number, fromUnit: string | null | undefined, item: StockItem): { qty: number; via: string } {
+  const cost = normUnit(item.countUnit ?? item.unit);
+  const from = normUnit(fromUnit);
+  const purchase = normUnit(item.unit);
+  if (!from || from === cost) return { qty, via: 'same' };
+  if (from === 'each') return { qty, via: 'each' };
+  if (item.countUnit && cost === normUnit(item.countUnit) && from === purchase && item.conversionFactor > 0) {
+    return { qty: qty * item.conversionFactor, via: 'pack' };
+  }
+  const mf = metricFactor(from, cost);
+  if (mf !== null) return { qty: qty * mf, via: 'measure' };
+  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
+    const toMeasure = metricFactor(from, normUnit(item.measureUnit));
+    if (toMeasure !== null) return { qty: (qty * toMeasure) / item.measurePerCountUnit, via: 'measure-pack' };
+  }
+  return { qty, via: 'unknown' };
+}
+// Live value estimate for a count line. unitMismatch = the entered unit can't be
+// resolved to the item's cost unit (the classic mL/g-vs-parent setup error).
+function estimateLineValueCents(
+  item: StockItem | undefined,
+  countedQty: number | null,
+  unit: string | null
+): { cents: number | null; unitMismatch: boolean; countUnit: string | null; unitCostCents: number | null } {
+  if (!item) return { cents: null, unitMismatch: false, countUnit: null, unitCostCents: null };
+  const unitCostCents = stockUnitCostCents(item) ?? null;
+  const countUnit = stockCountUnit(item);
+  if (countedQty === null || unitCostCents === null) {
+    return { cents: null, unitMismatch: false, countUnit, unitCostCents };
+  }
+  const conv = convertToCountUnitClient(countedQty, unit, item);
+  const unitMismatch = conv.via === 'unknown' && !!unit && normUnit(unit) !== normUnit(countUnit);
+  return {
+    cents: unitMismatch ? null : Math.round(unitCostCents * conv.qty),
+    unitMismatch,
+    countUnit,
+    unitCostCents
+  };
+}
+
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
   switch (type) {
     case 'STOCKTAKE_CORRECTION':
@@ -927,6 +988,7 @@ export function StocktakePage() {
                                   {detail && detail.id === stocktake.id ? (
                                     <StocktakeLinesTable
                                       detail={detail}
+                                      items={items}
                                       canManageReview={canManageReview}
                                       onChanged={() => void refreshDetail(stocktake.id)}
                                     />
@@ -1159,6 +1221,26 @@ function StocktakeForm({
                   Remove
                 </Button>
               </div>
+              {(() => {
+                const lineItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
+                if (!lineItem) return null;
+                const countRaw = String(line.countedQty ?? '').trim();
+                const countedQty = countRaw === '' ? null : Number(countRaw);
+                const estimate = estimateLineValueCents(lineItem, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null);
+                if (estimate.unitCostCents === null) {
+                  return <div className="stocktake-count-cost is-missing">No cost set for {lineItem.name} — value can't be checked</div>;
+                }
+                return (
+                  <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
+                    <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
+                    {estimate.unitMismatch ? (
+                      <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
+                    ) : estimate.cents !== null ? (
+                      <strong>line value {formatCurrency(estimate.cents)}</strong>
+                    ) : null}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}
@@ -1199,10 +1281,12 @@ type UsageVarianceReport = {
 
 function StocktakeLinesTable({
   detail,
+  items,
   canManageReview,
   onChanged
 }: {
   detail: StocktakeWithLines;
+  items: StockItem[];
   canManageReview: boolean;
   onChanged: () => void;
 }) {
@@ -1232,6 +1316,79 @@ function StocktakeLinesTable({
       cancelled = true;
     };
   }, [detail.id]);
+
+  // ── Bulk line editing (review) ──────────────────────────────────────────
+  // Select any lines, then correct their unit and/or counted qty together —
+  // the fast fix when a batch of lines was counted in the wrong unit (mL vs
+  // bottle, g vs each) relative to their parent product. Edits save through the
+  // normal stocktake update, which re-derives each line's value server-side; on
+  // a not-yet-applied count this touches no ledger balances.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkUnit, setBulkUnit] = useState('');
+  const [bulkQty, setBulkQty] = useState('');
+  const [savingBulk, setSavingBulk] = useState(false);
+  const [bulkFeedback, setBulkFeedback] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  useEffect(() => {
+    // Reset selection when the stocktake changes.
+    setSelected(new Set());
+    setBulkUnit('');
+    setBulkQty('');
+    setBulkFeedback(null);
+  }, [detail.id]);
+
+  const toggleLine = (lineId: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+
+  async function saveBulkEdit() {
+    const unitOverride = bulkUnit.trim();
+    const qtyRaw = bulkQty.trim();
+    const qtyOverride = qtyRaw === '' ? undefined : Number(qtyRaw);
+    if (!unitOverride && qtyOverride === undefined) {
+      setBulkFeedback({ message: 'Set a new unit or quantity to apply.', tone: 'error' });
+      return;
+    }
+    if (qtyOverride !== undefined && !Number.isFinite(qtyOverride)) {
+      setBulkFeedback({ message: 'Quantity must be a number.', tone: 'error' });
+      return;
+    }
+    setSavingBulk(true);
+    setBulkFeedback(null);
+    try {
+      const lines: StocktakeLineInput[] = detail.lines.map((line) => {
+        const apply = selected.has(line.id);
+        return {
+          itemId: line.itemId ?? '',
+          label: line.label,
+          countedQty:
+            apply && qtyOverride !== undefined ? qtyOverride : line.countedQty ?? null,
+          unit: apply && unitOverride ? unitOverride : line.unit ?? '',
+          location: line.location ?? '',
+          notes: line.notes ?? ''
+        };
+      });
+      await api<StocktakeWithLines>(`/api/stocktake/${detail.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ lines })
+      });
+      setBulkFeedback({ message: `Updated ${selected.size} line${selected.size === 1 ? '' : 's'}.`, tone: 'success' });
+      setSelected(new Set());
+      setBulkUnit('');
+      setBulkQty('');
+      onChanged();
+    } catch (err) {
+      setBulkFeedback({
+        message: err instanceof ApiError ? err.message : 'Could not save line edits',
+        tone: 'error'
+      });
+    } finally {
+      setSavingBulk(false);
+    }
+  }
 
   if (detail.lines.length === 0) return <p className="subtle">This stocktake has no recorded lines.</p>;
 
@@ -1355,6 +1512,28 @@ function StocktakeLinesTable({
           ) : null}
         </div>
       ) : null}
+      {canManageReview && selected.size > 0 ? (
+        <div className="stocktake-bulk-bar">
+          <div className="stocktake-bulk-head">
+            <strong>{selected.size} line{selected.size === 1 ? '' : 's'} selected</strong>
+            <button type="button" className="stocktake-groups-toggle" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+          <p className="subtle">
+            Fix a wrong count unit (e.g. mL vs bottle) across the selected lines. Leave a field blank to keep it. Values
+            are re-derived from each item's cost on save.
+          </p>
+          <div className="stocktake-bulk-fields">
+            <Input label="Set unit" placeholder="e.g. bottle" value={bulkUnit} onChange={(event) => setBulkUnit(event.currentTarget.value)} />
+            <Input label="Set qty" type="number" step="0.01" placeholder="unchanged" value={bulkQty} onChange={(event) => setBulkQty(event.currentTarget.value)} />
+            <Button type="button" variant="secondary" size="sm" disabled={savingBulk} onClick={() => void saveBulkEdit()}>
+              {savingBulk ? 'Saving…' : `Apply to ${selected.size}`}
+            </Button>
+            <ActionFeedback message={bulkFeedback?.message ?? null} tone={bulkFeedback?.tone ?? 'success'} />
+          </div>
+        </div>
+      ) : null}
       <div className="stocktake-groups-toolbar">
         <span className="subtle">{groups.size} categor{groups.size === 1 ? 'y' : 'ies'}</span>
         <button
@@ -1383,8 +1562,10 @@ function StocktakeLinesTable({
           <table className="recipe-lines-table">
             <thead>
               <tr>
+                {canManageReview ? <th aria-label="Select" /> : null}
                 <th>Item</th>
                 <th>Qty</th>
+                <th>Unit cost</th>
                 <th>Current</th>
                 <th>Variance</th>
                 <th>Value</th>
@@ -1406,8 +1587,22 @@ function StocktakeLinesTable({
                 const isLiquid = /liquor|beer|wine|spirit|liquid|cocktail|bottle|keg|draught|draft/i.test(categoryHint);
                 const threshold = isLiquid ? 10 : 5;
                 const isAlert = variancePct !== null && variancePct > threshold;
+                const fullItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
+                const unitCostCents = fullItem ? stockUnitCostCents(fullItem) : null;
+                const unitCostLabel = fullItem ? stockCountUnit(fullItem) : null;
+                const isSelected = selected.has(line.id);
                 return (
-                  <tr key={line.id} className={isAlert ? 'stocktake-variance-row-alert' : ''}>
+                  <tr key={line.id} className={`${isAlert ? 'stocktake-variance-row-alert' : ''}${isSelected ? ' is-selected' : ''}`}>
+                    {canManageReview ? (
+                      <td className="stocktake-select-cell">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleLine(line.id)}
+                          aria-label={`Select ${line.label}`}
+                        />
+                      </td>
+                    ) : null}
                     <td>
                       <span className="cell-stack">
                         <strong>{line.label}</strong>
@@ -1415,6 +1610,7 @@ function StocktakeLinesTable({
                       </span>
                     </td>
                     <td>{formatQuantity(countedQty, line.unit)}</td>
+                    <td>{unitCostCents === null || unitCostCents === undefined ? '—' : `${formatCurrency(unitCostCents)} / ${unitCostLabel}`}</td>
                     <td>{line.item ? formatQuantity(currentQty, line.unit ?? line.item.unit) : '—'}</td>
                     <td>
                       {variance === null ? (

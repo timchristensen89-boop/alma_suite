@@ -1509,6 +1509,58 @@ tbody tr.row-detail:hover {
   background: var(--color-surface-muted);
 }
 
+/* Live per-line cost readout while counting — spots a wrong unit before submit. */
+.stocktake-count-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  margin: 4px 2px 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.stocktake-count-cost strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.stocktake-count-cost.is-missing {
+  color: var(--color-warning-strong, #9a6a00);
+}
+.stocktake-count-cost.is-alert strong {
+  color: var(--color-danger-strong, #b42318);
+}
+
+/* Bulk line editing bar in review. */
+.stocktake-bulk-bar {
+  border: 1px solid var(--color-accent, #684a4a);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stocktake-bulk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stocktake-bulk-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.stocktake-select-cell {
+  width: 34px;
+  text-align: center;
+}
+.recipe-lines-table tr.is-selected td {
+  background: color-mix(in srgb, var(--color-accent, #684a4a) 10%, transparent);
+}
+
 @media (max-width: 1100px) {
   .stock-dashboard-grid,
   .stock-dashboard-toolbar,
