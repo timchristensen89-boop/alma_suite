@@ -126,10 +126,24 @@ export const AWARD_RATE_SETS: AwardRateSet[] = [
 export const DEFAULT_STAFF_AWARD_CODE: AustralianAwardCode = 'MA000119';
 export const DEFAULT_STAFF_AWARD_CLASSIFICATION = 'introductory';
 
+// Fallback for a casual with no rate configured: Restaurant Industry Award
+// (MA000119) Level 2 — food & beverage attendant grade 2 — casual (loaded).
+export const DEFAULT_CASUAL_AWARD_CODE: AustralianAwardCode = 'MA000119';
+export const DEFAULT_CASUAL_AWARD_CLASSIFICATION = 'level-2-food-beverage-attendant-grade-2';
+
 export function getAwardRateSet(awardCode: string) {
   return AWARD_RATE_SETS.find((award) => award.awardCode === awardCode) ?? null;
 }
 
 export function getAwardClassification(awardCode: string, classificationId: string) {
   return getAwardRateSet(awardCode)?.classifications.find((item) => item.id === classificationId) ?? null;
+}
+
+// Casual loaded hourly rate (cents) for the default casual classification. Sourced
+// from the award table so it tracks the annual award increase automatically.
+export function defaultCasualRateCents(): number {
+  return (
+    getAwardClassification(DEFAULT_CASUAL_AWARD_CODE, DEFAULT_CASUAL_AWARD_CLASSIFICATION)
+      ?.casualLoadedHourlyRateCents ?? 3231
+  );
 }

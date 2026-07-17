@@ -1,13 +1,17 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useStickyVenue } from '../hooks/useStickyVenue';
 import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
 import { ItemForm } from '../features/items/ItemForm';
+import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
 
 const UNCATEGORISED_FILTER = '__uncategorised';
 
@@ -241,8 +245,9 @@ export function ItemsPage() {
   const [bulkVenueActive, setBulkVenueActive] = useState<'' | 'active' | 'inactive'>('');
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [selectedVenue, setSelectedVenue] = useState('');
+  const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [viewMode, setViewMode] = useState<ItemViewMode>('category');
+  const [searchParams, setSearchParams] = useSearchParams();
 
   useEffect(() => {
     let cancelled = false;
@@ -272,6 +277,21 @@ export function ItemsPage() {
       cancelled = true;
     };
   }, [selectedVenue, reloadKey]);
+
+  // Deep-link from the Costing health worklist (?edit=<id>) — open that item in
+  // edit once items have loaded, then drop the param so refresh doesn't re-open.
+  useEffect(() => {
+    if (!canManage || !data) return;
+    const editId = searchParams.get('edit');
+    if (!editId) return;
+    const target = data.items.find((item) => item.id === editId);
+    if (target) {
+      setForm({ mode: 'edit', item: target });
+      const next = new URLSearchParams(searchParams);
+      next.delete('edit');
+      setSearchParams(next, { replace: true });
+    }
+  }, [canManage, data, searchParams, setSearchParams]);
 
   const activeVenue = selectedVenue || data?.scope?.venue || '';
 
@@ -505,21 +525,7 @@ export function ItemsPage() {
     setExportingItems(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch('/api/items/export.csv', {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'alma-stock-items.csv';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv('/api/items/export.csv', 'alma-stock-items.csv');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export items CSV');
     } finally {
@@ -796,6 +802,9 @@ export function ItemsPage() {
                 description="Select a venue to edit local par, reorder and active settings for this catalogue item."
               />
             )}
+            <div className="card stock-portions-card">
+              <PortionsBuilder parentType="item" parentId={form.item.id} canManage={canManage} />
+            </div>
           </div>
         ) : loading ? (
           <Spinner label="Loading items" />

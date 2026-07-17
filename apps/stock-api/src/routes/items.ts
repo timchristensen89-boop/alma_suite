@@ -59,6 +59,17 @@ itemsRouter.get('/data-quality', async (req, res, next) => {
   }
 });
 
+// Costing-trust health: active items mis-configured so they cost $0 or wrong,
+// ranked by impact, with the affected recipes named. Drives the worklist panel.
+itemsRouter.get('/config-health', async (req, res, next) => {
+  try {
+    const staleDays = typeof req.query.staleDays === 'string' ? Number(req.query.staleDays) : undefined;
+    res.json(await itemsService.configHealth({ staleDays: Number.isFinite(staleDays) ? staleDays : undefined }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/:id/usage-history', async (req, res, next) => {
   try {
     res.json(await itemsService.usageHistory(String(req.params.id), {

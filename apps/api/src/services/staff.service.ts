@@ -72,6 +72,9 @@ import type {
   StaffLeaveType
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
+import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
@@ -1413,10 +1416,6 @@ function lateThreshold(shiftStart: Date) {
   return new Date(shiftStart.getTime() + 10 * 60 * 1000);
 }
 
-function staffRateCents(profile: { payRateCents: number | null; trainingPayRateCents: number | null } | null | undefined) {
-  return profile?.trainingPayRateCents ?? profile?.payRateCents ?? 0;
-}
-
 function csvCell(value: unknown) {
   const text = value == null ? '' : String(value);
   return /[",\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
@@ -1514,28 +1513,66 @@ function abaRecord(parts: string[]) {
   return record;
 }
 
-function tipsAbaConfig() {
+async function tipsAbaConfig(venue?: string | null) {
+  // Prefer the in-app Settings value (AppSettings.tipsAbaSettings), falling back
+  // to env vars so existing deployments keep working.
+  const row = await prisma.appSettings.findUnique({
+    where: { id: 'singleton' },
+    select: { tipsAbaSettings: true }
+  });
+  const flat =
+    row?.tipsAbaSettings && typeof row.tipsAbaSettings === 'object' && !Array.isArray(row.tipsAbaSettings)
+      ? (row.tipsAbaSettings as Record<string, unknown>)
+      : {};
+  // Per-venue override: the venues are separate legal entities with separate
+  // bank accounts, so tipsAbaSettings.venues["<venue>"] layers over the flat
+  // defaults when exporting that venue's run.
+  const venueRecord =
+    venue && flat.venues && typeof flat.venues === 'object' && !Array.isArray(flat.venues)
+      ? ((flat.venues as Record<string, unknown>)[venue] as Record<string, string> | undefined)
+      : undefined;
+  const stored: Record<string, string> = {
+    ...(flat as Record<string, string>),
+    ...(venueRecord && typeof venueRecord === 'object' ? venueRecord : {})
+  };
+  const pick = (key: string, ...envValues: (string | undefined)[]) => {
+    const fromStore = stored[key]?.trim();
+    if (fromStore) return fromStore;
+    for (const value of envValues) {
+      if (value && value.trim()) return value.trim();
+    }
+    return '';
+  };
+  const userName = pick('userName', process.env.TIPS_ABA_USER_NAME, process.env.ABA_USER_NAME);
   const config = {
-    financialInstitution: process.env.TIPS_ABA_FINANCIAL_INSTITUTION ?? process.env.ABA_FINANCIAL_INSTITUTION ?? '',
-    userName: process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
-    userId: process.env.TIPS_ABA_USER_ID ?? process.env.ABA_USER_ID ?? '',
-    description: process.env.TIPS_ABA_DESCRIPTION ?? 'ALMA TIPS',
-    remitterName: process.env.TIPS_ABA_REMITTER_NAME ?? process.env.ABA_REMITTER_NAME ?? process.env.TIPS_ABA_USER_NAME ?? process.env.ABA_USER_NAME ?? '',
-    traceBsb: process.env.TIPS_ABA_TRACE_BSB ?? process.env.ABA_TRACE_BSB ?? '',
-    traceAccount: process.env.TIPS_ABA_TRACE_ACCOUNT ?? process.env.ABA_TRACE_ACCOUNT ?? ''
+    financialInstitution: pick(
+      'financialInstitution',
+      process.env.TIPS_ABA_FINANCIAL_INSTITUTION,
+      process.env.ABA_FINANCIAL_INSTITUTION
+    ),
+    userName,
+    userId: pick('userId', process.env.TIPS_ABA_USER_ID, process.env.ABA_USER_ID),
+    description: pick('description', process.env.TIPS_ABA_DESCRIPTION) || 'ALMA TIPS',
+    remitterName:
+      pick('remitterName', process.env.TIPS_ABA_REMITTER_NAME, process.env.ABA_REMITTER_NAME) || userName,
+    traceBsb: pick('traceBsb', process.env.TIPS_ABA_TRACE_BSB, process.env.ABA_TRACE_BSB),
+    traceAccount: pick('traceAccount', process.env.TIPS_ABA_TRACE_ACCOUNT, process.env.ABA_TRACE_ACCOUNT)
   };
   const missing = [
-    ['TIPS_ABA_FINANCIAL_INSTITUTION', config.financialInstitution],
-    ['TIPS_ABA_USER_NAME', config.userName],
-    ['TIPS_ABA_USER_ID', config.userId],
-    ['TIPS_ABA_TRACE_BSB', config.traceBsb],
-    ['TIPS_ABA_TRACE_ACCOUNT', config.traceAccount],
-    ['TIPS_ABA_REMITTER_NAME', config.remitterName]
+    ['Financial institution', config.financialInstitution],
+    ['User name', config.userName],
+    ['User ID', config.userId],
+    ['Trace BSB', config.traceBsb],
+    ['Trace account', config.traceAccount],
+    ['Remitter name', config.remitterName]
   ]
     .filter(([, value]) => !String(value).trim())
     .map(([key]) => key);
   if (missing.length) {
-    throw new HttpError(400, `ABA export is not configured. Add ${missing.join(', ')}.`);
+    throw new HttpError(
+      400,
+      `ABA export is not configured. Set your tip-payment bank details in Settings → Tip payments (missing: ${missing.join(', ')}).`
+    );
   }
   const userId = normaliseDigits(config.userId);
   if (userId.length !== 6) throw new HttpError(400, 'TIPS_ABA_USER_ID must be 6 digits.');
@@ -1646,8 +1683,8 @@ function tipRunFilenamePart(value: string) {
   return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'venue';
 }
 
-function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
-  const config = tipsAbaConfig();
+async function buildTipsAba(run: Awaited<ReturnType<typeof getApprovedTipRun>>) {
+  const config = await tipsAbaConfig(run.venue);
   const payableLines = run.lines.filter((line) => !line.excluded && line.amountCents > 0);
   if (!payableLines.length) throw new HttpError(400, 'Approved tip run has no payable lines for ABA export.');
 
@@ -2112,7 +2149,14 @@ export const staffService = {
       where: { id },
       data: {
         employmentStatus: 'ARCHIVED',
-        notes: [existing.notes, `Archived ${new Date().toISOString()} during staff beta testing.`]
+        // Offboarding must actually revoke access: clear the login password + kiosk
+        // PIN and disable every app-access grant, so a terminated staffer can no
+        // longer sign into any suite app or clock in. (login() + the session lookup
+        // also now reject archived humans, killing any open session.)
+        passwordHash: null,
+        pinHash: null,
+        appAccess: { updateMany: { where: {}, data: { status: 'DISABLED' } } },
+        notes: [existing.notes, `Archived ${new Date().toISOString()} — access revoked (password, PIN, app access).`]
           .filter(Boolean)
           .join('\n')
       }
@@ -3855,8 +3899,7 @@ export const staffService = {
               roleTitle: true,
               venue: true,
               email: true,
-              payRateCents: true,
-              trainingPayRateCents: true
+              ...staffPayRateSelect
             }
           }
         }
@@ -3897,17 +3940,23 @@ export const staffService = {
         include: {
           staffProfile: {
             select: {
-              payRateCents: true,
-              trainingPayRateCents: true
+              venue: true,
+              ...staffPayRateSelect
             }
           }
         }
       }),
-      prisma.stockItem.findMany({
-        where: { status: 'ACTIVE' },
-        include: { category: { select: { name: true } } },
-        orderBy: [{ name: 'asc' }]
-      }),
+      // Stock-forward separation: manager dashboard's low-stock widget reads
+      // ACTIVE items. Default-OFF path is the original Prisma query (unchanged).
+      // With USE_STOCK_API_READS=1 the same data comes from stock-api instead.
+      // See docs/MIGRATION_RECIPE.md.
+      useStockApiReads
+        ? stockReads.activeItems()
+        : prisma.stockItem.findMany({
+            where: { status: 'ACTIVE' },
+            include: { category: { select: { name: true } } },
+            orderBy: [{ name: 'asc' }]
+          }),
       prisma.issue.findMany({
         where: { status: { in: [...activeIssueStatuses] } },
         orderBy: [{ dueDate: 'asc' }, { createdAt: 'desc' }],
@@ -3923,6 +3972,16 @@ export const staffService = {
         return map;
       }, new Map<string, number>())
     ).map(([entryVenue, salesCents]) => ({ venue: entryVenue, salesCents }));
+
+    // Live "today" wages use the same canonical hourly rate as the reports —
+    // award/payProfile rate, casual default, salaried ÷45h equivalent, all with
+    // super on top — so the dashboard figure no longer reads ~12%+ light vs the
+    // Staff Costing / Prime Cost / Monthly Recap reports. (Overtime and the full
+    // salaried weekly salary are period concepts the reports add; a single live
+    // day costs salaried staff at their ordinary hourly equivalent.)
+    const superRate = await configuredSuperRateFraction();
+    const liveRateCents = (profile: Parameters<typeof staffCostingRate>[0]) =>
+      staffCostingRate(profile, superRate).ordinaryRateCents ?? 0;
 
     const wagesByVenueMap = new Map<string, {
       venue: string;
@@ -3943,7 +4002,7 @@ export const staffService = {
       };
       const hours = liveTimesheetHours(entry, now);
       current.actualHours += hours;
-      current.actualWageCents += Math.round(hours * staffRateCents(entry.staffProfile));
+      current.actualWageCents += Math.round(hours * liveRateCents(entry.staffProfile));
       wagesByVenueMap.set(entryVenue, current);
     }
 
@@ -3958,7 +4017,7 @@ export const staffService = {
       };
       const hours = shiftHours(shift);
       current.rosterHours += hours;
-      current.rosterWageCents += Math.round(hours * staffRateCents(shift.staffProfile));
+      current.rosterWageCents += Math.round(hours * liveRateCents(shift.staffProfile));
       wagesByVenueMap.set(shiftVenue, current);
     }
 
@@ -5107,6 +5166,31 @@ export const staffService = {
       })
     ]);
 
+    if (paidRuns.length > 0) {
+      // Provenance of the locked run(s) shown as "Approved tip run" — so a stale
+      // or wrong-venue lock surfacing under this week is visible in the logs.
+      console.log(
+        `[tips] summary venue=${JSON.stringify(data.venue ?? null)} ` +
+          `week ${startDate.toISOString().slice(0, 10)}..${endDate.toISOString().slice(0, 10)}: ` +
+          `${paidRuns.length} locked run(s) — ` +
+          paidRuns
+            .map(
+              (r) =>
+                `{id:${r.id} venue:${JSON.stringify(r.venue)} wk:${r.weekStart
+                  .toISOString()
+                  .slice(0, 10)}..${r.weekEnd.toISOString().slice(0, 10)} paidAt:${r.paidAt
+                  .toISOString()
+                  .slice(0, 10)} lines:${r.lines.length} [${r.lines
+                  .map(
+                    (l) =>
+                      `${l.staffProfile.firstName} ${l.staffProfile.lastName}/${l.staffProfile.venue ?? '∅'}=${l.hours}h`
+                  )
+                  .join(', ')}]}`
+            )
+            .join(' ')
+      );
+    }
+
     const cashTipsCents = cashEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const squareTipsCents = cardEntries.reduce((sum, entry) => sum + entry.amountCents, 0);
     const tipPoolCents = cashTipsCents + squareTipsCents;
@@ -5126,7 +5210,12 @@ export const staffService = {
       approvedHours: number;
     }>();
 
+    // A manual-hours entry (incl. a Deputy import) is the authoritative hours
+    // for that person/week — skip their timesheet rows so the two don't
+    // double-count in the pool.
+    const manualStaffIds = new Set(manualHoursEntries.map((entry) => entry.staffProfileId));
     for (const timesheet of timesheets) {
+      if (manualStaffIds.has(timesheet.staffProfileId)) continue;
       const hours = timesheetHours(timesheet);
       if (hours <= 0) continue;
       const existing = byStaff.get(timesheet.staffProfileId) ?? {
@@ -5233,6 +5322,26 @@ export const staffService = {
     return { deleted: true };
   },
 
+  // Unlock/remove an approved tip run so the week can be reviewed and re-approved
+  // from corrected data. Reports read the locked run as the payroll source, so a
+  // bad snapshot (wrong staff/venue/hours) can only be fixed by removing it.
+  // Lines cascade-delete with the run.
+  async deleteTipsRun(id: string) {
+    const run = await prisma.staffTipPaymentRun.findUnique({
+      where: { id },
+      select: { id: true, venue: true, weekStart: true, weekEnd: true, lines: { select: { id: true } } }
+    });
+    if (!run) throw new HttpError(404, 'Tip run not found');
+    await prisma.staffTipPaymentRun.delete({ where: { id } });
+    return {
+      deleted: true,
+      venue: run.venue,
+      weekStart: run.weekStart.toISOString(),
+      weekEnd: run.weekEnd.toISOString(),
+      removedLines: run.lines.length
+    };
+  },
+
   async deleteTipCardEntry(id: string) {
     await prisma.staffTipCardEntry.delete({ where: { id } });
     return { deleted: true };
@@ -5263,6 +5372,76 @@ export const staffService = {
   async deleteManualHoursEntry(id: string) {
     await prisma.staffTipManualHoursEntry.delete({ where: { id } });
     return { deleted: true };
+  },
+
+  // Pull the hours basis for a tip week from Deputy timesheets (identified by
+  // deputyTimesheetId) and write them as the week's manual-hours entries, so the
+  // tip pool splits by Deputy hours without anyone re-typing them. Idempotent
+  // (upsert per staff/venue/week); manager can still adjust afterwards.
+  async importDeputyTipsHours(input: unknown) {
+    const data = tipsQuerySchema.parse(input);
+    const startDate = parseDate(data.start, 'Tips start date');
+    const endDate = parseDate(data.end, 'Tips end date');
+    const timesheets = await prisma.timesheet.findMany({
+      where: {
+        deputyTimesheetId: { not: null },
+        workDate: { gte: startDate, lt: endDate },
+        ...(data.venue ? { venue: data.venue } : {})
+      },
+      include: { staffProfile: { select: { firstName: true, lastName: true, venue: true } } }
+    });
+
+    const byKey = new Map<string, { staffProfileId: string; venue: string; name: string; hours: number }>();
+    for (const ts of timesheets) {
+      const hours = timesheetHours(ts);
+      if (hours <= 0) continue;
+      const venue = data.venue || ts.venue || ts.staffProfile.venue || 'All venues';
+      const key = `${ts.staffProfileId}|${venue}`;
+      const row = byKey.get(key) ?? {
+        staffProfileId: ts.staffProfileId,
+        venue,
+        name: `${ts.staffProfile.firstName} ${ts.staffProfile.lastName}`.trim(),
+        hours: 0
+      };
+      row.hours += hours;
+      byKey.set(key, row);
+    }
+
+    if (timesheets.length === 0) {
+      // Nothing matched — surface why: how many Deputy timesheets exist at all in
+      // the window (ignoring venue) and which venues they carry, so a venue-name
+      // mismatch is obvious in the logs instead of a silent "0 found".
+      const anyInWindow = await prisma.timesheet.findMany({
+        where: { deputyTimesheetId: { not: null }, workDate: { gte: startDate, lt: endDate } },
+        select: { venue: true }
+      });
+      const venues = Array.from(new Set(anyInWindow.map((t) => t.venue ?? '∅')));
+      console.log(
+        `[tips] deputy-import: 0 matched for venue=${JSON.stringify(data.venue ?? null)} ` +
+          `window ${startDate.toISOString()}..${endDate.toISOString()}; ` +
+          `${anyInWindow.length} deputy timesheets in window across venues [${venues.join(', ')}]`
+      );
+    }
+
+    const rows = Array.from(byKey.values()).map((r) => ({ ...r, hours: Math.round(r.hours * 100) / 100 }));
+    if (rows.length > 0) {
+      await prisma.$transaction(
+        rows.map((row) =>
+          prisma.staffTipManualHoursEntry.upsert({
+            where: { staffProfileId_venue_weekStart: { staffProfileId: row.staffProfileId, venue: row.venue, weekStart: startDate } },
+            create: { staffProfileId: row.staffProfileId, venue: row.venue, weekStart: startDate, hours: row.hours, notes: 'Imported from Deputy timesheets' },
+            update: { hours: row.hours, notes: 'Imported from Deputy timesheets' }
+          })
+        )
+      );
+    }
+
+    return {
+      imported: rows.length,
+      timesheetRows: timesheets.length,
+      totalHours: Math.round(rows.reduce((sum, r) => sum + r.hours, 0) * 100) / 100,
+      staff: rows.map((r) => ({ staffProfileId: r.staffProfileId, name: r.name, hours: r.hours }))
+    };
   },
 
   async saveTipsCashEntry(input: unknown) {

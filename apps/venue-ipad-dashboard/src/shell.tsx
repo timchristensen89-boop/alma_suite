@@ -82,6 +82,7 @@ export function AppShell({
               <Link to={`/venue/${venue.id}/stocktake`}>Stocktake</Link>
               <Link to={`/venue/${venue.id}/bookings`}>Bookings</Link>
               <Link to={`/venue/${venue.id}/checklists`}>Checklists</Link>
+              <Link to={`/venue/${venue.id}/log-issue`}>Log an issue</Link>
               <Link to={`/venue/${venue.id}/handover`}>Handover</Link>
               <Link to={`/venue/${venue.id}/roster`}>Roster</Link>
               <Link to={`/venue/${venue.id}/tasks`}>Tasks</Link>
@@ -109,7 +110,20 @@ export function AppShell({
             <button
               type="button"
               className="button secondary settings-signout"
-              onClick={() => void auth.signOutDevice()}
+              onClick={() => {
+                // Staffless sessions are safe to exit. When a staff member is
+                // signed in they may have unsaved stocktake drafts, so confirm
+                // before signing the whole device out.
+                if (
+                  auth.staff &&
+                  !window.confirm(
+                    'Sign out device?\n\nAny unsaved stocktake drafts will be lost. Are you sure?'
+                  )
+                ) {
+                  return;
+                }
+                void auth.signOutDevice();
+              }}
             >
               Sign out device
             </button>

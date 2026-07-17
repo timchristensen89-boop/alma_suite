@@ -22,6 +22,7 @@ coverage
 output
 tmp
 *.bak
+.pnpm-store
 
 # prisma
 packages/db/generated

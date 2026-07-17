@@ -4,11 +4,91 @@ import {
   appSettingsUpdateSchema,
   normaliseOnboardingSettings,
   normaliseStaffDefaults,
-  type AppSettingsPayload
+  type AppSettingsPayload,
+  type TipsAbaSettings
 } from '@alma/shared';
 
 const SINGLETON_ID = 'singleton';
 const DEFAULT_GOVEE_BASE_URL = 'https://openapi.api.govee.com';
+
+// Mask a bank account number so the GET response never exposes it in full —
+// only the last 3 digits, mirroring how the Govee key is masked.
+function maskAbaAccount(value: string): string {
+  const digits = value.replace(/\s+/g, '');
+  if (!digits) return '';
+  if (digits.length <= 3) return '•••';
+  return `•••• ${digits.slice(-3)}`;
+}
+
+function abaRecord(raw: unknown): Record<string, string> {
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? (raw as Record<string, string>) : {};
+}
+
+function toAbaPayload(raw: unknown): TipsAbaSettings {
+  const o = abaRecord(raw);
+  const financialInstitution = String(o.financialInstitution ?? '');
+  const userName = String(o.userName ?? '');
+  const userId = String(o.userId ?? '');
+  const remitterName = String(o.remitterName ?? '');
+  const description = String(o.description ?? '');
+  const traceBsb = String(o.traceBsb ?? '');
+  const traceAccount = String(o.traceAccount ?? '');
+  return {
+    financialInstitution,
+    userName,
+    userId,
+    remitterName,
+    description,
+    traceBsb,
+    traceAccount: maskAbaAccount(traceAccount),
+    configured: Boolean(financialInstitution && userName && userId && remitterName && traceBsb && traceAccount)
+  };
+}
+
+// Merge incoming venues onto the stored ones, matched by name. A field that
+// isn't provided keeps its prior value, so blanking a wage forecast/target in
+// the form never silently wipes it — the admin must enter an explicit 0 to
+// clear it. Venues absent from the incoming list are dropped (deletion), and
+// new venues are added as-is.
+function mergeVenues(
+  existingRaw: unknown,
+  incoming: Array<Record<string, unknown>>
+): Array<Record<string, unknown>> {
+  const prevList = Array.isArray(existingRaw)
+    ? (existingRaw.filter((v) => v && typeof v === 'object' && !Array.isArray(v)) as Array<Record<string, unknown>>)
+    : [];
+  const prevByName = new Map(
+    prevList.filter((v) => typeof v.name === 'string').map((v) => [v.name as string, v])
+  );
+  return incoming.map((v) => {
+    const prev = typeof v.name === 'string' ? prevByName.get(v.name) : undefined;
+    // Provided keys win; keys omitted from the patch fall back to the prior value.
+    return prev ? { ...prev, ...v } : v;
+  });
+}
+
+// Merge an incoming ABA patch onto the stored (full) values. Fields are only
+// changed when provided; the account number is ignored when it comes back
+// masked (contains •) so re-saving the form doesn't wipe the stored number.
+function mergeAbaSettings(
+  existingRaw: unknown,
+  incoming: Partial<Record<keyof TipsAbaSettings, string>>
+): Record<string, string> {
+  const out: Record<string, string> = { ...abaRecord(existingRaw) };
+  const set = (key: string, val: string | undefined, guardMasked = false) => {
+    if (val === undefined) return;
+    if (guardMasked && val.includes('•')) return;
+    out[key] = val.trim();
+  };
+  set('financialInstitution', incoming.financialInstitution);
+  set('userName', incoming.userName);
+  set('userId', incoming.userId);
+  set('remitterName', incoming.remitterName);
+  set('description', incoming.description);
+  set('traceBsb', incoming.traceBsb);
+  set('traceAccount', incoming.traceAccount, true);
+  return out;
+}
 
 function normaliseGoveeBaseUrl(value: string | null | undefined) {
   const raw = value?.trim() || DEFAULT_GOVEE_BASE_URL;
@@ -24,9 +104,11 @@ function toPayload(row: {
   primaryContactEmail: string | null;
   primaryContactPhone: string | null;
   venues: unknown;
+  superGuaranteePercent?: number;
   handbookContent?: unknown;
   onboardingSettings?: unknown;
   staffDefaults?: unknown;
+  tipsAbaSettings?: unknown;
   goveeApiKey: string | null;
   goveeBaseUrl: string | null;
   notifyEmail: string | null;
@@ -43,6 +125,7 @@ function toPayload(row: {
         phone?: string;
         weeklyForecastSalesCents?: number;
         targetWagePercent?: number;
+        targetPrimeCostPercent?: number;
       } => typeof v === 'object' && v !== null && typeof (v as { name?: unknown }).name === 'string')
       .map((v) => ({
         name: v.name,
@@ -53,6 +136,9 @@ function toPayload(row: {
           : {}),
         ...(typeof v.targetWagePercent === 'number' && Number.isFinite(v.targetWagePercent)
           ? { targetWagePercent: Math.min(100, Math.max(0, v.targetWagePercent)) }
+          : {}),
+        ...(typeof v.targetPrimeCostPercent === 'number' && Number.isFinite(v.targetPrimeCostPercent)
+          ? { targetPrimeCostPercent: Math.min(100, Math.max(0, v.targetPrimeCostPercent)) }
           : {})
       }));
   }
@@ -64,6 +150,7 @@ function toPayload(row: {
     primaryContactEmail: row.primaryContactEmail,
     primaryContactPhone: row.primaryContactPhone,
     venues,
+    superGuaranteePercent: typeof row.superGuaranteePercent === 'number' ? row.superGuaranteePercent : 12,
     handbookContent: row.handbookContent && typeof row.handbookContent === 'object' ? (row.handbookContent as Record<string, unknown>) : {},
     onboardingSettings: normaliseOnboardingSettings(row.onboardingSettings),
     staffDefaults: normaliseStaffDefaults(row.staffDefaults),
@@ -73,13 +160,26 @@ function toPayload(row: {
     notifyEmail: row.notifyEmail,
     notifyOverdueIssues: row.notifyOverdueIssues,
     notifyExpiringStaff: row.notifyExpiringStaff,
-    notifyOutOfRangeTemp: row.notifyOutOfRangeTemp
+    notifyOutOfRangeTemp: row.notifyOutOfRangeTemp,
+    tipsAbaSettings: toAbaPayload(row.tipsAbaSettings)
   };
 }
 
 function maskKey(key: string) {
   if (key.length <= 8) return '••••';
   return `${key.slice(0, 4)}••••${key.slice(-4)}`;
+}
+
+// The admin-configured super guarantee rate as a FRACTION (0.12 = 12%) for the
+// costing engine. Falls back to the legacy 12% when unset, so costing never
+// breaks if the row predates the column.
+export async function configuredSuperRateFraction(): Promise<number> {
+  const row = await prisma.appSettings.findUnique({
+    where: { id: SINGLETON_ID },
+    select: { superGuaranteePercent: true }
+  });
+  const pct = typeof row?.superGuaranteePercent === 'number' ? row.superGuaranteePercent : 12;
+  return Math.min(30, Math.max(0, pct)) / 100;
 }
 
 async function ensureSingleton() {
@@ -96,14 +196,22 @@ export const settingsService = {
 
   async update(input: unknown): Promise<AppSettingsPayload> {
     const data = appSettingsUpdateSchema.parse(input);
-    await ensureSingleton();
+    const existing = await ensureSingleton();
 
     const updateData: Prisma.AppSettingsUpdateInput = {
       ...(data.orgName !== undefined && { orgName: data.orgName }),
       ...(data.primaryContactName !== undefined && { primaryContactName: data.primaryContactName || null }),
       ...(data.primaryContactEmail !== undefined && { primaryContactEmail: data.primaryContactEmail || null }),
       ...(data.primaryContactPhone !== undefined && { primaryContactPhone: data.primaryContactPhone || null }),
-      ...(data.venues !== undefined && { venues: data.venues }),
+      ...(data.venues !== undefined && {
+        venues: mergeVenues(
+          (existing as { venues?: unknown }).venues,
+          data.venues as Array<Record<string, unknown>>
+        ) as Prisma.InputJsonValue
+      }),
+      ...(data.superGuaranteePercent !== undefined && {
+        superGuaranteePercent: Math.min(30, Math.max(0, data.superGuaranteePercent))
+      }),
       ...(data.handbookContent !== undefined && {
         handbookContent: data.handbookContent as Prisma.InputJsonValue
       }),
@@ -120,7 +228,13 @@ export const settingsService = {
       ...(data.notifyEmail !== undefined && { notifyEmail: data.notifyEmail || null }),
       ...(data.notifyOverdueIssues !== undefined && { notifyOverdueIssues: data.notifyOverdueIssues }),
       ...(data.notifyExpiringStaff !== undefined && { notifyExpiringStaff: data.notifyExpiringStaff }),
-      ...(data.notifyOutOfRangeTemp !== undefined && { notifyOutOfRangeTemp: data.notifyOutOfRangeTemp })
+      ...(data.notifyOutOfRangeTemp !== undefined && { notifyOutOfRangeTemp: data.notifyOutOfRangeTemp }),
+      ...(data.tipsAbaSettings !== undefined && {
+        tipsAbaSettings: mergeAbaSettings(
+          (existing as { tipsAbaSettings?: unknown }).tipsAbaSettings,
+          data.tipsAbaSettings
+        ) as Prisma.InputJsonValue
+      })
     };
 
     const updated = await prisma.appSettings.update({

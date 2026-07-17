@@ -7,6 +7,8 @@
 import { prisma } from '@alma/db';
 import type { AuthUser } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { staffCostingRate, staffPayRateSelect } from '../lib/staff-pay-rates.js';
+import { configuredSuperRateFraction } from './settings.service.js';
 
 type ExportKind = 'sales-by-day' | 'wages-by-week' | 'timesheets' | 'stocktake-variance' | 'low-stock';
 
@@ -130,10 +132,15 @@ async function generateWagesByWeek(range: { start: Date; end: Date }, venueFilte
       ...(venueFilter ? { venue: venueFilter } : {})
     },
     include: {
-      staffProfile: { select: { firstName: true, lastName: true, payRateCents: true } }
+      staffProfile: { select: { firstName: true, lastName: true, ...staffPayRateSelect } }
     },
     orderBy: [{ workDate: 'asc' }]
   });
+
+  // Cost hours at the canonical rate (award/payProfile, casual default, salaried
+  // ÷45h equivalent, all incl. super) so the export reconciles with the reports
+  // instead of using a naked payRateCents that dropped super and award rates.
+  const superRate = await configuredSuperRateFraction();
 
   // Bucket by ISO week + venue.
   function isoWeek(date: Date): string {
@@ -154,7 +161,7 @@ async function generateWagesByWeek(range: { start: Date; end: Date }, venueFilte
     const hours = ts.clockInAt && ts.clockOutAt
       ? Math.max(0, ((ts.clockOutAt.getTime() - ts.clockInAt.getTime()) / 3_600_000) - (ts.breakMinutes ?? 0) / 60)
       : 0;
-    const rate = ts.staffProfile?.payRateCents ?? 0;
+    const rate = ts.staffProfile ? staffCostingRate(ts.staffProfile, superRate).ordinaryRateCents ?? 0 : 0;
     const wageCents = Math.round(hours * rate);
     const bucket = buckets.get(key) ?? { week, venue, hours: 0, wageCents: 0, shifts: 0 };
     bucket.hours += hours;
@@ -186,17 +193,21 @@ async function generateTimesheets(range: { start: Date; end: Date }, venueFilter
       ...(venueFilter ? { venue: venueFilter } : {})
     },
     include: {
-      staffProfile: { select: { firstName: true, lastName: true, email: true, payRateCents: true } }
+      staffProfile: { select: { firstName: true, lastName: true, email: true, ...staffPayRateSelect } }
     },
     orderBy: [{ workDate: 'asc' }, { venue: 'asc' }]
   });
+
+  // Canonical hourly rate (incl. super + award + casual default) so each row's
+  // wage reconciles with the reports rather than using a naked payRateCents.
+  const superRate = await configuredSuperRateFraction();
 
   const headers = ['date', 'staffName', 'email', 'venue', 'role', 'hours', 'breakMinutes', 'wages', 'status', 'paymentMethod'];
   const rows = timesheets.map((ts) => {
     const hours = ts.clockInAt && ts.clockOutAt
       ? Math.max(0, ((ts.clockOutAt.getTime() - ts.clockInAt.getTime()) / 3_600_000) - (ts.breakMinutes ?? 0) / 60)
       : 0;
-    const rate = ts.staffProfile?.payRateCents ?? 0;
+    const rate = ts.staffProfile ? staffCostingRate(ts.staffProfile, superRate).ordinaryRateCents ?? 0 : 0;
     return {
       date: dateOnly(ts.workDate),
       staffName: ts.staffProfile ? `${ts.staffProfile.firstName} ${ts.staffProfile.lastName}` : '',

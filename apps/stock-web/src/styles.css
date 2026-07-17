@@ -1096,9 +1096,118 @@ tbody tr.row-detail:hover {
   gap: 8px;
 }
 
+.stock-portions-card {
+  margin-top: 12px;
+}
+
+.portions-builder {
+  display: grid;
+  gap: 10px;
+}
+
+.portions-head {
+  display: grid;
+  gap: 2px;
+}
+
+.portions-tree {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.portions-tree-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+  position: relative;
+}
+
+.portions-tree-row::before {
+  content: '↳';
+  color: var(--color-muted, #999);
+  margin-right: 2px;
+}
+
+.portions-tree-name {
+  font-weight: 600;
+}
+
+.portions-tree-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+  color: var(--color-text-muted, #666);
+  white-space: nowrap;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.portions-add {
+  display: grid;
+  gap: 8px;
+}
+
+.portions-draft-row {
+  display: grid;
+  grid-template-columns: 2fr 1fr auto 1fr auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.portions-unit-select {
+  height: 38px;
+  padding: 0 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  background: var(--color-surface, #fff);
+  color: var(--color-text);
+}
+
+.portions-remove {
+  border: none;
+  background: transparent;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--color-muted, #999);
+}
+
+.portions-add-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .recipe-lines-table {
   width: 100%;
   border-collapse: collapse;
+}
+
+.recipe-lines-table tr.recipe-line-has-warning > td {
+  border-top: 1px solid var(--color-danger, #c0392b);
+}
+
+.recipe-line-warning-detail > td {
+  padding: 4px 8px 8px;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--color-danger, #c0392b);
+}
+
+.recipe-line-trace-detail > td {
+  padding: 2px 8px 7px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
 }
 
 .recipe-lines-table thead th {
@@ -1209,6 +1318,58 @@ tbody tr.row-detail:hover {
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--color-text-muted);
+}
+
+.stocktake-valuation-check {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm, 8px);
+  padding: 12px 14px;
+  margin-bottom: 14px;
+  background: var(--color-surface-muted, rgba(0, 0, 0, 0.02));
+}
+
+.stocktake-valuation-check.is-suspect {
+  border-color: var(--color-danger, #c0392b);
+}
+
+.stocktake-valuation-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+}
+
+.stocktake-valuation-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.stocktake-valuation-list > li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 14px;
+}
+
+.stocktake-valuation-list > li.is-suspect {
+  color: var(--color-danger, #c0392b);
+  font-weight: 700;
+}
+
+.stocktake-valuation-flag {
+  font-weight: 700;
+}
+
+.stocktake-valuation-num {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .stocktake-variance-summary {
@@ -1346,6 +1507,75 @@ tbody tr.row-detail:hover {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   background: var(--color-surface-muted);
+}
+
+/* Live per-line cost readout while counting — spots a wrong unit before submit. */
+.stocktake-count-cost {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  margin: 4px 2px 0;
+  font-size: 0.82rem;
+  color: var(--color-text-muted);
+}
+.stocktake-count-cost strong {
+  color: var(--color-text);
+  font-weight: 600;
+}
+.stocktake-count-cost.is-missing {
+  color: var(--color-warning-strong, #9a6a00);
+}
+.stocktake-count-cost.is-alert strong {
+  color: var(--color-danger-strong, #b42318);
+}
+
+/* Bulk line editing bar in review. */
+.stocktake-bulk-bar {
+  border: 1px solid var(--color-accent, #684a4a);
+  background: var(--color-surface-muted);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  margin-bottom: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.stocktake-bulk-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stocktake-bulk-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: end;
+}
+.stocktake-select-cell {
+  width: 34px;
+  text-align: center;
+}
+
+/* Inline link from a stocktake line / top-value row to the item's edit form. */
+.stocktake-item-link {
+  border: 0;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-weight: 600;
+  color: var(--color-accent, #684a4a);
+  text-align: left;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.stocktake-item-link:hover {
+  text-decoration: none;
+}
+.recipe-lines-table tr.is-selected td {
+  background: color-mix(in srgb, var(--color-accent, #684a4a) 10%, transparent);
 }
 
 @media (max-width: 1100px) {
@@ -1860,6 +2090,16 @@ html[data-theme='dark'] .price-movement-tile.is-positive strong { color: var(--t
   max-width: 80px;
 }
 
+/* Bigger amount box: staff enter quantities here a lot, so give it room.
+   Works whether the class lands on the <input> directly (table editor) or on
+   the @alma/ui Input wrapper (main recipe form). */
+.recipe-amount-input,
+.recipe-amount-input input {
+  min-width: 120px;
+  font-size: 15px;
+  padding: 9px 12px;
+}
+
 .recipe-line-delete {
   display: inline-grid;
   place-items: center;
@@ -2153,6 +2393,44 @@ html[data-theme='dark'] {
 .loaded-import-toggle { display: flex; align-items: flex-start; gap: 9px; font-size: 13px; color: var(--color-text); line-height: 1.4; }
 .loaded-import-toggle input { margin-top: 2px; }
 
+.loaded-import-flags {
+  display: grid; gap: 6px; padding: 12px 14px; border-radius: 10px;
+  border: 1px solid var(--tone-warning-border, #E4C58A);
+  background: var(--tone-warning-bg, #FBF3E2);
+}
+.loaded-import-flags > strong { font-size: 13.5px; color: var(--tone-warning-fg, #92400e); }
+.loaded-import-flag-list { margin: 4px 0 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.loaded-import-flag-list li {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px 10px; border-radius: 8px; background: var(--color-surface);
+}
+.loaded-import-flag-item { font-weight: 600; font-size: 13px; color: var(--color-text); }
+.loaded-import-flag-where { font-weight: 400; color: var(--color-text-muted); }
+.loaded-import-flag-reason { font-size: 12.5px; color: var(--tone-warning-fg, #92400e); }
+
+/* ── Costing health worklist ──────────────────────────────────────────── */
+.config-health-error { margin: 0 0 12px; color: #9A3A2E; font-size: 13px; }
+.config-health-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 16px; }
+.config-health-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.config-health-row {
+  display: grid; gap: 8px; padding: 12px 14px;
+  border: 1px solid var(--color-border); border-left-width: 4px; border-radius: 11px; background: var(--color-surface);
+}
+.config-health-row.is-error { border-left-color: var(--tone-danger-border, #D9805F); }
+.config-health-row.is-warn { border-left-color: var(--tone-warning-border, #E4C58A); }
+.config-health-row-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 14px; }
+.config-health-row-title { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.config-health-row-name { font-weight: 600; font-size: 14.5px; color: var(--color-text); text-decoration: none; }
+.config-health-row-name:hover { text-decoration: underline; }
+.config-health-row-cat { font-size: 12px; color: var(--color-text-muted); }
+.config-health-row-meta { display: flex; gap: 14px; font-size: 12.5px; color: var(--color-text-muted); white-space: nowrap; }
+.config-health-issues { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
+.config-health-issue { display: flex; align-items: flex-start; gap: 9px; font-size: 12.5px; color: var(--color-text); line-height: 1.45; }
+.config-health-issue > span { padding-top: 1px; }
+.config-health-row-actions { display: flex; justify-content: flex-end; }
+.config-health-fix { font-size: 12.5px; font-weight: 600; color: var(--color-accent, #7A5C3E); text-decoration: none; }
+.config-health-fix:hover { text-decoration: underline; }
+
 /* ── Inter-venue transfers ────────────────────────────────────────────── */
 .transfer-arrow { align-self: center; font-size: 18px; color: var(--color-text-muted); padding: 0 2px; }
 .transfer-onhand { margin: 0; }
@@ -2224,3 +2502,398 @@ html[data-theme='dark'] .stock-bulk-edit-title { color: var(--color-text); }
 .hub-tab-icon { display: inline-flex; opacity: 0.85; }
 .hub-tab-icon svg { width: 15px; height: 15px; }
 html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #fff); }
+
+/* ── Stocktake Phase 1: progress, count toggles, area walking ─────── */
+.stocktake-count-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin: 8px 0 12px;
+}
+.stocktake-count-progress {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 220px;
+  flex: 1;
+}
+.stocktake-progress-track {
+  flex: 1;
+  max-width: 260px;
+  height: 7px;
+  border-radius: 9999px;
+  background: rgba(31, 53, 36, 0.12);
+  overflow: hidden;
+}
+.stocktake-progress-bar {
+  height: 100%;
+  border-radius: 9999px;
+  background: #4f6b47;
+  transition: width 200ms ease;
+}
+.stocktake-count-toggles {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+.stocktake-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text, #1f3524);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.stocktake-toggle input {
+  cursor: pointer;
+}
+.stocktake-area-header {
+  margin: 14px 0 6px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--color-surface-muted, #eef2ea);
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #5a6b58);
+}
+
+/* ── Menu-engineering quadrant ── */
+.menu-quadrant {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.menu-quadrant-caption {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+}
+
+.menu-quadrant-caption strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 16px;
+  font-weight: 400;
+  color: var(--color-text);
+}
+
+.menu-quadrant-caption span {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+.menu-quadrant-caption small.subtle {
+  font-size: 11px;
+  color: var(--color-text-muted);
+  opacity: 0.85;
+}
+
+.menu-quadrant-clear {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--color-accent, #9a3a2e);
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.menu-quadrant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.menu-quadrant-cell {
+  display: grid;
+  gap: 3px;
+  text-align: left;
+  padding: 12px 14px;
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+  cursor: pointer;
+  transition: box-shadow 120ms ease, transform 120ms ease;
+}
+
+.menu-quadrant-cell:hover {
+  transform: translateY(-1px);
+}
+
+.menu-quadrant-cell strong {
+  font-family: Georgia, 'Times New Roman', serif;
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1;
+}
+
+.menu-quadrant-name {
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.menu-quadrant-hint {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-muted);
+}
+
+/* Classic quadrant colours: Star=green, Plow-horse=amber, Puzzle=blue, Dog=red. */
+.menu-quadrant-cell.is-star {
+  border-left-color: #4f6b47;
+  background: rgba(79, 107, 71, 0.08);
+}
+.menu-quadrant-cell.is-star strong,
+.menu-quadrant-cell.is-star .menu-quadrant-name { color: #2f4129; }
+
+.menu-quadrant-cell.is-plow {
+  border-left-color: #b5772f;
+  background: rgba(181, 119, 47, 0.1);
+}
+.menu-quadrant-cell.is-plow strong,
+.menu-quadrant-cell.is-plow .menu-quadrant-name { color: #6f4915; }
+
+.menu-quadrant-cell.is-puzzle {
+  border-left-color: #2563eb;
+  background: rgba(37, 99, 235, 0.08);
+}
+.menu-quadrant-cell.is-puzzle strong,
+.menu-quadrant-cell.is-puzzle .menu-quadrant-name { color: #1d4ed8; }
+
+.menu-quadrant-cell.is-dog {
+  border-left-color: #6e2419;
+  background: rgba(110, 36, 25, 0.08);
+}
+.menu-quadrant-cell.is-dog strong,
+.menu-quadrant-cell.is-dog .menu-quadrant-name { color: #6e2419; }
+
+.menu-quadrant-cell.is-active {
+  box-shadow: 0 0 0 2px currentColor inset;
+}
+.menu-quadrant-cell.is-star.is-active { box-shadow: 0 0 0 2px #4f6b47 inset; }
+.menu-quadrant-cell.is-plow.is-active { box-shadow: 0 0 0 2px #b5772f inset; }
+.menu-quadrant-cell.is-puzzle.is-active { box-shadow: 0 0 0 2px #2563eb inset; }
+.menu-quadrant-cell.is-dog.is-active { box-shadow: 0 0 0 2px #6e2419 inset; }
+
+/* Widen the dish table to fit the added "Menu class" column (append-only
+   override of the 9-column grid; mobile collapse re-declared afterwards so it
+   still wins under the media query). */
+.dish-margin-row {
+  grid-template-columns:
+    minmax(180px, 2.2fr) minmax(80px, 1fr) minmax(70px, 0.8fr) minmax(80px, 0.9fr)
+    minmax(110px, 1.1fr) minmax(80px, 0.8fr) minmax(100px, 1fr) minmax(100px, 1fr)
+    minmax(120px, 1.15fr) minmax(110px, 1fr);
+}
+
+@media (max-width: 900px) {
+  .dish-margin-row,
+  .dish-margin-row.dish-margin-head {
+    grid-template-columns: 1fr 1fr;
+  }
+  .menu-quadrant-caption .menu-quadrant-clear {
+    margin-left: 0;
+  }
+}
+
+/* ── Stocktake mobile count polish (phone counting on the floor) ──── */
+@media (max-width: 720px) {
+  .stocktake-count-line {
+    gap: 8px;
+    padding: 12px;
+    border-radius: 12px;
+  }
+  /* Bigger, thumb-friendly quantity field — the one you touch most while counting */
+  .stocktake-count-line input[type='number'] {
+    font-size: 17px;
+    padding: 12px 10px;
+    text-align: center;
+  }
+  .stocktake-count-toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 4;
+    background: var(--color-bg, #fff);
+    padding: 8px 0;
+  }
+  .stocktake-count-progress {
+    width: 100%;
+  }
+}
+
+/* ── Stocktake usage variance / shrinkage panel (Phase 3) ────────── */
+.stocktake-shrinkage {
+  margin-top: 14px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-left: 3px solid #4f6b47;
+  border-radius: 12px;
+  background: var(--color-surface, #fff);
+}
+.stocktake-shrinkage.is-loss {
+  border-left-color: #9a3a2e;
+}
+.stocktake-shrinkage-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stocktake-shrinkage-head span {
+  font-size: 10.5px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #5a6b58);
+}
+.stocktake-shrinkage-head strong {
+  font-size: 18px;
+  font-weight: 800;
+  color: #2f4129;
+}
+.stocktake-shrinkage.is-loss .stocktake-shrinkage-head strong {
+  color: #9a3a2e;
+}
+.stocktake-shrinkage-list {
+  list-style: none;
+  margin: 10px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.stocktake-shrinkage-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.6fr) auto;
+  gap: 10px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 8px;
+  background: var(--color-surface-muted, #f4f6f2);
+}
+.stocktake-shrinkage-name {
+  font-weight: 700;
+  font-size: 13px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stocktake-shrinkage-qty {
+  font-size: 11.5px;
+  color: var(--color-text-muted, #5a6b58);
+}
+.stocktake-shrinkage-list strong {
+  text-align: right;
+  font-weight: 800;
+  font-size: 13px;
+  color: #9a3a2e;
+}
+@media (max-width: 720px) {
+  .stocktake-shrinkage-list li {
+    grid-template-columns: 1fr auto;
+  }
+  .stocktake-shrinkage-qty {
+    grid-column: 1 / -1;
+  }
+}
+
+/* ── Purchase orders ── */
+.po-view-toggle {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--color-surface-muted, #f4f6f2);
+}
+.po-line-list {
+  display: grid;
+  gap: 12px;
+}
+.po-line-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.6fr) minmax(0, 1.4fr) 90px 90px 120px auto;
+  gap: 10px;
+  align-items: end;
+  padding: 12px;
+  border-radius: 10px;
+  background: var(--color-surface-muted, #f4f6f2);
+}
+.po-block {
+  display: grid;
+  gap: 0;
+}
+.po-panel {
+  display: grid;
+  gap: 12px;
+  padding: 14px 16px;
+  border-top: 1px solid var(--color-border, #e2e6dd);
+  background: var(--color-surface-muted, #f4f6f2);
+}
+.po-receive-lines {
+  display: grid;
+  gap: 10px;
+}
+.po-receive-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 140px;
+  gap: 12px;
+  align-items: end;
+}
+.po-receive-label {
+  display: grid;
+  gap: 2px;
+}
+.po-match-result {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border, #e2e6dd);
+  background: var(--color-surface, #fff);
+}
+.po-match-result--clean {
+  border-color: #3f8f5f;
+}
+.po-match-result--flagged {
+  border-color: #9a3a2e;
+}
+.po-match-banner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+}
+.po-discrepancy-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.po-discrepancy-list li {
+  display: grid;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--color-surface-muted, #f4f6f2);
+}
+@media (max-width: 720px) {
+  .po-line-row {
+    grid-template-columns: 1fr 1fr;
+  }
+  .po-receive-row {
+    grid-template-columns: 1fr;
+  }
+}

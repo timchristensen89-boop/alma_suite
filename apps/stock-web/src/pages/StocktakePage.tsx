@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
   StockItem,
@@ -15,9 +16,11 @@ import type {
 } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
+import { StockItemPicker } from '../components/StockItemPicker';
 import { IconStocktake } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -125,6 +128,67 @@ function stockUnitCostCents(item: StockItem) {
   return item.avgCostCents;
 }
 
+// Client mirror of the API's convertQuantityToCostUnit. Enough to estimate a
+// line's dollar value live while counting, so a wrong unit (mL vs bottle, g vs
+// each) shows up as a wildly off figure before the count is ever submitted. The
+// server recomputes the authoritative value on save; this is display-only.
+function normUnit(value: string | null | undefined): string {
+  const s = (value ?? '').trim().toLowerCase();
+  if (['each', 'ea', 'unit', 'units', 'portion', 'portions'].includes(s)) return 'each';
+  if (['litre', 'litres', 'liter', 'liters', 'l'].includes(s)) return 'l';
+  if (['millilitre', 'millilitres', 'milliliter', 'ml'].includes(s)) return 'ml';
+  if (['kilogram', 'kilograms', 'kg'].includes(s)) return 'kg';
+  if (['gram', 'grams', 'g'].includes(s)) return 'g';
+  return s;
+}
+function metricFactor(from: string, to: string): number | null {
+  if (from === to) return 1;
+  if (from === 'l' && to === 'ml') return 1000;
+  if (from === 'ml' && to === 'l') return 1 / 1000;
+  if (from === 'kg' && to === 'g') return 1000;
+  if (from === 'g' && to === 'kg') return 1 / 1000;
+  return null;
+}
+function convertToCountUnitClient(qty: number, fromUnit: string | null | undefined, item: StockItem): { qty: number; via: string } {
+  const cost = normUnit(item.countUnit ?? item.unit);
+  const from = normUnit(fromUnit);
+  const purchase = normUnit(item.unit);
+  if (!from || from === cost) return { qty, via: 'same' };
+  if (from === 'each') return { qty, via: 'each' };
+  if (item.countUnit && cost === normUnit(item.countUnit) && from === purchase && item.conversionFactor > 0) {
+    return { qty: qty * item.conversionFactor, via: 'pack' };
+  }
+  const mf = metricFactor(from, cost);
+  if (mf !== null) return { qty: qty * mf, via: 'measure' };
+  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
+    const toMeasure = metricFactor(from, normUnit(item.measureUnit));
+    if (toMeasure !== null) return { qty: (qty * toMeasure) / item.measurePerCountUnit, via: 'measure-pack' };
+  }
+  return { qty, via: 'unknown' };
+}
+// Live value estimate for a count line. unitMismatch = the entered unit can't be
+// resolved to the item's cost unit (the classic mL/g-vs-parent setup error).
+function estimateLineValueCents(
+  item: StockItem | undefined,
+  countedQty: number | null,
+  unit: string | null
+): { cents: number | null; unitMismatch: boolean; countUnit: string | null; unitCostCents: number | null } {
+  if (!item) return { cents: null, unitMismatch: false, countUnit: null, unitCostCents: null };
+  const unitCostCents = stockUnitCostCents(item) ?? null;
+  const countUnit = stockCountUnit(item);
+  if (countedQty === null || unitCostCents === null) {
+    return { cents: null, unitMismatch: false, countUnit, unitCostCents };
+  }
+  const conv = convertToCountUnitClient(countedQty, unit, item);
+  const unitMismatch = conv.via === 'unknown' && !!unit && normUnit(unit) !== normUnit(countUnit);
+  return {
+    cents: unitMismatch ? null : Math.round(unitCostCents * conv.qty),
+    unitMismatch,
+    countUnit,
+    unitCostCents
+  };
+}
+
 function movementTypeLabel(type: StocktakeMovement['movementType']) {
   switch (type) {
     case 'STOCKTAKE_CORRECTION':
@@ -167,22 +231,25 @@ function varianceSummary(detail: StocktakeWithLines) {
   );
 }
 
-function emptyLine(item?: StockItem): LineDraft {
+// blind=true seeds a line WITHOUT the expected on-hand in the qty field, so the
+// counter records what they actually see rather than being nudged to the system
+// number. Value is left blank too — it is recomputed on apply from the count.
+function emptyLine(item?: StockItem, blind = true): LineDraft {
   const onHand = item ? effectiveItemOnHand(item) : 0;
   const unitCostCents = item ? stockUnitCostCents(item) : null;
   const value = unitCostCents ? Math.round(unitCostCents * onHand) : '';
   return {
     itemId: item?.id ?? '',
     label: item?.name ?? '',
-    countedQty: item ? String(onHand) : '0',
+    countedQty: blind ? '' : item ? String(onHand) : '0',
     unit: item ? stockCountUnit(item) : '',
     location: item?.category?.name ?? '',
-    stockValueCents: value === '' ? '' : String(value),
+    stockValueCents: blind ? '' : value === '' ? '' : String(value),
     notes: ''
   };
 }
 
-function emptyDraft(items: StockItem[]): StocktakeDraft {
+function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
   return {
     name: `Stocktake ${new Date().toLocaleDateString()}`,
     venue: '',
@@ -190,7 +257,7 @@ function emptyDraft(items: StockItem[]): StocktakeDraft {
     countedAt: formatDateTimeInput(new Date().toISOString()),
     status: 'IN_PROGRESS',
     notes: '',
-    lines: items.filter((item) => item.status === 'ACTIVE').map(emptyLine)
+    lines: items.filter((item) => item.status === 'ACTIVE').map((item) => emptyLine(item, blind))
   };
 }
 
@@ -405,21 +472,10 @@ export function StocktakePage() {
   async function downloadStocktakeCsv(stocktake: Stocktake) {
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch(`/api/stocktake/${stocktake.id}/export.csv`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv(
+        `/api/stocktake/${stocktake.id}/export.csv`,
+        `${(stocktake.name || 'stocktake').replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-stocktake.csv`
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export stocktake CSV');
     }
@@ -933,6 +989,7 @@ export function StocktakePage() {
                                   {detail && detail.id === stocktake.id ? (
                                     <StocktakeLinesTable
                                       detail={detail}
+                                      items={items}
                                       canManageReview={canManageReview}
                                       onChanged={() => void refreshDetail(stocktake.id)}
                                     />
@@ -985,20 +1042,43 @@ function StocktakeForm({
   onCancel: () => void;
 }) {
   const [draft, setDraft] = useState<StocktakeDraft>(() =>
-    initial ? draftFromStocktake(initial) : emptyDraft(items)
+    initial ? draftFromStocktake(initial) : emptyDraft(items, mode === 'create')
   );
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
   const [feedbackTone, setFeedbackTone] = useState<'success' | 'error'>('success');
   const [feedbackTarget, setFeedbackTarget] = useState<'draft' | 'review'>('draft');
+  // Blind count (best practice: don't show the expected number while counting)
+  // defaults on for new counts. Walk-by-area orders entry by physical location.
+  const [blind, setBlind] = useState(mode === 'create');
+  const [walkByArea, setWalkByArea] = useState(false);
 
-  const itemOptions = useMemo(
-    () => [
-      { label: 'Unlinked count line', value: '' },
-      ...items.map((item) => ({ label: `${item.name} (${item.unit})`, value: item.id }))
-    ],
-    [items]
-  );
+  const countedCount = draft.lines.filter((line) => line.countedQty.trim() !== '').length;
+  const progressPct = draft.lines.length ? Math.round((countedCount / draft.lines.length) * 100) : 0;
+
+  const orderedIndices = useMemo(() => {
+    const idx = draft.lines.map((_, i) => i);
+    if (!walkByArea) return idx;
+    return idx.sort((a, b) =>
+      (draft.lines[a]?.location || 'ZZZ').localeCompare(draft.lines[b]?.location || 'ZZZ')
+    );
+  }, [draft.lines, walkByArea]);
+
+  function toggleBlind(next: boolean) {
+    setBlind(next);
+    setDraft((current) => ({
+      ...current,
+      lines: current.lines.map((line) => {
+        if (!line.itemId) return line;
+        const item = items.find((candidate) => candidate.id === line.itemId);
+        if (!item) return line;
+        if (next) return { ...line, countedQty: '', stockValueCents: '' };
+        if (line.countedQty.trim() !== '') return line; // never clobber a real count
+        const seeded = emptyLine(item, false);
+        return { ...line, countedQty: seeded.countedQty, stockValueCents: seeded.stockValueCents };
+      })
+    }));
+  }
 
   function update<K extends keyof StocktakeDraft>(key: K, value: StocktakeDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -1093,25 +1173,78 @@ function StocktakeForm({
       </div>
 
       <div className="stocktake-count-toolbar">
-        <strong>{draft.lines.length} count lines</strong>
-        <Button type="button" variant="secondary" size="sm" onClick={() => update('lines', [...draft.lines, emptyLine()])}>
-          Add line
-        </Button>
+        <div className="stocktake-count-progress">
+          <strong>{countedCount} / {draft.lines.length} counted</strong>
+          <div className="stocktake-progress-track" aria-hidden>
+            <div className="stocktake-progress-bar" style={{ width: `${progressPct}%` }} />
+          </div>
+          <span className="subtle">{progressPct}%</span>
+        </div>
+        <div className="stocktake-count-toggles">
+          <label className="stocktake-toggle" title="Hide the expected on-hand while counting — record what you actually see.">
+            <input type="checkbox" checked={blind} onChange={(event) => toggleBlind(event.currentTarget.checked)} />
+            Blind count
+          </label>
+          <label className="stocktake-toggle" title="Order the count lines by location so you can count one area at a time.">
+            <input type="checkbox" checked={walkByArea} onChange={(event) => setWalkByArea(event.currentTarget.checked)} />
+            Walk by area
+          </label>
+          <Button type="button" variant="secondary" size="sm" onClick={() => update('lines', [...draft.lines, emptyLine(undefined, blind)])}>
+            Add line
+          </Button>
+        </div>
       </div>
 
       <div className="stocktake-count-lines">
-        {draft.lines.map((line, index) => (
-          <div key={index} className="stocktake-count-line">
-            <Select label="Item" value={line.itemId} onChange={(event) => selectLineItem(index, event.currentTarget.value)} options={itemOptions} />
-            <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
-            <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
-            <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-            <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
-            <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
-              Remove
-            </Button>
-          </div>
-        ))}
+        {orderedIndices.map((index, displayPos) => {
+          const line = draft.lines[index];
+          if (!line) return null;
+          const prevIdx = displayPos > 0 ? orderedIndices[displayPos - 1] : undefined;
+          const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
+          const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
+          return (
+            <div key={index}>
+              {showAreaHeader ? (
+                <div className="stocktake-area-header">{line.location || 'No location'}</div>
+              ) : null}
+              <div className="stocktake-count-line">
+                <StockItemPicker
+                  label="Item"
+                  items={items}
+                  value={line.itemId}
+                  onChange={(itemId) => selectLineItem(index, itemId)}
+                />
+                <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
+                <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
+                <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
+                <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
+                <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
+                  Remove
+                </Button>
+              </div>
+              {(() => {
+                const lineItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
+                if (!lineItem) return null;
+                const countRaw = String(line.countedQty ?? '').trim();
+                const countedQty = countRaw === '' ? null : Number(countRaw);
+                const estimate = estimateLineValueCents(lineItem, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null);
+                if (estimate.unitCostCents === null) {
+                  return <div className="stocktake-count-cost is-missing">No cost set for {lineItem.name} — value can't be checked</div>;
+                }
+                return (
+                  <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
+                    <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
+                    {estimate.unitMismatch ? (
+                      <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
+                    ) : estimate.cents !== null ? (
+                      <strong>line value {formatCurrency(estimate.cents)}</strong>
+                    ) : null}
+                  </div>
+                );
+              })()}
+            </div>
+          );
+        })}
       </div>
 
       <p className="subtle">Submitting sends this count for review. It does not update stock balances.</p>
@@ -1129,15 +1262,37 @@ function StocktakeForm({
   );
 }
 
+// Response shape from GET /api/stocktake/:id/variance (the expected-vs-counted
+// usage analytic). Typed inline — the endpoint has no shared type yet.
+type UsageVarianceRow = {
+  lineId: string;
+  label: string;
+  itemId: string | null;
+  unit: string | null;
+  currentQty: number | null;
+  expectedQty: number | null;
+  expectedVarianceQty: number | null;
+  expectedVarianceValueCents: number | null;
+  theoreticalUsageQty: number | null;
+};
+type UsageVarianceReport = {
+  summary: { expectedAvailable: boolean; unexplainedShrinkageValueCents: number | null };
+  rows: UsageVarianceRow[];
+};
+
 function StocktakeLinesTable({
   detail,
+  items,
   canManageReview,
   onChanged
 }: {
   detail: StocktakeWithLines;
+  items: StockItem[];
   canManageReview: boolean;
   onChanged: () => void;
 }) {
+  const navigate = useNavigate();
+  const openItem = (itemId: string) => navigate(`/items?edit=${itemId}`);
   // Category groups start collapsed; `expanded` holds the ones the user opened.
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
   const toggleGroup = (key: string) =>
@@ -1147,9 +1302,104 @@ function StocktakeLinesTable({
       else next.add(key);
       return next;
     });
+  // Expected-vs-counted usage variance from the API (the theoretical-depletion
+  // analytic): what the shelf should hold given deliveries, wastage and sales.
+  const [usageVariance, setUsageVariance] = useState<UsageVarianceReport | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const report = await api<UsageVarianceReport>(`/api/stocktake/${detail.id}/variance`);
+        if (!cancelled) setUsageVariance(report);
+      } catch {
+        /* silent — expected-variance is informational */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [detail.id]);
+
+  // ── Bulk line editing (review) ──────────────────────────────────────────
+  // Select any lines, then correct their unit and/or counted qty together —
+  // the fast fix when a batch of lines was counted in the wrong unit (mL vs
+  // bottle, g vs each) relative to their parent product. Edits save through the
+  // normal stocktake update, which re-derives each line's value server-side; on
+  // a not-yet-applied count this touches no ledger balances.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [bulkUnit, setBulkUnit] = useState('');
+  const [bulkQty, setBulkQty] = useState('');
+  const [savingBulk, setSavingBulk] = useState(false);
+  const [bulkFeedback, setBulkFeedback] = useState<{ message: string; tone: 'success' | 'error' } | null>(null);
+  useEffect(() => {
+    // Reset selection when the stocktake changes.
+    setSelected(new Set());
+    setBulkUnit('');
+    setBulkQty('');
+    setBulkFeedback(null);
+  }, [detail.id]);
+
+  const toggleLine = (lineId: string) =>
+    setSelected((current) => {
+      const next = new Set(current);
+      if (next.has(lineId)) next.delete(lineId);
+      else next.add(lineId);
+      return next;
+    });
+
+  async function saveBulkEdit() {
+    const unitOverride = bulkUnit.trim();
+    const qtyRaw = bulkQty.trim();
+    const qtyOverride = qtyRaw === '' ? undefined : Number(qtyRaw);
+    if (!unitOverride && qtyOverride === undefined) {
+      setBulkFeedback({ message: 'Set a new unit or quantity to apply.', tone: 'error' });
+      return;
+    }
+    if (qtyOverride !== undefined && !Number.isFinite(qtyOverride)) {
+      setBulkFeedback({ message: 'Quantity must be a number.', tone: 'error' });
+      return;
+    }
+    setSavingBulk(true);
+    setBulkFeedback(null);
+    try {
+      const lines: StocktakeLineInput[] = detail.lines.map((line) => {
+        const apply = selected.has(line.id);
+        return {
+          itemId: line.itemId ?? '',
+          label: line.label,
+          countedQty:
+            apply && qtyOverride !== undefined ? qtyOverride : line.countedQty ?? null,
+          unit: apply && unitOverride ? unitOverride : line.unit ?? '',
+          location: line.location ?? '',
+          notes: line.notes ?? ''
+        };
+      });
+      await api<StocktakeWithLines>(`/api/stocktake/${detail.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ lines })
+      });
+      setBulkFeedback({ message: `Updated ${selected.size} line${selected.size === 1 ? '' : 's'}.`, tone: 'success' });
+      setSelected(new Set());
+      setBulkUnit('');
+      setBulkQty('');
+      onChanged();
+    } catch (err) {
+      setBulkFeedback({
+        message: err instanceof ApiError ? err.message : 'Could not save line edits',
+        tone: 'error'
+      });
+    } finally {
+      setSavingBulk(false);
+    }
+  }
+
   if (detail.lines.length === 0) return <p className="subtle">This stocktake has no recorded lines.</p>;
 
   const summary = varianceSummary(detail);
+  const shrinkageRows = (usageVariance?.rows ?? [])
+    .filter((row) => row.expectedVarianceValueCents !== null && row.expectedVarianceValueCents < 0)
+    .sort((a, b) => (a.expectedVarianceValueCents ?? 0) - (b.expectedVarianceValueCents ?? 0))
+    .slice(0, 8);
   const groups = new Map<string, typeof detail.lines>();
   for (const line of detail.lines) {
     const key = line.location ?? 'Other';
@@ -1157,6 +1407,26 @@ function StocktakeLinesTable({
     list.push(line);
     groups.set(key, list);
   }
+
+  // Valuation check — surface the lines driving the stocktake value so a
+  // mis-valued line (usually a unit/cost setup error blowing one line up by
+  // ~1000×) is obvious instead of buried in a collapsed group.
+  const valuedLines = detail.lines
+    .map((line) => ({
+      id: line.id,
+      label: line.label,
+      itemId: line.itemId ?? null,
+      itemName: line.item?.name ?? null,
+      value: line.stockValueCents ?? 0,
+      countedQty: normalQuantity(line.countedQty),
+      unit: line.unit ?? line.item?.unit ?? null
+    }))
+    .filter((line) => line.value > 0)
+    .sort((a, b) => b.value - a.value);
+  const totalValuedCents = valuedLines.reduce((sum, line) => sum + line.value, 0);
+  const topValuedLines = valuedLines.slice(0, 5);
+  const suspectShareThreshold = 0.25;
+  const hasSuspectLine = totalValuedCents > 0 && topValuedLines.some((line) => line.value / totalValuedCents >= suspectShareThreshold);
 
   return (
     <div className="recipe-lines">
@@ -1186,6 +1456,94 @@ function StocktakeLinesTable({
       ) : (
         <p className="subtle">No linked stock items yet, so variances cannot be calculated for this stocktake.</p>
       )}
+      {usageVariance?.summary.expectedAvailable ? (
+        <div className={`stocktake-shrinkage${(usageVariance.summary.unexplainedShrinkageValueCents ?? 0) < 0 ? ' is-loss' : ''}`}>
+          <div className="stocktake-shrinkage-head">
+            <span>Usage variance · counted vs expected</span>
+            <strong>{formatCurrency(usageVariance.summary.unexplainedShrinkageValueCents ?? 0)} unexplained</strong>
+          </div>
+          <p className="subtle">
+            Expected = last count + deliveries − wastage − theoretical sales usage. Lines below expected are stock you
+            counted short of what should be on the shelf — the real, unexplained loss.
+          </p>
+          {shrinkageRows.length ? (
+            <ul className="stocktake-shrinkage-list">
+              {shrinkageRows.map((row) => (
+                <li key={row.lineId}>
+                  <span className="stocktake-shrinkage-name">{row.label}</span>
+                  <span className="stocktake-shrinkage-qty">
+                    counted {formatQuantity(row.currentQty, row.unit)} · expected {formatQuantity(row.expectedQty, row.unit)}
+                  </span>
+                  <strong>{formatCurrency(row.expectedVarianceValueCents ?? 0)}</strong>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p className="subtle">No unexplained shortfalls — counted stock matches expected usage.</p>
+          )}
+        </div>
+      ) : null}
+      {totalValuedCents > 0 ? (
+        <div className={`stocktake-valuation-check${hasSuspectLine ? ' is-suspect' : ''}`}>
+          <div className="stocktake-valuation-head">
+            <span>Top value lines</span>
+            <strong>{formatCurrency(totalValuedCents)} total</strong>
+          </div>
+          <ul className="stocktake-valuation-list">
+            {topValuedLines.map((line) => {
+              const share = totalValuedCents > 0 ? line.value / totalValuedCents : 0;
+              const suspect = share >= suspectShareThreshold;
+              return (
+                <li key={line.id} className={suspect ? 'is-suspect' : ''}>
+                  <span className="stocktake-valuation-name">
+                    {line.itemId ? (
+                      <button type="button" className="stocktake-item-link" onClick={() => openItem(line.itemId!)} title="Open item details to fix its unit/cost">
+                        {line.itemName ?? line.label}
+                      </button>
+                    ) : (
+                      line.itemName ?? line.label
+                    )}
+                    {suspect ? <span className="stocktake-valuation-flag"> ⚠ check unit/cost</span> : null}
+                  </span>
+                  <span className="stocktake-valuation-num">
+                    {formatCurrency(line.value)} · {(share * 100).toFixed(0)}%
+                    {line.countedQty !== null ? ` · counted ${formatQuantity(line.countedQty, line.unit)}` : ''}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          {hasSuspectLine ? (
+            <p className="subtle">
+              One line driving most of the value is almost always a unit/cost setup error — e.g. a spirit counted in mL
+              but costed per bottle (×1000), or a wrong pack size. Open that item and check its count unit, cost unit and
+              average cost.
+            </p>
+          ) : null}
+        </div>
+      ) : null}
+      {canManageReview && selected.size > 0 ? (
+        <div className="stocktake-bulk-bar">
+          <div className="stocktake-bulk-head">
+            <strong>{selected.size} line{selected.size === 1 ? '' : 's'} selected</strong>
+            <button type="button" className="stocktake-groups-toggle" onClick={() => setSelected(new Set())}>
+              Clear
+            </button>
+          </div>
+          <p className="subtle">
+            Fix a wrong count unit (e.g. mL vs bottle) across the selected lines. Leave a field blank to keep it. Values
+            are re-derived from each item's cost on save.
+          </p>
+          <div className="stocktake-bulk-fields">
+            <Input label="Set unit" placeholder="e.g. bottle" value={bulkUnit} onChange={(event) => setBulkUnit(event.currentTarget.value)} />
+            <Input label="Set qty" type="number" step="0.01" placeholder="unchanged" value={bulkQty} onChange={(event) => setBulkQty(event.currentTarget.value)} />
+            <Button type="button" variant="secondary" size="sm" disabled={savingBulk} onClick={() => void saveBulkEdit()}>
+              {savingBulk ? 'Saving…' : `Apply to ${selected.size}`}
+            </Button>
+            <ActionFeedback message={bulkFeedback?.message ?? null} tone={bulkFeedback?.tone ?? 'success'} />
+          </div>
+        </div>
+      ) : null}
       <div className="stocktake-groups-toolbar">
         <span className="subtle">{groups.size} categor{groups.size === 1 ? 'y' : 'ies'}</span>
         <button
@@ -1214,8 +1572,10 @@ function StocktakeLinesTable({
           <table className="recipe-lines-table">
             <thead>
               <tr>
+                {canManageReview ? <th aria-label="Select" /> : null}
                 <th>Item</th>
                 <th>Qty</th>
+                <th>Unit cost</th>
                 <th>Current</th>
                 <th>Variance</th>
                 <th>Value</th>
@@ -1237,15 +1597,36 @@ function StocktakeLinesTable({
                 const isLiquid = /liquor|beer|wine|spirit|liquid|cocktail|bottle|keg|draught|draft/i.test(categoryHint);
                 const threshold = isLiquid ? 10 : 5;
                 const isAlert = variancePct !== null && variancePct > threshold;
+                const fullItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
+                const unitCostCents = fullItem ? stockUnitCostCents(fullItem) : null;
+                const unitCostLabel = fullItem ? stockCountUnit(fullItem) : null;
+                const isSelected = selected.has(line.id);
                 return (
-                  <tr key={line.id} className={isAlert ? 'stocktake-variance-row-alert' : ''}>
+                  <tr key={line.id} className={`${isAlert ? 'stocktake-variance-row-alert' : ''}${isSelected ? ' is-selected' : ''}`}>
+                    {canManageReview ? (
+                      <td className="stocktake-select-cell">
+                        <input
+                          type="checkbox"
+                          checked={isSelected}
+                          onChange={() => toggleLine(line.id)}
+                          aria-label={`Select ${line.label}`}
+                        />
+                      </td>
+                    ) : null}
                     <td>
                       <span className="cell-stack">
-                        <strong>{line.label}</strong>
+                        {line.itemId ? (
+                          <button type="button" className="stocktake-item-link" onClick={() => openItem(line.itemId!)} title="Open item details to fix its unit/cost">
+                            {line.label}
+                          </button>
+                        ) : (
+                          <strong>{line.label}</strong>
+                        )}
                         <span className="subtle">{line.item ? `Linked to ${line.item.name}` : 'Unlinked count'}</span>
                       </span>
                     </td>
                     <td>{formatQuantity(countedQty, line.unit)}</td>
+                    <td>{unitCostCents === null || unitCostCents === undefined ? '—' : `${formatCurrency(unitCostCents)} / ${unitCostLabel}`}</td>
                     <td>{line.item ? formatQuantity(currentQty, line.unit ?? line.item.unit) : '—'}</td>
                     <td>
                       {variance === null ? (

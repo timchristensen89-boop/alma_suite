@@ -82,10 +82,19 @@ async function fetchWithRetry(makeRequest: () => Promise<Response>): Promise<Res
 }
 
 async function refreshConnection(connection: IntegrationConnection) {
-  if (!connection.refreshTokenEncrypted) {
+  // Re-read the LATEST stored refresh token before using it. Deputy rotates the
+  // refresh token on every refresh (single-use) and revokes the whole grant if
+  // an already-used token is presented again. A multi-resource "all" run refreshes
+  // several times in sequence off one captured connection object — without this
+  // re-read, sub-sync #2 would reuse sub-sync #1's spent token, tripping Deputy's
+  // reuse detection and killing the connection. Reading the current DB value means
+  // each refresh rotates the freshest token (A→B→C…) instead of reusing A.
+  const fresh = await prisma.integrationConnection.findUnique({ where: { id: connection.id } });
+  const refreshTokenEncrypted = fresh?.refreshTokenEncrypted ?? connection.refreshTokenEncrypted;
+  if (!refreshTokenEncrypted) {
     throw new HttpError(409, 'Deputy refresh token missing — please reconnect.');
   }
-  const refreshToken = decryptIntegrationSecret(connection.refreshTokenEncrypted);
+  const refreshToken = decryptIntegrationSecret(refreshTokenEncrypted);
   const endpoint = deputyEndpointFromConnection(connection);
   const body = new URLSearchParams({
     grant_type: 'refresh_token',
@@ -140,6 +149,23 @@ async function validAccessToken(connection: IntegrationConnection) {
   };
 }
 
+// Deputy's 5xx responses are its own incident page ("...please be patient as we
+// fix the problem") — surface those as a clear, de-noised "their side" message so
+// a Deputy outage doesn't read like an Alma bug. 4xx keeps the raw detail, since
+// that usually means our request needs fixing.
+function deputyHttpError(verb: string, path: string, status: number, detail: string): HttpError {
+  if (status >= 500) {
+    // Deputy's 5xx body usually carries the real reason (bad join/field). Log it
+    // so a recurring "server error" we can actually act on isn't hidden as "their end".
+    console.error(`[deputy] ${verb} ${path} -> ${status} body: ${detail.slice(0, 600)}`);
+    return new HttpError(
+      502,
+      `Deputy server error (${status}) on ${verb} ${path} — this is on Deputy's end, not Alma. We retried ${MAX_FETCH_RETRIES + 1}× automatically; their API is still failing, so try the sync again in a few minutes.`
+    );
+  }
+  return new HttpError(status, `Deputy ${verb} ${path} (${status}): ${detail.slice(0, 240)}`);
+}
+
 async function apiGet<T>(connection: IntegrationConnection, path: string): Promise<T> {
   let current = await validAccessToken(connection);
   const endpoint = deputyEndpointFromConnection(current.connection);
@@ -154,7 +180,7 @@ async function apiGet<T>(connection: IntegrationConnection, path: string): Promi
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy GET ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('GET', path, response.status, detail);
   }
   return (await response.json()) as T;
 }
@@ -182,7 +208,7 @@ async function apiPost<T>(connection: IntegrationConnection, path: string, body:
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy POST ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('POST', path, response.status, detail);
   }
   return (await response.json()) as T;
 }
@@ -199,7 +225,7 @@ async function apiGetBytes(connection: IntegrationConnection, path: string) {
   }
   if (!response.ok) {
     const detail = await response.text().catch(() => '');
-    throw new HttpError(response.status, `Deputy file ${path} (${response.status}): ${detail.slice(0, 240)}`);
+    throw deputyHttpError('file', path, response.status, detail);
   }
   return {
     bytes: Buffer.from(await response.arrayBuffer()),
@@ -212,7 +238,14 @@ async function connectedDeputyConnection(): Promise<IntegrationConnection> {
     where: { provider: 'DEPUTY', scopeType: 'BUSINESS' },
     orderBy: { updatedAt: 'desc' }
   });
-  if (!connection || connection.status !== 'CONNECTED') {
+  // Gate on whether we still hold a usable OAuth grant, NOT on the cached status.
+  // A failed sync flips status→ERROR (markSyncRun), so hard-blocking here on
+  // status!=='CONNECTED' self-locked the scheduler: one transient Deputy failure
+  // meant every later run 409'd before even trying, and it could never recover
+  // without a human reconnecting. A deliberate disconnect clears the tokens, so
+  // the token check below still blocks that; an ERROR connection that still holds
+  // tokens is retried, and a successful run flips status back to CONNECTED.
+  if (!connection || (!connection.tokenEncrypted && !connection.refreshTokenEncrypted)) {
     throw new HttpError(409, 'Deputy is not connected. Connect it from admin > integrations.');
   }
   return connection;
@@ -366,19 +399,94 @@ type RosterSyncOptions = {
   lookforwardDays?: number;
 };
 
+// Deputy intermittently 500s on *joined* QUERY calls — its generic incident
+// message ("internal error… please be patient"), not a query bug: the same call
+// succeeds minutes later, and the failing resource moves run to run. syncEmployees
+// already dodges this with a no-joins retry; roster + timesheets can't simply
+// drop the join because they read the joined _DPMetaData (employee name/email,
+// area, venue). So on a 5xx we refetch the rows without joins and rebuild that
+// metadata from id-maps of the Employee, OperationalUnit and Company resources
+// — each fetched join-free, so each dodges the same incident independently.
+type DeputyLookupMaps = {
+  employeeById: Map<number, { FirstName?: string; LastName?: string; Email?: string }>;
+  opUnitById: Map<number, { OperationalUnitName?: string; CompanyName?: string }>;
+};
+
+async function deputyLookupMaps(connection: IntegrationConnection): Promise<DeputyLookupMaps> {
+  const [employees, opUnits, companies] = await Promise.all([
+    apiPost<DeputyEmployee[]>(connection, '/resource/Employee/QUERY', { max: 500 }),
+    apiPost<Array<{ Id: number; OperationalUnitName?: string; Company?: number }>>(
+      connection,
+      '/resource/OperationalUnit/QUERY',
+      { max: 500 }
+    ),
+    apiPost<Array<{ Id: number; CompanyName?: string }>>(connection, '/resource/Company/QUERY', {
+      max: 200
+    })
+  ]);
+  const companyName = new Map<number, string>();
+  for (const c of Array.isArray(companies) ? companies : []) {
+    if (c?.Id != null) companyName.set(c.Id, c.CompanyName ?? '');
+  }
+  const employeeById: DeputyLookupMaps['employeeById'] = new Map();
+  for (const e of Array.isArray(employees) ? employees : []) {
+    if (e?.Id != null) {
+      employeeById.set(e.Id, { FirstName: e.FirstName, LastName: e.LastName, Email: e.Email });
+    }
+  }
+  const opUnitById: DeputyLookupMaps['opUnitById'] = new Map();
+  for (const o of Array.isArray(opUnits) ? opUnits : []) {
+    if (o?.Id != null) {
+      opUnitById.set(o.Id, {
+        OperationalUnitName: o.OperationalUnitName,
+        CompanyName: o.Company != null ? companyName.get(o.Company) : undefined
+      });
+    }
+  }
+  return { employeeById, opUnitById };
+}
+
 export async function syncRoster(connection: IntegrationConnection, options: RosterSyncOptions = {}) {
   const lookbackDays = options.lookbackDays ?? 7;
   const lookforwardDays = options.lookforwardDays ?? 14;
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const shifts = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
-    search: {
-      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-    },
-    join: ['EmployeeInfo', 'OperationalUnitInfo']
-  });
+  const rosterSearch = {
+    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+  };
+  let shifts: DeputyRosterShift[];
+  try {
+    shifts = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
+      search: rosterSearch,
+      // Roster/Timesheet join on the *Object names (EmployeeObject/
+      // OperationalUnitObject); the *Info names are response _DPMetaData keys,
+      // not valid joins on these resources. The Object joins populate
+      // _DPMetaData.{EmployeeInfo,OperationalUnitInfo} read below.
+      join: ['EmployeeObject', 'OperationalUnitObject']
+    });
+  } catch (error) {
+    if (!(error instanceof HttpError && error.statusCode >= 500)) throw error;
+    // Joined query is down on Deputy's side — refetch join-free and rebuild the
+    // employee/area/venue metadata from id-maps so the sync still completes.
+    const maps = await deputyLookupMaps(connection);
+    const raw = await apiPost<DeputyRosterShift[]>(connection, '/resource/Roster/QUERY', {
+      search: rosterSearch
+    });
+    shifts = (Array.isArray(raw) ? raw : []).map((s) => ({
+      ...s,
+      _DPMetaData: {
+        ...(s._DPMetaData ?? {}),
+        EmployeeInfo:
+          (s.Employee != null ? maps.employeeById.get(s.Employee) : undefined) ??
+          s._DPMetaData?.EmployeeInfo,
+        OperationalUnitInfo:
+          (s.OperationalUnit != null ? maps.opUnitById.get(s.OperationalUnit) : undefined) ??
+          s._DPMetaData?.OperationalUnitInfo
+      }
+    }));
+  }
 
   // Clear previously-imported shifts in this window before re-creating them.
   // Match on startsAt only — the Deputy query filters by StartTime, so every
@@ -400,6 +508,21 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
   const skipped: Array<{ id: number; reason: string }> = [];
   const staffCandidates = await loadStaffCandidates();
 
+  // Deputy's joined Roster/QUERY intermittently returns 200 with an EMPTY
+  // EmployeeInfo embed (distinct from the 5xx case the catch above handles) —
+  // which made every shift fall through to an "Unallocated" placeholder because
+  // the name read blank. Lazily build the employee id-map and resolve the name
+  // from shift.Employee whenever the embed is blank, so staff matching no longer
+  // depends on the flaky embed being populated.
+  let employeeById: DeputyLookupMaps['employeeById'] | null = null;
+  const resolveEmployeeInfo = async (shift: DeputyRosterShift) => {
+    const embed = shift._DPMetaData?.EmployeeInfo;
+    if (embed?.FirstName?.trim() || embed?.LastName?.trim()) return embed;
+    if (shift.Employee == null) return embed ?? {};
+    if (!employeeById) employeeById = (await deputyLookupMaps(connection)).employeeById;
+    return employeeById.get(shift.Employee) ?? embed ?? {};
+  };
+
   for (const shift of Array.isArray(shifts) ? shifts : []) {
     const startsAt = new Date(shift.StartTime * 1000);
     const endsAt = new Date(shift.EndTime * 1000);
@@ -412,7 +535,7 @@ export async function syncRoster(connection: IntegrationConnection, options: Ros
       continue;
     }
 
-    const employeeInfo = shift._DPMetaData?.EmployeeInfo ?? {};
+    const employeeInfo = (await resolveEmployeeInfo(shift)) ?? {};
     const opUnitInfo = shift._DPMetaData?.OperationalUnitInfo ?? {};
     const firstName = employeeInfo.FirstName?.trim() ?? '';
     const lastName = employeeInfo.LastName?.trim() ?? '';
@@ -896,13 +1019,32 @@ export async function syncTimesheets(
   const start = new Date(Date.now() - lookbackDays * 86_400_000);
   const end = new Date(Date.now() + lookforwardDays * 86_400_000);
 
-  const sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
-    search: {
-      s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
-      s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
-    },
-    join: ['EmployeeInfo', 'OperationalUnitInfo']
-  });
+  const timesheetSearch = {
+    s1: { field: 'StartTime', type: 'ge', data: Math.floor(start.getTime() / 1000) },
+    s2: { field: 'StartTime', type: 'le', data: Math.floor(end.getTime() / 1000) }
+  };
+  // Unlike Roster, the Timesheet resource's EmployeeObject/OperationalUnitObject
+  // joins do NOT reliably populate _DPMetaData.{EmployeeInfo,OperationalUnitInfo}
+  // — the embed comes back empty, so every row failed name-matching and was
+  // skipped as "No matching staff profile". Build id-maps up front and resolve
+  // the employee/area/venue by id (ts.Employee / ts.OperationalUnit) instead.
+  // The maps double as the no-joins fallback when Deputy 500s the joined query.
+  const maps = await deputyLookupMaps(connection);
+  let sheets: DeputyTimesheet[];
+  try {
+    sheets = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+      search: timesheetSearch,
+      join: ['EmployeeObject', 'OperationalUnitObject']
+    });
+  } catch (error) {
+    if (!(error instanceof HttpError && error.statusCode >= 500)) throw error;
+    // Joined query is down on Deputy's side — refetch join-free; the id-maps
+    // below fill the employee/area/venue regardless of the embed.
+    const raw = await apiPost<DeputyTimesheet[]>(connection, '/resource/Timesheet/QUERY', {
+      search: timesheetSearch
+    });
+    sheets = Array.isArray(raw) ? raw : [];
+  }
 
   let created = 0;
   let updated = 0;
@@ -933,13 +1075,17 @@ export async function syncTimesheets(
       continue;
     }
 
-    const employeeInfo = ts._DPMetaData?.EmployeeInfo ?? {};
-    const opUnitInfo = ts._DPMetaData?.OperationalUnitInfo ?? {};
-    const firstName = employeeInfo.FirstName?.trim() ?? '';
-    const lastName = employeeInfo.LastName?.trim() ?? '';
-    const email = normaliseEmail(employeeInfo.Email);
-    const area = normaliseArea(opUnitInfo.OperationalUnitName);
-    const venue = normaliseVenue(opUnitInfo.CompanyName);
+    // Prefer the joined embed, but fall back to the id-maps (the Timesheet embed
+    // is routinely empty — see note above), so the employee/area/venue resolve.
+    const embedEmp = ts._DPMetaData?.EmployeeInfo ?? {};
+    const mapEmp = ts.Employee != null ? maps.employeeById.get(ts.Employee) : undefined;
+    const embedOu = ts._DPMetaData?.OperationalUnitInfo ?? {};
+    const mapOu = ts.OperationalUnit != null ? maps.opUnitById.get(ts.OperationalUnit) : undefined;
+    const firstName = (embedEmp.FirstName ?? mapEmp?.FirstName ?? '').trim();
+    const lastName = (embedEmp.LastName ?? mapEmp?.LastName ?? '').trim();
+    const email = normaliseEmail(embedEmp.Email ?? mapEmp?.Email);
+    const area = normaliseArea(embedOu.OperationalUnitName ?? mapOu?.OperationalUnitName);
+    const venue = normaliseVenue(embedOu.CompanyName ?? mapOu?.CompanyName);
 
     // Actuals must attach to a real person — never create placeholder staff.
     let profile = email ? await prisma.staffProfile.findUnique({ where: { email } }) : null;
@@ -1021,6 +1167,20 @@ async function runSyncForRoute(actor: AuthUser, trigger: SyncTrigger, task: 'ros
     try { documents = await syncDocuments(connection); } catch (error) { failures.push(`documents: ${reason(error)}`); }
     try { roster = await syncRoster(connection); } catch (error) { failures.push(`roster: ${reason(error)}`); }
     try { timesheets = await syncTimesheets(connection); } catch (error) { failures.push(`timesheets: ${reason(error)}`); }
+
+    console.log(
+      `[deputy] sync(all) results — employees:${employees?.created ?? '–'}/${employees?.updated ?? '–'} ` +
+        `roster:${roster?.shiftsCreated ?? '–'} timesheets:${timesheets?.created ?? '–'}/${timesheets?.updated ?? '–'} ` +
+        `(read ${timesheets?.rowsRead ?? '–'}, skipped ${timesheets?.skipped?.length ?? '–'}) ` +
+        `failures:[${failures.join(' • ')}]`
+    );
+    if (timesheets?.skipped?.length) {
+      const reasons = timesheets.skipped.reduce<Record<string, number>>((acc, s) => {
+        acc[s.reason] = (acc[s.reason] ?? 0) + 1;
+        return acc;
+      }, {});
+      console.log(`[deputy] timesheet skips: ${JSON.stringify(reasons)}`);
+    }
 
     const allFailed = failures.length === 4;
     await markSyncRun(connection, trigger, allFailed ? 'ERROR' : 'SUCCESS', {

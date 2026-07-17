@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useState } from 'react';
 import type {
   Recipe,
   RecipeCreateInput,
+  RecipeCostLine,
   RecipeCostPayload,
   RecipeLineInput,
   RecipeUpdateInput,
@@ -15,9 +16,11 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconChevronDown, IconRecipes } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api } from '../lib/api';
+import { downloadCsv } from '../lib/csv';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
+import { PortionsBuilder } from '../features/recipes/PortionsBuilder';
 
 type FormState =
   | { mode: 'closed' }
@@ -128,6 +131,31 @@ function stockCostUnit(item: StockItem) {
   return item.countUnit ?? item.unit;
 }
 
+function tidyQtyText(value: number) {
+  return String(Math.round(value * 1000) / 1000);
+}
+
+// "Show the working" line for a costed ingredient: how the per-cost-unit price
+// and the converted quantity multiply out to the line cost. Returns null when
+// there isn't a meaningful trace (e.g. uncosted lines — the warning explains).
+function costTraceText(line: RecipeCostLine | null): string | null {
+  const trace = line?.trace;
+  if (!trace || line.lineCostCents === null) return null;
+  const parts: string[] = [];
+  if (trace.conversionLabel) parts.push(trace.conversionLabel);
+  if (trace.convertedQuantity !== null && line.unitCostCents !== null) {
+    const unit = trace.costUnitLabel ? ` ${trace.costUnitLabel}` : '';
+    let calc = `${tidyQtyText(trace.convertedQuantity)}${unit} × ${formatCurrencyCents(line.unitCostCents)}/${(trace.costUnitLabel ?? 'unit')}`;
+    if (trace.wasteMultiplier > 1) calc += ` × ${trace.wasteMultiplier.toFixed(2)} waste`;
+    calc += ` = ${formatCurrencyCents(line.lineCostCents)}`;
+    parts.push(calc);
+  } else if (line.source === 'MANUAL') {
+    parts.push(`${formatCurrencyCents(line.lineCostCents)} entered manually`);
+  }
+  if (trace.costSource) parts.push(trace.costSource);
+  return parts.length ? parts.join('  ·  ') : null;
+}
+
 function formatPercent(value: number | null | undefined) {
   if (value === null || value === undefined) return '—';
   return `${value.toFixed(1)}%`;
@@ -159,6 +187,79 @@ function duplicateRecipeKey(recipe: Recipe) {
     recipe.subcategory?.trim().toLowerCase() ?? '',
     recipe.venue?.trim().toLowerCase() ?? ''
   ].join('|');
+}
+
+// Standard, convertible recipe units. Solids: Unit / kg / g. Liquids: Unit / L
+// / mL. "Unit" = one whole purchase unit, and the backend converts all of them
+// to a consistent cost (1 Unit = 1 kg = 1000 g for a 1 kg item, etc.).
+const SOLID_UNIT_OPTIONS = [
+  { label: 'Unit', value: 'unit' },
+  { label: 'kg', value: 'kg' },
+  { label: 'g', value: 'g' }
+];
+const LIQUID_UNIT_OPTIONS = [
+  { label: 'Unit', value: 'unit' },
+  { label: 'L', value: 'l' },
+  { label: 'mL', value: 'ml' }
+];
+const ALL_UNIT_OPTIONS = [...SOLID_UNIT_OPTIONS, { label: 'L', value: 'l' }, { label: 'mL', value: 'ml' }];
+
+function isLiquidUnit(u: string | null | undefined): boolean {
+  return ['ml', 'l', 'lt', 'ltr', 'litre', 'liter', 'litres', 'liters', 'millilitre', 'milliliter'].includes(
+    (u ?? '').trim().toLowerCase()
+  );
+}
+
+const MASS_UNITS = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilograms', 'kilo'];
+const VOLUME_UNITS = ['ml', 'cl', 'dl', 'l', 'litre', 'litres', 'liter', 'liters', 'millilitre', 'milliliter'];
+const inFamily = (unit: string | null | undefined, family: string[]) =>
+  family.includes((unit ?? '').trim().toLowerCase());
+
+// Only the units that will ACTUALLY convert for this item, mirroring the backend
+// engine: 'Unit' (= 1 cost unit) always works; the metric family works when the
+// cost unit is metric OR a measure-per-unit bridge is set; a count-unit item
+// with no measure bridge offers ONLY 'Unit', so you can't pick g/mL that fails.
+function convertibleUnitOptionsForItem(item: StockItem): { label: string; value: string }[] {
+  const costUnit = item.countUnit ?? item.unit;
+  const measureUnit = item.measureUnit;
+  const hasMeasureBridge = Boolean(item.measurePerCountUnit && item.measurePerCountUnit > 0 && measureUnit);
+  if (inFamily(costUnit, MASS_UNITS) || (hasMeasureBridge && inFamily(measureUnit, MASS_UNITS))) {
+    return SOLID_UNIT_OPTIONS; // Unit / kg / g
+  }
+  if (inFamily(costUnit, VOLUME_UNITS) || (hasMeasureBridge && inFamily(measureUnit, VOLUME_UNITS))) {
+    return LIQUID_UNIT_OPTIONS; // Unit / L / mL
+  }
+  // Counted/each item with no weight/volume bridge — only whole units convert.
+  return [{ label: 'Unit', value: 'unit' }];
+}
+
+// Units offered for a recipe line, constrained to the linked item's (or prep
+// recipe's) solid-vs-liquid nature so staff pick from a consistent vocabulary
+// instead of typing free-form units that don't convert.
+function lineUnitOptions(
+  unit: string | undefined,
+  itemId: string | undefined,
+  subRecipeId: string | undefined,
+  items: StockItem[],
+  recipes: Recipe[]
+): { label: string; value: string }[] {
+  let base = ALL_UNIT_OPTIONS;
+  if (itemId) {
+    const item = items.find((i) => i.id === itemId);
+    if (item) {
+      base = convertibleUnitOptionsForItem(item);
+    }
+  } else if (subRecipeId) {
+    const rec = recipes.find((r) => r.id === subRecipeId);
+    if (rec) base = isLiquidUnit(rec.yieldUnit) ? LIQUID_UNIT_OPTIONS : SOLID_UNIT_OPTIONS;
+  }
+  // Keep an existing non-standard unit as an option so editing an old recipe
+  // doesn't silently change it; the user can switch to a standard one.
+  const cur = (unit ?? '').trim();
+  if (cur && !base.some((o) => o.value === cur.toLowerCase())) {
+    return [{ label: cur, value: cur }, ...base];
+  }
+  return base;
 }
 
 export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
@@ -196,21 +297,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
     setExportingRecipes(true);
     setError(null);
     try {
-      const token = window.localStorage.getItem('alma.stock.session');
-      const res = await fetch('/api/recipes/export.csv', {
-        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-        credentials: 'include'
-      });
-      if (!res.ok) throw new Error(`Export failed (${res.status})`);
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = 'alma-recipes.csv';
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(url);
+      await downloadCsv('/api/recipes/export.csv', 'alma-recipes.csv');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not export recipes CSV');
     } finally {
@@ -646,6 +733,11 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
                       void load();
                     }}
                   />
+                ) : null}
+                {detail && detail.id === recipe.id && detail.isPrepRecipe ? (
+                  <div className="card stock-portions-card">
+                    <PortionsBuilder parentType="recipe" parentId={detail.id} canManage={canManage} />
+                  </div>
                 ) : null}
               </td>
             </tr>
@@ -1311,9 +1403,9 @@ function RecipeForm({
           value={draft.yieldQuantity}
           onChange={(event) => update('yieldQuantity', event.currentTarget.value)}
         />
-        <Input label="Yield unit" placeholder="kg, L, portions" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} />
+        <Select label="Yield unit" value={draft.yieldUnit} onChange={(event) => update('yieldUnit', event.currentTarget.value)} options={lineUnitOptions(draft.yieldUnit, undefined, undefined, items, recipes)} />
         <Input label="Portion size" type="number" min="0" step="0.01" placeholder="Servings (leave blank for 1)" value={draft.portionSize} onChange={(event) => update('portionSize', event.currentTarget.value)} />
-        <Input label="Portion unit" placeholder="portion, kg, L" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} />
+        <Select label="Portion unit" value={draft.portionUnit} onChange={(event) => update('portionUnit', event.currentTarget.value)} options={lineUnitOptions(draft.portionUnit, undefined, undefined, items, recipes)} />
         <Select
           label="Status"
           value={draft.status}
@@ -1347,8 +1439,8 @@ function RecipeForm({
             <Select label="Linked item" value={line.itemId} onChange={(event) => selectItem(index, event.currentTarget.value)} options={itemOptions} />
             <Select label="Production recipe" value={line.subRecipeId} onChange={(event) => selectProductionRecipe(index, event.currentTarget.value)} options={productionRecipeOptions} />
             <Input label="Ingredient" required value={line.ingredientName} onChange={(event) => updateLine(index, { ingredientName: event.currentTarget.value })} />
-            <Input label="Qty" type="number" step="0.01" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
-            <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
+            <Input label="Amount" type="number" step="0.01" className="recipe-amount-input" value={line.quantity} onChange={(event) => updateLine(index, { quantity: event.currentTarget.value })} />
+            <Select label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} options={lineUnitOptions(line.unit, line.itemId, line.subRecipeId, items, recipes)} />
             <Input label="Manual cost" type="number" step="0.01" value={line.cost} onChange={(event) => updateLine(index, { cost: event.currentTarget.value })} />
             <Input label="Waste %" type="number" step="0.01" value={line.wastePercent} onChange={(event) => updateLine(index, { wastePercent: event.currentTarget.value })} />
             <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
@@ -1437,6 +1529,9 @@ function RecipeLinesTable({
   const [dirty, setDirty] = useState(false);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
+  // Live cost preview computed from the unsaved drafts so cost + per-line
+  // warnings update as you type, without saving. Null = show the saved cost.
+  const [livePreview, setLivePreview] = useState<RecipeCostPayload | null>(null);
 
   // Re-sync drafts when the underlying recipe changes (e.g. after save+reload
   // or when switching expanded rows)
@@ -1444,8 +1539,47 @@ function RecipeLinesTable({
     setDrafts(detail.lines.map(lineToDraft));
     setDirty(false);
     setMessage(null);
+    setLivePreview(null);
   }, [detail.id, detail.lines]);
 
+  // Debounced live cost-as-you-type: recost the unsaved draft on every edit.
+  useEffect(() => {
+    if (!dirty) {
+      setLivePreview(null);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      try {
+        const preview = await api<RecipeCostPayload>('/api/recipes/cost-preview', {
+          method: 'POST',
+          body: JSON.stringify({
+            yieldQuantity: detail.yieldQuantity,
+            yieldUnit: detail.yieldUnit,
+            portionSize: detail.portionSize,
+            portionUnit: detail.portionUnit,
+            salePriceCents: detail.salePriceCents,
+            isPrepRecipe: detail.isPrepRecipe,
+            estimatedCost: detail.estimatedCost,
+            lines: drafts.map((draft) => ({
+              ingredientName: draft.ingredientName,
+              quantity: draft.quantity === '' ? null : Number(draft.quantity),
+              unit: draft.unit,
+              wastePercent: draft.wastePercent === '' ? null : Number(draft.wastePercent),
+              itemId: draft.itemId || null,
+              subRecipeId: draft.subRecipeId || null
+            }))
+          })
+        });
+        setLivePreview(preview);
+      } catch {
+        /* keep the last preview on a transient error */
+      }
+    }, 400);
+    return () => clearTimeout(handle);
+  }, [drafts, dirty, detail.id, detail.yieldQuantity, detail.yieldUnit, detail.portionSize, detail.portionUnit, detail.salePriceCents, detail.isPrepRecipe, detail.estimatedCost]);
+
+  const effectiveCost = livePreview ?? cost;
+  const usingLivePreview = livePreview !== null;
   const costLines = new Map((cost?.lines ?? []).map((line) => [line.lineId, line]));
 
   const itemOptions = useMemo(
@@ -1571,13 +1705,14 @@ function RecipeLinesTable({
 
   return (
     <div className="recipe-lines">
-      <RecipeCostSummary cost={cost} />
-      {cost?.warnings.length ? (
+      <RecipeCostSummary cost={effectiveCost} />
+      {usingLivePreview ? <p className="recipe-costing-note">Live preview — costs update as you edit. Save to store.</p> : null}
+      {effectiveCost?.warnings.length ? (
         <div className="recipe-cost-warnings">
-          {cost.warnings.slice(0, 5).map((warning) => (
+          {effectiveCost.warnings.slice(0, 5).map((warning) => (
             <Badge key={warning} tone="warning">{warning}</Badge>
           ))}
-          {cost.warnings.length > 5 ? <Badge tone="muted">+{cost.warnings.length - 5} more</Badge> : null}
+          {effectiveCost.warnings.length > 5 ? <Badge tone="muted">+{effectiveCost.warnings.length - 5} more</Badge> : null}
         </div>
       ) : null}
       {drafts.some((draft) => draft.subRecipeId) ? (
@@ -1602,9 +1737,17 @@ function RecipeLinesTable({
         <tbody>
           {drafts.map((draft, index) => {
             const persistedLine = detail.lines[index];
-            const costLine = persistedLine ? costLines.get(persistedLine.id) : null;
+            // Live-preview lines come back in draft order (no persisted id), so
+            // match by index; saved lines match by their persisted id.
+            const costLine = usingLivePreview
+              ? effectiveCost?.lines[index] ?? null
+              : persistedLine
+                ? costLines.get(persistedLine.id) ?? null
+                : null;
+            const lineWarnings = costLine?.warnings ?? [];
             return (
-              <tr key={persistedLine?.id ?? `draft-${index}`}>
+              <Fragment key={persistedLine?.id ?? `draft-${index}`}>
+              <tr className={lineWarnings.length ? 'recipe-line-has-warning' : ''}>
                 <td>{index + 1}</td>
                 <td>
                   <input
@@ -1642,20 +1785,26 @@ function RecipeLinesTable({
                     type="number"
                     step="0.01"
                     min="0"
-                    className="recipe-line-input recipe-line-input-narrow"
+                    className="recipe-line-input recipe-amount-input"
                     value={draft.quantity}
                     onChange={(event) => updateDraft(index, { quantity: event.currentTarget.value })}
                     placeholder="0"
                   />
                 </td>
                 <td>
-                  <input
-                    type="text"
+                  <select
                     className="recipe-line-input recipe-line-input-narrow"
                     value={draft.unit}
                     onChange={(event) => updateDraft(index, { unit: event.currentTarget.value })}
-                    placeholder="ml"
-                  />
+                  >
+                    {lineUnitOptions(draft.unit, draft.itemId, draft.subRecipeId, items, allRecipes).map(
+                      (opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      )
+                    )}
+                  </select>
                 </td>
                 <td>{formatCurrencyCents(costLine?.lineCostCents ?? null)}</td>
                 <td>
@@ -1675,6 +1824,19 @@ function RecipeLinesTable({
                   </button>
                 </td>
               </tr>
+              {lineWarnings.length ? (
+                <tr className="recipe-line-warning-detail">
+                  <td />
+                  <td colSpan={8}>{lineWarnings.join(' ')}</td>
+                </tr>
+              ) : null}
+              {!lineWarnings.length && costTraceText(costLine) ? (
+                <tr className="recipe-line-trace-detail">
+                  <td />
+                  <td colSpan={8}>{costTraceText(costLine)}</td>
+                </tr>
+              ) : null}
+              </Fragment>
             );
           })}
         </tbody>

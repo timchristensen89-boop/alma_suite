@@ -1718,12 +1718,27 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
     event.preventDefault();
     setMessage(null);
     setMessageTarget('redeem');
+    const amountCents = Math.round(Number(amount) * 100);
+    if (!amountCents || amountCents <= 0) {
+      setMessage('Enter an amount to redeem.');
+      return;
+    }
+    const newBalance = card ? card.balanceCents - amountCents : null;
+    if (
+      !window.confirm(
+        `Redeem ${formatCents(amountCents)} from ${card?.code ?? 'this card'}?` +
+          (newBalance != null ? ` New balance will be ${formatCents(newBalance)}.` : '') +
+          ' This cannot be undone.'
+      )
+    ) {
+      return;
+    }
     try {
       const updated = await api<GiftCard>('/api/gift-cards/redeem', {
         method: 'POST',
         body: JSON.stringify({
           code,
-          amountCents: Math.round(Number(amount) * 100),
+          amountCents,
           venue,
           notes
         })
@@ -1742,6 +1757,9 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
   async function cancelCard(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!card) return;
+    if (!window.confirm(`Cancel gift card ${card.code}? This permanently voids any remaining balance and cannot be undone.`)) {
+      return;
+    }
     setMessage(null);
     setMessageTarget('cancel');
     try {
@@ -1945,14 +1963,14 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open active gift cards">
                 <StatCard label="Active" value={data?.totals.active ?? 0} hint="Can be redeemed" loading={loading} />
               </button>
+              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open sold gift cards">
+                <StatCard label="Issued (lifetime)" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+              </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open redeemed gift cards">
-                <StatCard label="Redeemed" value={data?.totals.redeemed ?? 0} hint="Fully used" loading={loading} />
+                <StatCard label="Redeemed (lifetime)" value={formatCents(data?.totals.redeemedValueCents ?? 0)} hint={`${data?.totals.redeemed ?? 0} fully used`} loading={loading} />
               </button>
               <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open gift card balance report">
-                <StatCard label="Balance" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Outstanding liability" loading={loading} />
-              </button>
-              <button type="button" className="stat-card-link" onClick={() => window.location.assign('/orders')} aria-label="Open sold gift cards">
-                <StatCard label="Sold" value={formatCents(data?.totals.soldValueCents ?? 0)} hint={`${data?.totals.test ?? 0} test cards excluded`} loading={loading} />
+                <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
               </button>
             </div>
             <ActionPanel

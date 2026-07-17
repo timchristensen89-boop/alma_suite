@@ -25,6 +25,21 @@ const OPEN_STATUSES = ['OPEN', 'IN_PROGRESS', 'BLOCKED'] as const;
 let lastReconcileAt = 0;
 const RECONCILE_MIN_INTERVAL_MS = 30_000;
 
+// Resolved tasks (DONE/DISMISSED) older than this are deleted so the table
+// doesn't grow without bound. Source-reconciled tasks resurrect on their own
+// unique key if the condition recurs, so deleting old closed ones is safe.
+const PRUNE_AFTER_MS = 14 * 24 * 60 * 60 * 1000;
+
+async function pruneResolvedTasks(now: Date): Promise<void> {
+  const cutoff = new Date(now.getTime() - PRUNE_AFTER_MS);
+  await prisma.almaTask.deleteMany({
+    where: {
+      status: { in: ['DONE', 'DISMISSED'] },
+      updatedAt: { lt: cutoff }
+    }
+  });
+}
+
 async function reconcileIssues(now: Date): Promise<void> {
   const issues = await prisma.issue.findMany({
     where: { status: { notIn: ['RESOLVED', 'CLOSED'] } },
@@ -113,7 +128,7 @@ export const taskSyncService = {
     }
     lastReconcileAt = startedAt;
     const now = new Date();
-    const results = await Promise.allSettled([reconcileIssues(now), reconcileLeave()]);
+    const results = await Promise.allSettled([reconcileIssues(now), reconcileLeave(), pruneResolvedTasks(now)]);
     for (const result of results) {
       if (result.status === 'rejected') {
         // Log but don't throw — a bad reconciler shouldn't break the task list.

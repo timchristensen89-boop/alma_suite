@@ -12,6 +12,8 @@
     "dev:stock-web": "pnpm --filter @alma/stock-web dev",
     "dev:staff": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/staff-web dev\"",
     "dev:staff-web": "pnpm --filter @alma/staff-web dev",
+    "dev:staff-api": "pnpm --filter @alma/staff-api dev",
+    "check:boundaries": "node scripts/check-domain-boundaries.mjs",
     "dev:reports": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/stock-api dev\" \"pnpm --filter @alma/reports-web dev\"",
     "dev:reports-web": "pnpm --filter @alma/reports-web dev",
     "dev:reserve": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/reserve-web dev\"",

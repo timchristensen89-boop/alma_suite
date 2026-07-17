@@ -12,9 +12,38 @@ operationsRouter.get('/wastage', async (req, res, next) => {
   }
 });
 
+// Reporting feed (suite prime-cost): date-ranged, all reasons, uncapped.
+operationsRouter.get('/wastage-report', async (req, res, next) => {
+  try {
+    res.json(await stockOperationsService.listWastageForReport({
+      venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+      from: typeof req.query.from === 'string' ? req.query.from : null,
+      to: typeof req.query.to === 'string' ? req.query.to : null
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 operationsRouter.post('/wastage', async (req, res, next) => {
   try {
     res.status(201).json(await stockOperationsService.createWastage(req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+operationsRouter.get('/staff-usage', async (req, res, next) => {
+  try {
+    res.json(await stockOperationsService.listStaffUsage(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+operationsRouter.post('/staff-usage', async (req, res, next) => {
+  try {
+    res.status(201).json(await stockOperationsService.createStaffUsage(req.body, req.user));
   } catch (error) {
     next(error);
   }

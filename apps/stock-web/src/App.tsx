@@ -4,17 +4,20 @@ import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitc
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
+import { ConfigHealthPage } from './pages/ConfigHealthPage';
 import { StocktakePage } from './pages/StocktakePage';
 import { TransfersPage } from './pages/TransfersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
 import { DeliveriesPage } from './pages/DeliveriesPage';
+import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
 import { RecipesPage } from './pages/RecipesPage';
 import { DishMarginPage } from './pages/DishMarginPage';
 import { PriceMovementPage } from './pages/PriceMovementPage';
 import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { WastagePage } from './pages/WastagePage';
+import { StaffUsagePage } from './pages/StaffUsagePage';
 import { LoginPage } from './pages/LoginPage';
 import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
@@ -32,15 +35,18 @@ const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const ITEMS_TABS: HubTab[] = [
   { to: '/items', label: 'Catalogue', end: true },
   { to: '/reorder', label: 'Below par' },
+  { to: '/items/health', label: 'Costing health' },
   { to: '/items/categories', label: 'Categories' }
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
   { to: '/wastage', label: 'Wastage' },
+  { to: '/staff-usage', label: 'Staff usage' },
   { to: '/transfers', label: 'Transfers' }
 ];
 const PURCHASING_TABS: HubTab[] = [
   { to: '/invoices', label: 'Invoices' },
+  { to: '/purchase-orders', label: 'Purchase orders' },
   { to: '/deliveries', label: 'Deliveries' },
   { to: '/suppliers', label: 'Suppliers' },
   { to: '/price-movement', label: 'Price changes' }
@@ -221,16 +227,19 @@ function StockAppShell() {
 
         {/* Items hub */}
         <Route path="/items" element={<HubLayout tabs={ITEMS_TABS}><ItemsPage /></HubLayout>} />
+        <Route path="/items/health" element={<HubLayout tabs={ITEMS_TABS}><ConfigHealthPage /></HubLayout>} />
         <Route path="/reorder" element={<HubLayout tabs={ITEMS_TABS}><ReorderNoticesPage /></HubLayout>} />
         <Route path="/items/categories" element={<HubLayout tabs={ITEMS_TABS}><SettingsPage section="stock" /></HubLayout>} />
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
         <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
+        <Route path="/staff-usage" element={<HubLayout tabs={STOCK_COUNT_TABS}><StaffUsagePage /></HubLayout>} />
         <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
 
         {/* Purchasing hub */}
         <Route path="/invoices" element={<HubLayout tabs={PURCHASING_TABS}><InvoicesPage /></HubLayout>} />
+        <Route path="/purchase-orders" element={<HubLayout tabs={PURCHASING_TABS}><PurchaseOrdersPage /></HubLayout>} />
         <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
         <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
         <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />

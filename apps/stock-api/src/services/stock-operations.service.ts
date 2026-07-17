@@ -5,8 +5,10 @@ import {
   stockDeliveryCheckCreateInputSchema,
   stockDeliveryCheckUpdateInputSchema,
   stockReorderNoticeResolveInputSchema,
+  stockStaffUsageCreateInputSchema,
   stockSupplierOrderEmailInputSchema,
   stockWastageCreateInputSchema,
+  STOCK_STAFF_USAGE_REASONS,
   type AuthUser,
   type StockDeliveryCheck,
   type StockDeliveryChecksPayload,
@@ -420,7 +422,8 @@ export const stockOperationsService = {
     const venue = actorVenueScope(actor, requestedVenue);
     const [records, items, venues] = await Promise.all([
       prisma.stockWastageRecord.findMany({
-        where: venue ? { venue } : {},
+        // Exclude staff/personal consumption — those live in the Staff usage area.
+        where: { ...(venue ? { venue } : {}), reason: { notIn: [...STOCK_STAFF_USAGE_REASONS] } },
         include: { stockItem: { select: itemSelect } },
         orderBy: { wastedAt: 'desc' },
         take: 100
@@ -434,6 +437,91 @@ export const stockOperationsService = {
       venues,
       scope: { venue, admin: isAdminActor(actor) }
     };
+  },
+
+  /**
+   * Wastage for reporting (suite prime-cost): date-ranged, ALL reasons, uncapped.
+   * Distinct from listWastage (which excludes staff-usage reasons + caps at 100
+   * for the operations UI). Minimal projection — the report only sums by venue.
+   */
+  async listWastageForReport(params: { venue?: string | null; from?: string | null; to?: string | null }) {
+    const wastedAt: Prisma.DateTimeFilter = {};
+    if (params.from) wastedAt.gte = new Date(params.from);
+    if (params.to) wastedAt.lt = new Date(params.to);
+    const hasRange = params.from != null || params.to != null;
+    return prisma.stockWastageRecord.findMany({
+      where: {
+        ...(hasRange ? { wastedAt } : {}),
+        ...(params.venue ? { venue: params.venue } : {})
+      },
+      select: { venue: true, costImpactCents: true, wastedAt: true }
+    });
+  },
+
+  async listStaffUsage(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockWastagePayload> {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const [records, items, venues] = await Promise.all([
+      prisma.stockWastageRecord.findMany({
+        where: { ...(venue ? { venue } : {}), reason: { in: [...STOCK_STAFF_USAGE_REASONS] } },
+        include: { stockItem: { select: itemSelect } },
+        orderBy: { wastedAt: 'desc' },
+        take: 100
+      }),
+      itemsForActor(actor, venue),
+      venuesForActor(actor)
+    ]);
+    return {
+      records: records.map(toWastagePayload),
+      items,
+      venues,
+      scope: { venue, admin: isAdminActor(actor) }
+    };
+  },
+
+  // Record staff food / staff drinks / personal use. Reuses the wastage engine
+  // (deducts venue stock at the item's average cost) so it comes off the
+  // stocktake; the staff member's name is kept on the note for attribution.
+  async createStaffUsage(input: unknown, actor?: AuthUser | null): Promise<StockWastageRecord> {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const data = stockStaffUsageCreateInputSchema.parse(input);
+    const venue = actorVenueScope(actor, data.venue);
+    if (!venue) throw new HttpError(400, 'Venue is required');
+    await assertKnownVenue(venue, actor);
+
+    const staffName = (data.staffName ?? '').trim();
+    const extraNote = (data.note ?? '').trim();
+    const combinedNote = [staffName ? `For: ${staffName}` : '', extraNote].filter(Boolean).join(' — ') || null;
+    const categoryLabel = data.category.replaceAll('_', ' ').toLowerCase();
+
+    const created = await prisma.$transaction(async (tx) => {
+      const { item } = await getVenueStock(tx, data.stockItemId, venue);
+      const usage = await tx.stockWastageRecord.create({
+        data: {
+          stockItemId: data.stockItemId,
+          venue,
+          quantity: data.quantity,
+          unit: data.unit,
+          reason: data.category,
+          note: combinedNote,
+          wastedAt: dateOrNow(data.usedAt),
+          recordedById: actor.id,
+          costImpactCents: moneyImpactCents(data.quantity, item.avgCostCents)
+        },
+        include: { stockItem: { select: itemSelect } }
+      });
+      await adjustVenueOnHand(tx, {
+        stockItemId: data.stockItemId,
+        venue,
+        quantityDelta: -Math.abs(data.quantity),
+        movementType: 'WASTAGE',
+        unit: data.unit,
+        notes: `Staff usage: ${categoryLabel}${combinedNote ? ` — ${combinedNote}` : ''}`,
+        sourceWastageId: usage.id
+      });
+      return usage;
+    });
+
+    return toWastagePayload(created);
   },
 
   async createWastage(input: unknown, actor?: AuthUser | null): Promise<StockWastageRecord> {

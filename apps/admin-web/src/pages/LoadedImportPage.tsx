@@ -187,7 +187,9 @@ function ItemImportPanel() {
                         {row.action}
                       </Badge>
                     </td>
-                    <td style={{ color: '#9A3A2E', fontSize: 11 }}>{row.warnings.join(', ') || row.reason || ''}</td>
+                    <td style={{ color: '#9A3A2E', fontSize: 11 }}>
+                      {row.warnings.length ? row.warnings.join(', ') : ''}{row.warnings.length && row.reason ? ' • ' : ''}{row.reason || ''}
+                    </td>
                     <td>{row.proposed.unit}</td>
                     <td>{row.proposed.countUnit ?? ''}</td>
                     <td>{row.proposed.conversionFactor}</td>
@@ -197,6 +199,38 @@ function ItemImportPanel() {
               </tbody>
             </table>
           </details>
+          {(() => {
+            // Every row needing attention (warning / error / skipped), regardless
+            // of position — so issues past row 50 aren't hidden before commit.
+            const flagged = preview.rows.filter((row) => row.warnings.length > 0 || row.action === 'error' || (row.reason && row.action === 'skip'));
+            if (flagged.length === 0) return null;
+            return (
+              <details open style={{ marginTop: 8 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: '#9A3A2E' }}>
+                  All {flagged.length} flagged row{flagged.length === 1 ? '' : 's'} (warnings / errors / skipped)
+                </summary>
+                <table className="stocktake-variance-table" style={{ marginTop: 8 }}>
+                  <thead>
+                    <tr><th>Row</th><th>Name</th><th>Action</th><th>Warnings / reason</th></tr>
+                  </thead>
+                  <tbody>
+                    {flagged.map((row) => (
+                      <tr key={`flagged-${row.csvRow}`}>
+                        <td>{row.csvRow}</td>
+                        <td>{row.name}</td>
+                        <td>
+                          <Badge tone={row.action === 'error' ? 'danger' : row.action === 'skip' ? 'warning' : 'info'}>{row.action}</Badge>
+                        </td>
+                        <td style={{ color: '#9A3A2E', fontSize: 11 }}>
+                      {row.warnings.length ? row.warnings.join(', ') : ''}{row.warnings.length && row.reason ? ' • ' : ''}{row.reason || ''}
+                    </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </details>
+            );
+          })()}
         </div>
       ) : null}
       {message ? <ActionFeedback message={message} tone={tone} /> : null}
@@ -231,6 +265,9 @@ function StocktakeImportPanel() {
   async function runCommit() {
     if (!preview) return;
     if (!window.confirm(`Commit ${preview.summary.sessionCount} historical stocktake session${preview.summary.sessionCount === 1 ? '' : 's'} (${preview.summary.matchedItems} matched, ${preview.summary.unmatchedItems} unmatched${skipUnmatched ? ' will be skipped' : ' will be created as label-only lines'})?`)) return;
+    if (!skipUnmatched && preview.summary.unmatchedItems > 0) {
+      if (!window.confirm(`This will create ${preview.summary.unmatchedItems} label-only row${preview.summary.unmatchedItems === 1 ? '' : 's'} with zero quantity. These will corrupt variance reports unless immediately reviewed and deleted. Are you certain?`)) return;
+    }
     setBusy(true); setMessage(null);
     try {
       const result = await api<{ sessionsCreated: number; linesCreated: number; linesSkipped: number }>('/api/admin/loaded-import/stocktakes/commit', {
@@ -254,7 +291,7 @@ function StocktakeImportPanel() {
       <CsvDropTarget value={csv} onChange={(text) => { setCsv(text); setPreview(null); }} />
       <label className="field" style={{ marginTop: 8, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <input type="checkbox" checked={skipUnmatched} onChange={(event) => setSkipUnmatched(event.target.checked)} />
-        <span>Skip rows whose item name doesn't match an existing Alma item (recommended)</span>
+        <span>Skip rows whose item name doesn't match an existing Alma item (recommended to prevent zero-quantity orphans). Uncheck only if you are sure unmatched rows should be retained for manual correction.</span>
       </label>
       <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
         <Button type="button" onClick={() => void runPreview()} disabled={busy || !csv.trim()}>
@@ -273,6 +310,7 @@ function StocktakeImportPanel() {
             <Badge tone="warning">{preview.summary.unmatchedItems} unmatched</Badge>
             <Badge tone="info">{preview.summary.sessionCount} session{preview.summary.sessionCount === 1 ? '' : 's'}</Badge>
           </div>
+          <p className="subtle" style={{ fontSize: 12 }}>Sessions will be created LOCKED and immutable — a manager reopen is required to edit them after import.</p>
           <ul className="loaded-replacement-list">
             {preview.sessions.slice(0, 10).map((session, idx) => (
               <li key={idx} className="loaded-replacement-row">

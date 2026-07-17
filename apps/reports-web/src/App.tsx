@@ -21,6 +21,7 @@ import type {
   StocktakesSummary,
   Timesheet
 } from '@alma/shared';
+import { defaultCasualRateCents } from '@alma/shared';
 import {
   AlmaHomeBubble,
   AlmaPill,
@@ -60,7 +61,7 @@ import {
   stockApi
 } from './lib/api';
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
-import { historicalSalesForWeek, normaliseHistoricalVenue } from './data/historicalSales';
+import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { BarChart, Donut, HBars, TrendLine, CHART_COLORS, CHART_PALETTE } from './components/Charts';
 
 type SuiteSummary = {
@@ -132,6 +133,9 @@ type WageRow = {
   projectedCostCents: number;
   approvedCostCents: number;
   rateCents: number;
+  // > 0 when the staffer is salaried — their cost is this weekly salary
+  // (× period weeks), not hours × rate.
+  salariedWeeklyCents: number;
   tipsCents: number;
   exportedCount: number;
   approvedCount: number;
@@ -199,6 +203,7 @@ type ReportNavItem = {
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
+const REPORTS_MENU_FILTERS_STORAGE_KEY = 'alma.reports.menu-filters.v1';
 const REPORT_NAV_ITEMS: ReportNavItem[] = [
   {
     id: 'overview',
@@ -330,6 +335,17 @@ function addDays(date: Date, days: number) {
 
 function isoDate(date: Date) {
   return date.toISOString().slice(0, 10);
+}
+
+// Calendar date (YYYY-MM-DD) in LOCAL time. Use this when matching a local-midnight
+// day against sales whose serviceDate is stored as UTC-midnight of the venue's date:
+// isoDate() on a local-midnight date can roll back a day in +UTC timezones (Sydney),
+// shifting actuals onto the wrong day; localIsoDate keeps the calendar day intact.
+function localIsoDate(date: Date) {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 // Period presets for the top-of-report week control. Each preset resolves to a
@@ -759,6 +775,59 @@ function staffName(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
   return `${member.firstName} ${member.lastName}`.trim();
 }
 
+// Salaried full-timers are paid a fixed weekly salary, NOT an hourly rate — so
+// their cost must never be hours × rate (that turns a $90k salary into $90k/hr).
+// This mirrors the server costing engine (apps/api/src/lib/staff-pay-rates.ts):
+// salaried staff cost their weekly salary; everyone else is hourly.
+const FULL_TIME_WEEKLY_HOURS = 45;
+
+function isFullTimeEmploymentType(type: string | null | undefined): boolean {
+  const v = (type ?? '').toUpperCase().replace(/[\s-]/g, '_');
+  return v === 'FULL_TIME' || v === 'FULLTIME' || v === 'PERMANENT_FULL_TIME';
+}
+
+// Annual salary (cents) if the staffer is a salaried full-timer, else null.
+function salariedAnnualCents(staff: StaffProfile): number | null {
+  const pp = staff.payProfile;
+  if (pp && (pp.payMode === 'MANUAL_FULL_TIME' || isFullTimeEmploymentType(pp.employmentType))) {
+    const amount = pp.manualFullTimePayAmountCents;
+    if (amount) {
+      const freq = (pp.manualFullTimePayFrequency ?? '').toUpperCase();
+      if (freq === 'HOURLY_FULL_TIME') return null; // actually paid hourly
+      return freq === 'WEEKLY' ? amount * 52
+        : freq === 'FORTNIGHTLY' ? amount * 26
+        : freq === 'MONTHLY' ? amount * 12
+        : amount; // ANNUAL (default)
+    }
+  }
+  // Guard: a "rate" this high is almost certainly an annual salary typed into the
+  // hourly field (e.g. $90,000). Treat it as a salary so it isn't × hours.
+  const raw = staff.trainingPayRateCents ?? staff.payRateCents ?? 0;
+  if (raw >= 150_000) return raw; // ≥ $1,500/hr is not a real hourly rate
+  return null;
+}
+
+// Resolve a staffer's hourly-equivalent rate and (for salaried staff) their
+// weekly salary. salariedWeeklyCents is 0 for genuine hourly staff.
+function resolvedWage(staff: StaffProfile | undefined): { rateCents: number; salariedWeeklyCents: number } {
+  if (!staff) return { rateCents: 0, salariedWeeklyCents: 0 };
+  const annual = salariedAnnualCents(staff);
+  if (annual != null) {
+    return {
+      rateCents: Math.round(annual / 52 / FULL_TIME_WEEKLY_HOURS),
+      salariedWeeklyCents: Math.round(annual / 52)
+    };
+  }
+  const rawRate = staff.trainingPayRateCents ?? staff.payRateCents ?? 0;
+  if (rawRate === 0) {
+    // A casual with no rate set defaults to the Restaurant Award Level 2 casual
+    // rate, so they're never costed at $0.
+    const isCasual = staff.payProfile?.employmentType === 'CASUAL' || /casual/i.test(staff.employmentType ?? '');
+    if (isCasual) return { rateCents: defaultCasualRateCents(), salariedWeeklyCents: 0 };
+  }
+  return { rateCents: rawRate, salariedWeeklyCents: 0 };
+}
+
 function ReportsUserMenu({ user, onLogout }: { user: AuthUser; onLogout: () => Promise<void> }) {
   if (!user) return null;
   return <SuiteSignOutButton onClick={() => void onLogout()} />;
@@ -967,10 +1036,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     () => PERIOD_PRESETS.find((preset) => preset.key === periodPreset)?.label ?? 'This week',
     [periodPreset]
   );
-  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>('all');
-  const [menuVenue, setMenuVenue] = useState('');
-  const [menuCategory, setMenuCategory] = useState('');
-  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>('all');
+  // Menu Engineering filters persist across refreshes (like the forecast inputs)
+  // so an analyst doesn't re-pick account/venue/category/mapping every visit.
+  const storedMenuFilters = loadJsonDraft<{
+    accountKey?: 'all' | 'primary' | 'secondary';
+    venue?: string;
+    category?: string;
+    mappingStatus?: 'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost';
+  }>(REPORTS_MENU_FILTERS_STORAGE_KEY, {});
+  const [menuAccountKey, setMenuAccountKey] = useState<'all' | 'primary' | 'secondary'>(storedMenuFilters.accountKey ?? 'all');
+  const [menuVenue, setMenuVenue] = useState(storedMenuFilters.venue ?? '');
+  const [menuCategory, setMenuCategory] = useState(storedMenuFilters.category ?? '');
+  const [menuMappingStatus, setMenuMappingStatus] = useState<'all' | 'mapped' | 'unmapped' | 'missing_recipe' | 'missing_cost'>(storedMenuFilters.mappingStatus ?? 'all');
+  // Sales section: optionally isolate a single venue's per-venue panels.
+  const [salesVenue, setSalesVenue] = useState('');
   const [menuGroupByRecipe, setMenuGroupByRecipe] = useState(false);
   const [data, setData] = useState<ReportsData>({
     overview: null,
@@ -997,6 +1076,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     loadJsonDraft<Record<string, ForecastInput>>(REPORTS_FORECAST_STORAGE_KEY, {})
   );
   const [exportMessage, setExportMessage] = useState<string | null>(null);
+  // Per-venue prime-cost target % set by admins in Admin → Wage forecasts.
+  const [primeTargets, setPrimeTargets] = useState<Record<string, number>>({});
   // 4-week historical prime cost trend (most recent on the right, current week as the 5th).
   const [primeCostHistory, setPrimeCostHistory] = useState<Array<{ weekStart: string; primeCostPercent: number | null; wagePercent: number | null; cogsPercent: number | null; salesCents: number }>>([]);
   // 8-week forecast vs actual history for the sales section chart.
@@ -1160,8 +1241,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     void (async () => {
       try {
-        const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number }> }>('/api/settings');
+        const settings = await staffApi<{ venues?: Array<{ name: string; weeklyForecastSalesCents?: number; targetWagePercent?: number; targetPrimeCostPercent?: number }> }>('/api/settings');
         const next: Record<string, ForecastInput> = {};
+        const primes: Record<string, number> = {};
         for (const venue of settings.venues ?? []) {
           if (typeof venue.weeklyForecastSalesCents === 'number' || typeof venue.targetWagePercent === 'number') {
             next[venue.name] = {
@@ -1169,9 +1251,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               targetWagePercent: typeof venue.targetWagePercent === 'number' ? String(venue.targetWagePercent) : '32'
             };
           }
+          if (typeof venue.targetPrimeCostPercent === 'number') {
+            primes[venue.name] = venue.targetPrimeCostPercent;
+          }
         }
         if (Object.keys(next).length > 0) {
           setForecastInputs((current) => ({ ...current, ...next }));
+        }
+        if (Object.keys(primes).length > 0) {
+          setPrimeTargets(primes);
         }
       } catch {
         /* fallback to localStorage values already loaded */
@@ -1182,6 +1270,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   useEffect(() => {
     window.localStorage.setItem(REPORTS_FORECAST_STORAGE_KEY, JSON.stringify(forecastInputs));
   }, [forecastInputs]);
+
+  useEffect(() => {
+    window.localStorage.setItem(
+      REPORTS_MENU_FILTERS_STORAGE_KEY,
+      JSON.stringify({ accountKey: menuAccountKey, venue: menuVenue, category: menuCategory, mappingStatus: menuMappingStatus })
+    );
+  }, [menuAccountKey, menuVenue, menuCategory, menuMappingStatus]);
 
   const activeStaff = data.staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const staffById = useMemo(() => new Map(activeStaff.map((member) => [member.id, member])), [activeStaff]);
@@ -1203,12 +1298,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   );
 
   const wageRows = useMemo<WageRow[]>(() => {
+    // Number of weeks the report covers — salaried staff cost their salary per week.
+    const periodWeeks = Math.max(1, Math.round((weekEnd.getTime() - weekStart.getTime()) / (7 * 86_400_000)));
     const rows = new Map<string, WageRow>();
     for (const timesheet of data.timesheets) {
       const staff = staffById.get(timesheet.staffProfileId);
-      const rateCents = staff?.trainingPayRateCents ?? staff?.payRateCents ?? 0;
+      const { rateCents, salariedWeeklyCents } = resolvedWage(staff);
       const hours = timesheetHours(timesheet);
-      const costCents = Math.round(hours * rateCents);
       const existing =
         rows.get(timesheet.staffProfileId) ??
         {
@@ -1224,6 +1320,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           projectedCostCents: 0,
           approvedCostCents: 0,
           rateCents,
+          salariedWeeklyCents,
           tipsCents: tipsByStaffId.get(timesheet.staffProfileId) ?? 0,
           exportedCount: 0,
           approvedCount: 0,
@@ -1231,10 +1328,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         };
 
       existing.hours += hours;
-      existing.projectedCostCents += costCents;
       if (timesheet.status === 'APPROVED' || timesheet.status === 'EXPORTED') {
         existing.approvedHours += hours;
-        existing.approvedCostCents += costCents;
         if (timesheet.paymentMethod === 'CASH') {
           existing.cashHours += hours;
           if (!timesheet.cashPaidAt) existing.cashPaidMissingCount += 1;
@@ -1246,8 +1341,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
       rows.set(timesheet.staffProfileId, existing);
     }
+    // Cost each row once hours are tallied: salaried staff cost their weekly salary
+    // regardless of hours; hourly staff cost hours × rate.
+    for (const row of rows.values()) {
+      if (row.salariedWeeklyCents > 0) {
+        const cost = Math.round(row.salariedWeeklyCents * periodWeeks);
+        row.projectedCostCents = cost;
+        row.approvedCostCents = cost;
+      } else {
+        row.projectedCostCents = Math.round(row.hours * row.rateCents);
+        row.approvedCostCents = Math.round(row.approvedHours * row.rateCents);
+      }
+    }
     return Array.from(rows.values()).sort((a, b) => b.projectedCostCents - a.projectedCostCents);
-  }, [data.timesheets, staffById, tipsByStaffId]);
+  }, [data.timesheets, staffById, tipsByStaffId, weekStart, weekEnd]);
 
   const wageTotals = wageRows.reduce(
     (total, row) => ({
@@ -1456,7 +1563,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   const averageRateCents = useMemo(() => {
     const rates = activeStaff
-      .map((member) => member.trainingPayRateCents ?? member.payRateCents ?? 0)
+      .map((member) => resolvedWage(member).rateCents)
       .filter((rate) => rate > 0);
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
@@ -1474,7 +1581,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const planned = shifts.reduce(
         (total, shift) => {
           const member = staffById.get(shift.staffProfileId);
-          const rateCents = member?.trainingPayRateCents ?? member?.payRateCents ?? averageRateCents;
+          const rateCents = resolvedWage(member).rateCents || averageRateCents;
           const hours = rosterShiftHours(shift);
           total.hours += hours;
           total.costCents += Math.round(hours * rateCents);
@@ -1621,7 +1728,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const actualSalesCents = entries.reduce((sum, entry) => sum + entry.salesCents, 0);
       const actualDates = new Set(entries.map((entry) => isoDate(new Date(entry.serviceDate))));
       const actualHistoricalCents = historical.days
-        .filter((day) => actualDates.has(isoDate(day.date)))
+        .filter((day) => actualDates.has(localIsoDate(day.date)))
         .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
       const historicalSalesCents = Math.round(historical.total * 100);
       const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
@@ -1659,7 +1766,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const salesDailyRows = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
-      const dateKey = isoDate(date);
+      // Match the local calendar day against each actual's stored date. serviceDate
+      // is UTC-midnight of the venue's local date, so its UTC slice IS the local
+      // calendar day; the row date is local-midnight, so it must use localIsoDate
+      // (plain isoDate would roll back a day in Sydney and shift actuals one day).
+      const dateKey = localIsoDate(date);
       return {
         date,
         venues: salesReportVenues.map((venue) => {
@@ -1743,6 +1854,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
   function moveWeek(days: number) {
     setSelectedWeekStart(isoDate(addDays(weekStart, days)));
+    // Manual week navigation no longer matches the chosen preset; reset the
+    // label so the period button doesn't show a stale value like "Last month".
+    setPeriodPreset('this-week');
   }
 
   // Apply a top-of-report period preset. Aligns the week-shaped reports to the
@@ -1950,6 +2064,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
     // Weekly Snapshot (editorial dashboard from the design)
     const salesCentsForRange = primeTotals?.salesCents ?? 0;
+    // Actual purchase COGS lags within an in-progress week (bills arrive after
+    // the stock is sold), so for the weekly snapshot fall back to THEORETICAL
+    // food cost — recipe cost × Square units sold — which is available live.
+    // The Monthly Recap / Prime Cost reports keep the canonical actual COGS.
+    const actualCogsCentsForRange = primeTotals?.cogsCents ?? 0;
+    const theoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
+    const theoreticalFoodCostPct = data.menuProfitability?.totals.foodCostPercent ?? null;
+    const overviewCogsIsActual = actualCogsCentsForRange > 0;
+    const overviewCogsCents = overviewCogsIsActual ? actualCogsCentsForRange : (theoreticalCogsCents ?? 0);
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
     const noShowsForRange = data.overview?.reserve.noShows ?? 0;
@@ -2001,6 +2124,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           cogsCents: venueRows.reduce((sum, v) => sum + v.cogsCents, 0),
           invoiceCogsCents: venueRows.reduce((sum, v) => sum + v.invoiceCogsCents, 0),
           wastageCents: venueRows.reduce((sum, v) => sum + v.wastageCents, 0),
+          purchasesCents: venueRows.reduce((sum, v) => sum + v.purchasesCents, 0),
+          openingStockCents: venueRows.reduce((sum, v) => sum + v.openingStockCents, 0),
+          closingStockCents: venueRows.reduce((sum, v) => sum + v.closingStockCents, 0),
+          cogsSource: 'purchases_only' as const,
+          cogsQuality: 'estimated' as const,
           primeCostCents: venueRows.reduce((sum, v) => sum + v.primeCostCents, 0),
           wagePercent: (() => {
             const sales = venueRows.reduce((sum, v) => sum + v.salesCents, 0);
@@ -2034,14 +2162,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           {(() => {
+            // Prime-cost target: the average of the admin-set per-venue targets
+            // (this overview is org-wide), falling back to the 60% default.
+            const primeCostTarget = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : 60;
+            })();
             const variancePct = primeTotals?.primeCostPercent != null
-              ? primeTotals.primeCostPercent - 60
+              ? primeTotals.primeCostPercent - primeCostTarget
               : null;
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
               if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
               if (variancePct != null && variancePct > 5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the 60% target.`;
+                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
               }
               if (variancePct != null && variancePct < -5) {
                 return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
@@ -2306,13 +2440,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
 
           <div className="stats-grid report-metric-grid">
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
-              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : weekWindowLabel} loading={loading} />
+              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : 'ex-GST net · Square Net Sales'} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
               <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
-              <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Missing matched invoices' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+              <StatCard
+                label="COGS"
+                value={formatCurrency(overviewCogsCents)}
+                hint={overviewCogsIsActual
+                  ? `${formatPercent(primeTotals?.cogsPercent)} of sales · actual`
+                  : theoreticalCogsCents != null
+                    ? `${formatPercent(theoreticalFoodCostPct)} of sales · theoretical (recipe × sales)`
+                    : 'Map Square items to recipes in Stock to see food cost'}
+                loading={loading}
+              />
             </button>
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
               <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
@@ -2442,8 +2585,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <p className="report-warning-text">Historical sales history is missing for {missingHistoryCount} venue{missingHistoryCount === 1 ? '' : 's'}, so trend percentage and historical reset may be unavailable there.</p>
           ) : null}
 
+          {salesReportVenues.length > 1 ? (
+            <div className="report-filter-row">
+              <Select
+                label="Show venue"
+                value={salesVenue}
+                onChange={(event) => setSalesVenue(event.currentTarget.value)}
+                options={[{ label: 'All venues', value: '' }, ...salesReportVenues.map((venue) => ({ label: venue, value: venue }))]}
+              />
+            </div>
+          ) : null}
+
           <div className="sales-venue-grid">
-            {salesTrendRows.map((row) => {
+            {(salesVenue ? salesTrendRows.filter((row) => row.venue === salesVenue) : salesTrendRows).map((row) => {
               const trendLabel = row.trendPercent === null ? 'No trend' : `${row.trendPercent >= 0 ? '+' : ''}${row.trendPercent.toFixed(1)}%`;
               const trendTone = row.trendPercent === null ? 'neutral' : row.trendPercent >= 0 ? 'positive' : 'warning';
               const varianceTone = row.forecastVarianceCents >= 0 ? 'positive' : 'warning';
@@ -2480,17 +2634,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       value={forecastInputs[row.venue]?.sales ?? ''}
                       placeholder={centsInput(row.historicalSalesCents) || 'Set in Admin'}
                       readOnly
+                      title="Managed in Admin → Wage forecasts and synced here for consistency."
                       onChange={() => {}}
                     />
                     <Input
                       label="Target wage %"
                       value={forecastInputs[row.venue]?.targetWagePercent ?? '32'}
                       readOnly
+                      title="Managed in Admin → Wage forecasts and synced here for consistency."
                       onChange={() => {}}
                     />
                   </div>
-                  <p className="subtle" style={{ marginTop: 0 }}>
-                    Edit these values in <a href="https://alma-suite-admin.web.app/wage-forecasts" target="_blank" rel="noreferrer">Admin → Wage forecasts</a>.
+                  <p className="report-callout subtle" style={{ marginTop: 0 }}>
+                    These forecasts are <strong>Admin-managed</strong> and synced here so every report stays consistent. Edit them in <a href="https://alma-suite-admin.web.app/wage-forecasts" target="_blank" rel="noreferrer">Admin → Wage forecasts</a>.
                   </p>
 
                   <div className="sales-mini-metrics">
@@ -2511,18 +2667,30 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div key={isoDate(day.date)} className="sales-daily-row">
                   <span>{day.date.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}</span>
                   <div>
-                    {day.venues.map((row) => (
-                      <div key={row.venue} className="sales-daily-bar-row">
-                        <small>{row.venue}</small>
-                        <div className="sales-horizontal-track">
-                          <div className="sales-horizontal-bar is-actual" style={{ width: `${Math.max(4, (row.actualSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                    {day.venues.map((row) => {
+                      // A venue that doesn't trade this weekday (e.g. Avalon Tuesday)
+                      // shows "Closed" rather than a phantom forecast bar — unless a
+                      // real sale was imported (a one-off), which we still surface.
+                      const closed = !isVenueOpenOnDate(row.venue, day.date) && row.actualSalesCents === 0;
+                      return (
+                        <div key={row.venue} className="sales-daily-bar-row">
+                          <small>{row.venue}</small>
+                          {closed ? (
+                            <span className="subtle" style={{ gridColumn: '2 / -1' }}>Closed</span>
+                          ) : (
+                            <>
+                              <div className="sales-horizontal-track">
+                                <div className="sales-horizontal-bar is-actual" style={{ width: `${Math.max(4, (row.actualSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                              </div>
+                              <div className="sales-horizontal-track">
+                                <div className="sales-horizontal-bar is-forecast" style={{ width: `${Math.max(4, (row.forecastSalesCents / salesDailyMaxCents) * 100)}%` }} />
+                              </div>
+                              <strong>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : formatCurrency(row.forecastSalesCents)}</strong>
+                            </>
+                          )}
                         </div>
-                        <div className="sales-horizontal-track">
-                          <div className="sales-horizontal-bar is-forecast" style={{ width: `${Math.max(4, (row.forecastSalesCents / salesDailyMaxCents) * 100)}%` }} />
-                        </div>
-                        <strong>{row.actualSalesCents ? formatCurrency(row.actualSalesCents) : formatCurrency(row.forecastSalesCents)}</strong>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -2613,6 +2781,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rows={data.actualSales.entries}
                   rowKey={(entry) => entry.id}
                   defaultSortKey="date"
+                  initialRowLimit={10}
                   columns={[
                     { key: 'date', label: 'Date', sortValue: (e) => e.serviceDate, render: (e) => new Date(e.serviceDate).toLocaleDateString() },
                     { key: 'venue', label: 'Venue', sortValue: (e) => e.venue, render: (e) => e.venue },
@@ -2753,13 +2922,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rows={wageRows}
                   rowKey={(row) => row.staffProfileId}
                   defaultSortKey="payroll"
+                  initialRowLimit={10}
                   columns={[
                     { key: 'staff', label: 'Staff', sortValue: (r) => r.name, render: (r) => <strong>{r.name}</strong> },
                     { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
                     { key: 'role', label: 'Role', sortValue: (r) => r.roleTitle, render: (r) => r.roleTitle },
                     { key: 'hours', label: 'Total hrs', align: 'right', sortValue: (r) => r.hours, render: (r) => r.hours.toFixed(2) },
                     { key: 'apprHours', label: 'Appr. hrs', align: 'right', sortValue: (r) => r.approvedHours, render: (r) => r.approvedHours.toFixed(2) },
-                    { key: 'rate', label: 'Rate', align: 'right', sortValue: (r) => r.rateCents, render: (r) => (r.rateCents ? formatCurrency(r.rateCents) : <span className="subtle">—</span>) },
+                    { key: 'rate', label: 'Rate', align: 'right', sortValue: (r) => r.rateCents, render: (r) => (r.rateCents ? (r.salariedWeeklyCents > 0 ? <span>{formatCurrency(r.rateCents)} <span className="subtle">/hr · salary</span></span> : formatCurrency(r.rateCents)) : <span className="subtle">—</span>) },
                     { key: 'projected', label: 'Projected wages', align: 'right', sortValue: (r) => r.projectedCostCents, render: (r) => formatCurrency(r.projectedCostCents) },
                     { key: 'approved', label: 'Approved wages', align: 'right', sortValue: (r) => r.approvedCostCents, render: (r) => formatCurrency(r.approvedCostCents) },
                     { key: 'tips', label: 'Tips', align: 'right', sortValue: (r) => r.tipsCents, render: (r) => (r.tipsCents ? formatCurrency(r.tipsCents) : <span className="subtle">—</span>) },
@@ -2861,10 +3031,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={data.primeCost?.sources.cogs === 'missing' ? 'Supplier invoices not matched' : `${formatPercent(primeTotals?.cogsPercent)} of sales`} loading={loading} />
+            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
             <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales`} loading={loading} />
-            <StatCard label="Invoice COGS" value={formatCurrency(primeTotals?.invoiceCogsCents ?? 0)} hint="Matched supplier invoice lines" loading={loading} />
-            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage impact" loading={loading} />
+            <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
+            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
           </div>
 
           <div className="report-chart-grid">
@@ -3218,28 +3388,19 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 padding="none"
               >
                 <div className="table-scroll">
-                  <table className="report-table">
-                    <thead>
-                      <tr>
-                        <th>Component</th>
-                        <th>Menu</th>
-                        <th>Venue</th>
-                        <th style={{ textAlign: 'right' }}>Units · 30d</th>
-                        <th>Type</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {missing.map((m, i) => (
-                        <tr key={`${m.itemName}|${m.venue}|${i}`}>
-                          <td><strong>{m.itemName}</strong></td>
-                          <td>{m.menu}</td>
-                          <td>{m.venue}</td>
-                          <td style={{ textAlign: 'right' }}>{Math.round(m.units).toLocaleString()}</td>
-                          <td><Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge></td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <SortableTable
+                    rows={missing}
+                    rowKey={(m, i) => `${m.itemName}|${m.venue}|${i}`}
+                    defaultSortKey="units"
+                    defaultSortDir="desc"
+                    columns={[
+                      { key: 'component', label: 'Component', sortValue: (m) => m.itemName, render: (m) => <strong>{m.itemName}</strong> },
+                      { key: 'menu', label: 'Menu', sortValue: (m) => m.menu, render: (m) => m.menu },
+                      { key: 'venue', label: 'Venue', sortValue: (m) => m.venue, render: (m) => m.venue },
+                      { key: 'units', label: 'Units · 30d', align: 'right', sortValue: (m) => m.units, render: (m) => Math.round(m.units).toLocaleString() },
+                      { key: 'type', label: 'Type', sortValue: (m) => m.type, render: (m) => <Badge tone={m.type === 'bb' ? 'info' : 'warning'}>{m.type === 'bb' ? 'BB drink' : 'Course'}</Badge> }
+                    ]}
+                  />
                 </div>
               </Card>
             );
@@ -3293,7 +3454,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             );
           })()}
 
-          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete." padding="none">
+          <Card title="Menu profitability" subtitle="Read-only Square item sales matched to Alma recipe costs. Rows without mappings or costs stay incomplete. Click any mapped row to preview the linked recipe." padding="none">
             <div className="reports-filter-grid">
               <Select
                 label="Square account"

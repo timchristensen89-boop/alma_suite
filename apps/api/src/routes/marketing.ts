@@ -521,6 +521,26 @@ marketingRouter.post('/automations', requireManager, async (req, res, next) => {
   }
 });
 
+// Seed the starter automation library (visit-lifecycle + birthday + winback) for
+// the venue. Idempotent — re-running skips ones that already exist.
+marketingRouter.post('/automations/install-library', requireManager, async (req, res, next) => {
+  try {
+    res.status(201).json(await marketingService.installAutomationLibrary(req.user!, req.body?.venue));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Manager-triggered dry run of the automation runner (no emails sent) — lets a
+// manager preview what today's run would do. The live run is the cron below.
+marketingRouter.post('/automations/run', requireManager, async (req, res, next) => {
+  try {
+    res.json(await marketingService.runDueAutomations({ venue: req.user!.venue ?? undefined, dryRun: true }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 marketingRouter.patch('/automations/:id', requireManager, async (req, res, next) => {
   try {
     res.json(await marketingService.updateAutomation(req.user!, String(req.params.id), req.body));

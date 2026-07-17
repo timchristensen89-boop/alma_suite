@@ -4,6 +4,7 @@ import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { z } from 'zod';
 import type {
+  AdminMetaConnectedPage,
   AdminMetaIntegrationStatus,
   AuthUser,
   IntegrationConnectResponse,
@@ -74,13 +75,23 @@ const XERO_SCOPES = [
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
+// Scoped to MESSAGING + INSIGHTS only. Publishing (pages_manage_posts /
+// instagram_content_publish) is intentionally NOT requested — social posts are
+// scheduled in Adobe Express, so Alma never needs the heavier publishing App Review.
 const META_SCOPES = [
+  // Pages — list, read engagement, manage metadata + comments, messaging, insights
   'pages_show_list',
   'pages_read_engagement',
   'pages_manage_metadata',
+  'pages_manage_engagement',
   'pages_messaging',
+  'read_insights',
+  'business_management',
+  // Instagram — basic profile, manage comments/insights/messages (no publishing)
   'instagram_basic',
-  'business_management'
+  'instagram_manage_comments',
+  'instagram_manage_insights',
+  'instagram_manage_messages'
 ];
 
 const META_ALLOWED_DOMAINS = [
@@ -181,6 +192,19 @@ function verifyMetaState(state: string) {
     return parsed.provider === 'meta' && typeof parsed.exp === 'number' && parsed.exp > Date.now();
   } catch {
     return false;
+  }
+}
+
+// Verified read of the signed Meta state → the actor who started the connect, so
+// the stored connection records who linked it. Returns null on any tamper/expiry.
+function readMetaState(state: string): { actorId: string | null } | null {
+  if (!verifyMetaState(state)) return null;
+  try {
+    const [payload] = state.split('.');
+    const parsed = JSON.parse(base64UrlDecode(payload!)) as { actorId?: unknown };
+    return { actorId: typeof parsed.actorId === 'string' ? parsed.actorId : null };
+  } catch {
+    return null;
   }
 }
 
@@ -341,6 +365,101 @@ function metaConfig() {
   };
 }
 
+type MetaPageAsset = {
+  id: string;
+  name: string;
+  instagramId: string | null;
+  instagramUsername: string | null;
+};
+
+// Exchange the OAuth code for a short-lived user token, then upgrade it to a
+// long-lived (~60 day) token. Long-lived user tokens are what page tokens are
+// derived from, so this is what we persist.
+async function exchangeMetaToken(code: string): Promise<{ accessToken: string; expiresIn: number }> {
+  const cfg = metaConfig();
+  const version = cfg.graphVersion;
+  const shortUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+  shortUrl.searchParams.set('client_id', env.integrations.meta.appId);
+  shortUrl.searchParams.set('client_secret', env.integrations.meta.appSecret);
+  shortUrl.searchParams.set('redirect_uri', cfg.redirectUri);
+  shortUrl.searchParams.set('code', code);
+  const shortRes = await fetch(shortUrl.toString());
+  if (!shortRes.ok) {
+    const detail = await shortRes.text().catch(() => '');
+    throw new HttpError(502, `Meta token exchange failed (${shortRes.status}): ${detail.slice(0, 200)}`);
+  }
+  const shortJson = (await shortRes.json()) as { access_token?: string };
+  if (!shortJson.access_token) throw new HttpError(502, 'Meta did not return an access token.');
+
+  const longUrl = new URL(`https://graph.facebook.com/${version}/oauth/access_token`);
+  longUrl.searchParams.set('grant_type', 'fb_exchange_token');
+  longUrl.searchParams.set('client_id', env.integrations.meta.appId);
+  longUrl.searchParams.set('client_secret', env.integrations.meta.appSecret);
+  longUrl.searchParams.set('fb_exchange_token', shortJson.access_token);
+  const longRes = await fetch(longUrl.toString());
+  if (!longRes.ok) {
+    const detail = await longRes.text().catch(() => '');
+    throw new HttpError(502, `Meta long-lived token exchange failed (${longRes.status}): ${detail.slice(0, 200)}`);
+  }
+  const longJson = (await longRes.json()) as { access_token?: string; expires_in?: number };
+  if (!longJson.access_token) throw new HttpError(502, 'Meta did not return a long-lived token.');
+  // Long-lived user tokens last ~60 days; default if Meta omits expires_in.
+  return { accessToken: longJson.access_token, expiresIn: longJson.expires_in ?? 60 * 24 * 60 * 60 };
+}
+
+// With a (long-lived) user token, read the linked Pages + their Instagram
+// business accounts, the user's identity, and the permissions actually granted.
+async function fetchMetaAssets(userToken: string): Promise<{
+  userId: string | null;
+  userName: string | null;
+  pages: MetaPageAsset[];
+  grantedScopes: string[];
+}> {
+  const version = metaConfig().graphVersion;
+  const graphGet = async (path: string, params: Record<string, string>) => {
+    const url = new URL(`https://graph.facebook.com/${version}/${path}`);
+    for (const [k, v] of Object.entries(params)) url.searchParams.set(k, v);
+    url.searchParams.set('access_token', userToken);
+    const res = await fetch(url.toString());
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '');
+      throw new HttpError(502, `Meta Graph ${path} failed (${res.status}): ${detail.slice(0, 160)}`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  };
+
+  const me = await graphGet('me', { fields: 'id,name' }).catch(() => ({} as Record<string, unknown>));
+  const accounts = await graphGet('me/accounts', {
+    fields: 'id,name,instagram_business_account{id,username}'
+  }).catch(() => ({ data: [] }));
+  const permissions = await graphGet('me/permissions', {}).catch(() => ({ data: [] }));
+
+  const pages: MetaPageAsset[] = Array.isArray((accounts as { data?: unknown }).data)
+    ? ((accounts as { data: Array<Record<string, unknown>> }).data).map((p) => {
+        const ig = p.instagram_business_account as { id?: string; username?: string } | undefined;
+        return {
+          id: String(p.id ?? ''),
+          name: String(p.name ?? ''),
+          instagramId: ig?.id ? String(ig.id) : null,
+          instagramUsername: ig?.username ? String(ig.username) : null
+        };
+      }).filter((p) => p.id)
+    : [];
+
+  const grantedScopes: string[] = Array.isArray((permissions as { data?: unknown }).data)
+    ? ((permissions as { data: Array<{ permission?: string; status?: string }> }).data)
+        .filter((perm) => perm.status === 'granted' && typeof perm.permission === 'string')
+        .map((perm) => perm.permission as string)
+    : [];
+
+  return {
+    userId: typeof me.id === 'string' ? me.id : null,
+    userName: typeof me.name === 'string' ? me.name : null,
+    pages,
+    grantedScopes
+  };
+}
+
 async function connectionSelect(provider: Provider, accountKey?: SquareAccountKey) {
   const where: Prisma.IntegrationConnectionWhereInput = { provider, scopeType: 'BUSINESS' };
   if (provider === 'SQUARE' && accountKey) {
@@ -416,7 +535,7 @@ async function safeResponseDetails(response: Response) {
 }
 
 async function recordEvent(input: {
-  provider: Provider;
+  provider: Provider | 'META';
   connectionId?: string | null;
   eventType: string;
   summary: string;
@@ -1968,7 +2087,16 @@ async function xeroGetJson<T>(
   }
 
   if (!response.ok) {
-    throw new HttpError(502, 'Xero request failed.', await safeResponseDetails(response));
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    // Surface Xero's own status + error body (e.g. a 403 "Forbidden" when the
+    // payroll scope wasn't granted) instead of a generic message — otherwise
+    // the real cause is invisible to anyone debugging a failed sync.
+    throw new HttpError(
+      502,
+      `Xero request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
   }
 
   return {
@@ -2258,15 +2386,39 @@ async function recordSquareCallbackFailure(input: {
   });
 }
 
-function metaStatus(): AdminMetaIntegrationStatus {
+async function metaStatus(): Promise<AdminMetaIntegrationStatus> {
   const config = metaConfig();
-  const status = config.configured ? 'READY_TO_CONNECT' : 'NOT_CONFIGURED';
+  const connection = await prisma.integrationConnection.findFirst({
+    where: { provider: 'META', scopeType: 'BUSINESS' },
+    orderBy: { updatedAt: 'desc' }
+  });
+  const connected = connection?.status === 'CONNECTED' && Boolean(connection.tokenEncrypted);
+  const meta = (connection?.metadata ?? {}) as { pages?: unknown };
+  const pages: AdminMetaConnectedPage[] = Array.isArray(meta.pages)
+    ? (meta.pages as Array<Record<string, unknown>>).map((p) => ({
+        id: String(p.id ?? ''),
+        name: String(p.name ?? ''),
+        instagramUsername: typeof p.instagramUsername === 'string' ? p.instagramUsername : null
+      }))
+    : [];
+  const grantedScopes = Array.isArray(connection?.scopes) ? (connection!.scopes as unknown[]).map(String) : [];
+
+  const status: AdminMetaIntegrationStatus['status'] = connected
+    ? 'CONNECTED'
+    : connection?.status === 'ERROR'
+      ? 'ERROR'
+      : connection?.status === 'NOT_CONNECTED' && connection?.disconnectedAt
+        ? 'DISCONNECTED'
+        : config.configured
+          ? 'READY_TO_CONNECT'
+          : 'NOT_CONFIGURED';
+
   return {
     provider: 'meta',
     label: 'Meta / Facebook / Instagram',
     status,
     configured: config.configured,
-    canConnect: config.configured,
+    canConnect: config.configured && !connected,
     connectBlockedReason: config.configured ? null : `Missing ${config.missingEnvVars.join(', ')}.`,
     redirectUri: config.redirectUri,
     authorizationUrl: null,
@@ -2301,7 +2453,14 @@ function metaStatus(): AdminMetaIntegrationStatus {
       }
     ],
     deauthorizeCallbackConfigured: false,
-    dataDeletionCallbackConfigured: false
+    dataDeletionCallbackConfigured: false,
+    connected,
+    connectedAt: connected && connection?.connectedAt ? connection.connectedAt.toISOString() : null,
+    accountName: connection?.providerAccountName ?? null,
+    pages,
+    grantedScopes,
+    tokenExpiresAt: connection?.tokenExpiresAt ? connection.tokenExpiresAt.toISOString() : null,
+    lastError: connection?.lastError ?? null
   };
 }
 
@@ -2541,7 +2700,8 @@ export const integrationService = {
     const code = typeof query.code === 'string' ? query.code : '';
     const state = typeof query.state === 'string' ? query.state : '';
 
-    if (!state || !verifyMetaState(state)) {
+    const stateData = state ? readMetaState(state) : null;
+    if (!stateData) {
       return frontendAdminRedirect({
         integration: 'meta',
         status: 'invalid_state'
@@ -2563,11 +2723,84 @@ export const integrationService = {
       });
     }
 
-    return frontendAdminRedirect({
-      integration: 'meta',
-      status: 'callback_received',
-      next: 'store_token_secret_reference'
+    try {
+      const { accessToken, expiresIn } = await exchangeMetaToken(code);
+      const assets = await fetchMetaAssets(accessToken);
+      const primaryPage = assets.pages[0] ?? null;
+      const existing = await prisma.integrationConnection.findFirst({
+        where: { provider: 'META', scopeType: 'BUSINESS' },
+        orderBy: { updatedAt: 'desc' }
+      });
+      const data = {
+        status: 'CONNECTED' as const,
+        connectedAt: new Date(),
+        disconnectedAt: null,
+        lastError: null,
+        providerAccountId: assets.userId ?? primaryPage?.id ?? null,
+        providerAccountName: primaryPage?.name ?? assets.userName ?? 'Meta account',
+        scopes: assets.grantedScopes.length ? assets.grantedScopes : META_SCOPES,
+        tokenEncrypted: encryptIntegrationSecret(accessToken),
+        refreshTokenEncrypted: null,
+        tokenExpiresAt: new Date(Date.now() + expiresIn * 1000),
+        metadata: {
+          userId: assets.userId,
+          userName: assets.userName,
+          pages: assets.pages,
+          requestedScopes: META_SCOPES
+        } as Prisma.InputJsonValue,
+        updatedByUserId: stateData.actorId
+      };
+      const connection = await prisma.integrationConnection.upsert({
+        where: { id: existing?.id ?? '__new_meta_connection__' },
+        update: data,
+        create: { provider: 'META', scopeType: 'BUSINESS', ...data }
+      });
+      await prisma.integrationSyncRun.create({
+        data: { provider: 'META', connectionId: connection.id, syncType: 'OAUTH_CALLBACK', status: 'SUCCESS', finishedAt: new Date() }
+      });
+      await recordEvent({
+        provider: 'META',
+        connectionId: connection.id,
+        eventType: 'CONNECTED',
+        summary: `Meta connected — ${assets.pages.length} page(s)${primaryPage ? ` incl. ${primaryPage.name}` : ''}.`,
+        metadata: { pageCount: assets.pages.length, grantedScopes: assets.grantedScopes }
+      });
+      return frontendAdminRedirect({ integration: 'meta', status: 'connected' });
+    } catch (err) {
+      return frontendAdminRedirect({
+        integration: 'meta',
+        status: 'failed',
+        reason: err instanceof HttpError ? err.message : 'meta_token_exchange_failed'
+      });
+    }
+  },
+
+  async disconnectMeta(actor: AuthUser) {
+    const existing = await prisma.integrationConnection.findFirst({
+      where: { provider: 'META', scopeType: 'BUSINESS' },
+      orderBy: { updatedAt: 'desc' }
     });
+    if (!existing) return { provider: 'meta' as const, disconnected: false };
+    await prisma.integrationConnection.update({
+      where: { id: existing.id },
+      data: {
+        status: 'NOT_CONNECTED',
+        disconnectedAt: new Date(),
+        tokenEncrypted: null,
+        refreshTokenEncrypted: null,
+        tokenExpiresAt: null,
+        lastError: null,
+        updatedByUserId: actor.id
+      }
+    });
+    await recordEvent({
+      provider: 'META',
+      connectionId: existing.id,
+      eventType: 'DISCONNECTED',
+      summary: 'Meta disconnected by admin.',
+      actor
+    });
+    return { provider: 'meta' as const, disconnected: true };
   },
 
   async status(): Promise<IntegrationStatusPayload> {
@@ -2590,7 +2823,7 @@ export const integrationService = {
       xero,
       deputy,
       xeroScheduledImport,
-      meta: metaStatus(),
+      meta: await metaStatus(),
       latestSyncRuns: syncRuns,
       tokenStorage: integrationTokenEncryptionStatus()
     };
@@ -3668,6 +3901,11 @@ export const integrationService = {
     if (!existing) throw new HttpError(404, 'Square menu mapping not found.');
     const almaRecipeId = data.almaRecipeId === '' ? null : data.almaRecipeId ?? existing.almaRecipeId;
     const stockItemId = data.stockItemId === '' ? null : data.stockItemId ?? existing.stockItemId;
+    // A Square item maps to a recipe OR a stock item — never both, which would
+    // be ambiguous for sales attribution and costing.
+    if (almaRecipeId && stockItemId) {
+      throw new HttpError(400, 'Map this Square item to a recipe OR a stock item, not both.');
+    }
     if (almaRecipeId) {
       const recipe = await prisma.recipe.findUnique({ where: { id: almaRecipeId }, select: { id: true, venue: true } });
       if (!recipe) throw new HttpError(400, 'Selected Alma recipe was not found.');
@@ -5726,6 +5964,23 @@ export const integrationService = {
       throw new HttpError(409, 'No Xero tenants are connected.');
     }
 
+    // A Xero connection authorised before payroll access was added carries a
+    // token that can't read the Payroll API, so every call 403s with an opaque
+    // error. If we recorded the granted scopes and payroll isn't among them,
+    // fail fast with an actionable message instead of a cryptic Xero 403.
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0) {
+      const missingPayrollScopes = ['payroll.employees.read', 'payroll.timesheets.read'].filter(
+        (scope) => !grantedScopes.includes(scope)
+      );
+      if (missingPayrollScopes.length > 0) {
+        throw new HttpError(
+          409,
+          'Your Xero connection was authorised before payroll access was enabled, so it can’t read timesheets. Disconnect Xero and reconnect it (you’ll be asked to grant payroll access), then run the import again.'
+        );
+      }
+    }
+
     const lookbackDays = clampLimit(input.lookbackDays, 35, 120);
     const windowStart = new Date();
     windowStart.setHours(0, 0, 0, 0);
@@ -5735,14 +5990,34 @@ export const integrationService = {
 
     const staffProfiles = await prisma.staffProfile.findMany({
       where: { mergedIntoStaffProfileId: null },
-      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true }
+      select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true, employmentStatus: true }
     });
+    // Archived/terminated duplicates would otherwise make a current employee's
+    // name (or shared email) "ambiguous" and silently skip them. Prefer the live
+    // profile when several share a key.
+    const INACTIVE_STATUSES = new Set(['ARCHIVED', 'TERMINATED', 'INACTIVE']);
+    const isActiveProfile = (p: (typeof staffProfiles)[number]) =>
+      !INACTIVE_STATUSES.has((p.employmentStatus ?? '').toUpperCase());
+    // From several candidates sharing a match key, pick the one obvious profile:
+    // a lone candidate, else the single active one. Genuinely ambiguous → skip.
+    const resolveProfile = (candidates: typeof staffProfiles): (typeof staffProfiles)[number] | undefined => {
+      if (candidates.length === 1) return candidates[0];
+      if (candidates.length === 0) return undefined;
+      const active = candidates.filter(isActiveProfile);
+      return active.length === 1 ? active[0] : undefined;
+    };
+
     const byXeroId = new Map(
       staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
     );
-    const byEmail = new Map(
-      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
-    );
+    const byEmail = new Map<string, typeof staffProfiles>();
+    for (const p of staffProfiles) {
+      if (!p.email) continue;
+      const k = p.email.toLowerCase();
+      const list = byEmail.get(k) ?? [];
+      list.push(p);
+      byEmail.set(k, list);
+    }
     const nameKey = (first: string, last: string) =>
       `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
     const byName = new Map<string, typeof staffProfiles>();
@@ -5772,6 +6047,7 @@ export const integrationService = {
     let totalImported = 0;
     let totalTimesheets = 0;
     let totalSkipped = 0;
+    let totalDeduped = 0;
 
     for (const tenant of targets) {
       let tenantImported = 0;
@@ -5821,10 +6097,11 @@ export const integrationService = {
 
           const emp = employeesById.get(summary.EmployeeID);
           const nameList = emp ? byName.get(nameKey(emp.FirstName, emp.LastName)) ?? [] : [];
+          const emailList = emp?.Email ? byEmail.get(emp.Email.toLowerCase()) ?? [] : [];
           const profile =
             byXeroId.get(summary.EmployeeID.toLowerCase()) ??
-            (emp?.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
-            (nameList.length === 1 ? nameList[0] : undefined);
+            resolveProfile(emailList) ??
+            resolveProfile(nameList);
 
           if (!profile) {
             const key = `${tenant.id}:${summary.EmployeeID}`;
@@ -5893,6 +6170,41 @@ export const integrationService = {
             };
           });
 
+          // Exclude any day-row that exactly duplicates a timesheet already on
+          // file from another source — a Deputy sync or a manually entered shift
+          // for the same staff member, same day and same worked hours. This stops
+          // the Xero import from doubling shifts that were already recorded.
+          // Because we also delete this import's own prior rows below, simply
+          // re-running the import cleans up earlier duplicates too.
+          const dayKey = (d: Date) => d.toISOString().slice(0, 10);
+          const workedHours = (inAt: Date, outAt: Date, breakMin: number) =>
+            Math.round((((outAt.getTime() - inAt.getTime()) / 3_600_000) - (breakMin ?? 0) / 60) * 100) / 100;
+          const existingShifts = await prisma.timesheet.findMany({
+            where: {
+              staffProfileId: profile.id,
+              workDate: { in: rows.map((r) => r.workDate) },
+              // Compare only against rows NOT created by this Xero importer.
+              xeroImportKey: null
+            },
+            select: { workDate: true, clockInAt: true, clockOutAt: true, breakMinutes: true }
+          });
+          const existingShiftKeys = new Set(
+            existingShifts
+              .filter((e) => e.clockInAt && e.clockOutAt)
+              .map(
+                (e) =>
+                  `${dayKey(e.workDate)}|${workedHours(e.clockInAt as Date, e.clockOutAt as Date, e.breakMinutes ?? 0)}`
+              )
+          );
+          const dedupedRows = rows.filter((r) => {
+            const key = `${dayKey(r.workDate)}|${workedHours(r.clockInAt, r.clockOutAt, r.breakMinutes)}`;
+            if (existingShiftKeys.has(key)) {
+              totalDeduped++;
+              return false;
+            }
+            return true;
+          });
+
           // Replace this timesheet's prior import rows (handles edited/removed
           // days), then insert. Only ever touches rows with this xeroImportKey
           // prefix — never Deputy/manual/export-origin rows.
@@ -5900,12 +6212,12 @@ export const integrationService = {
             prisma.timesheet.deleteMany({
               where: { xeroImportKey: { startsWith: `${tenant.id}:${summary.TimesheetID}:` } }
             }),
-            prisma.timesheet.createMany({ data: rows })
+            prisma.timesheet.createMany({ data: dedupedRows })
           ]);
 
           matchedStaffIds.add(profile.id);
-          tenantImported += rows.length;
-          totalImported += rows.length;
+          tenantImported += dedupedRows.length;
+          totalImported += dedupedRows.length;
         }
       } catch (error) {
         tenantError = safeErrorMessage(error);
@@ -5935,16 +6247,23 @@ export const integrationService = {
       throw new HttpError(502, `Xero timesheet import failed: ${errorMessages.join(' | ')}`);
     }
 
+    if (totalDeduped > 0) {
+      warnings.push(
+        `${totalDeduped} day-row(s) skipped as exact duplicates of existing Deputy or manually entered timesheets.`
+      );
+    }
+
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
       eventType: 'DATA_IMPORTED',
-      summary: `Xero timesheets synced: ${totalImported} day-rows for ${matchedStaffIds.size} staff across ${tenantResults.length} tenant(s).`,
+      summary: `Xero timesheets synced: ${totalImported} day-rows for ${matchedStaffIds.size} staff across ${tenantResults.length} tenant(s)${totalDeduped > 0 ? `; ${totalDeduped} duplicate(s) skipped` : ''}.`,
       actor,
       metadata: {
         imported: totalImported,
         staffMatched: matchedStaffIds.size,
         timesheetCount: totalTimesheets,
+        deduped: totalDeduped,
         notMatched: unmatched.length
       }
     });
@@ -6218,7 +6537,9 @@ export const integrationService = {
    *   arbitrary historical roster windows.
    */
   async backfillSquareSales(input: { days?: number; account?: string | null } = {}, actor: AuthUser) {
-    const days = clampLimit(input.days, 90, 90);
+    // Up to ~13 months so a full financial year can be backfilled in one pass
+    // (the live sync only keeps a rolling window, so YTD reads low without this).
+    const days = clampLimit(input.days, 90, 400);
     const chunkDays = 7;
     const accountKey = input.account ?? 'primary';
 
@@ -6288,6 +6609,38 @@ export const integrationService = {
       itemRows,
       totalSalesCents,
       warnings
+    };
+  },
+
+  // Secret-guarded entrypoint for a one-off historical backfill across BOTH
+  // Square accounts (St Alma + Avalon). Runs the per-account backfill above with
+  // the scheduler actor so it can be triggered as a job without a signed-in user.
+  // Idempotent — importSquareSales upserts, so re-running is safe.
+  async runScheduledSquareBackfill(input: Record<string, unknown> = {}, actor: AuthUser = integrationSchedulerActor) {
+    const accountInput = optionalText(input.account);
+    const accounts = accountInput ? [normaliseSquareAccountKey(accountInput)] : SQUARE_ACCOUNT_KEYS;
+    const days = clampLimit(input.days, 400, 400);
+    const accountResults: Array<Record<string, unknown>> = [];
+    for (const accountKey of accounts) {
+      const status = await providerStatus('SQUARE', accountKey);
+      if (!status.connected) {
+        accountResults.push({
+          account: accountKey,
+          label: squareAccountConfig(accountKey).label,
+          status: 'skipped' as const,
+          message: status.connectBlockedReason ?? `${squareAccountConfig(accountKey).label} Square is not connected — reconnect it, then re-run the backfill for this account.`
+        });
+        continue;
+      }
+      const result = await integrationService.backfillSquareSales({ days, account: accountKey }, actor);
+      accountResults.push({ ...result, label: squareAccountConfig(accountKey).label, status: 'synced' as const });
+    }
+    return {
+      provider: 'square' as const,
+      mode: 'backfill' as const,
+      generatedAt: new Date().toISOString(),
+      days,
+      accounts: accountResults
     };
   },
 

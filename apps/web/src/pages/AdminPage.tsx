@@ -27,6 +27,7 @@ import type {
   AdminOverviewPayload,
   AdminSignalTone,
   AdminSystemHealthPayload,
+  AppSettingsPayload,
   AlmaAppId,
   IntegrationConnectResponse,
   IntegrationProviderStatus,
@@ -300,6 +301,16 @@ const DATA_IMPORTS = [
     provider: 'square' as const,
     runEndpoint: '/api/integrations/square/import-sales',
     runLabel: 'Import sales',
+    appHref: 'https://alma-reports.web.app'
+  },
+  {
+    key: 'sales-backfill',
+    title: 'Backfill sales history',
+    body: 'One-off: pull up to 13 months of Square sales for BOTH accounts (St Alma + Avalon) into Reports, so YTD reflects the full year. Run this after both Square accounts are connected. It can take a few minutes and is safe to re-run — if it times out, just run it again to finish.',
+    surface: 'Reports',
+    provider: 'square' as const,
+    runEndpoint: '/api/integrations/square/backfill',
+    runLabel: 'Backfill 12 months',
     appHref: 'https://alma-reports.web.app'
   },
   {
@@ -847,6 +858,105 @@ function shiftTaskRulePayload(form: ShiftTaskRuleForm) {
     dueOffsetMinutes: minutesPayload(form.dueOffsetMinutes),
     assignmentTarget: form.assignmentTarget
   };
+}
+
+// Self-contained ABA tip-payment settings card. Loads + saves AppSettings
+// directly (admin-only PATCH) so it can drop into any admin section. Shown on
+// the Staff settings page so admins configure tip payouts where they'd expect.
+function TipPaymentsAbaCard() {
+  const [aba, setAba] = useState<AppSettingsPayload['tipsAbaSettings'] | null>(null);
+  const [form, setForm] = useState({
+    financialInstitution: '',
+    userName: '',
+    userId: '',
+    remitterName: '',
+    description: 'ALMA TIPS',
+    traceBsb: '',
+    traceAccount: ''
+  });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ text: string; tone: 'success' | 'error' } | null>(null);
+
+  useEffect(() => {
+    void (async () => {
+      try {
+        const data = await api<AppSettingsPayload>('/api/settings');
+        const a = data.tipsAbaSettings;
+        if (a) {
+          setAba(a);
+          setForm({
+            financialInstitution: a.financialInstitution ?? '',
+            userName: a.userName ?? '',
+            userId: a.userId ?? '',
+            remitterName: a.remitterName ?? '',
+            description: a.description || 'ALMA TIPS',
+            traceBsb: a.traceBsb ?? '',
+            traceAccount: a.traceAccount ?? ''
+          });
+        }
+      } catch {
+        /* ignore — admin may not have settings access */
+      } finally {
+        setLoading(false);
+      }
+    })();
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    setSaving(true);
+    setMsg(null);
+    try {
+      const data = await api<AppSettingsPayload>('/api/settings', {
+        method: 'PATCH',
+        body: JSON.stringify({ tipsAbaSettings: { ...form } })
+      });
+      if (data.tipsAbaSettings) {
+        setAba(data.tipsAbaSettings);
+        setForm((f) => ({ ...f, traceAccount: data.tipsAbaSettings.traceAccount ?? f.traceAccount }));
+      }
+      setMsg({ text: 'Saved', tone: 'success' });
+    } catch (err) {
+      setMsg({ text: err instanceof Error ? err.message : 'Could not save', tone: 'error' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <Card
+      title="Tip payments (ABA bank file)"
+      subtitle="Your business bank details for the direct-entry (ABA) file used to pay staff tips. Stored securely; the account number is masked when shown."
+      action={
+        <Badge tone={aba?.configured ? 'positive' : 'warning'} dot>
+          {aba?.configured ? 'Configured' : 'Not configured'}
+        </Badge>
+      }
+    >
+      {loading ? (
+        <Spinner label="Loading…" />
+      ) : (
+        <form className="page-stack compact" onSubmit={submit}>
+          <div className="admin-grid two">
+            <Input label="Financial institution" value={form.financialInstitution} onChange={(e) => setForm((f) => ({ ...f, financialInstitution: e.currentTarget.value }))} placeholder="e.g. WBC, ANZ, CBA, NAB" hint="3-letter bank abbreviation." />
+            <Input label="APCA user ID" value={form.userId} onChange={(e) => setForm((f) => ({ ...f, userId: e.currentTarget.value }))} placeholder="6 digits" hint="The 6-digit direct-entry ID your bank issued." />
+            <Input label="User name" value={form.userName} onChange={(e) => setForm((f) => ({ ...f, userName: e.currentTarget.value }))} placeholder="Registered direct-entry name" />
+            <Input label="Remitter name" value={form.remitterName} onChange={(e) => setForm((f) => ({ ...f, remitterName: e.currentTarget.value }))} placeholder="Shows on staff statements" hint="Defaults to the user name." />
+            <Input label="Trace BSB" value={form.traceBsb} onChange={(e) => setForm((f) => ({ ...f, traceBsb: e.currentTarget.value }))} placeholder="000-000" hint="Your business account BSB." />
+            <Input label="Trace account number" value={form.traceAccount} onChange={(e) => setForm((f) => ({ ...f, traceAccount: e.currentTarget.value }))} placeholder="Your business account" hint="Leave the masked value to keep it; type a new number to replace." />
+            <Input label="Lodgement description" value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.currentTarget.value }))} placeholder="ALMA TIPS" hint="Max ~12 chars." />
+          </div>
+          <div className="toolbar-right">
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Saving…' : 'Save tip payment details'}
+            </Button>
+            {msg ? <Badge tone={msg.tone === 'error' ? 'danger' : 'positive'}>{msg.text}</Badge> : null}
+          </div>
+        </form>
+      )}
+    </Card>
+  );
 }
 
 function IssueAreaRulesAdminSection() {
@@ -3359,7 +3469,7 @@ export function AdminPage({
               <a
                 key={item.kind}
                 className="admin-link-card"
-                href={`/api/admin/exports/${item.kind}`}
+                href={apiUrl(`/api/admin/exports/${item.kind}`)}
               >
                 <span>
                   <strong>{item.label}</strong>
@@ -3933,6 +4043,7 @@ export function AdminPage({
             </div>
           </Card>
         </div>
+        {showStaffSettings ? <TipPaymentsAbaCard /> : null}
       </section>
       ) : null}
 

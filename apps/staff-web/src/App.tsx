@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { HubLayout, type HubTab } from './components/HubTabs';
+import { HubLayout, useHubTabBadge, type HubTab } from './components/HubTabs';
 import type {
   AppSettingsPayload,
   AlmaAppId,
@@ -98,6 +98,12 @@ import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, createSuiteHandoffUrl } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
+import {
+  startOfWeek, addDays, shiftTimeRange, moveDateKeepingTime, sameDay,
+  isDateInRange, rangesOverlap, timeOf, toDateInput, toTimeInput,
+  isExpiringSoon, formatRange, shiftHours, roundHours, uniqueValues,
+  initials, timesheetHours, formatCents
+} from './lib/datetime';
 import { COMPLIANCE_WEB_URL, RESERVE_WEB_URL, SETTINGS_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import {
   IconBadgeCheck,
@@ -294,6 +300,8 @@ const ACCESS_PERMISSION_GROUPS: Partial<Record<AlmaAppId, Array<{ key: string; l
   ]
 };
 
+// Consolidated manager nav: fewer top-level items, each a hub that groups the
+// related screens as in-page tabs (matching the Stock and Compliance apps).
 const NAV_ITEMS = [
   {
     to: '/',
@@ -303,88 +311,49 @@ const NAV_ITEMS = [
     end: true
   },
   {
+    // Today hub: dashboard, daily brief, readiness, and the manager's own clock.
     to: '/manager',
     label: 'Today',
-    description: 'Staff, clock sessions, bookings, daily brief and readiness',
-    icon: <IconDashboard />
+    description: 'Daily brief, readiness, clock and the day at a glance',
+    icon: <IconDashboard />,
+    match: ['/brief', '/readiness', '/clock']
   },
   {
-    to: '/clock',
-    label: 'Clock',
-    description: 'My clock in, out and breaks',
-    icon: <IconClock />
-  },
-  {
-    to: '/profiles',
-    label: 'Profiles',
-    description: 'Full staff profiles, permissions, documents, and tasks',
-    icon: <IconFileText />
-  },
-  {
-    to: '/invites',
-    label: 'Invites',
-    description: 'Staff onboarding links',
-    icon: <IconUserPlus />
-  },
-  {
-    to: '/approvals',
-    label: 'Approvals',
-    description: 'Review onboarding documents',
-    icon: <IconBadgeCheck />
-  },
-  {
+    // Roster & pay hub: roster, leave, timesheets and tips — the scheduling and
+    // labour-cost workflow in one place.
     to: '/roster',
-    label: 'Roster',
-    description: 'Roster board foundation',
-    icon: <IconCalendarClock />
+    label: 'Roster & pay',
+    description: 'Roster, leave, timesheets and tips',
+    icon: <IconCalendarClock />,
+    match: ['/leave', '/timesheets', '/tips']
   },
   {
-    to: '/leave',
-    label: 'Leave',
-    description: 'Manager leave calendar',
-    icon: <IconCalendarCheck />
+    // People hub: profiles, invites, approvals and HR records.
+    to: '/profiles',
+    label: 'People',
+    description: 'Profiles, onboarding invites, approvals and HR records',
+    icon: <IconFileText />,
+    match: ['/invites', '/approvals', '/hr', '/staff']
   },
   {
+    // Compliance & training hub: certifications and the Academy.
     to: '/compliance',
     label: 'Compliance',
-    description: 'Staff compliance reminders',
-    icon: <IconFileLock />
-  },
-  {
-    to: '/hr',
-    label: 'HR',
-    description: 'Restricted employment records',
-    icon: <IconBriefcase />
-  },
-  {
-    to: '/academy',
-    label: 'Academy',
-    description: 'Modules, levels and pay rules',
-    icon: <CapIcon />
-  },
-  {
-    to: '/timesheets',
-    label: 'Timesheets',
-    description: 'Submit, approve, export',
-    icon: <IconClock />
-  },
-  {
-    to: '/tips',
-    label: 'Tips',
-    description: 'Cash tips and payout runs',
-    icon: <IconWallet />
-  },
-  {
-    to: '/settings',
-    label: 'Staff settings',
-    description: 'Staff defaults, onboarding and access',
-    icon: <GearIcon />
+    description: 'Staff compliance reminders and Academy training',
+    icon: <IconFileLock />,
+    match: ['/academy']
   },
   {
     to: 'https://alma-comms.web.app',
     label: 'Comms',
     description: 'Announcements, group chats, and messaging permissions',
     icon: <IconMail />
+  },
+  {
+    to: '/settings',
+    label: 'Staff settings',
+    description: 'Staff defaults, onboarding and access',
+    icon: <GearIcon />
   }
 ];
 
@@ -393,8 +362,36 @@ const NAV_ITEMS = [
 const TODAY_TABS: HubTab[] = [
   { to: '/manager', label: 'Today', end: true },
   { to: '/brief', label: 'Daily brief' },
-  { to: '/readiness', label: 'Readiness' }
+  { to: '/readiness', label: 'Readiness' },
+  { to: '/clock', label: 'Clock' }
 ];
+
+// Roster & pay hub — roster, leave, timesheets and tips all share the week
+// selector and form the labour-cost workflow.
+const ROSTER_PAY_TABS: HubTab[] = [
+  { to: '/roster', label: 'Roster' },
+  { to: '/leave', label: 'Leave' },
+  { to: '/timesheets', label: 'Timesheets' },
+  { to: '/tips', label: 'Tips' }
+];
+
+// People hub — profiles, onboarding invites and approvals. HR is appended at
+// render time only when the viewer has HR access.
+const PEOPLE_TABS_BASE: HubTab[] = [
+  { to: '/profiles', label: 'Profiles', end: true },
+  { to: '/invites', label: 'Invites' },
+  { to: '/approvals', label: 'Approvals' }
+];
+
+const COMPLIANCE_TABS: HubTab[] = [
+  { to: '/compliance', label: 'Compliance', end: true },
+  { to: '/academy', label: 'Academy' }
+];
+
+// HR is access-gated, so only show it as a People tab when the viewer can open it.
+function peopleTabsFor(canOpenHr: boolean): HubTab[] {
+  return canOpenHr ? [...PEOPLE_TABS_BASE, { to: '/hr', label: 'HR' }] : PEOPLE_TABS_BASE;
+}
 
 const STAFF_MEMBER_NAV_ITEMS = [
   {
@@ -439,6 +436,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     label: 'Tips',
     description: 'View your tip history and entitlements',
     icon: <IconWallet />
+  },
+  {
+    to: '/my-pay',
+    label: 'My pay',
+    description: 'Your pay rate, employment type and setup',
+    icon: <IconBriefcase />
   },
   {
     to: '/compliance',
@@ -803,13 +806,20 @@ function TopBarWithContext() {
   );
 }
 
+// A nav item is active for its own route AND any hub sub-route listed in match[]
+// (e.g. the "Roster & pay" hub lights up on /leave, /timesheets, /tips).
+function staffNavMatches(item: { to: string; match?: string[] }, pathname: string): boolean {
+  const candidates = [item.to, ...(item.match ?? [])];
+  return candidates.some((p) =>
+    p === '/' ? pathname === '/' : pathname === p || pathname.startsWith(`${p}/`)
+  );
+}
+
 function currentPage(pathname: string, items = NAV_ITEMS) {
   return (
     [...items]
       .sort((a, b) => b.to.length - a.to.length)
-      .find((item) =>
-        item.to === '/' ? pathname === '/' : pathname === item.to || pathname.startsWith(`${item.to}/`)
-      ) ?? {
+      .find((item) => staffNavMatches(item, pathname)) ?? {
       to: pathname,
       label: 'Page not found',
       description: "The URL didn't match any section",
@@ -858,7 +868,13 @@ function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
                 <span>{item.label}</span>
               </a>
             ) : (
-              <NavLink to={item.to} end={item.end} aria-label={item.label} title={item.label}>
+              <NavLink
+                to={item.to}
+                end={item.end}
+                className={() => (staffNavMatches(item, location.pathname) ? 'active' : undefined)}
+                aria-label={item.label}
+                title={item.label}
+              >
                 <span className="sidebar-nav-icon">{item.icon}</span>
                 <span>{item.label}</span>
               </NavLink>
@@ -925,14 +941,29 @@ function StaffHome({
   reload: () => Promise<void>;
 }) {
   const navigate = useNavigate();
-  const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
+  // Readiness/active set excludes ALL terminated staff (archived, terminated,
+  // inactive…), not just ARCHIVED — so warnings only ever flag current staff.
+  const activeStaff = staff.filter((member) => !isTerminatedStaffProfile(member));
   const pending = staff.filter((member) => member.employmentStatus === 'PENDING');
   const withStaffAccess = staff.filter((member) =>
     member.appAccess.some((access) => access.appId === 'STAFF' && access.status === 'ENABLED')
   );
   const lightweightDeputyProfiles = staff.filter(isDeputyImportedProfile);
   const staffForReadiness = activeStaff.filter((member) => !isUnallocatedProfile(member));
-  const missingPayRate = staffForReadiness.filter((member) => !member.payRateCents && !member.trainingPayRateCents);
+  const missingPayRate = staffForReadiness.filter((member) => {
+    if (member.payRateCents || member.trainingPayRateCents) return false;
+    // An award pay profile that's been explicitly configured counts as having a rate,
+    // even when the legacy payRateCents column is null. A system-defaulted profile
+    // (e.g. casual with no rate → Award Level 2 fallback) still gets flagged so the
+    // manager confirms the real rate.
+    const profile = member.payProfile;
+    if (profile && !profile.isDefaulted && (
+      (profile.ordinaryHourlyRateCents ?? 0) > 0 ||
+      (profile.casualLoadedHourlyRateCents ?? 0) > 0 ||
+      (profile.manualFullTimePayAmountCents ?? 0) > 0
+    )) return false;
+    return true;
+  });
   const missingPayType = staffForReadiness.filter((member) => !member.payType);
   const pendingRecords = staff.flatMap((member) => member.records.filter((record) => record.status === 'PENDING'));
   const duplicateProfileGroups = duplicateStaffProfileGroups(staffForReadiness);
@@ -1457,6 +1488,84 @@ function StaffProfilesPage({
     }
   }
 
+  const renderStaffRow = (member: StaffProfile) => {
+    const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
+    const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
+    const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
+    return (
+      <div key={member.id} className="staff-list-button">
+        <button type="button" className="staff-list-main" onClick={() => openProfile(member.id)}>
+          <span>
+            <strong>
+              {member.firstName} {member.lastName}
+            </strong>
+            <span className="subtle" style={{ display: 'block' }}>
+              {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
+            </span>
+            {uploadedDocuments ? <span className="subtle" style={{ display: 'block' }}>{uploadedDocuments} uploaded document{uploadedDocuments === 1 ? '' : 's'} in profile</span> : null}
+            {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
+          </span>
+        </button>
+        <span className="staff-row-actions">
+          {uploadedRsa ? <Badge tone="positive">RSA uploaded</Badge> : null}
+          {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
+          {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
+          <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
+          {isDeputyImportedProfile(member) ? (
+            <Button
+              type="button"
+              size="sm"
+              variant="secondary"
+              disabled={reonboardingId === member.id}
+              onClick={(event) => {
+                event.stopPropagation();
+                void reonboardLightweightProfile(member);
+              }}
+            >
+              {reonboardingId === member.id ? 'Sending...' : 'Re-onboard'}
+            </Button>
+          ) : null}
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'documents');
+            }}
+          >
+            Documents
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'personal');
+            }}
+          >
+            Profile
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            onClick={(event) => {
+              event.stopPropagation();
+              openProfile(member.id, 'payroll');
+            }}
+          >
+            Payroll
+          </Button>
+        </span>
+      </div>
+    );
+  };
+
+  const currentRows = visibleStaff.filter((member) => !isTerminatedStaffProfile(member));
+  const terminatedRows = visibleStaff.filter(isTerminatedStaffProfile);
+
   return (
     <div className="page-stack staff-settings-page">
       <PageHeader
@@ -1520,80 +1629,18 @@ function StaffProfilesPage({
               description="Choose another status filter to see more profiles."
             />
           ) : null}
-          {visibleStaff.map((member) => {
-            const soon = member.records.filter((record) => record.expiryDate && isExpiringSoon(record.expiryDate)).length;
-            const uploadedDocuments = member.records.filter((record) => Boolean(record.documentUrl)).length;
-            const uploadedRsa = member.records.some((record) => record.recordType === 'RSA' && record.documentUrl);
-            return (
-              <div key={member.id} className="staff-list-button">
-                <button type="button" className="staff-list-main" onClick={() => openProfile(member.id)}>
-                  <span>
-                    <strong>
-                      {member.firstName} {member.lastName}
-                    </strong>
-                    <span className="subtle" style={{ display: 'block' }}>
-                      {member.roleTitle} · {member.venue || 'No venue'} · {member.email || 'No email'}
-                    </span>
-                    {uploadedDocuments ? <span className="subtle" style={{ display: 'block' }}>{uploadedDocuments} uploaded document{uploadedDocuments === 1 ? '' : 's'} in profile</span> : null}
-                    {soon ? <span className="subtle" style={{ display: 'block' }}>{soon} record{soon === 1 ? '' : 's'} expiring soon</span> : null}
-                  </span>
-                </button>
-                <span className="staff-row-actions">
-                  {uploadedRsa ? <Badge tone="positive">RSA uploaded</Badge> : null}
-                  {isDeputyImportedProfile(member) ? <Badge tone="info">Roster import</Badge> : null}
-                  {isUnallocatedProfile(member) ? <Badge tone="warning">Unallocated</Badge> : null}
-                  <Badge tone={member.employmentStatus === 'ACTIVE' ? 'positive' : 'warning'}>{member.employmentStatus}</Badge>
-                  {isDeputyImportedProfile(member) ? (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="secondary"
-                      disabled={reonboardingId === member.id}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        void reonboardLightweightProfile(member);
-                      }}
-                    >
-                      {reonboardingId === member.id ? 'Sending...' : 'Re-onboard'}
-                    </Button>
-                  ) : null}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'documents');
-                    }}
-                  >
-                    Documents
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'personal');
-                    }}
-                  >
-                    Profile
-                  </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      openProfile(member.id, 'payroll');
-                    }}
-                  >
-                    Payroll
-                  </Button>
-                </span>
-              </div>
-            );
-          })}
+          {currentRows.length > 0 ? (
+            <>
+              {terminatedRows.length > 0 ? <div className="staff-list-section-head">Current staff</div> : null}
+              {currentRows.map(renderStaffRow)}
+            </>
+          ) : null}
+          {terminatedRows.length > 0 ? (
+            <>
+              <div className="staff-list-section-head">Terminated staff</div>
+              {terminatedRows.map(renderStaffRow)}
+            </>
+          ) : null}
         </div>
       </Card>
 
@@ -3631,6 +3678,30 @@ function StaffProfileWorkspacePage({
     }
   }
 
+  async function setKioskPin() {
+    if (!canManageProfileAccess) return;
+    const entered = window.prompt(`Set a shared-device kiosk PIN for ${staffFullName(member)} (4 to 6 digits). They use this to switch into their account on a venue iPad.`);
+    if (entered === null) return;
+    const pin = entered.trim();
+    if (!/^\d{4,6}$/.test(pin)) {
+      setMessageTarget('pin');
+      setMessage('PIN must be 4 to 6 digits.');
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('pin');
+    try {
+      await api(`/api/staff/${member.id}/pin/reset`, { method: 'POST', body: JSON.stringify({ pin }) });
+      await reload();
+      setMessage(`Kiosk PIN set for ${staffFullName(member)}.`);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not set the kiosk PIN.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function updateProfile<K extends keyof StaffDraft>(key: K, value: StaffDraft[K]) {
     setProfileDraft((current) => ({ ...current, [key]: value }));
   }
@@ -4409,6 +4480,17 @@ function StaffProfileWorkspacePage({
             { label: 'Last updated', value: profileDate(member.pinUpdatedAt) },
             { label: 'Account type', value: member.accountType.replaceAll('_', ' ') }
           ]} />
+          {canManageProfileAccess && member.accountType === 'HUMAN' ? (
+            <div className="staff-profile-actions">
+              <Button type="button" variant="secondary" onClick={setKioskPin} disabled={saving}>
+                {member.pinUpdatedAt ? 'Reset kiosk PIN' : 'Set kiosk PIN'}
+              </Button>
+              {!member.pinUpdatedAt ? (
+                <p className="subtle">No PIN set yet — this person can’t switch into their account on a shared venue iPad until you set one.</p>
+              ) : null}
+            </div>
+          ) : null}
+          {message && messageTarget === 'pin' ? <p className="subtle">{message}</p> : null}
           <details className="staff-profile-collapsible">
             <summary>Device security notes</summary>
             <p className="subtle">PINs are managed through the staff PIN reset/change flow. Venue device accounts cannot use this profile workspace to access staff documents, payroll, or HR settings.</p>
@@ -7775,7 +7857,7 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
 
   const staffOptions = [
     { label: 'Select staff', value: '' },
-    ...staff.map((member) => ({
+    ...sortStaffForSelect(staff).map((member) => ({
       label: `${member.firstName} ${member.lastName}`,
       value: member.id
     }))
@@ -7956,8 +8038,13 @@ function TrainingPage({ staff, reloadStaff }: { staff: StaffProfile[]; reloadSta
             }}
           >
             <Input label="Module title" required value={moduleDraft.title} onChange={(event) => updateModuleDraft('title', event.currentTarget.value)} />
+            <datalist id="academy-categories">
+              {Array.from(new Set(modules.map((module) => module.category).filter((c): c is string => Boolean(c)))).map((category) => (
+                <option key={category} value={category} />
+              ))}
+            </datalist>
             <div className="form-grid three">
-              <Input label="Category" value={moduleDraft.category} onChange={(event) => updateModuleDraft('category', event.currentTarget.value)} />
+              <Input label="Category" list="academy-categories" value={moduleDraft.category} onChange={(event) => updateModuleDraft('category', event.currentTarget.value)} />
               <Input label="Level" type="number" min="1" value={moduleDraft.level} onChange={(event) => updateModuleDraft('level', event.currentTarget.value)} />
               <Input label="Minutes" type="number" min="1" value={moduleDraft.estimatedMinutes} onChange={(event) => updateModuleDraft('estimatedMinutes', event.currentTarget.value)} />
             </div>
@@ -8214,6 +8301,22 @@ function staffLabel(member?: Pick<StaffProfile, 'firstName' | 'lastName' | 'role
   return `${member.firstName} ${member.lastName} · ${member.roleTitle}${member.venue ? ` · ${member.venue}` : ''}`;
 }
 
+// Order staff for dropdowns: active first, then everyone else, each group A→Z by
+// name. Keeps the people you pick most (current staff) at the top of every
+// selector while still listing past staff below for historical entries.
+function sortStaffForSelect<T extends { firstName?: string; lastName?: string; employmentStatus?: string }>(
+  list: T[]
+): T[] {
+  return [...list].sort((a, b) => {
+    const aActive = a.employmentStatus === 'ACTIVE' ? 0 : 1;
+    const bActive = b.employmentStatus === 'ACTIVE' ? 0 : 1;
+    if (aActive !== bActive) return aActive - bActive;
+    return `${a.firstName ?? ''} ${a.lastName ?? ''}`
+      .trim()
+      .localeCompare(`${b.firstName ?? ''} ${b.lastName ?? ''}`.trim(), undefined, { sensitivity: 'base' });
+  });
+}
+
 function HrOverviewPage({ records, loading }: { records: StaffHrRecord[]; loading: boolean }) {
   const attentionItems = records.filter((record) =>
     record.status === 'RE_REQUESTED' ||
@@ -8303,8 +8406,7 @@ function HrSectionPage({
 
   const staffOptions = [
     { label: 'Choose staff', value: '' },
-    ...staff
-      .filter((member) => member.employmentStatus !== 'ARCHIVED')
+    ...sortStaffForSelect(staff.filter((member) => member.employmentStatus !== 'ARCHIVED'))
       .map((member) => ({ label: staffLabel(member), value: member.id }))
   ];
   const filterStaffOptions = [{ label: 'All staff', value: '' }, ...staffOptions.slice(1)];
@@ -8814,6 +8916,34 @@ function leaveStatusLabel(value: StaffLeaveStatus) {
   return LEAVE_STATUS_OPTIONS.find((option) => option.value === value)?.label ?? value;
 }
 
+// Roster & pay Turn 2: "6 days · 2 weeks out" meta line for leave request cards.
+function leaveRequestMeta(item: StaffLeaveRequest) {
+  const start = new Date(item.startDate);
+  const end = new Date(item.endDate);
+  const today = new Date();
+  start.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+  today.setHours(0, 0, 0, 0);
+  const days = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86400000) + 1);
+  const lead = Math.round((start.getTime() - today.getTime()) / 86400000);
+  let when: string;
+  if (lead > 13) when = `${Math.round(lead / 7)} weeks out`;
+  else if (lead > 1) when = `${lead} days out`;
+  else if (lead === 1) when = 'starts tomorrow';
+  else if (lead === 0) when = 'starts today';
+  else if (end.getTime() >= today.getTime()) when = 'away now';
+  else when = 'in the past';
+  return `${days} day${days === 1 ? '' : 's'} · ${when}`;
+}
+
+// Leave-type pill accent (annual=info, sick=danger, personal=warn, unpaid/other=neutral).
+function leaveTypePillClass(type: StaffLeaveType) {
+  if (type === 'ANNUAL') return 'is-annual';
+  if (type === 'SICK') return 'is-sick';
+  if (type === 'PERSONAL') return 'is-personal';
+  return 'is-neutral';
+}
+
 function leaveOverlapsDay(leave: StaffLeaveRequest, day: Date) {
   const start = new Date(leave.startDate);
   const end = new Date(leave.endDate);
@@ -8838,6 +8968,8 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
   const [selectedDay, setSelectedDay] = useState(() => toDateInput(new Date()));
+  // Optional manager note captured per pending request when approving/declining.
+  const [leaveNotes, setLeaveNotes] = useState<Record<string, string>>({});
 
   const activeStaff = staff.filter((member) => member.employmentStatus !== 'ARCHIVED');
   const venueOptions = [
@@ -8846,14 +8978,14 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   ];
   const staffOptions = [
     { label: 'All staff', value: '' },
-    ...activeStaff.map((member) => ({
+    ...sortStaffForSelect(activeStaff).map((member) => ({
       label: `${member.firstName} ${member.lastName}`,
       value: member.id
     }))
   ];
   const recordStaffOptions = [
     { label: 'Choose staff', value: '' },
-    ...activeStaff.map((member) => ({
+    ...sortStaffForSelect(activeStaff).map((member) => ({
       label: `${member.firstName} ${member.lastName} · ${member.venue || 'No venue'}`,
       value: member.id
     }))
@@ -8863,6 +8995,10 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
   const calendarEnd = useMemo(() => addDays(calendarStart, 42), [calendarStart]);
   const approvedCount = leave.filter((item) => item.status === 'APPROVED').length;
   const pendingCount = leave.filter((item) => item.status === 'PENDING').length;
+  const pendingLeave = leave.filter((item) => item.status === 'PENDING');
+  const resolvedLeave = leave.filter((item) => item.status !== 'PENDING');
+  // Roster & pay Turn 2: surface the pending count on the hub's Leave tab.
+  useHubTabBadge('/leave', pendingCount);
   const selectedDayDate = useMemo(() => new Date(`${selectedDay}T00:00:00`), [selectedDay]);
   const selectedDayLeave = leave.filter((item) => leaveOverlapsDay(item, selectedDayDate));
 
@@ -8961,12 +9097,18 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`leave:${item.id}:${status}`);
+    const note = leaveNotes[item.id]?.trim();
     try {
       await api<StaffLeaveRequest>(`/api/staff/leave/${item.id}`, {
         method: 'PATCH',
-        body: JSON.stringify({ status })
+        body: JSON.stringify({ status, ...(note ? { managerNote: note } : {}) })
       });
       setMessage(`Leave ${status.toLowerCase()}.`);
+      setLeaveNotes((prev) => {
+        const next = { ...prev };
+        delete next[item.id];
+        return next;
+      });
       await loadLeave();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not update leave.');
@@ -9100,47 +9242,99 @@ function LeaveCalendarPage({ staff }: { staff: StaffProfile[] }) {
         </aside>
       </div>
 
-      <Card title="Leave list" subtitle="Mobile-friendly list with review actions.">
-        <div className="staff-expiry-list">
-          {loading ? <Spinner label="Loading leave…" /> : null}
-          {!loading && leave.length === 0 ? (
-            <EmptyState title="No leave in this range" description="Record leave when a staff member is away, or adjust the filters." />
-          ) : null}
-          {leave.map((item) => (
-            <div key={item.id} className="staff-expiry-row">
-              <span>
-                <strong>{item.staffProfile ? `${item.staffProfile.firstName} ${item.staffProfile.lastName}` : 'Staff member'}</strong>
-                <span className="subtle">
-                  {leaveTypeLabel(item.type)} · {formatRange(new Date(item.startDate), new Date(item.endDate))} · {item.staffProfile?.venue || 'No venue'}
-                </span>
-                {item.notes ? <span>{item.notes}</span> : null}
-                {item.managerNote ? <span className="subtle">Manager note: {item.managerNote}</span> : null}
-              </span>
-              <span className="invite-row-actions">
-                <Badge tone={leaveStatusTone(item.status)}>{leaveStatusLabel(item.status)}</Badge>
-                {item.status === 'PENDING' ? (
-                  <>
-                    <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void changeStatus(item, 'APPROVED')}>
-                      Approve
-                    </Button>
-                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'DECLINED')}>
-                      Decline
-                    </Button>
-                  </>
-                ) : null}
-                {item.status !== 'CANCELLED' ? (
-                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'CANCELLED')}>
-                    Cancel
-                  </Button>
-                ) : null}
-                <ActionFeedback
-                  message={messageTarget?.startsWith(`leave:${item.id}:`) ? message : null}
-                  tone={message?.includes('Could') ? 'error' : 'success'}
-                />
-              </span>
-            </div>
-          ))}
-        </div>
+      <Card title="Leave requests" subtitle="Review pending requests first — resolved history stays below.">
+        {loading ? <Spinner label="Loading leave…" /> : null}
+        {!loading && leave.length === 0 ? (
+          <EmptyState title="No leave in this range" description="Record leave when a staff member is away, or adjust the filters." />
+        ) : null}
+        {leave.length > 0 ? (
+          <div className="leave-request-groups">
+            {(
+              [
+                { key: 'pending', label: `Pending · ${pendingLeave.length}`, items: pendingLeave },
+                { key: 'resolved', label: 'Resolved', items: resolvedLeave }
+              ] as const
+            ).map((group) =>
+              group.key === 'resolved' && group.items.length === 0 ? null : (
+                <section key={group.key} className="leave-request-group">
+                  <h4 className="leave-request-group-label">{group.label}</h4>
+                  {group.key === 'pending' && group.items.length === 0 ? (
+                    <div className="leave-request-empty">All caught up. Nothing waiting on you.</div>
+                  ) : null}
+                  {group.items.map((item) => {
+                    const member = item.staffProfile;
+                    const resolved = item.status !== 'PENDING';
+                    return (
+                      <article
+                        key={item.id}
+                        className={`leave-request-card${resolved ? ` is-resolved is-${item.status.toLowerCase()}` : ''}`}
+                        style={areaStyle(member?.roleTitle ?? '')}
+                      >
+                        <span className="leave-request-avatar" aria-hidden>
+                          {member ? staffInitials(member) : 'SP'}
+                        </span>
+                        <div className="leave-request-main">
+                          <div className="leave-request-topline">
+                            <strong>{member ? `${member.firstName} ${member.lastName}` : 'Staff member'}</strong>
+                            <span className={`leave-type-pill ${leaveTypePillClass(item.type)}`}>{leaveTypeLabel(item.type)}</span>
+                            <span className="leave-request-role">{[member?.roleTitle, member?.venue].filter(Boolean).join(' · ') || 'No venue'}</span>
+                          </div>
+                          <div className="leave-request-range">{formatRange(new Date(item.startDate), new Date(item.endDate))}</div>
+                          <div className="leave-request-meta">{leaveRequestMeta(item)}</div>
+                          {item.notes ? <p className="leave-request-note">“{item.notes}”</p> : null}
+                          {item.managerNote ? <p className="leave-request-manager-note">Manager note: {item.managerNote}</p> : null}
+                        </div>
+                        <div className="leave-request-actions">
+                          {item.status === 'PENDING' ? (
+                            <>
+                              <Input
+                                label=""
+                                placeholder="Note (optional)"
+                                value={leaveNotes[item.id] ?? ''}
+                                onChange={(event) =>
+                                  setLeaveNotes((prev) => ({ ...prev, [item.id]: event.currentTarget.value }))
+                                }
+                              />
+                              <div className="leave-request-buttons">
+                                <button
+                                  type="button"
+                                  className="leave-action-btn is-decline"
+                                  disabled={saving}
+                                  onClick={() => void changeStatus(item, 'DECLINED')}
+                                >
+                                  Decline
+                                </button>
+                                <button
+                                  type="button"
+                                  className="leave-action-btn is-approve"
+                                  disabled={saving}
+                                  onClick={() => void changeStatus(item, 'APPROVED')}
+                                >
+                                  Approve
+                                </button>
+                              </div>
+                            </>
+                          ) : (
+                            <span className={`leave-resolved-pill is-${item.status.toLowerCase()}`}>{leaveStatusLabel(item.status)}</span>
+                          )}
+                          {item.status !== 'CANCELLED' ? (
+                            <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void changeStatus(item, 'CANCELLED')}>
+                              Cancel
+                            </Button>
+                          ) : null}
+                          <ActionFeedback
+                            message={messageTarget?.startsWith(`leave:${item.id}:`) ? message : null}
+                            tone={message?.includes('Could') ? 'error' : 'success'}
+                          />
+                        </div>
+                      </article>
+                    );
+                  })}
+                </section>
+              )
+            )}
+          </div>
+        ) : null}
       </Card>
     </div>
   );
@@ -11062,14 +11256,30 @@ function RosterPage({
                                   {shift.status === 'PUBLISHED' ? 'Live' : shift.status.toLowerCase()}
                                 </em>
                               </span>
-                              <span className="deputy-shift-person">{viewMode === 'team' ? shift.area || shift.roleTitle || 'Shift' : `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}</span>
-                              <small>
-                                {isUnallocatedProfile(shift.staffProfile)
-                                  ? 'Unallocated'
-                                  : shift.breakMinutes
-                                    ? `${shift.breakMinutes}m break`
-                                    : shift.status}
-                              </small>
+                              {isUnallocatedProfile(shift.staffProfile) ? (
+                                <>
+                                  <span className="deputy-shift-person deputy-shift-needs-staff">Needs staff</span>
+                                  <small className="deputy-shift-assign-hint">+ Assign</small>
+                                </>
+                              ) : (
+                                <>
+                                  <span className="deputy-shift-person">
+                                    {viewMode === 'team' ? (
+                                      shift.area || shift.roleTitle || 'Shift'
+                                    ) : (
+                                      <>
+                                        {shift.staffProfile ? (
+                                          <span className="deputy-shift-avatar" aria-hidden>{staffInitials(shift.staffProfile)}</span>
+                                        ) : null}
+                                        {`${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim()}
+                                      </>
+                                    )}
+                                  </span>
+                                  <small>
+                                    {shift.breakMinutes ? `${shift.breakMinutes}m break` : shift.status}
+                                  </small>
+                                </>
+                              )}
                             </span>
                           )) : null}
                         </button>
@@ -11138,7 +11348,20 @@ function RosterPage({
                   </p>
                   <div className="roster-forecast-metrics roster-forecast-metrics-compact">
                     <div>
-                      <span>Forecast sales</span>
+                      <span>
+                        Forecast sales
+                        {dailyForecastTotalCents === 0 &&
+                        parseMoneyCents(forecastSales) === 0 &&
+                        historicalForecastSalesCents > 0 ? (
+                          <span
+                            className="subtle"
+                            style={{ marginLeft: 6, fontWeight: 400 }}
+                            title="No manual forecast entered — using the baseline from previous years."
+                          >
+                            (historical)
+                          </span>
+                        ) : null}
+                      </span>
                       <strong>{formatCents(forecastSalesCents)}</strong>
                     </div>
                     <div>
@@ -11226,6 +11449,42 @@ function RosterPage({
                 <Card
                   className="roster-side-card"
                 >
+                  {(() => {
+                    // Roster Redesign 1C: "Needs filling" queue — every unallocated
+                    // shift this week as a prioritised, one-tap list.
+                    const openShifts = visibleRoster
+                      .filter((shift) => isUnallocatedProfile(shift.staffProfile) && shift.status !== 'CANCELLED')
+                      .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
+                    if (!openShifts.length) return null;
+                    return (
+                      <div className="roster-fill-queue">
+                        <div className="roster-fill-queue-head">
+                          <strong>Needs filling</strong>
+                          <span>{openShifts.length} shift{openShifts.length === 1 ? '' : 's'}</span>
+                        </div>
+                        {openShifts.map((shift) => (
+                          <button
+                            key={shift.id}
+                            type="button"
+                            className="roster-fill-queue-card"
+                            style={areaStyle(shift.area || '')}
+                            onClick={() => startEditShift(shift)}
+                          >
+                            <span className="roster-fill-queue-meta">
+                              <span className="dot" aria-hidden />
+                              <strong>{shift.area || shift.roleTitle || 'Shift'}</strong>
+                              <small>
+                                {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' })}
+                                {' · '}
+                                {timeOf(shift.startsAt)}–{timeOf(shift.endsAt)}
+                              </small>
+                            </span>
+                            <span className="roster-fill-queue-assign">Assign</span>
+                          </button>
+                        ))}
+                      </div>
+                    );
+                  })()}
                   <div className="roster-side-staff-list">
                     {sidePanelStaff.length ? sidePanelStaff.map((member) => {
                       const memberShifts = visibleRoster.filter((shift) => shift.staffProfileId === member.id);
@@ -11307,7 +11566,7 @@ function RosterPage({
                   label="Team member"
                   value={staffProfileId}
                   onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-                  options={activeStaff.map((member) => ({
+                  options={sortStaffForSelect(activeStaff).map((member) => ({
                     label: `${member.firstName} ${member.lastName}`,
                     value: member.id
                   }))}
@@ -11906,91 +12165,7 @@ function weekDays(reference: Date, length = 7) {
   });
 }
 
-function startOfWeek(reference: Date) {
-  const start = new Date(reference);
-  start.setHours(0, 0, 0, 0);
-  const day = start.getDay();
-  start.setDate(start.getDate() - (day === 0 ? 6 : day - 1));
-  return start;
-}
-
-function addDays(reference: Date, days: number) {
-  const date = new Date(reference);
-  date.setDate(reference.getDate() + days);
-  return date;
-}
-
-function shiftTimeRange(date: string, startTime: string, endTime: string) {
-  if (!date || !startTime || !endTime) return null;
-  const startsAt = new Date(`${date}T${startTime}:00`);
-  const endsAt = new Date(`${date}T${endTime}:00`);
-  if (Number.isNaN(startsAt.getTime()) || Number.isNaN(endsAt.getTime())) return null;
-  if (endsAt <= startsAt) endsAt.setDate(endsAt.getDate() + 1);
-  return { startsAt, endsAt };
-}
-
-function moveDateKeepingTime(value: string, targetDay: Date) {
-  const source = new Date(value);
-  const next = new Date(targetDay);
-  next.setHours(source.getHours(), source.getMinutes(), source.getSeconds(), source.getMilliseconds());
-  return next;
-}
-
-function sameDay(a: Date, b: Date) {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
-}
-
-function isDateInRange(value: Date, start: Date, end: Date) {
-  const time = value.getTime();
-  return !Number.isNaN(time) && time >= start.getTime() && time < end.getTime();
-}
-
-function rangesOverlap(startA: Date, endA: Date, startB: Date, endB: Date) {
-  return startA < endB && startB < endA;
-}
-
-function timeOf(value: string) {
-  const d = new Date(value);
-  const h = d.getHours();
-  const m = d.getMinutes();
-  const suffix = h < 12 ? 'am' : 'pm';
-  const hour = h % 12 || 12;
-  return m === 0 ? `${hour} ${suffix}` : `${hour}:${String(m).padStart(2, '0')} ${suffix}`;
-}
-
-function toDateInput(value: Date) {
-  const year = value.getFullYear();
-  const month = String(value.getMonth() + 1).padStart(2, '0');
-  const day = String(value.getDate()).padStart(2, '0');
-  return `${year}-${month}-${day}`;
-}
-
-function toTimeInput(value: Date) {
-  return `${String(value.getHours()).padStart(2, '0')}:${String(value.getMinutes()).padStart(2, '0')}`;
-}
-
-function isExpiringSoon(iso: string) {
-  const expiry = new Date(iso);
-  if (Number.isNaN(expiry.getTime())) return false;
-  const now = new Date();
-  const soon = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-  return expiry <= soon && expiry >= new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
-}
-
-function formatRange(start: Date, end: Date) {
-  return `${start.toLocaleDateString(undefined, { day: 'numeric', month: 'short' })} - ${end.toLocaleDateString(undefined, {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric'
-  })}`;
-}
-
-function shiftHours(shift: RosterShift) {
-  const startsAt = new Date(shift.startsAt).getTime();
-  const endsAt = new Date(shift.endsAt).getTime();
-  if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt <= startsAt) return 0;
-  return (endsAt - startsAt) / 36e5;
-}
+// Pure date/time/format helpers moved to ./lib/datetime (staff-web breakup).
 
 // Any "hourly rate" above $200/hr is bad data — almost always an annual salary
 // that's landed in an hourly field. The roster forecast clamps to this so one
@@ -12095,13 +12270,6 @@ function countRosterOverlaps(shifts: RosterShift[]) {
   return conflicts;
 }
 
-function roundHours(hours: number) {
-  return `${hours.toFixed(hours % 1 === 0 ? 0 : 1)}h`;
-}
-
-function uniqueValues(values: string[]) {
-  return [...new Set(values.filter(Boolean))];
-}
 
 function rosterClosedDaysScopeKey(weekStart: Date, boardDays: number, venue: string) {
   return `${toDateInput(weekStart)}:${boardDays}:${normaliseRosterAreaName(venue)}`;
@@ -12201,17 +12369,20 @@ function mergeRosterAreas(settings: RosterAreaSettings, rosterAreas: string[]) {
 }
 
 const AREA_THEMES: Record<string, { bg: string; border: string; text: string }> = {
-  bar: { bg: '#eef2ff', border: '#4f46e5', text: '#312e81' },
-  'floor day': { bg: '#e0f2fe', border: '#0284c7', text: '#075985' },
-  'floor night': { bg: '#ecfdf5', border: '#059669', text: '#064e3b' },
-  floor: { bg: '#ecfdf5', border: '#059669', text: '#064e3b' },
-  kitchen: { bg: '#fff7ed', border: '#ea580c', text: '#7c2d12' },
-  management: { bg: '#f5f3ff', border: '#7c3aed', text: '#4c1d95' },
-  'host / floor manager': { bg: '#fefce8', border: '#ca8a04', text: '#713f12' },
-  'avalon manager': { bg: '#f5f3ff', border: '#7c3aed', text: '#4c1d95' },
-  events: { bg: '#fdf2f8', border: '#db2777', text: '#831843' },
-  training: { bg: '#eff6ff', border: '#2563eb', text: '#1e3a8a' }
+  // Alma design-system role palette (Roster Redesign 1A)
+  bar: { bg: '#F7E4D8', border: '#9A3A2E', text: '#6E2419' },
+  'floor day': { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  'floor night': { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  floor: { bg: '#EAF0E1', border: '#4F6B47', text: '#2F4129' },
+  kitchen: { bg: '#EFE7E4', border: '#684A4A', text: '#5E4444' },
+  management: { bg: '#DFE7DF', border: '#1F3524', text: '#1F3524' },
+  'host / floor manager': { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' },
+  host: { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' },
+  'avalon manager': { bg: '#DFE7DF', border: '#1F3524', text: '#1F3524' },
+  events: { bg: '#F6E5CC', border: '#B5772F', text: '#6F4915' },
+  training: { bg: '#E1E7F0', border: '#4D5E7A', text: '#2F3C50' }
 };
+
 
 function areaStyle(area: string): CSSProperties {
   const theme = AREA_THEMES[area.trim().toLowerCase()] ?? {
@@ -12226,9 +12397,6 @@ function areaStyle(area: string): CSSProperties {
   } as CSSProperties;
 }
 
-function initials(member: Pick<StaffProfile, 'firstName' | 'lastName'>) {
-  return `${member.firstName?.[0] ?? ''}${member.lastName?.[0] ?? ''}`.toUpperCase() || 'A';
-}
 
 function statusTone(status: RosterShift['status']) {
   switch (status) {
@@ -13023,6 +13191,28 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function importDeputyHours() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('deputy-import');
+    try {
+      const result = await api<{ imported: number; timesheetRows: number; totalHours: number }>('/api/staff/tips/deputy-import', {
+        method: 'POST',
+        body: JSON.stringify({ start: weekStart.toISOString(), end: weekEnd.toISOString(), venue })
+      });
+      setMessage(
+        result.imported
+          ? `Imported Deputy hours for ${result.imported} staff (${result.totalHours}h from ${result.timesheetRows} timesheet rows). Adjust below if needed.`
+          : 'No Deputy timesheets found for this week — run the Deputy sync (Admin → Integrations) first, then re-import.'
+      );
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import Deputy hours.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function deleteManualHoursEntry(id: string) {
     setSaving(true);
     setMessage(null);
@@ -13182,6 +13372,32 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
     }
   }
 
+  async function removeLockedRun() {
+    const run = summary?.paidRuns?.[0];
+    if (!run) return;
+    setMessageTarget('paid');
+    if (
+      !window.confirm(
+        `Remove the approved tip run for ${venue} (week of ${formatRange(weekStart, weekEnd)})?\n\n` +
+          `This unlocks the week so you can review and re-approve it from corrected data. ` +
+          `Reports will no longer use the old snapshot. This cannot be undone.`
+      )
+    ) {
+      return;
+    }
+    setSaving(true);
+    setMessage(null);
+    try {
+      const result = await api<{ removedLines: number }>(`/api/staff/tips/run/${run.id}`, { method: 'DELETE' });
+      setMessage(`Approved tip run removed (${result.removedLines} staff). Review the week and re-approve when ready.`);
+      await loadTips();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove the approved tip run.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function downloadTipsTemplate() {
     downloadTextFile(
       `alma-card-tips-template-${venue || 'venue'}-${toDateInput(weekStart)}.csv`,
@@ -13253,6 +13469,33 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
         </div>
       </div>
 
+      {/* Roster & pay Turn 2: hero stat row — the week's pool at a glance. */}
+      <div className="tips-hero-row">
+        <div className="tips-hero-card is-primary">
+          <span className="tips-hero-label">Total pool</span>
+          <span className="tips-hero-value">{loading ? '…' : formatCents(summary?.tipPoolCents ?? 0)}</span>
+          <span className="tips-hero-sub">
+            Cash + card · {summary?.tradingDays ?? 0} trading day{summary?.tradingDays === 1 ? '' : 's'}
+          </span>
+        </div>
+        <div className="tips-hero-card">
+          <span className="tips-hero-label">Card tips</span>
+          <span className="tips-hero-value">
+            {loading ? '…' : formatCents(Math.max(0, (summary?.tipPoolCents ?? 0) - (summary?.cashTipsCents ?? 0)))}
+          </span>
+          <span className="tips-hero-sub">
+            {summary?.cardEntries.length ?? 0} imported entr{(summary?.cardEntries.length ?? 0) === 1 ? 'y' : 'ies'}
+          </span>
+        </div>
+        <div className="tips-hero-card">
+          <span className="tips-hero-label">Cash tips</span>
+          <span className="tips-hero-value">{loading ? '…' : formatCents(summary?.cashTipsCents ?? 0)}</span>
+          <span className="tips-hero-sub">
+            {summary?.cashEntries.length ?? 0} day{(summary?.cashEntries.length ?? 0) === 1 ? '' : 's'} entered
+          </span>
+        </div>
+      </div>
+
       {/* Venue + breakage controls live just below the week selector. */}
       <TipsSection title="Review settings" summary={`${venue || 'Choose venue'} · $${breakagePerDay || 0}/day breakage`}>
         <Card padding="tight">
@@ -13266,7 +13509,6 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       {/* Summary stats */}
       <TipsSection title="Summary" summary={`${formatCents(summary?.allocatablePoolCents ?? 0)} allocatable · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
         <div className="stats-grid">
-          <StatCard label="Gross tips" value={formatCents(summary?.tipPoolCents ?? 0)} hint={`Cash + card · ${summary?.tradingDays ?? 0} trading day${summary?.tradingDays === 1 ? '' : 's'}`} loading={loading} />
           <StatCard label="Breakage" value={formatCents(summary?.breakageCents ?? 0)} hint={`$${breakagePerDay}/day × ${summary?.tradingDays ?? 0} days`} loading={loading} />
           <StatCard label="Allocatable pool" value={formatCents(summary?.allocatablePoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
           <StatCard label="Final payout" value={formatCents(totalPayoutCents)} hint={payoutVarianceCents === 0 ? 'Balances to pool' : `${formatCents(Math.abs(payoutVarianceCents))} ${payoutVarianceCents > 0 ? 'over' : 'under'}`} loading={loading} />
@@ -13518,8 +13760,20 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
       </TipsSection>
 
       {/* Manual staff hours */}
-      <TipsSection title="Manual staff hours" summary={`${summary?.manualHoursEntries.length ?? 0} manual entries`}>
-        <Card title="Manually add staff hours" subtitle="Add a staff member to the tips allocation pool for this week — useful when they have no approved timesheets.">
+      <TipsSection title="Hours for allocation" summary={`${summary?.manualHoursEntries.length ?? 0} manual entries`}>
+        <Card
+          title="Hours for allocation"
+          subtitle="The tip pool splits by hours. Import the week's hours straight from Deputy timesheets, or add a staff member by hand."
+          action={
+            <Button type="button" variant="secondary" disabled={saving} onClick={() => void importDeputyHours()}>
+              {saving && messageTarget === 'deputy-import' ? 'Importing…' : 'Import hours from Deputy'}
+            </Button>
+          }
+        >
+          <ActionFeedback
+            message={messageTarget === 'deputy-import' ? message : null}
+            tone={message?.includes('Could') || message?.includes('No Deputy') ? 'error' : 'success'}
+          />
           <div className="form-grid three">
             <Select
               label="Staff member"
@@ -13554,6 +13808,50 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
           ) : null}
         </Card>
       </TipsSection>
+
+      {/* Roster & pay Turn 2: distribution overview — proportional bars in each
+          staff member's role accent colour. Adjustments still happen below. */}
+      {reviewedRows.length ? (
+        <TipsSection title="Distribution" summary={`By hours worked · ${roundHours(summary?.approvedHours ?? 0)}h pooled`}>
+          <div className="tips-distribution-card">
+            <header className="tips-distribution-head">
+              <h3>Distribution</h3>
+              <span>By hours worked · {roundHours(summary?.approvedHours ?? 0)}h pooled</span>
+            </header>
+            <div className="tips-distribution-rows">
+              {(() => {
+                const maxCents = Math.max(1, ...reviewedRows.map((row) => row.finalAmountCents));
+                return reviewedRows.map((row) => {
+                  const member = staff.find((candidate) => candidate.id === row.staffProfileId);
+                  const roleTitle = row.roleTitle ?? member?.roleTitle ?? 'Team member';
+                  return (
+                    <div
+                      key={row.staffProfileId}
+                      className={`tips-distribution-row${row.excluded ? ' is-excluded' : ''}`}
+                      style={areaStyle(roleTitle)}
+                    >
+                      <span className="tips-distribution-avatar" aria-hidden>
+                        {member
+                          ? staffInitials(member)
+                          : (row.name.split(' ').map((part) => part[0] ?? '').slice(0, 2).join('') || 'SP').toUpperCase()}
+                      </span>
+                      <span className="tips-distribution-who">
+                        <strong>{row.name}</strong>
+                        <small>{roleTitle}</small>
+                      </span>
+                      <span className="tips-distribution-bar">
+                        <span style={{ width: `${Math.max(2, Math.round((row.finalAmountCents / maxCents) * 100))}%` }} />
+                      </span>
+                      <span className="tips-distribution-hours">{row.approvedHours.toFixed(1)}h</span>
+                      <span className="tips-distribution-amount">{formatCents(row.finalAmountCents)}</span>
+                    </div>
+                  );
+                });
+              })()}
+            </div>
+          </div>
+        </TipsSection>
+      ) : null}
 
       {/* Payroll status + entitlements */}
       <TipsSection title="Staff entitlements" summary={`${reviewedRows.length} staff · ${hasPaidRun ? 'approved' : 'waiting for review'}`}>
@@ -13643,7 +13941,16 @@ function TipsPage({ staff }: { staff: StaffProfile[] }) {
 
       {lockedRows.length ? (
         <TipsSection title="Approved tip run" summary={`${lockedRows.length} staff locked for payroll`}>
-          <Card title="Approved tip run" subtitle="This locked run is the source Reports uses for payroll tips." padding="none">
+          <Card
+            title="Approved tip run"
+            subtitle="This locked run is the source Reports uses for payroll tips."
+            padding="none"
+            action={
+              <Button type="button" variant="secondary" disabled={saving} onClick={() => void removeLockedRun()}>
+                {saving && messageTarget === 'paid' ? 'Removing…' : 'Remove locked run'}
+              </Button>
+            }
+          >
             <div className="table-card tips-table">
               <table>
                 <thead>
@@ -13768,6 +14075,172 @@ function StaffMemberTipsPage() {
           ))}
         </div>
       </Card>
+    </div>
+  );
+}
+
+type MyPaySnapshot = {
+  firstName: string;
+  lastName: string;
+  venue: string | null;
+  roleTitle: string;
+  employmentStatus: string;
+  employmentType: string | null;
+  payProfile: {
+    awardName: string;
+    awardClassification: string;
+    employmentType: string;
+    payMode: string;
+    ordinaryHourlyRateCents: number;
+    casualLoadedHourlyRateCents: number | null;
+    manualFullTimePayAmountCents: number | null;
+    manualFullTimePayFrequency: string | null;
+    cashHourlyRateCents: number | null;
+    payUpdatedAt: string | null;
+  } | null;
+  hasBankAccount: boolean;
+  hasTaxFileNumber: boolean;
+};
+
+function employmentTypeLabel(value: string | null | undefined) {
+  switch (value) {
+    case 'CASUAL':
+      return 'Casual';
+    case 'PART_TIME':
+      return 'Part-time';
+    case 'FULL_TIME':
+      return 'Full-time';
+    default:
+      return value || '—';
+  }
+}
+
+// A staff member's read-only view of their own pay rate and employment setup.
+// Backed by GET /api/staff/me/pay, which returns only the caller's data and
+// never bank/TFN numbers (only "on file" flags).
+function StaffMemberPayPage() {
+  const [data, setData] = useState<MyPaySnapshot | null>(null);
+  const [loading, setLoading] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setMessage(null);
+    try {
+      setData(await api<MyPaySnapshot>('/api/staff/me/pay'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your pay details.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const pp = data?.payProfile ?? null;
+  const headline = pp
+    ? pp.payMode === 'CASH' && pp.cashHourlyRateCents
+      ? { label: 'Cash rate', value: `${formatCents(pp.cashHourlyRateCents)}/hr` }
+      : pp.manualFullTimePayAmountCents
+        ? {
+            label: pp.manualFullTimePayFrequency === 'ANNUAL_SALARY' ? 'Annual salary' : 'Full-time rate',
+            value: formatCents(pp.manualFullTimePayAmountCents)
+          }
+        : pp.casualLoadedHourlyRateCents
+          ? { label: 'Loaded rate', value: `${formatCents(pp.casualLoadedHourlyRateCents)}/hr` }
+          : { label: 'Ordinary rate', value: `${formatCents(pp.ordinaryHourlyRateCents)}/hr` }
+    : null;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="My pay"
+        title="My pay & details"
+        description="Your current pay rate and employment setup. Ask a manager to update any of these."
+        actions={
+          <Button type="button" variant="secondary" onClick={() => void load()} disabled={loading}>
+            Refresh
+          </Button>
+        }
+      />
+
+      <div className="stats-grid">
+        <StatCard
+          label={headline?.label ?? 'Pay rate'}
+          value={headline?.value ?? '—'}
+          hint="Your current rate"
+          loading={loading}
+        />
+        <StatCard
+          label="Employment type"
+          value={employmentTypeLabel(data?.employmentType)}
+          hint={data?.roleTitle || 'Your role'}
+          loading={loading}
+        />
+      </div>
+
+      {message ? <p className="error-text">{message}</p> : null}
+      {loading ? <Spinner label="Loading your pay details..." /> : null}
+
+      {!loading && !pp ? (
+        <EmptyState
+          title="Pay details not set up yet"
+          description="Your pay rate and employment type haven't been configured. Ask your manager to set up your pay profile."
+        />
+      ) : null}
+
+      {pp ? (
+        <Card title="Pay details" subtitle="Set by your manager in the Staff app.">
+          <div className="staff-detail-list">
+            <div className="staff-expiry-row">
+              <span><strong>Award</strong><span className="subtle">{pp.awardName}</span></span>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Classification</strong><span className="subtle">{pp.awardClassification}</span></span>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Ordinary rate</strong><span className="subtle">{formatCents(pp.ordinaryHourlyRateCents)}/hr</span></span>
+            </div>
+            {pp.casualLoadedHourlyRateCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>Casual loaded rate</strong><span className="subtle">{formatCents(pp.casualLoadedHourlyRateCents)}/hr (includes casual loading)</span></span>
+              </div>
+            ) : null}
+            {pp.manualFullTimePayAmountCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>{pp.manualFullTimePayFrequency === 'ANNUAL_SALARY' ? 'Annual salary' : 'Full-time rate'}</strong><span className="subtle">{formatCents(pp.manualFullTimePayAmountCents)}</span></span>
+              </div>
+            ) : null}
+            {pp.payMode === 'CASH' && pp.cashHourlyRateCents ? (
+              <div className="staff-expiry-row">
+                <span><strong>Cash rate</strong><span className="subtle">{formatCents(pp.cashHourlyRateCents)}/hr</span></span>
+              </div>
+            ) : null}
+            {pp.payUpdatedAt ? (
+              <div className="staff-expiry-row">
+                <span><strong>Last updated</strong><span className="subtle">{new Date(pp.payUpdatedAt).toLocaleDateString()}</span></span>
+              </div>
+            ) : null}
+          </div>
+        </Card>
+      ) : null}
+
+      {data ? (
+        <Card title="Payment setup" subtitle="Whether your details are on file. Numbers are hidden for security — see a manager to update.">
+          <div className="staff-detail-list">
+            <div className="staff-expiry-row">
+              <span><strong>Bank account</strong><span className="subtle">{data.hasBankAccount ? 'On file' : 'Not on file — give your manager your bank details'}</span></span>
+              <Badge tone={data.hasBankAccount ? 'positive' : 'warning'}>{data.hasBankAccount ? '✓' : 'Missing'}</Badge>
+            </div>
+            <div className="staff-expiry-row">
+              <span><strong>Tax file number</strong><span className="subtle">{data.hasTaxFileNumber ? 'On file' : 'Not provided — complete a TFN declaration with your manager'}</span></span>
+              <Badge tone={data.hasTaxFileNumber ? 'positive' : 'warning'}>{data.hasTaxFileNumber ? '✓' : 'Missing'}</Badge>
+            </div>
+          </div>
+        </Card>
+      ) : null}
     </div>
   );
 }
@@ -14760,6 +15233,24 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     [timesheets]
   );
 
+  // Roster & pay Turn 2: surface the needs-review count on the hub's Timesheets tab.
+  useHubTabBadge('/timesheets', overallCounts.submitted);
+
+  // Roster & pay Turn 2: rostered hours per staff member inside the current
+  // range, from the roster prop the page already receives (no new API calls).
+  const rosteredHoursByStaff = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const shift of roster) {
+      if (!shift.staffProfileId || shift.status === 'CANCELLED') continue;
+      const startsAt = new Date(shift.startsAt);
+      const endsAt = new Date(shift.endsAt);
+      if (endsAt.getTime() <= rangeStart.getTime() || startsAt.getTime() >= rangeEnd.getTime()) continue;
+      const hours = Math.max(0, (endsAt.getTime() - startsAt.getTime()) / 3600000 - (shift.breakMinutes ?? 0) / 60);
+      map.set(shift.staffProfileId, (map.get(shift.staffProfileId) ?? 0) + hours);
+    }
+    return map;
+  }, [roster, rangeStart, rangeEnd]);
+
   // Groups filtered to the current explorer selection (shown in the detail pane).
   const visibleGroups = useMemo(() => {
     const filtered = timesheets.filter((entry) => {
@@ -15016,6 +15507,45 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
   }
 
+  async function importFromXero() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('import-xero');
+    try {
+      const result = await api<{ imported?: number; staffMatched?: number; warnings?: string[] }>(
+        '/api/integrations/xero/sync-timesheets',
+        { method: 'POST', body: JSON.stringify({}) }
+      );
+      const extra = result.warnings?.length ? ` ${result.warnings.join(' ')}` : '';
+      setMessage(`Imported ${result.imported ?? 0} day-rows from Xero for ${result.staffMatched ?? 0} staff.${extra}`);
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import from Xero.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function importFromDeputy() {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget('import-deputy');
+    try {
+      const result = await api<{ timesheets?: { created?: number; updated?: number } }>(
+        '/api/integrations/deputy/sync-timesheets',
+        { method: 'POST' }
+      );
+      const created = result.timesheets?.created ?? 0;
+      const updated = result.timesheets?.updated ?? 0;
+      setMessage(`Imported from Deputy: ${created} new, ${updated} updated.`);
+      await loadTimesheets();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not import from Deputy.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   function renderSubmitFields() {
     return (
       <>
@@ -15039,12 +15569,25 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
           </div>
         ) : null}
         <div className="form-grid">
-          <Select
-            label="Staff member"
-            value={staffProfileId}
-            onChange={(event) => setStaffProfileId(event.currentTarget.value)}
-            options={staff.map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
-          />
+          {isManagerView ? (
+            <Select
+              label="Staff member"
+              value={staffProfileId}
+              onChange={(event) => setStaffProfileId(event.currentTarget.value)}
+              options={sortStaffForSelect(staff).map((member) => ({ label: `${member.firstName} ${member.lastName}`, value: member.id }))}
+            />
+          ) : (
+            <Input
+              label="Staff member"
+              value={
+                selectedMember
+                  ? `${selectedMember.firstName} ${selectedMember.lastName}`
+                  : `${timesheetsViewer?.firstName ?? ''} ${timesheetsViewer?.lastName ?? ''}`.trim() || 'You'
+              }
+              readOnly
+              hint="You can only submit timesheets for yourself."
+            />
+          )}
           <Input label="Date" type="date" value={workDate} onChange={(event) => setWorkDate(event.currentTarget.value)} />
           <Input label="Clock in" type="time" value={startTime} onChange={(event) => setStartTime(event.currentTarget.value)} />
           <Input label="Clock out" type="time" value={endTime} onChange={(event) => setEndTime(event.currentTarget.value)} />
@@ -15200,6 +15743,12 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         </Button>
         {isManagerView ? (
           <div className="toolbar-right">
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void importFromDeputy()}>
+              Import from Deputy
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void importFromXero()}>
+              Import from Xero
+            </Button>
             <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(false)}>
               Preview CSV
             </Button>
@@ -15212,6 +15761,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
           </div>
         ) : null}
       </div>
+      {isManagerView && (messageTarget === 'import-xero' || messageTarget === 'import-deputy') && message ? (
+        <ActionFeedback message={message} tone={message.includes('Could') ? 'error' : 'success'} />
+      ) : null}
 
       {/* Week selector — same editorial style as the roster board, sitting
           between the toolbar and the approval queue. */}
@@ -15255,6 +15807,170 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
 
       {(messageTarget === 'preview' || messageTarget === 'export' || messageTarget === 'push') && message ? (
         <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
+      ) : null}
+
+      {/* Roster & pay Turn 2: week review table — at-a-glance rostered vs worked
+          per staff member, with per-staff and bulk approval (existing endpoints). */}
+      {!loading && timesheets.length > 0 ? (
+        <div className="ts-review">
+          <div className="pay-section-head">
+            <div className="pay-section-head-text">
+              <h3 className="pay-section-title">Week review</h3>
+              <p className="pay-section-note">
+                {overallCounts.submitted > 0
+                  ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
+                  : 'All clear.'}
+              </p>
+            </div>
+            {isManagerView && overallCounts.submitted > 0 ? (
+              <button
+                type="button"
+                className="pay-head-approve-btn"
+                disabled={saving}
+                onClick={() =>
+                  void approveGroup(
+                    timesheets
+                      .filter((entry) => entry.status === 'SUBMITTED' || entry.status === 'REJECTED')
+                      .map((entry) => entry.id)
+                  )
+                }
+              >
+                Approve {overallCounts.submitted} flagged
+              </button>
+            ) : null}
+          </div>
+          <div className="ts-review-card">
+            <table className="ts-review-table">
+              <thead>
+                <tr>
+                  <th>Staff</th>
+                  <th className="is-num">Rostered</th>
+                  <th className="is-num">Worked</th>
+                  <th className="is-num">Variance</th>
+                  <th>Flag</th>
+                  <th className="is-status">Status</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allGroups.map((group) => {
+                  const rostered = rosteredHoursByStaff.get(group.id);
+                  const worked = group.totalHours;
+                  const variance = rostered === undefined ? null : worked - rostered;
+                  const drift = group.entries
+                    .map((entry) => computeClockDrift(entry, clockSessions))
+                    .find((result) => result && result.severity !== 'ok');
+                  const award = checkAwardCompliance(group.member);
+                  const flag = drift
+                    ? `Drift ${drift.driftHours >= 0 ? '+' : ''}${drift.driftHours.toFixed(1)}h`
+                    : award.status === 'below'
+                      ? 'Award rate'
+                      : group.submittedIds.length
+                        ? 'Needs review'
+                        : null;
+                  const restingStatus = group.entries[0]?.status ?? '';
+                  return (
+                    <tr key={group.id}>
+                      <td>
+                        <span className="ts-review-staff" style={areaStyle(group.roleTitle || '')}>
+                          <span className="ts-review-avatar" aria-hidden>
+                            {group.member ? staffInitials(group.member) : (group.name[0] ?? 'A').toUpperCase()}
+                          </span>
+                          <span className="ts-review-who">
+                            <strong>{group.name}</strong>
+                            <small>{[group.roleTitle, group.venue].filter(Boolean).join(' · ') || 'No venue set'}</small>
+                          </span>
+                        </span>
+                      </td>
+                      <td className="is-num ts-review-rostered">{rostered === undefined ? '—' : `${roundHours(rostered)}h`}</td>
+                      <td className="is-num ts-review-worked">{roundHours(worked)}h</td>
+                      <td
+                        className={`is-num ts-review-variance ${
+                          variance === null || Math.abs(variance) < 0.05 ? 'is-zero' : variance > 0 ? 'is-pos' : 'is-neg'
+                        }`}
+                      >
+                        {variance === null
+                          ? '—'
+                          : Math.abs(variance) < 0.05
+                            ? '0.0'
+                            : `${variance > 0 ? '+' : '-'}${Math.abs(variance).toFixed(1)}`}
+                      </td>
+                      <td>
+                        {flag ? (
+                          <span className="ts-review-flag">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" aria-hidden="true">
+                              <circle cx="12" cy="12" r="9" />
+                              <polyline points="12 7 12 12 15.5 14" />
+                            </svg>
+                            {flag}
+                          </span>
+                        ) : (
+                          <span className="ts-review-noflag">—</span>
+                        )}
+                      </td>
+                      <td className="is-status">
+                        {isManagerView && group.submittedIds.length ? (
+                          <button
+                            type="button"
+                            className="ts-approve-btn"
+                            disabled={saving}
+                            onClick={() => void approveGroup(group.submittedIds)}
+                          >
+                            Approve
+                          </button>
+                        ) : group.submittedIds.length ? (
+                          <span className="ts-status-pill is-pending">Submitted</span>
+                        ) : group.approvedCount ? (
+                          <span className="ts-status-pill is-approved">Approved</span>
+                        ) : (
+                          <span className="ts-status-pill is-neutral">
+                            {restingStatus ? restingStatus.charAt(0) + restingStatus.slice(1).toLowerCase() : '—'}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                {(() => {
+                  const totals = allGroups.reduce(
+                    (acc, group) => {
+                      const rostered = rosteredHoursByStaff.get(group.id);
+                      acc.worked += group.totalHours;
+                      if (rostered !== undefined) {
+                        acc.rostered += rostered;
+                        acc.variance += group.totalHours - rostered;
+                        acc.hasRostered = true;
+                      }
+                      return acc;
+                    },
+                    { rostered: 0, worked: 0, variance: 0, hasRostered: false }
+                  );
+                  return (
+                    <tr>
+                      <td>Week total</td>
+                      <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
+                      <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>
+                      <td
+                        className={`is-num ts-review-variance ${
+                          !totals.hasRostered || Math.abs(totals.variance) < 0.05 ? 'is-zero' : totals.variance > 0 ? 'is-pos' : 'is-neg'
+                        }`}
+                      >
+                        {!totals.hasRostered
+                          ? '—'
+                          : Math.abs(totals.variance) < 0.05
+                            ? '0.0'
+                            : `${totals.variance > 0 ? '+' : '-'}${Math.abs(totals.variance).toFixed(1)}`}
+                      </td>
+                      <td />
+                      <td />
+                    </tr>
+                  );
+                })()}
+              </tfoot>
+            </table>
+          </div>
+        </div>
       ) : null}
 
       {showSubmitModal ? (
@@ -15466,12 +16182,6 @@ function timesheetTone(status: Timesheet['status']) {
   }
 }
 
-function timesheetHours(entry: Timesheet) {
-  const startsAt = new Date(entry.clockInAt).getTime();
-  const endsAt = new Date(entry.clockOutAt).getTime();
-  if (Number.isNaN(startsAt) || Number.isNaN(endsAt) || endsAt <= startsAt) return 0;
-  return Math.max(0, (endsAt - startsAt) / 36e5 - entry.breakMinutes / 60);
-}
 
 function downloadTextFile(filename: string, contents: string, type = 'text/csv') {
   const blob = new Blob([contents], { type });
@@ -15794,13 +16504,6 @@ function formatDateTime(value: string) {
   });
 }
 
-function formatCents(value: number | null | undefined) {
-  if (value === null || value === undefined) return 'No rate';
-  return (value / 100).toLocaleString(undefined, {
-    style: 'currency',
-    currency: 'AUD'
-  });
-}
 
 type OnboardingContext = {
   token: string;
@@ -15814,6 +16517,45 @@ type OnboardingContext = {
   createdAt: string;
   onboardingSettings: OnboardingSettings;
 };
+
+// Fields we deliberately never write to localStorage — tax file number, bank details
+// and the chosen password are sensitive, and `documents` is re-derived from settings.
+const NON_PERSISTED_ONBOARDING_KEYS = ['taxFileNumber', 'bankBsb', 'bankAccountNumber', 'password', 'documents'];
+
+function readOnboardingDraft(key: string | null): Record<string, unknown> | null {
+  if (!key || typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingDraft(key: string | null, draft: Record<string, unknown>): void {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    const safe: Record<string, unknown> = {};
+    for (const [field, value] of Object.entries(draft)) {
+      if (NON_PERSISTED_ONBOARDING_KEYS.includes(field)) continue;
+      safe[field] = value;
+    }
+    window.localStorage.setItem(key, JSON.stringify(safe));
+  } catch {
+    // Storage can be unavailable (private mode / quota) — losing draft persistence is non-fatal.
+  }
+}
+
+function clearOnboardingDraft(key: string | null): void {
+  if (!key || typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // ignore
+  }
+}
 
 function PublicOnboardingPage() {
   const { token } = useParams();
@@ -15862,6 +16604,9 @@ function PublicOnboardingPage() {
     documents: onboardingDocumentsFromSettings(DEFAULT_ONBOARDING_SETTINGS)
   });
 
+  const draftStorageKey = token ? `alma-onboarding-draft-${token}` : null;
+  const draftHydratedRef = useRef(false);
+
   useEffect(() => {
     async function load() {
       if (!token) return;
@@ -15871,23 +16616,35 @@ function PublicOnboardingPage() {
         const next = await api<OnboardingContext>(`/api/staff/invites/by-token/${token}`);
         const onboardingSettings = normaliseOnboardingSettings(next.onboardingSettings);
         setContext({ ...next, onboardingSettings });
+        // Restore any in-progress, non-sensitive answers this person entered earlier on
+        // this device (sensitive fields like TFN/bank/password are never persisted).
+        const saved = readOnboardingDraft(draftStorageKey);
         setDraft((current) => ({
           ...current,
+          ...(saved ?? {}),
           firstName: next.firstName,
           lastName: next.lastName,
           roleTitle: next.roleTitle,
-          email: next.email ?? '',
+          email: next.email ?? (typeof saved?.email === 'string' ? saved.email : ''),
           venue: next.venue,
           documents: onboardingDocumentsFromSettings(onboardingSettings, current.documents)
         }));
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Could not load invite');
       } finally {
+        draftHydratedRef.current = true;
         setLoading(false);
       }
     }
     void load();
   }, [token]);
+
+  // Save progress as the person types, but only after the initial hydrate so we never
+  // clobber the restored draft with the empty starting state.
+  useEffect(() => {
+    if (!draftHydratedRef.current || !draftStorageKey || completed) return;
+    writeOnboardingDraft(draftStorageKey, draft);
+  }, [draft, draftStorageKey, completed]);
 
   function update<K extends keyof typeof draft>(key: K, value: (typeof draft)[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
@@ -16021,6 +16778,7 @@ function PublicOnboardingPage() {
             }))
         })
       });
+      clearOnboardingDraft(draftStorageKey);
       setCompleted(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not complete onboarding');
@@ -16516,6 +17274,7 @@ function StaffShell() {
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
           <Route path="/tips" element={<StaffMemberTipsPage />} />
+          <Route path="/my-pay" element={<StaffMemberPayPage />} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
           <Route path="/settings" element={<Navigate to="/" replace />} />
           <Route path="/admin" element={<Navigate to="/" replace />} />
@@ -16528,24 +17287,24 @@ function StaffShell() {
           <Route path="/brief" element={<HubLayout tabs={TODAY_TABS}><ManagerDailyBriefPage staff={staff} /></HubLayout>} />
           <Route path="/readiness" element={<HubLayout tabs={TODAY_TABS}><VenueReadinessPage staff={staff} /></HubLayout>} />
           <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} /></HubLayout>} />
-          <Route path="/clock" element={<StaffMemberClockPage />} />
-          <Route path="/profiles" element={<StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} />} />
-          <Route path="/invites" element={<InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} />} />
-          <Route path="/approvals" element={<ApprovalsPage staff={staff} reload={reload} />} />
+          <Route path="/clock" element={<HubLayout tabs={TODAY_TABS}><StaffMemberClockPage /></HubLayout>} />
+          <Route path="/profiles" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} /></HubLayout>} />
+          <Route path="/invites" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} /></HubLayout>} />
+          <Route path="/approvals" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><ApprovalsPage staff={staff} reload={reload} /></HubLayout>} />
           <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<Navigate to="/profiles" replace />} />
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
-          <Route path="/roster" element={<RosterPage staff={staff} roster={roster} reload={reload} />} />
-          <Route path="/leave" element={<LeaveCalendarPage staff={staff} />} />
-          <Route path="/compliance" element={<StaffMemberCompliancePage />} />
-          <Route path="/academy" element={<TrainingPage staff={staff} reloadStaff={reload} />} />
+          <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
+          <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
+          <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
+          <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
-          <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
-          <Route path="/tips" element={<TipsPage staff={staff} />} />
+          <Route path="/timesheets" element={<HubLayout tabs={ROSTER_PAY_TABS}><TimesheetsPage staff={staff} roster={roster} /></HubLayout>} />
+          <Route path="/tips" element={<HubLayout tabs={ROSTER_PAY_TABS}><TipsPage staff={staff} /></HubLayout>} />
           <Route path="/communications" element={<CommunicationsPage staff={staff} reload={reload} />} />
-          <Route path="/hr" element={canOpenHr ? <HrOverviewPage records={hrRecords} loading={hrLoading} /> : <Navigate to="/" replace />} />
+          <Route path="/hr" element={canOpenHr ? <HubLayout tabs={peopleTabsFor(canOpenHr)}><HrOverviewPage records={hrRecords} loading={hrLoading} /></HubLayout> : <Navigate to="/" replace />} />
           <Route path="/hr/contracts" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="CONTRACT" mode="contracts" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/warnings" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="WARNING" mode="warnings" loading={hrLoading} reload={loadHrRecords} canManage={canManageHr} /> : <Navigate to="/" replace />} />
           <Route path="/hr/pay-changes" element={canOpenHr ? <HrSectionPage staff={staff} records={hrRecords} type="PAY_CHANGE" mode="pay-changes" loading={hrLoading} reload={loadHrRecords} canManage={canManagePayChangeHr} canApprove={canApprovePayChangeHr} currentUserId={currentUserId} /> : <Navigate to="/" replace />} />

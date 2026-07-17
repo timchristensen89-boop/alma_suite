@@ -7,6 +7,7 @@ import type {
 } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
+import { useStickyVenue } from '../hooks/useStickyVenue';
 import { ApiError, api } from '../lib/api';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -50,7 +51,7 @@ export function ReorderNoticesPage() {
   useDocumentTitle('Below par');
   const [data, setData] = useState<StockReorderNoticesPayload | null>(null);
   const [recommendations, setRecommendations] = useState<StockMenuParRecommendationsPayload | null>(null);
-  const [selectedVenue, setSelectedVenue] = useState('');
+  const [selectedVenue, setSelectedVenue] = useStickyVenue();
   const [loading, setLoading] = useState(true);
   const [recommendationsLoading, setRecommendationsLoading] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);

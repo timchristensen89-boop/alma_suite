@@ -266,6 +266,18 @@ export function StaffPage() {
               icon={<IconStaff size={22} />}
               title="No staff yet"
               description="Onboard staff in the Staff app. Their compliance documents will appear here."
+              action={
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="secondary"
+                  onClick={() => {
+                    window.location.href = STAFF_WEB_URL;
+                  }}
+                >
+                  Go to Staff app
+                </Button>
+              }
             />
           ) : null}
 

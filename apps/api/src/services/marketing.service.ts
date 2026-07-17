@@ -33,6 +33,7 @@ import {
 import { env } from '../env.js';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
+import { AUTOMATION_LIBRARY } from '../data/marketingAutomationLibrary.js';
 
 const BIG_SPENDER_THRESHOLD_CENTS = 50_000;
 const LAPSED_DAYS = 90;
@@ -182,6 +183,23 @@ type PublishAttemptRow = Prisma.MarketingContentPublishAttemptGetPayload<Record<
 
 function isAdminActor(actor?: AuthUser | null) {
   return Boolean(actor?.isAdmin || actor?.role === 'ADMIN');
+}
+
+// Synthetic admin actor for system jobs (the automation runner) so they can load
+// any venue's audience without a real signed-in manager.
+function systemMarketingActor(venue: string | null): AuthUser {
+  return {
+    id: 'system-marketing',
+    firstName: 'System',
+    lastName: 'Automation',
+    email: null,
+    roleTitle: 'system',
+    venue,
+    accountType: 'HUMAN',
+    isAdmin: true,
+    role: 'ADMIN',
+    appAccess: []
+  } as AuthUser;
 }
 
 function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null, product = 'Marketing') {
@@ -672,7 +690,9 @@ async function recalculateAutoTagsForGuests(guestIds: string[]) {
 }
 
 function renderMergeFields(template: string, guest: GuestRow, venueName: string) {
-  const firstName = guest.firstName || 'guest';
+  // Escape the guest-controlled name so a value like "<img onerror=…>" can't
+  // inject markup into the rendered email/preview.
+  const firstName = escapeHtml(guest.firstName || 'guest');
   const bookingLink = `${process.env.RESERVE_WEB_URL ?? 'http://localhost:5177'}/widget?venue=${encodeURIComponent(venueName)}`;
   const unsubscribeLink = `${process.env.MARKETING_WEB_URL ?? 'http://localhost:5178'}/preferences?guest=${guest.id}`;
   return template
@@ -767,7 +787,9 @@ async function loadGuestsForSegment(
     },
     include: guestInclude(),
     orderBy: [{ lastVisitAt: 'desc' }, { updatedAt: 'desc' }],
-    take: 500
+    // Raised from 500 so segments aren't silently truncated for these venue
+    // sizes. TODO: paginate for audiences beyond 5000 opted-in guests.
+    take: 5000
   });
 
   let filteredGuests = guests.filter((guest) => {
@@ -3108,6 +3130,11 @@ export const marketingService = {
     const data = marketingAutomationInputSchema.parse(input);
     const venue = actorVenueScope(actor, data.venue, 'Marketing');
     if (!venue) throw new HttpError(400, 'Automation venue is required');
+    // An active automation with no email template can never send — block it at
+    // creation rather than letting it sit active-but-inert.
+    if (data.active && !cleanText(data.emailTemplateId)) {
+      throw new HttpError(400, 'Choose an email template before activating an automation.');
+    }
     const automation = await prisma.marketingAutomation.create({
       data: {
         venue,
@@ -3191,5 +3218,263 @@ export const marketingService = {
       preview,
       message: 'Automation simulation completed. No external emails were sent.'
     };
+  },
+
+  // Seed the starter automation library (templates + automations, inactive) for a
+  // venue. Idempotent: an automation whose name already exists is skipped, so it
+  // can be re-run safely and never duplicates.
+  async installAutomationLibrary(actor: AuthUser, venueInput?: unknown) {
+    const venue = actorVenueScope(actor, typeof venueInput === 'string' ? venueInput : actor.venue ?? null, 'Marketing');
+    if (!venue) throw new HttpError(400, 'A venue is required to install the automation library.');
+    let installed = 0;
+    let skipped = 0;
+    for (const item of AUTOMATION_LIBRARY) {
+      const existing = await prisma.marketingAutomation.findFirst({ where: { venue, name: item.name } });
+      if (existing) {
+        skipped += 1;
+        continue;
+      }
+      const template = await prisma.marketingEmailTemplate.create({
+        data: {
+          venue,
+          name: item.name,
+          subject: item.subject,
+          previewText: item.previewText,
+          htmlBody: item.htmlBody,
+          textBody: item.textBody,
+          status: 'ACTIVE'
+        }
+      });
+      await prisma.marketingAutomation.create({
+        data: {
+          venue,
+          name: item.name,
+          triggerType: item.triggerType,
+          // Parse through the schema so the stored JSON carries the array defaults
+          // (guestIds/tagIds/...) the audience builder expects.
+          segmentDefinition: marketingSegmentDefinitionSchema.parse(item.segmentDefinition) as Prisma.InputJsonValue,
+          emailTemplateId: template.id,
+          delayHours: item.delayHours,
+          active: false
+        }
+      });
+      installed += 1;
+    }
+    return { venue, installed, skipped, total: AUTOMATION_LIBRARY.length };
+  },
+
+  // The live runner. For every ACTIVE automation, build the eligible audience
+  // (segment-based for guest-attribute triggers; recent reservations for event
+  // triggers), drop anyone already sent (dedup), consent-check, send via Resend,
+  // and log a MarketingAutomationRun. Invoked daily by Cloud Scheduler.
+  async runDueAutomations(options?: { venue?: string | null; dryRun?: boolean }) {
+    const now = Date.now();
+    const dryRun = Boolean(options?.dryRun);
+    // Atomic concurrency claim — only one LIVE run at a time, so a scheduler retry
+    // or overlapping invocation can't double-send. A stale claim (>1h, e.g. a run
+    // that crashed) is reclaimable. Dry runs don't send, so they skip the claim.
+    if (!dryRun) {
+      // Make sure the settings singleton exists so the claim UPDATE can't no-op
+      // forever on a brand-new environment.
+      await prisma.appSettings.upsert({ where: { id: 'singleton' }, update: {}, create: { id: 'singleton' } }).catch(() => undefined);
+      const claimed = await prisma.$executeRaw`
+        UPDATE "AppSettings" SET "marketingAutomationRunAt" = NOW()
+        WHERE id = 'singleton'
+          AND ("marketingAutomationRunAt" IS NULL OR "marketingAutomationRunAt" < NOW() - INTERVAL '1 hour')`;
+      if (claimed === 0) {
+        return {
+          ranAt: new Date().toISOString(),
+          mailConfigured: mailService.isConfigured(),
+          dryRun,
+          claimSkipped: true,
+          totalSent: 0,
+          totalSkipped: 0,
+          totalFailed: 0,
+          automations: [] as Array<{ automationId: string; name: string; venue: string; sent: number; skipped: number; failed: number }>
+        };
+      }
+    }
+    try {
+    const automations = await prisma.marketingAutomation.findMany({
+      where: { active: true, ...(options?.venue ? { venue: options.venue } : {}) },
+      include: automationWithTemplateArgs.include
+    });
+    const mailReady = mailService.isConfigured();
+
+    // Once-ever milestones vs windowed/recurring; event triggers dedup by reservation.
+    const COOLDOWN_DAYS: Record<string, number> = {
+      FIRST_VISIT_COMPLETED: 3650,
+      REPEAT_VISIT: 3650,
+      BIG_SPENDER: 3650,
+      LAPSED_GUEST: 180,
+      BIRTHDAY_UPCOMING: 330
+    };
+    const EVENT_STATUS: Record<string, 'CANCELLED' | 'NO_SHOW' | 'CONFIRMED'> = {
+      RESERVATION_CANCELLED: 'CANCELLED',
+      NO_SHOW: 'NO_SHOW',
+      RESERVATION_CREATED: 'CONFIRMED'
+    };
+    const PER_AUTOMATION_CAP = 500;
+
+    const results: Array<{ automationId: string; name: string; venue: string; sent: number; skipped: number; failed: number }> = [];
+    let totalSent = 0;
+    let totalSkipped = 0;
+    let totalFailed = 0;
+
+    for (const automation of automations) {
+      const template = automation.emailTemplate;
+      let sent = 0;
+      let skipped = 0;
+      let failed = 0;
+      if (!template) {
+        results.push({ automationId: automation.id, name: automation.name, venue: automation.venue, sent, skipped, failed });
+        continue;
+      }
+      const venueName = automation.venue;
+      const delayMs = automation.delayHours * 3_600_000;
+
+      type Candidate = { guest: GuestRow; reservationId: string | null };
+      let candidates: Candidate[] = [];
+      const eventStatus = EVENT_STATUS[automation.triggerType];
+      if (eventStatus) {
+        // Reservations that hit this status in the last 2 days, older than the
+        // automation's delay.
+        const since = new Date(now - 2 * 86_400_000);
+        const until = new Date(now - delayMs);
+        const reservations = await prisma.reserveReservation.findMany({
+          where: { venue: automation.venue, status: eventStatus, updatedAt: { gte: since, lte: until } },
+          include: { guest: { include: guestWithTagsArgs.include } }
+        });
+        const raw: Candidate[] = reservations.map((r) => ({ guest: r.guest as GuestRow, reservationId: r.id }));
+        const resvIds = raw.map((c) => c.reservationId).filter((id): id is string => Boolean(id));
+        const guestIds = raw.map((c) => c.guest.id);
+        // Dedup three ways: each reservation fires at most once (reservationId);
+        // a guest with any run for this automation in the last week is suppressed
+        // (so two cancellations don't double-email); and within this run a guest
+        // appears at most once even with several qualifying reservations.
+        const [byResv, byGuest] = await Promise.all([
+          resvIds.length
+            ? prisma.marketingAutomationRun.findMany({ where: { automationId: automation.id, reservationId: { in: resvIds } }, select: { reservationId: true } })
+            : Promise.resolve([] as Array<{ reservationId: string | null }>),
+          guestIds.length
+            ? prisma.marketingAutomationRun.findMany({ where: { automationId: automation.id, guestId: { in: guestIds }, createdAt: { gte: new Date(now - 7 * 86_400_000) } }, select: { guestId: true } })
+            : Promise.resolve([] as Array<{ guestId: string }>)
+        ]);
+        const doneResv = new Set(byResv.map((r) => r.reservationId));
+        const recentGuests = new Set(byGuest.map((r) => r.guestId));
+        const seenGuests = new Set<string>();
+        candidates = [];
+        for (const c of raw) {
+          if (doneResv.has(c.reservationId)) continue;
+          if (recentGuests.has(c.guest.id) || seenGuests.has(c.guest.id)) continue;
+          seenGuests.add(c.guest.id);
+          candidates.push(c);
+        }
+      } else {
+        // Normalise the stored JSON (guarantees array defaults) and HARD-PIN the
+        // venue to the automation's, so an edited segmentDefinition.venue can
+        // never pull another venue's guests under the system admin actor.
+        const definition: MarketingSegmentDefinition = {
+          ...segmentDefinitionFromJson(automation.segmentDefinition),
+          venue: automation.venue
+        };
+        const guests = await loadGuestsForSegment(systemMarketingActor(automation.venue), definition, automation.venue);
+        candidates = guests.map((g) => ({ guest: g, reservationId: null }));
+        const cooldownDays = COOLDOWN_DAYS[automation.triggerType] ?? 180;
+        const guestIds = candidates.map((c) => c.guest.id);
+        // Suppress guests already SENT within the cooldown, OR attempted (incl.
+        // FAILED — which may have actually delivered) in the last few days, so a
+        // transient post-send failure can't re-email the same guest tomorrow.
+        const priorRuns = guestIds.length
+          ? await prisma.marketingAutomationRun.findMany({
+              where: {
+                automationId: automation.id,
+                guestId: { in: guestIds },
+                OR: [
+                  { status: 'SENT', createdAt: { gte: new Date(now - cooldownDays * 86_400_000) } },
+                  { status: 'FAILED', createdAt: { gte: new Date(now - 3 * 86_400_000) } }
+                ]
+              },
+              select: { guestId: true }
+            })
+          : [];
+        const done = new Set(priorRuns.map((r) => r.guestId));
+        candidates = candidates.filter((c) => !done.has(c.guest.id));
+      }
+
+      for (const candidate of candidates.slice(0, PER_AUTOMATION_CAP)) {
+        const guest = candidate.guest;
+        const outcome = recipientStatusForGuest(guest, 'EMAIL');
+        const recordRun = (status: 'SENT' | 'SKIPPED' | 'FAILED', reason: string | null) =>
+          prisma.marketingAutomationRun.create({
+            data: {
+              automationId: automation.id,
+              guestId: guest.id,
+              reservationId: candidate.reservationId,
+              status,
+              reason,
+              processedAt: new Date()
+            }
+          });
+
+        if (outcome.status !== 'PENDING' || !guest.email) {
+          skipped += 1;
+          if (!dryRun) await recordRun('SKIPPED', outcome.skipReason ?? 'not_eligible');
+          continue;
+        }
+        if (dryRun || !mailReady) {
+          skipped += 1;
+          if (!dryRun) await recordRun('SKIPPED', 'mail_not_configured');
+          continue;
+        }
+
+        const unsubscribeUrl = `${process.env.MARKETING_WEB_URL ?? 'https://alma-marketing.web.app'}/preferences?guest=${guest.id}`;
+        try {
+          const result = await mailService.sendCampaignEmail({
+            to: guest.email,
+            subject: renderMergeFields(template.subject, guest, venueName),
+            previewText: template.previewText ? renderMergeFields(template.previewText, guest, venueName) : null,
+            htmlBody: renderMergeFields(template.htmlBody, guest, venueName),
+            textBody: template.textBody ? renderMergeFields(template.textBody, guest, venueName) : null,
+            venue: automation.venue,
+            senderName: automation.venue,
+            unsubscribeUrl
+          });
+          if (result.status === 'sent') {
+            sent += 1;
+            await recordRun('SENT', null);
+          } else {
+            failed += 1;
+            await recordRun('FAILED', result.status === 'skipped' ? result.reason ?? 'skipped' : result.reason ?? 'send_failed');
+          }
+        } catch (error) {
+          failed += 1;
+          await recordRun('FAILED', error instanceof Error ? error.message.slice(0, 200) : 'send_error');
+        }
+      }
+
+      totalSent += sent;
+      totalSkipped += skipped;
+      totalFailed += failed;
+      results.push({ automationId: automation.id, name: automation.name, venue: automation.venue, sent, skipped, failed });
+    }
+
+    return {
+      ranAt: new Date().toISOString(),
+      mailConfigured: mailReady,
+      dryRun,
+      totalSent,
+      totalSkipped,
+      totalFailed,
+      automations: results
+    };
+    } finally {
+      // Release the claim so the next scheduled run can proceed.
+      if (!dryRun) {
+        await prisma.appSettings
+          .update({ where: { id: 'singleton' }, data: { marketingAutomationRunAt: null } })
+          .catch(() => undefined);
+      }
+    }
   }
 };

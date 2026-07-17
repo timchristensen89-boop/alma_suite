@@ -23,6 +23,9 @@ export {
   AWARD_RATE_SETS,
   DEFAULT_STAFF_AWARD_CLASSIFICATION,
   DEFAULT_STAFF_AWARD_CODE,
+  DEFAULT_CASUAL_AWARD_CODE,
+  DEFAULT_CASUAL_AWARD_CLASSIFICATION,
+  defaultCasualRateCents,
   getAwardClassification,
   getAwardRateSet,
   type AustralianAwardCode,
@@ -84,8 +87,20 @@ export const stockWastageReasonSchema = z.enum([
   'RETURNED',
   'EXPIRED',
   'STAFF_MEAL',
-  'OTHER'
+  'OTHER',
+  // Staff usage categories — surfaced in the dedicated "Staff usage" area, not
+  // the wastage list. Stored on the same record so they deduct venue stock at
+  // cost the same way wastage does.
+  'STAFF_FOOD',
+  'STAFF_DRINK',
+  'PERSONAL_USE'
 ]);
+
+// The reasons that represent staff/personal consumption rather than wastage.
+// Used to split the two areas: the Wastage list excludes these, the Staff usage
+// list includes only these.
+export const STOCK_STAFF_USAGE_REASONS = ['STAFF_FOOD', 'STAFF_DRINK', 'PERSONAL_USE'] as const;
+export type StockStaffUsageCategory = (typeof STOCK_STAFF_USAGE_REASONS)[number];
 export const stockDeliveryCheckStatusSchema = z.enum(['DRAFT', 'IN_REVIEW', 'COMPLETED', 'DISCREPANCY']);
 export const stockReorderNoticeStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMISSED']);
 export const stockInvoiceMatchingStatusSchema = z.enum([
@@ -1890,8 +1905,12 @@ export const appSettingsUpdateSchema = z.object({
     address: z.string().optional().or(z.literal('')),
     phone: z.string().optional().or(z.literal('')),
     weeklyForecastSalesCents: z.number().int().nonnegative().optional(),
-    targetWagePercent: z.number().min(0).max(100).optional()
+    targetWagePercent: z.number().min(0).max(100).optional(),
+    targetPrimeCostPercent: z.number().min(0).max(100).optional()
   })).optional(),
+  // Superannuation guarantee rate as a percent (12 = 12%). National rate that
+  // steps up over time, so it's editable rather than hardcoded in the costing engine.
+  superGuaranteePercent: z.number().min(0).max(30).optional(),
   handbookContent: z.record(z.string(), z.unknown()).optional(),
   onboardingSettings: onboardingSettingsInputSchema.optional(),
   staffDefaults: staffDefaultsInputSchema.optional(),
@@ -1900,8 +1919,35 @@ export const appSettingsUpdateSchema = z.object({
   notifyEmail: z.string().email().optional().or(z.literal('')),
   notifyOverdueIssues: z.boolean().optional(),
   notifyExpiringStaff: z.boolean().optional(),
-  notifyOutOfRangeTemp: z.boolean().optional()
+  notifyOutOfRangeTemp: z.boolean().optional(),
+  // ABA (direct-entry) bank-file details for paying staff tips. The account
+  // number can be sent back masked (containing •) — the server ignores masked
+  // echoes so a save doesn't wipe the stored value.
+  tipsAbaSettings: z
+    .object({
+      financialInstitution: z.string().optional().or(z.literal('')),
+      userName: z.string().optional().or(z.literal('')),
+      userId: z.string().optional().or(z.literal('')),
+      remitterName: z.string().optional().or(z.literal('')),
+      description: z.string().optional().or(z.literal('')),
+      traceBsb: z.string().optional().or(z.literal('')),
+      traceAccount: z.string().optional().or(z.literal(''))
+    })
+    .optional()
 });
+
+export type TipsAbaSettings = {
+  financialInstitution: string;
+  userName: string;
+  userId: string;
+  remitterName: string;
+  description: string;
+  traceBsb: string;
+  // Returned masked (e.g. "•••• 123"); never the full account number.
+  traceAccount: string;
+  // True when every required field is present in storage.
+  configured: boolean;
+};
 
 export type AuthUser = {
   id: string;
@@ -1927,7 +1973,9 @@ export type AppSettingsPayload = {
   primaryContactName: string | null;
   primaryContactEmail: string | null;
   primaryContactPhone: string | null;
-  venues: Array<{ name: string; address?: string; phone?: string; weeklyForecastSalesCents?: number; targetWagePercent?: number }>;
+  venues: Array<{ name: string; address?: string; phone?: string; weeklyForecastSalesCents?: number; targetWagePercent?: number; targetPrimeCostPercent?: number }>;
+  // Superannuation guarantee rate as a percent (12 = 12%); feeds the costing engine.
+  superGuaranteePercent: number;
   handbookContent: Record<string, unknown>;
   onboardingSettings: OnboardingSettings;
   staffDefaults: StaffDefaults;
@@ -1937,6 +1985,7 @@ export type AppSettingsPayload = {
   notifyOverdueIssues: boolean;
   notifyExpiringStaff: boolean;
   notifyOutOfRangeTemp: boolean;
+  tipsAbaSettings: TipsAbaSettings;
 };
 
 export type AdminSignalTone = 'positive' | 'warning' | 'danger' | 'info' | 'muted';
@@ -2217,10 +2266,15 @@ export type HomeOperationalSummary = {
 };
 
 export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';
+export type AdminMetaConnectedPage = {
+  id: string;
+  name: string;
+  instagramUsername: string | null;
+};
 export type AdminMetaIntegrationStatus = {
   provider: 'meta';
   label: string;
-  status: 'NOT_CONFIGURED' | 'READY_TO_CONNECT' | 'CALLBACK_RECEIVED' | 'TOKEN_STORAGE_PENDING';
+  status: 'NOT_CONFIGURED' | 'READY_TO_CONNECT' | 'CALLBACK_RECEIVED' | 'TOKEN_STORAGE_PENDING' | 'CONNECTED' | 'DISCONNECTED' | 'ERROR';
   configured: boolean;
   canConnect: boolean;
   connectBlockedReason: string | null;
@@ -2232,6 +2286,14 @@ export type AdminMetaIntegrationStatus = {
   checklist: Array<{ label: string; status: 'done' | 'required' | 'not_configured'; detail: string }>;
   deauthorizeCallbackConfigured: boolean;
   dataDeletionCallbackConfigured: boolean;
+  // Live connection state (present once the OAuth handshake has stored a token).
+  connected: boolean;
+  connectedAt: string | null;
+  accountName: string | null;
+  pages: AdminMetaConnectedPage[];
+  grantedScopes: string[];
+  tokenExpiresAt: string | null;
+  lastError: string | null;
 };
 export type IntegrationConnectionStatus = 'NOT_CONNECTED' | 'CONNECTED' | 'ERROR' | 'REVOKED' | 'NOT_CONFIGURED';
 export type IntegrationSyncStatus = 'RUNNING' | 'SUCCESS' | 'ERROR';
@@ -3549,8 +3611,15 @@ export type ReportsPrimeCostVenueRow = {
   approvedWageCents: number;
   rosterWageEstimateCents: number;
   cogsCents: number;
+  // invoiceCogsCents / wastageCents are informational context only — COGS is the
+  // canonical opening + purchases − closing figure, NOT their sum.
   invoiceCogsCents: number;
   wastageCents: number;
+  purchasesCents: number;
+  openingStockCents: number;
+  closingStockCents: number;
+  cogsSource: 'stock_bounded' | 'purchases_only';
+  cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
   primeCostCents: number;
   wagePercent: number | null;
   cogsPercent: number | null;
@@ -3571,7 +3640,7 @@ export const reportsMonthlyRecapEmailInputSchema = reportsMonthlyRecapQuerySchem
   to: z.string().email()
 });
 
-export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated';
+export type MonthlyRecapStockQuality = 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
 
 export type MonthlyRecapPeriod = {
   label: string;
@@ -3621,7 +3690,7 @@ export type ReportsPrimeCostPayload = {
   sources: {
     sales: 'actual_sales_import' | 'missing';
     wages: 'timesheet_actuals' | 'roster_estimate' | 'missing';
-    cogs: 'supplier_invoice_lines' | 'supplier_invoice_lines_plus_wastage' | 'wastage_only' | 'missing';
+    cogs: 'stock_bounded' | 'purchases_only' | 'missing';
   };
   warnings: string[];
 };
@@ -3853,6 +3922,12 @@ export type ReserveReservation = {
   drinksRedeemedAt: string | null;
   seatedAt: string | null;
   serviceStage: ReserveServiceStage | null;
+  hasCardOnFile: boolean;
+  cardBrand: string | null;
+  cardLast4: string | null;
+  noShowFeeAmountCents: number | null;
+  noShowFeeChargedAt: string | null;
+  noShowFeeError: string | null;
   createdAt: string;
   updatedAt: string;
   guest: ReserveGuest;
@@ -4336,6 +4411,7 @@ export type GiftCardOverview = {
     test: number;
     activeBalanceCents: number;
     soldValueCents: number;
+    redeemedValueCents: number;
   };
 };
 
@@ -5341,6 +5417,21 @@ export const stockWastageCreateInputSchema = z.object({
   wastedAt: z.string().optional().or(z.literal(''))
 });
 
+// Staff/personal consumption: staff food, staff drinks, or stock taken for
+// personal use. Recorded against venue stock at cost (same engine as wastage)
+// so it comes off the stocktake instead of looking like loss.
+export const stockStaffUsageCreateInputSchema = z.object({
+  stockItemId: z.string().min(1, 'Select a stock item'),
+  venue: z.string().min(1, 'Venue is required'),
+  quantity: z.coerce.number().positive('Quantity must be greater than zero'),
+  unit: z.string().min(1, 'Unit is required'),
+  category: z.enum(['STAFF_FOOD', 'STAFF_DRINK', 'PERSONAL_USE']),
+  staffName: z.string().optional().or(z.literal('')),
+  note: z.string().optional().or(z.literal('')),
+  usedAt: z.string().optional().or(z.literal(''))
+});
+export type StockStaffUsageCreateInput = z.infer<typeof stockStaffUsageCreateInputSchema>;
+
 export const stockDeliveryCheckItemInputSchema = z.object({
   stockItemId: z.string().optional().or(z.literal('')),
   description: z.string().min(1, 'Description is required'),
@@ -5874,6 +5965,7 @@ export type RecipeCostLine = {
   unitCostCents: number | null;
   lineCostCents: number | null;
   warnings: string[];
+  trace?: RecipeCostLineTrace;
 };
 
 export type RecipeCostPayload = {
@@ -5890,6 +5982,56 @@ export type RecipeCostPayload = {
   missingCostCount: number;
   warnings: string[];
   lines: RecipeCostLine[];
+};
+
+// ─── Item config health ──────────────────────────────────────────
+// Surfaces stock items that are silently mis-configured for costing, so the
+// gaps that quietly make recipes/stock value read $0 (or wrong) become a
+// fix-it worklist instead of a mystery in the reports.
+export type StockConfigHealthIssueCode =
+  | 'no-avg-cost'
+  | 'recipe-unit-mismatch'
+  | 'measure-half-set'
+  | 'stale-cost';
+
+export type StockConfigHealthIssue = {
+  code: StockConfigHealthIssueCode;
+  severity: 'error' | 'warn';
+  message: string;
+};
+
+export type StockConfigHealthItem = {
+  id: string;
+  name: string;
+  categoryName: string | null;
+  unit: string;
+  countUnit: string | null;
+  recipeCount: number;
+  onHand: number;
+  onHandValueCents: number | null;
+  topSeverity: 'error' | 'warn';
+  issues: StockConfigHealthIssue[];
+};
+
+export type StockConfigHealthPayload = {
+  generatedAt: string;
+  totalActiveItems: number;
+  flaggedCount: number;
+  errorItemCount: number;
+  warnItemCount: number;
+  items: StockConfigHealthItem[];
+};
+
+export type RecipeCostLineTrace = {
+  // Per-cost-unit price and where it came from (e.g. "Average stock cost").
+  costUnitLabel: string | null;
+  costSource: string | null;
+  // Line quantity expressed in the item's cost unit, and how that conversion
+  // was resolved (human label, e.g. "2 case → 24 bottle (pack ×12)").
+  convertedQuantity: number | null;
+  conversionMethod: 'same-unit' | 'pack' | 'measure' | 'measure-pack' | 'prep-yield' | 'none' | 'unknown';
+  conversionLabel: string | null;
+  wasteMultiplier: number;
 };
 
 export type RecipeIngredientOption = {
@@ -5992,6 +6134,52 @@ export type RecipeCreateInput = z.infer<typeof recipeCreateInputSchema>;
 export type RecipeUpdateInput = z.infer<typeof recipeUpdateInputSchema>;
 export type RecipeVenuePriceInput = z.infer<typeof recipeVenuePriceInputSchema>;
 export type RecipeBulkDeleteInput = z.infer<typeof recipeBulkDeleteInputSchema>;
+
+/* ------------------------------------------------------------------------- */
+/* Portioned products ("serves") — a parent (a stock item like a bottle/keg/   */
+/* case, or a bulk production recipe) yields child sellable recipes (glasses,   */
+/* schooners, bottles, single cocktails), each a 1-line recipe linking the      */
+/* parent at a portion size and costed from it.                                 */
+/* ------------------------------------------------------------------------- */
+export const portionParentTypeSchema = z.enum(['item', 'recipe']);
+export type PortionParentType = z.infer<typeof portionParentTypeSchema>;
+
+export const recipePortionInputSchema = z.object({
+  name: z.string().min(2, 'Name is required'),
+  quantity: z.coerce.number().positive('Portion size must be greater than 0'),
+  unit: z.string().min(1, 'Choose a unit'),
+  salePriceCents: z.coerce.number().int().nonnegative().optional(),
+  wastePercent: z.coerce.number().min(0).max(100).optional()
+});
+
+export const recipePortionsCreateInputSchema = z.object({
+  parentType: portionParentTypeSchema,
+  parentId: z.string().min(1),
+  portions: z.array(recipePortionInputSchema).min(1, 'Add at least one serve')
+});
+
+export type RecipePortionInput = z.infer<typeof recipePortionInputSchema>;
+export type RecipePortionsCreateInput = z.infer<typeof recipePortionsCreateInputSchema>;
+
+export type PortionChild = {
+  recipeId: string;
+  title: string;
+  portionLabel: string | null;
+  salePriceCents: number | null;
+  costPerPortionCents: number | null;
+  foodCostPercent: number | null;
+  grossProfitCents: number | null;
+  squareMapped: boolean;
+  warnings: string[];
+};
+
+export type PortionTreePayload = {
+  parentType: PortionParentType;
+  parentId: string;
+  parentLabel: string;
+  parentUnitKind: 'volume' | 'mass' | 'count';
+  children: PortionChild[];
+};
 
 /* ------------------------------------------------------------------------- */
 /* Stocktakes                                                                 */
@@ -6209,7 +6397,9 @@ export const stocktakeLineInputSchema = z.object({
   countedQty: z.coerce.number().nullable(),
   unit: z.string().optional().or(z.literal('')),
   location: z.string().optional().or(z.literal('')),
-  stockValueCents: z.coerce.number().int().nonnegative().optional(),
+  // Can be negative: lines are prefilled from system on-hand, which goes
+  // negative between counts when sales/wastage deductions overshoot.
+  stockValueCents: z.coerce.number().int().optional(),
   notes: z.string().optional().or(z.literal(''))
 });
 
@@ -6396,6 +6586,7 @@ export type AlmaTask = {
   sourceApp: AlmaTaskSourceApp;
   sourceRefType: string | null;
   sourceRefId: string | null;
+  link: string | null;
   venue: string | null;
   title: string;
   description: string | null;

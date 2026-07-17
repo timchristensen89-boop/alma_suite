@@ -14,6 +14,19 @@ invoicesRouter.get('/', async (req, res, next) => {
   }
 });
 
+// COGS lines for suite prime-cost reporting (registered before '/:id').
+invoicesRouter.get('/cogs-lines', async (req, res, next) => {
+  try {
+    res.json(await invoicesService.listCogsLinesForReport({
+      venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+      from: typeof req.query.from === 'string' ? req.query.from : null,
+      to: typeof req.query.to === 'string' ? req.query.to : null
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.get('/summary', async (_req, res, next) => {
   try {
     res.json(await invoicesService.summary());

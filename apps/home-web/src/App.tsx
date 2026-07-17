@@ -26,6 +26,8 @@ import {
  * scoped to the signed-in venue iPad account.
  */
 
+const API_BASE = ((import.meta.env.VITE_API_URL as string | undefined) ?? '').replace(/\/+$/, '');
+
 function normalisePath(path: string) {
   return path.startsWith('/') ? path : `/${path}`;
 }
@@ -62,7 +64,7 @@ async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Authorization', `Bearer ${homeAuthToken}`);
   }
 
-  const response = await fetch(normalisePath(path), {
+  const response = await fetch(`${API_BASE}${normalisePath(path)}`, {
     credentials: 'include',
     ...init,
     headers
@@ -592,19 +594,23 @@ export function App() {
     setEntry((prev) => (prev.length >= 6 ? prev : `${prev}${key}`));
   }, [busy, locked]);
 
-  const openSuiteApp = useCallback<AppOpenHandler>(async (event, app) => {
-    if (!user || !app.href) return;
-    event.preventDefault();
+  const navigateWithHandoff = useCallback(async (href: string) => {
     try {
       const data = await api<{ token: string }>('/api/auth/handoff', { method: 'POST' });
-      const url = new URL(app.href, window.location.origin);
+      const url = new URL(href, window.location.origin);
       url.searchParams.set('suite_token', data.token);
       url.searchParams.set('suite_from', window.location.origin);
       window.location.href = url.toString();
     } catch {
-      window.location.href = app.href;
+      window.location.href = href;
     }
-  }, [user]);
+  }, []);
+
+  const openSuiteApp = useCallback<AppOpenHandler>((event, app) => {
+    if (!user || !app.href) return;
+    event.preventDefault();
+    void navigateWithHandoff(app.href);
+  }, [user, navigateWithHandoff]);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -771,6 +777,7 @@ export function App() {
                 actioningId={almaTasksActioningId}
                 onComplete={(task) => void completeAlmaTask(task, 'complete')}
                 onDismiss={(task) => void completeAlmaTask(task, 'dismiss')}
+                onOpenTask={user ? (task) => { if (task.link) void navigateWithHandoff(task.link); } : undefined}
               />
             }
           />
@@ -978,13 +985,15 @@ function AlmaTasksPanel({
   summary,
   actioningId,
   onComplete,
-  onDismiss
+  onDismiss,
+  onOpenTask
 }: {
   tasks: AlmaTask[] | null;
   summary: AlmaTasksSummary | null;
   actioningId: string | null;
   onComplete: (task: AlmaTask) => void;
   onDismiss: (task: AlmaTask) => void;
+  onOpenTask?: (task: AlmaTask) => void;
 }) {
   // Hide the panel entirely when there's no signal (not signed in, or
   // the API isn't reachable). Don't dilute the Home view with empty
@@ -1022,6 +1031,17 @@ function AlmaTasksPanel({
               {task.description ? <p>{task.description}</p> : null}
             </div>
             <div className="kiosk-tasks__rowactions">
+              {task.link && onOpenTask ? (
+                <button
+                  type="button"
+                  className="kiosk-tasks__btn"
+                  disabled={actioningId === task.id}
+                  onClick={() => onOpenTask(task)}
+                  aria-label={`Open ${task.title}`}
+                >
+                  Open
+                </button>
+              ) : null}
               <button
                 type="button"
                 className="kiosk-tasks__btn kiosk-tasks__btn--dismiss"

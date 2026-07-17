@@ -141,27 +141,31 @@ export function IssuesListPage() {
             placeholder="Title, category, description, assignee"
           />
         </div>
-        <div className="issue-cat-bar" role="group" aria-label="Filter by category">
-          <button
-            type="button"
-            className={`issue-cat-chip ${category === '' ? 'is-active' : ''}`}
-            aria-pressed={category === ''}
-            onClick={() => setCategory('')}
-          >
-            All
-          </button>
-          {categoryList.map((name) => (
+        {configuredCategories.loading && categoryList.length === 0 ? (
+          <Spinner label="Loading categories…" />
+        ) : (
+          <div className="issue-cat-bar" role="group" aria-label="Filter by category">
             <button
-              key={name}
               type="button"
-              className={`issue-cat-chip ${category === name ? 'is-active' : ''}`}
-              aria-pressed={category === name}
-              onClick={() => setCategory(name)}
+              className={`issue-cat-chip ${category === '' ? 'is-active' : ''}`}
+              aria-pressed={category === ''}
+              onClick={() => setCategory('')}
             >
-              {name}
+              All
             </button>
-          ))}
-        </div>
+            {categoryList.map((name) => (
+              <button
+                key={name}
+                type="button"
+                className={`issue-cat-chip ${category === name ? 'is-active' : ''}`}
+                aria-pressed={category === name}
+                onClick={() => setCategory(name)}
+              >
+                {name}
+              </button>
+            ))}
+          </div>
+        )}
       </Card>
 
       {error ? (

@@ -644,10 +644,10 @@ function SidebarNav() {
 // refreshes so an unsent campaign / unsaved post isn't lost. Merges the stored
 // value over the current defaults so newly-added fields still get a default.
 function usePersistentState<T>(key: string, initial: () => T) {
-  const [state, setState] = useState<T>(() => {
+  const read = (k: string): T => {
     if (typeof window === 'undefined') return initial();
     try {
-      const raw = window.localStorage.getItem(key);
+      const raw = window.localStorage.getItem(k);
       if (raw) {
         const parsed = JSON.parse(raw);
         const base = initial();
@@ -660,7 +660,18 @@ function usePersistentState<T>(key: string, initial: () => T) {
       /* ignore corrupt/blocked storage */
     }
     return initial();
-  });
+  };
+  const [state, setState] = useState<T>(() => read(key));
+  // When the scope key changes (e.g. the venue filter switches), load that
+  // scope's own stored draft instead of carrying the previous venue's draft
+  // over — which previously risked sending one venue's content under another.
+  // This is React's documented "reset state when a prop changes" pattern; it
+  // runs during render so the save effect below sees the new value (no race).
+  const [scopeKey, setScopeKey] = useState(key);
+  if (scopeKey !== key) {
+    setScopeKey(key);
+    setState(read(key));
+  }
   useEffect(() => {
     try {
       window.localStorage.setItem(key, JSON.stringify(state));
@@ -685,7 +696,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [guestDetail, setGuestDetail] = useState<MarketingGuestDetail | null>(null);
   const [segmentPreview, setSegmentPreview] = useState<MarketingSegmentPreviewPayload | null>(null);
+  const [isLoadingSegmentPreview, setIsLoadingSegmentPreview] = useState(false);
   const [campaignPreview, setCampaignPreview] = useState<CampaignPreviewResult | null>(null);
+  const [loadingCampaignId, setLoadingCampaignId] = useState<string | null>(null);
   const [contentDashboard, setContentDashboard] = useState<MarketingContentDashboardSummary | null>(null);
   const [contentAssets, setContentAssets] = useState<MarketingContentAsset[]>([]);
   const [contentPosts, setContentPosts] = useState<MarketingContentPost[]>([]);
@@ -702,12 +715,12 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   const venueParam = venueFilter === ALL_VENUES ? '' : venueFilter;
   const defaultVenue = venueParam || user.venue || KNOWN_VENUES[0]!;
   const [tagForm, setTagForm] = useState<TagForm>(() => defaultTagForm(defaultVenue));
-  const [segmentForm, setSegmentForm] = usePersistentState<SegmentBuilder>('alma.marketing.segmentForm', () => defaultSegmentBuilder(venueFilter));
-  const [templateForm, setTemplateForm] = usePersistentState<TemplateForm>('alma.marketing.templateForm', () => defaultTemplateForm(defaultVenue));
-  const [campaignForm, setCampaignForm] = usePersistentState<CampaignForm>('alma.marketing.campaignForm', () => defaultCampaignForm(defaultVenue));
-  const [automationForm, setAutomationForm] = usePersistentState<AutomationForm>('alma.marketing.automationForm', () => defaultAutomationForm(defaultVenue));
+  const [segmentForm, setSegmentForm] = usePersistentState<SegmentBuilder>(`alma.marketing.segmentForm:${venueFilter}`, () => defaultSegmentBuilder(venueFilter));
+  const [templateForm, setTemplateForm] = usePersistentState<TemplateForm>(`alma.marketing.templateForm:${defaultVenue}`, () => defaultTemplateForm(defaultVenue));
+  const [campaignForm, setCampaignForm] = usePersistentState<CampaignForm>(`alma.marketing.campaignForm:${defaultVenue}`, () => defaultCampaignForm(defaultVenue));
+  const [automationForm, setAutomationForm] = usePersistentState<AutomationForm>(`alma.marketing.automationForm:${defaultVenue}`, () => defaultAutomationForm(defaultVenue));
   const [contentAssetForm, setContentAssetForm] = useState<ContentAssetForm>(() => defaultContentAssetForm(defaultVenue));
-  const [contentPostForm, setContentPostForm] = usePersistentState<ContentPostForm>('alma.marketing.contentPostForm', () => defaultContentPostForm(defaultVenue));
+  const [contentPostForm, setContentPostForm] = usePersistentState<ContentPostForm>(`alma.marketing.contentPostForm:${defaultVenue}`, () => defaultContentPostForm(defaultVenue));
 
   const tags = overview?.tags ?? [];
   const templates = overview?.templates ?? [];
@@ -920,6 +933,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function previewSegment(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    setIsLoadingSegmentPreview(true);
     try {
       const preview = await api<MarketingSegmentPreviewPayload>('/api/marketing/segments/preview', {
         method: 'POST',
@@ -933,6 +947,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess('segment', 'Segment preview refreshed.');
     } catch (error) {
       setError('segment', error, 'Could not preview segment.');
+    } finally {
+      setIsLoadingSegmentPreview(false);
     }
   }
 
@@ -953,6 +969,17 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function saveCampaign(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    // The segment is re-scoped to the campaign's venue on save. Warn if that
+    // changes the audience the segment was built for, rather than doing it silently.
+    if (segmentForm.venue && campaignForm.venue && segmentForm.venue !== campaignForm.venue) {
+      if (
+        !window.confirm(
+          `This segment was built for "${segmentForm.venue}", but the campaign targets "${campaignForm.venue}". Saving will re-scope the audience to "${campaignForm.venue}". Continue?`
+        )
+      ) {
+        return;
+      }
+    }
     try {
       await api<MarketingCampaign>('/api/marketing/campaigns', {
         method: 'POST',
@@ -978,6 +1005,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
   }
 
   async function previewCampaignRecipients(campaignId: string) {
+    setLoadingCampaignId(campaignId);
     try {
       const preview = await api<CampaignPreviewResult>(`/api/marketing/campaigns/${campaignId}/preview-recipients`, {
         method: 'POST'
@@ -986,10 +1014,13 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setSuccess(`campaign-preview:${campaignId}`, 'Recipient preview refreshed.');
     } catch (error) {
       setError(`campaign-preview:${campaignId}`, error, 'Could not preview recipients.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
   async function simulateCampaign(campaignId: string) {
+    setLoadingCampaignId(campaignId);
     try {
       const preview = await api<CampaignPreviewResult>(`/api/marketing/campaigns/${campaignId}/simulate-send`, {
         method: 'POST'
@@ -999,6 +1030,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       await load();
     } catch (error) {
       setError(`campaign-simulate:${campaignId}`, error, 'Could not simulate campaign.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1011,6 +1044,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setError(`campaign-test:${campaignId}`, new Error('Enter a valid email.'), 'Enter a valid email.');
       return;
     }
+    setLoadingCampaignId(campaignId);
     try {
       const result = await api<{ message: string; delivered: boolean }>(`/api/marketing/campaigns/${campaignId}/test-send`, {
         method: 'POST',
@@ -1024,6 +1058,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       await load();
     } catch (error) {
       setError(`campaign-test:${campaignId}`, error, 'Could not send the test email.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1050,6 +1086,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       setError(`campaign-live:${campaign.id}`, new Error('Cancelled'), 'Live send cancelled.');
       return;
     }
+    setLoadingCampaignId(campaign.id);
     try {
       const result = await api<{ message: string; sent: number; failed: number; skipped: number }>(`/api/marketing/campaigns/${campaign.id}/live-send`, {
         method: 'POST',
@@ -1078,6 +1115,8 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
         }
       }
       setError(`campaign-live:${campaign.id}`, error, 'Could not send live.');
+    } finally {
+      setLoadingCampaignId(null);
     }
   }
 
@@ -1117,6 +1156,19 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
   async function saveAutomation(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!automationForm.emailTemplateId) {
+      setError('automation', new Error('Select an email template before saving.'), 'Select an email template before saving.');
+      return;
+    }
+    if (segmentForm.venue && automationForm.venue && segmentForm.venue !== automationForm.venue) {
+      if (
+        !window.confirm(
+          `This segment was built for "${segmentForm.venue}", but the automation targets "${automationForm.venue}". Saving will re-scope the audience to "${automationForm.venue}". Continue?`
+        )
+      ) {
+        return;
+      }
+    }
     try {
       await api<MarketingAutomation>('/api/marketing/automations', {
         method: 'POST',
@@ -1139,6 +1191,22 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
       await load();
     } catch (error) {
       setError('automation', error, 'Could not save automation.');
+    }
+  }
+
+  async function installStarterAutomations() {
+    if (!window.confirm('Add the starter automation library (First Visit, Cancellation, No Show, Re-engagement, Birthday, VIP Winback) for this venue? They install switched OFF so you can review the copy before turning them on.')) {
+      return;
+    }
+    try {
+      const result = await api<{ installed: number; skipped: number; total: number }>('/api/marketing/automations/install-library', {
+        method: 'POST',
+        body: JSON.stringify({ venue: automationForm.venue })
+      });
+      setSuccess('automation', `Installed ${result.installed} starter automation${result.installed === 1 ? '' : 's'}${result.skipped ? ` (${result.skipped} already existed)` : ''}. Review the copy, then switch them on.`);
+      await load();
+    } catch (error) {
+      setError('automation', error, 'Could not install the starter automations.');
     }
   }
 
@@ -1716,7 +1784,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                           <Select label="Venue" value={contentPostForm.venue} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
                           <Select label="Pillar" value={contentPostForm.contentPillar} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, contentPillar: el.value })); }} options={CONTENT_PILLARS.map((value) => ({ label: prettyLabel(value), value }))} />
                           <Input label="Title" required value={contentPostForm.title} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, title: el.value })); }} />
-                          <Input label="Schedule" type="datetime-local" value={contentPostForm.scheduledAt} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, scheduledAt: el.value })); }} />
+                          <Input label="Schedule" type="datetime-local" min={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16)} value={contentPostForm.scheduledAt} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, scheduledAt: el.value })); }} />
                         </div>
                         <Textarea label="Caption" rows={5} required value={contentPostForm.caption} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, caption: el.value })); }} />
                         <Select label="Attach asset" value={contentPostForm.assetId} onChange={(event) => { const el = event.currentTarget; setContentPostForm((current) => ({ ...current, assetId: el.value })); }} options={[{ label: 'No asset attached', value: '' }, ...contentAssets.map((asset) => ({ label: `${asset.title} · ${asset.assetType}`, value: asset.id }))]} />
@@ -2005,7 +2073,7 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                         <Select label="Venue" value={tagForm.venue} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
                         <Select label="Type" value={tagForm.type} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, type: el.value as GuestTagType })); }} options={TAG_TYPES.map((value) => ({ label: value, value }))} />
                         <Input label="Tag name" required value={tagForm.name} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, name: el.value })); }} />
-                        <Input label="Colour" value={tagForm.color} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, color: el.value })); }} />
+                        <Input label="Colour" type="color" value={tagForm.color} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, color: el.value })); }} />
                       </div>
                       <Textarea label="Description" rows={2} value={tagForm.description} onChange={(event) => { const el = event.currentTarget; setTagForm((current) => ({ ...current, description: el.value })); }} />
                       <div className="toolbar-right">
@@ -2057,9 +2125,10 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                       </div>
                       <div className="toolbar-right">
                         <ActionFeedback message={feedback.target === 'segment' ? feedback.message : null} tone={feedback.tone} />
-                        <Button type="submit">Preview segment</Button>
+                        <Button type="submit" disabled={isLoadingSegmentPreview}>Preview segment</Button>
                       </div>
                     </form>
+                    {isLoadingSegmentPreview ? <Spinner label="Previewing segment..." /> : null}
                     {segmentPreview ? (
                       <div className="marketing-stack">
                         <div className="marketing-summary-card">
@@ -2179,13 +2248,18 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                     })()}
                     <strong>{campaign.name}</strong>
                     <span>{campaign.channel} · {campaign.status} · {campaign.recipients.length} recipients</span>
+                    {!campaign.simulatedAt && !campaign.sentAt ? (
+                      <div className="marketing-badges">
+                        <Badge tone="warning">Needs test send</Badge>
+                      </div>
+                    ) : null}
                     <div className="marketing-badges">
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)}>Preview</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void previewCampaignRecipients(campaign.id)} disabled={loadingCampaignId === campaign.id}>Preview</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void createContentPostFromCampaign(campaign.id)}>Create social post</Button>
                       <Button type="button" size="sm" variant="secondary" onClick={() => void issueGiftCardsForCampaign(campaign.id)}>🎁 Issue gift cards</Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)}>Simulate send</Button>
-                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)}>📧 Test send</Button>
-                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={!campaign.simulatedAt || Boolean(campaign.sentAt)}>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void simulateCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>Simulate send</Button>
+                      <Button type="button" size="sm" variant="secondary" onClick={() => void testSendCampaign(campaign.id)} disabled={loadingCampaignId === campaign.id}>📧 Test send</Button>
+                      <Button type="button" size="sm" onClick={() => void liveSendCampaign(campaign)} disabled={loadingCampaignId === campaign.id || !campaign.simulatedAt || Boolean(campaign.sentAt)}>
                         {campaign.sentAt ? 'Sent ✓' : 'Send live'}
                       </Button>
                     </div>
@@ -2217,7 +2291,11 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
 
             {isActiveSection('/automations') ? (
             <section id="automations" className="marketing-page-section">
-              <Card title="Automations" subtitle="Trigger-based audience selection with simulation only">
+              <Card
+                title="Automations"
+                subtitle="Trigger-based emails that send automatically. Install the starter library to get the visit-lifecycle set in one click."
+                action={<Button type="button" variant="secondary" onClick={() => void installStarterAutomations()}>Install starter automations</Button>}
+              >
               <form className="marketing-form" onSubmit={(event) => void saveAutomation(event)}>
                 <div className="form-grid two">
                   <Select label="Venue" value={automationForm.venue} onChange={(event) => { const el = event.currentTarget; setAutomationForm((current) => ({ ...current, venue: el.value })); }} options={KNOWN_VENUES.map((value) => ({ label: value, value }))} />
@@ -2243,6 +2321,9 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 />
               ) : null}
               <div className="marketing-stack">
+                {automations.length === 0 ? (
+                  <EmptyState title="No automations yet" description="Create an automation to trigger messages based on guest events." />
+                ) : null}
                 {automations.slice(0, 5).map((automation) => {
                   const metric = automationMetrics.find((m) => m.automationId === automation.id);
                   const lastRunRelative = metric?.lastRunAt

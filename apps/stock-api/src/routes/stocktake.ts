@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireStockManager } from '../lib/stock-permissions.js';
 import { stocktakesService } from '../services/stocktakes.service.js';
+import { stockReportsService } from '../services/stock-reports.service.js';
 
 export const stocktakeRouter = Router();
 
@@ -24,6 +25,27 @@ stocktakeRouter.get('/review', async (req, res, next) => {
   try {
     requireStockManager(req.user);
     res.json(await stocktakesService.reviewQueue(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Per-venue status for suite reports (registered before '/:id').
+stocktakeRouter.get('/venue-status', async (req, res, next) => {
+  try {
+    res.json(await stocktakesService.venueStatus({ venue: typeof req.query.venue === 'string' ? req.query.venue : null }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Stock summary block for suite reports (registered before '/:id').
+stocktakeRouter.get('/stock-summary', async (req, res, next) => {
+  try {
+    res.json(await stockReportsService.buildStockSummary({
+      venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+      sinceISO: typeof req.query.since === 'string' ? req.query.since : new Date(0).toISOString()
+    }));
   } catch (error) {
     next(error);
   }

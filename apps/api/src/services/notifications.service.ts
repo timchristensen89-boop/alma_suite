@@ -12,7 +12,10 @@ export type NotificationCategory =
   | 'ISSUE_OVERDUE'
   | 'TEMP_OUT_OF_RANGE'
   | 'STAFF_EXPIRING'
-  | 'INCIDENT_OPEN';
+  | 'INCIDENT_OPEN'
+  | 'INTEGRATION_FAILED'
+  | 'TIMESHEET_OPEN'
+  | 'ROSTER_PUBLISHED';
 
 export const NOTIFICATION_CATEGORIES: Array<{ category: NotificationCategory; label: string }> = [
   { category: 'COMMS', label: 'Comms messages' },
@@ -20,7 +23,10 @@ export const NOTIFICATION_CATEGORIES: Array<{ category: NotificationCategory; la
   { category: 'ISSUE_OVERDUE', label: 'Overdue issues' },
   { category: 'TEMP_OUT_OF_RANGE', label: 'Temperature alerts' },
   { category: 'STAFF_EXPIRING', label: 'Expiring staff records' },
-  { category: 'INCIDENT_OPEN', label: 'Open incidents' }
+  { category: 'INCIDENT_OPEN', label: 'Open incidents' },
+  { category: 'INTEGRATION_FAILED', label: 'Integration sync failures' },
+  { category: 'TIMESHEET_OPEN', label: 'Forgotten clock-outs' },
+  { category: 'ROSTER_PUBLISHED', label: 'Roster published' }
 ];
 
 const CATEGORY_LABEL: Record<NotificationCategory, string> = NOTIFICATION_CATEGORIES.reduce(
@@ -39,7 +45,7 @@ export type SuiteNotification = {
   description: string;
   to: string;
   href: string;
-  appId: 'compliance' | 'staff' | 'comms';
+  appId: 'compliance' | 'staff' | 'comms' | 'admin';
   appLabel: string;
   createdAt: string;
   // ISO timestamp the current user read/dismissed this notification, or null
@@ -50,7 +56,8 @@ export type SuiteNotification = {
 const APP_URLS = {
   compliance: (process.env.COMPLIANCE_WEB_URL ?? process.env.FRONTEND_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, ''),
   staff: (process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app').replace(/\/+$/, ''),
-  comms: (process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app').replace(/\/+$/, '')
+  comms: (process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app').replace(/\/+$/, ''),
+  admin: (process.env.ADMIN_WEB_URL ?? 'https://alma-suite-admin.web.app').replace(/\/+$/, '')
 };
 
 function fullName(actor: AuthUser) {
@@ -113,6 +120,44 @@ export const notificationsService = {
       }));
     }
 
+    // Roster published: tell a staffer when their upcoming shifts were just
+    // published. publishRoster flips DRAFT->PUBLISHED which bumps updatedAt, so a
+    // future PUBLISHED shift updated in the last 2 days = a fresh/changed roster.
+    // One grouped alert, keyed to the earliest week so the read marker sticks; it
+    // clears once the 2-day window passes. Real people only (not venue devices).
+    if (actor.accountType !== 'VENUE_DEVICE' && !actor.deviceAccount) {
+      const publishCutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const publishedShifts = await prisma.rosterShift.findMany({
+        where: {
+          staffProfileId: actor.id,
+          status: 'PUBLISHED',
+          startsAt: { gte: now },
+          updatedAt: { gte: publishCutoff }
+        },
+        orderBy: { startsAt: 'asc' },
+        select: { startsAt: true, updatedAt: true }
+      });
+      if (publishedShifts.length) {
+        const first = publishedShifts[0]!;
+        const weekStart = new Date(first.startsAt);
+        const dow = weekStart.getDay();
+        weekStart.setDate(weekStart.getDate() - (dow === 0 ? 6 : dow - 1));
+        weekStart.setHours(0, 0, 0, 0);
+        const latest = publishedShifts.reduce((max, s) => (s.updatedAt > max ? s.updatedAt : max), first.updatedAt);
+        notifications.push(notification({
+          id: `roster-published-${actor.id}-${weekStart.toISOString().slice(0, 10)}`,
+          category: 'ROSTER_PUBLISHED',
+          tone: 'info',
+          title: 'Your roster is published',
+          description: `${publishedShifts.length} upcoming shift${publishedShifts.length === 1 ? '' : 's'} from ${first.startsAt.toISOString().slice(0, 10)} — check your times.`,
+          to: '/roster',
+          appId: 'staff',
+          appLabel: 'Staff',
+          createdAt: latest.toISOString()
+        }));
+      }
+    }
+
     const [criticalIssues, overdueIssues] = await Promise.all([
       prisma.issue.findMany({
         where: {
@@ -165,7 +210,12 @@ export const notificationsService = {
     }
 
     if (manager) {
-      const [outOfRangeTemps, expiringRecords, openIncidents] = await Promise.all([
+      // Forgotten clock-out: an open timesheet (no clock-out) older than this.
+      const openShiftCutoff = new Date(Date.now() - 12 * 60 * 60 * 1000);
+      // Integration sync failure: only surface errors from the last 2 days so the
+      // alert clears once a later sync succeeds / time passes.
+      const syncFailCutoff = new Date(Date.now() - 2 * 24 * 60 * 60 * 1000);
+      const [outOfRangeTemps, expiringRecords, openIncidents, openTimesheets, failedSyncRuns] = await Promise.all([
         prisma.temperatureLog.findMany({
           where: {
             status: 'OUT_OF_RANGE',
@@ -193,6 +243,27 @@ export const notificationsService = {
             ...venueWhere
           },
           orderBy: { occurredAt: 'desc' },
+          take: 5
+        }),
+        // An open clock-in stays status DRAFT until clock-out (liveTimesheetHours
+        // treats DRAFT as still-running), so a DRAFT older than 12h = forgotten
+        // clock-out.
+        prisma.timesheet.findMany({
+          where: {
+            status: 'DRAFT',
+            clockInAt: { lt: openShiftCutoff },
+            staffProfile: { accountType: 'HUMAN', mergedIntoStaffProfileId: null },
+            ...venueWhere
+          },
+          orderBy: { clockInAt: 'asc' },
+          include: { staffProfile: true },
+          take: 5
+        }),
+        // Integration failures are business-level, so admins always see them and a
+        // venue manager sees them too (a broken Deputy/Xero sync affects everyone).
+        prisma.integrationSyncRun.findMany({
+          where: { status: 'ERROR', finishedAt: { gte: syncFailCutoff } },
+          orderBy: { finishedAt: 'desc' },
           take: 5
         })
       ]);
@@ -239,6 +310,42 @@ export const notificationsService = {
           appId: 'compliance',
           appLabel: 'Compliance',
           createdAt: incident.occurredAt.toISOString()
+        }));
+      }
+
+      for (const ts of openTimesheets) {
+        const name = `${ts.staffProfile.firstName} ${ts.staffProfile.lastName}`.trim();
+        const hours = Math.floor((Date.now() - ts.clockInAt.getTime()) / 3_600_000);
+        notifications.push(notification({
+          id: `timesheet-open-${ts.id}`,
+          category: 'TIMESHEET_OPEN',
+          tone: 'warning',
+          title: `${name || 'Someone'} still clocked in (${hours}h)`,
+          description: `Clocked in ${ts.clockInAt.toISOString().slice(11, 16)} and not clocked out — fix before approving the timesheet.`,
+          to: '/timesheets',
+          appId: 'staff',
+          appLabel: 'Staff',
+          createdAt: ts.clockInAt.toISOString()
+        }));
+      }
+
+      // One alert per failed provider (latest error) so the feed doesn't repeat.
+      // Admin-only: the Open link goes to Admin → Integration Health, which a
+      // non-admin manager can't load (it would 403).
+      const seenProviders = new Set<string>();
+      for (const run of actor.isAdmin ? failedSyncRuns : []) {
+        if (seenProviders.has(run.provider)) continue;
+        seenProviders.add(run.provider);
+        notifications.push(notification({
+          id: `integration-failed-${run.provider}`,
+          category: 'INTEGRATION_FAILED',
+          tone: 'danger',
+          title: `${run.provider} sync failed`,
+          description: (run.errorSummary ?? 'A sync run errored — check Integration Health.').slice(0, 140),
+          to: '/integrations/health',
+          appId: 'admin',
+          appLabel: 'Admin',
+          createdAt: (run.finishedAt ?? now).toISOString()
         }));
       }
     }

@@ -1,16 +1,21 @@
 import type { Prisma } from '@prisma/client';
-import { prisma } from '@alma/db';
+import { prisma, computeActualCogs } from '@alma/db';
 import {
   recipeBulkDeleteInputSchema,
   recipeCategoryCreateInputSchema,
   recipeCategoryUpdateInputSchema,
   recipeCreateInputSchema,
   recipeUpdateInputSchema,
+  recipePortionsCreateInputSchema,
+  type PortionChild,
+  type PortionParentType,
+  type PortionTreePayload,
   type Recipe,
   type RecipeActualSales,
   type RecipeCategory,
   type RecipeCategoryKind,
   type RecipeCostLine,
+  type RecipeCostLineTrace,
   type RecipeCostPayload,
   type RecipeIngredientOption,
   type RecipeLine,
@@ -22,7 +27,7 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { applyDefaultWastage, attachMatchesForReview, recipeCostSanity } from './stock-rules.service.js';
-import { convertQuantityToCostUnit } from './units.js';
+import { convertBetweenUnits, convertQuantityToCostUnit } from './units.js';
 
 type RecipeRow = Prisma.RecipeGetPayload<{
   include: {
@@ -89,6 +94,35 @@ function centsToDollars(value: number | null | undefined) {
 
 function roundCents(value: number) {
   return Math.round(value);
+}
+
+// Trim a converted quantity to a readable precision for the cost trace.
+function tidyQty(value: number): string {
+  const rounded = Math.round(value * 1000) / 1000;
+  return Number.isInteger(rounded) ? String(rounded) : String(rounded);
+}
+
+// Human label for how a stock-item line's quantity was converted to its cost
+// unit — the "show the working" line under each costed ingredient.
+function stockConversionLabel(
+  quantity: number,
+  fromUnit: string | null,
+  convertedQuantity: number,
+  costUnit: string | null,
+  via: RecipeCostLineTrace['conversionMethod']
+): string | null {
+  if (via === 'same-unit' || via === 'none') return null;
+  const from = `${tidyQty(quantity)} ${fromUnit ?? ''}`.trim();
+  const to = `${tidyQty(convertedQuantity)} ${costUnit ?? ''}`.trim();
+  const note =
+    via === 'pack'
+      ? ' (pack size)'
+      : via === 'measure'
+        ? ' (metric)'
+        : via === 'measure-pack'
+          ? ' (measure bridge)'
+          : '';
+  return `${from} → ${to}${note}`;
 }
 
 function inferRecipeCategoryKind(
@@ -231,21 +265,39 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     // and no conversion can be resolved — otherwise we'd silently mis-cost.
     const conversion =
       quantity !== null ? convertQuantityToCostUnit(quantity, row.unit, row.item) : null;
-    if (
+    // A genuinely unconvertible unit must NOT be costed off the raw quantity —
+    // that silently fabricates a wrong number (e.g. "2 kg" of a per-each item
+    // costed as 2 each). Refuse to cost the line and tell the user exactly what
+    // to set, so the recipe shows "cost unavailable" rather than a bad figure.
+    const conversionFailed = Boolean(
       quantity !== null &&
       conversion?.via === 'unknown' &&
       row.unit &&
       stockCostUnit &&
       row.unit !== stockCostUnit
-    ) {
-      warnings.push(`Unit ${row.unit} differs from stock item cost unit ${stockCostUnit} and no conversion is known; cost not adjusted`);
+    );
+    if (conversionFailed) {
+      warnings.push(`Can't convert “${row.unit}” to this item's cost unit (“${stockCostUnit}”). Fix it on the item: set the pack size (how many ${stockCostUnit} per ${row.item.unit}) or the measure-per-unit (e.g. grams/ml in one ${stockCostUnit}), or enter this line in ${stockCostUnit}. This line is not counted in the cost until then.`);
     }
-    const costQuantity = conversion?.quantity ?? quantity;
+    // Null when the unit can't convert — never fall back to the raw quantity.
+    const costQuantity = conversionFailed ? null : (conversion?.quantity ?? quantity);
     const unitCostCents = row.item.avgCostCents;
     const lineCostCents =
       unitCostCents !== null && costQuantity !== null
         ? roundCents(unitCostCents * costQuantity * wasteMultiplier)
         : null;
+    const via = (conversion?.via ?? 'none') as RecipeCostLineTrace['conversionMethod'];
+    const trace: RecipeCostLineTrace = {
+      costUnitLabel: stockCostUnit,
+      costSource: 'Average stock cost',
+      convertedQuantity: costQuantity,
+      conversionMethod: conversionFailed ? 'unknown' : via,
+      conversionLabel:
+        costQuantity !== null && quantity !== null
+          ? stockConversionLabel(quantity, row.unit, costQuantity, stockCostUnit, via)
+          : null,
+      wasteMultiplier
+    };
     return {
       lineId: row.id,
       ingredientName: row.ingredientName,
@@ -255,7 +307,8 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       source: lineCostCents === null ? 'MISSING' : 'STOCK_ITEM',
       unitCostCents,
       lineCostCents,
-      warnings
+      warnings,
+      trace
     };
   }
 
@@ -278,17 +331,48 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     if (batchCostCents === null || batchCostCents <= 0) warnings.push('Prep recipe batch cost is missing');
     if (!yieldQuantity || yieldQuantity <= 0) warnings.push('Prep recipe yield quantity is missing');
     if (quantity === null) warnings.push('Ingredient quantity is missing');
-    if (row.unit && row.subRecipe.yieldUnit && row.unit !== row.subRecipe.yieldUnit) {
-      warnings.push(`Unit ${row.unit} differs from prep recipe yield unit ${row.subRecipe.yieldUnit}; no conversion is applied`);
+
+    // Express the line quantity in the prep recipe's yield unit, so a per-yield
+    // cost applies correctly even when units differ (e.g. 200 mL used from a
+    // recipe that yields in L — previously mis-costed by 1000×).
+    let subCostQuantity: number | null = quantity;
+    if (quantity !== null) {
+      const converted = convertBetweenUnits(quantity, row.unit, row.subRecipe.yieldUnit);
+      if (converted === null) {
+        // Don't cost off the raw quantity when the unit can't convert — that
+        // mis-costs by up to 1000× (e.g. mL against an L yield).
+        warnings.push(`Can't convert “${row.unit}” to the prep recipe's yield unit (“${row.subRecipe.yieldUnit}”). Enter this line in ${row.subRecipe.yieldUnit} or a compatible metric unit. This line is not counted in the cost until then.`);
+        subCostQuantity = null;
+      } else {
+        subCostQuantity = converted;
+      }
     }
+
     const unitCostCents =
       batchCostCents !== null && yieldQuantity && yieldQuantity > 0
         ? batchCostCents / yieldQuantity
         : null;
     const lineCostCents =
-      unitCostCents !== null && quantity !== null
-        ? roundCents(unitCostCents * quantity * wasteMultiplier)
+      unitCostCents !== null && subCostQuantity !== null
+        ? roundCents(unitCostCents * subCostQuantity * wasteMultiplier)
         : null;
+    const yieldUnit = row.subRecipe.yieldUnit;
+    const batchDollars = centsToDollars(batchCostCents);
+    const prepCostSource =
+      batchDollars !== null && yieldQuantity && yieldQuantity > 0
+        ? `Prep batch $${batchDollars.toFixed(2)} ÷ ${tidyQty(yieldQuantity)} ${yieldUnit ?? ''}`.trim()
+        : 'Prep batch ÷ yield';
+    const trace: RecipeCostLineTrace = {
+      costUnitLabel: yieldUnit,
+      costSource: prepCostSource,
+      convertedQuantity: subCostQuantity,
+      conversionMethod: 'prep-yield',
+      conversionLabel:
+        subCostQuantity !== null && quantity !== null && yieldUnit && row.unit && row.unit !== yieldUnit
+          ? `${tidyQty(quantity)} ${row.unit} → ${tidyQty(subCostQuantity)} ${yieldUnit}`
+          : null,
+      wasteMultiplier
+    };
     return {
       lineId: row.id,
       ingredientName: row.ingredientName,
@@ -298,7 +382,8 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
       source: lineCostCents === null ? 'MISSING' : 'PREP_RECIPE',
       unitCostCents: unitCostCents === null ? null : roundCents(unitCostCents),
       lineCostCents,
-      warnings
+      warnings,
+      trace
     };
   }
 
@@ -313,7 +398,17 @@ function costForLine(row: RecipeLineRow): RecipeCostLine {
     source: manualCostCents === null ? 'MISSING' : 'MANUAL',
     unitCostCents: null,
     lineCostCents: manualCostCents,
-    warnings
+    warnings,
+    trace: manualCostCents === null
+      ? undefined
+      : {
+          costUnitLabel: row.unit,
+          costSource: 'Manual line cost',
+          convertedQuantity: null,
+          conversionMethod: 'none',
+          conversionLabel: null,
+          wasteMultiplier: 1
+        }
   };
 }
 
@@ -408,6 +503,45 @@ async function refreshRecipeEstimatedCost(id: string) {
       venuePrices: { select: { venue: true, salePriceCents: true } }
     }
   });
+}
+
+// Recompute stored estimatedCost for every recipe affected by a change to the
+// given stock items' costs — directly (a recipe that uses the item) and then
+// up the prep-recipe chain (recipes that use those recipes as ingredients), so
+// nested costs stay current. Called after supplier-bill costs are applied, so
+// recipe costs and theoretical COGS never go stale. Idempotent + best-effort.
+export async function recomputeRecipeCostsForItems(itemIds: string[]): Promise<{ recipesRefreshed: number }> {
+  const uniqueItemIds = [...new Set(itemIds.filter(Boolean))];
+  if (uniqueItemIds.length === 0) return { recipesRefreshed: 0 };
+
+  const directLines = await prisma.recipeLine.findMany({
+    where: { itemId: { in: uniqueItemIds } },
+    select: { recipeId: true },
+    distinct: ['recipeId']
+  });
+
+  const seen = new Set<string>();
+  let frontier = directLines.map((line) => line.recipeId);
+  let depth = 0;
+  // Cap the cascade depth as a guard against a (mis-configured) prep-recipe cycle.
+  while (frontier.length > 0 && depth < 8) {
+    const next = new Set<string>();
+    for (const recipeId of frontier) {
+      if (seen.has(recipeId)) continue;
+      seen.add(recipeId);
+      await refreshRecipeEstimatedCost(recipeId).catch(() => undefined);
+      const dependents = await prisma.recipeLine.findMany({
+        where: { subRecipeId: recipeId },
+        select: { recipeId: true },
+        distinct: ['recipeId']
+      });
+      dependents.forEach((dependent) => next.add(dependent.recipeId));
+    }
+    frontier = [...next].filter((id) => !seen.has(id));
+    depth += 1;
+  }
+
+  return { recipesRefreshed: seen.size };
 }
 
 async function recipeCountMapByCategory() {
@@ -518,6 +652,24 @@ async function listRecipeCategories(syncFromRecipes: boolean) {
   return rows.map((row) => toRecipeCategoryPayload(row, counts.get(row.name) ?? 0));
 }
 
+const VOLUME_UNIT_TOKENS = ['ml', 'cl', 'dl', 'l', 'litre', 'litres', 'liter', 'liters', 'millilitre', 'milliliter'];
+const MASS_UNIT_TOKENS = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilograms', 'kilo'];
+function unitKindOf(unit: string | null | undefined): 'volume' | 'mass' | 'count' {
+  const u = (unit ?? '').trim().toLowerCase();
+  if (VOLUME_UNIT_TOKENS.includes(u)) return 'volume';
+  if (MASS_UNIT_TOKENS.includes(u)) return 'mass';
+  return 'count';
+}
+// What kind of portion unit a parent item yields: a measure-per-unit bridge or a
+// metric cost unit means weight/volume; otherwise it's counted (each).
+function stockItemUnitKind(item: { unit: string; countUnit: string | null; measureUnit: string | null; measurePerCountUnit: number | null }): 'volume' | 'mass' | 'count' {
+  if (item.measurePerCountUnit && item.measurePerCountUnit > 0 && item.measureUnit) {
+    const kind = unitKindOf(item.measureUnit);
+    if (kind !== 'count') return kind;
+  }
+  return unitKindOf(item.countUnit ?? item.unit);
+}
+
 export const recipesService = {
   // Full recipe-book CSV export — every recipe with its type, category, venue,
   // portion/yield, sale price, estimated cost, line count and ingredient list.
@@ -608,21 +760,15 @@ export const recipesService = {
       }
     }
 
-    // Actual COGS = supplier purchases in the window (venue-scoped, excluding
-    // non-stock "no item" triaged documents).
-    const since = new Date();
+    // Actual COGS comes from the suite-wide canonical helper (ex-GST, finalised
+    // stock purchases, stocktake-bounded with a purchases-only fallback) so this
+    // dashboard agrees with the Reports Prime Cost and Monthly Recap for the same
+    // period instead of using its own formula.
+    const windowEnd = new Date();
+    const since = new Date(windowEnd);
     since.setDate(since.getDate() - lookbackDays);
-    const purchaseAgg = await prisma.supplierInvoice.aggregate({
-      // Ex-GST subtotal so it compares apples-to-apples with the ex-GST
-      // recipe cost. Falls back to total when a subtotal wasn't parsed.
-      _sum: { subtotalCents: true, totalCents: true },
-      where: {
-        triageStatus: { not: 'NO_ITEM' },
-        invoiceDate: { gte: since },
-        ...(venue ? { venue } : {})
-      }
-    });
-    const actualCogsCents = purchaseAgg._sum.subtotalCents || purchaseAgg._sum.totalCents || 0;
+    const actualCogs = await computeActualCogs({ venue: venue ?? null, start: since, end: windowEnd });
+    const actualCogsCents = actualCogs.cogsCents;
 
     const varianceCents = actualCogsCents - theoreticalCogsCents;
     const variancePercent =
@@ -906,6 +1052,179 @@ export const recipesService = {
   async cost(id: string): Promise<RecipeCostPayload> {
     const row = await findRecipeWithLines(id);
     return calculateRecipeCost(row);
+  },
+
+  // Cost an UNSAVED recipe draft so the builder can show cost + per-line warnings
+  // live as the user types, without saving. Resolves linked items/prep-recipes
+  // from the ids in the draft, then runs the same costing as the saved endpoint.
+  async costPreview(input: unknown): Promise<RecipeCostPayload> {
+    const body = (input ?? {}) as Record<string, unknown>;
+    const rawLines = Array.isArray(body.lines) ? (body.lines as Array<Record<string, unknown>>) : [];
+    const num = (value: unknown): number | null => {
+      const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : null;
+      return parsed !== null && Number.isFinite(parsed) ? parsed : null;
+    };
+    const str = (value: unknown): string => (typeof value === 'string' ? value : '');
+    const optId = (value: unknown): string | null => (typeof value === 'string' && value.trim() !== '' ? value : null);
+
+    const itemIds = [...new Set(rawLines.map((line) => optId(line.itemId)).filter((id): id is string => Boolean(id)))];
+    const subRecipeIds = [...new Set(rawLines.map((line) => optId(line.subRecipeId)).filter((id): id is string => Boolean(id)))];
+
+    const [items, subRecipes] = await Promise.all([
+      itemIds.length
+        ? prisma.stockItem.findMany({
+            where: { id: { in: itemIds } },
+            select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true }
+          })
+        : Promise.resolve([]),
+      subRecipeIds.length
+        ? prisma.recipe.findMany({
+            where: { id: { in: subRecipeIds } },
+            select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true }
+          })
+        : Promise.resolve([])
+    ]);
+    const itemMap = new Map(items.map((item) => [item.id, item]));
+    const subMap = new Map(subRecipes.map((recipe) => [recipe.id, recipe]));
+
+    const lines = rawLines.map((line, index) => {
+      const itemId = optId(line.itemId);
+      const subRecipeId = optId(line.subRecipeId);
+      return {
+        id: `preview-${index}`,
+        position: index,
+        ingredientName: str(line.ingredientName) || `Line ${index + 1}`,
+        quantity: num(line.quantity),
+        unit: str(line.unit) || null,
+        wastePercent: num(line.wastePercent) ?? 0,
+        cost: num(line.cost),
+        itemId,
+        subRecipeId,
+        item: itemId ? itemMap.get(itemId) ?? null : null,
+        subRecipe: subRecipeId ? subMap.get(subRecipeId) ?? null : null
+      };
+    });
+
+    const pseudoRow = {
+      id: 'preview',
+      yieldQuantity: num(body.yieldQuantity),
+      yieldUnit: str(body.yieldUnit) || null,
+      portionSize: num(body.portionSize),
+      portionUnit: str(body.portionUnit) || null,
+      salePriceCents: num(body.salePriceCents),
+      isPrepRecipe: Boolean(body.isPrepRecipe),
+      estimatedCost: num(body.estimatedCost),
+      lines,
+      venuePrices: []
+    } as unknown as RecipeWithLinesRow;
+
+    return calculateRecipeCost(pseudoRow);
+  },
+
+  // The parent → child "serves" tree: child recipes that draw a portion from this
+  // parent (a stock item bottle/keg/case, or a bulk production recipe), each
+  // costed from the parent so you see cost + margin per serve.
+  async portionTree(parentType: PortionParentType, parentId: string): Promise<PortionTreePayload> {
+    let parentLabel = '';
+    let parentUnitKind: 'volume' | 'mass' | 'count' = 'count';
+    if (parentType === 'item') {
+      const item = await prisma.stockItem.findUnique({
+        where: { id: parentId },
+        select: { name: true, unit: true, countUnit: true, measureUnit: true, measurePerCountUnit: true }
+      });
+      if (!item) throw new HttpError(404, 'Stock item not found');
+      parentLabel = item.name;
+      parentUnitKind = stockItemUnitKind(item);
+    } else {
+      const recipe = await prisma.recipe.findUnique({ where: { id: parentId }, select: { title: true, yieldUnit: true } });
+      if (!recipe) throw new HttpError(404, 'Recipe not found');
+      parentLabel = recipe.title;
+      parentUnitKind = unitKindOf(recipe.yieldUnit);
+    }
+
+    const rows = await prisma.recipe.findMany({
+      where: parentType === 'recipe' ? { lines: { some: { subRecipeId: parentId } } } : { lines: { some: { itemId: parentId } } },
+      include: {
+        lines: {
+          include: {
+            item: { select: { id: true, name: true, unit: true, countUnit: true, conversionFactor: true, measurePerCountUnit: true, measureUnit: true, avgCostCents: true } },
+            subRecipe: { select: { id: true, title: true, yieldQuantity: true, yieldUnit: true, estimatedCost: true, isPrepRecipe: true } }
+          }
+        },
+        venuePrices: { select: { venue: true, salePriceCents: true } },
+        squareMenuMappings: { where: { status: { in: ['MAPPED', 'CONFIRMED'] } }, select: { id: true } }
+      },
+      orderBy: { title: 'asc' }
+    });
+
+    const children: PortionChild[] = rows.map((row) => {
+      const cost = calculateRecipeCost(row as unknown as RecipeWithLinesRow);
+      const portionLine = row.lines.find((line) => (parentType === 'recipe' ? line.subRecipeId === parentId : line.itemId === parentId));
+      const portionLabel = portionLine && portionLine.quantity != null
+        ? `${portionLine.quantity} ${portionLine.unit ?? ''}`.trim()
+        : null;
+      return {
+        recipeId: row.id,
+        title: row.title,
+        portionLabel,
+        salePriceCents: row.salePriceCents,
+        costPerPortionCents: cost.costPerPortionCents,
+        foodCostPercent: cost.foodCostPercent,
+        grossProfitCents: cost.grossProfitCents,
+        squareMapped: row.squareMenuMappings.length > 0,
+        warnings: cost.warnings
+      };
+    });
+
+    return { parentType, parentId, parentLabel, parentUnitKind, children };
+  },
+
+  // Create one sellable child recipe per portion, each a single line drawing the
+  // portion from the parent. Costs auto-derive; a Square sold-item match is
+  // attached for review (same as a normal recipe create). Returns the new tree.
+  async createPortions(input: unknown): Promise<PortionTreePayload> {
+    const data = recipePortionsCreateInputSchema.parse(input);
+    let parentName = '';
+    if (data.parentType === 'item') {
+      const item = await prisma.stockItem.findUnique({ where: { id: data.parentId }, select: { name: true } });
+      if (!item) throw new HttpError(404, 'Stock item not found');
+      parentName = item.name;
+    } else {
+      const recipe = await prisma.recipe.findUnique({ where: { id: data.parentId }, select: { title: true } });
+      if (!recipe) throw new HttpError(404, 'Recipe not found');
+      parentName = recipe.title;
+    }
+
+    for (const portion of data.portions) {
+      const created = await prisma.recipe.create({
+        data: {
+          title: portion.name.trim(),
+          isPrepRecipe: false,
+          status: 'ACTIVE',
+          estimatedCost: 0,
+          salePriceCents: portion.salePriceCents ?? null,
+          portionSize: 1,
+          portionUnit: 'serve',
+          yieldQuantity: 1,
+          yieldUnit: 'serve',
+          lines: {
+            create: [{
+              position: 1,
+              ingredientName: parentName,
+              quantity: portion.quantity,
+              unit: portion.unit,
+              wastePercent: portion.wastePercent ?? 0,
+              itemId: data.parentType === 'item' ? data.parentId : null,
+              subRecipeId: data.parentType === 'recipe' ? data.parentId : null
+            }]
+          }
+        }
+      });
+      await refreshRecipeEstimatedCost(created.id).catch(() => undefined);
+      await attachMatchesForReview(created.id, created.title).catch(() => undefined);
+    }
+
+    return recipesService.portionTree(data.parentType, data.parentId);
   },
 
   async ingredientOptions(): Promise<{ options: RecipeIngredientOption[] }> {

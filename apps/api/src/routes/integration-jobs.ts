@@ -7,6 +7,7 @@ import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { integrationService } from '../services/integration.service.js';
+import { marketingService } from '../services/marketing.service.js';
 import { reportsService } from '../services/reports.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
@@ -40,6 +41,16 @@ integrationJobsRouter.use((req, _res, next) => {
 integrationJobsRouter.post('/square/sync', async (req, res, next) => {
   try {
     res.json(await integrationService.runScheduledSquareSync(req.body ?? {}));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// One-off historical Square sales backfill across both accounts (the live sync
+// only keeps a rolling window). Body: { days?, account? }. Idempotent.
+integrationJobsRouter.post('/square/backfill', async (req, res, next) => {
+  try {
+    res.json(await integrationService.runScheduledSquareBackfill(req.body ?? {}));
   } catch (error) {
     next(error);
   }
@@ -113,6 +124,18 @@ integrationJobsRouter.post('/monthly-recap', async (req, res, next) => {
       req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>).previewOnly : undefined
     );
     res.json(await reportsService.sendScheduledMonthlyRecap({ previewOnly }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Marketing automation runner — daily (e.g. 8am Sydney) by Cloud Scheduler.
+// Fires every active automation: builds the eligible audience, dedups, consent-
+// checks, and sends via Resend. Body { dryRun:true } previews without sending.
+integrationJobsRouter.post('/marketing/run-automations', async (req, res, next) => {
+  try {
+    const dryRun = Boolean(req.body && typeof req.body === 'object' ? (req.body as Record<string, unknown>).dryRun : undefined);
+    res.json(await marketingService.runDueAutomations({ dryRun }));
   } catch (error) {
     next(error);
   }

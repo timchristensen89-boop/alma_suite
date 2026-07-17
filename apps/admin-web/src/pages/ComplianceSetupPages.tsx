@@ -184,6 +184,7 @@ export function ChecklistTemplatesPage() {
   useDocumentTitle('Checklist templates · Alma Admin');
   const [templates, setTemplates] = useState<ChecklistTemplate[]>([]);
   const [draft, setDraft] = useState<ChecklistTemplateDraft>(() => emptyChecklistDraft());
+  const [originalDraft, setOriginalDraft] = useState<ChecklistTemplateDraft | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -213,7 +214,9 @@ export function ChecklistTemplatesPage() {
 
   function editTemplate(template: ChecklistTemplate) {
     setEditingId(template.id);
-    setDraft(checklistToDraft(template));
+    const next = checklistToDraft(template);
+    setDraft(next);
+    setOriginalDraft(next);
     setFeedback(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -221,10 +224,24 @@ export function ChecklistTemplatesPage() {
   function resetForm() {
     setEditingId(null);
     setDraft(emptyChecklistDraft());
+    setOriginalDraft(null);
+  }
+
+  function cancelEdit() {
+    if (originalDraft && JSON.stringify(draft) !== JSON.stringify(originalDraft)) {
+      if (!window.confirm('Discard your unsaved changes to this template?')) return;
+    }
+    resetForm();
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const droppedCount = draft.items.filter((item) => item.label.trim().length === 0).length;
+    if (droppedCount > 0) {
+      if (!window.confirm(`You have ${droppedCount} item${droppedCount === 1 ? '' : 's'} with no label. ${droppedCount === 1 ? 'It' : 'They'} will not be saved. Continue anyway?`)) {
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     setFeedback(null);
@@ -303,7 +320,7 @@ export function ChecklistTemplatesPage() {
             </div>
             <div className="page-stack compact">
               {draft.items.map((item, index) => (
-                <article key={item.key} className="template-item">
+                <article key={item.key} className="template-item" style={item.label.trim().length === 0 ? { border: '1px solid #C0392B' } : undefined}>
                   <div className="template-item-header">
                     <div className="template-item-header-left">
                       <span className="template-item-index">{index + 1}</span>
@@ -325,7 +342,7 @@ export function ChecklistTemplatesPage() {
             <div className="admin-form-actions">
               <Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, items: [...current.items, emptyChecklistItem()] }))}>Add item</Button>
               <Button type="submit" disabled={!canSave}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Create template'}</Button>
-              {editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancel edit</Button> : null}
+              {editingId ? <Button type="button" variant="ghost" onClick={cancelEdit}>Cancel edit</Button> : null}
             </div>
           </form>
         </Card>
@@ -357,6 +374,7 @@ export function AuditTemplatesPage() {
   useDocumentTitle('Audit templates · Alma Admin');
   const [templates, setTemplates] = useState<AuditTemplate[]>([]);
   const [draft, setDraft] = useState<AuditTemplateDraft>(() => emptyAuditDraft());
+  const [originalDraft, setOriginalDraft] = useState<AuditTemplateDraft | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -386,7 +404,9 @@ export function AuditTemplatesPage() {
 
   function editTemplate(template: AuditTemplate) {
     setEditingId(template.id);
-    setDraft(auditToDraft(template));
+    const next = auditToDraft(template);
+    setDraft(next);
+    setOriginalDraft(next);
     setFeedback(null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
@@ -394,10 +414,24 @@ export function AuditTemplatesPage() {
   function resetForm() {
     setEditingId(null);
     setDraft(emptyAuditDraft());
+    setOriginalDraft(null);
+  }
+
+  function cancelEdit() {
+    if (originalDraft && JSON.stringify(draft) !== JSON.stringify(originalDraft)) {
+      if (!window.confirm('Discard your unsaved changes to this template?')) return;
+    }
+    resetForm();
   }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
+    const droppedCount = draft.sections.filter((section) => section.title.trim().length === 0).length;
+    if (droppedCount > 0) {
+      if (!window.confirm(`You have ${droppedCount} section${droppedCount === 1 ? '' : 's'} with no title. ${droppedCount === 1 ? 'It' : 'They'} will not be saved. Continue anyway?`)) {
+        return;
+      }
+    }
     setSaving(true);
     setError(null);
     setFeedback(null);
@@ -467,7 +501,7 @@ export function AuditTemplatesPage() {
             />
             <div className="page-stack compact">
               {draft.sections.map((section, index) => (
-                <article key={section.key} className="template-item">
+                <article key={section.key} className="template-item" style={section.title.trim().length === 0 ? { border: '1px solid #C0392B' } : undefined}>
                   <div className="template-item-header">
                     <div className="template-item-header-left">
                       <span className="template-item-index">{index + 1}</span>
@@ -489,7 +523,7 @@ export function AuditTemplatesPage() {
             <div className="admin-form-actions">
               <Button type="button" variant="secondary" onClick={() => setDraft((current) => ({ ...current, sections: [...current.sections, emptyAuditSection()] }))}>Add section</Button>
               <Button type="submit" disabled={!canSave}>{saving ? 'Saving...' : editingId ? 'Save changes' : 'Create template'}</Button>
-              {editingId ? <Button type="button" variant="ghost" onClick={resetForm}>Cancel edit</Button> : null}
+              {editingId ? <Button type="button" variant="ghost" onClick={cancelEdit}>Cancel edit</Button> : null}
             </div>
           </form>
         </Card>

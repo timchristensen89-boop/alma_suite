@@ -14,18 +14,24 @@ const URLS = {
   home: 'https://alma-home.web.app'
 };
 
+// The APIs moved off Cloud Run to the VPS (Caddy-fronted). All apps now use
+// the absolute API domains instead of same-origin /api rewrites — the
+// Firebase Hosting → Cloud Run rewrites no longer exist.
+const API_URL = 'https://api.almagroup.com.au';
+const STOCK_API_URL = 'https://stock-api.almagroup.com.au';
+
 const APP_CONFIG = {
-  'admin-web': { apiBase: URLS.admin },
-  web: { apiBase: URLS.compliance },
-  'staff-web': { apiBase: URLS.staff },
-  'stock-web': { apiBase: URLS.stock, stockApiBase: URLS.stock },
-  'reports-web': { apiBase: URLS.reports, stockApiBase: `${URLS.reports}/stock-api` },
-  'giftcards-web': { apiBase: URLS.giftcards },
-  'reserve-web': { apiBase: URLS.reserve },
-  'marketing-web': { apiBase: URLS.marketing },
-  comms: { apiBase: URLS.comms },
-  'comms-web': { apiBase: URLS.comms },
-  'home-web': { apiBase: URLS.compliance }
+  'admin-web': { apiBase: API_URL },
+  web: { apiBase: API_URL },
+  'staff-web': { apiBase: API_URL },
+  'stock-web': { apiBase: API_URL, stockApiBase: STOCK_API_URL },
+  'reports-web': { apiBase: API_URL, stockApiBase: STOCK_API_URL },
+  'giftcards-web': { apiBase: API_URL },
+  'reserve-web': { apiBase: API_URL },
+  'marketing-web': { apiBase: API_URL },
+  comms: { apiBase: API_URL },
+  'comms-web': { apiBase: API_URL },
+  'home-web': { apiBase: API_URL }
 };
 
 const CROSS_APP_URLS = {

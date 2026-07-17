@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useMemo, useState } from 'react';
-import { Badge, Button, Card, PageHeader } from '@alma/ui';
+import { Badge, Button, Card, EmptyState, PageHeader } from '@alma/ui';
 import {
   DEFAULT_HANDBOOK_CONTENT,
   resolveHandbookContent,
@@ -168,6 +168,14 @@ export function GuidelinesPage() {
           );
         })}
       </div>
+
+      {handbook.guidelines.length === 0 ? (
+        <EmptyState
+          icon={<IconHandbook size={22} />}
+          title="No guidelines published yet"
+          description="Your venue's staff guidelines will appear here once a manager publishes them. Ask a manager if you need guidance in the meantime."
+        />
+      ) : null}
 
       {Array.from(grouped.entries()).map(([category, items]) => {
         if (items.length === 0) return null;

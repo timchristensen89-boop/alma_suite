@@ -30,13 +30,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -71,13 +64,6 @@
         }
       ],
       "rewrites": [
-        {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
         {
           "source": "**",
           "destination": "/index.html"
@@ -114,13 +100,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -155,13 +134,6 @@
         }
       ],
       "rewrites": [
-        {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-stock-api-v18",
-            "region": "australia-southeast1"
-          }
-        },
         {
           "source": "**",
           "destination": "/index.html"
@@ -198,13 +170,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -239,20 +204,6 @@
         }
       ],
       "rewrites": [
-        {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
-          "source": "/stock-api/**",
-          "run": {
-            "serviceId": "alma-stock-api-v18",
-            "region": "australia-southeast1"
-          }
-        },
         {
           "source": "**",
           "destination": "/index.html"
@@ -289,13 +240,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -330,13 +274,6 @@
         }
       ],
       "rewrites": [
-        {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
         {
           "source": "**",
           "destination": "/index.html"
@@ -373,13 +310,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -415,13 +345,6 @@
       ],
       "rewrites": [
         {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
-        {
           "source": "**",
           "destination": "/index.html"
         }
@@ -456,13 +379,6 @@
         }
       ],
       "rewrites": [
-        {
-          "source": "/api/**",
-          "run": {
-            "serviceId": "alma-compliance-api",
-            "region": "australia-southeast1"
-          }
-        },
         {
           "source": "**",
           "destination": "/index.html"

@@ -24,6 +24,7 @@ import {
   type StockSupplierInvoiceLine
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { recomputeRecipeCostsForItems } from './recipes.service.js';
 
 type JsonRecord = Record<string, unknown>;
 
@@ -33,6 +34,7 @@ const lineItemSelect = {
   unit: true,
   countUnit: true,
   conversionFactor: true,
+  onHand: true,
   latestCostCents: true,
   latestCostAt: true,
   avgCostCents: true
@@ -124,6 +126,26 @@ function normaliseMatchText(value: unknown) {
 
 function unitCostFromPurchaseCost(purchaseCostCents: number, item: Pick<MatchItemRow, 'conversionFactor'>) {
   return Math.round(purchaseCostCents / Math.max(item.conversionFactor || 1, 1));
+}
+
+// Weighted moving average cost: blend the item's existing avg cost with this
+// purchase, weighted by current on-hand vs quantity received. Falls back to the
+// new unit cost when there's no reliable history to blend (no on-hand, no prior
+// avg, or no received qty) — so it's never wilder than plain last-price, but
+// smooths price swings when stock is already on the shelf. countUnits = purchase
+// quantity × conversionFactor (the item's cost/count unit).
+function weightedAverageCostCents(params: {
+  onHand: number | null | undefined;
+  currentAvgCents: number | null | undefined;
+  receivedCountUnits: number;
+  newUnitCostCents: number;
+}): number {
+  const onHand = params.onHand ?? 0;
+  const oldAvg = params.currentAvgCents ?? 0;
+  const received = params.receivedCountUnits;
+  if (onHand <= 0 || oldAvg <= 0 || received <= 0) return params.newUnitCostCents;
+  const blended = (onHand * oldAvg + received * params.newUnitCostCents) / (onHand + received);
+  return Math.round(blended);
 }
 
 function toLookupRecord(value: unknown): JsonRecord {
@@ -517,7 +539,11 @@ function exclusionMatchFields(invoice: NormalisedInvoice): Record<ExclusionField
     .join(' ')
     .toLowerCase();
   return {
-    title: (invoice.sourceFileName ?? '').toLowerCase(),
+    // Xero-synced invoices carry no sourceFileName — their visible "title" is
+    // the invoiceNumber (e.g. "St Alma Square and Other Fees on 13 June 2026").
+    // A rule written against "title" must match that, so fold both in; otherwise
+    // title-based rules silently match an empty string and never fire.
+    title: `${invoice.sourceFileName ?? ''} ${invoice.invoiceNumber ?? ''}`.trim().toLowerCase(),
     body: bodyText,
     supplier: (invoice.supplierName ?? '').toLowerCase(),
     invoiceNumber: (invoice.invoiceNumber ?? '').toLowerCase()
@@ -557,6 +583,29 @@ function findMatchingExclusionRule(
 }
 
 export const invoicesService = {
+  /**
+   * COGS invoice lines for suite prime-cost reporting (reports read #7).
+   * Item-linked lines whose invoice falls in the date range; minimal projection
+   * (the report sums lineAmountCents by invoice venue).
+   */
+  async listCogsLinesForReport(params: { venue?: string | null; from?: string | null; to?: string | null }) {
+    const invoiceDate: { gte?: Date; lt?: Date } = {};
+    if (params.from) invoiceDate.gte = new Date(params.from);
+    if (params.to) invoiceDate.lt = new Date(params.to);
+    const hasRange = params.from != null || params.to != null;
+    const rows = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        itemId: { not: null },
+        invoice: {
+          ...(hasRange ? { invoiceDate } : {}),
+          ...(params.venue ? { venue: params.venue } : {})
+        }
+      },
+      select: { lineAmountCents: true, invoice: { select: { venue: true } } }
+    });
+    return rows.map((r) => ({ venue: r.invoice.venue, lineAmountCents: r.lineAmountCents }));
+  },
+
   async listExclusionRules(): Promise<InvoiceExclusionRule[]> {
     const rows = await prisma.invoiceExclusionRule.findMany({ orderBy: { createdAt: 'asc' } });
     return rows.map((row) => ({
@@ -1123,7 +1172,12 @@ export const invoicesService = {
         data: {
           latestCostCents: existing.unitAmountCents,
           latestCostAt: new Date(),
-          avgCostCents: unitCostFromPurchaseCost(existing.unitAmountCents, matchedItem)
+          avgCostCents: weightedAverageCostCents({
+            onHand: matchedItem.onHand,
+            currentAvgCents: matchedItem.avgCostCents,
+            receivedCountUnits: existing.quantity * Math.max(matchedItem.conversionFactor || 1, 1),
+            newUnitCostCents: unitCostFromPurchaseCost(existing.unitAmountCents, matchedItem)
+          })
         }
       });
       return tx.supplierInvoiceLine.update({
@@ -1132,6 +1186,9 @@ export const invoicesService = {
         include: { item: { select: lineItemSelect } }
       });
     });
+
+    // Keep recipe costs (and theoretical COGS) current now this item's cost moved.
+    await recomputeRecipeCostsForItems([matchedItemId]).catch(() => undefined);
 
     return toLinePayload(updated);
   },
@@ -1169,12 +1226,19 @@ export const invoicesService = {
             data: {
               latestCostCents: line.unitAmountCents,
               latestCostAt: new Date(),
-              avgCostCents: unitCostFromPurchaseCost(line.unitAmountCents, line.item!)
+              avgCostCents: weightedAverageCostCents({
+                onHand: line.item!.onHand,
+                currentAvgCents: line.item!.avgCostCents,
+                receivedCountUnits: line.quantity * Math.max(line.item!.conversionFactor || 1, 1),
+                newUnitCostCents: unitCostFromPurchaseCost(line.unitAmountCents, line.item!)
+              })
             }
           });
           await tx.supplierInvoiceLine.update({ where: { id: line.id }, data: { costAppliedAt: new Date() } });
         }
       });
+      // Recompute recipe costs for every item whose cost just changed.
+      await recomputeRecipeCostsForItems(eligible.map((line) => line.itemId!)).catch(() => undefined);
     }
 
     return {

@@ -401,6 +401,22 @@ export function ItemForm({
         />
       </div>
 
+      {(() => {
+        const cu = (draft.countUnit.trim() || draft.unit.trim() || 'unit').toLowerCase();
+        const hasMeasure = draft.measurePerCountUnit.trim() !== '' && Number(draft.measurePerCountUnit) > 0;
+        const mass = ['mg', 'g', 'kg', 'gram', 'grams', 'kilogram', 'kilo'];
+        const vol = ['ml', 'cl', 'dl', 'l', 'litre', 'liter'];
+        let usable: string;
+        if (mass.includes(cu) || (hasMeasure && draft.measureUnit === 'g')) usable = 'Unit, kg, g';
+        else if (vol.includes(cu) || (hasMeasure && draft.measureUnit === 'ml')) usable = 'Unit, L, mL';
+        else usable = `Unit only (1 = one whole ${countUnit}) — add a “measure per ${countUnit}” above to also cost g/mL recipe lines`;
+        return (
+          <p className="subtle" style={{ marginTop: -4 }}>
+            Recipe lines can cost this item in: <strong>{usable}</strong>.
+          </p>
+        );
+      })()}
+
       <div className="form-grid two">
         <Input
           label="Par level"

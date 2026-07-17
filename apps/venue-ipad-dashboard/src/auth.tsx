@@ -226,16 +226,19 @@ export function StaffPinPrompt({
   staffList,
   onClose,
   onSubmit,
+  onRefresh,
   intent
 }: {
   staffList: DeviceStaffOption[];
   onClose: () => void;
   onSubmit: (staffProfileId: string, pin: string) => Promise<void>;
+  onRefresh?: () => Promise<void>;
   intent?: string;
 }) {
   const [selected, setSelected] = useState<DeviceStaffOption | null>(null);
   const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
 
   const canSubmit = Boolean(selected?.hasPin) && pin.length >= 4 && pin.length <= 6 && !busy;
@@ -306,10 +309,29 @@ export function StaffPinPrompt({
         {!selected ? (
           <div className="pin-staff-grid">
             {staffList.length === 0 ? (
-              <p className="pin-empty">
-                No staff have set a Device PIN yet. Each staff member sets their PIN in Alma
-                Staff on their phone.
-              </p>
+              <div className="pin-empty">
+                <p>
+                  No staff have set a Device PIN yet. Each staff member sets their PIN in Alma
+                  Staff on their phone — this usually takes 1–2 minutes to sync.
+                </p>
+                {onRefresh ? (
+                  <button
+                    type="button"
+                    className="button secondary"
+                    disabled={refreshing}
+                    onClick={async () => {
+                      setRefreshing(true);
+                      try {
+                        await onRefresh();
+                      } finally {
+                        setRefreshing(false);
+                      }
+                    }}
+                  >
+                    {refreshing ? 'Refreshing…' : 'Refresh staff list'}
+                  </button>
+                ) : null}
+              </div>
             ) : (
               staffList.map((s) => (
                 <button

@@ -299,6 +299,11 @@ export function SquareMenuMappingPage() {
                       label: `${recipe.title}${recipe.venue ? ` · ${recipe.venue}` : ''} · ${recipeCost(recipe.estimatedCost)}`
                     }))}
                   />
+                  {selectedRecipes[mapping.id] ? (
+                    <small className="subtle">
+                      Saving sets this recipe&apos;s Alma sale price to the Square price ({money(mapping.priceMoneyAmount)}).
+                    </small>
+                  ) : null}
                 </div>
                 <div className="field">
                   <span>Stock item fallback</span>
@@ -312,8 +317,8 @@ export function SquareMenuMappingPage() {
                 </div>
                 <div className="admin-row-actions square-menu-actions">
                   <Button type="button" onClick={() => updateMapping(mapping)} disabled={savingId === mapping.id}>Save mapping</Button>
-                  <Button type="button" variant="secondary" onClick={() => updateMapping(mapping, { status: 'IGNORED' })} disabled={savingId === mapping.id}>Ignore</Button>
-                  <Button type="button" variant="ghost" onClick={() => updateMapping(mapping, { clear: true })} disabled={savingId === mapping.id}>Clear</Button>
+                  <Button type="button" variant="secondary" onClick={() => { if (window.confirm('Ignore this Square item? It will be excluded from sales mapping until you un-ignore it.')) void updateMapping(mapping, { status: 'IGNORED' }); }} disabled={savingId === mapping.id}>Ignore</Button>
+                  <Button type="button" variant="ghost" onClick={() => { if (window.confirm('Clear this mapping? The recipe/stock link and notes will be removed.')) void updateMapping(mapping, { clear: true }); }} disabled={savingId === mapping.id}>Clear</Button>
                 </div>
               </div>
             </Card>

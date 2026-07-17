@@ -12,13 +12,20 @@ type PreviewLine = {
   unit: string | null;
   valueCents: number | null;
   costCents: number | null;
+  suspectReason: string | null;
 };
 
 type PreviewSession = { date: string; venue: string; lines: PreviewLine[] };
 
 type PreviewResult = {
   sessions: PreviewSession[];
-  summary: { totalRows: number; matchedItems: number; unmatchedItems: number; sessionCount: number };
+  summary: {
+    totalRows: number;
+    matchedItems: number;
+    unmatchedItems: number;
+    sessionCount: number;
+    flaggedValueLines: number;
+  };
 };
 
 type CommitResult = { sessionsCreated: number; linesCreated: number; linesSkipped: number };
@@ -29,6 +36,10 @@ function money(cents: number) {
 
 function sessionValueCents(session: PreviewSession) {
   return session.lines.reduce((sum, line) => sum + (line.valueCents ?? 0), 0);
+}
+
+function suspectLines(session: PreviewSession) {
+  return session.lines.filter((line) => line.suspectReason);
 }
 
 export function LoadedStocktakeImportCard({ onImported }: { onImported?: () => void }) {
@@ -149,17 +160,47 @@ export function LoadedStocktakeImportCard({ onImported }: { onImported?: () => v
               <span><strong>{preview.summary.totalRows}</strong> rows</span>
               <span><strong>{preview.summary.matchedItems}</strong> matched</span>
               <span className={preview.summary.unmatchedItems > 0 ? 'is-warn' : ''}><strong>{preview.summary.unmatchedItems}</strong> unmatched</span>
+              {preview.summary.flaggedValueLines > 0 ? (
+                <span className="is-warn"><strong>{preview.summary.flaggedValueLines}</strong> to check</span>
+              ) : null}
             </div>
 
+            {preview.summary.flaggedValueLines > 0 ? (
+              <div className="loaded-import-flags">
+                <strong>Check these line values before importing</strong>
+                <p className="loaded-import-hint">
+                  These values are unusually large and are often a unit or typo error in the export. Fix them in the
+                  source CSV and re-preview, or import as-is if they're genuinely correct.
+                </p>
+                <ul className="loaded-import-flag-list">
+                  {preview.sessions.flatMap((session) =>
+                    suspectLines(session).map((line) => (
+                      <li key={`${session.date}|${session.venue}|${line.csvRow}`}>
+                        <span className="loaded-import-flag-item">
+                          {line.itemName || `Row ${line.csvRow}`}
+                          <span className="loaded-import-flag-where"> · {session.venue} · {session.date}</span>
+                        </span>
+                        <span className="loaded-import-flag-reason">{line.suspectReason}</span>
+                      </li>
+                    ))
+                  )}
+                </ul>
+              </div>
+            ) : null}
+
             <ul className="loaded-import-sessions">
-              {preview.sessions.map((session) => (
-                <li key={`${session.date}|${session.venue}`}>
-                  <span className="loaded-import-session-name">{session.venue} · {session.date}</span>
-                  <span className="loaded-import-session-meta">
-                    {session.lines.length} lines · {money(sessionValueCents(session))}
-                  </span>
-                </li>
-              ))}
+              {preview.sessions.map((session) => {
+                const flagged = suspectLines(session).length;
+                return (
+                  <li key={`${session.date}|${session.venue}`}>
+                    <span className="loaded-import-session-name">{session.venue} · {session.date}</span>
+                    <span className="loaded-import-session-meta">
+                      {session.lines.length} lines · {money(sessionValueCents(session))}
+                      {flagged > 0 ? <span className="is-warn"> · {flagged} to check</span> : null}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
 
             <label className="loaded-import-toggle">
