@@ -348,6 +348,97 @@ export function InvoicesPage() {
     }
   }
 
+  // Scan a PDF/photo of an invoice with Claude vision, then run it through the
+  // same import → match flow as a pasted invoice.
+  async function importScannedInvoice(file: File | null | undefined) {
+    const target = 'invoice-ocr';
+    if (!file) return;
+    if (!canManage) {
+      showFeedback(target, 'Manager access is required to import invoices.', 'error');
+      return;
+    }
+    const okType = ['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type);
+    if (!okType) {
+      showFeedback(target, 'Attach a PDF or image (PNG/JPG) of the invoice.', 'error');
+      return;
+    }
+    if (file.size > 18 * 1024 * 1024) {
+      showFeedback(target, 'File is too large — keep scans under 18 MB.', 'error');
+      return;
+    }
+
+    setBusyTarget(target);
+    setFeedbackTarget(target);
+    setFeedbackMessage(null);
+    try {
+      const fileBase64 = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(new Error('Could not read the file'));
+        reader.onload = () => {
+          const result = String(reader.result ?? '');
+          const comma = result.indexOf(',');
+          resolve(comma >= 0 ? result.slice(comma + 1) : result);
+        };
+        reader.readAsDataURL(file);
+      });
+
+      const ripped = await api<StockInvoiceRipResult>('/api/invoices/ocr', {
+        method: 'POST',
+        body: JSON.stringify({ fileBase64, mimeType: file.type, sourceFileName: sourceFileName || file.name, venue })
+      });
+      if (!ripped.invoices?.length) throw new Error('No invoice could be read from that file.');
+
+      const confirmed = confirmDangerousAction({
+        title: 'Import scanned invoice?',
+        message:
+          'Claude read this invoice from the file. Review the item matches after import — this does not change stock balances.',
+        confirmationText: 'IMPORT INVOICES'
+      });
+      if (!confirmed) return;
+
+      const result = await api<StockInvoiceImportResult>('/api/invoices/import', {
+        method: 'POST',
+        body: JSON.stringify({
+          source: 'RIPPED',
+          venue,
+          sourceFileName: sourceFileName || file.name,
+          sourceFileType: file.type,
+          sourceMetadata: { ripWarnings: ripped.warnings, ocrScanned: true },
+          confirmationText: 'IMPORT INVOICES',
+          invoices: ripped.invoices
+        })
+      });
+
+      setPayload((current) => mergeInvoices(current, result.invoices));
+      setSelectedInvoiceId(result.invoices[0]?.id ?? selectedInvoiceId);
+      setSummary((current) =>
+        current
+          ? {
+              ...current,
+              totalInvoices: current.totalInvoices + result.createdCount,
+              needsReviewLines: current.needsReviewLines + result.needsReviewLineCount,
+              matchedLines: current.matchedLines + result.matchedLineCount,
+              importedThisWeek: current.importedThisWeek + result.createdCount
+            }
+          : current
+      );
+      const warn = ripped.warnings.length ? ` ${ripped.warnings.join(' ')}` : '';
+      showFeedback(
+        target,
+        `Scanned & imported ${result.importedCount} invoice with ${result.matchedLineCount} matched line${result.matchedLineCount === 1 ? '' : 's'}.${warn}`,
+        result.needsReviewLineCount || ripped.warnings.length ? 'info' : 'success'
+      );
+    } catch (err) {
+      showFeedback(
+        target,
+        err instanceof ApiError || err instanceof Error ? err.message : 'Could not scan the invoice',
+        'error'
+      );
+    } finally {
+      setBusyTarget(null);
+    }
+  }
+
   async function saveLineMatch(line: StockSupplierInvoiceLine) {
     const target = `match:${line.id}`;
     if (!canManage) {
@@ -798,6 +889,26 @@ export function InvoicesPage() {
               </Button>
               <ActionFeedback
                 message={feedbackTarget === 'invoice-import' ? feedbackMessage : null}
+                tone={feedbackTone}
+              />
+            </div>
+            <div className="stock-invoice-import-action">
+              <label className={`stock-ocr-upload${!canManage || busyTarget === 'invoice-ocr' ? ' is-disabled' : ''}`}>
+                <input
+                  type="file"
+                  accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
+                  disabled={!canManage || busyTarget === 'invoice-ocr'}
+                  onChange={(event) => {
+                    const file = event.currentTarget.files?.[0];
+                    event.currentTarget.value = '';
+                    void importScannedInvoice(file);
+                  }}
+                />
+                {busyTarget === 'invoice-ocr' ? 'Scanning…' : '📷 Scan invoice (PDF / photo)'}
+              </label>
+              <span className="subtle">Reads a scanned or photographed invoice with Claude and imports it.</span>
+              <ActionFeedback
+                message={feedbackTarget === 'invoice-ocr' ? feedbackMessage : null}
                 tone={feedbackTone}
               />
             </div>

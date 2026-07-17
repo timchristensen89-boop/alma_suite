@@ -24,7 +24,7 @@ const app = express();
 app.use(cors({ origin: env.corsOrigin, credentials: true }));
 // 6mb body limit so the Loaded CSV imports (item catalogue + historical
 // stocktakes) fit. A medium-size venue's full catalogue is well under 1mb.
-app.use(express.json({ limit: '6mb' }));
+app.use(express.json({ limit: '20mb' })); // headroom for base64 invoice scans (OCR)
 app.use(cookieParser());
 app.use(authMiddleware);
 

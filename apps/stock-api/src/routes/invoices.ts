@@ -60,6 +60,15 @@ invoicesRouter.post('/import', async (req, res, next) => {
   }
 });
 
+invoicesRouter.post('/ocr', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.ocrInvoiceImage(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Exclusion rules — defined before "/:id" so the path isn't swallowed.
 invoicesRouter.get('/exclusion-rules', async (_req, res, next) => {
   try {

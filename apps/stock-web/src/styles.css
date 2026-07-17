@@ -1558,6 +1558,32 @@ tbody tr.row-detail:hover {
   text-align: center;
 }
 
+/* "Scan invoice (OCR)" upload — a styled label wrapping a hidden file input. */
+.stock-ocr-upload {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+}
+.stock-ocr-upload:hover {
+  border-color: var(--color-accent, #684a4a);
+}
+.stock-ocr-upload input {
+  display: none;
+}
+.stock-ocr-upload.is-disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 /* Inline link from a stocktake line / top-value row to the item's edit form. */
 .stocktake-item-link {
   border: 0;

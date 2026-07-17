@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import Anthropic from '@anthropic-ai/sdk';
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
@@ -10,6 +11,7 @@ import {
   stockInvoiceMarkNeedsReviewInputSchema,
   stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
+  stockInvoiceOcrInputSchema,
   type InvoiceExclusionRule,
   type StockInvoiceApplyAllCostsResult,
   type StockInvoiceAssignee,
@@ -917,6 +919,133 @@ export const invoicesService = {
           sourceMetadata: {
             rippedFromText: true,
             originalLineCount: lines.length
+          }
+        }
+      ]
+    };
+  },
+
+  // Read a scanned/photographed invoice (PDF or image) with Claude vision and
+  // return the same shape as ripInvoiceText, so the existing import → match flow
+  // handles it unchanged. Gated on ANTHROPIC_API_KEY — no key, clear error.
+  async ocrInvoiceImage(input: unknown): Promise<StockInvoiceRipResult> {
+    const data = stockInvoiceOcrInputSchema.parse(input);
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) {
+      throw new HttpError(
+        503,
+        'Invoice OCR is not configured. Set ANTHROPIC_API_KEY on the stock-api to enable it.'
+      );
+    }
+
+    const client = new Anthropic({ apiKey });
+    const source =
+      data.mimeType === 'application/pdf'
+        ? ({ type: 'base64', media_type: 'application/pdf', data: data.fileBase64 } as const)
+        : ({ type: 'base64', media_type: data.mimeType, data: data.fileBase64 } as const);
+    const fileBlock =
+      data.mimeType === 'application/pdf'
+        ? ({ type: 'document', source } as const)
+        : ({ type: 'image', source } as const);
+
+    const schema = {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        supplierName: { type: 'string' },
+        invoiceNumber: { type: 'string' },
+        invoiceDate: { type: 'string' },
+        total: { type: 'number' },
+        lineItems: {
+          type: 'array',
+          items: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              description: { type: 'string' },
+              quantity: { type: 'number' },
+              unitAmount: { type: 'number' },
+              lineAmount: { type: 'number' }
+            },
+            required: ['description', 'quantity', 'unitAmount', 'lineAmount']
+          }
+        }
+      },
+      required: ['supplierName', 'invoiceNumber', 'invoiceDate', 'total', 'lineItems']
+    };
+
+    let message;
+    try {
+      message = await client.messages.create({
+        model: 'claude-opus-4-8',
+        max_tokens: 8000,
+        // Constrain the response to our invoice schema so parsing can't drift.
+        output_config: { format: { type: 'json_schema', schema } },
+        messages: [
+          {
+            role: 'user',
+            content: [
+              fileBlock,
+              {
+                type: 'text',
+                text:
+                  'Extract this supplier invoice. Return the supplier name, invoice number, ' +
+                  'invoice date (ISO YYYY-MM-DD if you can), the invoice total, and every line ' +
+                  'item with its description, quantity, unit price (ex-GST unit amount), and line ' +
+                  'total. Use the printed unit price for unitAmount and the printed line total for ' +
+                  'lineAmount. If a value is genuinely absent, use 0. Do not invent lines.'
+              }
+            ]
+          }
+        ]
+        // output_config is a valid Messages API field; SDK typings lag it.
+      } as unknown as Anthropic.MessageCreateParamsNonStreaming);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : 'unknown error';
+      throw new HttpError(502, `Invoice OCR failed: ${detail}`);
+    }
+
+    const textBlock = message.content.find((block) => block.type === 'text');
+    const raw = textBlock && 'text' in textBlock ? textBlock.text : '';
+    let parsed: {
+      supplierName?: string;
+      invoiceNumber?: string;
+      invoiceDate?: string;
+      total?: number;
+      lineItems?: Array<{ description?: string; quantity?: number; unitAmount?: number; lineAmount?: number }>;
+    };
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new HttpError(502, 'Invoice OCR returned an unreadable result. Try a clearer scan.');
+    }
+
+    const warnings: string[] = [];
+    const supplierName = optionalText(parsed.supplierName) ?? 'Unknown supplier';
+    const invoiceNumber = optionalText(parsed.invoiceNumber);
+    const lineItems = (parsed.lineItems ?? [])
+      .map((line) => ({
+        Description: optionalText(line.description) ?? '',
+        Quantity: Number(line.quantity ?? 0) || 0,
+        UnitAmount: Number(line.unitAmount ?? 0) || 0,
+        LineAmount: Number(line.lineAmount ?? 0) || 0
+      }))
+      .filter((line) => line.Description.length > 0);
+    if (!invoiceNumber) warnings.push('Could not read an invoice number — check before importing.');
+    if (lineItems.length === 0) warnings.push('No line items were read — the scan may be too low quality.');
+
+    return {
+      warnings,
+      invoices: [
+        {
+          Contact: { Name: supplierName },
+          InvoiceNumber: invoiceNumber ?? buildHash([supplierName, String(parsed.total ?? ''), data.sourceFileName]),
+          Date: optionalText(parsed.invoiceDate) ?? undefined,
+          Total: typeof parsed.total === 'number' ? parsed.total : undefined,
+          LineItems: lineItems,
+          sourceMetadata: {
+            ocrScanned: true,
+            sourceFileName: data.sourceFileName ?? null
           }
         }
       ]

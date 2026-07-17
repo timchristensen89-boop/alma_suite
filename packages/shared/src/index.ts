@@ -5832,6 +5832,16 @@ export const stockInvoiceRipInputSchema = z.object({
   sourceFileName: z.string().optional().or(z.literal(''))
 });
 
+// OCR: a scanned/photographed invoice (PDF or image) sent as base64 for a
+// vision model to read into the same shape ripInvoiceText produces.
+export const stockInvoiceOcrInputSchema = z.object({
+  fileBase64: z.string().min(1, 'Attach an invoice file'),
+  mimeType: z.enum(['application/pdf', 'image/png', 'image/jpeg', 'image/webp', 'image/gif']),
+  sourceFileName: z.string().optional().or(z.literal('')),
+  venue: z.string().optional().or(z.literal(''))
+});
+export type StockInvoiceOcrInput = z.infer<typeof stockInvoiceOcrInputSchema>;
+
 export const stockInvoiceLineRematchInputSchema = z.object({
   itemId: z.string().min(1, 'Choose a stock item').or(z.literal('')),
   notes: z.string().optional().or(z.literal(''))
