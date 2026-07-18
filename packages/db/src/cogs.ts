@@ -52,9 +52,31 @@ const venueWhere = (venue: string | null | undefined) => (venue ? { venue } : {}
 // Total value of the latest finalised stocktake on or before `at` — the
 // canonical "stock on hand" valuation. Returns null when no stocktake brackets
 // the boundary, which is what drives the purchases-only fallback above.
+//
+// Stock is counted PER VENUE, so the all-venues valuation (venue == null) must
+// SUM the latest count of each venue, not take the single most-recent stocktake
+// (which belongs to just one venue and silently ignores the others). Untagged
+// (venue-null) counts are excluded from the all-venues sum: a whole-business
+// count would double-count against the per-venue counts it overlaps.
 export async function stockValueAtCents(venue: string | null, at: Date): Promise<number | null> {
+  if (venue == null) {
+    const venueRows = await prisma.stocktake.findMany({
+      where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, venue: { not: null } },
+      distinct: ['venue'],
+      select: { venue: true }
+    });
+    const values = await Promise.all(venueRows.map((row) => stockValueForVenueAtCents(row.venue as string, at)));
+    const present = values.filter((value): value is number => value != null);
+    if (present.length === 0) return null;
+    return present.reduce((sum, value) => sum + value, 0);
+  }
+  return stockValueForVenueAtCents(venue, at);
+}
+
+// Value of a single venue's latest finalised stocktake on or before `at`.
+async function stockValueForVenueAtCents(venue: string, at: Date): Promise<number | null> {
   const stocktake = await prisma.stocktake.findFirst({
-    where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, ...venueWhere(venue) },
+    where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, venue },
     orderBy: { countedAt: 'desc' },
     select: { id: true }
   });
