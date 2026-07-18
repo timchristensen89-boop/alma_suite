@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
-import type { StockCategory, StockItem, StockItemsPayload, VenueStockItem } from '@alma/shared';
+import type { StockCategory, StockItem, StockItemsPayload, StockItemMergeResult, VenueStockItem } from '@alma/shared';
 import { Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard } from '@alma/ui';
 import { IconItems } from '../lib/icons';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
@@ -237,6 +237,10 @@ export function ItemsPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkBusy, setBulkBusy] = useState(false);
+  const [mergeOpen, setMergeOpen] = useState(false);
+  const [mergeParentId, setMergeParentId] = useState('');
+  const [merging, setMerging] = useState(false);
+  const [mergeMessage, setMergeMessage] = useState<string | null>(null);
   const [exportingItems, setExportingItems] = useState(false);
   const [bulkCategory, setBulkCategory] = useState('');
   const [bulkStatus, setBulkStatus] = useState<'' | 'ACTIVE' | 'ARCHIVED'>('');
@@ -577,6 +581,50 @@ export function ItemsPage() {
     }
   }
 
+  async function mergeSelectedItems() {
+    if (!canManage) {
+      setError('Manager access is required to merge items.');
+      return;
+    }
+    const ids = Array.from(selectedIds);
+    if (ids.length < 2) {
+      setError('Select two or more items to merge.');
+      return;
+    }
+    const parentId = mergeParentId && ids.includes(mergeParentId) ? mergeParentId : ids[0]!;
+    const parent = selectedItems.find((item) => item.id === parentId);
+    const duplicateIds = ids.filter((id) => id !== parentId);
+    const confirmed = confirmDangerousAction({
+      title: `Merge ${duplicateIds.length} item${duplicateIds.length === 1 ? '' : 's'} into "${parent?.name ?? 'the parent'}"?`,
+      message:
+        'All recipe, invoice, stocktake, movement, delivery, purchase-order and Square history from the other items moves onto this one. Per-venue stock is combined — a venue that only the merged items had becomes stocked on the kept item too. The merged items are archived. This is not easily reversible.',
+      confirmationText: 'MERGE ITEMS'
+    });
+    if (!confirmed) return;
+
+    setMerging(true);
+    try {
+      const result = await api<StockItemMergeResult>('/api/items/merge', {
+        method: 'POST',
+        body: JSON.stringify({ parentId, duplicateIds, confirmationText: 'MERGE ITEMS' })
+      });
+      setSelectedIds(new Set());
+      setMergeOpen(false);
+      setMergeParentId('');
+      setError(null);
+      if (form.mode === 'edit' && duplicateIds.includes(form.item.id)) setForm({ mode: 'closed' });
+      setReloadKey((value) => value + 1);
+      setMergeMessage(
+        `Merged ${result.mergedCount} item${result.mergedCount === 1 ? '' : 's'} into "${parent?.name ?? 'the parent'}".` +
+          (result.venuesAdded.length ? ` Now stocked at: ${result.venuesAdded.join(', ')}.` : '')
+      );
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not merge items');
+    } finally {
+      setMerging(false);
+    }
+  }
+
   const cardTitle = form.mode === 'edit' ? `Editing ${form.item.name}` : 'Items';
   const cardSubtitle =
     form.mode === 'edit'
@@ -874,11 +922,23 @@ export function ItemsPage() {
                       variant="secondary"
                       size="sm"
                       onClick={() => setBulkOpen((value) => !value)}
-                      disabled={deleting || bulkBusy || !canManage}
+                      disabled={deleting || bulkBusy || merging || !canManage}
                       title={canManage ? undefined : 'Manager access required'}
                     >
                       {bulkOpen ? 'Close bulk edit' : 'Bulk edit'}
                     </Button>
+                    {selectedIds.size >= 2 ? (
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => { setMergeParentId((current) => current || Array.from(selectedIds)[0] || ''); setMergeOpen((value) => !value); }}
+                        disabled={deleting || bulkBusy || merging || !canManage}
+                        title={canManage ? 'Merge the selected items into one' : 'Manager access required'}
+                      >
+                        {mergeOpen ? 'Close merge' : `Merge ${selectedIds.size}`}
+                      </Button>
+                    ) : null}
                     <Button
                       type="button"
                       variant="danger"
@@ -903,6 +963,47 @@ export function ItemsPage() {
                 )}
               </span>
             </div>
+            {mergeMessage ? (
+              <div className="stock-merge-message">
+                <span>{mergeMessage}</span>
+                <button type="button" onClick={() => setMergeMessage(null)}>Dismiss</button>
+              </div>
+            ) : null}
+            {mergeOpen && selectedIds.size >= 2 ? (
+              <div className="stock-bulk-edit-panel">
+                <span className="stock-bulk-edit-title">
+                  Merge {selectedIds.size} items into one — pick the item to keep. The others' history and per-venue
+                  stock move onto it (a venue only they stocked becomes stocked on the kept item too), then they're archived.
+                </span>
+                <div className="stock-merge-list">
+                  {selectedItems.map((item) => (
+                    <label key={item.id} className={`stock-merge-option${mergeParentId === item.id ? ' is-parent' : ''}`}>
+                      <input
+                        type="radio"
+                        name="merge-parent"
+                        checked={mergeParentId === item.id}
+                        onChange={() => setMergeParentId(item.id)}
+                      />
+                      <span className="stock-merge-name">{item.name}</span>
+                      <span className="subtle">{item.category?.name ?? 'Uncategorised'} · {item.unit}</span>
+                    </label>
+                  ))}
+                </div>
+                <div className="stock-merge-actions">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    disabled={merging || !canManage}
+                    onClick={() => void mergeSelectedItems()}
+                  >
+                    {merging
+                      ? 'Merging…'
+                      : `Keep “${selectedItems.find((item) => item.id === (mergeParentId || Array.from(selectedIds)[0]))?.name ?? '—'}”, merge the rest`}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
             {bulkOpen && selectedIds.size > 0 ? (
               <div className="stock-bulk-edit-panel">
                 <span className="stock-bulk-edit-title">Bulk edit {selectedIds.size} item{selectedIds.size === 1 ? '' : 's'} — only the fields you set are changed.</span>

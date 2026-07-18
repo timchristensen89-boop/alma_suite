@@ -135,6 +135,15 @@ itemsRouter.post('/bulk', async (req, res, next) => {
   }
 });
 
+itemsRouter.post('/merge', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await itemsService.mergeItems(req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.patch('/:id', async (req, res, next) => {
   try {
     requireStockManager(req.user);

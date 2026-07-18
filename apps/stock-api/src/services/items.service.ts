@@ -4,6 +4,8 @@ import {
   stockCategoryCreateInputSchema,
   stockCategoryUpdateInputSchema,
   stockItemBulkDeleteInputSchema,
+  stockItemMergeInputSchema,
+  type StockItemMergeResult,
   stockItemBulkUpdateInputSchema,
   stockItemCreateInputSchema,
   stockItemUpdateInputSchema,
@@ -968,6 +970,78 @@ export const itemsService = {
     });
 
     return { deleted: result.count };
+  },
+
+  // Merge duplicate items into a chosen parent. Every reference (recipes,
+  // invoices, stocktakes, movements, deliveries, wastage, transfers, POs, Square
+  // mappings, reorder notices) is repointed onto the parent. Per-venue stock is
+  // summed where the parent already stocks that venue, otherwise moved onto the
+  // parent — so a duplicate that only existed at St Alma makes the parent stocked
+  // at St Alma too (one item, both venues). Duplicates are archived (reversible).
+  async mergeItems(input: unknown): Promise<StockItemMergeResult> {
+    const { parentId, duplicateIds } = stockItemMergeInputSchema.parse(input);
+    const dupIds = Array.from(new Set(duplicateIds)).filter((id) => id !== parentId);
+    if (dupIds.length === 0) throw new HttpError(400, 'Pick at least one different item to merge into the parent.');
+
+    const parent = await prisma.stockItem.findUnique({ where: { id: parentId }, include: { venueStock: true } });
+    if (!parent) throw new HttpError(404, 'Parent item not found.');
+    const dups = await prisma.stockItem.findMany({ where: { id: { in: dupIds } }, include: { venueStock: true } });
+    if (dups.length !== dupIds.length) throw new HttpError(404, 'One or more items to merge could not be found.');
+
+    const venuesAdded = new Set<string>();
+
+    await prisma.$transaction(async (tx) => {
+      // 1. Repoint every history/reference relation onto the parent.
+      await tx.recipeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.stocktakeLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.inventoryMovement.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.supplierInvoiceLine.updateMany({ where: { itemId: { in: dupIds } }, data: { itemId: parentId } });
+      await tx.stockTransfer.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockWastageRecord.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockDeliveryCheckItem.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.stockReorderNotice.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.squareMenuRecipeMapping.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+      await tx.purchaseOrderLine.updateMany({ where: { stockItemId: { in: dupIds } }, data: { stockItemId: parentId } });
+
+      // 2. Supplier price list is unique on (supplierId, stockItemId) — the parent
+      //    keeps its own prices; drop the duplicates' rows (re-derived from invoices).
+      await tx.supplierPriceListItem.deleteMany({ where: { stockItemId: { in: dupIds } } });
+
+      // 3. Venue stock — sum where the parent already has the venue, else move it
+      //    onto the parent (unioning venue availability). A running map keeps
+      //    multi-duplicate merges onto the same new venue from colliding.
+      const parentVenues = new Map(parent.venueStock.map((row) => [row.venue, { id: row.id, onHand: row.onHand ?? 0, active: row.active }]));
+      for (const dup of dups) {
+        for (const vs of dup.venueStock) {
+          const existing = parentVenues.get(vs.venue);
+          if (existing) {
+            existing.onHand += vs.onHand ?? 0;
+            existing.active = existing.active || vs.active;
+            await tx.venueStockItem.update({ where: { id: existing.id }, data: { onHand: existing.onHand, active: existing.active } });
+            await tx.venueStockItem.delete({ where: { id: vs.id } });
+          } else {
+            await tx.venueStockItem.update({ where: { id: vs.id }, data: { stockItemId: parentId } });
+            parentVenues.set(vs.venue, { id: vs.id, onHand: vs.onHand ?? 0, active: vs.active });
+            venuesAdded.add(vs.venue);
+          }
+        }
+      }
+
+      // 4. Recompute the parent's rolled-up on-hand from its venue rows.
+      const rows = await tx.venueStockItem.findMany({ where: { stockItemId: parentId }, select: { onHand: true } });
+      await tx.stockItem.update({
+        where: { id: parentId },
+        data: { onHand: rows.reduce((sum, row) => sum + (row.onHand ?? 0), 0) }
+      });
+
+      // 5. Archive the now-empty duplicates (reversible — no references remain).
+      await tx.stockItem.updateMany({
+        where: { id: { in: dupIds } },
+        data: { status: 'ARCHIVED', onHand: 0, notes: `Merged into ${parent.name} (${parentId})` }
+      });
+    }, { maxWait: 15_000, timeout: 60_000 });
+
+    return { parentId, mergedCount: dups.length, venuesAdded: Array.from(venuesAdded) };
   },
 
   // Data quality report for the Loaded replacement catalogue check

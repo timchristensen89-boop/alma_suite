@@ -5524,6 +5524,25 @@ export const stockItemBulkDeleteInputSchema = z.object({
   })
 });
 
+// Merge duplicate items into one parent. All history (recipes, invoices,
+// stocktakes, movements, POs…) repoints to the parent; per-venue stock is
+// summed where the parent already stocks that venue and otherwise moved onto
+// the parent (so one item ends up stocked at both venues); the duplicates are
+// archived.
+export const stockItemMergeInputSchema = z.object({
+  parentId: z.string().min(1, 'Pick the item to keep'),
+  duplicateIds: z.array(z.string().min(1)).min(1, 'Pick at least one item to merge in'),
+  confirmationText: z.literal('MERGE ITEMS', {
+    errorMap: () => ({ message: 'Type MERGE ITEMS to confirm the merge' })
+  })
+});
+export type StockItemMergeInput = z.infer<typeof stockItemMergeInputSchema>;
+export type StockItemMergeResult = {
+  parentId: string;
+  mergedCount: number;
+  venuesAdded: string[];
+};
+
 // Bulk-edit selected items. Each field is optional — only provided fields are
 // applied. `categoryId`/`countArea` null clears the value; `venue`+`venueActive`
 // toggles the items' active state at that venue.
