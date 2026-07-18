@@ -641,14 +641,27 @@ export function StocktakePage() {
     if (!confirmed) return;
     setBulkBusy('approve');
     setError(null);
-    const results = await Promise.allSettled(
-      targets.map((stocktake) => api(`/api/stocktake/${stocktake.id}/approve`, { method: 'POST' }))
-    );
-    const failed = results.filter((r) => r.status === 'rejected').length;
+    // Apply sequentially, NOT in parallel: each approval is a ledger transaction
+    // that reads then overwrites item on-hand, so two running at once on shared
+    // items deadlock and exhaust the DB connection pool (which reads as the whole
+    // section hanging). One at a time is also correct — each count sees the
+    // previous one's applied balances.
+    let failed = 0;
+    let lastError: string | null = null;
+    for (const stocktake of targets) {
+      try {
+        await api(`/api/stocktake/${stocktake.id}/approve`, { method: 'POST' });
+      } catch (err) {
+        failed += 1;
+        lastError = err instanceof ApiError ? err.message : 'Could not approve stocktake';
+      }
+    }
     setSelectedIds(new Set());
     setBulkBusy(null);
     await load();
-    if (failed) setError(`Approved ${results.length - failed} of ${results.length}; ${failed} could not be approved.`);
+    if (failed) {
+      setError(`Approved ${targets.length - failed} of ${targets.length}; ${failed} could not be approved${lastError ? ` (${lastError})` : ''}.`);
+    }
   }
 
   const cardTitle =
@@ -763,7 +776,7 @@ export function StocktakePage() {
                         type="button"
                         variant="secondary"
                         size="sm"
-                        disabled={applyingId === stocktake.id || !canManageReview}
+                        disabled={applyingId !== null || bulkBusy === 'approve' || !canManageReview}
                         title={canManageReview ? undefined : 'Manager access required'}
                         onClick={() => void applyStocktake(stocktake)}
                       >
@@ -972,7 +985,7 @@ export function StocktakePage() {
                                     type="button"
                                     variant="secondary"
                                     size="sm"
-                                    disabled={applyingId === stocktake.id || !canManageReview}
+                                    disabled={applyingId !== null || bulkBusy === 'approve' || !canManageReview}
                                     title={canManageReview ? undefined : 'Manager access required'}
                                     onClick={(event) => {
                                       event.stopPropagation();
