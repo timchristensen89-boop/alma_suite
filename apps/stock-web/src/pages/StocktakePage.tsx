@@ -10,6 +10,9 @@ import type {
   Stocktake,
   StocktakeLineInput,
   StocktakeStatus,
+  StocktakeTemplate,
+  StocktakeTemplatesPayload,
+  StocktakeTemplateResolved,
   StocktakeWithLines,
   StocktakesPayload,
   StocktakesSummary
@@ -258,6 +261,29 @@ function emptyDraft(items: StockItem[], blind = true): StocktakeDraft {
     status: 'IN_PROGRESS',
     notes: '',
     lines: items.filter((item) => item.status === 'ACTIVE').map((item) => emptyLine(item, blind))
+  };
+}
+
+// Seed a draft from a template's resolved item ids (walking order: area/category
+// then name), carrying the template's name, venue and blind default onto the count.
+function draftFromTemplate(
+  items: StockItem[],
+  resolvedItemIds: string[],
+  template: StocktakeTemplate,
+  blind: boolean
+): StocktakeDraft {
+  const order = new Map(resolvedItemIds.map((id, index) => [id, index] as const));
+  const chosen = items
+    .filter((item) => item.status === 'ACTIVE' && order.has(item.id))
+    .sort((a, b) => (order.get(a.id) ?? 0) - (order.get(b.id) ?? 0));
+  return {
+    name: `${template.name} ${new Date().toLocaleDateString()}`,
+    venue: template.venue ?? '',
+    template: template.name,
+    countedAt: formatDateTimeInput(new Date().toISOString()),
+    status: 'IN_PROGRESS',
+    notes: '',
+    lines: chosen.map((item) => emptyLine(item, blind))
   };
 }
 
@@ -1052,6 +1078,44 @@ function StocktakeForm({
   // defaults on for new counts. Walk-by-area orders entry by physical location.
   const [blind, setBlind] = useState(mode === 'create');
   const [walkByArea, setWalkByArea] = useState(false);
+  // Start-from-template (new counts only): pick a saved template to seed the
+  // draft with just that template's resolved items, in walking order.
+  const [templates, setTemplates] = useState<StocktakeTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState('');
+  const [templateBusy, setTemplateBusy] = useState(false);
+  useEffect(() => {
+    if (mode !== 'create') return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const payload = await api<StocktakeTemplatesPayload>('/api/stocktake-templates');
+        if (!cancelled) setTemplates(payload.templates.filter((template) => template.active));
+      } catch {
+        /* templates are optional — a blank list just means "Full count only" */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [mode]);
+
+  async function applyTemplate(templateId: string) {
+    setSelectedTemplateId(templateId);
+    if (!templateId) {
+      setDraft(emptyDraft(items, blind));
+      return;
+    }
+    setTemplateBusy(true);
+    try {
+      const resolved = await api<StocktakeTemplateResolved>(`/api/stocktake-templates/${templateId}/resolve`);
+      setBlind(resolved.template.blindDefault);
+      setDraft(draftFromTemplate(items, resolved.items.map((item) => item.id), resolved.template, resolved.template.blindDefault));
+    } catch {
+      /* leave the current draft as-is on failure */
+    } finally {
+      setTemplateBusy(false);
+    }
+  }
 
   const countedCount = draft.lines.filter((line) => line.countedQty.trim() !== '').length;
   const progressPct = draft.lines.length ? Math.round((countedCount / draft.lines.length) * 100) : 0;
@@ -1162,6 +1226,24 @@ function StocktakeForm({
         void submit(draft.status, 'draft');
       }}
     >
+      {mode === 'create' && templates.length > 0 ? (
+        <div className="stocktake-template-start">
+          <Select
+            label="Start from template"
+            value={selectedTemplateId}
+            disabled={templateBusy}
+            onChange={(event) => void applyTemplate(event.currentTarget.value)}
+            options={[
+              { label: 'Full count — all active items', value: '' },
+              ...templates.map((template) => ({
+                label: `${template.name}${template.venue ? ` · ${template.venue}` : ''} (≈ ${template.resolvedItemCount} items)`,
+                value: template.id
+              }))
+            ]}
+          />
+          <span className="subtle">{templateBusy ? 'Loading template…' : 'Loads just that template’s items, in walking order.'}</span>
+        </div>
+      ) : null}
       <div className="form-grid three">
         <Input label="Name" required value={draft.name} onChange={(event) => update('name', event.currentTarget.value)} />
         <Input label="Venue" value={draft.venue} onChange={(event) => update('venue', event.currentTarget.value)} placeholder="Freshie, Avalon…" />

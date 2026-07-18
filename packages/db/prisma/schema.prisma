@@ -2654,6 +2654,29 @@ model Stocktake {
 }
 
 // @domain: stock | home: suite
+// A reusable stocktake template ("count sheet"). Item membership is a BASE
+// selection (any item whose countArea is in countAreas OR whose category is in
+// categoryIds — empty base = all active items) with per-template tweaks
+// (includeItemIds added, excludeItemIds removed). Resolved to a concrete item
+// list when a count is started from it.
+model StocktakeTemplate {
+  id             String   @id @default(cuid())
+  name           String
+  venue          String?
+  blindDefault   Boolean  @default(true)
+  countAreas     String[] @default([])
+  categoryIds    String[] @default([])
+  includeItemIds String[] @default([])
+  excludeItemIds String[] @default([])
+  active         Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([venue])
+  @@index([active])
+}
+
+// @domain: stock | home: suite
 model StocktakeLine {
   id              String              @id @default(cuid())
   legacyId        String?             @unique

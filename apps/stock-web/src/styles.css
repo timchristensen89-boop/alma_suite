@@ -1509,6 +1509,19 @@ tbody tr.row-detail:hover {
   background: var(--color-surface-muted);
 }
 
+/* Start-from-template picker at the top of a new count. */
+.stocktake-template-start {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+  max-width: 520px;
+}
+
 /* Live per-line cost readout while counting — spots a wrong unit before submit. */
 .stocktake-count-cost {
   display: flex;
@@ -2922,4 +2935,46 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
   .po-receive-row {
     grid-template-columns: 1fr;
   }
+}
+
+/* Stocktake templates — reusable count sheets. */
+.template-field {
+  display: grid;
+  gap: 8px;
+}
+.template-checks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 18px;
+}
+.template-checks .check-row {
+  margin-top: 0;
+}
+.template-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.template-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-muted, var(--color-surface));
+  color: var(--color-text);
+  font-size: 12.5px;
+}
+.template-chip-remove {
+  border: none;
+  background: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-text-muted);
+  font-size: 15px;
+  line-height: 1;
+}
+.template-chip-remove:hover {
+  color: var(--color-text);
 }

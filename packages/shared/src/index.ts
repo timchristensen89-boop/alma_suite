@@ -6234,6 +6234,51 @@ export type Stocktake = {
 
 export type StocktakeWithLines = Stocktake & { lines: StocktakeLine[] };
 
+// Reusable stocktake template ("count sheet"). Base membership = items whose
+// countArea ∈ countAreas OR category ∈ categoryIds (empty base = all active
+// items), then + includeItemIds − excludeItemIds. resolvedItemCount is the
+// live count of active items the template currently resolves to.
+export type StocktakeTemplate = {
+  id: string;
+  name: string;
+  venue: string | null;
+  blindDefault: boolean;
+  countAreas: string[];
+  categoryIds: string[];
+  includeItemIds: string[];
+  excludeItemIds: string[];
+  active: boolean;
+  createdAt: string;
+  updatedAt: string;
+  resolvedItemCount: number;
+};
+
+export type StocktakeTemplatesPayload = {
+  templates: StocktakeTemplate[];
+  // Pickers: the distinct count areas + categories available to build a template.
+  countAreas: string[];
+  categories: Array<{ id: string; name: string }>;
+  venues: string[];
+};
+
+// The resolved concrete item list for starting a count from a template.
+export type StocktakeTemplateResolved = {
+  template: StocktakeTemplate;
+  items: Array<{ id: string; name: string; unit: string; countUnit: string | null; countArea: string | null; categoryName: string | null }>;
+};
+
+export const stocktakeTemplateInputSchema = z.object({
+  name: z.string().min(1, 'Template name is required'),
+  venue: z.string().optional().or(z.literal('')),
+  blindDefault: z.boolean().optional(),
+  countAreas: z.array(z.string()).optional(),
+  categoryIds: z.array(z.string()).optional(),
+  includeItemIds: z.array(z.string()).optional(),
+  excludeItemIds: z.array(z.string()).optional(),
+  active: z.boolean().optional()
+});
+export type StocktakeTemplateInput = z.infer<typeof stocktakeTemplateInputSchema>;
+
 export type StocktakesPayload = {
   stocktakes: Stocktake[];
 };

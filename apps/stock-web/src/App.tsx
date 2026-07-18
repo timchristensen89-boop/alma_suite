@@ -6,6 +6,7 @@ import { DashboardPage } from './pages/DashboardPage';
 import { ItemsPage } from './pages/ItemsPage';
 import { ConfigHealthPage } from './pages/ConfigHealthPage';
 import { StocktakePage } from './pages/StocktakePage';
+import { StocktakeTemplatesPage } from './pages/StocktakeTemplatesPage';
 import { TransfersPage } from './pages/TransfersPage';
 import { SuppliersPage } from './pages/SuppliersPage';
 import { InvoicesPage } from './pages/InvoicesPage';
@@ -40,6 +41,7 @@ const ITEMS_TABS: HubTab[] = [
 ];
 const STOCK_COUNT_TABS: HubTab[] = [
   { to: '/stocktake', label: 'Count' },
+  { to: '/stocktake-templates', label: 'Templates' },
   { to: '/wastage', label: 'Wastage' },
   { to: '/staff-usage', label: 'Staff usage' },
   { to: '/transfers', label: 'Transfers' }
@@ -233,6 +235,7 @@ function StockAppShell() {
 
         {/* Stock count hub */}
         <Route path="/stocktake" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakePage /></HubLayout>} />
+        <Route path="/stocktake-templates" element={<HubLayout tabs={STOCK_COUNT_TABS}><StocktakeTemplatesPage /></HubLayout>} />
         <Route path="/wastage" element={<HubLayout tabs={STOCK_COUNT_TABS}><WastagePage /></HubLayout>} />
         <Route path="/staff-usage" element={<HubLayout tabs={STOCK_COUNT_TABS}><StaffUsagePage /></HubLayout>} />
         <Route path="/transfers" element={<HubLayout tabs={STOCK_COUNT_TABS}><TransfersPage /></HubLayout>} />
