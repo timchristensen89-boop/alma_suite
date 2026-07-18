@@ -73,16 +73,26 @@ export async function stockValueAtCents(venue: string | null, at: Date): Promise
   return stockValueForVenueAtCents(venue, at);
 }
 
-// Value of a single venue's latest finalised stocktake on or before `at`.
+// Value of a single venue's latest finalised stock count on or before `at`.
+//
+// A venue's count is often SPLIT across sessions (e.g. a "Drinks" stocktake and
+// a "Food" stocktake imported from Loaded with the same countedAt). Taking only
+// the single most-recent stocktake would return just one session and drastically
+// undercount the venue. So: find the latest count date for the venue, then sum
+// every stocktake the venue recorded on that same date.
 async function stockValueForVenueAtCents(venue: string, at: Date): Promise<number | null> {
-  const stocktake = await prisma.stocktake.findFirst({
+  const latest = await prisma.stocktake.findFirst({
     where: { countedAt: { lte: at }, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, venue },
     orderBy: { countedAt: 'desc' },
+    select: { countedAt: true }
+  });
+  if (!latest) return null;
+  const sameDayStocktakes = await prisma.stocktake.findMany({
+    where: { countedAt: latest.countedAt, status: { in: ['SUBMITTED', 'REVIEWED', 'LOCKED'] }, venue },
     select: { id: true }
   });
-  if (!stocktake) return null;
   const agg = await prisma.stocktakeLine.aggregate({
-    where: { stocktakeId: stocktake.id },
+    where: { stocktakeId: { in: sameDayStocktakes.map((stocktake) => stocktake.id) } },
     _sum: { stockValueCents: true }
   });
   return agg._sum.stockValueCents ?? 0;
