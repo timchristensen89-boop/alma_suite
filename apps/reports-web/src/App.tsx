@@ -525,7 +525,13 @@ function RecapCharts({ recap }: { recap: MonthlyRecapPayload }) {
 
 function MonthlyRecapSection({ venues }: { venues: string[] }) {
   const [month, setMonth] = useState(() => {
+    // Default to the LAST COMPLETE month, not the in-progress current month.
+    // A partial month has only part-month sales/wages and no closing stocktake,
+    // so its COGS collapses to just that month's purchases (a misleading ~2%).
+    // The ‹ › controls still let you step to the current month if wanted.
     const d = new Date();
+    d.setDate(1);
+    d.setMonth(d.getMonth() - 1);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
   });
   const [venue, setVenue] = useState('');
