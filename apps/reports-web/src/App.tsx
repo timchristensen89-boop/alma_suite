@@ -2380,7 +2380,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       color: CHART_COLORS.positive
                     }
                   ]}
-                  centerValue={totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(0)}%` : '—'}
+                  centerValue={overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(0)}%` : '—'}
                   centerLabel="prime cost"
                   format={(v) => formatCurrency(v)}
                   emptyLabel="No prime cost data yet."
