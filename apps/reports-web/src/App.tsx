@@ -2160,6 +2160,35 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         }
       : null);
 
+    // ── Weekly overview COGS: use THEORETICAL food cost ──────────────────────
+    // Actual stock-based COGS collapses to ~0 on a weekly window (stocktakes are
+    // monthly), which zeroes the By-venue COGS % and makes prime cost = wages
+    // only. Show theoretical food cost consistently: group total from
+    // menu-profitability, split across venues by sales share, folded into prime
+    // cost. The dedicated Prime Cost / Monthly Recap reports keep actual COGS.
+    const pctOf = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
+    const overviewTotalSalesCents = totalsRow?.salesCents ?? venueRows.reduce((s, v) => s + v.salesCents, 0);
+    const overviewGroupCogsCents = hasTheoretical ? overviewCogsCents : (totalsRow?.cogsCents ?? 0);
+    const overviewVenueRows = venueRows.map((row) => {
+      const cogsCents = hasTheoretical
+        ? (overviewTotalSalesCents > 0 ? Math.round(overviewGroupCogsCents * (row.salesCents / overviewTotalSalesCents)) : 0)
+        : row.cogsCents;
+      return {
+        ...row,
+        cogsCents,
+        cogsPercent: pctOf(cogsCents, row.salesCents),
+        primeCostPercent: pctOf(row.wageCents + cogsCents, row.salesCents)
+      };
+    });
+    const overviewTotalsRow = totalsRow
+      ? {
+          ...totalsRow,
+          cogsCents: overviewGroupCogsCents,
+          cogsPercent: pctOf(overviewGroupCogsCents, overviewTotalSalesCents),
+          primeCostPercent: pctOf((totalsRow.wageCents ?? 0) + overviewGroupCogsCents, overviewTotalSalesCents)
+        }
+      : totalsRow;
+
     return (
       <SectionShell
         id="overview"
@@ -2288,7 +2317,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <span>COGS %</span>
                   <span>Prime cost</span>
                 </div>
-                {venueRows.map((row) => (
+                {overviewVenueRows.map((row) => (
                   <div className="alma-venue-row" key={row.venue}>
                     <span className="alma-venue-name">{row.venue}</span>
                     <span className="alma-venue-num">{formatCurrency(row.salesCents)}</span>
@@ -2311,16 +2340,16 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <span className="alma-venue-name">Group total</span>
                   <span className="alma-venue-num">{formatCurrency(totalsRow.salesCents)}</span>
                   <span className="alma-venue-num">{formatPercent(totalsRow.wagePercent)}</span>
-                  <span className="alma-venue-num">{formatPercent(totalsRow.cogsPercent)}</span>
+                  <span className="alma-venue-num">{formatPercent(overviewTotalsRow?.cogsPercent)}</span>
                   <span>
-                    <AlmaPill kind={totalsRow.primeCostPercent == null
+                    <AlmaPill kind={overviewTotalsRow?.primeCostPercent == null
                       ? 'neutral'
-                      : totalsRow.primeCostPercent >= 65
+                      : overviewTotalsRow.primeCostPercent >= 65
                         ? 'danger'
-                        : totalsRow.primeCostPercent >= 55
+                        : overviewTotalsRow.primeCostPercent >= 55
                           ? 'warn'
                           : 'success'}>
-                      {totalsRow.primeCostPercent != null ? `${totalsRow.primeCostPercent.toFixed(1)}%` : '—'}
+                      {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
                     </AlmaPill>
                   </span>
                 </div>
@@ -2343,11 +2372,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <Donut
                   size={130}
                   segments={[
-                    { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
+                    { label: 'COGS', value: overviewGroupCogsCents, color: CHART_COLORS.danger },
                     { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent },
                     {
                       label: 'Gross profit',
-                      value: Math.max(0, totalsRow.salesCents - (primeTotals?.cogsCents ?? 0) - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
+                      value: Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)),
                       color: CHART_COLORS.positive
                     }
                   ]}
@@ -2394,12 +2423,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="prime-cost-hero-main">
               <span className="prime-cost-hero-eyebrow">Prime cost · {weekWindowLabel}</span>
               <span className="prime-cost-hero-value">
-                {currentPct != null ? `${currentPct.toFixed(1)}%` : '—'}
+                {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
               </span>
               <span className="prime-cost-hero-split">
                 Wages {formatPercent(primeTotals?.wagePercent)}
                 <span aria-hidden="true">·</span>
-                COGS {formatPercent(primeTotals?.cogsPercent)}
+                COGS {formatPercent(overviewTotalsRow?.cogsPercent)}
                 <span aria-hidden="true">·</span>
                 Sales {formatCurrency(primeTotals?.salesCents ?? 0)}
               </span>
