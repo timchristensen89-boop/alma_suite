@@ -2071,8 +2071,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const actualCogsCentsForRange = primeTotals?.cogsCents ?? 0;
     const theoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
     const theoreticalFoodCostPct = data.menuProfitability?.totals.foodCostPercent ?? null;
-    const overviewCogsIsActual = actualCogsCentsForRange > 0;
-    const overviewCogsCents = overviewCogsIsActual ? actualCogsCentsForRange : (theoreticalCogsCents ?? 0);
+    // The weekly snapshot is NOT bracketed by two stocktakes (counts are monthly),
+    // so weekly "actual" COGS collapses to just this week's purchases — a stray
+    // mid-week invoice reads as a ~0% food cost. Prefer THEORETICAL (recipe × Square
+    // units sold), which is live and meaningful weekly; fall back to actual only when
+    // theoretical isn't available (Square items not yet mapped to recipes). The
+    // canonical actual COGS stays on the Monthly Recap / Prime Cost reports.
+    const hasTheoretical = theoreticalCogsCents != null && theoreticalCogsCents > 0;
+    const overviewCogsIsActual = !hasTheoretical && actualCogsCentsForRange > 0;
+    const overviewCogsCents = hasTheoretical ? theoreticalCogsCents : actualCogsCentsForRange;
     const itemSalesQuantity = data.itemSales?.totalQuantity ?? 0;
     const coversForRange = itemSalesQuantity > 0 ? itemSalesQuantity : (data.overview?.reserve.coversToday ?? 0);
     const noShowsForRange = data.overview?.reserve.noShows ?? 0;
