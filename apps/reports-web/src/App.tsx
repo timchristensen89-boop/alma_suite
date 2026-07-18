@@ -2168,10 +2168,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     // cost. The dedicated Prime Cost / Monthly Recap reports keep actual COGS.
     const pctOf = (n: number, d: number): number | null => (d > 0 ? (n / d) * 100 : null);
     const overviewTotalSalesCents = totalsRow?.salesCents ?? venueRows.reduce((s, v) => s + v.salesCents, 0);
+    // Each venue's OWN theoretical COGS, summed from that venue's menu-profitability
+    // rows (recipe cost × its own units sold) — so venues show their real, differing
+    // food cost, not a uniform group average. Falls back to a sales-share split only
+    // for a venue with no rows of its own.
+    const theoreticalCogsByVenue = new Map<string, number>();
+    for (const row of data.menuProfitability?.rows ?? []) {
+      if (row.estimatedCogsCents == null) continue;
+      theoreticalCogsByVenue.set(row.venue, (theoreticalCogsByVenue.get(row.venue) ?? 0) + row.estimatedCogsCents);
+    }
     const overviewGroupCogsCents = hasTheoretical ? overviewCogsCents : (totalsRow?.cogsCents ?? 0);
     const overviewVenueRows = venueRows.map((row) => {
       const cogsCents = hasTheoretical
-        ? (overviewTotalSalesCents > 0 ? Math.round(overviewGroupCogsCents * (row.salesCents / overviewTotalSalesCents)) : 0)
+        ? (theoreticalCogsByVenue.get(row.venue)
+            ?? (overviewTotalSalesCents > 0 ? Math.round(overviewGroupCogsCents * (row.salesCents / overviewTotalSalesCents)) : 0))
         : row.cogsCents;
       return {
         ...row,
