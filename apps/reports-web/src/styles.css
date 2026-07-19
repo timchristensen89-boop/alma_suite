@@ -854,6 +854,54 @@
 }
 
 /* ── Prime cost hero — editorial paper-cream chrome ──────────── */
+/* Plain-English lead line at the top of a report — the one-sentence "what this
+   tells you / where you stand" read before the numbers. */
+.report-lead {
+  margin: 0 0 18px;
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-text, #2C2A26);
+}
+.report-lead strong { font-weight: 600; }
+
+/* Cost triangle — the three headline cost ratios for the week, each read as a
+   plain traffic light against its target. */
+.cost-triangle {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+.cost-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 16px 18px;
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  border-left-width: 4px;
+  border-radius: 14px;
+  background: #F8F6F1;
+}
+.cost-tile.is-positive { border-left-color: #4F7A57; }
+.cost-tile.is-warning { border-left-color: #C99A3F; }
+.cost-tile.is-danger { border-left-color: #9A3A2E; }
+.cost-tile.is-neutral { border-left-color: rgba(var(--ink-forest-rgb), 0.2); }
+.cost-tile-label { font-size: 12.5px; font-weight: 600; color: var(--color-text, #2C2A26); letter-spacing: 0.01em; }
+.cost-tile-label em { font-style: normal; font-weight: 500; color: var(--color-text-muted, #6B655C); }
+.cost-tile-value { font-family: var(--font-display, 'Cormorant Garamond', serif); font-size: 2.4rem; line-height: 1; }
+.cost-tile.is-positive .cost-tile-value { color: #3F6A47; }
+.cost-tile.is-warning .cost-tile-value { color: #A67A24; }
+.cost-tile.is-danger .cost-tile-value { color: #9A3A2E; }
+.cost-tile-target { font-size: 12px; font-weight: 600; }
+.cost-tile.is-positive .cost-tile-target { color: #4F7A57; }
+.cost-tile.is-warning .cost-tile-target { color: #A67A24; }
+.cost-tile.is-danger .cost-tile-target { color: #9A3A2E; }
+.cost-tile.is-neutral .cost-tile-target { color: var(--color-text-muted, #6B655C); }
+.cost-tile-hint { font-size: 11.5px; color: var(--color-text-muted, #6B655C); }
+@media (max-width: 720px) {
+  .cost-triangle { grid-template-columns: 1fr; }
+}
+html[data-theme='dark'] .cost-tile { background: rgba(255, 255, 255, 0.03); }
+
 .prime-cost-hero {
   display: grid;
   grid-template-columns: minmax(0, 1.1fr) minmax(0, 1.3fr);

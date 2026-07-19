@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
@@ -199,95 +199,116 @@ type ReportNavItem = {
   title: string;
   description: string;
   icon: JSX.Element;
+  // 'core' = the daily P&L reports an operator lives in; 'more' = secondary
+  // reports tucked behind a group so they don't crowd the nav.
+  group: 'core' | 'more';
 };
+
+// Plain-restaurant cost targets (% of sales) used for the at-a-glance tone on
+// the "This Week" cost triangle. Prime can be overridden per-venue by admins.
+const COST_TARGETS = { food: 30, labour: 30, prime: 60 };
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 const REPORTS_FORECAST_STORAGE_KEY = 'alma.reports.forecast.v1';
 const REPORTS_MENU_FILTERS_STORAGE_KEY = 'alma.reports.menu-filters.v1';
 const REPORT_NAV_ITEMS: ReportNavItem[] = [
+  // ── Core: the daily P&L an operator actually runs the restaurant on ──
   {
     id: 'overview',
-    label: 'Overview',
-    title: 'Reports Overview',
-    description: 'High-level attention signals across the suite.',
-    icon: <ChartIcon />
+    label: 'This Week',
+    title: 'This Week',
+    description: 'Your week at a glance: takings, the cost triangle, covers, and what needs attention.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'sales',
     label: 'Sales',
-    title: 'Sales Reports',
-    description: 'Venue sales, trends, and sales forecasting for Alma Avalon and St Alma.',
-    icon: <ChartIcon />
+    title: 'Sales',
+    description: 'Takings by venue and day, plus forecast vs actual for Alma Avalon and St Alma.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'staff',
-    label: 'Staff',
-    title: 'Staff Reports',
-    description: 'Active staff, leave, payroll readiness, and recent management events.',
-    icon: <ChartIcon />
-  },
-  {
-    id: 'compliance',
-    label: 'Compliance',
-    title: 'Compliance Reports',
-    description: 'Outstanding compliance records, expiring items, and venue attention signals.',
-    icon: <DocumentIcon />
+    label: 'Labour',
+    title: 'Labour (wages)',
+    description: 'Wage cost vs sales by venue, payroll readiness, tips, and staff attention.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'stock',
-    label: 'Stock',
-    title: 'Stock Reports',
-    description: 'Catalogue health, venue stock status, low stock, and stocktake review signals.',
-    icon: <DocumentIcon />
+    label: 'Food & Bev Cost',
+    title: 'Food & Bev Cost (COGS)',
+    description: 'What you spent to sell — food cost %, purchases, wastage, and stock value.',
+    icon: <DocumentIcon />,
+    group: 'core'
   },
   {
     id: 'menu-engineering',
-    label: 'Menu Engineering',
-    title: 'Menu Engineering',
-    description: 'Readiness for item sales, recipe costs, COGS, margin, and menu action decisions.',
-    icon: <ChartIcon />
+    label: 'Menu',
+    title: 'Menu',
+    description: 'Which dishes make money and which lose it — sales, cost, and margin per item.',
+    icon: <ChartIcon />,
+    group: 'core'
   },
   {
     id: 'monthly-recap',
     label: 'Monthly Recap',
     title: 'Monthly Recap',
-    description: 'Month vs last year + FY-to-date: sales, wages, COGS, prime cost and recommendations. Export or email.',
-    icon: <ChartIcon />
+    description: 'The month closed out: sales, labour, food cost and total cost vs target and last year.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  // ── More: secondary reports, kept out of the daily flow ──
+  {
+    id: 'compliance',
+    label: 'Compliance',
+    title: 'Compliance Reports',
+    description: 'Outstanding compliance records, expiring items, and venue attention signals.',
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'reserve',
     label: 'Reserve',
     title: 'Reserve Reports',
     description: 'Bookings, covers, cancellations, no-shows, and guest mix.',
-    icon: <ChartIcon />
+    icon: <ChartIcon />,
+    group: 'more'
   },
   {
     id: 'marketing',
     label: 'Marketing',
     title: 'Marketing Reports',
     description: 'Guest CRM reach, consent, campaigns, and simulated sends.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'content',
     label: 'Content',
     title: 'Content Reports',
     description: 'Scheduled posts, approvals, simulated publishing, and social setup readiness.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'gift-cards',
     label: 'Gift Cards',
     title: 'Gift Card Reports',
     description: 'Pending gift card orders, value, fulfilment, and payment readiness.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   },
   {
     id: 'exports',
     label: 'Exports',
     title: 'Exports',
     description: 'Read-only CSV downloads and weekly summary exports.',
-    icon: <DocumentIcon />
+    icon: <DocumentIcon />,
+    group: 'more'
   }
 ];
 
@@ -987,7 +1008,24 @@ function SidebarNav({
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Reports</li>
-        {REPORT_NAV_ITEMS.map((item) => (
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'core').map((item) => (
+          <li key={item.id}>
+            <a
+              href={reportHash(item.id)}
+              className={item.id === activeSection ? 'active' : undefined}
+              onClick={(event) => {
+                event.preventDefault();
+                onSectionChange(item.id);
+                setMobileMenuOpen(false);
+              }}
+            >
+              <span className="sidebar-nav-icon">{item.icon}</span>
+              <span>{item.label}</span>
+            </a>
+          </li>
+        ))}
+        <li className="sidebar-nav-section">More</li>
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'more').map((item) => (
           <li key={item.id}>
             <a
               href={reportHash(item.id)}
@@ -1982,7 +2020,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     id: ReportSectionId;
     title: string;
     description: string;
-    children: JSX.Element;
+    children: ReactNode;
     action?: JSX.Element;
   }) {
     const label = id === 'exports' || id === 'menu-engineering' ? weekWindowLabel : overviewWindowLabel;
@@ -2226,11 +2264,16 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
               if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
+              // Prime over ~120% of sales is impossible in a trading week — the
+              // sales import is short. Flag that, not a phantom cost blowout.
+              if (primeTotals?.primeCostPercent != null && primeTotals.primeCostPercent > 120) {
+                return 'Sales look incomplete for this week — check the Square import before trusting the cost %.';
+              }
               if (variancePct != null && variancePct > 5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
+                return `Total operating cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
               }
               if (variancePct != null && variancePct < -5) {
-                return `Prime cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
+                return `Total operating cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
               }
               return `Signed in as ${user.firstName}`;
             })();
@@ -2314,6 +2357,73 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             />
           </div>
 
+          {/* Cost triangle — the three numbers a restaurant lives or dies on,
+              each read against its target as a plain traffic light. */}
+          {(() => {
+            const primeTarget = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+            })();
+            const costTone = (pct: number | null, target: number): 'positive' | 'warning' | 'danger' | 'neutral' =>
+              pct == null ? 'neutral' : pct <= target ? 'positive' : pct <= target + 5 ? 'warning' : 'danger';
+            const tiles = [
+              {
+                label: 'Food & bev cost',
+                term: 'COGS',
+                pct: overviewTotalsRow?.cogsPercent ?? null,
+                target: COST_TARGETS.food,
+                hint: hasTheoretical ? 'Estimated from recipes × units sold' : 'From purchases this week'
+              },
+              {
+                label: 'Labour',
+                term: 'wages',
+                pct: primeTotals?.wagePercent ?? null,
+                target: COST_TARGETS.labour,
+                hint: 'Wages ÷ sales'
+              },
+              {
+                label: 'Total operating cost',
+                term: 'prime',
+                pct: overviewTotalsRow?.primeCostPercent ?? null,
+                target: primeTarget,
+                hint: 'Food + labour ÷ sales'
+              }
+            ];
+            // A cost ratio above ~120% of sales can't happen in a trading
+            // restaurant — it means sales didn't fully import for the window.
+            // Say that plainly instead of flashing a false red alarm.
+            const IMPLAUSIBLE = 120;
+            return (
+              <div className="cost-triangle" aria-label="Cost triangle for the week">
+                {tiles.map((tile) => {
+                  const incomplete = tile.pct != null && tile.pct > IMPLAUSIBLE;
+                  const tone = incomplete ? 'neutral' : costTone(tile.pct, tile.target);
+                  const over = tile.pct != null && tile.pct > tile.target;
+                  return (
+                    <div key={tile.label} className={`cost-tile is-${tone}`}>
+                      <span className="cost-tile-label">
+                        {tile.label} <em>({tile.term})</em>
+                      </span>
+                      <span className="cost-tile-value">
+                        {tile.pct == null ? '—' : incomplete ? '— ' : `${tile.pct.toFixed(1)}%`}
+                      </span>
+                      <span className="cost-tile-target">
+                        {tile.pct == null
+                          ? `Aim ≤ ${tile.target.toFixed(0)}% of sales`
+                          : incomplete
+                            ? 'Sales data looks incomplete — check the Square import'
+                            : over
+                              ? `${(tile.pct - tile.target).toFixed(1)} pts over the ${tile.target.toFixed(0)}% target`
+                              : `On target — aim ≤ ${tile.target.toFixed(0)}%`}
+                      </span>
+                      <span className="cost-tile-hint">{tile.hint}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })()}
+
           {/* By venue — editorial panel using primeCost venues data */}
           {venueRows.length > 0 && totalsRow ? (
             <EditorialPanel
@@ -2329,9 +2439,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 <div className="alma-venue-table-head">
                   <span>Venue</span>
                   <span>Sales</span>
-                  <span>Wages %</span>
-                  <span>COGS %</span>
-                  <span>Prime cost</span>
+                  <span>Labour %</span>
+                  <span>Food %</span>
+                  <span>Total cost</span>
                 </div>
                 {overviewVenueRows.map((row) => (
                   <div className="alma-venue-row" key={row.venue}>
@@ -2437,14 +2547,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             aria-label="Open prime cost detail"
           >
             <div className="prime-cost-hero-main">
-              <span className="prime-cost-hero-eyebrow">Prime cost · {weekWindowLabel}</span>
+              <span className="prime-cost-hero-eyebrow">Total operating cost (prime) · {weekWindowLabel}</span>
               <span className="prime-cost-hero-value">
                 {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
               </span>
               <span className="prime-cost-hero-split">
-                Wages {formatPercent(primeTotals?.wagePercent)}
+                Labour {formatPercent(primeTotals?.wagePercent)}
                 <span aria-hidden="true">·</span>
-                COGS {formatPercent(overviewTotalsRow?.cogsPercent)}
+                Food &amp; bev {formatPercent(overviewTotalsRow?.cogsPercent)}
                 <span aria-hidden="true">·</span>
                 Sales {formatCurrency(primeTotals?.salesCents ?? 0)}
               </span>
@@ -2494,12 +2604,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
               <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : 'ex-GST net · Square Net Sales'} loading={loading} />
             </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open wage reports">
-              <StatCard label="Wages" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open labour reports">
+              <StatCard label="Labour (wages)" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
             </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open COGS reports">
+            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open food cost reports">
               <StatCard
-                label="COGS"
+                label="Food &amp; bev cost (COGS)"
                 value={formatCurrency(overviewCogsCents)}
                 hint={overviewCogsIsActual
                   ? `${formatPercent(primeTotals?.cogsPercent)} of sales · actual`
@@ -3042,9 +3152,23 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="compliance"
-        title="Compliance Reports"
-        description="Outstanding compliance, expired records, expiring records, and venue attention"
+        title="Compliance"
+        description="Staff records, licences, and food-safety temperature logs — what's current and what needs attention"
       >
+        {(() => {
+          const attention =
+            (data.overview?.compliance.expiredStaffRecords ?? 0) +
+            (data.overview?.compliance.pendingStaffRecords ?? 0) +
+            (data.summary?.issues?.critical ?? 0) +
+            (data.overview?.compliance.missingTemperatureReadingsToday ?? 0);
+          return (
+            <p className="report-lead">
+              {attention > 0
+                ? <>Have a look — <strong>{attention} item{attention === 1 ? '' : 's'}</strong> need attention: expired or pending staff records, critical issues, or missing temperature logs today.</>
+                : <>All clear — staff records, licences and food-safety temperature logs are current.</>}
+            </p>
+          );
+        })()}
         <div className="report-detail-grid">
           <div className="report-panel">
             <h4>Record attention</h4>
@@ -3083,23 +3207,23 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="COGS" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
-            <StatCard label="Prime cost" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales`} loading={loading} />
+            <StatCard label="Food &amp; bev cost (COGS)" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
+            <StatCard label="Total operating cost (prime)" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales · food + labour`} loading={loading} />
             <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
             <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
           </div>
 
           <div className="report-chart-grid">
             <div className="report-chart-panel">
-              <h5 className="report-chart-title">Prime cost composition</h5>
+              <h5 className="report-chart-title">Where each sales dollar goes</h5>
               <Donut
                 size={130}
                 segments={[
-                  { label: 'COGS', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
-                  { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent }
+                  { label: 'Food & bev', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
+                  { label: 'Labour', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent }
                 ]}
                 centerValue={formatPercent(primeTotals?.primeCostPercent)}
-                centerLabel="prime %"
+                centerLabel="total cost %"
                 format={(v) => formatCurrency(v)}
                 emptyLabel="No prime cost data yet."
               />
@@ -3123,10 +3247,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
 
             <div className="report-panel">
-              <h4>Prime cost data quality</h4>
+              <h4>Cost data quality</h4>
               <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="Wage source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="COGS source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Labour source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
               {(data.primeCost?.warnings ?? []).map((warning) => (
                 <p key={warning} className="subtle">{warning}</p>
               ))}
@@ -3134,7 +3258,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="report-panel">
-            <h4>Prime cost by venue</h4>
+            <h4>Cost by venue</h4>
             <div className="table-scroll">
               {(data.primeCost?.venues ?? []).filter((row) => row.venue && row.venue !== 'Both').length ? (
                 <SortableTable
@@ -3144,12 +3268,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   columns={[
                     { key: 'venue', label: 'Venue', sortValue: (r) => r.venue, render: (r) => r.venue },
                     { key: 'sales', label: 'Sales', align: 'right', sortValue: (r) => r.salesCents, render: (r) => formatCurrency(r.salesCents) },
-                    { key: 'wages', label: 'Wages', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
-                    { key: 'wagePct', label: 'Wage %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
-                    { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
-                    { key: 'cogsPct', label: 'COGS %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
-                    { key: 'prime', label: 'Prime cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
-                    { key: 'primePct', label: 'Prime %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
+                    { key: 'wages', label: 'Labour', align: 'right', sortValue: (r) => r.wageCents, render: (r) => formatCurrency(r.wageCents) },
+                    { key: 'wagePct', label: 'Labour %', align: 'right', sortValue: (r) => r.wagePercent, render: (r) => formatPercent(r.wagePercent) },
+                    { key: 'cogs', label: 'Food & bev', align: 'right', sortValue: (r) => r.cogsCents, render: (r) => formatCurrency(r.cogsCents) },
+                    { key: 'cogsPct', label: 'Food %', align: 'right', sortValue: (r) => r.cogsPercent, render: (r) => formatPercent(r.cogsPercent) },
+                    { key: 'prime', label: 'Total cost', align: 'right', sortValue: (r) => r.primeCostCents, render: (r) => formatCurrency(r.primeCostCents) },
+                    { key: 'primePct', label: 'Total %', align: 'right', sortValue: (r) => r.primeCostPercent, render: (r) => formatPercent(r.primeCostPercent) },
                     { key: 'quality', label: 'Quality', sortValue: (r) => r.sourceQuality, render: (r) => qualityLabel(r.sourceQuality) }
                   ]}
                 />
@@ -3727,9 +3851,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="reserve"
-        title="Reserve Reports"
-        description="Bookings, covers, cancellations, no-shows, and guest mix"
+        title="Bookings & covers"
+        description="Reservations, covers, cancellations, no-shows, and new guests"
       >
+        <p className="report-lead">
+          <strong>{data.overview?.reserve.coversToday ?? 0} covers</strong> booked today · {data.overview?.reserve.upcomingBookings ?? 0} upcoming booking{(data.overview?.reserve.upcomingBookings ?? 0) === 1 ? '' : 's'} on the books.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
           <StatCard label="Upcoming bookings" value={data.overview?.reserve.upcomingBookings ?? 0} hint="Future reservations" loading={loading} />
@@ -3746,9 +3873,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="marketing"
-        title="Marketing Reports"
-        description="Guest CRM reach, consent, campaigns, lapsed guests, and simulated sends"
+        title="Marketing & guests"
+        description="Your guest database, email consent, repeat visitors, and campaigns"
       >
+        <p className="report-lead">
+          <strong>{(data.overview?.marketing.totalGuests ?? 0).toLocaleString()} guests</strong> on file · {(data.overview?.marketing.optedInGuests ?? 0).toLocaleString()} opted in to email you can market to.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Total guests" value={data.overview?.marketing.totalGuests ?? 0} hint="Reserve and Marketing guest profiles" loading={loading} />
           <StatCard label="Opted-in guests" value={data.overview?.marketing.optedInGuests ?? 0} hint="Email marketing consent" loading={loading} />
@@ -3765,9 +3895,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="content"
-        title="Content Reports"
-        description="Scheduled posts, approvals, simulated publish attempts, and social setup readiness"
+        title="Social content"
+        description="Scheduled posts, the approval queue, uploaded assets, and social account setup"
       >
+        <p className="report-lead">
+          <strong>{data.overview?.content.scheduledPostsThisWeek ?? 0} post{(data.overview?.content.scheduledPostsThisWeek ?? 0) === 1 ? '' : 's'}</strong> scheduled this week · {data.overview?.content.postsNeedingApproval ?? 0} waiting for your approval.
+        </p>
         <div className="stats-grid report-metric-grid">
           <StatCard label="Scheduled posts" value={data.overview?.content.scheduledPostsThisWeek ?? 0} hint="This week" loading={loading} />
           <StatCard label="Needs approval" value={data.overview?.content.postsNeedingApproval ?? 0} hint="Review queue" loading={loading} />
@@ -3783,9 +3916,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="gift-cards"
-        title="Gift Card Reports"
-        description="Pending gift card orders, pending value, fulfilment, and setup state"
+        title="Gift cards"
+        description="Gift-card orders waiting to be fulfilled, their value, and what's already done"
       >
+        <p className="report-lead">
+          {(data.overview?.giftCards.pendingOrders ?? 0) > 0
+            ? <><strong>{data.overview?.giftCards.pendingOrders} order{(data.overview?.giftCards.pendingOrders ?? 0) === 1 ? '' : 's'}</strong> pending — {formatCurrency(data.overview?.giftCards.totalPendingAmountCents ?? 0)} of gift cards to send out.</>
+            : <>No gift-card orders are waiting to be fulfilled.</>}
+        </p>
         <div className="report-detail-grid">
           <ActionPanel
             title="Gift card order actions"
@@ -3834,8 +3972,11 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <SectionShell
         id="exports"
         title="Exports"
-        description="Read-only downloads for management reporting"
+        description="Read-only downloads for your accountant, bookkeeper, or your own records"
       >
+        <p className="report-lead">
+          Download this week's numbers as CSV, or copy a weekly summary to paste into an email. Nothing here changes live data.
+        </p>
         <div className="report-detail-grid">
           <div className="report-panel">
             <h4>Available exports</h4>
