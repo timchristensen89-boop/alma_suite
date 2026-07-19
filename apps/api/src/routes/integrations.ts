@@ -2,6 +2,7 @@ import { Router, type Request, type Response, type NextFunction } from 'express'
 import { requireAdmin, requireManager } from '../lib/auth-middleware.js';
 import { integrationService } from '../services/integration.service.js';
 import { deputyService } from '../services/deputy.service.js';
+import { sevenroomsService } from '../services/sevenrooms.service.js';
 
 export const integrationsRouter = Router();
 
@@ -402,6 +403,16 @@ export async function xeroWebhookReceiver(req: Request, res: Response, next: Nex
 export async function deputyWebhookReceiver(req: Request, res: Response, next: NextFunction) {
   try {
     res.json(await integrationService.handleDeputyWebhook(req));
+  } catch (error) {
+    next(error);
+  }
+}
+
+// Inbound reservation email from SevenRooms (via Resend Inbound). Token-guarded
+// in the service; lands ReserveGuest + ReserveReservation rows for the reports.
+export async function sevenroomsInboundEmailReceiver(req: Request, res: Response, next: NextFunction) {
+  try {
+    res.json(await sevenroomsService.handleInboundEmail(req));
   } catch (error) {
     next(error);
   }

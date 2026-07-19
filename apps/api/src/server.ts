@@ -17,7 +17,7 @@ import { giftCardsRouter, stripeGiftCardWebhook } from './routes/gift-cards.js';
 import { healthRouter } from './routes/health.js';
 import { incidentsRouter } from './routes/incidents.js';
 import { integrationJobsRouter } from './routes/integration-jobs.js';
-import { deputyWebhookReceiver, integrationsRouter, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
+import { deputyWebhookReceiver, integrationsRouter, sevenroomsInboundEmailReceiver, squareWebhookReceiver, xeroWebhookReceiver } from './routes/integrations.js';
 import { issuesRouter } from './routes/issues.js';
 import { liquorRouter } from './routes/liquor.js';
 import { marketingRouter } from './routes/marketing.js';
@@ -49,6 +49,9 @@ app.post('/webhooks/square/:accountKey', express.raw({ type: 'application/json',
 app.post('/webhooks/xero', express.raw({ type: 'application/json', limit: '2mb' }), xeroWebhookReceiver);
 app.post('/api/integrations/deputy/webhook', express.raw({ type: 'application/json', limit: '2mb' }), deputyWebhookReceiver);
 app.post('/webhooks/deputy', express.raw({ type: 'application/json', limit: '2mb' }), deputyWebhookReceiver);
+// Inbound reservation email (Resend Inbound → JSON POST). 25mb: emails can
+// carry sizeable CSV attachments.
+app.post('/webhooks/sevenrooms/email', express.raw({ type: '*/*', limit: '25mb' }), sevenroomsInboundEmailReceiver);
 app.use(express.json({ limit: '6mb' }));
 app.use(cookieParser());
 app.use('/api/integration-jobs', integrationJobsRouter);

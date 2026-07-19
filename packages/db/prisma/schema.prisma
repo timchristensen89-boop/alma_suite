@@ -367,6 +367,7 @@ enum IntegrationProvider {
   XERO
   DEPUTY
   META
+  SEVENROOMS
 }
 
 enum IntegrationConnectionStatus {
@@ -1409,6 +1410,9 @@ model ReserveReservation {
   covers                   Int
   status                   ReserveReservationStatus @default(PENDING)
   source                   String                   @default("manager")
+  // External system's reservation id (e.g. SevenRooms confirmation number) so
+  // re-imports update the same row instead of duplicating it.
+  externalRef              String?                  @unique
   tableId                  String?
   area                     String?
   guestId                  String
