@@ -1597,6 +1597,21 @@ tbody tr.row-detail:hover {
   cursor: not-allowed;
 }
 
+.stock-invoice-doc-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: var(--color-surface-muted);
+}
+.stock-invoice-doc-bar .subtle {
+  font-size: 0.85rem;
+}
+
 /* Inline link from a stocktake line / top-value row to the item's edit form. */
 .stocktake-item-link {
   border: 0;

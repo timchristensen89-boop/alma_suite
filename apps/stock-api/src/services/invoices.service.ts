@@ -63,7 +63,9 @@ const assigneeSelect = {
 const invoiceInclude = {
   lines: { include: { item: { select: lineItemSelect } } },
   triagedBy: { select: assigneeSelect },
-  assignedTo: { select: assigneeSelect }
+  assignedTo: { select: assigneeSelect },
+  // Metadata only (not the blob) so list queries stay light.
+  document: { select: { id: true } }
 } satisfies Prisma.SupplierInvoiceInclude;
 
 type InvoiceRow = Prisma.SupplierInvoiceGetPayload<{ include: typeof invoiceInclude }>;
@@ -470,6 +472,7 @@ function toInvoicePayload(row: InvoiceRow): StockSupplierInvoice {
     totalCents: row.totalCents,
     sourceFileName: row.sourceFileName,
     sourceFileType: row.sourceFileType,
+    hasDocument: Boolean(row.document),
     importedAt: row.importedAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -1052,12 +1055,24 @@ export const invoicesService = {
     };
   },
 
+  // Stream the original uploaded scan back so the invoice screen can open it.
+  async getDocument(invoiceId: string): Promise<{ fileName: string | null; mimeType: string; data: Buffer }> {
+    const doc = await prisma.supplierInvoiceDocument.findUnique({ where: { invoiceId } });
+    if (!doc) throw new HttpError(404, 'No original document is stored for this invoice.');
+    return { fileName: doc.fileName, mimeType: doc.mimeType, data: Buffer.from(doc.data) };
+  },
+
   async importInvoices(input: unknown): Promise<StockInvoiceImportResult> {
     const data = stockInvoiceImportInputSchema.parse(normaliseImportBody(input));
     const source = data.source.trim().toUpperCase();
     const sourceFileName = optionalText(data.sourceFileName) ?? 'Manual invoice import';
     const sourceFileType = optionalText(data.sourceFileType);
     const venue = optionalText(data.venue);
+    // Original uploaded scan, kept against the created invoice so a manager can
+    // reopen it and enter lines by hand when OCR only read a total.
+    const documentBuffer = data.documentBase64 ? Buffer.from(data.documentBase64, 'base64') : null;
+    const documentMimeType = optionalText(data.documentMimeType);
+    const documentFileName = optionalText(data.documentFileName);
     const defaults = {
       source,
       venue,
@@ -1148,6 +1163,19 @@ export const invoicesService = {
         if (existing) updatedCount += 1;
         else createdCount += 1;
         importedInvoiceIds.push(invoice.id);
+
+        if (documentBuffer && documentMimeType) {
+          await tx.supplierInvoiceDocument.upsert({
+            where: { invoiceId: invoice.id },
+            create: {
+              invoiceId: invoice.id,
+              fileName: documentFileName,
+              mimeType: documentMimeType,
+              data: documentBuffer
+            },
+            update: { fileName: documentFileName, mimeType: documentMimeType, data: documentBuffer }
+          });
+        }
 
         const lineKeys = invoiceInput.lines.map((line) => line.lineKey);
         await tx.supplierInvoiceLine.deleteMany({

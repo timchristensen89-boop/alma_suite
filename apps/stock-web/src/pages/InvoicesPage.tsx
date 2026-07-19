@@ -18,7 +18,7 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconInvoices } from '../lib/icons';
 import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
-import { ApiError, api } from '../lib/api';
+import { ApiError, api, apiBlob } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
 import { useAuth } from '../lib/auth';
 import { canManageStock } from '../lib/stockPermissions';
@@ -348,6 +348,25 @@ export function InvoicesPage() {
     }
   }
 
+  // Open the original stored scan in a new tab. Auth is a Bearer token, so we
+  // fetch the blob with credentials and hand the browser an object URL.
+  async function openInvoiceDocument(invoice: StockSupplierInvoice) {
+    const target = `invoice-doc-${invoice.id}`;
+    try {
+      const blob = await apiBlob(`/api/invoices/${invoice.id}/document`);
+      const url = URL.createObjectURL(blob);
+      window.open(url, '_blank', 'noopener');
+      // Revoke after the tab has had time to load the resource.
+      setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (error) {
+      showFeedback(
+        target,
+        error instanceof ApiError ? error.message : 'Could not open the original scan.',
+        'error'
+      );
+    }
+  }
+
   // Scan a PDF/photo of an invoice with Claude vision, then run it through the
   // same import → match flow as a pasted invoice.
   async function importScannedInvoice(file: File | null | undefined) {
@@ -404,6 +423,9 @@ export function InvoicesPage() {
           sourceFileName: sourceFileName || file.name,
           sourceFileType: file.type,
           sourceMetadata: { ripWarnings: ripped.warnings, ocrScanned: true },
+          documentBase64: fileBase64,
+          documentMimeType: file.type,
+          documentFileName: sourceFileName || file.name,
           confirmationText: 'IMPORT INVOICES',
           invoices: ripped.invoices
         })
@@ -977,7 +999,10 @@ export function InvoicesPage() {
                         <td>
                           <span className="cell-stack">
                             <strong>{invoice.invoiceNumber ?? invoice.invoiceKey.slice(0, 8)}</strong>
-                            <span className="subtle">{invoice.sourceFileName ?? invoice.source}</span>
+                            <span className="subtle">
+                              {invoice.hasDocument ? '📎 ' : ''}
+                              {invoice.sourceFileName ?? invoice.source}
+                            </span>
                           </span>
                         </td>
                         <td>{invoice.supplierName}</td>
@@ -1022,6 +1047,23 @@ export function InvoicesPage() {
         >
           {selectedInvoice ? (
             <>
+              {selectedInvoice.hasDocument ? (
+                <div className="stock-invoice-doc-bar">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => void openInvoiceDocument(selectedInvoice)}
+                  >
+                    📎 View original scan
+                  </Button>
+                  <span className="subtle">Open the uploaded file to key in any lines OCR missed.</span>
+                  <ActionFeedback
+                    message={feedbackTarget === `invoice-doc-${selectedInvoice.id}` ? feedbackMessage : null}
+                    tone={feedbackTone}
+                  />
+                </div>
+              ) : null}
               <InvoiceTriagePanel
                 invoice={selectedInvoice}
                 assigneeOptions={assigneeOptions}

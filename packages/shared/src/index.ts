@@ -5731,6 +5731,7 @@ export type StockSupplierInvoice = {
   totalCents: number;
   sourceFileName: string | null;
   sourceFileType: string | null;
+  hasDocument: boolean;
   importedAt: string;
   createdAt: string;
   updatedAt: string;
@@ -5839,6 +5840,11 @@ export const stockInvoiceImportInputSchema = z.object({
   sourceFileName: z.string().optional().or(z.literal('')),
   sourceFileType: z.string().optional().or(z.literal('')),
   sourceMetadata: z.record(z.unknown()).optional(),
+  // Original uploaded file (raw base64, data-URL prefix stripped) kept so the
+  // scanned invoice can be re-opened for manual entry when OCR misses lines.
+  documentBase64: z.string().optional(),
+  documentMimeType: z.string().optional(),
+  documentFileName: z.string().optional().or(z.literal('')),
   invoices: z.array(z.record(z.unknown())).min(1, 'At least one invoice is required'),
   confirmationText: z.literal('IMPORT INVOICES', {
     errorMap: () => ({ message: 'Type IMPORT INVOICES to confirm invoice import' })

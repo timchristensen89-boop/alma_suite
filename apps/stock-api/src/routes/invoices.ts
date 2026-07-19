@@ -124,6 +124,23 @@ invoicesRouter.get('/:id', async (req, res, next) => {
   }
 });
 
+// Serve the original uploaded scan inline so a manager can read it while keying
+// in lines OCR missed. Manager-gated like the rest of the invoice surface.
+invoicesRouter.get('/:id/document', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    const doc = await invoicesService.getDocument(String(req.params.id));
+    res.setHeader('Content-Type', doc.mimeType);
+    res.setHeader(
+      'Content-Disposition',
+      `inline; filename="${(doc.fileName ?? 'invoice').replace(/"/g, '')}"`
+    );
+    res.send(doc.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.post('/:id/mark-no-item', async (req, res, next) => {
   try {
     requireStockManager(req.user);

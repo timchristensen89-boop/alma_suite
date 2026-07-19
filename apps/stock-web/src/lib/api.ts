@@ -92,6 +92,29 @@ export function apiUrl(path: string) {
   return `${API_BASE_URL}${normalisePath(path)}`;
 }
 
+// Fetch a binary response (e.g. a stored invoice scan) with the same auth as
+// api(). Auth is a Bearer token, so a plain <a href> can't reach protected
+// routes — callers open the returned Blob via an object URL instead.
+export async function apiBlob(path: string): Promise<Blob> {
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${normalisePath(path)}`, {
+      credentials: 'include',
+      headers: requestHeaders()
+    });
+  } catch {
+    throw new ApiError(`Cannot reach the ALMA Stock API at ${API_BASE_URL}.`, 0);
+  }
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearApiAuthToken();
+      throw new ApiError('Please sign in again.', response.status);
+    }
+    throw new ApiError('Could not load the file.', response.status);
+  }
+  return response.blob();
+}
+
 function urlWithSuiteToken(href: string, token: string) {
   const url = new URL(href, window.location.origin);
   url.searchParams.set('suite_token', token);

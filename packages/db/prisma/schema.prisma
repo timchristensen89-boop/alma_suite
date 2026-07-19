@@ -3002,6 +3002,7 @@ model SupplierInvoice {
   assignedTo               StaffProfile?         @relation("SupplierInvoiceAssignedTo", fields: [assignedToStaffProfileId], references: [id], onDelete: SetNull)
   lines                    SupplierInvoiceLine[]
   matchedPurchaseOrders    PurchaseOrder[]
+  document                 SupplierInvoiceDocument?
 
   @@unique([source, invoiceKey])
   @@index([venue, invoiceDate])
@@ -3010,6 +3011,19 @@ model SupplierInvoice {
   @@index([invoiceNumber])
   @@index([triageStatus])
   @@index([assignedToStaffProfileId])
+}
+
+// The original uploaded invoice file (PDF/photo) kept so a manager can open it
+// and key in lines by hand when OCR only reads a total (or misses lines). The
+// blob lives in its own table so it never bloats SupplierInvoice list queries.
+model SupplierInvoiceDocument {
+  id        String          @id @default(cuid())
+  invoiceId String          @unique
+  fileName  String?
+  mimeType  String
+  data      Bytes
+  createdAt DateTime        @default(now())
+  invoice   SupplierInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
 }
 
 // @domain: stock | home: suite
