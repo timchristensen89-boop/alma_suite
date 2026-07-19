@@ -3191,14 +3191,40 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   }
 
   function renderStockSection() {
+    // Weekly actual COGS (opening + purchases − closing) collapses to $0 because
+    // stocktakes are monthly, so nothing brackets a single week. Fall back to
+    // THEORETICAL food cost (recipe cost × Square units sold) — the same figure
+    // the "This Week" report uses — so a food cost always shows. Labelled clearly.
+    const stockTheoreticalCogsCents = data.menuProfitability?.totals.estimatedCogsCents ?? null;
+    const stockTheoreticalFoodPct = data.menuProfitability?.totals.foodCostPercent ?? null;
+    const stockActualCogsCents = primeTotals?.cogsCents ?? 0;
+    const stockUsingTheoretical =
+      stockActualCogsCents <= 0 && stockTheoreticalCogsCents != null && stockTheoreticalCogsCents > 0;
+    const stockDisplayCogsCents = stockUsingTheoretical ? stockTheoreticalCogsCents! : stockActualCogsCents;
+    const stockSalesCents = primeTotals?.salesCents ?? 0;
+    const stockDisplayCogsPct = stockUsingTheoretical
+      ? stockTheoreticalFoodPct
+      : (primeTotals?.cogsPercent ?? null);
+    const stockLabourCents = primeTotals?.wageCents ?? 0;
+    const stockDisplayPrimeCents = stockUsingTheoretical
+      ? stockLabourCents + stockDisplayCogsCents
+      : (primeTotals?.primeCostCents ?? 0);
+    const stockDisplayPrimePct = stockSalesCents > 0
+      ? (stockDisplayPrimeCents / stockSalesCents) * 100
+      : (primeTotals?.primeCostPercent ?? null);
     return (
       <SectionShell
         id="stock"
-        title="Stock Reports"
-        description="Catalogue health, venue stock status, low stock, and stocktake review"
+        title="Food &amp; Bev Cost (COGS)"
+        description="What you spent to sell — food cost %, purchases, wastage, and stock value"
       >
         <div className="report-section-stack">
           {stockMessage ? <p className="error-text">{stockMessage}</p> : null}
+          <p className="report-lead">
+            {stockDisplayCogsCents > 0
+              ? <>Food &amp; bev is running at <strong>{formatPercent(stockDisplayCogsPct)}</strong> of sales{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : ''}. Aim for ≤ 30%.</>
+              : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
+          </p>
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active catalogue items" value={data.overview?.stock.activeStockItems ?? data.stockSummary?.activeItems ?? 0} hint="Global catalogue" loading={loading} />
             <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? data.stockSummary?.lowStockItems ?? 0} hint="Venue-aware rows" loading={loading} />
@@ -3207,8 +3233,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="Food &amp; bev cost (COGS)" value={formatCurrency(primeTotals?.cogsCents ?? 0)} hint={primeTotals ? `${formatPercent(primeTotals.cogsPercent)} of sales · ${primeTotals.cogsSource === 'stock_bounded' ? 'opening + purchases − closing' : 'purchases only (est.)'}` : 'No data'} loading={loading} />
-            <StatCard label="Total operating cost (prime)" value={formatCurrency(primeTotals?.primeCostCents ?? 0)} hint={`${formatPercent(primeTotals?.primeCostPercent)} of sales · food + labour`} loading={loading} />
+            <StatCard label="Food &amp; bev cost (COGS)" value={formatCurrency(stockDisplayCogsCents)} hint={stockDisplayCogsCents <= 0 ? 'No data yet' : stockUsingTheoretical ? `${formatPercent(stockDisplayCogsPct)} of sales · estimated (recipe × units sold)` : `${formatPercent(stockDisplayCogsPct)} of sales · ${primeTotals?.cogsSource === 'stock_bounded' ? 'actual (opening + purchases − closing)' : 'purchases only (est.)'}`} loading={loading} />
+            <StatCard label="Total operating cost (prime)" value={formatCurrency(stockDisplayPrimeCents)} hint={`${formatPercent(stockDisplayPrimePct)} of sales · food + labour`} loading={loading} />
             <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
             <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
           </div>
@@ -3219,10 +3245,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <Donut
                 size={130}
                 segments={[
-                  { label: 'Food & bev', value: primeTotals?.cogsCents ?? 0, color: CHART_COLORS.danger },
-                  { label: 'Labour', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent }
+                  { label: 'Food & bev', value: stockDisplayCogsCents, color: CHART_COLORS.danger },
+                  { label: 'Labour', value: stockLabourCents, color: CHART_COLORS.accent }
                 ]}
-                centerValue={formatPercent(primeTotals?.primeCostPercent)}
+                centerValue={formatPercent(stockDisplayPrimePct)}
                 centerLabel="total cost %"
                 format={(v) => formatCurrency(v)}
                 emptyLabel="No prime cost data yet."
