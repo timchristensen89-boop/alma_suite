@@ -1308,6 +1308,20 @@ html[data-theme='dark'] .cost-tile { background: rgba(255, 255, 255, 0.03); }
   letter-spacing: -0.005em;
 }
 
+/* Keep the section header readable when the action cluster (week nav + export
+   buttons) is wide: let it wrap below the title instead of crushing the
+   title/description down to one word per line. */
+.report-active-section > .card > .card-header {
+  flex-wrap: wrap;
+}
+.report-active-section > .card > .card-header > .card-header-text {
+  flex: 1 1 280px;
+  min-width: 240px;
+}
+.report-active-section > .card > .card-header > .card-action {
+  flex: 0 1 auto;
+}
+
 /* Prev/next period steppers (roster-style round icon buttons). */
 .alma-roster-weeknav {
   display: inline-flex;

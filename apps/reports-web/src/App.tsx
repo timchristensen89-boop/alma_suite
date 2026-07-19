@@ -2973,11 +2973,25 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="staff"
-        title="Staff Reports"
-        description="Active staff, leave, clocking, payroll readiness, and wage costing"
+        title="Labour (wages)"
+        description="Wage cost vs sales, payroll readiness, tips, and staff needing attention"
         action={<Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>Export wages CSV</Button>}
       >
         <div className="report-section-stack">
+          {(() => {
+            const labourPct = primeTotals?.wagePercent ?? null;
+            const incomplete = labourPct != null && labourPct > 120;
+            const payroll = wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0);
+            return (
+              <p className="report-lead">
+                {incomplete
+                  ? <>Sales look incomplete for this week, so the labour % isn't reliable yet — check the Square import. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                  : labourPct != null
+                    ? <>Labour is running at <strong>{formatPercent(labourPct)}</strong> of sales — aim for ≤ 30%. Approved payroll with tips is {formatCurrency(payroll)}.</>
+                    : <>Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>}
+              </p>
+            );
+          })()}
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? activeStaff.length} hint="Current profiles" loading={loading} />
             <StatCard label="Pending leave" value={data.overview?.staff.pendingLeaveCount ?? 0} hint="Awaiting manager decision" loading={loading} />
@@ -2986,8 +3000,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           </div>
 
           <div className="stats-grid report-metric-grid">
-            <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)}h total`} loading={loading} />
-            <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)}h approved`} loading={loading} />
+            <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)} total`} loading={loading} />
+            <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)} approved`} loading={loading} />
             <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
             <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
           </div>
