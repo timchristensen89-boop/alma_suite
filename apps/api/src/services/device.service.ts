@@ -365,6 +365,73 @@ export const deviceService = {
     };
   },
 
+  // Tonight's service sheet for the venue iPad: today's live bookings with the
+  // guest context the floor team needs (occasion, requests, allergies, visit
+  // history). Carries personal data, so it is served ONLY behind the device
+  // session — never on the public snapshot endpoint.
+  async tonightService(venue: string | null) {
+    const { start, end } = dayWindow(new Date());
+    const reservations = await prisma.reserveReservation.findMany({
+      where: {
+        ...(venue ? { venue } : {}),
+        startsAt: { gte: start, lt: end },
+        status: { notIn: ['CANCELLED', 'NO_SHOW'] }
+      },
+      orderBy: [{ startsAt: 'asc' }],
+      select: {
+        id: true,
+        venue: true,
+        startsAt: true,
+        covers: true,
+        status: true,
+        servicePeriod: true,
+        guestName: true,
+        occasion: true,
+        notes: true,
+        specialRequests: true,
+        area: true,
+        seatedAt: true,
+        guest: {
+          select: {
+            totalVisits: true,
+            noShowCount: true,
+            lastVisitAt: true,
+            allergyNotes: true,
+            dietaryNotes: true,
+            tags: true
+          }
+        }
+      }
+    });
+    return {
+      generatedAt: new Date().toISOString(),
+      reservations: reservations.map((row) => ({
+        id: row.id,
+        venue: row.venue,
+        startsAt: row.startsAt.toISOString(),
+        covers: row.covers,
+        status: row.status,
+        servicePeriod: row.servicePeriod,
+        guestName: row.guestName,
+        occasion: row.occasion,
+        notes: row.notes,
+        specialRequests: row.specialRequests,
+        area: row.area,
+        seated: row.seatedAt != null,
+        guest: row.guest
+          ? {
+              totalVisits: row.guest.totalVisits,
+              noShowCount: row.guest.noShowCount,
+              lastVisitAt: row.guest.lastVisitAt?.toISOString() ?? null,
+              allergyNotes: row.guest.allergyNotes,
+              dietaryNotes: row.guest.dietaryNotes,
+              tags: row.guest.tags
+            }
+          : null
+      }))
+    };
+  },
+
   async homeSummary(): Promise<HomeOperationalSummary> {
     const now = new Date();
     const { start, end } = dayWindow(now);

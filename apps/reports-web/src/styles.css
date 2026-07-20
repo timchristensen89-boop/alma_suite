@@ -854,6 +854,36 @@
 }
 
 /* ── Prime cost hero — editorial paper-cream chrome ──────────── */
+/* Covers-ahead table: day rows × venue columns with a total bar per day. */
+.covers-ahead-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13.5px;
+}
+.covers-ahead-table th,
+.covers-ahead-table td {
+  padding: 7px 10px;
+  border-bottom: 1px solid rgba(var(--ink-forest-rgb), 0.08);
+  text-align: left;
+  white-space: nowrap;
+}
+.covers-ahead-table th {
+  font-size: 11.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-muted, #6B655C);
+}
+.covers-ahead-num { text-align: right !important; font-variant-numeric: tabular-nums; }
+.covers-ahead-table tr.is-weekend td { background: rgba(var(--ink-forest-rgb), 0.04); font-weight: 600; }
+.covers-ahead-bar-cell { width: 30%; min-width: 120px; }
+.covers-ahead-bar {
+  height: 10px;
+  border-radius: 5px;
+  background: var(--color-accent, #684A4A);
+  opacity: 0.75;
+  min-width: 2px;
+}
+
 /* Plain-English lead line at the top of a report — the one-sentence "what this
    tells you / where you stand" read before the numbers. */
 .report-lead {

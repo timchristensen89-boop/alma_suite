@@ -2719,6 +2719,80 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     );
   }
 
+  // Covers on the books for the next 14 days — day rows × venue columns.
+  // The demand signal for rostering and prep: shared by Sales + Bookings.
+  function renderCoversAhead(venueFilter: string) {
+    const rows = (data.overview?.reserve.coversAhead ?? []).filter(
+      (row) => !venueFilter || row.venue === venueFilter
+    );
+    const venues = Array.from(new Set(rows.map((row) => row.venue))).sort();
+    const byDate = new Map<string, Map<string, { covers: number; bookings: number }>>();
+    for (const row of rows) {
+      const day = byDate.get(row.date) ?? new Map();
+      day.set(row.venue, { covers: row.covers, bookings: row.bookings });
+      byDate.set(row.date, day);
+    }
+    const dates = Array.from(byDate.keys()).sort();
+    const maxDayCovers = Math.max(
+      1,
+      ...dates.map((date) =>
+        venues.reduce((sum, venue) => sum + (byDate.get(date)?.get(venue)?.covers ?? 0), 0)
+      )
+    );
+    return (
+      <div className="report-panel">
+        <h4>Covers on the books — next 14 days</h4>
+        {dates.length === 0 ? (
+          <p className="subtle">Nothing on the books for the next 14 days yet. Bookings land here automatically from SevenRooms.</p>
+        ) : (
+          <div className="table-scroll">
+            <table className="covers-ahead-table">
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  {venues.map((venue) => (
+                    <th key={venue} className="covers-ahead-num">{venue}</th>
+                  ))}
+                  <th className="covers-ahead-num">Covers</th>
+                  <th className="covers-ahead-bar-cell" aria-hidden="true" />
+                </tr>
+              </thead>
+              <tbody>
+                {dates.map((date) => {
+                  const day = byDate.get(date)!;
+                  const total = venues.reduce((sum, venue) => sum + (day.get(venue)?.covers ?? 0), 0);
+                  const parsed = new Date(`${date}T12:00:00`);
+                  const weekday = parsed.toLocaleDateString(undefined, { weekday: 'short' });
+                  const label = parsed.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+                  const isWeekend = parsed.getDay() === 0 || parsed.getDay() === 6;
+                  return (
+                    <tr key={date} className={isWeekend ? 'is-weekend' : undefined}>
+                      <td>{weekday} {label}</td>
+                      {venues.map((venue) => {
+                        const cell = day.get(venue);
+                        return (
+                          <td key={venue} className="covers-ahead-num">
+                            {cell ? `${cell.covers}` : '—'}
+                            {cell && cell.bookings > 0 ? <span className="subtle"> ({cell.bookings})</span> : null}
+                          </td>
+                        );
+                      })}
+                      <td className="covers-ahead-num"><strong>{total}</strong></td>
+                      <td className="covers-ahead-bar-cell">
+                        <div className="covers-ahead-bar" style={{ width: `${(total / maxDayCovers) * 100}%` }} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <p className="subtle">Live bookings only (pending, confirmed, seated) — covers (bookings). Use the big days to roster up and order ahead.</p>
+      </div>
+    );
+  }
+
   function renderSalesSection() {
     const totalForecastCents = salesTrendRows.reduce((sum, row) => sum + row.manualForecastCents, 0);
     const totalHistoricalCents = salesTrendRows.reduce((sum, row) => sum + row.historicalSalesCents, 0);
@@ -2729,8 +2803,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     return (
       <SectionShell
         id="sales"
-        title="Sales Reports"
-        description="Alma Avalon and St Alma sales actuals, daily trends, historical baseline, and weekly prediction"
+        title="Sales"
+        description="Takings by venue and day, forecast vs actual, and covers on the books ahead"
       >
         <div className="report-section-stack">
           <div className="stats-grid report-metric-grid">
@@ -2757,6 +2831,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               />
             </div>
           ) : null}
+
+          {renderCoversAhead(salesVenue)}
 
           <div className="sales-venue-grid">
             {(salesVenue ? salesTrendRows.filter((row) => row.venue === salesVenue) : salesTrendRows).map((row) => {
@@ -3905,6 +3981,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <StatCard label="New guests" value={data.overview?.reserve.newGuests ?? 0} hint={overviewWindowLabel} loading={loading} />
           <StatCard label="Covers today" value={data.overview?.reserve.coversToday ?? 0} hint="Booked covers" loading={loading} />
         </div>
+        {renderCoversAhead('')}
       </SectionShell>
     );
   }

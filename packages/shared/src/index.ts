@@ -6427,6 +6427,15 @@ export type ReportsReserveSummary = {
   cancellations: number;
   noShows: number;
   newGuests: number;
+  // Booked covers on the books for the next 14 days — the demand signal for
+  // rostering and prep. One row per day × venue with live (not cancelled)
+  // bookings; days with nothing on the books are omitted.
+  coversAhead: Array<{
+    date: string; // ISO yyyy-mm-dd
+    venue: string;
+    covers: number;
+    bookings: number;
+  }>;
 };
 
 export type ReportsMarketingSummary = {

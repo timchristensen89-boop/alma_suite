@@ -603,13 +603,36 @@ async function buildReserveSummary(
     })
   ]);
 
+  // Booked covers by day × venue for the next 14 days — the demand signal for
+  // rostering and prep. serviceDate is stored as UTC midnight of the local
+  // date, so grouping on it gives clean local-day buckets.
+  const aheadRows = await prisma.reserveReservation.groupBy({
+    by: ['serviceDate', 'venue'],
+    where: {
+      ...reservationWhere,
+      serviceDate: { gte: today, lt: addDays(today, 14) },
+      status: { in: ['PENDING', 'CONFIRMED', 'SEATED'] }
+    },
+    _sum: { covers: true },
+    _count: { _all: true }
+  });
+  const coversAhead = aheadRows
+    .map((row) => ({
+      date: row.serviceDate.toISOString().slice(0, 10),
+      venue: row.venue,
+      covers: row._sum.covers ?? 0,
+      bookings: row._count._all
+    }))
+    .sort((a, b) => (a.date === b.date ? a.venue.localeCompare(b.venue) : a.date.localeCompare(b.date)));
+
   return {
     bookingsToday,
     coversToday: coversTodayRows._sum.covers ?? 0,
     upcomingBookings,
     cancellations,
     noShows,
-    newGuests
+    newGuests,
+    coversAhead
   };
 }
 

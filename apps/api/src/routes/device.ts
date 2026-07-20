@@ -42,6 +42,19 @@ deviceRouter.get('/home-summary', async (_req, res, next) => {
   }
 });
 
+// Tonight's service sheet — guest names/notes ride on this, so it requires the
+// venue-device session (unlike the public venue-snapshot, which stays PII-free).
+deviceRouter.get('/tonight-service', async (req, res, next) => {
+  try {
+    const deviceUser = currentDeviceUser(req);
+    if (!deviceUser) throw new HttpError(403, 'Venue device account required.');
+    const venue = typeof req.query.venue === 'string' && req.query.venue ? req.query.venue : deviceUser.venue ?? null;
+    res.json(await deviceService.tonightService(venue));
+  } catch (error) {
+    next(error);
+  }
+});
+
 deviceRouter.post('/staff-pin-login', async (req, res, next) => {
   try {
     // Scope PIN matching to the kiosk device's venue when present, so identical
