@@ -174,6 +174,8 @@ type SalesTrendVenueRow = {
   historicalSalesCents: number;
   previousHistoricalSalesCents: number;
   predictedSalesCents: number;
+  bookedCovers: number;
+  bookedEstimateCents: number;
   trendPercent: number | null;
   forecastVarianceCents: number;
   paceLabel: string;
@@ -1764,7 +1766,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       return map;
     }, new Map<string, SalesActualSummary['entries']>());
   }, [data.actualSales?.entries]);
+  // Group average spend per cover (Square net sales ÷ item units sold) — used
+  // to turn booked covers into a dollars-on-the-books floor for the forecast.
+  const avgSpendPerCoverCents = useMemo(() => {
+    const salesCents = (data.actualSales?.entries ?? []).reduce((sum, entry) => sum + entry.salesCents, 0);
+    const quantity = data.itemSales?.totalQuantity ?? 0;
+    return quantity > 0 ? salesCents / quantity : 0;
+  }, [data.actualSales, data.itemSales]);
+
   const salesTrendRows = useMemo<SalesTrendVenueRow[]>(() => {
+    const todayKey = isoDate(new Date());
+    const weekEndKey = isoDate(addDays(weekStart, 7));
+    const weekStartKey = isoDate(weekStart);
     return salesReportVenues.map((venue) => {
       const historical = historicalSalesForWeek(venue, weekStart);
       const previousHistorical = historicalSalesForWeek(venue, addDays(weekStart, -7));
@@ -1777,9 +1790,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const historicalSalesCents = Math.round(historical.total * 100);
       const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
       const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
-      const predictedSalesCents = actualSalesCents > 0 && actualHistoricalCents > 0
+      // Covers already booked for the REMAINING days of this week — a floor
+      // under the prediction (strong bookings raise it; sparse bookings never
+      // lower it). serviceDate keys are local dates, so string-compare works.
+      const bookedRows = (data.overview?.reserve.coversAhead ?? []).filter(
+        (row) => row.venue === venue && row.date >= weekStartKey && row.date < weekEndKey && row.date >= todayKey
+      );
+      const bookedCovers = bookedRows.reduce((sum, row) => sum + row.covers, 0);
+      const bookedEstimateCents = Math.round(bookedCovers * avgSpendPerCoverCents);
+      const basePredictedCents = actualSalesCents > 0 && actualHistoricalCents > 0
         ? Math.round(actualSalesCents * (historicalSalesCents / actualHistoricalCents))
         : manualForecastCents || historicalSalesCents;
+      const predictedSalesCents = Math.max(basePredictedCents, actualSalesCents + bookedEstimateCents);
       const trendPercent = previousHistoricalSalesCents > 0
         ? ((predictedSalesCents - previousHistoricalSalesCents) / previousHistoricalSalesCents) * 100
         : null;
@@ -1795,18 +1817,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         historicalSalesCents,
         previousHistoricalSalesCents,
         predictedSalesCents,
+        bookedCovers,
+        bookedEstimateCents,
         trendPercent,
         forecastVarianceCents,
-        paceLabel: actualSalesCents > 0 && actualHistoricalCents > 0
-          ? 'Actual pace vs matching historical days'
-          : manualForecastCents > 0
-            ? 'Manual forecast'
-            : historicalSalesCents > 0
-              ? 'Historical baseline'
-              : 'Missing sales history'
+        paceLabel: predictedSalesCents > basePredictedCents
+          ? 'Bookings on the books (raised the forecast)'
+          : actualSalesCents > 0 && actualHistoricalCents > 0
+            ? 'Actual pace vs matching historical days'
+            : manualForecastCents > 0
+              ? 'Manual forecast'
+              : historicalSalesCents > 0
+                ? 'Historical baseline'
+                : 'Missing sales history'
       };
     });
-  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, weekStart]);
+  }, [actualSalesEntriesByVenue, avgSpendPerCoverCents, data.overview, forecastInputs, salesReportVenues, weekStart]);
   const salesDailyRows = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
@@ -2865,6 +2891,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       </div>
                     ))}
                   </div>
+
+                  {row.bookedCovers > 0 ? (
+                    <p className="sales-booked-line">
+                      On the books for the rest of this week: <strong>{row.bookedCovers} covers</strong>
+                      {row.bookedEstimateCents > 0 ? <> ≈ <strong>{formatCurrency(row.bookedEstimateCents)}</strong> at avg spend</> : null}
+                      {row.paceLabel === 'Bookings on the books (raised the forecast)' ? ' — raised the prediction.' : '.'}
+                    </p>
+                  ) : null}
 
                   <div className="form-grid two">
                     <Input
@@ -3982,6 +4016,50 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <StatCard label="Covers today" value={data.overview?.reserve.coversToday ?? 0} hint="Booked covers" loading={loading} />
         </div>
         {renderCoversAhead('')}
+        {(() => {
+          const noShowCovers = data.overview?.reserve.noShowCovers ?? 0;
+          const lostCents = Math.round(noShowCovers * avgSpendPerCoverCents);
+          const repeats = data.overview?.reserve.repeatNoShowGuests ?? [];
+          return (
+            <div className="report-detail-grid">
+              <div className="report-panel">
+                <h4>What no-shows cost you</h4>
+                <Metric label="No-show covers" value={noShowCovers} tone={noShowCovers > 0 ? 'warning' : 'positive'} hint={overviewWindowLabel} />
+                <Metric
+                  label="Estimated revenue lost"
+                  value={lostCents > 0 ? formatCurrency(lostCents) : noShowCovers > 0 ? '—' : formatCurrency(0)}
+                  tone={lostCents > 0 ? 'danger' : 'positive'}
+                  hint={avgSpendPerCoverCents > 0 ? `${noShowCovers} covers × ${formatCurrency(avgSpendPerCoverCents)} avg spend` : 'Needs Square sales for avg spend'}
+                />
+                <p className="subtle">Every no-show cover is a seat you turned other bookings away from. If this number grows, deposits or card-on-file (set up in SevenRooms) pay for themselves fast.</p>
+              </div>
+              <div className="report-panel">
+                <h4>Repeat no-showers</h4>
+                {repeats.length === 0 ? (
+                  <p className="subtle">No guest has more than one no-show on record — nothing to act on.</p>
+                ) : (
+                  <>
+                    <div className="table-scroll">
+                      <SortableTable
+                        rows={repeats}
+                        rowKey={(row) => row.guestId}
+                        defaultSortKey="noShows"
+                        columns={[
+                          { key: 'name', label: 'Guest', sortValue: (r) => r.name, render: (r) => r.name },
+                          { key: 'noShows', label: 'No-shows', align: 'right', sortValue: (r) => r.noShows, render: (r) => r.noShows },
+                          { key: 'covers', label: 'Covers lost', align: 'right', sortValue: (r) => r.noShowCovers, render: (r) => r.noShowCovers },
+                          { key: 'visits', label: 'Completed visits', align: 'right', sortValue: (r) => r.totalVisits, render: (r) => r.totalVisits },
+                          { key: 'last', label: 'Last no-show', sortValue: (r) => r.lastNoShowAt ?? '', render: (r) => (r.lastNoShowAt ? new Date(r.lastNoShowAt).toLocaleDateString() : '—') }
+                        ]}
+                      />
+                    </div>
+                    <p className="subtle">Candidates for card-on-file or a deposit when they next book — set that per-guest in SevenRooms.</p>
+                  </>
+                )}
+              </div>
+            </div>
+          );
+        })()}
       </SectionShell>
     );
   }

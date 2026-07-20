@@ -6436,6 +6436,17 @@ export type ReportsReserveSummary = {
     covers: number;
     bookings: number;
   }>;
+  // No-show economics: covers lost to no-shows in the report window, and the
+  // guests who do it repeatedly (candidates for card-on-file in SevenRooms).
+  noShowCovers: number;
+  repeatNoShowGuests: Array<{
+    guestId: string;
+    name: string;
+    noShows: number;
+    noShowCovers: number;
+    totalVisits: number;
+    lastNoShowAt: string | null;
+  }>;
 };
 
 export type ReportsMarketingSummary = {

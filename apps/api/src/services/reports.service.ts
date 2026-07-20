@@ -625,6 +625,45 @@ async function buildReserveSummary(
     }))
     .sort((a, b) => (a.date === b.date ? a.venue.localeCompare(b.venue) : a.date.localeCompare(b.date)));
 
+  // No-show economics. Covers lost in the report window, plus repeat offenders
+  // (2+ no-shows all-time, computed from reservations — the imported SevenRooms
+  // history doesn't maintain ReserveGuest.noShowCount).
+  const [noShowCoversRow, noShowByGuest] = await Promise.all([
+    prisma.reserveReservation.aggregate({
+      _sum: { covers: true },
+      where: { ...reservationWhere, updatedAt: { gte: start, lte: end }, status: 'NO_SHOW' }
+    }),
+    prisma.reserveReservation.groupBy({
+      by: ['guestId'],
+      where: { ...reservationWhere, status: 'NO_SHOW' },
+      _count: { _all: true },
+      _sum: { covers: true },
+      _max: { startsAt: true }
+    })
+  ]);
+  const repeatRows = noShowByGuest
+    .filter((row) => row._count._all >= 2)
+    .sort((a, b) => b._count._all - a._count._all)
+    .slice(0, 8);
+  const repeatGuests = repeatRows.length
+    ? await prisma.reserveGuest.findMany({
+        where: { id: { in: repeatRows.map((row) => row.guestId) } },
+        select: { id: true, firstName: true, lastName: true, totalVisits: true, _count: { select: { reservations: { where: { status: 'COMPLETED' } } } } }
+      })
+    : [];
+  const guestById = new Map(repeatGuests.map((guest) => [guest.id, guest]));
+  const repeatNoShowGuests = repeatRows.map((row) => {
+    const guest = guestById.get(row.guestId);
+    return {
+      guestId: row.guestId,
+      name: guest ? `${guest.firstName} ${guest.lastName}`.trim() || 'Guest' : 'Guest',
+      noShows: row._count._all,
+      noShowCovers: row._sum.covers ?? 0,
+      totalVisits: guest ? Math.max(guest.totalVisits, guest._count.reservations) : 0,
+      lastNoShowAt: row._max.startsAt?.toISOString() ?? null
+    };
+  });
+
   return {
     bookingsToday,
     coversToday: coversTodayRows._sum.covers ?? 0,
@@ -632,7 +671,9 @@ async function buildReserveSummary(
     cancellations,
     noShows,
     newGuests,
-    coversAhead
+    coversAhead,
+    noShowCovers: noShowCoversRow._sum.covers ?? 0,
+    repeatNoShowGuests
   };
 }
 

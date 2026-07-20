@@ -854,6 +854,14 @@
 }
 
 /* ── Prime cost hero — editorial paper-cream chrome ──────────── */
+/* Booked-covers line under the venue forecast bars. */
+.sales-booked-line {
+  margin: 10px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted, #6B655C);
+}
+.sales-booked-line strong { color: var(--color-text, #2C2A26); }
+
 /* Covers-ahead table: day rows × venue columns with a total bar per day. */
 .covers-ahead-table {
   width: 100%;
