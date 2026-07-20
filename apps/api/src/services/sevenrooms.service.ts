@@ -87,6 +87,46 @@ function csvObjects(text: string): Array<Record<string, string>> {
   });
 }
 
+// ── Looker HTML-table parsing ────────────────────────────────────────────────
+// SevenRooms' scheduled "Reservations Export" arrives as an HTML file
+// attachment (Looker: "results too large for the email body"). One big <table>,
+// first <tr> is the header row, ~71 columns. Convert it to the same row-object
+// shape csvObjects() produces so the mapping below is shared.
+function decodeEntities(value: string): string {
+  return value
+    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, code: string) => String.fromCodePoint(parseInt(code, 16)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'");
+}
+
+function htmlCellText(cell: string): string {
+  return decodeEntities(cell.replace(/<[^>]+>/g, '')).replace(/\s+/g, ' ').trim();
+}
+
+function htmlTableObjects(html: string): Array<Record<string, string>> {
+  const rowMatches = html.match(/<tr[^>]*>[\s\S]*?<\/tr>/gi) ?? [];
+  if (rowMatches.length < 2) return [];
+  const cellsOf = (rowHtml: string) =>
+    (rowHtml.match(/<t[hd][^>]*>[\s\S]*?<\/t[hd]>/gi) ?? []).map((cell) =>
+      htmlCellText(cell.replace(/^<t[hd][^>]*>/i, '').replace(/<\/t[hd]>$/i, ''))
+    );
+  const headers = cellsOf(rowMatches[0]!).map(normaliseHeader);
+  if (!headers.some(Boolean)) return [];
+  return rowMatches.slice(1).map((rowHtml) => {
+    const cells = cellsOf(rowHtml);
+    const object: Record<string, string> = {};
+    headers.forEach((header, index) => {
+      if (header) object[header] = cells[index] ?? '';
+    });
+    return object;
+  });
+}
+
 // ── field helpers ─────────────────────────────────────────────────────────────
 function pick(row: Record<string, string>, keys: string[]): string | null {
   for (const key of keys) {
@@ -168,11 +208,25 @@ function servicePeriodFor(hour: number): 'BREAKFAST' | 'LUNCH' | 'DINNER' {
   return 'DINNER';
 }
 
+// SevenRooms "Shift Name" (DAY / DINNER / BREAKFAST / EVENT…) → service period;
+// unknown shifts fall back to the time-of-day heuristic.
+function servicePeriodForShift(
+  shift: string | null,
+  hour: number
+): 'BREAKFAST' | 'LUNCH' | 'DINNER' | 'EVENT' {
+  const value = (shift ?? '').toLowerCase();
+  if (/breakfast|brunch|morning/.test(value)) return 'BREAKFAST';
+  if (/day|lunch/.test(value)) return 'LUNCH';
+  if (/dinner|evening|night/.test(value)) return 'DINNER';
+  if (/event|function|private/.test(value)) return 'EVENT';
+  return servicePeriodFor(hour);
+}
+
 function parseName(row: Record<string, string>): { firstName: string; lastName: string } {
   const first = pick(row, ['first_name', 'guest_first_name', 'client_first_name']);
   const last = pick(row, ['last_name', 'guest_last_name', 'client_last_name']);
   if (first || last) return { firstName: first ?? 'Guest', lastName: last ?? '' };
-  const full = pick(row, ['guest_name', 'client_name', 'full_name', 'name']) ?? '';
+  const full = pick(row, ['guest_name', 'client_name', 'full_name', 'full_name_reservation', 'name']) ?? '';
   const parts = full.split(/\s+/).filter(Boolean);
   if (parts.length === 0) return { firstName: 'Guest', lastName: '' };
   if (parts.length === 1) return { firstName: parts[0]!, lastName: '' };
@@ -230,6 +284,22 @@ async function extractCsvText(data: Record<string, unknown>): Promise<{ csv: str
     }
   }
   return { csv: null, source: 'none' };
+}
+
+// The Looker HTML export attachment ("Reservations_Export_….html", or any
+// text/html attachment). Returned raw; caller feeds it to htmlTableObjects.
+function extractHtmlText(data: Record<string, unknown>): { html: string | null; source: string } {
+  const attachments = (data.attachments as InboundAttachment[] | undefined) ?? [];
+  for (const attachment of attachments) {
+    const name = (attachment.filename ?? '').toLowerCase();
+    const type = (attachment.content_type ?? attachment.contentType ?? '').toLowerCase();
+    if (!name.endsWith('.html') && !name.endsWith('.htm') && !type.includes('text/html')) continue;
+    const inline = decodeAttachmentContent(attachment.content);
+    if (inline && /<table[\s>]/i.test(inline)) {
+      return { html: inline, source: `html-attachment:${attachment.filename ?? 'unnamed'}` };
+    }
+  }
+  return { html: null, source: 'none' };
 }
 
 function safeTokenEqual(provided: string | null, expected: string): boolean {
@@ -299,16 +369,26 @@ export const sevenroomsService = {
       throw error;
     }
 
-    const { csv, source } = await extractCsvText(data);
-    if (!csv) {
+    // Prefer a CSV attachment; fall back to the Looker HTML-table attachment
+    // ("results too large for the email body" exports arrive that way).
+    let rows: Array<Record<string, string>>;
+    let source: string;
+    const csvResult = await extractCsvText(data);
+    if (csvResult.csv) {
+      rows = csvObjects(csvResult.csv);
+      source = csvResult.source;
+    } else {
+      const htmlResult = extractHtmlText(data);
+      rows = htmlResult.html ? htmlTableObjects(htmlResult.html) : [];
+      source = htmlResult.source;
+    }
+    if (rows.length === 0) {
       await prisma.integrationWebhookEvent.updateMany({
         where: { provider: 'SEVENROOMS', accountKey: 'inbound-email', providerEventId: messageId },
-        data: { status: 'IGNORED', processedAt: new Date(), errorSummary: 'No CSV attachment or CSV-like body found.' }
+        data: { status: 'IGNORED', processedAt: new Date(), errorSummary: 'No CSV or HTML reservation export found.' }
       });
-      return { received: true, ignored: 'No CSV attachment or CSV-like body found in the email.' };
+      return { received: true, ignored: 'No CSV attachment, HTML export, or CSV-like body found in the email.' };
     }
-
-    const rows = csvObjects(csv);
     const warnings: string[] = [];
     let reservationsCreated = 0;
     let reservationsUpdated = 0;
@@ -340,10 +420,13 @@ export const sevenroomsService = {
       }
       const durationMinutes = Number(pick(row, ['duration', 'duration_minutes']) ?? '') || DEFAULT_DURATION_MINUTES;
       const endsAt = new Date(startsAt.getTime() + durationMinutes * 60_000);
-      const serviceDate = new Date(`${dateIso}T00:00:00${offset}`);
+      // Match the Reserve app's convention: serviceDate is UTC midnight of the
+      // local date string (reserve.service startOfDay runs in a UTC container),
+      // NOT Sydney midnight — otherwise day-bucketed queries miss these rows.
+      const serviceDate = new Date(`${dateIso}T00:00:00Z`);
 
-      const covers = Number(pick(row, ['covers', 'party_size', 'guests', 'pax', 'party', 'max_guests']) ?? '') || 1;
-      const status = mapStatus(pick(row, ['status', 'reservation_status', 'state']));
+      const covers = Number(pick(row, ['covers', 'booked_covers', 'party_size', 'guests', 'pax', 'party', 'max_guests']) ?? '') || 1;
+      const status = mapStatus(pick(row, ['status', 'reservation_status', 'detailed_status', 'state']));
       const externalRef = pick(row, ['reservation_id', 'confirmation_number', 'confirmation', 'reference_number', 'reference', 'booking_id', 'id']);
       const sevenRoomsGuestId = pick(row, ['client_id', 'guest_id', 'client_reference']);
 
@@ -351,6 +434,8 @@ export const sevenroomsService = {
       const email = pick(row, ['email', 'guest_email', 'client_email'])?.toLowerCase() ?? null;
       const phone = pick(row, ['phone', 'phone_number', 'mobile', 'guest_phone']) ?? null;
       const notes = pick(row, ['notes', 'reservation_notes', 'special_requests', 'requests']);
+      const area = pick(row, ['area', 'seating_area', 'seating_area_name', 'room']);
+      const shift = pick(row, ['shift', 'shift_name']);
 
       // Guest: match by SevenRooms client id, then email, then phone; else create.
       let guest = sevenRoomsGuestId
@@ -378,7 +463,7 @@ export const sevenroomsService = {
       const reservationData = {
         venue,
         serviceDate,
-        servicePeriod: servicePeriodFor(Number(time.slice(0, 2))),
+        servicePeriod: servicePeriodForShift(shift, Number(time.slice(0, 2))),
         startsAt,
         endsAt,
         covers,
@@ -389,6 +474,7 @@ export const sevenroomsService = {
         guestEmail: email,
         guestPhone: phone,
         notes,
+        area,
         ...(status === 'CANCELLED' ? { cancelledAt: new Date() } : {}),
         ...(status === 'COMPLETED' ? { completedAt: startsAt } : {})
       };
