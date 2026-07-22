@@ -12,6 +12,7 @@ import type {
   MonthlyRecapPayload,
   MonthlyRecapPeriod,
   RosterForecastSnapshot,
+  ForecastOutlookPayload,
   RosterShift,
   SalesActualSummary,
   SalesItemActualSummary,
@@ -1432,6 +1433,48 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       .values()
   ).sort((a, b) => b.costCents - a.costCents);
 
+  // Live forecast engine outlook — the single basis for every prediction on
+  // this page. The legacy hardcoded historical table remains only as a
+  // fallback for weeks outside the 13-week horizon or a failed fetch.
+  const [engineOutlook, setEngineOutlook] = useState<ForecastOutlookPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void staffApi<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13')
+      .then((next) => {
+        if (!cancelled) setEngineOutlook(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const engineSalesByVenueDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const venueOutlook of engineOutlook?.venues ?? []) {
+      for (const day of venueOutlook.days) {
+        map.set(`${venueOutlook.venue}|${day.date}`, day.salesForecastCents);
+      }
+    }
+    return map;
+  }, [engineOutlook]);
+  const engineDayCents = useCallback(
+    (venue: string, dateKey: string): number | null => engineSalesByVenueDay.get(`${venue}|${dateKey}`) ?? null,
+    [engineSalesByVenueDay]
+  );
+  // Week total only when EVERY day of the week is inside the engine horizon.
+  const engineWeekCents = useCallback(
+    (venue: string, weekStartDate: Date): number | null => {
+      let total = 0;
+      for (let i = 0; i < 7; i += 1) {
+        const value = engineSalesByVenueDay.get(`${venue}|${localIsoDate(addDays(weekStartDate, i))}`);
+        if (value == null) return null;
+        total += value;
+      }
+      return total;
+    },
+    [engineSalesByVenueDay]
+  );
+
   useEffect(() => {
     if (!venues.length) return;
     setForecastInputs((current) => {
@@ -1439,14 +1482,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       let changed = false;
       for (const venue of venues) {
         if (!next[venue]) {
-          const historical = historicalSalesForWeek(venue, weekStart);
-          next[venue] = { sales: centsInput(Math.round(historical.total * 100)), targetWagePercent: '32' };
+          const baselineCents = engineWeekCents(venue, weekStart) ?? Math.round(historicalSalesForWeek(venue, weekStart).total * 100);
+          next[venue] = { sales: centsInput(baselineCents), targetWagePercent: '32' };
           changed = true;
         }
       }
       return changed ? next : current;
     });
-  }, [venues, weekStart]);
+  }, [engineWeekCents, venues, weekStart]);
 
   function updateForecastInput(venue: string, patch: Partial<ForecastInput>) {
     setForecastInputs((current) => ({
@@ -1464,10 +1507,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const next = { ...current };
       const targetVenues = venue ? [venue] : venues;
       for (const targetVenue of targetVenues) {
-        const historical = historicalSalesForWeek(targetVenue, weekStart);
-        if (historical.total <= 0) continue;
+        const baselineCents = engineWeekCents(targetVenue, weekStart) ?? Math.round(historicalSalesForWeek(targetVenue, weekStart).total * 100);
+        if (baselineCents <= 0) continue;
         next[targetVenue] = {
-          sales: centsInput(Math.round(historical.total * 100)),
+          sales: centsInput(baselineCents),
           targetWagePercent: current[targetVenue]?.targetWagePercent ?? '32'
         };
       }
@@ -1626,8 +1669,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const forecastRows = useMemo<ForecastVenueRow[]>(() => {
     return venues.map((venue) => {
       const input = forecastInputs[venue] ?? { sales: '', targetWagePercent: '32' };
-      const historical = historicalSalesForWeek(venue, weekStart);
-      const historicalSalesCents = Math.round(historical.total * 100);
+      const engineWeekTotal = engineWeekCents(venue, weekStart);
+      const historicalSalesCents = engineWeekTotal ?? Math.round(historicalSalesForWeek(venue, weekStart).total * 100);
       const historicalSource = normaliseHistoricalVenue(venue);
       const forecastSalesCents = parseMoneyCents(input.sales);
       const targetWagePercent = parsePercent(input.targetWagePercent);
@@ -1788,16 +1831,22 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const weekEndKey = isoDate(addDays(weekStart, 7));
     const weekStartKey = isoDate(weekStart);
     return salesReportVenues.map((venue) => {
+      const engineWeekTotal = engineWeekCents(venue, weekStart);
       const historical = historicalSalesForWeek(venue, weekStart);
-      const previousHistorical = historicalSalesForWeek(venue, addDays(weekStart, -7));
       const entries = actualSalesEntriesByVenue.get(venue) ?? [];
       const actualSalesCents = entries.reduce((sum, entry) => sum + entry.salesCents, 0);
       const actualDates = new Set(entries.map((entry) => isoDate(new Date(entry.serviceDate))));
-      const actualHistoricalCents = historical.days
-        .filter((day) => actualDates.has(localIsoDate(day.date)))
-        .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
-      const historicalSalesCents = Math.round(historical.total * 100);
-      const previousHistoricalSalesCents = Math.round(previousHistorical.total * 100);
+      // Engine days ARE the baseline when the week is in horizon (past days in
+      // it already carry actuals, so the pace ratio self-normalises to 1 and
+      // the prediction converges on the engine's week figure).
+      const actualHistoricalCents = engineWeekTotal != null
+        ? Array.from(actualDates).reduce((sum, key) => sum + (engineDayCents(venue, key) ?? 0), 0)
+        : historical.days
+            .filter((day) => actualDates.has(localIsoDate(day.date)))
+            .reduce((sum, day) => sum + Math.round(day.sales * 100), 0);
+      const historicalSalesCents = engineWeekTotal ?? Math.round(historical.total * 100);
+      const previousHistoricalSalesCents =
+        engineWeekCents(venue, addDays(weekStart, -7)) ?? Math.round(historicalSalesForWeek(venue, addDays(weekStart, -7)).total * 100);
       const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
       // Covers already booked for the REMAINING days of this week — a floor
       // under the prediction (strong bookings raise it; sparse bookings never
@@ -1832,16 +1881,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         forecastVarianceCents,
         paceLabel: predictedSalesCents > basePredictedCents
           ? 'Bookings on the books (raised the forecast)'
-          : actualSalesCents > 0 && actualHistoricalCents > 0
-            ? 'Actual pace vs matching historical days'
-            : manualForecastCents > 0
-              ? 'Manual forecast'
-              : historicalSalesCents > 0
-                ? 'Historical baseline'
-                : 'Missing sales history'
+          : engineWeekTotal != null
+            ? 'Forecast engine (your history, trend + bookings)'
+            : actualSalesCents > 0 && actualHistoricalCents > 0
+              ? 'Actual pace vs matching historical days'
+              : manualForecastCents > 0
+                ? 'Manual forecast'
+                : historicalSalesCents > 0
+                  ? 'Historical baseline'
+                  : 'Missing sales history'
       };
     });
-  }, [actualSalesEntriesByVenue, avgSpendPerCoverCents, data.overview, forecastInputs, salesReportVenues, weekStart]);
+  }, [actualSalesEntriesByVenue, avgSpendPerCoverCents, data.overview, engineDayCents, engineWeekCents, forecastInputs, salesReportVenues, weekStart]);
   const salesDailyRows = useMemo(() => {
     return Array.from({ length: 7 }, (_, index) => {
       const date = addDays(weekStart, index);
@@ -1856,7 +1907,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           const actualSalesCents = (actualSalesEntriesByVenue.get(venue) ?? [])
             .filter((entry) => isoDate(new Date(entry.serviceDate)) === dateKey)
             .reduce((sum, entry) => sum + entry.salesCents, 0);
-          const historicalSalesCents = Math.round((historicalSalesForWeek(venue, weekStart).days[index]?.sales ?? 0) * 100);
+          const historicalSalesCents = engineDayCents(venue, dateKey) ?? Math.round((historicalSalesForWeek(venue, weekStart).days[index]?.sales ?? 0) * 100);
           const historicalWeekCents = salesTrendRows.find((row) => row.venue === venue)?.historicalSalesCents ?? 0;
           const manualForecastCents = parseMoneyCents(forecastInputs[venue]?.sales ?? '');
           const forecastSalesCents = manualForecastCents > 0 && historicalWeekCents > 0
@@ -1866,7 +1917,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         })
       };
     });
-  }, [actualSalesEntriesByVenue, forecastInputs, salesReportVenues, salesTrendRows, weekStart]);
+  }, [actualSalesEntriesByVenue, engineDayCents, forecastInputs, salesReportVenues, salesTrendRows, weekStart]);
   const salesGraphMaxCents = Math.max(
     1,
     ...salesTrendRows.flatMap((row) => [row.actualSalesCents, row.manualForecastCents, row.predictedSalesCents, row.historicalSalesCents])

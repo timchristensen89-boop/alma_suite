@@ -35,6 +35,18 @@ function isWrite(req: Request) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
 }
 
+// Mirror of the suite API's read-only rule: an account whose every ENABLED
+// app access carries permissions.readOnly can see everything its access
+// allows but never change it (applies to isAdmin viewer logins too).
+function isReadOnlyAccount(user: AuthUser) {
+  const enabled = user.appAccess.filter((access) => access.status === 'ENABLED');
+  if (enabled.length === 0) return false;
+  return enabled.every((access) => {
+    const perms = access.permissions;
+    return Boolean(perms && typeof perms === 'object' && (perms as { readOnly?: unknown }).readOnly === true);
+  });
+}
+
 function bearerToken(req: Request) {
   const header = req.header('authorization') ?? '';
   const match = header.match(/^bearer\s+(.+)$/i);
@@ -68,6 +80,10 @@ export async function authMiddleware(
 
   if (req.user.accountType === 'VENUE_DEVICE' && isWrite(req)) {
     return next(new HttpError(403, 'Staff PIN context is required on this shared device.'));
+  }
+
+  if (isWrite(req) && isReadOnlyAccount(req.user)) {
+    return next(new HttpError(403, 'This account is read-only — viewing is fine, changes are off.'));
   }
 
   return next();

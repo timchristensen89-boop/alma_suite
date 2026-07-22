@@ -829,7 +829,9 @@ export const stockOperationsService = {
   async getMenuParRecommendations(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockMenuParRecommendationsPayload> {
     const venue = actorVenueScope(actor, requestedVenue);
     const { start, end } = sixMonthLookback();
-    const [venues, salesEntries, itemSalesEntries, recipes] = await Promise.all([
+    const todayUtc = new Date(new Date().toISOString().slice(0, 10) + 'T00:00:00.000Z');
+    const weekAhead = new Date(todayUtc.getTime() + 7 * 86_400_000);
+    const [venues, salesEntries, itemSalesEntries, forecastSnapshots, recipes] = await Promise.all([
       venuesForActor(actor),
       prisma.salesActualEntry.findMany({
         where: {
@@ -845,6 +847,17 @@ export const stockOperationsService = {
           recipeId: { not: null }
         },
         orderBy: { serviceDate: 'asc' }
+      }),
+      // Week-ahead demand from the forecasting engine's daily snapshots (the
+      // suite-wide forecast bus — written by /api/forecast, read here so par
+      // recommendations follow predicted demand instead of a flat average).
+      prisma.forecastDaySnapshot.findMany({
+        where: {
+          ...(venue ? { venue } : {}),
+          forecastDate: { gte: todayUtc, lt: weekAhead }
+        },
+        select: { venue: true, forecastDate: true, leadDays: true, salesForecastCents: true },
+        orderBy: { leadDays: 'asc' }
       }),
       prisma.recipe.findMany({
         where: venue ? { OR: [{ venue }, { venue: null }] } : {},
@@ -886,6 +899,37 @@ export const stockOperationsService = {
       if (line.itemId && !supplierByItem.has(line.itemId)) supplierByItem.set(line.itemId, line);
     }
 
+    // Freshest snapshot per venue+date (smallest leadDays), summed per venue.
+    const next7ByVenue = new Map<string, number>();
+    {
+      const seenVenueDates = new Set<string>();
+      for (const snap of forecastSnapshots) {
+        const key = `${snap.venue}|${snap.forecastDate.toISOString().slice(0, 10)}`;
+        if (seenVenueDates.has(key)) continue;
+        seenVenueDates.add(key);
+        next7ByVenue.set(snap.venue, (next7ByVenue.get(snap.venue) ?? 0) + snap.salesForecastCents);
+      }
+    }
+    const trailingDailyByVenue = new Map<string, { totalCents: number; days: Set<string> }>();
+    for (const entry of salesEntries) {
+      const row = trailingDailyByVenue.get(entry.venue) ?? { totalCents: 0, days: new Set<string>() };
+      row.totalCents += entry.salesCents;
+      row.days.add(entry.serviceDate.toISOString().slice(0, 10));
+      trailingDailyByVenue.set(entry.venue, row);
+    }
+    // Demand factor: >1 when the week ahead is forecast busier than the
+    // trailing average (holidays, big bookings), <1 when quieter (deep
+    // winter). Clamped so par floors never swing wildly, 1 when the engine
+    // has no snapshots yet.
+    const demandFactorForVenue = (rowVenue: string): number => {
+      const next7 = next7ByVenue.get(rowVenue) ?? 0;
+      const trailing = trailingDailyByVenue.get(rowVenue);
+      if (next7 <= 0 || !trailing || trailing.days.size === 0 || trailing.totalCents <= 0) return 1;
+      const trailingWeekCents = (trailing.totalCents / trailing.days.size) * 7;
+      if (trailingWeekCents <= 0) return 1;
+      return Math.min(1.6, Math.max(0.6, next7 / trailingWeekCents));
+    };
+
     const salesDays = new Set(salesEntries.map((entry) => entry.serviceDate.toISOString().slice(0, 10)));
     const itemSalesDays = new Set(itemSalesEntries.map((entry) => entry.serviceDate.toISOString().slice(0, 10)));
     const totalSalesCents = salesEntries.reduce((sum, entry) => sum + entry.salesCents, 0);
@@ -923,8 +967,9 @@ export const stockOperationsService = {
             : 0;
           const estimatedSixMonthUsage = recipeQuantitySold * ingredientPerSale;
           const averageDailyUsage = itemSalesDays.size > 0 ? estimatedSixMonthUsage / itemSalesDays.size : 0;
+          const demandFactor = demandFactorForVenue(rowVenue);
           const recommendedFromItemSales = hasItemSales && averageDailyUsage > 0
-            ? Math.ceil(averageDailyUsage * 7)
+            ? Math.ceil(averageDailyUsage * 7 * demandFactor)
             : null;
           const recommendedParLevel = recommendedFromItemSales
             ? Math.max(currentParLevel ?? 0, recommendedFromItemSales)
@@ -951,6 +996,9 @@ export const stockOperationsService = {
             continue;
           }
           const warnings = [
+            ...(Math.abs(demandFactor - 1) >= 0.05
+              ? [`Week-ahead demand is forecast at ${Math.round(demandFactor * 100)}% of the trailing average, so the recommended week of stock is scaled to match.`]
+              : []),
             ...(!hasItemSales ? ['Item-level Square sales are not connected for this recipe yet, so current par levels are preserved.'] : []),
             ...(hasItemSales && !matchedRecipeSales ? ['No matched Square item sales found for this recipe in the six-month window.'] : []),
             ...(matchedRecipeSales && !line.quantity ? ['Recipe ingredient quantity is missing, so item sales cannot estimate stock usage for this line.'] : []),
