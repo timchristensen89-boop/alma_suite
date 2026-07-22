@@ -28,6 +28,7 @@ import {
   type ForecastAccuracyBucket,
   type ForecastAccuracyPayload,
   type ForecastAccuracyWeekRow,
+  type ForecastBacktestPayload,
   type ForecastCashflowPayload,
   type ForecastConfigPayload,
   type ForecastDay,
@@ -40,11 +41,15 @@ import { HttpError } from '../lib/http.js';
 import {
   DAY_MS,
   addDaysUtc,
+  baselineForDate,
+  buildBaselineModel,
   dateFromKey,
   keyOf,
-  median,
   mondayOf,
+  nextOccurrence,
   pctOf,
+  quarterEndMonth,
+  quarterStartOf,
   sydneyKeyForInstant,
   sydneyTodayKey,
   trimmedMean
@@ -93,6 +98,8 @@ function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
   if (venue && venue !== actor.venue) throw new HttpError(403, 'Forecasts are limited to your venue.');
   return actor.venue;
 }
+
+const isHolidayKey = (dateKey: string) => nswHolidayName(dateKey) != null;
 
 function rosterHoursForShift(entry: { startsAt: Date; endsAt: Date; breakMinutes: number }): number {
   const minutes = (entry.endsAt.getTime() - entry.startsAt.getTime()) / 60_000 - entry.breakMinutes;
@@ -394,37 +401,14 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     const firstDataKey = [...sales.keys()].sort()[0];
     const firstDataDate = firstDataKey ? dateFromKey(firstDataKey) : null;
 
-    // Trend: last 28 full days vs the 28 before.
-    let trendFactor = 1;
-    if (firstDataDate && firstDataDate <= addDaysUtc(sampleAnchor, -56)) {
-      let recent = 0;
-      let prior = 0;
-      for (let i = 1; i <= 28; i += 1) recent += sales.get(keyOf(addDaysUtc(sampleAnchor, -i))) ?? 0;
-      for (let i = 29; i <= 56; i += 1) prior += sales.get(keyOf(addDaysUtc(sampleAnchor, -i))) ?? 0;
-      if (prior > 0 && recent > 0) trendFactor = Math.min(1.15, Math.max(0.85, recent / prior));
-    }
-
-    // Per-weekday baselines from the last 8 same-weekday actuals.
-    const weekdayValues = new Map<number, number[]>();
-    for (let weekday = 0; weekday < 7; weekday += 1) weekdayValues.set(weekday, []);
-    for (let back = 1; back <= 56; back += 1) {
-      const d = addDaysUtc(sampleAnchor, -back);
-      if (firstDataDate && d < firstDataDate) continue;
-      // Holiday trade is its own animal — keep it out of ordinary weekday baselines.
-      if (nswHolidayName(keyOf(d))) continue;
-      weekdayValues.get(d.getUTCDay())!.push(sales.get(keyOf(d)) ?? 0);
-    }
-    const closedWeekdays: number[] = [];
-    const baselineByWeekday = new Map<number, number>();
-    for (let weekday = 0; weekday < 7; weekday += 1) {
-      const values = weekdayValues.get(weekday) ?? [];
-      if (values.length >= 3 && median(values) < CLOSED_DAY_THRESHOLD_CENTS) {
-        closedWeekdays.push(weekday);
-        baselineByWeekday.set(weekday, 0);
-      } else {
-        baselineByWeekday.set(weekday, trimmedMean(values));
-      }
-    }
+    const model = buildBaselineModel({
+      sales,
+      anchor: sampleAnchor,
+      firstDataDate,
+      isHoliday: isHolidayKey,
+      closedThresholdCents: CLOSED_DAY_THRESHOLD_CENTS
+    });
+    const { closedWeekdays, trendFactor } = model;
 
     // Historical final covers per weekday (last 8 weeks of reservations).
     const weekdayCovers = new Map<number, number[]>();
@@ -479,14 +463,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
       const actualSalesCents = sales.get(key) ?? null;
       const holiday = nswHolidayName(key);
-      const yoyKey = keyOf(addDaysUtc(date, -364));
-      const yoyRaw = sales.get(yoyKey) ?? null;
-      // Only blend last year in when holiday-status matches: an ordinary day
-      // last year says nothing about this year's Good Friday, and vice versa.
-      const yoy = (holiday == null) === (nswHolidayName(yoyKey) == null) ? yoyRaw : null;
-      const rawBaseline = baselineByWeekday.get(weekday) ?? 0;
-      const blended = yoy != null && yoy > 0 && rawBaseline > 0 ? rawBaseline * 0.7 + yoy * 0.3 : rawBaseline;
-      const baselineSalesCents = closed ? 0 : Math.round(blended * trendFactor);
+      const { baselineCents: baselineSalesCents, yoyRaw } = baselineForDate(model, sales, date, isHolidayKey);
 
       const bookedCovers = covers.get(key) ?? 0;
       const keptBooked = Math.round(bookedCovers * (1 - noShowRate));
@@ -689,6 +666,23 @@ function rollupWeeks(days: ForecastDay[]): ForecastWeek[] {
   return weeks;
 }
 
+const OUTLOOK_CACHE_TTL_MS = 60_000;
+const outlookCache = new Map<string, { at: number; promise: Promise<ForecastOutlookPayload> }>();
+
+// Memoise concurrent/near-simultaneous outlook builds (the Forecast page fires
+// /outlook and /cashflow together). Failures evict so errors don't stick.
+function cachedOutlook(options: BuildOptions): Promise<ForecastOutlookPayload> {
+  const key = `${options.venue ?? 'ALL'}|${options.weeks}|${options.persistSnapshots ? 1 : 0}`;
+  const hit = outlookCache.get(key);
+  if (hit && Date.now() - hit.at < OUTLOOK_CACHE_TTL_MS) return hit.promise;
+  const promise = buildOutlook(options).catch((error) => {
+    outlookCache.delete(key);
+    throw error;
+  });
+  outlookCache.set(key, { at: Date.now(), promise });
+  return promise;
+}
+
 async function persistSnapshots(payload: ForecastOutlookPayload, today: Date) {
   const rows: Array<{
     venue: string;
@@ -785,36 +779,31 @@ const SUPER_DUE_BY_QUARTER_END_MONTH: Record<number, { month: number; day: numbe
   5: { month: 6, day: 28 }
 };
 
-function quarterEndMonth(date: Date): number {
-  const month = date.getUTCMonth();
-  if (month <= 2) return 2;
-  if (month <= 5) return 5;
-  if (month <= 8) return 8;
-  return 11;
-}
-
-function nextOccurrence(due: { month: number; day: number }, after: Date): Date {
-  const year = after.getUTCFullYear();
-  for (const y of [year, year + 1]) {
-    const candidate = new Date(Date.UTC(y, due.month, due.day));
-    if (candidate >= after) return candidate;
-  }
-  return new Date(Date.UTC(year + 1, due.month, due.day));
-}
-
 async function buildCashflow(weeks: number): Promise<ForecastCashflowPayload> {
   const todayKey = sydneyTodayKey();
   const today = dateFromKey(todayKey);
   const weekStart = mondayOf(today);
   const horizonEnd = addDaysUtc(weekStart, weeks * 7);
 
-  const [outlook, configRow, superRate, openBills] = await Promise.all([
-    buildOutlook({ weeks, venue: null, persistSnapshots: false }),
+  const quarterStart = quarterStartOf(today);
+  const [outlook, configRow, superRate, openBills, qtdSalesAgg, qtdBillTaxAgg] = await Promise.all([
+    cachedOutlook({ weeks, venue: null, persistSnapshots: false }),
     ensureConfig(),
     configuredSuperRateFraction(),
     prisma.supplierInvoice.findMany({
       where: { status: 'AUTHORISED' },
       select: { supplierName: true, totalCents: true, dueDate: true, invoiceDate: true }
+    }),
+    // Quarter-to-date actuals so the next BAS/super remittances carry the
+    // liability already accrued BEFORE this projection window — without
+    // these, the runway looks rosier than it is.
+    prisma.salesActualEntry.aggregate({
+      where: { serviceDate: { gte: quarterStart, lt: today } },
+      _sum: { salesCents: true }
+    }),
+    prisma.supplierInvoice.aggregate({
+      where: { invoiceDate: { gte: quarterStart, lte: today }, status: { not: 'DRAFT' } },
+      _sum: { taxCents: true }
     })
   ]);
   const config = configToPayload(configRow);
@@ -910,6 +899,11 @@ async function buildCashflow(weeks: number): Promise<ForecastCashflowPayload> {
 
   const priorWeekStart = addDaysUtc(weekStart, -7);
   const priorWeekWages = await recapWageCents(null, priorWeekStart, weekStart);
+  // Super accrued from the quarter start up to (but excluding) last week —
+  // last week is handled separately below, and this week onward accrues from
+  // the forecast.
+  const superQtdWages = priorWeekStart > quarterStart ? await recapWageCents(null, quarterStart, priorWeekStart) : 0;
+  let superAccruedQtdCents = Math.round(superQtdWages * (superRate / (1 + superRate)));
   {
     const payday = paydayForWeek(priorWeekStart);
     if (payday >= today && payday < horizonEnd) {
@@ -934,8 +928,8 @@ async function buildCashflow(weeks: number): Promise<ForecastCashflowPayload> {
   {
     const due = nextOccurrence(SUPER_DUE_BY_QUARTER_END_MONTH[quarterEndMonth(today)]!, today);
     if (due < horizonEnd) {
-      add(outflows, weekIndexOf(due), 'super_remittance', superAccruedCents);
-      notes.push('Super remittance covers only wages accrued inside this projection window — super owing from before this window is not included.');
+      add(outflows, weekIndexOf(due), 'super_remittance', superAccruedQtdCents + superAccruedCents);
+      notes.push('Super remittance includes wages accrued since the quarter started (from actual timesheets) plus forecast wages to the due date.');
     }
   }
 
@@ -944,9 +938,14 @@ async function buildCashflow(weeks: number): Promise<ForecastCashflowPayload> {
   {
     const due = nextOccurrence(BAS_DUE_BY_QUARTER_END_MONTH[quarterEndMonth(today)]!, today);
     if (due < horizonEnd) {
-      const gstCents = Math.max(0, Math.round(accruedSalesCents / 11 - accruedPurchasesCents / 11));
+      const qtdCollectedCents = Math.round((qtdSalesAgg._sum.salesCents ?? 0) / 11);
+      const qtdCreditsCents = qtdBillTaxAgg._sum.taxCents ?? 0;
+      const gstCents = Math.max(
+        0,
+        qtdCollectedCents - qtdCreditsCents + Math.round(accruedSalesCents / 11 - accruedPurchasesCents / 11)
+      );
       add(outflows, weekIndexOf(due), 'gst_remittance', gstCents);
-      notes.push('GST is estimated as 1/11th of forecast takings less purchases accrued in this window — BAS liabilities from earlier quarters are not included.');
+      notes.push('GST is 1/11th of takings less purchase credits, accrued from the quarter start (actuals) through the projection (forecast).');
     }
   }
 
@@ -1124,13 +1123,101 @@ async function buildAccuracy(): Promise<ForecastAccuracyPayload> {
   return { buckets, recentWeeks };
 }
 
+// ── Backtest ─────────────────────────────────────────────────────────────────
+// Walk-forward validation: re-run the EXACT baseline model as-of each past
+// Monday (only data available before that Monday) and score it against what
+// the week actually took. Gives an honest error bar today, without waiting
+// for live snapshots to accumulate. Baseline-only: the bookings floor and
+// same-day actuals that help the live forecast aren't replayed, so real
+// accuracy should be at least this good.
+async function buildBacktest(weeksBack: number): Promise<ForecastBacktestPayload> {
+  const today = dateFromKey(sydneyTodayKey());
+  const currentMonday = mondayOf(today);
+  const targets = await venueTargets();
+  const venueNames = targets.map((t) => t.name);
+  const historyStart = addDaysUtc(currentMonday, -(HISTORY_DAYS + weeksBack * 7));
+
+  const salesRows = await prisma.salesActualEntry.groupBy({
+    by: ['venue', 'serviceDate'],
+    where: { venue: { in: venueNames }, serviceDate: { gte: historyStart, lt: currentMonday } },
+    _sum: { salesCents: true }
+  });
+  const salesByVenue = new Map<string, Map<string, number>>();
+  for (const row of salesRows) {
+    const map = salesByVenue.get(row.venue) ?? new Map<string, number>();
+    const key = keyOf(row.serviceDate);
+    map.set(key, (map.get(key) ?? 0) + (row._sum.salesCents ?? 0));
+    salesByVenue.set(row.venue, map);
+  }
+
+  const weeks: ForecastAccuracyWeekRow[] = [];
+  for (const venue of venueNames) {
+    const sales = salesByVenue.get(venue) ?? new Map<string, number>();
+    const firstDataKey = [...sales.keys()].sort()[0];
+    const firstDataDate = firstDataKey ? dateFromKey(firstDataKey) : null;
+    if (!firstDataDate) continue;
+    for (let w = weeksBack; w >= 1; w -= 1) {
+      const weekMonday = addDaysUtc(currentMonday, -7 * w);
+      // The model needs a real run-up of history before the week under test.
+      if (firstDataDate > addDaysUtc(weekMonday, -28)) continue;
+      const model = buildBaselineModel({
+        sales,
+        anchor: weekMonday,
+        firstDataDate,
+        isHoliday: isHolidayKey,
+        closedThresholdCents: CLOSED_DAY_THRESHOLD_CENTS
+      });
+      let forecastCents = 0;
+      let actualCents = 0;
+      let actualDays = 0;
+      for (let i = 0; i < 7; i += 1) {
+        const date = addDaysUtc(weekMonday, i);
+        forecastCents += baselineForDate(model, sales, date, isHolidayKey).baselineCents;
+        const actual = sales.get(keyOf(date));
+        if (actual != null) {
+          actualCents += actual;
+          actualDays += 1;
+        }
+      }
+      if (actualDays === 0) continue;
+      weeks.push({
+        weekStart: keyOf(weekMonday),
+        venue,
+        forecastSalesCents: forecastCents,
+        actualSalesCents: actualCents,
+        variancePct:
+          forecastCents > 0 && actualCents > 0
+            ? Math.round(((actualCents - forecastCents) / forecastCents) * 1000) / 10
+            : null
+      });
+    }
+  }
+
+  let errSum = 0;
+  let biasSum = 0;
+  let n = 0;
+  for (const row of weeks) {
+    if (row.actualSalesCents <= 0) continue;
+    const err = (row.forecastSalesCents - row.actualSalesCents) / row.actualSalesCents;
+    errSum += Math.abs(err);
+    biasSum += err;
+    n += 1;
+  }
+  return {
+    sampleWeeks: n,
+    salesMapePct: n > 0 ? Math.round((errSum / n) * 1000) / 10 : null,
+    salesBiasPct: n > 0 ? Math.round((biasSum / n) * 1000) / 10 : null,
+    weeks: weeks.sort((a, b) => (a.weekStart < b.weekStart ? -1 : a.weekStart > b.weekStart ? 1 : a.venue.localeCompare(b.venue)))
+  };
+}
+
 // ── Public service ───────────────────────────────────────────────────────────
 
 export const forecastService = {
   async outlook(query: unknown, actor: AuthUser): Promise<ForecastOutlookPayload> {
     const parsed = outlookQuerySchema.parse(query ?? {});
     const venue = actorVenueScope(actor, parsed.venue?.trim() || null);
-    return buildOutlook({ weeks: parsed.weeks, venue, persistSnapshots: true });
+    return cachedOutlook({ weeks: parsed.weeks, venue, persistSnapshots: true });
   },
 
   async cashflow(query: unknown, actor: AuthUser): Promise<ForecastCashflowPayload> {
@@ -1143,6 +1230,10 @@ export const forecastService = {
 
   async accuracy(): Promise<ForecastAccuracyPayload> {
     return buildAccuracy();
+  },
+
+  async backtest(): Promise<ForecastBacktestPayload> {
+    return buildBacktest(8);
   },
 
   async getConfig(): Promise<ForecastConfigPayload> {
@@ -1178,6 +1269,13 @@ export const forecastService = {
       where: { forecastDate: { lt: addDaysUtc(dateFromKey(sydneyTodayKey()), -180) } }
     });
     const outlook = await buildOutlook({ weeks: 13, venue: null, persistSnapshots: true });
+    // Stamp engine health so the suite notification bell can alert on a
+    // stalled engine or degraded inputs without recomputing anything.
+    await prisma.forecastConfig.upsert({
+      where: { id: CONFIG_ID },
+      update: { lastRunAt: new Date(), lastWarnings: outlook.warnings },
+      create: { id: CONFIG_ID, lastRunAt: new Date(), lastWarnings: outlook.warnings }
+    });
     return {
       ok: true,
       venues: outlook.venues.length,

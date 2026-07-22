@@ -1240,6 +1240,11 @@ model ForecastConfig {
   payrollPayWeekday      Int       @default(3)
   payrollAnchorDate      DateTime?
   fixedCosts             Json      @default("[]")
+  // Engine health, written by the nightly snapshot job so the suite
+  // notification bell can alert on stale runs / data-quality warnings
+  // without recomputing the forecast.
+  lastRunAt              DateTime?
+  lastWarnings           Json      @default("[]")
   createdAt              DateTime  @default(now())
   updatedAt              DateTime  @updatedAt
 }

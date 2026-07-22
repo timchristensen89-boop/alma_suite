@@ -46,3 +46,12 @@ forecastRouter.patch('/config', requireManager, async (req, res, next) => {
     next(error);
   }
 });
+
+// Walk-forward backtest: how the model would have scored over recent weeks.
+forecastRouter.get('/backtest', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await forecastService.backtest());
+  } catch (error) {
+    next(error);
+  }
+});

@@ -6895,3 +6895,13 @@ export const forecastConfigUpdateSchema = z.object({
 });
 
 export type ForecastConfigUpdateInput = z.infer<typeof forecastConfigUpdateSchema>;
+
+export type ForecastBacktestPayload = {
+  // Walk-forward validation: the baseline model re-run as-of each past Monday
+  // against what the week actually took. Baseline-only (no bookings floor),
+  // so live accuracy should be at least this good.
+  sampleWeeks: number;
+  salesMapePct: number | null;
+  salesBiasPct: number | null;
+  weeks: ForecastAccuracyWeekRow[];
+};

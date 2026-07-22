@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type {
   ForecastAccuracyPayload,
+  ForecastBacktestPayload,
   ForecastCashflowPayload,
   ForecastConfigPayload,
   ForecastDay,
@@ -209,6 +210,7 @@ export function ForecastPage() {
   const [outlook, setOutlook] = useState<ForecastOutlookPayload | null>(null);
   const [cashflow, setCashflow] = useState<ForecastCashflowPayload | null>(null);
   const [accuracy, setAccuracy] = useState<ForecastAccuracyPayload | null>(null);
+  const [backtest, setBacktest] = useState<ForecastBacktestPayload | null>(null);
   const [config, setConfig] = useState<ForecastConfigPayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -235,6 +237,11 @@ export function ForecastPage() {
     void staffApi<ForecastAccuracyPayload>('/api/forecast/accuracy')
       .then((next) => {
         if (!cancelled) setAccuracy(next);
+      })
+      .catch(() => undefined);
+    void staffApi<ForecastBacktestPayload>('/api/forecast/backtest')
+      .then((next) => {
+        if (!cancelled) setBacktest(next);
       })
       .catch(() => undefined);
     void staffApi<ForecastConfigPayload>('/api/forecast/config')
@@ -662,6 +669,45 @@ export function ForecastPage() {
                   </table>
                 </div>
               ) : null}
+            </>
+          ) : backtest && backtest.sampleWeeks > 0 ? (
+            <>
+              <p className="subtle" style={{ marginTop: 0 }}>
+                Live self-grading starts as daily snapshots accumulate. Meanwhile, here is the model <strong>backtested</strong> against the
+                last {backtest.sampleWeeks} venue-weeks — the same maths re-run as-of each past Monday, scored against what actually happened
+                (baseline only; live forecasts also get bookings and same-day actuals, so expect them to do at least this well).
+              </p>
+              <div className="forecast-accuracy-grid">
+                <div className="forecast-accuracy-cell">
+                  <span className="forecast-hero-label">Typical weekly error</span>
+                  <strong>{backtest.salesMapePct != null ? `±${backtest.salesMapePct}%` : '—'}</strong>
+                  <small className="subtle">
+                    {backtest.salesBiasPct != null
+                      ? `bias ${backtest.salesBiasPct > 0 ? '+' : ''}${backtest.salesBiasPct}% (${backtest.salesBiasPct > 0 ? 'runs hot' : 'runs shy'})`
+                      : ''}
+                  </small>
+                </div>
+              </div>
+              <div className="table-scroll" style={{ marginTop: 12 }}>
+                <table className="forecast-table">
+                  <thead>
+                    <tr><th>Week</th><th>Venue</th><th>Model would have said</th><th>Actual</th><th>Variance</th></tr>
+                  </thead>
+                  <tbody>
+                    {backtest.weeks.slice(-10).map((row) => (
+                      <tr key={`${row.weekStart}-${row.venue}`}>
+                        <td>{fmtDate(row.weekStart, { day: 'numeric', month: 'short' })}</td>
+                        <td>{row.venue}</td>
+                        <td>{money(row.forecastSalesCents)}</td>
+                        <td>{money(row.actualSalesCents)}</td>
+                        <td className={row.variancePct != null && row.variancePct >= 0 ? 'forecast-up' : 'forecast-down'}>
+                          {row.variancePct != null ? `${row.variancePct > 0 ? '+' : ''}${row.variancePct}%` : '—'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </>
           ) : (
             <p className="subtle">

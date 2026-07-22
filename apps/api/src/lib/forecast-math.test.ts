@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { addDaysUtc, dateFromKey, keyOf, median, mondayOf, pctOf, trimmedMean } from './forecast-math.js';
+import { addDaysUtc, baselineForDate, buildBaselineModel, dateFromKey, keyOf, median, mondayOf, nextOccurrence, pctOf, quarterEndMonth, quarterStartOf, trimmedMean } from './forecast-math.js';
 import { nswHolidayName } from './nsw-holidays.js';
 
 describe('date helpers', () => {
@@ -74,5 +74,74 @@ describe('nsw holidays', () => {
 
   it('returns null for ordinary days', () => {
     assert.equal(nswHolidayName('2026-07-22'), null);
+  });
+});
+
+describe('buildBaselineModel + baselineForDate', () => {
+  // Synthetic venue: closed Mondays, $1000 Fridays, $500 other days, flat.
+  const sales = new Map<string, number>();
+  const anchor = dateFromKey('2026-07-20'); // Monday
+  for (let back = 1; back <= 120; back += 1) {
+    const d = addDaysUtc(anchor, -back);
+    const wd = d.getUTCDay();
+    sales.set(keyOf(d), wd === 1 ? 0 : wd === 5 ? 100_000 : 50_000);
+  }
+  const firstDataDate = addDaysUtc(anchor, -120);
+  const noHolidays = () => false;
+
+  const model = buildBaselineModel({ sales, anchor, firstDataDate, isHoliday: noHolidays, closedThresholdCents: 20_000 });
+
+  it('detects the closed weekday and flat trend', () => {
+    assert.ok(model.closedWeekdays.includes(1));
+    assert.equal(model.trendFactor, 1);
+  });
+
+  it('reproduces the weekly pattern', () => {
+    const friday = dateFromKey('2026-07-24');
+    const tuesday = dateFromKey('2026-07-21');
+    const monday = dateFromKey('2026-07-27');
+    // YoY (-364d) has no data in this fixture, so baselines are pure weekday means.
+    assert.equal(baselineForDate(model, sales, friday, noHolidays).baselineCents, 100_000);
+    assert.equal(baselineForDate(model, sales, tuesday, noHolidays).baselineCents, 50_000);
+    assert.equal(baselineForDate(model, sales, monday, noHolidays).baselineCents, 0);
+  });
+
+  it('blends YoY 70/30 only when holiday-status matches', () => {
+    const friday = dateFromKey('2026-07-24');
+    const withYoy = new Map(sales);
+    withYoy.set(keyOf(addDaysUtc(friday, -364)), 200_000);
+    assert.equal(baselineForDate(model, withYoy, friday, noHolidays).baselineCents, 130_000); // 0.7*100k + 0.3*200k
+    // Same date flagged as a holiday this year but not last year → no blend.
+    const holidayThisYear = (key: string) => key === keyOf(friday);
+    assert.equal(baselineForDate(model, withYoy, friday, holidayThisYear).baselineCents, 100_000);
+  });
+
+  it('keeps holiday trading out of the weekday samples', () => {
+    const spiked = new Map(sales);
+    const lastFriday = keyOf(addDaysUtc(anchor, -3)); // Friday before anchor
+    spiked.set(lastFriday, 1_000_000); // a blowout holiday Friday
+    const holidayFn = (key: string) => key === lastFriday;
+    const guarded = buildBaselineModel({ sales: spiked, anchor, firstDataDate, isHoliday: holidayFn, closedThresholdCents: 20_000 });
+    const unguarded = buildBaselineModel({ sales: spiked, anchor, firstDataDate, isHoliday: noHolidays, closedThresholdCents: 20_000 });
+    const friday = dateFromKey('2026-07-24');
+    assert.equal(baselineForDate(guarded, spiked, friday, holidayFn).baselineCents, 100_000);
+    // Without the guard the spike leaks into the trend factor (clamped to 1.15).
+    assert.ok(baselineForDate(unguarded, spiked, friday, noHolidays).baselineCents > 100_000);
+  });
+});
+
+describe('cash-flow calendar', () => {
+  it('quarterEndMonth and quarterStartOf agree', () => {
+    assert.equal(quarterEndMonth(dateFromKey('2026-07-22')), 8); // Sep quarter
+    assert.equal(keyOf(quarterStartOf(dateFromKey('2026-07-22'))), '2026-07-01');
+    assert.equal(keyOf(quarterStartOf(dateFromKey('2026-01-15'))), '2026-01-01');
+    assert.equal(keyOf(quarterStartOf(dateFromKey('2026-12-31'))), '2026-10-01');
+  });
+
+  it('nextOccurrence wraps the year', () => {
+    // BAS for the Dec quarter is due 28 Feb — from November that's next year.
+    assert.equal(keyOf(nextOccurrence({ month: 1, day: 28 }, dateFromKey('2026-11-15'))), '2027-02-28');
+    // Same-day boundary counts as "at/after".
+    assert.equal(keyOf(nextOccurrence({ month: 6, day: 28 }, dateFromKey('2026-07-28'))), '2026-07-28');
   });
 });
