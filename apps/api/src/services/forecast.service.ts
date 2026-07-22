@@ -335,10 +335,17 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         let mappedCostCents = 0;
         let mappedNetCents = 0;
         for (const row of mappedItemRows) {
-          const cost = row.recipe?.estimatedCost ?? 0;
-          if (cost <= 0) continue;
-          mappedCostCents += Math.round(cost * 100) * row.quantity;
-          mappedNetCents += row.netSalesCents > 0 ? row.netSalesCents : row.grossSalesCents;
+          const costCentsPerUnit = Math.round((row.recipe?.estimatedCost ?? 0) * 100);
+          if (costCentsPerUnit <= 0 || row.quantity <= 0) continue;
+          const netCents = row.netSalesCents > 0 ? row.netSalesCents : row.grossSalesCents;
+          if (netCents <= 0) continue;
+          // Data-error guard: a per-serve cost at or above the per-serve take
+          // is a recipe costing mistake (a batch/prep recipe costed per unit,
+          // e.g. a whole avocado tray per serve of guacamole) — skip the row
+          // entirely so one bad recipe can't poison the venue's food-cost %.
+          if (costCentsPerUnit * row.quantity >= netCents) continue;
+          mappedCostCents += costCentsPerUnit * row.quantity;
+          mappedNetCents += netCents;
         }
         // Only trust theory when mapped items cover a meaningful slice of takings.
         if (mappedNetCents > 0 && salesCents > 0 && mappedNetCents / salesCents >= 0.25) {
