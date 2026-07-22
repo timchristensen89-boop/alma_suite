@@ -6717,3 +6717,171 @@ export type AlmaTasksSummary = {
   byVenue: Array<{ venue: string | null; outstanding: number }>;
   oldestOpenAt: string | null;
 };
+
+// ── Forecasting engine (Reports → Forecast) ─────────────────────────────────
+// Server-computed forward outlook per venue per day: covers, sales, wages,
+// COGS, plus a 13-week cash-flow projection and forecast-accuracy tracking.
+
+export type ForecastDayMethod = {
+  sales: 'history' | 'history+bookings' | 'actual+pace' | 'manual';
+  wages: 'roster' | 'ratio';
+  cogs: 'trailing_actual' | 'target' | 'default';
+};
+
+export type ForecastDay = {
+  date: string; // YYYY-MM-DD (Sydney service date)
+  weekday: number; // 0=Sun..6=Sat
+  isPast: boolean;
+  isToday: boolean;
+  closed: boolean;
+  // Covers
+  bookedCovers: number;
+  expectedCovers: number;
+  // Sales
+  actualSalesCents: number | null;
+  baselineSalesCents: number;
+  salesForecastCents: number;
+  lastYearSalesCents: number | null;
+  // Costs
+  wagesForecastCents: number;
+  rosterCostCents: number | null; // present when wages method = roster
+  cogsForecastCents: number;
+  method: ForecastDayMethod;
+};
+
+export type ForecastWeek = {
+  weekStart: string; // Monday YYYY-MM-DD
+  salesForecastCents: number;
+  actualSalesCents: number;
+  lastYearSalesCents: number | null;
+  expectedCovers: number;
+  bookedCovers: number;
+  wagesForecastCents: number;
+  cogsForecastCents: number;
+  wagePct: number | null;
+  cogsPct: number | null;
+  primePct: number | null;
+};
+
+export type ForecastVenueOutlook = {
+  venue: string;
+  days: ForecastDay[];
+  weeks: ForecastWeek[];
+  assumptions: {
+    avgSpendPerCoverCents: number | null;
+    noShowRate: number; // fraction 0..1
+    trendFactor: number; // recent 4w vs prior 4w, clamped
+    trailingWagePct: number | null;
+    trailingCogsPct: number | null;
+    cogsQuality: string | null;
+    targetWagePercent: number | null;
+    targetPrimeCostPercent: number | null;
+    closedWeekdays: number[];
+    historyDays: number;
+  };
+};
+
+export type ForecastOutlookPayload = {
+  generatedAt: string;
+  horizonWeeks: number;
+  venues: ForecastVenueOutlook[];
+  totals: {
+    weeks: ForecastWeek[];
+  };
+};
+
+export type CashflowComponent =
+  | 'sales_settlement'
+  | 'supplier_bills_due'
+  | 'supplier_projected'
+  | 'net_wages'
+  | 'super_remittance'
+  | 'gst_remittance'
+  | 'fixed_costs';
+
+export type CashflowWeek = {
+  weekStart: string;
+  inflowCents: number;
+  outflowCents: number;
+  netCents: number;
+  closingBalanceCents: number;
+  components: Array<{ key: CashflowComponent; label: string; amountCents: number; direction: 'in' | 'out'; estimated: boolean }>;
+};
+
+export type ForecastFixedCost = {
+  id: string;
+  name: string;
+  amountCents: number;
+  cadence: 'WEEKLY' | 'MONTHLY' | 'QUARTERLY' | 'ANNUAL';
+  // MONTHLY/QUARTERLY/ANNUAL: day of month it leaves the account (1-28).
+  dayOfMonth?: number;
+  // ANNUAL/QUARTERLY: anchor month 1-12 (quarterly = that month + every 3rd).
+  month?: number;
+};
+
+export type ForecastConfigPayload = {
+  openingBalanceCents: number;
+  openingBalanceDate: string | null;
+  supplierPaymentLagDays: number;
+  cardSettlementLagDays: number;
+  payrollFrequency: 'WEEKLY' | 'FORTNIGHTLY';
+  payrollPayWeekday: number; // 0=Sun..6=Sat
+  fixedCosts: ForecastFixedCost[];
+};
+
+export type ForecastCashflowPayload = {
+  generatedAt: string;
+  horizonWeeks: number;
+  config: ForecastConfigPayload;
+  openingBalanceCents: number;
+  weeks: CashflowWeek[];
+  lowestBalance: { weekStart: string; balanceCents: number } | null;
+  notes: string[];
+};
+
+export type ForecastAccuracyBucket = {
+  leadLabel: string; // e.g. "1 day out", "7 days out", "14 days out"
+  leadDaysMin: number;
+  leadDaysMax: number;
+  sampleDays: number;
+  salesMapePct: number | null; // mean absolute % error
+  salesBiasPct: number | null; // signed mean % error (+ = over-forecast)
+  coversMapePct: number | null;
+};
+
+export type ForecastAccuracyWeekRow = {
+  weekStart: string;
+  venue: string;
+  forecastSalesCents: number;
+  actualSalesCents: number;
+  variancePct: number | null;
+};
+
+export type ForecastAccuracyPayload = {
+  buckets: ForecastAccuracyBucket[];
+  recentWeeks: ForecastAccuracyWeekRow[];
+};
+
+export const forecastConfigUpdateSchema = z.object({
+  openingBalanceCents: z.number().int().min(-100_000_000_00).max(100_000_000_00).optional(),
+  openingBalanceDate: z.string().datetime().nullable().optional(),
+  supplierPaymentLagDays: z.number().int().min(0).max(90).optional(),
+  cardSettlementLagDays: z.number().int().min(0).max(14).optional(),
+  payrollFrequency: z.enum(['WEEKLY', 'FORTNIGHTLY']).optional(),
+  payrollPayWeekday: z.number().int().min(0).max(6).optional(),
+  fixedCosts: z
+    .array(
+      z.object({
+        id: z.string().min(1).max(64),
+        name: z.string().min(1).max(120),
+        amountCents: z.number().int().min(0).max(100_000_000_00),
+        cadence: z.enum(['WEEKLY', 'MONTHLY', 'QUARTERLY', 'ANNUAL']),
+        dayOfMonth: z.number().int().min(1).max(28).optional(),
+        month: z.number().int().min(1).max(12).optional()
+      })
+    )
+    .max(100)
+    .optional()
+});
+
+export type ForecastConfigUpdateInput = z.infer<typeof forecastConfigUpdateSchema>;

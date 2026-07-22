@@ -1206,6 +1206,45 @@ model RosterForecastSnapshot {
 }
 
 // @domain: workforce | home: workforce
+// One row per (venue, forecast date, lead-time) written whenever the forecast
+// engine generates a future day, so accuracy can later be measured by how far
+// out the prediction was made (leadDays 0 = generated on the day itself).
+model ForecastDaySnapshot {
+  id                 String   @id @default(cuid())
+  venue              String
+  forecastDate       DateTime
+  leadDays           Int
+  coversForecast     Int      @default(0)
+  salesForecastCents Int      @default(0)
+  wagesForecastCents Int      @default(0)
+  cogsForecastCents  Int      @default(0)
+  method             Json     @default("{}")
+  createdAt          DateTime @default(now())
+
+  @@unique([venue, forecastDate, leadDays])
+  @@index([forecastDate])
+  @@index([venue, forecastDate])
+}
+
+// @domain: workforce | home: workforce
+// Singleton cash-flow assumptions for the forecasting tool: opening bank
+// balance, payment-timing lags, payroll cycle, and recurring fixed outgoings
+// (rent, subscriptions, ...) stored as a JSON list.
+model ForecastConfig {
+  id                     String    @id @default("singleton")
+  openingBalanceCents    Int       @default(0)
+  openingBalanceDate     DateTime?
+  supplierPaymentLagDays Int       @default(21)
+  cardSettlementLagDays  Int       @default(1)
+  payrollFrequency       String    @default("WEEKLY")
+  payrollPayWeekday      Int       @default(3)
+  payrollAnchorDate      DateTime?
+  fixedCosts             Json      @default("[]")
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+// @domain: workforce | home: workforce
 model SalesActualEntry {
   id           String   @id @default(cuid())
   venue        String

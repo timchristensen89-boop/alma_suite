@@ -5,6 +5,7 @@ import { HttpError } from '../lib/http.js';
 import { adminService } from '../services/admin.service.js';
 import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
+import { forecastService } from '../services/forecast.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { marketingService } from '../services/marketing.service.js';
@@ -36,6 +37,17 @@ integrationJobsRouter.use((req, _res, next) => {
     return;
   }
   next();
+});
+
+// Nightly forecast snapshot: regenerates the 13-week outlook for every venue
+// so ForecastDaySnapshot accumulates one prediction per lead-time per day,
+// which is what powers the Forecast accuracy report.
+integrationJobsRouter.post('/forecast/snapshot', async (_req, res, next) => {
+  try {
+    res.json(await forecastService.runScheduledSnapshot());
+  } catch (error) {
+    next(error);
+  }
 });
 
 integrationJobsRouter.post('/square/sync', async (req, res, next) => {

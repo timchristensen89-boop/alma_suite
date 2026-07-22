@@ -1,5 +1,6 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
+import { ForecastPage } from './pages/ForecastPage';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -184,6 +185,7 @@ type SalesTrendVenueRow = {
 type ReportSectionId =
   | 'overview'
   | 'sales'
+  | 'forecast'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -228,6 +230,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Sales',
     title: 'Sales',
     description: 'Takings by venue and day, plus forecast vs actual for Alma Avalon and St Alma.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'forecast',
+    label: 'Forecast',
+    title: 'Forecast',
+    description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
     icon: <ChartIcon />,
     group: 'core'
   },
@@ -323,7 +333,6 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
   '#report-content': 'content',
   '#report-giftcards': 'gift-cards',
   '#giftcards': 'gift-cards',
-  '#forecast': 'sales',
   '#wages': 'staff',
   '#cogs': 'stock',
   '#menu-engineering': 'menu-engineering',
@@ -4207,6 +4216,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     switch (activeSection) {
       case 'sales':
         return renderSalesSection();
+      case 'forecast':
+        return <ForecastPage />;
       case 'staff':
         return renderStaffSection();
       case 'compliance':

@@ -791,7 +791,9 @@ function escapeHtml(value: string): string {
   return value.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c] ?? c));
 }
 
-async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
+// Exported: the forecast engine reuses this as the canonical "actual wages for
+// a period" figure (timesheet hours + salaried weekly fixed cost, super baked in).
+export async function recapWageCents(venue: string | null, start: Date, end: Date): Promise<number> {
   const superRate = await configuredSuperRateFraction();
   const [timesheets, salariedStaff] = await Promise.all([
     prisma.timesheet.findMany({
