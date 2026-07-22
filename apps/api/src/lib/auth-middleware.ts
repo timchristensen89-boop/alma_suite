@@ -82,6 +82,19 @@ function isWrite(req: Request) {
   return ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method.toUpperCase());
 }
 
+// A read-only account: every ENABLED app access carries permissions.readOnly.
+// Deliberately checked even for isAdmin accounts — the flag is only ever set
+// on purpose (e.g. an external administrator/accountant viewer login), and a
+// read-only admin can see everything but change nothing.
+function isReadOnlyAccount(user: AuthUser) {
+  const enabled = user.appAccess.filter((access) => access.status === 'ENABLED');
+  if (enabled.length === 0) return false;
+  return enabled.every((access) => {
+    const perms = access.permissions;
+    return Boolean(perms && typeof perms === 'object' && (perms as { readOnly?: unknown }).readOnly === true);
+  });
+}
+
 function isStaffWriteAllowed(req: Request) {
   if (!isWrite(req)) return true;
   if (req.path.startsWith('/api/issues')) return true;
@@ -168,6 +181,13 @@ export async function authMiddleware(
     return next(new HttpError(403, 'Shared-device sign-in only lets you read the venue board. Sign in as a staff PIN to take this action.'));
   }
 
+  // Read-only accounts can view everything their access allows but never
+  // change anything. /api/auth stays open so they can sign out and manage
+  // their own password.
+  if (isWrite(req) && !req.path.startsWith('/api/auth') && isReadOnlyAccount(req.user)) {
+    return next(new HttpError(403, 'This account is read-only — viewing is fine, changes are off.'));
+  }
+
   const settingsRequest = req.path.startsWith('/api/settings') || req.path.startsWith('/api/shift-task-rules');
 
   if (settingsRequest && !hasSettingsAccess(req.user)) {
@@ -179,7 +199,8 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
       }
-    } else if (req.path.startsWith('/api/reports')) {
+    } else if (req.path.startsWith('/api/reports') || req.path.startsWith('/api/forecast')) {
+      // /api/forecast is part of the Reports app (Reports → Forecast section).
       if (!hasAnyEnabledAppAccess(req.user, ['REPORTS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Alma Reports is restricted to managers and admins. Ask an Alma admin if you need access.'));
       }
