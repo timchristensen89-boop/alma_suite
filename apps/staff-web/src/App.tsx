@@ -124,6 +124,7 @@ import {
   IconWallet
 } from '../../web/src/lib/icons';
 import { historicalSalesForDate, normaliseHistoricalVenue } from './data/historicalSales';
+import type { ForecastOutlookPayload } from '@alma/shared';
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -9467,18 +9468,59 @@ function RosterPage({
     (day: Date) => rosterClosedVenueScope.filter((venue) => isVenueClosedOnDate(venue, day)),
     [isVenueClosedOnDate, rosterClosedVenueScope]
   );
+  // Live forecast engine outlook (13 weeks from the current Monday). When a
+  // viewed day is inside the horizon, the engine's prediction replaces the
+  // legacy hardcoded historical table as the baseline; the static table stays
+  // as the fallback for past weeks and for when the fetch fails.
+  const [engineOutlook, setEngineOutlook] = useState<ForecastOutlookPayload | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void api<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13')
+      .then((next) => {
+        if (!cancelled) setEngineOutlook(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const engineSalesByVenueDay = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const venueOutlook of engineOutlook?.venues ?? []) {
+      for (const day of venueOutlook.days) {
+        map.set(`${venueOutlook.venue}|${day.date}`, day.salesForecastCents);
+      }
+    }
+    return map;
+  }, [engineOutlook]);
+  const engineSalesCentsForDate = useCallback(
+    (venue: string, day: Date): number | null => {
+      const key = `${venue}|${toDateInput(day)}`;
+      return engineSalesByVenueDay.has(key) ? engineSalesByVenueDay.get(key)! : null;
+    },
+    [engineSalesByVenueDay]
+  );
+  // Engine first, hardcoded table as fallback — one place, used everywhere a
+  // baseline is read so the numbers can never disagree within the page.
+  const baselineSalesCentsForDate = useCallback(
+    (venue: string, day: Date): number => {
+      const engine = engineSalesCentsForDate(venue, day);
+      if (engine != null) return engine;
+      return Math.round(historicalSalesForDate(venue, day) * 100);
+    },
+    [engineSalesCentsForDate]
+  );
+
   const isDayClosedForCurrentView = useCallback(
     (day: Date) => rosterClosedVenueScope.length > 0 && rosterClosedVenueScope.every((venue) => isVenueClosedOnDate(venue, day)),
     [isVenueClosedOnDate, rosterClosedVenueScope]
   );
   const closedDayCount = useMemo(() => days.reduce((sum, day) => sum + closedVenuesForDay(day).length, 0), [closedVenuesForDay, days]);
   const historicalDailyForecast = useMemo(() => days.reduce((map, day) => {
-    const cents = Math.round(
-      forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
-    );
+    const cents = forecastVenues.reduce((sum, venue) => sum + baselineSalesCentsForDate(venue, day), 0);
     map[toDateInput(day)] = cents;
     return map;
-  }, {} as Record<string, number>), [days, forecastVenues]);
+  }, {} as Record<string, number>), [baselineSalesCentsForDate, days, forecastVenues]);
   const historicalForecastSalesCents = useMemo(() => Object.values(historicalDailyForecast).reduce((sum, cents) => sum + cents, 0), [historicalDailyForecast]);
   const forecastHasManualDailyInputs = useMemo(() => days.some((day) => parseMoneyCents(dailyForecastSales[toDateInput(day)] ?? '') > 0), [dailyForecastSales, days]);
   // Sum of MANUAL per-day forecast inputs only. Previously this fell
@@ -9613,7 +9655,7 @@ function RosterPage({
       const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
-    const historicalSalesCents = Math.round(days.reduce((sum, day) => sum + historicalSalesForDate(venue, day), 0) * 100);
+    const historicalSalesCents = days.reduce((sum, day) => sum + baselineSalesCentsForDate(venue, day), 0);
     const dayKeys = days.map((day) => toDateInput(day));
     const manualDailyCents = dayKeys.reduce((sum, key) => sum + parseMoneyCents(dailyForecastSales[key] ?? ''), 0);
     const selectedSalesCents =
@@ -9906,9 +9948,7 @@ function RosterPage({
   function applyHistoricalForecast() {
     setMessageTarget('forecast');
     const nextDailyForecast = days.reduce((draft, day) => {
-      const cents = Math.round(
-        forecastVenues.reduce((sum, venue) => sum + historicalSalesForDate(venue, day), 0) * 100
-      );
+      const cents = forecastVenues.reduce((sum, venue) => sum + baselineSalesCentsForDate(venue, day), 0);
       draft[toDateInput(day)] = cents > 0 ? String(Math.round(cents / 100)) : '';
       return draft;
     }, {} as Record<string, string>);
@@ -11104,7 +11144,7 @@ function RosterPage({
                         }, 0);
                         const isClosed = isVenueClosedOnDate(row.venue, day);
                         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-                        const venueForecastCents = Math.round(historicalSalesForDate(row.venue, day) * 100);
+                        const venueForecastCents = baselineSalesCentsForDate(row.venue, day);
                         const wagePercent = venueForecastCents > 0 ? (dayCostCents / venueForecastCents) * 100 : 0;
                         const isOver = venueForecastCents > 0 && dayCostCents > Math.round(venueForecastCents * targetWagePercentParsed);
                         const hasCost = !isClosed && dayCostCents > 0;
@@ -11344,7 +11384,7 @@ function RosterPage({
                     placeholder="28"
                   />
                   <p className="subtle roster-forecast-source">
-                    Baseline from previous years: {formatCents(historicalForecastSalesCents)} across {forecastVenues.length || 1} venue{forecastVenues.length === 1 ? '' : 's'}.
+                    Baseline from {engineOutlook ? 'the live forecast engine (your own trading history, bookings-aware)' : 'previous years'}: {formatCents(historicalForecastSalesCents)} across {forecastVenues.length || 1} venue{forecastVenues.length === 1 ? '' : 's'}.
                   </p>
                   <div className="roster-forecast-metrics roster-forecast-metrics-compact">
                     <div>

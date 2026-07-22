@@ -1269,12 +1269,47 @@ export const forecastService = {
       where: { forecastDate: { lt: addDaysUtc(dateFromKey(sydneyTodayKey()), -180) } }
     });
     const outlook = await buildOutlook({ weeks: 13, venue: null, persistSnapshots: true });
+
+    // Self-check: compare yesterday's 1-day-out prediction against what the
+    // day actually took. A miss this size means something changed that the
+    // model didn't see (event, closure, data gap) — a human should look.
+    const selfCheckWarnings: string[] = [];
+    try {
+      const yesterday = addDaysUtc(dateFromKey(sydneyTodayKey()), -1);
+      const [snaps, actuals] = await Promise.all([
+        prisma.forecastDaySnapshot.findMany({
+          where: { forecastDate: yesterday, leadDays: 1 },
+          select: { venue: true, salesForecastCents: true }
+        }),
+        prisma.salesActualEntry.groupBy({
+          by: ['venue'],
+          where: { serviceDate: yesterday },
+          _sum: { salesCents: true }
+        })
+      ]);
+      const actualByVenue = new Map(actuals.map((row) => [row.venue, row._sum.salesCents ?? 0]));
+      for (const snap of snaps) {
+        const actual = actualByVenue.get(snap.venue) ?? 0;
+        if (actual <= 0 || snap.salesForecastCents <= 0) continue;
+        const errPct = Math.round(((actual - snap.salesForecastCents) / snap.salesForecastCents) * 100);
+        if (Math.abs(errPct) >= 35) {
+          selfCheckWarnings.push(
+            `${snap.venue}: yesterday traded ${Math.abs(errPct)}% ${errPct > 0 ? 'ABOVE' : 'below'} forecast ` +
+              `($${Math.round(actual / 100).toLocaleString()} vs $${Math.round(snap.salesForecastCents / 100).toLocaleString()} predicted) — worth a look.`
+          );
+        }
+      }
+    } catch {
+      // Self-check is advisory — never fail the snapshot run over it.
+    }
+
     // Stamp engine health so the suite notification bell can alert on a
     // stalled engine or degraded inputs without recomputing anything.
+    const allWarnings = [...outlook.warnings, ...selfCheckWarnings];
     await prisma.forecastConfig.upsert({
       where: { id: CONFIG_ID },
-      update: { lastRunAt: new Date(), lastWarnings: outlook.warnings },
-      create: { id: CONFIG_ID, lastRunAt: new Date(), lastWarnings: outlook.warnings }
+      update: { lastRunAt: new Date(), lastWarnings: allWarnings },
+      create: { id: CONFIG_ID, lastRunAt: new Date(), lastWarnings: allWarnings }
     });
     return {
       ok: true,
