@@ -3858,7 +3858,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                     { key: 'cogs', label: 'COGS', align: 'right', sortValue: (r) => r.estimatedCogsCents, render: (r) => (r.estimatedCogsCents === null ? '—' : formatCurrency(r.estimatedCogsCents)) },
                     { key: 'gp', label: 'Gross profit', align: 'right', sortValue: (r) => r.grossProfitCents, render: (r) => (r.grossProfitCents === null ? '—' : formatCurrency(r.grossProfitCents)) },
                     { key: 'foodCost', label: 'Food cost %', align: 'right', sortValue: (r) => r.foodCostPercent, render: (r) => formatPercent(r.foodCostPercent) },
-                    { key: 'status', label: 'Status', sortValue: (r) => r.mappingStatus, render: (r) => <Badge tone={menuMappingTone(r.mappingStatus)}>{menuMappingLabel(r.mappingStatus)}</Badge> }
+                    { key: 'status', label: 'Status', sortValue: (r) => (r.dataQuality.includes('suspect_batch_cost') ? 'suspect_batch_cost' : r.mappingStatus), render: (r) => r.dataQuality.includes('suspect_batch_cost')
+                      ? <Badge tone="danger">batch cost — set yield</Badge>
+                      : <Badge tone={menuMappingTone(r.mappingStatus)}>{menuMappingLabel(r.mappingStatus)}</Badge> }
                   ]}
                 />
               ) : (

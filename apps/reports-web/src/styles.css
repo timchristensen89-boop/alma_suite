@@ -2219,3 +2219,124 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   margin: 4px 0 0;
   padding-left: 18px;
 }
+
+/* ── Forecast page: breathing-room pass ────────────────────────────────────── */
+
+.forecast-page {
+  gap: 32px;
+}
+
+.forecast-hero-grid {
+  gap: 16px;
+}
+
+.forecast-hero-metric {
+  gap: 6px;
+  min-height: 118px;
+  justify-content: center;
+}
+
+.forecast-hero-metric strong {
+  font-size: 1.65rem;
+}
+
+.forecast-hero-metric small {
+  line-height: 1.4;
+}
+
+.forecast-table {
+  font-size: 0.9rem;
+}
+
+.forecast-table th {
+  padding: 10px 14px;
+}
+
+.forecast-table td {
+  padding: 12px 14px;
+  line-height: 1.45;
+}
+
+.forecast-table tbody tr:hover {
+  background: color-mix(in srgb, var(--color-accent, #b5772f) 4%, transparent);
+}
+
+.forecast-table td:first-child,
+.forecast-table th:first-child {
+  padding-left: 4px;
+  white-space: nowrap;
+}
+
+.forecast-venue-tabs,
+.forecast-scenario {
+  gap: 8px;
+}
+
+.forecast-venue-tabs button,
+.forecast-scenario button {
+  padding: 6px 14px;
+}
+
+.forecast-assumption-row {
+  padding: 14px 0;
+  gap: 5px;
+  line-height: 1.5;
+}
+
+.forecast-assumption-row:last-of-type {
+  border-bottom: none;
+}
+
+.forecast-accuracy-grid {
+  gap: 12px;
+}
+
+.forecast-accuracy-cell {
+  padding: 14px 16px;
+  gap: 4px;
+}
+
+.forecast-accuracy-cell strong {
+  font-size: 1.35rem;
+}
+
+.forecast-notes {
+  margin-top: 16px;
+  gap: 6px;
+  line-height: 1.5;
+}
+
+.forecast-config {
+  gap: 18px;
+}
+
+.forecast-config h4 {
+  margin-top: 8px;
+}
+
+.forecast-warnings {
+  padding: 14px 18px;
+  line-height: 1.5;
+}
+
+.forecast-warnings ul {
+  margin-top: 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.forecast-components {
+  gap: 4px;
+}
+
+@media (max-width: 900px) {
+  .forecast-page {
+    gap: 22px;
+  }
+
+  .forecast-table th,
+  .forecast-table td {
+    padding: 9px 10px;
+  }
+}

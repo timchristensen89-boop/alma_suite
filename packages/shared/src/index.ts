@@ -3579,7 +3579,7 @@ export type ReportsMenuProfitabilityRow = {
   estimatedCogsCents: number | null;
   grossProfitCents: number | null;
   foodCostPercent: number | null;
-  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item'>;
+  dataQuality: Array<'actual_sales' | 'mapped_recipe_cost' | 'missing_recipe' | 'missing_cost' | 'unmapped_square_item' | 'suspect_batch_cost'>;
 };
 
 export type ReportsMenuProfitabilityPayload = {

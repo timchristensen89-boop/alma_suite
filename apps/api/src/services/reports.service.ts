@@ -1429,6 +1429,12 @@ export const reportsService = {
       if (row.mappingStatus === 'unmapped') dataQuality.push('unmapped_square_item');
       if (row.mappingStatus === 'missing_recipe') dataQuality.push('missing_recipe');
       if (row.mappingStatus === 'missing_cost') dataQuality.push('missing_cost');
+      // A recipe that costs as much as (or more than) it sells for is a
+      // batch/prep recipe costed per serve, not a real menu economics row.
+      // Keep it visible and flagged, but keep it out of every total.
+      if (estimatedCogsCents !== null && row.netSalesCents > 0 && estimatedCogsCents >= row.netSalesCents) {
+        dataQuality.push('suspect_batch_cost');
+      }
       return { ...row, estimatedCogsCents, grossProfitCents, foodCostPercent, dataQuality };
     });
 
@@ -1437,7 +1443,10 @@ export const reportsService = {
     }
     rows.sort((a, b) => b.netSalesCents - a.netSalesCents);
 
-    const rowsWithCost = rows.filter((row) => row.estimatedCogsCents !== null);
+    const suspectRows = rows.filter((row) => row.dataQuality.includes('suspect_batch_cost'));
+    const rowsWithCost = rows.filter(
+      (row) => row.estimatedCogsCents !== null && !row.dataQuality.includes('suspect_batch_cost')
+    );
     const estimatedCogsCents = rowsWithCost.length
       ? rowsWithCost.reduce((sum, row) => sum + (row.estimatedCogsCents ?? 0), 0)
       : null;
@@ -1466,7 +1475,10 @@ export const reportsService = {
       warnings: [
         ...(entries.length ? [] : ['No Square item-level sales were found for the selected period. Import Square item sales before using menu profitability.']),
         ...(rows.some((row) => row.mappingStatus === 'unmapped') ? ['Some Square items are not mapped to Alma recipes, so COGS and margin are incomplete.'] : []),
-        ...(rows.some((row) => row.mappingStatus === 'missing_cost') ? ['Some mapped recipes have no cost yet. Update recipe ingredients/costs in Stock.'] : [])
+        ...(rows.some((row) => row.mappingStatus === 'missing_cost') ? ['Some mapped recipes have no cost yet. Update recipe ingredients/costs in Stock.'] : []),
+        ...(suspectRows.length
+          ? [`${suspectRows.length} recipe${suspectRows.length === 1 ? ' costs' : 's cost'} more per serve than the dish sells for — almost certainly a batch recipe costed per serve (${suspectRows.slice(0, 3).map((row) => row.squareItem).join(', ')}). Set portion yields in Stock; these rows are flagged and excluded from the totals.`]
+          : [])
       ]
     };
   },
