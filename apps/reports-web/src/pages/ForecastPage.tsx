@@ -51,10 +51,16 @@ function salesMethodBadge(day: ForecastDay) {
 function HeroMetric({ label, value, hint, tone = 'neutral' }: { label: string; value: string; hint: string; tone?: 'neutral' | 'positive' | 'warning' | 'danger' | 'info' }) {
   return (
     <Card className="forecast-hero-metric" padding="tight">
-      <span className="forecast-hero-label">{label}</span>
-      <strong>{value}</strong>
-      <small className="subtle">{hint}</small>
-      {tone !== 'neutral' ? <Badge tone={tone}>{tone === 'positive' ? 'on track' : tone === 'info' ? 'note' : 'watch'}</Badge> : null}
+      <div className="forecast-hero-inner">
+        <span className="forecast-hero-label">{label}</span>
+        <strong className="forecast-hero-value">{value}</strong>
+        <small className="subtle">{hint}</small>
+        {tone !== 'neutral' ? (
+          <span className="forecast-hero-badge">
+            <Badge tone={tone}>{tone === 'positive' ? 'on track' : tone === 'info' ? 'note' : 'watch'}</Badge>
+          </span>
+        ) : null}
+      </div>
     </Card>
   );
 }
@@ -153,13 +159,13 @@ function CashflowConfigEditor({ config, onSaved }: { config: ForecastConfigPaylo
         <div className="table-scroll">
           <table className="forecast-table">
             <thead>
-              <tr><th>Name</th><th>Amount</th><th>Cadence</th><th /></tr>
+              <tr><th>Name</th><th className="num">Amount</th><th>Cadence</th><th /></tr>
             </thead>
             <tbody>
               {fixedCosts.map((cost) => (
                 <tr key={cost.id}>
                   <td>{cost.name}</td>
-                  <td>{money(cost.amountCents)}</td>
+                  <td className="num">{money(cost.amountCents)}</td>
                   <td>{cost.cadence.toLowerCase()}{cost.cadence !== 'WEEKLY' && cost.dayOfMonth ? ` (day ${cost.dayOfMonth})` : ''}</td>
                   <td>
                     <Button variant="ghost" type="button" onClick={() => setFixedCosts((current) => current.filter((c) => c.id !== cost.id))}>
@@ -433,11 +439,11 @@ export function ForecastPage() {
               <tr>
                 <th>Day</th>
                 <th>Covers (booked → expected)</th>
-                <th>Sales forecast</th>
+                <th className="num">Sales forecast</th>
                 <th>Source</th>
                 <th>Wages</th>
-                <th>COGS</th>
-                <th>Prime %</th>
+                <th className="num">COGS</th>
+                <th className="num">Prime %</th>
               </tr>
             </thead>
             <tbody>
@@ -450,14 +456,14 @@ export function ForecastPage() {
                       {day.holiday ? <> <Badge tone="warning">{day.holiday}</Badge></> : null}
                     </td>
                     <td>{day.closed ? '—' : `${day.bookedCovers} → ${day.expectedCovers}`}</td>
-                    <td><strong>{money(day.salesForecastCents)}</strong>{day.isToday && day.actualSalesCents != null ? <span className="subtle"> ({money(day.actualSalesCents)} so far)</span> : null}</td>
+                    <td className="num"><strong>{money(day.salesForecastCents)}</strong>{day.isToday && day.actualSalesCents != null ? <span className="subtle"> ({money(day.actualSalesCents)} so far)</span> : null}</td>
                     <td>{salesMethodBadge(day)}</td>
                     <td>
                       {money(day.wagesForecastCents)}{' '}
                       <Badge tone={day.method.wages === 'roster' ? 'positive' : 'neutral'}>{day.method.wages === 'roster' ? 'rostered' : 'ratio'}</Badge>
                     </td>
-                    <td>{money(day.cogsForecastCents)}</td>
-                    <td>{pctLabel(prime)}</td>
+                    <td className="num">{money(day.cogsForecastCents)}</td>
+                    <td className="num">{pctLabel(prime)}</td>
                   </tr>
                 );
               })}
@@ -490,12 +496,12 @@ export function ForecastPage() {
             <thead>
               <tr>
                 <th>Week</th>
-                <th>Sales forecast</th>
-                <th>Last year</th>
-                <th>Covers</th>
-                <th>Wages</th>
-                <th>COGS</th>
-                <th>Prime %</th>
+                <th className="num">Sales forecast</th>
+                <th className="num">Last year</th>
+                <th className="num">Covers</th>
+                <th className="num">Wages</th>
+                <th className="num">COGS</th>
+                <th className="num">Prime %</th>
               </tr>
             </thead>
             <tbody>
@@ -507,17 +513,17 @@ export function ForecastPage() {
                 return (
                   <tr key={week.weekStart} className={index === 0 ? 'forecast-row-today' : undefined}>
                     <td>{index === 0 ? <strong>This week</strong> : fmtDate(week.weekStart, { day: 'numeric', month: 'short' })}</td>
-                    <td><strong>{money(week.salesForecastCents)}</strong></td>
-                    <td>
+                    <td className="num"><strong>{money(week.salesForecastCents)}</strong></td>
+                    <td className="num">
                       {money(week.lastYearSalesCents)}
                       {yoyPct != null ? (
                         <span className={yoyPct >= 0 ? 'forecast-up' : 'forecast-down'}> {yoyPct >= 0 ? '▲' : '▼'} {Math.abs(yoyPct).toFixed(0)}%</span>
                       ) : null}
                     </td>
-                    <td>{week.expectedCovers}</td>
-                    <td>{money(week.wagesForecastCents)} <span className="subtle">{pctLabel(week.wagePct)}</span></td>
-                    <td>{money(week.cogsForecastCents)} <span className="subtle">{pctLabel(week.cogsPct)}</span></td>
-                    <td>{pctLabel(week.primePct)}</td>
+                    <td className="num">{week.expectedCovers}</td>
+                    <td className="num">{money(week.wagesForecastCents)} <span className="subtle">{pctLabel(week.wagePct)}</span></td>
+                    <td className="num">{money(week.cogsForecastCents)} <span className="subtle">{pctLabel(week.cogsPct)}</span></td>
+                    <td className="num">{pctLabel(week.primePct)}</td>
                   </tr>
                 );
               })}
@@ -548,10 +554,10 @@ export function ForecastPage() {
                 <thead>
                   <tr>
                     <th>Week</th>
-                    <th>In</th>
-                    <th>Out</th>
-                    <th>Net</th>
-                    <th>Balance</th>
+                    <th className="num">In</th>
+                    <th className="num">Out</th>
+                    <th className="num">Net</th>
+                    <th className="num">Balance</th>
                     <th>Biggest movements</th>
                   </tr>
                 </thead>
@@ -559,10 +565,10 @@ export function ForecastPage() {
                   {cashflow.weeks.map((week, index) => (
                     <tr key={week.weekStart} className={index === 0 ? 'forecast-row-today' : undefined}>
                       <td>{index === 0 ? <strong>This week</strong> : fmtDate(week.weekStart, { day: 'numeric', month: 'short' })}</td>
-                      <td className="forecast-up">{money(week.inflowCents)}</td>
-                      <td className="forecast-down">{money(week.outflowCents)}</td>
-                      <td className={week.netCents >= 0 ? 'forecast-up' : 'forecast-down'}>{money(week.netCents)}</td>
-                      <td><strong className={week.closingBalanceCents < 0 ? 'forecast-down' : undefined}>{money(week.closingBalanceCents)}</strong></td>
+                      <td className="num forecast-up">{money(week.inflowCents)}</td>
+                      <td className="num forecast-down">{money(week.outflowCents)}</td>
+                      <td className={`num ${week.netCents >= 0 ? 'forecast-up' : 'forecast-down'}`}>{money(week.netCents)}</td>
+                      <td className="num"><strong className={week.closingBalanceCents < 0 ? 'forecast-down' : undefined}>{money(week.closingBalanceCents)}</strong></td>
                       <td className="forecast-components">
                         {week.components.slice(0, 3).map((component) => (
                           <span key={component.key} className="subtle">
@@ -651,16 +657,16 @@ export function ForecastPage() {
                 <div className="table-scroll" style={{ marginTop: 12 }}>
                   <table className="forecast-table">
                     <thead>
-                      <tr><th>Week</th><th>Venue</th><th>Forecast</th><th>Actual</th><th>Variance</th></tr>
+                      <tr><th>Week</th><th>Venue</th><th className="num">Forecast</th><th className="num">Actual</th><th className="num">Variance</th></tr>
                     </thead>
                     <tbody>
                       {accuracy.recentWeeks.slice(-10).map((row) => (
                         <tr key={`${row.weekStart}-${row.venue}`}>
                           <td>{fmtDate(row.weekStart, { day: 'numeric', month: 'short' })}</td>
                           <td>{row.venue}</td>
-                          <td>{money(row.forecastSalesCents)}</td>
-                          <td>{money(row.actualSalesCents)}</td>
-                          <td className={row.variancePct != null && row.variancePct >= 0 ? 'forecast-up' : 'forecast-down'}>
+                          <td className="num">{money(row.forecastSalesCents)}</td>
+                          <td className="num">{money(row.actualSalesCents)}</td>
+                          <td className={`num ${row.variancePct != null && row.variancePct >= 0 ? 'forecast-up' : 'forecast-down'}`}>
                             {row.variancePct != null ? `${row.variancePct > 0 ? '+' : ''}${row.variancePct}%` : '—'}
                           </td>
                         </tr>
@@ -691,16 +697,16 @@ export function ForecastPage() {
               <div className="table-scroll" style={{ marginTop: 12 }}>
                 <table className="forecast-table">
                   <thead>
-                    <tr><th>Week</th><th>Venue</th><th>Model would have said</th><th>Actual</th><th>Variance</th></tr>
+                    <tr><th>Week</th><th>Venue</th><th className="num">Model would have said</th><th className="num">Actual</th><th className="num">Variance</th></tr>
                   </thead>
                   <tbody>
                     {backtest.weeks.slice(-10).map((row) => (
                       <tr key={`${row.weekStart}-${row.venue}`}>
                         <td>{fmtDate(row.weekStart, { day: 'numeric', month: 'short' })}</td>
                         <td>{row.venue}</td>
-                        <td>{money(row.forecastSalesCents)}</td>
-                        <td>{money(row.actualSalesCents)}</td>
-                        <td className={row.variancePct != null && row.variancePct >= 0 ? 'forecast-up' : 'forecast-down'}>
+                        <td className="num">{money(row.forecastSalesCents)}</td>
+                        <td className="num">{money(row.actualSalesCents)}</td>
+                        <td className={`num ${row.variancePct != null && row.variancePct >= 0 ? 'forecast-up' : 'forecast-down'}`}>
                           {row.variancePct != null ? `${row.variancePct > 0 ? '+' : ''}${row.variancePct}%` : '—'}
                         </td>
                       </tr>
