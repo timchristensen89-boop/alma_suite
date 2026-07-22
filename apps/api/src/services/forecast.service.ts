@@ -38,6 +38,19 @@ import {
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import {
+  DAY_MS,
+  addDaysUtc,
+  dateFromKey,
+  keyOf,
+  median,
+  mondayOf,
+  pctOf,
+  sydneyKeyForInstant,
+  sydneyTodayKey,
+  trimmedMean
+} from '../lib/forecast-math.js';
+import { NSW_HOLIDAYS_COVERED_UNTIL, nswHolidayName } from '../lib/nsw-holidays.js';
+import {
   costForRate,
   salariedVenueAllocations,
   splitOvertimeHours,
@@ -48,7 +61,6 @@ import {
 import { configuredSuperRateFraction, settingsService } from './settings.service.js';
 import { recapWageCents } from './reports.service.js';
 
-const DAY_MS = 86_400_000;
 const HISTORY_DAYS = 371; // 53 weeks, so YoY (−364d) always has neighbours
 const CLOSED_DAY_THRESHOLD_CENTS = 20_000; // < $200 median = venue not trading
 const MIN_COVERS_FOR_SPEND_SAMPLE = 10;
@@ -57,6 +69,9 @@ const DEFAULT_COGS_PCT = 30;
 // Assumed cost % for takings NOT covered by recipe-mapped items — mostly
 // bottled wine and beer resale, which typically runs 35-40% cost in AU venues.
 const UNMAPPED_TAKINGS_COGS_PCT = 38;
+// Sales data older than this many days means the Square sync is stalled —
+// baselines then anchor to the last real day and the payload carries a warning.
+const STALE_SALES_AFTER_DAYS = 2;
 
 const outlookQuerySchema = z.object({
   weeks: z.coerce.number().int().min(2).max(26).optional().default(13),
@@ -66,37 +81,6 @@ const outlookQuerySchema = z.object({
 const cashflowQuerySchema = z.object({
   weeks: z.coerce.number().int().min(4).max(26).optional().default(13)
 });
-
-// ── Sydney service-date helpers ──────────────────────────────────────────────
-// Service dates are stored as UTC midnight of the Sydney calendar date (the
-// convention used by the Square sync, SevenRooms ingestion and timesheets).
-
-const sydneyDayFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: 'Australia/Sydney' });
-
-function sydneyTodayKey(): string {
-  return sydneyDayFormatter.format(new Date());
-}
-
-function sydneyKeyForInstant(instant: Date): string {
-  return sydneyDayFormatter.format(instant);
-}
-
-function dateFromKey(key: string): Date {
-  return new Date(`${key}T00:00:00.000Z`);
-}
-
-function keyOf(date: Date): string {
-  return date.toISOString().slice(0, 10);
-}
-
-function addDaysUtc(date: Date, days: number): Date {
-  return new Date(date.getTime() + days * DAY_MS);
-}
-
-function mondayOf(date: Date): Date {
-  const weekday = date.getUTCDay();
-  return addDaysUtc(date, weekday === 0 ? -6 : 1 - weekday);
-}
 
 function isAdminActor(actor?: AuthUser | null) {
   return Boolean(actor?.isAdmin || actor?.role === 'ADMIN');
@@ -108,24 +92,6 @@ function actorVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
   if (!actor.venue) throw new HttpError(403, 'Forecasts require a venue-scoped manager.');
   if (venue && venue !== actor.venue) throw new HttpError(403, 'Forecasts are limited to your venue.');
   return actor.venue;
-}
-
-function trimmedMean(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const trimmed = sorted.length >= 5 ? sorted.slice(1, -1) : sorted;
-  return trimmed.reduce((sum, v) => sum + v, 0) / trimmed.length;
-}
-
-function median(values: number[]): number {
-  if (values.length === 0) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? ((sorted[mid - 1] ?? 0) + (sorted[mid] ?? 0)) / 2 : sorted[mid] ?? 0;
-}
-
-function pctOf(part: number, whole: number): number | null {
-  return whole > 0 ? Math.round((part / whole) * 1000) / 10 : null;
 }
 
 function rosterHoursForShift(entry: { startsAt: Date; endsAt: Date; breakMinutes: number }): number {
@@ -162,6 +128,10 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
   const weekStart = mondayOf(today);
   const horizonEnd = addDaysUtc(weekStart, options.weeks * 7); // exclusive
   const historyStart = addDaysUtc(today, -HISTORY_DAYS);
+  const warnings: string[] = [];
+  if (keyOf(addDaysUtc(horizonEnd, -1)) > NSW_HOLIDAYS_COVERED_UNTIL) {
+    warnings.push('The forecast horizon runs past the NSW public-holiday table — extend nsw-holidays.ts before trusting late weeks.');
+  }
 
   const allTargets = await venueTargets();
   const targets = options.venue ? allTargets.filter((t) => t.name === options.venue) : allTargets;
@@ -400,8 +370,24 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
   for (const target of targets) {
     const venue = target.name;
+    try {
     const sales = salesByVenue.get(venue) ?? new Map<string, number>();
     const covers = coversByVenue.get(venue) ?? new Map<string, number>();
+
+    // Stale-feed guard: if the Square sync has stalled, anchor all history
+    // sampling to the last real trading day instead of today, so a run of
+    // missing days doesn't read as a collapse in trade.
+    const latestSaleKey = [...sales.keys()].sort().at(-1) ?? null;
+    let sampleAnchor = today;
+    if (latestSaleKey) {
+      const staleDays = Math.round((today.getTime() - dateFromKey(latestSaleKey).getTime()) / DAY_MS);
+      if (staleDays > STALE_SALES_AFTER_DAYS) {
+        sampleAnchor = addDaysUtc(dateFromKey(latestSaleKey), 1);
+        warnings.push(`${venue}: no Square sales recorded since ${latestSaleKey} — check the Square sync. Baselines are anchored to the last recorded day.`);
+      }
+    } else {
+      warnings.push(`${venue}: no sales history at all — forecasts fall back to bookings and targets.`);
+    }
 
     // History stats.
     const historyDays = sales.size;
@@ -410,11 +396,11 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
     // Trend: last 28 full days vs the 28 before.
     let trendFactor = 1;
-    if (firstDataDate && firstDataDate <= addDaysUtc(today, -56)) {
+    if (firstDataDate && firstDataDate <= addDaysUtc(sampleAnchor, -56)) {
       let recent = 0;
       let prior = 0;
-      for (let i = 1; i <= 28; i += 1) recent += sales.get(keyOf(addDaysUtc(today, -i))) ?? 0;
-      for (let i = 29; i <= 56; i += 1) prior += sales.get(keyOf(addDaysUtc(today, -i))) ?? 0;
+      for (let i = 1; i <= 28; i += 1) recent += sales.get(keyOf(addDaysUtc(sampleAnchor, -i))) ?? 0;
+      for (let i = 29; i <= 56; i += 1) prior += sales.get(keyOf(addDaysUtc(sampleAnchor, -i))) ?? 0;
       if (prior > 0 && recent > 0) trendFactor = Math.min(1.15, Math.max(0.85, recent / prior));
     }
 
@@ -422,8 +408,10 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     const weekdayValues = new Map<number, number[]>();
     for (let weekday = 0; weekday < 7; weekday += 1) weekdayValues.set(weekday, []);
     for (let back = 1; back <= 56; back += 1) {
-      const d = addDaysUtc(today, -back);
+      const d = addDaysUtc(sampleAnchor, -back);
       if (firstDataDate && d < firstDataDate) continue;
+      // Holiday trade is its own animal — keep it out of ordinary weekday baselines.
+      if (nswHolidayName(keyOf(d))) continue;
       weekdayValues.get(d.getUTCDay())!.push(sales.get(keyOf(d)) ?? 0);
     }
     const closedWeekdays: number[] = [];
@@ -458,7 +446,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     let spendSampleSales = 0;
     let spendSampleCovers = 0;
     for (let back = 1; back <= 56; back += 1) {
-      const key = keyOf(addDaysUtc(today, -back));
+      const key = keyOf(addDaysUtc(sampleAnchor, -back));
       const dayCovers = covers.get(key) ?? 0;
       const daySales = sales.get(key) ?? 0;
       if (dayCovers >= MIN_COVERS_FOR_SPEND_SAMPLE && daySales > 0) {
@@ -490,7 +478,12 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
       const closed = closedWeekdays.includes(weekday);
 
       const actualSalesCents = sales.get(key) ?? null;
-      const yoy = sales.get(keyOf(addDaysUtc(date, -364))) ?? null;
+      const holiday = nswHolidayName(key);
+      const yoyKey = keyOf(addDaysUtc(date, -364));
+      const yoyRaw = sales.get(yoyKey) ?? null;
+      // Only blend last year in when holiday-status matches: an ordinary day
+      // last year says nothing about this year's Good Friday, and vice versa.
+      const yoy = (holiday == null) === (nswHolidayName(yoyKey) == null) ? yoyRaw : null;
       const rawBaseline = baselineByWeekday.get(weekday) ?? 0;
       const blended = yoy != null && yoy > 0 && rawBaseline > 0 ? rawBaseline * 0.7 + yoy * 0.3 : rawBaseline;
       const baselineSalesCents = closed ? 0 : Math.round(blended * trendFactor);
@@ -553,12 +546,13 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         isPast,
         isToday,
         closed,
+        holiday,
         bookedCovers,
         expectedCovers,
         actualSalesCents,
         baselineSalesCents,
         salesForecastCents,
-        lastYearSalesCents: yoy,
+        lastYearSalesCents: yoyRaw,
         wagesForecastCents,
         rosterCostCents,
         cogsForecastCents,
@@ -586,6 +580,13 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         historyDays
       }
     });
+    } catch (error) {
+      warnings.push(`${venue}: forecast generation failed (${error instanceof Error ? error.message : 'unknown error'}) — venue skipped this run.`);
+    }
+  }
+
+  if (venues.length === 0) {
+    throw new HttpError(500, `Forecast failed for every venue. ${warnings[warnings.length - 1] ?? ''}`.trim());
   }
 
   // Cross-venue weekly totals.
@@ -633,7 +634,8 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     generatedAt: new Date().toISOString(),
     horizonWeeks: options.weeks,
     venues,
-    totals: { weeks: totalsWeeks }
+    totals: { weeks: totalsWeeks },
+    warnings
   };
 
   if (options.persistSnapshots) {
@@ -1170,6 +1172,11 @@ export const forecastService = {
   // Nightly scheduler entry point: generate the full-horizon forecast for all
   // venues purely to write the day's accuracy snapshots.
   async runScheduledSnapshot(): Promise<{ ok: true; venues: number; days: number }> {
+    // Retention: accuracy scoring looks back 8 weeks; keep 180 days of
+    // snapshots and prune the rest so the table can't grow unbounded.
+    await prisma.forecastDaySnapshot.deleteMany({
+      where: { forecastDate: { lt: addDaysUtc(dateFromKey(sydneyTodayKey()), -180) } }
+    });
     const outlook = await buildOutlook({ weeks: 13, venue: null, persistSnapshots: true });
     return {
       ok: true,

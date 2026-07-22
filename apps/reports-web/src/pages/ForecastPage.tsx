@@ -216,27 +216,32 @@ export function ForecastPage() {
   const [scenarioPct, setScenarioPct] = useState(0);
   const [cashReload, setCashReload] = useState(0);
 
+  // Each panel loads independently: a failure in accuracy or config must
+  // never blank the main outlook, and vice versa.
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       setLoading(true);
       setError(null);
       try {
-        const [outlookNext, accuracyNext, configNext] = await Promise.all([
-          staffApi<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13'),
-          staffApi<ForecastAccuracyPayload>('/api/forecast/accuracy'),
-          staffApi<ForecastConfigPayload>('/api/forecast/config')
-        ]);
-        if (cancelled) return;
-        setOutlook(outlookNext);
-        setAccuracy(accuracyNext);
-        setConfig(configNext);
+        const outlookNext = await staffApi<ForecastOutlookPayload>('/api/forecast/outlook?weeks=13');
+        if (!cancelled) setOutlook(outlookNext);
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : 'Could not load the forecast');
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
+    void staffApi<ForecastAccuracyPayload>('/api/forecast/accuracy')
+      .then((next) => {
+        if (!cancelled) setAccuracy(next);
+      })
+      .catch(() => undefined);
+    void staffApi<ForecastConfigPayload>('/api/forecast/config')
+      .then((next) => {
+        if (!cancelled) setConfig(next);
+      })
+      .catch(() => undefined);
     return () => {
       cancelled = true;
     };
@@ -355,6 +360,16 @@ export function ForecastPage() {
 
   return (
     <div className="page-stack forecast-page">
+      {outlook.warnings.length > 0 ? (
+        <div className="forecast-warnings" role="alert">
+          <strong>Data quality</strong>
+          <ul>
+            {outlook.warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       <div className="forecast-hero-grid">
         <HeroMetric label="Next 7 days — sales" value={money(next7Sales)} hint="Forecast takings across the week ahead" />
         <HeroMetric
@@ -371,9 +386,23 @@ export function ForecastPage() {
         />
         <HeroMetric
           label="Cash — lowest point"
-          value={cashflow?.lowestBalance ? money(cashflow.lowestBalance.balanceCents) : '—'}
-          hint={cashflow?.lowestBalance ? `Week of ${fmtDate(cashflow.lowestBalance.weekStart, { day: 'numeric', month: 'short' })}` : 'Set your bank balance below'}
-          tone={cashflow?.lowestBalance ? (cashflow.lowestBalance.balanceCents < 0 ? 'danger' : 'positive') : 'info'}
+          value={cashflow?.lowestBalance && cashflow.config.openingBalanceDate ? money(cashflow.lowestBalance.balanceCents) : '—'}
+          hint={
+            cashflow && !cashflow.config.openingBalanceDate
+              ? 'Set the opening bank balance below — the runway is relative movement until then'
+              : cashflow?.lowestBalance
+                ? `Week of ${fmtDate(cashflow.lowestBalance.weekStart, { day: 'numeric', month: 'short' })}`
+                : 'Loading cash projection…'
+          }
+          tone={
+            cashflow && !cashflow.config.openingBalanceDate
+              ? 'info'
+              : cashflow?.lowestBalance
+                ? cashflow.lowestBalance.balanceCents < 0
+                  ? 'danger'
+                  : 'positive'
+                : 'neutral'
+          }
         />
       </div>
 
@@ -409,7 +438,10 @@ export function ForecastPage() {
                 const prime = day.salesForecastCents > 0 ? ((day.wagesForecastCents + day.cogsForecastCents) / day.salesForecastCents) * 100 : null;
                 return (
                   <tr key={day.date} className={day.isToday ? 'forecast-row-today' : day.closed ? 'forecast-row-closed' : undefined}>
-                    <td>{day.isToday ? <strong>Today</strong> : fmtDate(day.date)}</td>
+                    <td>
+                      {day.isToday ? <strong>Today</strong> : fmtDate(day.date)}
+                      {day.holiday ? <> <Badge tone="warning">{day.holiday}</Badge></> : null}
+                    </td>
                     <td>{day.closed ? '—' : `${day.bookedCovers} → ${day.expectedCovers}`}</td>
                     <td><strong>{money(day.salesForecastCents)}</strong>{day.isToday && day.actualSalesCents != null ? <span className="subtle"> ({money(day.actualSalesCents)} so far)</span> : null}</td>
                     <td>{salesMethodBadge(day)}</td>

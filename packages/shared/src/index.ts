@@ -6734,6 +6734,9 @@ export type ForecastDay = {
   isPast: boolean;
   isToday: boolean;
   closed: boolean;
+  // NSW public holiday name for this date, when it is one. Holiday days keep
+  // their weekday baseline but are flagged so nobody reads them as normal.
+  holiday: string | null;
   // Covers
   bookedCovers: number;
   expectedCovers: number;
@@ -6791,6 +6794,10 @@ export type ForecastOutlookPayload = {
   totals: {
     weeks: ForecastWeek[];
   };
+  // Data-quality alerts (stale Square feed, skipped venues, holiday-table
+  // coverage) — surfaced as a banner so estimates are never mistaken for
+  // clean data.
+  warnings: string[];
 };
 
 export type CashflowComponent =
