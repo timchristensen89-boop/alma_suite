@@ -54,6 +54,9 @@ const CLOSED_DAY_THRESHOLD_CENTS = 20_000; // < $200 median = venue not trading
 const MIN_COVERS_FOR_SPEND_SAMPLE = 10;
 const DEFAULT_WAGE_PCT = 32;
 const DEFAULT_COGS_PCT = 30;
+// Assumed cost % for takings NOT covered by recipe-mapped items — mostly
+// bottled wine and beer resale, which typically runs 35-40% cost in AU venues.
+const UNMAPPED_TAKINGS_COGS_PCT = 38;
 
 const outlookQuerySchema = z.object({
   weeks: z.coerce.number().int().min(2).max(26).optional().default(13),
@@ -348,8 +351,16 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
           mappedNetCents += netCents;
         }
         // Only trust theory when mapped items cover a meaningful slice of takings.
+        // Recipe-mapped items skew to cocktails and food (low ingredient cost);
+        // the unmapped remainder is mostly wine/beer resale, which runs far
+        // dearer. Blend: real recipe costs for the mapped share, a standard
+        // beverage-resale margin for the rest — cross-checked against the
+        // Xero-booked cost-of-sales ratio (~25% June 2026).
         if (mappedNetCents > 0 && salesCents > 0 && mappedNetCents / salesCents >= 0.25) {
-          theoreticalPct = Math.min(45, Math.max(18, (mappedCostCents / mappedNetCents) * 100));
+          const mappedShare = Math.min(1, mappedNetCents / salesCents);
+          const mappedPct = (mappedCostCents / mappedNetCents) * 100;
+          const blendedPct = mappedPct * mappedShare + UNMAPPED_TAKINGS_COGS_PCT * (1 - mappedShare);
+          theoreticalPct = Math.min(45, Math.max(18, blendedPct));
         }
       }
       const targetCogsPct =

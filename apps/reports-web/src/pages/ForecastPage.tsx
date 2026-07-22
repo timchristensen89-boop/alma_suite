@@ -578,7 +578,7 @@ export function ForecastPage() {
                   : v.assumptions.cogsBasis === 'purchases'
                     ? '(from recorded purchases)'
                     : v.assumptions.cogsBasis === 'theoretical'
-                      ? '(recipe-based estimate — recorded purchases look incomplete; lock stocktakes for the true figure)'
+                      ? '(estimate: recipe costs for mapped items + standard beverage margins for the rest — lock stocktakes for the true figure)'
                       : v.assumptions.cogsBasis === 'target'
                         ? '(from your venue target — not enough data yet)'
                         : '(default — not enough data yet)'}
