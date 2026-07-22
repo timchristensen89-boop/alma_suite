@@ -6725,7 +6725,7 @@ export type AlmaTasksSummary = {
 export type ForecastDayMethod = {
   sales: 'history' | 'history+bookings' | 'actual+pace' | 'manual';
   wages: 'roster' | 'ratio';
-  cogs: 'trailing_actual' | 'target' | 'default';
+  cogs: 'trailing_actual' | 'theoretical' | 'target' | 'default';
 };
 
 export type ForecastDay = {
@@ -6773,6 +6773,9 @@ export type ForecastVenueOutlook = {
     trendFactor: number; // recent 4w vs prior 4w, clamped
     trailingWagePct: number | null;
     trailingCogsPct: number | null;
+    // Which signal the COGS % came from: stocktake-bounded actual, plausible
+    // purchases-only actual, recipe-theoretical, venue target, or the default.
+    cogsBasis: 'stock_bounded' | 'purchases' | 'theoretical' | 'target' | 'default';
     cogsQuality: string | null;
     targetWagePercent: number | null;
     targetPrimeCostPercent: number | null;

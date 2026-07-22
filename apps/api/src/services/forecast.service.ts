@@ -297,23 +297,82 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
   // ── Trailing wage % and COGS % (last 4 complete weeks) ──
   const trailingEnd = weekStart; // Monday of the current week
   const trailingStart = addDaysUtc(trailingEnd, -28);
-  const trailingByVenue = new Map<string, { wagePct: number | null; cogsPct: number | null; cogsQuality: string | null }>();
+  type TrailingCosts = {
+    wagePct: number | null;
+    cogsPct: number;
+    cogsBasis: 'stock_bounded' | 'purchases' | 'theoretical' | 'target' | 'default';
+    cogsQuality: string | null;
+  };
+  const trailingByVenue = new Map<string, TrailingCosts>();
   await Promise.all(
     venueNames.map(async (venue) => {
-      const [wageCents, cogs, salesAgg] = await Promise.all([
+      const target = targets.find((t) => t.name === venue);
+      const [wageCents, cogs, salesAgg, mappedItemRows] = await Promise.all([
         recapWageCents(venue, trailingStart, trailingEnd),
         computeActualCogs({ venue, start: trailingStart, end: trailingEnd }),
         prisma.salesActualEntry.aggregate({
           where: { venue, serviceDate: { gte: trailingStart, lt: trailingEnd } },
           _sum: { salesCents: true }
+        }),
+        prisma.salesItemActualEntry.findMany({
+          where: { venue, serviceDate: { gte: trailingStart, lt: trailingEnd }, recipeId: { not: null } },
+          select: { quantity: true, netSalesCents: true, grossSalesCents: true, recipe: { select: { estimatedCost: true } } }
         })
       ]);
       const salesCents = salesAgg._sum.salesCents ?? 0;
       const wagePctRaw = salesCents > 0 ? (wageCents / salesCents) * 100 : null;
-      const cogsPctRaw = salesCents > 0 ? (cogs.cogsCents / salesCents) * 100 : null;
+
+      // COGS basis, most to least trustworthy:
+      //   1. stocktake-bounded actual (opening + purchases − closing)
+      //   2. purchases-only actual, but only when plausible (≥20% of sales —
+      //      below that, bills are missing/lagging, not food cost genius)
+      //   3. theoretical (recipe cost × Square units sold) when enough of the
+      //      menu is recipe-mapped
+      //   4. targets, then a flat default.
+      const actualPct = salesCents > 0 ? (cogs.cogsCents / salesCents) * 100 : null;
+      let theoreticalPct: number | null = null;
+      if (mappedItemRows.length > 0) {
+        let mappedCostCents = 0;
+        let mappedNetCents = 0;
+        for (const row of mappedItemRows) {
+          const cost = row.recipe?.estimatedCost ?? 0;
+          if (cost <= 0) continue;
+          mappedCostCents += Math.round(cost * 100) * row.quantity;
+          mappedNetCents += row.netSalesCents > 0 ? row.netSalesCents : row.grossSalesCents;
+        }
+        // Only trust theory when mapped items cover a meaningful slice of takings.
+        if (mappedNetCents > 0 && salesCents > 0 && mappedNetCents / salesCents >= 0.25) {
+          theoreticalPct = Math.min(45, Math.max(18, (mappedCostCents / mappedNetCents) * 100));
+        }
+      }
+      const targetCogsPct =
+        target && target.targetPrimeCostPercent != null && target.targetWagePercent != null
+          ? Math.max(15, target.targetPrimeCostPercent - target.targetWagePercent)
+          : null;
+
+      let cogsPct: number;
+      let cogsBasis: TrailingCosts['cogsBasis'];
+      if (actualPct != null && cogs.source === 'stock_bounded' && cogs.quality === 'complete' && actualPct >= 15 && actualPct <= 50) {
+        cogsPct = actualPct;
+        cogsBasis = 'stock_bounded';
+      } else if (actualPct != null && actualPct >= 20 && actualPct <= 50) {
+        cogsPct = actualPct;
+        cogsBasis = 'purchases';
+      } else if (theoreticalPct != null) {
+        cogsPct = theoreticalPct;
+        cogsBasis = 'theoretical';
+      } else if (targetCogsPct != null) {
+        cogsPct = targetCogsPct;
+        cogsBasis = 'target';
+      } else {
+        cogsPct = DEFAULT_COGS_PCT;
+        cogsBasis = 'default';
+      }
+
       trailingByVenue.set(venue, {
         wagePct: wagePctRaw != null ? Math.min(60, Math.max(15, wagePctRaw)) : null,
-        cogsPct: cogsPctRaw != null ? Math.min(50, Math.max(15, cogsPctRaw)) : null,
+        cogsPct: Math.round(cogsPct * 10) / 10,
+        cogsBasis,
         cogsQuality: cogs.quality
       });
     })
@@ -391,13 +450,14 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     }
     const avgSpendPerCoverCents = spendSampleCovers > 0 ? Math.round(spendSampleSales / spendSampleCovers) : null;
 
-    const trailing = trailingByVenue.get(venue) ?? { wagePct: null, cogsPct: null, cogsQuality: null };
+    const trailing = trailingByVenue.get(venue) ?? {
+      wagePct: null,
+      cogsPct: DEFAULT_COGS_PCT,
+      cogsBasis: 'default' as const,
+      cogsQuality: null
+    };
     const wagePctForRatio = trailing.wagePct ?? target.targetWagePercent ?? DEFAULT_WAGE_PCT;
-    const cogsPctForRatio =
-      trailing.cogsPct ??
-      (target.targetPrimeCostPercent != null && target.targetWagePercent != null
-        ? Math.max(15, target.targetPrimeCostPercent - target.targetWagePercent)
-        : DEFAULT_COGS_PCT);
+    const cogsPctForRatio = trailing.cogsPct;
 
     // ── Assemble days ──
     const days: ForecastDay[] = [];
@@ -461,7 +521,13 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
       const cogsForecastCents = Math.round((salesForecastCents * cogsPctForRatio) / 100);
       const cogsMethod: ForecastDay['method']['cogs'] =
-        trailing.cogsPct != null ? 'trailing_actual' : target.targetPrimeCostPercent != null ? 'target' : 'default';
+        trailing.cogsBasis === 'stock_bounded' || trailing.cogsBasis === 'purchases'
+          ? 'trailing_actual'
+          : trailing.cogsBasis === 'theoretical'
+            ? 'theoretical'
+            : trailing.cogsBasis === 'target'
+              ? 'target'
+              : 'default';
 
       days.push({
         date: key,
@@ -493,7 +559,8 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         noShowRate: Math.round(noShowRate * 1000) / 1000,
         trendFactor: Math.round(trendFactor * 1000) / 1000,
         trailingWagePct: trailing.wagePct != null ? Math.round(trailing.wagePct * 10) / 10 : null,
-        trailingCogsPct: trailing.cogsPct != null ? Math.round(trailing.cogsPct * 10) / 10 : null,
+        trailingCogsPct: trailing.cogsPct,
+        cogsBasis: trailing.cogsBasis,
         cogsQuality: trailing.cogsQuality,
         targetWagePercent: target.targetWagePercent,
         targetPrimeCostPercent: target.targetPrimeCostPercent,

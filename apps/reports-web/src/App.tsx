@@ -3355,7 +3355,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {stockMessage ? <p className="error-text">{stockMessage}</p> : null}
           <p className="report-lead">
             {stockDisplayCogsCents > 0
-              ? <>Food &amp; bev is running at <strong>{formatPercent(stockDisplayCogsPct)}</strong> of sales{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : ''}. Aim for ≤ 30%.</>
+              ? <>Food &amp; bev is running at <strong>{formatPercent(stockDisplayCogsPct)}</strong> of sales{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : primeTotals?.cogsSource !== 'stock_bounded' ? ' (bills recorded so far only — likely understated until stocktakes bracket the period)' : ''}. Aim for ≤ 30%.</>
               : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
           </p>
           <div className="stats-grid report-metric-grid">

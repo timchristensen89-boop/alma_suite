@@ -572,8 +572,16 @@ export function ForecastPage() {
                 {v.assumptions.noShowRate > 0 ? `${(v.assumptions.noShowRate * 100).toFixed(1)}% no-show rate · ` : ''}
                 trend ×{v.assumptions.trendFactor.toFixed(2)} ·{' '}
                 {v.assumptions.trailingWagePct != null ? `wages run at ${v.assumptions.trailingWagePct}%` : `wage target ${v.assumptions.targetWagePercent ?? 32}%`} ·{' '}
-                {v.assumptions.trailingCogsPct != null ? `COGS runs at ${v.assumptions.trailingCogsPct}%` : 'COGS from target'}
-                {v.assumptions.cogsQuality && v.assumptions.cogsQuality !== 'complete' ? ' (COGS estimated — lock stocktakes for a true figure)' : ''}
+                COGS {v.assumptions.trailingCogsPct}%{' '}
+                {v.assumptions.cogsBasis === 'stock_bounded'
+                  ? '(true stocktake-bounded actual)'
+                  : v.assumptions.cogsBasis === 'purchases'
+                    ? '(from recorded purchases)'
+                    : v.assumptions.cogsBasis === 'theoretical'
+                      ? '(recipe-based estimate — recorded purchases look incomplete; lock stocktakes for the true figure)'
+                      : v.assumptions.cogsBasis === 'target'
+                        ? '(from your venue target — not enough data yet)'
+                        : '(default — not enough data yet)'}
                 {' · '}closed {v.assumptions.closedWeekdays.map((d) => WEEKDAY_LABELS[d]).join(', ') || 'never'}
               </span>
             </div>
