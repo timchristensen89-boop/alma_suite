@@ -5369,6 +5369,13 @@ export type StockMenuParRecommendationsPayload = {
     readyToOrder: number;
     missingItemSales: boolean;
     missingSupplierCount: number;
+    // Week-ahead demand from the forecast engine: factor >1 = busier than the
+    // trailing average, <1 = quieter, 1 = typical (or no forecast yet).
+    demand: {
+      factor: number;
+      available: boolean;
+      label: string;
+    };
   };
   recommendations: StockMenuParRecommendation[];
   warnings: string[];

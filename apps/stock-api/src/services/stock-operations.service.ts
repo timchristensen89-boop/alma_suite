@@ -1058,7 +1058,26 @@ export const stockOperationsService = {
         stockItemsReviewed: recommendations.length,
         readyToOrder: recommendations.filter((item) => item.suggestedOrderQuantity > 0).length,
         missingItemSales: !hasItemSales,
-        missingSupplierCount: recommendations.filter((item) => !item.supplier).length
+        missingSupplierCount: recommendations.filter((item) => !item.supplier).length,
+        // Week-ahead demand signal from the forecast engine, so the person
+        // ordering can see WHY quantities were scaled (or that they weren't).
+        demand: (() => {
+          const scoped = venue ? [venue] : venues;
+          const factors = scoped.map((v) => demandFactorForVenue(v)).filter((f) => f !== 1);
+          if (factors.length === 0) {
+            return { factor: 1, available: forecastSnapshots.length > 0, label: 'Week-ahead demand looks typical — order quantities are at the usual level.' };
+          }
+          const factor = factors.reduce((sum, f) => sum + f, 0) / factors.length;
+          const pct = Math.round(factor * 100);
+          return {
+            factor: Math.round(factor * 100) / 100,
+            available: true,
+            label:
+              factor > 1
+                ? `The week ahead is forecast ${pct}% of a normal week — busier than usual, so recommended quantities are scaled up.`
+                : `The week ahead is forecast ${pct}% of a normal week — quieter than usual, so recommended quantities are scaled down.`
+          };
+        })()
       },
       recommendations,
       warnings: [
