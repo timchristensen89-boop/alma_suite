@@ -13,6 +13,7 @@ import type {
   MonthlyRecapPeriod,
   RosterForecastSnapshot,
   ForecastOutlookPayload,
+  ForecastDay,
   RosterShift,
   SalesActualSummary,
   SalesItemActualSummary,
@@ -2507,6 +2508,69 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   );
                 })}
               </div>
+            );
+          })()}
+
+          {/* Week ahead — the forward glance, straight from the forecast
+              engine (same model the Forecast tab, roster and ordering use).
+              Turns "This Week" from a rear-view mirror into a windscreen. */}
+          {(() => {
+            const todayKey = isoDate(new Date());
+            const rows: ForecastDay[] = [];
+            for (const v of engineOutlook?.venues ?? []) {
+              const start = v.days.findIndex((d) => d.date >= todayKey);
+              if (start < 0) continue;
+              v.days.slice(start, start + 7).forEach((d, i) => {
+                const existing = rows[i];
+                if (!existing) {
+                  rows[i] = { ...d };
+                } else {
+                  existing.salesForecastCents += d.salesForecastCents;
+                  existing.expectedCovers += d.expectedCovers;
+                  existing.bookedCovers += d.bookedCovers;
+                  existing.wagesForecastCents += d.wagesForecastCents;
+                  existing.cogsForecastCents += d.cogsForecastCents;
+                }
+              });
+            }
+            if (rows.length === 0) return null;
+            const sales = rows.reduce((s, d) => s + d.salesForecastCents, 0);
+            const covers = rows.reduce((s, d) => s + d.expectedCovers, 0);
+            const booked = rows.reduce((s, d) => s + d.bookedCovers, 0);
+            const wages = rows.reduce((s, d) => s + d.wagesForecastCents, 0);
+            const cogs = rows.reduce((s, d) => s + d.cogsForecastCents, 0);
+            const primePct = sales > 0 ? ((wages + cogs) / sales) * 100 : null;
+            const busiest = [...rows].sort((a, b) => b.salesForecastCents - a.salesForecastCents)[0];
+            const primeTargetPct = (() => {
+              const vals = Object.values(primeTargets);
+              return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
+            })();
+            return (
+              <EditorialPanel
+                eyebrow="Week ahead · next 7 days"
+                title="What's coming"
+                actions={sectionButton('forecast', 'Open the full forecast')}
+              >
+                <div className="alma-page-grid-kpis">
+                  <BigStat eyebrow="Forecast takings" value={formatCurrency(sales)} sub="Predicted from your trading history" />
+                  <BigStat
+                    eyebrow="Expected covers"
+                    value={covers.toLocaleString()}
+                    sub={booked > 0 ? `${booked.toLocaleString()} already booked` : 'From weekday history'}
+                  />
+                  <BigStat
+                    eyebrow="Forecast prime cost"
+                    value={primePct != null ? `${primePct.toFixed(1)}%` : '—'}
+                    sub={primePct == null ? 'Awaiting data' : primePct <= primeTargetPct ? `Inside the ${primeTargetPct.toFixed(0)}% guide` : `${(primePct - primeTargetPct).toFixed(0)} pts over guide`}
+                    delta={primePct != null && primePct > primeTargetPct ? 'watch' : undefined}
+                  />
+                  <BigStat
+                    eyebrow="Busiest day"
+                    value={busiest ? new Date(`${busiest.date}T00:00:00Z`).toLocaleDateString('en-AU', { weekday: 'short', timeZone: 'UTC' }) : '—'}
+                    sub={busiest ? formatCurrency(busiest.salesForecastCents) : ''}
+                  />
+                </div>
+              </EditorialPanel>
             );
           })()}
 
