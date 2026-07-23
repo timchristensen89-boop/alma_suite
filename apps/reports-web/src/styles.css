@@ -2352,3 +2352,9 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
     grid-template-columns: 1fr 1fr;
   }
 }
+
+.forecast-range {
+  font-size: 0.76rem;
+  font-weight: 400;
+  margin-top: 2px;
+}

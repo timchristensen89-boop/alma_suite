@@ -371,6 +371,18 @@ export function ForecastPage() {
   const primePct = next7WagePct != null && next7CogsPct != null ? next7WagePct + next7CogsPct : null;
   const primeTarget = venues.reduce<number | null>((acc, v) => acc ?? v.assumptions.targetPrimeCostPercent, null) ?? 60;
 
+  // Honest confidence band: forecasts are point estimates, so pair each with a
+  // likely range built from the model's OWN measured accuracy (backtest MAPE),
+  // widened with horizon (next week is tighter than week 13). Falls back to a
+  // conservative 12% when the backtest hasn't enough history yet.
+  const baseErrorFraction = (backtest?.salesMapePct ?? 12) / 100;
+  const bandFraction = (weeksAhead: number) => Math.min(0.4, baseErrorFraction * (1 + 0.15 * Math.max(0, weeksAhead)));
+  const rangeLabel = (cents: number, weeksAhead: number) => {
+    if (cents <= 0) return null;
+    const f = bandFraction(weeksAhead);
+    return `${money(Math.round(cents * (1 - f)))}–${money(Math.round(cents * (1 + f)))}`;
+  };
+
   return (
     <div className="page-stack forecast-page">
       {outlook.warnings.length > 0 ? (
@@ -384,7 +396,11 @@ export function ForecastPage() {
         </div>
       ) : null}
       <div className="forecast-hero-grid">
-        <HeroMetric label="Next 7 days — sales" value={money(next7Sales)} hint="Forecast takings across the week ahead" />
+        <HeroMetric
+          label="Next 7 days — sales"
+          value={money(next7Sales)}
+          hint={rangeLabel(next7Sales, 0) ? `Likely ${rangeLabel(next7Sales, 0)}` : 'Forecast takings across the week ahead'}
+        />
         <HeroMetric
           label="Next 7 days — covers"
           value={String(next7Covers)}
@@ -513,7 +529,12 @@ export function ForecastPage() {
                 return (
                   <tr key={week.weekStart} className={index === 0 ? 'forecast-row-today' : undefined}>
                     <td>{index === 0 ? <strong>This week</strong> : fmtDate(week.weekStart, { day: 'numeric', month: 'short' })}</td>
-                    <td className="num"><strong>{money(week.salesForecastCents)}</strong></td>
+                    <td className="num">
+                      <strong>{money(week.salesForecastCents)}</strong>
+                      {rangeLabel(week.salesForecastCents, index) ? (
+                        <div className="subtle forecast-range">{rangeLabel(week.salesForecastCents, index)}</div>
+                      ) : null}
+                    </td>
                     <td className="num">
                       {money(week.lastYearSalesCents)}
                       {yoyPct != null ? (
@@ -530,12 +551,14 @@ export function ForecastPage() {
             </tbody>
           </table>
         </div>
-        {scenarioPct !== 0 ? (
-          <p className="subtle" style={{ marginTop: 8 }}>
-            Scenario view: sales {scenarioPct > 0 ? 'up' : 'down'} {Math.abs(scenarioPct)}%. Rostered wages only move half as far as sales
-            (the roster is a commitment); COGS moves with sales.
-          </p>
-        ) : null}
+        <p className="subtle" style={{ marginTop: 8 }}>
+          The range under each forecast is the likely band — {backtest && backtest.sampleWeeks > 0
+            ? `built from this model's own measured accuracy (±${backtest.salesMapePct}% on the last ${backtest.sampleWeeks} venue-weeks)`
+            : 'a conservative ±12% until enough history accumulates to measure it'}, widening the further out you look.
+          {scenarioPct !== 0
+            ? ` Scenario view: sales ${scenarioPct > 0 ? 'up' : 'down'} ${Math.abs(scenarioPct)}% — rostered wages move half as far (the roster is a commitment); COGS moves with sales.`
+            : ''}
+        </p>
       </Card>
 
       <Card
