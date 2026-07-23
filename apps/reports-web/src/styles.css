@@ -2358,3 +2358,10 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   font-weight: 400;
   margin-top: 2px;
 }
+
+.forecast-outlook-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}

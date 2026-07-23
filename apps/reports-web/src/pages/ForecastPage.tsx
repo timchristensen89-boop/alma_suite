@@ -383,6 +383,55 @@ export function ForecastPage() {
     return `${money(Math.round(cents * (1 - f)))}–${money(Math.round(cents * (1 + f)))}`;
   };
 
+  // Export the forecast for spreadsheet work (the accountant/administrator
+  // view). One CSV, dollars not cents, with the weekly outlook, its
+  // confidence band, and the cash-flow projection as labelled sections.
+  function exportForecastCsv() {
+    const esc = (v: string | number) => {
+      const s = String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const dollars = (cents: number | null | undefined) => (cents == null ? '' : (cents / 100).toFixed(2));
+    const rows: Array<Array<string | number>> = [];
+    rows.push([`Alma forecast — ${activeVenue === 'all' ? 'all venues' : activeVenue}`]);
+    rows.push([`Generated ${new Date(outlook!.generatedAt).toLocaleString('en-AU')}`]);
+    rows.push([]);
+    rows.push(['13-week outlook']);
+    rows.push(['Week starting', 'Sales forecast', 'Likely low', 'Likely high', 'Last year', 'Expected covers', 'Wages', 'Wage %', 'COGS', 'COGS %', 'Prime %']);
+    weeklyRows.forEach((week, index) => {
+      const f = bandFraction(index);
+      rows.push([
+        week.weekStart,
+        dollars(week.salesForecastCents),
+        dollars(Math.round(week.salesForecastCents * (1 - f))),
+        dollars(Math.round(week.salesForecastCents * (1 + f))),
+        dollars(week.lastYearSalesCents),
+        week.expectedCovers,
+        dollars(week.wagesForecastCents),
+        week.wagePct ?? '',
+        dollars(week.cogsForecastCents),
+        week.cogsPct ?? '',
+        week.primePct ?? ''
+      ]);
+    });
+    if (cashflow) {
+      rows.push([]);
+      rows.push([`Cash flow — opening balance ${dollars(cashflow.openingBalanceCents)}${cashflow.config.openingBalanceDate ? '' : ' (opening balance not set)'}`]);
+      rows.push(['Week starting', 'In', 'Out', 'Net', 'Closing balance']);
+      cashflow.weeks.forEach((week) => {
+        rows.push([week.weekStart, dollars(week.inflowCents), dollars(week.outflowCents), dollars(week.netCents), dollars(week.closingBalanceCents)]);
+      });
+    }
+    const csv = rows.map((r) => r.map(esc).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `alma-forecast-${activeVenue === 'all' ? 'all' : activeVenue.toLowerCase().replace(/\s+/g, '-')}-${outlook!.generatedAt.slice(0, 10)}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   return (
     <div className="page-stack forecast-page">
       {outlook.warnings.length > 0 ? (
@@ -492,18 +541,21 @@ export function ForecastPage() {
         title="13-week outlook"
         subtitle="Weekly forecast vs the same week last year, with the wage and food-cost line each week."
         action={
-          <div className="forecast-scenario">
-            <span className="subtle">What if sales move…</span>
-            {[-10, 0, 10].map((pct) => (
-              <button
-                key={pct}
-                type="button"
-                className={scenarioPct === pct ? 'is-active' : ''}
-                onClick={() => setScenarioPct(pct)}
-              >
-                {pct === 0 ? 'Base' : `${pct > 0 ? '+' : ''}${pct}%`}
-              </button>
-            ))}
+          <div className="forecast-outlook-actions">
+            <div className="forecast-scenario">
+              <span className="subtle">What if sales move…</span>
+              {[-10, 0, 10].map((pct) => (
+                <button
+                  key={pct}
+                  type="button"
+                  className={scenarioPct === pct ? 'is-active' : ''}
+                  onClick={() => setScenarioPct(pct)}
+                >
+                  {pct === 0 ? 'Base' : `${pct > 0 ? '+' : ''}${pct}%`}
+                </button>
+              ))}
+            </div>
+            <Button type="button" variant="secondary" onClick={exportForecastCsv}>Export CSV</Button>
           </div>
         }
       >
