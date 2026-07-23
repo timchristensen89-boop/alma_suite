@@ -29,6 +29,7 @@ import {
   type StocktakeReviewItem
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
+import { isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import { useStockApiReads, stockReads } from '../clients/stock-reads.js';
 import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
@@ -1431,8 +1432,13 @@ export const reportsService = {
       if (row.mappingStatus === 'missing_cost') dataQuality.push('missing_cost');
       // A recipe that costs as much as (or more than) it sells for is a
       // batch/prep recipe costed per serve, not a real menu economics row.
-      // Keep it visible and flagged, but keep it out of every total.
-      if (estimatedCogsCents !== null && row.netSalesCents > 0 && estimatedCogsCents >= row.netSalesCents) {
+      // Keep it visible and flagged, but keep it out of every total (shared
+      // guard, tested). recipeCostCents is per serve; estimatedCogsCents is
+      // already cost × units, so pass quantity 1 against the row total.
+      if (
+        row.recipeCostCents !== null &&
+        isSuspectRecipeCost(row.recipeCostCents, row.netSalesCents, row.quantitySold)
+      ) {
         dataQuality.push('suspect_batch_cost');
       }
       return { ...row, estimatedCogsCents, grossProfitCents, foodCostPercent, dataQuality };

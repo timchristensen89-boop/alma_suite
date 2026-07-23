@@ -55,6 +55,7 @@ import {
   trimmedMean
 } from '../lib/forecast-math.js';
 import { NSW_HOLIDAYS_COVERED_UNTIL, nswHolidayName } from '../lib/nsw-holidays.js';
+import { blendedTheoreticalCogsPct, isSuspectRecipeCost } from '../lib/cogs-quality.js';
 import {
   costForRate,
   salariedVenueAllocations,
@@ -71,9 +72,6 @@ const CLOSED_DAY_THRESHOLD_CENTS = 20_000; // < $200 median = venue not trading
 const MIN_COVERS_FOR_SPEND_SAMPLE = 10;
 const DEFAULT_WAGE_PCT = 32;
 const DEFAULT_COGS_PCT = 30;
-// Assumed cost % for takings NOT covered by recipe-mapped items — mostly
-// bottled wine and beer resale, which typically runs 35-40% cost in AU venues.
-const UNMAPPED_TAKINGS_COGS_PCT = 38;
 // Sales data older than this many days means the Square sync is stalled —
 // baselines then anchor to the last real day and the payload carries a warning.
 const STALE_SALES_AFTER_DAYS = 2;
@@ -315,30 +313,17 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
         let mappedCostCents = 0;
         let mappedNetCents = 0;
         for (const row of mappedItemRows) {
-          const costCentsPerUnit = Math.round((row.recipe?.estimatedCost ?? 0) * 100);
-          if (costCentsPerUnit <= 0 || row.quantity <= 0) continue;
+          const costCentsPerServe = Math.round((row.recipe?.estimatedCost ?? 0) * 100);
+          if (costCentsPerServe <= 0 || row.quantity <= 0) continue;
           const netCents = row.netSalesCents > 0 ? row.netSalesCents : row.grossSalesCents;
           if (netCents <= 0) continue;
-          // Data-error guard: a per-serve cost at or above the per-serve take
-          // is a recipe costing mistake (a batch/prep recipe costed per unit,
-          // e.g. a whole avocado tray per serve of guacamole) — skip the row
-          // entirely so one bad recipe can't poison the venue's food-cost %.
-          if (costCentsPerUnit * row.quantity >= netCents) continue;
-          mappedCostCents += costCentsPerUnit * row.quantity;
+          // Skip batch/prep recipes costed per serve — one bad recipe must not
+          // poison the venue food-cost % (shared guard, tested).
+          if (isSuspectRecipeCost(costCentsPerServe, netCents, row.quantity)) continue;
+          mappedCostCents += costCentsPerServe * row.quantity;
           mappedNetCents += netCents;
         }
-        // Only trust theory when mapped items cover a meaningful slice of takings.
-        // Recipe-mapped items skew to cocktails and food (low ingredient cost);
-        // the unmapped remainder is mostly wine/beer resale, which runs far
-        // dearer. Blend: real recipe costs for the mapped share, a standard
-        // beverage-resale margin for the rest — cross-checked against the
-        // Xero-booked cost-of-sales ratio (~25% June 2026).
-        if (mappedNetCents > 0 && salesCents > 0 && mappedNetCents / salesCents >= 0.25) {
-          const mappedShare = Math.min(1, mappedNetCents / salesCents);
-          const mappedPct = (mappedCostCents / mappedNetCents) * 100;
-          const blendedPct = mappedPct * mappedShare + UNMAPPED_TAKINGS_COGS_PCT * (1 - mappedShare);
-          theoreticalPct = Math.min(45, Math.max(18, blendedPct));
-        }
+        theoreticalPct = blendedTheoreticalCogsPct({ mappedCostCents, mappedNetCents, totalSalesCents: salesCents });
       }
       const targetCogsPct =
         target && target.targetPrimeCostPercent != null && target.targetWagePercent != null
