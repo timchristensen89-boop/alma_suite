@@ -233,6 +233,53 @@ function parseName(row: Record<string, string>): { firstName: string; lastName: 
   return { firstName: parts.slice(0, -1).join(' '), lastName: parts.at(-1) ?? '' };
 }
 
+// SevenRooms sends a real-time "Reservation Alert" email per booking (from
+// noreply@sevenrooms.com) with the data as labelled body text, not an
+// attachment — so it fell through the CSV/HTML parsers and was ignored,
+// leaving reservations stale between the scheduled bulk exports. Parse that
+// body into a single synthetic row the normal loop can ingest. Returns null
+// when the body isn't a reservation alert.
+function parseReservationAlert(bodyText: string | null): Record<string, string> | null {
+  if (!bodyText) return null;
+  const text = bodyText.replace(/\s+/g, ' ').trim();
+  // Require the labelled structure so we never misread an unrelated email.
+  if (!/Reservation No\.?:/i.test(text) || !/Venue:/i.test(text) || !/Party Size:/i.test(text)) {
+    return null;
+  }
+  // Value between one label and the next, tolerant of a trailing "." on the
+  // boundary label ("Reservation No.:").
+  const between = (label: string, next: string) => {
+    const m = text.match(new RegExp(`${label}\\s*:?\\s*(.*?)\\s*${next}\\s*\\.?\\s*:`, 'i'));
+    return m?.[1]?.trim() || '';
+  };
+  const row: Record<string, string> = {};
+  const name = between('Name', 'Reservation No');
+  const confirmation = (text.match(/Reservation No\.?:?\s*([A-Za-z0-9-]+)/i)?.[1] ?? '').trim();
+  const venue = between('Venue', 'Date');
+  const dateRaw = between('Date', 'Party Size');
+  const partySize = (text.match(/Party Size:?\s*(\d+)/i)?.[1] ?? '').trim();
+  const time = (text.match(/Time:?\s*([\d:]+\s*(?:AM|PM)?)/i)?.[1] ?? '').trim();
+  if (!venue || !dateRaw || !confirmation) return null;
+  // Normalise "Tuesday, July 28, 2026" → "2026-07-28" here rather than leaning
+  // on new Date()'s local-timezone parse downstream (deterministic regardless
+  // of the container timezone).
+  const MONTHS = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december'];
+  const dm = dateRaw.match(/([A-Za-z]+)\s+(\d{1,2}),?\s+(\d{4})/);
+  const monthIdx = dm ? MONTHS.indexOf(dm[1]!.toLowerCase()) : -1;
+  const date = dm && monthIdx >= 0 ? `${dm[3]}-${String(monthIdx + 1).padStart(2, '0')}-${String(Number(dm[2])).padStart(2, '0')}` : dateRaw;
+  if (name) row.guest_name = name;
+  row.confirmation_number = confirmation;
+  row.venue = venue;
+  row.date = date;
+  if (partySize) row.party_size = partySize;
+  if (time) row.time = time;
+  // A "just booked" alert is a live, confirmed reservation. Cancellations and
+  // modifications still reconcile via the scheduled bulk export (the full
+  // snapshot), which these single-booking alerts intentionally don't replace.
+  row.status = /cancel/i.test(text) ? 'cancelled' : /no[\s-]?show/i.test(text) ? 'no_show' : 'booked';
+  return row;
+}
+
 // ── inbound payload handling ─────────────────────────────────────────────────
 type InboundAttachment = { filename?: string; content_type?: string; contentType?: string; content?: unknown; url?: string };
 
@@ -381,6 +428,18 @@ export const sevenroomsService = {
       const htmlResult = extractHtmlText(data);
       rows = htmlResult.html ? htmlTableObjects(htmlResult.html) : [];
       source = htmlResult.source;
+    }
+    // No bulk export? It may be a single real-time "Reservation Alert" email,
+    // whose data lives in the body text, not an attachment.
+    if (rows.length === 0) {
+      const bodyText =
+        (typeof data.text === 'string' && data.text) ||
+        (typeof data.html === 'string' ? data.html.replace(/<[^>]+>/g, ' ') : null);
+      const alertRow = parseReservationAlert(bodyText);
+      if (alertRow) {
+        rows = [alertRow];
+        source = 'reservation-alert';
+      }
     }
     if (rows.length === 0) {
       await prisma.integrationWebhookEvent.updateMany({
