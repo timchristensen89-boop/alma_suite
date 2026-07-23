@@ -12,8 +12,10 @@ import {
 import {
   AlmaHomeBubble,
   AppShell,
+  Button,
   Card,
   CommsGlyph,
+  Input,
   ProductLogo,
   SUITE_APPS,
   SuiteAppSwitcher,
@@ -315,27 +317,40 @@ function LoginGate({ onSignedIn }: { onSignedIn: () => void }) {
   }
 
   return (
-    <main className="comms-login">
-      <Card className="comms-login-card">
-        <ProductLogo appId="comms" size="lg" />
-        <h1>Sign in to Comms</h1>
-        <p>Messages, handovers, alerts, and follow-ups are restricted to authorised Alma users.</p>
-        <form onSubmit={submit} className="comms-form">
-          <label>
-            Email
-            <input value={email} onChange={(event) => setEmail(event.target.value)} type="email" autoComplete="email" required />
-          </label>
-          <label>
-            Password
-            <input value={password} onChange={(event) => setPassword(event.target.value)} type="password" autoComplete="current-password" required />
-          </label>
-          {message ? <p className="comms-error">{message}</p> : null}
-          <button type="submit" disabled={busy}>
-            {busy ? 'Signing in…' : 'Sign in'}
-          </button>
-        </form>
-      </Card>
-    </main>
+    <div className="login-wrap comms-login-wrap">
+      <div className="login-card">
+        <div className="login-brand">
+          <ProductLogo appId="comms" size="lg" />
+        </div>
+
+        <Card title="Sign in" subtitle="Messages, handovers, alerts, and follow-ups for authorised Alma users">
+          <form onSubmit={submit} className="page-stack compact">
+            <Input
+              label="Email"
+              type="email"
+              autoComplete="email"
+              required
+              value={email}
+              onChange={(event) => setEmail(event.currentTarget.value)}
+            />
+            <Input
+              label="Password"
+              type="password"
+              autoComplete="current-password"
+              required
+              value={password}
+              onChange={(event) => setPassword(event.currentTarget.value)}
+            />
+            {message ? <p className="error-text">{message}</p> : null}
+            <Button type="submit" disabled={busy}>
+              {busy ? 'Signing in…' : 'Sign in'}
+            </Button>
+          </form>
+        </Card>
+
+        <SuiteAppSwitcher currentApp="comms" apps={suiteApps} />
+      </div>
+    </div>
   );
 }
 

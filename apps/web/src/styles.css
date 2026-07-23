@@ -560,7 +560,8 @@ p {
   line-height: 1;
 }
 
-.sidebar-nav a {
+.sidebar-nav a,
+.sidebar-nav li > span[aria-disabled] {
   display: flex;
   align-items: center;
   gap: 14px;
@@ -717,12 +718,17 @@ p {
     overflow: hidden;
   }
 
-  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a {
+  /* "a" covers real links; "li > span" covers disabled placeholders (e.g. an
+     external jump with no URL configured) so their labels collapse too instead
+     of leaking text into the icon rail. */
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a,
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav li > span[aria-disabled] {
     justify-content: center;
     padding-inline: 8px;
   }
 
-  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a > span:not(.sidebar-nav-icon) {
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav a > span:not(.sidebar-nav-icon),
+  .app-shell:not(.is-sidebar-pinned) .app-shell-sidebar:not(:hover):not(:focus-within) .sidebar-nav li > span[aria-disabled] > span:not(.sidebar-nav-icon) {
     width: 0;
     max-width: 0;
     opacity: 0;
@@ -1265,12 +1271,17 @@ p {
    Stat card
    ========================================================================== */
 
+/* Elevated tile: cream-on-cream cards blended into their panels, so the
+   numbers didn't read as tiles. White (dark: dark-elevated) with a soft
+   shadow lifts them off any surface — the treatment proven in Reports,
+   promoted here so every suite app inherits it. */
 .stat-card {
-  background: var(--color-surface);
-  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  background: var(--color-elevated);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.08);
   border-radius: 16px;
   padding: 18px 20px;
-  box-shadow: none;
+  box-shadow: 0 1px 3px rgba(var(--ink-forest-rgb), 0.05);
+  transition: box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -1326,10 +1337,21 @@ p {
   margin-top: 6px;
 }
 
+.stat-card:hover {
+  box-shadow: 0 6px 18px rgba(var(--ink-forest-rgb), 0.10);
+  transform: translateY(-1px);
+}
+
 .stat-card.tone-positive .stat-card-icon { background: var(--tone-positive-bg); color: var(--tone-positive-fg); }
 .stat-card.tone-warning .stat-card-icon  { background: var(--tone-warning-bg);  color: var(--tone-warning-fg); }
 .stat-card.tone-danger .stat-card-icon   { background: var(--tone-danger-bg);   color: var(--tone-danger-fg); }
 .stat-card.tone-info .stat-card-icon     { background: var(--tone-info-bg);     color: var(--tone-info-fg); }
+
+/* Status at a glance: toned metrics carry a stripe of their tone. */
+.stat-card.tone-positive { border-left: 3px solid var(--tone-positive-dot); }
+.stat-card.tone-warning  { border-left: 3px solid var(--tone-warning-dot); }
+.stat-card.tone-danger   { border-left: 3px solid var(--tone-danger-dot); }
+.stat-card.tone-info     { border-left: 3px solid var(--tone-info-dot); }
 
 /* ==========================================================================
    Badges
@@ -8361,10 +8383,12 @@ a.suite-app-tile:hover {
 /* --- BigStat KPI card ---------------------------------------------------- */
 
 .alma-bigstat {
-  background: var(--color-surface);
-  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  /* Elevated tile, matching .stat-card — see the stat-card note. */
+  background: var(--color-elevated);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.08);
   border-radius: 16px;
   padding: 20px 22px;
+  box-shadow: 0 1px 3px rgba(var(--ink-forest-rgb), 0.05);
   display: flex;
   flex-direction: column;
   gap: 14px;

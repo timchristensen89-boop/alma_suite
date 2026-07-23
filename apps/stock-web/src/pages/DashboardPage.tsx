@@ -192,6 +192,7 @@ export function DashboardPage() {
             label="On hand"
             value={loading ? '—' : formatQuantity(dashboard?.summary.totalOnHand)}
             hint={activeVenue ? 'Tracked units at the selected venue' : 'Tracked units across venue stock'}
+            tone={(dashboard?.summary.totalOnHand ?? 0) < 0 ? 'danger' : undefined}
           />
         </Link>
         <Link to="/stocktake" className="stat-card-link" aria-label="Open stocktakes ready for review">
