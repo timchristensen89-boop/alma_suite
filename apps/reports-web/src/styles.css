@@ -467,6 +467,8 @@
   width: 100%;
   border-collapse: collapse;
   font-size: 13px;
+  /* Money and counts line up column-to-column even in left-aligned cells. */
+  font-variant-numeric: tabular-nums;
 }
 
 .report-table th,
@@ -484,10 +486,27 @@
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
+  /* A firmer rule under the header separates it from the body. */
+  border-bottom: 1px solid var(--color-border-strong);
+}
+
+.report-table tbody tr {
+  transition: background 100ms ease;
+}
+
+.report-table tbody tr:hover {
+  background: var(--color-surface-hover);
 }
 
 .report-table tr:last-child td {
   border-bottom: none;
+}
+
+/* Right-align numeric columns where the markup opts in (class="num"), so
+   money reads down a clean edge. */
+.report-table th.num,
+.report-table td.num {
+  text-align: right;
 }
 
 .report-error {
