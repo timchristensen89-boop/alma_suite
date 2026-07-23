@@ -27,8 +27,8 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-end;
-  justify-content: flex-end;
-  gap: 8px;
+  justify-content: flex-start;
+  gap: 10px;
 }
 
 .reports-week-controls .field {
@@ -2365,3 +2365,37 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   gap: 12px;
   flex-wrap: wrap;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Reports design pass — hierarchy + colour (scoped to the Reports app only)
+   The metric cards were the same cream as their containing panel, so they
+   blended in. Lift them onto white with a soft shadow so the numbers read as
+   distinct tiles, and bring the traffic-light colour to status at a glance.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.report-active-section .stat-card,
+.reports-section .stat-card {
+  background: var(--color-elevated);
+  border-color: rgba(var(--ink-forest-rgb), 0.08);
+  box-shadow: 0 1px 3px rgba(var(--ink-forest-rgb), 0.05);
+  transition: box-shadow 150ms ease, transform 150ms ease, border-color 150ms ease;
+}
+
+.report-active-section .stat-card:hover,
+.reports-section .stat-card:hover {
+  box-shadow: 0 6px 18px rgba(var(--ink-forest-rgb), 0.10);
+  transform: translateY(-1px);
+}
+
+/* Status colour, scannable: a tone stripe down the left of any toned metric. */
+.report-active-section .stat-card.tone-positive { border-left: 3px solid var(--tone-positive-dot); }
+.report-active-section .stat-card.tone-warning  { border-left: 3px solid var(--tone-warning-dot); }
+.report-active-section .stat-card.tone-danger   { border-left: 3px solid var(--tone-danger-dot); }
+.report-active-section .stat-card.tone-info      { border-left: 3px solid var(--tone-info-dot); }
+
+/* Cost triangle: give each tile a faint wash of its tone so "on target" reads
+   green and "over" reads amber/red without having to parse the number. */
+.report-active-section .cost-tile.is-positive { background: color-mix(in srgb, var(--tone-positive-dot) 7%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-warning  { background: color-mix(in srgb, var(--tone-warning-dot) 10%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-danger   { background: color-mix(in srgb, var(--tone-danger-dot) 8%, var(--color-elevated)); }
+.report-active-section .cost-tile.is-neutral  { background: var(--color-elevated); }
