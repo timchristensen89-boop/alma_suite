@@ -14762,6 +14762,7 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
   const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
+  const [forecast, setForecast] = useState<ForecastOutlookPayload | null>(null);
   const [date, setDate] = useState(() => toDateInput(new Date()));
   const [venue, setVenue] = useState('');
   const [loading, setLoading] = useState(false);
@@ -14798,6 +14799,38 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
       setLoading(false);
     }
   }, [date, venue]);
+
+  // Forecast outlook (same engine as Reports/roster) — powers the "Forecast
+  // today" pace metric and the week-ahead line. Non-blocking: a failure just
+  // hides those, the rest of the dashboard is unaffected.
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ weeks: '13' });
+    if (venue) params.set('venue', venue);
+    void api<ForecastOutlookPayload>(`/api/forecast/outlook?${params.toString()}`)
+      .then((next) => {
+        if (!cancelled) setForecast(next);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [venue]);
+
+  // Engine forecast for the selected day and the 7 days ahead of it.
+  const forecastToday = useMemo(() => {
+    let today = 0;
+    let weekAhead = 0;
+    for (const v of forecast?.venues ?? []) {
+      const idx = v.days.findIndex((d) => d.date === date);
+      if (idx >= 0) today += v.days[idx]!.salesForecastCents;
+      const startAhead = v.days.findIndex((d) => d.date > date);
+      if (startAhead >= 0) {
+        weekAhead += v.days.slice(startAhead, startAhead + 7).reduce((sum, d) => sum + d.salesForecastCents, 0);
+      }
+    }
+    return { todayCents: today, weekAheadCents: weekAhead };
+  }, [forecast, date]);
 
   useEffect(() => {
     void loadDashboard();
@@ -14941,7 +14974,27 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <div className="live-hero-metric">
           <span className="live-hero-label">Sales today</span>
           <span className="live-hero-value">{loading && !dashboard ? '—' : formatCents(dashboard?.totals.salesCents ?? 0)}</span>
-          <span className="live-hero-hint">{dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales yet'}</span>
+          <span className="live-hero-hint">
+            {(() => {
+              const fc = forecastToday.todayCents;
+              const actual = dashboard?.totals.salesCents ?? 0;
+              if (fc <= 0) return dashboard?.salesByVenue.length ? `${dashboard.salesByVenue.length} venue${dashboard.salesByVenue.length === 1 ? '' : 's'}` : 'No sales yet';
+              // Only score actual-vs-forecast for a COMPLETED day — comparing a
+              // part-day's takings to the full-day forecast reads as "behind"
+              // all afternoon even when the day is on track.
+              const dayComplete = date < toDateInput(new Date());
+              if (dayComplete && actual > 0) {
+                const pct = Math.round(((actual - fc) / fc) * 100);
+                return `${formatCents(fc)} forecast · ${pct >= 0 ? '+' : ''}${pct}% actual`;
+              }
+              return `${formatCents(fc)} forecast today`;
+            })()}
+          </span>
+        </div>
+        <div className="live-hero-metric">
+          <span className="live-hero-label">Week ahead</span>
+          <span className="live-hero-value">{forecastToday.weekAheadCents > 0 ? formatCents(forecastToday.weekAheadCents) : '—'}</span>
+          <span className="live-hero-hint">{forecastToday.weekAheadCents > 0 ? 'Forecast sales, next 7 days' : 'Forecast warming up'}</span>
         </div>
         <div className={`live-hero-metric ${wageTone}`}>
           <span className="live-hero-label">Wage cost</span>
