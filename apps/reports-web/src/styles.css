@@ -2443,3 +2443,37 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   margin-top: 12px;
   max-width: 72ch;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Recomposed report sections — helpers for the shared editorial vocabulary
+   (ov-prime / ov-two / ov-library / mini bars) used across Sales, Labour,
+   Food & Bev Cost, Menu Engineering, and Exports.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* Currency figures run longer than percentages, so the money variants of the
+   prime feature panel step the type down a size. */
+.rs-prime-main-money .ov-prime-value {
+  font-size: clamp(34px, 4.2vw, 54px);
+  overflow-wrap: anywhere;
+}
+
+.rs-prime-cols-money .ov-prime-col-value {
+  font-size: clamp(24px, 2.4vw, 34px);
+  overflow-wrap: anywhere;
+}
+
+/* Mini bar sitting under a right-aligned numeric table cell. */
+.rs-bar-right {
+  margin-left: auto;
+  max-width: 120px;
+}
+
+/* Export library rows disable while their dataset is empty. */
+.rs-export-library .ov-library-row:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.rs-export-library .ov-library-row:disabled:hover {
+  background: transparent;
+}

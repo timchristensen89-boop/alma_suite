@@ -9,7 +9,7 @@ import type {
   ForecastOutlookPayload,
   ForecastVenueOutlook
 } from '@alma/shared';
-import { ActionFeedback, Badge, Button, Card, Input, Select, Spinner } from '@alma/ui';
+import { ActionFeedback, Badge, Button, Card, EditorialPanel, Input, Select, Spinner } from '@alma/ui';
 import { staffApi } from '../lib/api';
 import { TrendLine } from '../components/Charts';
 
@@ -444,6 +444,9 @@ export function ForecastPage() {
           </ul>
         </div>
       ) : null}
+      {/* Forward-looking summary sits on the sage band, matching the
+          overview's week-ahead treatment. */}
+      <EditorialPanel className="alma-band-sage" eyebrow="Forecast" title="What's coming">
       <div className="forecast-hero-grid">
         <HeroMetric
           label="Next 7 days — sales"
@@ -483,6 +486,7 @@ export function ForecastPage() {
           }
         />
       </div>
+      </EditorialPanel>
 
       <Card
         title="The next 14 days"

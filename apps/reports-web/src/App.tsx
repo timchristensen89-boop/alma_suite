@@ -66,7 +66,7 @@ import {
 } from './lib/api';
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
-import { BarChart, Donut, HBars, TrendLine, CHART_COLORS, CHART_PALETTE } from './components/Charts';
+import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
 
 type SuiteSummary = {
   incidents?: { total?: number; open?: number; followUp?: number };
@@ -685,7 +685,8 @@ function MonthlyRecapSection({ venues }: { venues: string[] }) {
           <p className="report-error">{error}</p>
         ) : recap ? (
           <>
-            <div className="recap-grid">
+            {/* The month and the FY-to-date read as a pair. */}
+            <div className="ov-two">
               <RecapCard title={recap.monthCurrent.label} period={recap.monthCurrent} compare={recap.monthPriorYear} compareLabel="last year" />
               <RecapCard title={recap.ytdLabel} period={recap.ytdCurrent} compare={recap.ytdPriorYear} compareLabel="prior FY" />
             </div>
@@ -2948,6 +2949,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const totalPredictedCents = salesTrendRows.reduce((sum, row) => sum + row.predictedSalesCents, 0);
     const importedDays = salesTrendRows.reduce((sum, row) => sum + row.actualDays, 0);
     const missingHistoryCount = salesTrendRows.filter((row) => row.historicalSalesCents <= 0).length;
+    // Presentation only: relative-size read for the imported sales rows table.
+    const importedSalesMaxCents = Math.max(1, ...(data.actualSales?.entries ?? []).map((entry) => entry.salesCents));
 
     return (
       <SectionShell
@@ -2956,12 +2959,35 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         description="Takings by venue and day, forecast vs actual, and covers on the books ahead"
       >
         <div className="report-section-stack">
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="Actual imported" value={formatCurrency(actualSalesCents)} hint={`${importedDays} venue day${importedDays === 1 ? '' : 's'} imported`} loading={loading} />
-            <StatCard label="Manual forecast" value={formatCurrency(totalForecastCents)} hint="Editable venue inputs" loading={loading} />
-            <StatCard label="Predicted sales" value={formatCurrency(totalPredictedCents)} hint="Current pace, forecast, or history" loading={loading} />
-            <StatCard label="Historical baseline" value={formatCurrency(totalHistoricalCents)} hint={missingHistoryCount ? `${missingHistoryCount} missing baseline${missingHistoryCount === 1 ? '' : 's'}` : 'Selected week baseline'} loading={loading} />
-          </div>
+          {/* Takings feature — the section's one headline figure. The
+              forecast, prediction, and baseline read alongside it instead of
+              repeating in a metric-card grid. */}
+          <section className="ov-prime is-neutral rs-prime-main-money rs-prime-cols-money" aria-label="Takings for the week">
+            <div className="ov-prime-main">
+              <span className="ov-prime-label">Takings · actual imported</span>
+              <div className="ov-prime-row">
+                <span className="ov-prime-value">{formatCurrency(actualSalesCents)}</span>
+              </div>
+              <span className="ov-prime-note">
+                <strong>{importedDays}</strong> venue day{importedDays === 1 ? '' : 's'} imported · {weekWindowLabel}.
+              </span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Manual forecast</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalForecastCents)}</span>
+              <span className="ov-prime-col-hint">Editable venue inputs</span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Predicted sales</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalPredictedCents)}</span>
+              <span className="ov-prime-col-hint">Current pace, forecast, or history</span>
+            </div>
+            <div className="ov-prime-col">
+              <span className="ov-prime-label">Historical baseline</span>
+              <span className="ov-prime-col-value">{formatCurrency(totalHistoricalCents)}</span>
+              <span className="ov-prime-col-hint">{missingHistoryCount ? `${missingHistoryCount} missing baseline${missingHistoryCount === 1 ? '' : 's'}` : 'Selected week baseline'}</span>
+            </div>
+          </section>
 
           {data.actualSales?.entries.length ? null : (
             <p className="report-warning-text">No imported sales actuals are available for this week. The predicted sales value falls back to manual forecast first, then historical baseline.</p>
@@ -3096,9 +3122,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
+          {/* The two eight-week reads pair side by side — same window, two
+              angles (level and accuracy). */}
+          {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
+          <div className="ov-two">
           {forecastHistory.filter((w) => w.actualCents > 0).length >= 2 ? (
-            <div className="report-panel">
-              <h4>Actual sales trend · last 8 weeks</h4>
+            <EditorialPanel eyebrow="Last 8 weeks" title="Actual sales trend">
               <TrendLine
                 points={forecastHistory.map((w) => ({
                   label: new Date(w.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' }),
@@ -3107,13 +3136,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 format={(v) => formatCurrency(v)}
                 color={CHART_COLORS.accent}
               />
-            </div>
+            </EditorialPanel>
           ) : null}
 
           {/* 8-week forecast vs actual */}
           {forecastHistory.some((w) => w.forecastCents > 0 || w.actualCents > 0) ? (
-            <div className="report-panel">
-              <h4>Forecast vs actual · last 8 weeks</h4>
+            <EditorialPanel eyebrow="Last 8 weeks" title="Forecast vs actual">
               <p className="subtle" style={{ marginTop: -4 }}>
                 Side-by-side bars per week. Variance shows how the forecast compared to imported actuals.
               </p>
@@ -3165,7 +3193,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   </>
                 );
               })()}
-            </div>
+            </EditorialPanel>
+          ) : null}
+          </div>
           ) : null}
 
           <div className="report-panel">
@@ -3180,7 +3210,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   columns={[
                     { key: 'date', label: 'Date', sortValue: (e) => e.serviceDate, render: (e) => new Date(e.serviceDate).toLocaleDateString() },
                     { key: 'venue', label: 'Venue', sortValue: (e) => e.venue, render: (e) => e.venue },
-                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (e) => e.salesCents, render: (e) => formatCurrency(e.salesCents) },
+                    { key: 'sales', label: 'Sales', align: 'right', sortValue: (e) => e.salesCents, render: (e) => (
+                      <>
+                        {formatCurrency(e.salesCents)}
+                        <span className="ov-dish-bar rs-bar-right" aria-hidden="true">
+                          <span style={{ width: `${Math.round((e.salesCents / importedSalesMaxCents) * 100)}%` }} />
+                        </span>
+                      </>
+                    ) },
                     { key: 'source', label: 'Source', sortValue: (e) => e.source, render: (e) => e.source },
                     { key: 'notes', label: 'Notes', sortValue: (e) => e.notes || e.externalId || 'Imported actual', render: (e) => e.notes || e.externalId || 'Imported actual' }
                   ]}
@@ -3211,18 +3248,51 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         action={<Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>Export wages CSV</Button>}
       >
         <div className="report-section-stack">
+          {/* Labour feature — the section's one headline ratio, with the
+              payroll dollars alongside instead of a second metric-card grid. */}
           {(() => {
             const labourPct = primeTotals?.wagePercent ?? null;
             const incomplete = labourPct != null && labourPct > 120;
-            const payroll = wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0);
+            const tipsPoolCents = data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0;
+            const payroll = wageTotals.approvedCostCents + tipsPoolCents;
+            const tone = incomplete || labourPct == null
+              ? 'neutral'
+              : labourPct <= COST_TARGETS.labour
+                ? 'positive'
+                : labourPct <= COST_TARGETS.labour + 5
+                  ? 'warning'
+                  : 'danger';
             return (
-              <p className="report-lead">
-                {incomplete
-                  ? <>Sales look incomplete for this week, so the labour % isn't reliable yet — check the Square import. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
-                  : labourPct != null
-                    ? <>Labour is running at <strong>{formatPercent(labourPct)}</strong> of sales — aim for ≤ 30%. Approved payroll with tips is {formatCurrency(payroll)}.</>
-                    : <>Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>}
-              </p>
+              <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Labour cost for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Labour · wages % of sales</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">{labourPct == null || incomplete ? '—' : formatPercent(labourPct)}</span>
+                  </div>
+                  <span className="ov-prime-note">
+                    {incomplete
+                      ? <>Sales look incomplete for this week, so the labour % isn't reliable yet — check the Square import. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                      : labourPct != null
+                        ? <>Aim for ≤ {COST_TARGETS.labour}%. Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>
+                        : <>Approved payroll with tips is <strong>{formatCurrency(payroll)}</strong>.</>}
+                  </span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Projected wages</span>
+                  <span className="ov-prime-col-value">{formatCurrency(wageTotals.projectedCostCents)}</span>
+                  <span className="ov-prime-col-hint">{roundHours(wageTotals.hours)} total</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Approved wages</span>
+                  <span className="ov-prime-col-value">{formatCurrency(wageTotals.approvedCostCents)}</span>
+                  <span className="ov-prime-col-hint">{roundHours(wageTotals.approvedHours)} approved</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Payroll total</span>
+                  <span className="ov-prime-col-value">{formatCurrency(payroll)}</span>
+                  <span className="ov-prime-col-hint">Approved wages + {formatCurrency(tipsPoolCents)} tips pool (after breakage deduction)</span>
+                </div>
+              </section>
             );
           })()}
           <div className="stats-grid report-metric-grid">
@@ -3232,15 +3302,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Awaiting approval" value={data.timesheets.filter((item) => item.status === 'SUBMITTED').length} hint={weekWindowLabel} loading={loading} />
           </div>
 
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="Projected wages" value={formatCurrency(wageTotals.projectedCostCents)} hint={`${roundHours(wageTotals.hours)} total`} loading={loading} />
-            <StatCard label="Approved wages" value={formatCurrency(wageTotals.approvedCostCents)} hint={`${roundHours(wageTotals.approvedHours)} approved`} loading={loading} />
-            <StatCard label="Weekly tips pool" value={formatCurrency(data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0)} hint="After breakage deduction" loading={loading} />
-            <StatCard label="Payroll total" value={formatCurrency(wageTotals.approvedCostCents + (data.tips?.allocatablePoolCents ?? data.tips?.tipPoolCents ?? 0))} hint="Approved wages + tips" loading={loading} />
-          </div>
-
-          <div className="report-detail-grid">
-            <ActionPanel
+          <ActionPanel
               title="Staff attention"
               description="Expand to see the affected staff rows and the safest next action."
               count={staffAttentionCount}
@@ -3276,10 +3338,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               ))}
               {submittedTimesheets.length > 8 ? <p className="subtle">{submittedTimesheets.length - 8} more timesheets waiting.</p> : null}
-            </ActionPanel>
+          </ActionPanel>
 
-            <div className="report-panel">
-              <h4>Wages by venue</h4>
+          {/* Two reads of the same payroll dollars — by venue and by person —
+              paired instead of a metric list plus a duplicating bar chart. */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Wages by venue">
               {(data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').length ? (
                 (data.primeCost?.venues ?? []).filter((venue) => venue.venue && venue.venue !== 'Both').map((venue) => (
                   <Metric
@@ -3293,35 +3357,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               ) : (
                 <p className="subtle">No timesheets found for this week.</p>
               )}
-              <Metric label="Approved wages" value={formatCurrency(primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)} tone="positive" hint="Approved/exported timesheets only" />
-            </div>
+            </EditorialPanel>
+            <EditorialPanel eyebrow={weekWindowLabel} title="Top payroll">
+              <HBars
+                data={[...wageRows]
+                  .sort((a, b) => b.approvedCostCents + b.tipsCents - (a.approvedCostCents + a.tipsCents))
+                  .slice(0, 6)
+                  .map((r) => ({ label: r.name, value: r.approvedCostCents + r.tipsCents }))}
+                format={(v) => formatCurrency(v)}
+                emptyLabel="No approved payroll yet."
+              />
+            </EditorialPanel>
           </div>
-
-          {(data.primeCost?.venues ?? []).filter((v) => v.venue && v.venue !== 'Both').length || wageRows.length ? (
-            <div className="report-chart-grid">
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Wages by venue</h5>
-                <BarChart
-                  data={(data.primeCost?.venues ?? [])
-                    .filter((v) => v.venue && v.venue !== 'Both')
-                    .map((v, i) => ({ label: v.venue, value: v.wageCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No venue wages for this week."
-                />
-              </div>
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Top payroll — {weekWindowLabel}</h5>
-                <HBars
-                  data={[...wageRows]
-                    .sort((a, b) => b.approvedCostCents + b.tipsCents - (a.approvedCostCents + a.tipsCents))
-                    .slice(0, 6)
-                    .map((r) => ({ label: r.name, value: r.approvedCostCents + r.tipsCents }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No approved payroll yet."
-                />
-              </div>
-            </div>
-          ) : null}
 
           {wageRows.length ? (
             <div className="report-panel">
@@ -3459,6 +3506,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     const stockDisplayPrimePct = stockSalesCents > 0
       ? (stockDisplayPrimeCents / stockSalesCents) * 100
       : (primeTotals?.primeCostPercent ?? null);
+    // Presentation only: relative-size read for the category value table.
+    const categoryValueMaxCents = Math.max(1, ...categoryValueRows.map((row) => row.valueCents));
     return (
       <SectionShell
         id="stock"
@@ -3467,11 +3516,47 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       >
         <div className="report-section-stack">
           {stockMessage ? <p className="error-text">{stockMessage}</p> : null}
-          <p className="report-lead">
-            {stockDisplayCogsCents > 0
-              ? <>Food &amp; bev is running at <strong>{formatPercent(stockDisplayCogsPct)}</strong> of sales{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : primeTotals?.cogsSource !== 'stock_bounded' ? ' (bills recorded so far only — likely understated until stocktakes bracket the period)' : ''}. Aim for ≤ 30%.</>
-              : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
-          </p>
+          {/* Food-cost feature — the section's one headline ratio, with prime,
+              purchases, and wastage alongside instead of a second metric grid. */}
+          {(() => {
+            const tone = stockDisplayCogsCents <= 0 || stockDisplayCogsPct == null
+              ? 'neutral'
+              : stockDisplayCogsPct <= COST_TARGETS.food
+                ? 'positive'
+                : stockDisplayCogsPct <= COST_TARGETS.food + 5
+                  ? 'warning'
+                  : 'danger';
+            return (
+              <section className={`ov-prime is-${tone} rs-prime-cols-money`} aria-label="Food and beverage cost for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Food &amp; bev · COGS % of sales</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">{stockDisplayCogsCents > 0 ? formatPercent(stockDisplayCogsPct) : '—'}</span>
+                  </div>
+                  <span className="ov-prime-note">
+                    {stockDisplayCogsCents > 0
+                      ? <>Aim for ≤ {COST_TARGETS.food}%. Food &amp; bev cost of <strong>{formatCurrency(stockDisplayCogsCents)}</strong>{stockUsingTheoretical ? ' (estimated from recipes — no stocktake brackets this week yet)' : primeTotals?.cogsSource !== 'stock_bounded' ? ' (bills recorded so far only — likely understated until stocktakes bracket the period)' : ' (actual: opening + purchases − closing)'}.</>
+                      : <>No food cost to show yet — take a stocktake, or map your Square items to recipes in Stock, to see it here.</>}
+                  </span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Total operating cost · Prime</span>
+                  <span className="ov-prime-col-value">{formatCurrency(stockDisplayPrimeCents)}</span>
+                  <span className="ov-prime-col-hint">{formatPercent(stockDisplayPrimePct)} of sales · food + labour</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Purchases (ex-GST)</span>
+                  <span className="ov-prime-col-value">{formatCurrency(primeTotals?.purchasesCents ?? 0)}</span>
+                  <span className="ov-prime-col-hint">Finalised supplier bills, net of GST</span>
+                </div>
+                <div className="ov-prime-col">
+                  <span className="ov-prime-label">Wastage cost</span>
+                  <span className="ov-prime-col-value">{formatCurrency(primeTotals?.wastageCents ?? 0)}</span>
+                  <span className="ov-prime-col-hint">Recorded wastage (informational)</span>
+                </div>
+              </section>
+            );
+          })()}
           <div className="stats-grid report-metric-grid">
             <StatCard label="Active catalogue items" value={data.overview?.stock.activeStockItems ?? data.stockSummary?.activeItems ?? 0} hint="Global catalogue" loading={loading} />
             <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? data.stockSummary?.lowStockItems ?? 0} hint="Venue-aware rows" loading={loading} />
@@ -3479,16 +3564,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <StatCard label="Ready for review" value={data.overview?.stock.stocktakesReadyForReview ?? 0} hint="Submitted stocktakes" loading={loading} />
           </div>
 
-          <div className="stats-grid report-metric-grid">
-            <StatCard label="Food &amp; bev cost (COGS)" value={formatCurrency(stockDisplayCogsCents)} hint={stockDisplayCogsCents <= 0 ? 'No data yet' : stockUsingTheoretical ? `${formatPercent(stockDisplayCogsPct)} of sales · estimated (recipe × units sold)` : `${formatPercent(stockDisplayCogsPct)} of sales · ${primeTotals?.cogsSource === 'stock_bounded' ? 'actual (opening + purchases − closing)' : 'purchases only (est.)'}`} loading={loading} />
-            <StatCard label="Total operating cost (prime)" value={formatCurrency(stockDisplayPrimeCents)} hint={`${formatPercent(stockDisplayPrimePct)} of sales · food + labour`} loading={loading} />
-            <StatCard label="Purchases (ex-GST)" value={formatCurrency(primeTotals?.purchasesCents ?? 0)} hint="Finalised supplier bills, net of GST" loading={loading} />
-            <StatCard label="Wastage cost" value={formatCurrency(primeTotals?.wastageCents ?? 0)} hint="Recorded wastage (informational)" loading={loading} />
-          </div>
-
-          <div className="report-chart-grid">
-            <div className="report-chart-panel">
-              <h5 className="report-chart-title">Where each sales dollar goes</h5>
+          {/* Cost split and stock health paired; the by-category values live
+              once, in the table below, with a relative-size bar per row. */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Where each sales dollar goes">
               <Donut
                 size={130}
                 segments={[
@@ -3500,34 +3579,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 format={(v) => formatCurrency(v)}
                 emptyLabel="No prime cost data yet."
               />
-            </div>
-            <div className="report-chart-panel">
-              <h5 className="report-chart-title">Stock value by category</h5>
-              <HBars
-                data={categoryValueRows.slice(0, 8).map((c) => ({ label: c.category, value: c.valueCents }))}
-                format={(v) => formatCurrency(v)}
-                emptyLabel="No stock value to show."
-              />
-            </div>
-          </div>
-
-          <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Stock health</h4>
+            </EditorialPanel>
+            <EditorialPanel eyebrow="Stock on hand" title="Stock health">
               <Metric label="Current stock value" value={formatCurrency(stockValueCents)} tone="info" />
               <Metric label={stockLowStockLabel} value={data.stockSummary?.lowStockItems ?? 0} tone={(data.stockSummary?.lowStockItems ?? 0) > 0 ? 'warning' : 'positive'} />
               <Metric label="Latest stocktake value" value={formatCurrency(data.stocktakes?.totalValueCents ?? 0)} tone="neutral" />
-            </div>
-
-            <div className="report-panel">
-              <h4>Cost data quality</h4>
-              <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="Labour source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
-              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
-              {(data.primeCost?.warnings ?? []).map((warning) => (
-                <p key={warning} className="subtle">{warning}</p>
-              ))}
-            </div>
+            </EditorialPanel>
           </div>
 
           <div className="report-panel">
@@ -3556,9 +3613,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             </div>
           </div>
 
-          <div className="report-detail-grid">
-            <div className="report-panel">
-              <h4>Stocktake variance attention</h4>
+          {/* Data quality and variance attention paired — both answer "can I
+              trust this week's food cost?". */}
+          <div className="ov-two">
+            <EditorialPanel eyebrow={weekWindowLabel} title="Cost data quality">
+              <Metric label="Sales source" value={data.primeCost?.sources.sales.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.sales === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Labour source" value={data.primeCost?.sources.wages.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.wages === 'missing' ? 'warning' : 'positive'} />
+              <Metric label="Food cost source" value={data.primeCost?.sources.cogs.replace(/_/g, ' ') ?? 'missing'} tone={data.primeCost?.sources.cogs === 'missing' ? 'warning' : 'positive'} />
+              {(data.primeCost?.warnings ?? []).map((warning) => (
+                <p key={warning} className="subtle">{warning}</p>
+              ))}
+            </EditorialPanel>
+            <EditorialPanel eyebrow={overviewWindowLabel} title="Stocktake variance attention">
               <div className="table-scroll">
                 {data.overview?.stock.highestVarianceLines.length ? (
                   <SortableTable
@@ -3576,7 +3642,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   <p className="subtle">No submitted stocktake variances in this range.</p>
                 )}
               </div>
-            </div>
+            </EditorialPanel>
           </div>
 
           <div className="report-panel">
@@ -3588,7 +3654,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   rowKey={(row) => row.category}
                   defaultSortKey="value"
                   columns={[
-                    { key: 'category', label: 'Category', sortValue: (r) => r.category, render: (r) => r.category },
+                    { key: 'category', label: 'Category', sortValue: (r) => r.category, render: (r) => (
+                      <>
+                        {r.category}
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((r.valueCents / categoryValueMaxCents) * 100)}%` }} />
+                        </span>
+                      </>
+                    ) },
                     { key: 'count', label: stockCategoryCountLabel, align: 'right', sortValue: (r) => r.itemCount, render: (r) => r.itemCount },
                     { key: 'low', label: stockLowStockLabel, align: 'right', sortValue: (r) => r.lowStock, render: (r) => r.lowStock },
                     { key: 'value', label: 'Value', align: 'right', sortValue: (r) => r.valueCents, render: (r) => formatCurrency(r.valueCents) }
@@ -3652,6 +3725,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       }
       return [...merged, ...passthrough];
     })();
+    // Presentation only: relative-size read for the ranking tables.
+    const menuRowsMaxQty = Math.max(1, ...menuRowsDisplay.map((row) => row.quantitySold));
     const mappedMenuRows = menuProfit?.totals.mappedRows ?? 0;
     const menuEstimatedCogs = menuProfit?.totals.estimatedCogsCents;
     const menuGrossProfit = menuProfit?.totals.grossProfitCents;
@@ -3962,6 +4037,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       <>
                         <strong>{r.squareItem}</strong>
                         <span className="subtle">{[r.variationName, r.categoryName, r.accountKey].filter(Boolean).join(' · ')}</span>
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((r.quantitySold / menuRowsMaxQty) * 100)}%` }} />
+                        </span>
                       </>
                     ) },
                     { key: 'recipe', label: 'Recipe', sortValue: (r) => r.almaRecipeTitle ?? 'Not mapped', render: (r) => r.almaRecipeTitle ?? 'Not mapped' },
@@ -4069,7 +4147,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                             <tbody>
                               {row.items.map((item) => (
                                 <tr key={item.key}>
-                                  <td><strong>{item.squareItem}</strong>{item.almaRecipeTitle ? <span className="subtle"> · {item.almaRecipeTitle}</span> : null}</td>
+                                  <td>
+                                    <strong>{item.squareItem}</strong>{item.almaRecipeTitle ? <span className="subtle"> · {item.almaRecipeTitle}</span> : null}
+                                    <span className="ov-dish-bar" aria-hidden="true">
+                                      <span style={{ width: `${Math.round((item.netSalesCents / Math.max(1, ...row.items.map((i) => i.netSalesCents))) * 100)}%` }} />
+                                    </span>
+                                  </td>
                                   <td style={{ textAlign: 'right' }}>{item.quantitySold.toLocaleString()}</td>
                                   <td style={{ textAlign: 'right' }}>{formatCurrency(item.netSalesCents)}</td>
                                   <td style={{ textAlign: 'right' }}>{item.foodCostPercent == null ? '—' : `${item.foodCostPercent.toFixed(1)}%`}</td>
@@ -4138,7 +4221,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           <StatCard label="Cancellations" value={data.overview?.reserve.cancellations ?? 0} hint={overviewWindowLabel} loading={loading} />
           <StatCard label="No shows" value={data.overview?.reserve.noShows ?? 0} hint={overviewWindowLabel} loading={loading} />
           <StatCard label="New guests" value={data.overview?.reserve.newGuests ?? 0} hint={overviewWindowLabel} loading={loading} />
-          <StatCard label="Covers today" value={data.overview?.reserve.coversToday ?? 0} hint="Booked covers" loading={loading} />
         </div>
         {renderCoversAhead('')}
         {(() => {
@@ -4300,21 +4382,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         <div className="report-detail-grid">
           <div className="report-panel">
             <h4>Available exports</h4>
-            <div className="reports-export-actions spacious">
-              <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
-                Download overview CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={exportPerformanceCsv} disabled={!venuePerformanceRows.length}>
-                Download performance CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={exportWagesCsv} disabled={!wageRows.length}>
-                Download wage CSV
-              </Button>
-              <Button type="button" size="sm" variant="secondary" onClick={() => void copyWeeklySummary()}>
-                Copy weekly summary
-              </Button>
-              {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
+            {/* Download list as ov-library rows — same actions, library read. */}
+            <div className="ov-library rs-export-library">
+              {[
+                { key: 'overview', label: 'Download overview CSV', onClick: exportOverviewCsv, disabled: false },
+                { key: 'performance', label: 'Download performance CSV', onClick: exportPerformanceCsv, disabled: !venuePerformanceRows.length },
+                { key: 'wages', label: 'Download wage CSV', onClick: exportWagesCsv, disabled: !wageRows.length },
+                { key: 'summary', label: 'Copy weekly summary', onClick: () => void copyWeeklySummary(), disabled: false }
+              ].map((row) => (
+                <button
+                  key={row.key}
+                  type="button"
+                  className="ov-library-row"
+                  onClick={row.onClick}
+                  disabled={row.disabled}
+                >
+                  <span className="ov-library-initial">{row.label.startsWith('Copy') ? 'C' : row.label.replace('Download ', '').charAt(0).toUpperCase()}</span>
+                  <span className="ov-library-text">
+                    <span className="ov-library-name">{row.label}</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                    <path d="M7 17L17 7M9 7h8v8" />
+                  </svg>
+                </button>
+              ))}
             </div>
+            {exportMessage ? <span className="subtle">{exportMessage}</span> : null}
           </div>
 
           <div className="report-panel">
