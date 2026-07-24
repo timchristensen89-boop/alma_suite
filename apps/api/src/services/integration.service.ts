@@ -5116,6 +5116,48 @@ export const integrationService = {
     let lineCount = 0;
     const warnings: string[] = [];
 
+    // Invoice exclusion rules (managed in Stock → Invoices) must gate EVERY
+    // import path. This function serves both the manual picker and the
+    // scheduled sync — without this check the scheduler recreated excluded
+    // invoices on its next run, which read as "exclusion rules don't work".
+    // Semantics mirror stock-api exclusionMatchFields: Xero bills have no
+    // source file name, so "title" is the invoice number; "body" is the line
+    // descriptions; ALL conditions in a rule must match (AND).
+    const exclusionRules = (
+      await prisma.invoiceExclusionRule.findMany({ where: { enabled: true } })
+    )
+      .map((row) => ({
+        name: row.name,
+        conditions: (Array.isArray(row.conditions) ? row.conditions : [])
+          .map((entry) => {
+            if (typeof entry !== 'object' || entry === null) return null;
+            const record = entry as Record<string, unknown>;
+            const field = trimText(record.field);
+            const value = trimText(record.value).toLowerCase();
+            if (!value || !['title', 'body', 'supplier', 'invoiceNumber'].includes(field)) return null;
+            return { field: field as 'title' | 'body' | 'supplier' | 'invoiceNumber', value };
+          })
+          .filter((entry): entry is { field: 'title' | 'body' | 'supplier' | 'invoiceNumber'; value: string } => entry !== null)
+      }))
+      .filter((rule) => rule.conditions.length > 0);
+    const exclusionRuleForBill = (bill: XeroInvoice): string | null => {
+      if (exclusionRules.length === 0) return null;
+      const invoiceNumber = (optionalText(bill.InvoiceNumber) ?? optionalText(bill.Reference) ?? '').toLowerCase();
+      const fields = {
+        title: invoiceNumber,
+        body: (bill.LineItems ?? []).map((line) => line.Description ?? '').join(' ').toLowerCase(),
+        supplier: (optionalText(bill.Contact?.Name) ?? '').toLowerCase(),
+        invoiceNumber
+      };
+      for (const rule of exclusionRules) {
+        if (rule.conditions.every((condition) => fields[condition.field].includes(condition.value))) {
+          return rule.name;
+        }
+      }
+      return null;
+    };
+    let excludedCount = 0;
+
     await prisma.$transaction(async (tx) => {
       for (const bill of selectedBills) {
         const id = xeroBillId(bill);
@@ -5128,6 +5170,14 @@ export const integrationService = {
         if (duplicate.duplicateStatus !== 'new') {
           duplicateCount += 1;
           warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} was skipped as a duplicate.`);
+          continue;
+        }
+
+        const matchedExclusion = exclusionRuleForBill(bill);
+        if (matchedExclusion) {
+          excludedCount += 1;
+          skippedCount += 1;
+          warnings.push(`${billInvoiceNumber(bill) ?? maskIdentifier(id)} excluded by rule "${matchedExclusion}".`);
           continue;
         }
 
@@ -5282,9 +5332,9 @@ export const integrationService = {
       provider: 'XERO',
       connectionId: connection.id,
       eventType: options?.eventType ?? 'SUPPLIER_BILLS_IMPORTED',
-      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped, ${duplicateCount} duplicate.`,
+      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped (${excludedCount} by exclusion rule), ${duplicateCount} duplicate.`,
       actor,
-      metadata: { importedCount, skippedCount, duplicateCount, supplierCreatedCount, lineCount, syncType: options?.syncType ?? 'MANUAL' }
+      metadata: { importedCount, skippedCount, excludedCount, duplicateCount, supplierCreatedCount, lineCount, syncType: options?.syncType ?? 'MANUAL' }
     });
 
     return {

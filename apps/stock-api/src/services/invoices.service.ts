@@ -682,7 +682,11 @@ export const invoicesService = {
     const toExclude: Array<{ id: string; label: string }> = [];
     for (const inv of pending) {
       const fields: Record<ExclusionField, string> = {
-        title: (inv.sourceFileName ?? '').toLowerCase(),
+        // Mirror exclusionMatchFields: Xero-synced invoices carry no
+        // sourceFileName, so their visible "title" is the invoiceNumber —
+        // a title rule must match that here too, or the sweep never fires
+        // for Xero rows even though the same rule fires at import time.
+        title: `${inv.sourceFileName ?? ''} ${inv.invoiceNumber ?? ''}`.trim().toLowerCase(),
         body: inv.lines.map((line) => line.description ?? '').join(' ').toLowerCase(),
         supplier: (inv.supplierName ?? '').toLowerCase(),
         invoiceNumber: (inv.invoiceNumber ?? '').toLowerCase()
