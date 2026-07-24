@@ -3004,7 +3004,7 @@ type XeroAttachmentTarget = {
 async function fetchXeroRenderedBillPdf(
   state: { connection: IntegrationConnection },
   target: XeroAttachmentTarget,
-  tenantId: string
+  tenantId: string | undefined
 ): Promise<boolean> {
   let binary: { data: Buffer; connection: IntegrationConnection };
   try {
