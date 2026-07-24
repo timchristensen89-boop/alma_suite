@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import type { Request } from 'express';
+import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { Prisma, type IntegrationConnection } from '@prisma/client';
 import { prisma } from '@alma/db';
 import { z } from 'zod';
@@ -2995,50 +2996,109 @@ type XeroAttachmentTarget = {
 // Fetches one bill's attachment and stores it against the SupplierInvoice.
 // `state.connection` is threaded through because Xero rotates refresh tokens —
 // callers must keep passing the freshest connection row between calls.
-// Fallback when a bill has no attachment: ask Xero to RENDER the bill itself
-// as a PDF (Accept: application/pdf on the invoice endpoint). Bills that
-// entered Xero through feeds (no scanned original) still get a readable
-// document this way. VERIFY: PDF rendering is documented for invoices; live
-// behaviour for Type=ACCPAY confirmed empirically — a 4xx here degrades to
-// no_attachment rather than failing the batch.
-async function fetchXeroRenderedBillPdf(
+// Fallback when a bill has no attachment: GENERATE an expense document from
+// the bill data we already hold. Xero cannot render ACCPAY bills as PDFs —
+// verified live 2026-07-25, the invoice endpoint 404s on Accept:
+// application/pdf for bills (it renders sales invoices only) — so bills that
+// entered Xero through feeds get a clearly-labelled generated document
+// instead. Same storage slot the stock invoice screen opens as "the
+// original"; the label makes clear it is not the supplier's own paper.
+async function generateExpensePdfDocument(
   state: { connection: IntegrationConnection; renderFailures: string[] },
-  target: XeroAttachmentTarget,
-  tenantId: string | undefined
+  target: XeroAttachmentTarget
 ): Promise<boolean> {
-  let binary: { data: Buffer; connection: IntegrationConnection };
-  try {
-    binary = await xeroGetBinary(`/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}`, {
-      connection: state.connection,
-      tenantId,
-      accept: 'application/pdf'
-    });
-  } catch (error) {
-    if (isXeroRateLimitError(error) || isXeroAuthError(error)) throw error;
-    // Surface a sample of render failures so an unsupported-render verdict is
-    // diagnosable from the backfill response instead of a silent zero.
-    if (state.renderFailures.length < 3) {
-      state.renderFailures.push(`${target.label}: render failed (${safeErrorMessage(error)})`);
-    }
-    return false; // rendering unsupported or bill unrenderable — not fatal
-  }
-  state.connection = binary.connection;
-  if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) return false;
-  // Sanity: a real PDF starts with %PDF — protects against an HTML error page
-  // slipping through with a 200.
-  if (binary.data.subarray(0, 5).toString('utf8') !== '%PDF-') return false;
-
-  await prisma.supplierInvoiceDocument.upsert({
-    where: { invoiceId: target.invoiceId },
-    create: {
-      invoiceId: target.invoiceId,
-      fileName: `xero-rendered-${target.billId.slice(0, 8)}.pdf`,
-      mimeType: 'application/pdf',
-      data: new Uint8Array(binary.data)
-    },
-    update: {}
+  const invoice = await prisma.supplierInvoice.findUnique({
+    where: { id: target.invoiceId },
+    include: { lines: { orderBy: { lineNumber: 'asc' } } }
   });
-  return true;
+  if (!invoice) return false;
+
+  try {
+    const pdf = await PDFDocument.create();
+    const font = await pdf.embedFont(StandardFonts.Helvetica);
+    const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold);
+    const PAGE_WIDTH = 595.28;
+    const PAGE_HEIGHT = 841.89;
+    let page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    const margin = 48;
+    let y = PAGE_HEIGHT - margin;
+    const ink = rgb(0.12, 0.2, 0.14);
+    const muted = rgb(0.45, 0.48, 0.45);
+    const money = (cents: number | null | undefined) =>
+      ((cents ?? 0) / 100).toLocaleString('en-AU', { style: 'currency', currency: 'AUD' });
+    const line = (text: string, size: number, opts: { bold?: boolean; dim?: boolean; x?: number } = {}) => {
+      if (y < margin + size + 6) {
+        page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        y = PAGE_HEIGHT - margin;
+      }
+      page.drawText(text.slice(0, 110), {
+        x: opts.x ?? margin,
+        y,
+        size,
+        font: opts.bold ? fontBold : font,
+        color: opts.dim ? muted : ink
+      });
+      y -= size + 6;
+    };
+
+    line('EXPENSE DOCUMENT', 9, { dim: true });
+    line(invoice.supplierName ?? 'Unknown supplier', 20, { bold: true });
+    y -= 4;
+    line(`Invoice ${invoice.invoiceNumber ?? invoice.invoiceKey}`, 11);
+    if (invoice.invoiceDate) line(`Invoice date ${invoice.invoiceDate.toISOString().slice(0, 10)}`, 10, { dim: true });
+    if (invoice.venue) line(`Venue ${invoice.venue}`, 10, { dim: true });
+    y -= 10;
+
+    if (invoice.lines.length > 0) {
+      line('Description', 9, { bold: true });
+      y += 15; // reposition amount header on the same row
+      page.drawText('Amount ex GST', {
+        x: PAGE_WIDTH - margin - 90,
+        y,
+        size: 9,
+        font: fontBold,
+        color: ink
+      });
+      y -= 15;
+      for (const row of invoice.lines) {
+        const description = (row.description || row.itemCode || 'Line item').slice(0, 78);
+        const amount = money(row.lineAmountCents);
+        if (y < margin + 16) {
+          page = pdf.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+          y = PAGE_HEIGHT - margin;
+        }
+        page.drawText(description, { x: margin, y, size: 9.5, font, color: ink });
+        page.drawText(amount, { x: PAGE_WIDTH - margin - font.widthOfTextAtSize(amount, 9.5), y, size: 9.5, font, color: ink });
+        y -= 15;
+      }
+      y -= 8;
+    }
+
+    line(`Subtotal ${money(invoice.subtotalCents)}`, 10);
+    line(`GST ${money(invoice.taxCents)}`, 10);
+    line(`Total ${money(invoice.totalCents ?? invoice.subtotalCents)}`, 12, { bold: true });
+    y -= 14;
+    line('Generated by Alma Suite from Xero bill data.', 8, { dim: true });
+    line('The supplier attached no original document in Xero.', 8, { dim: true });
+
+    const bytes = await pdf.save();
+    await prisma.supplierInvoiceDocument.upsert({
+      where: { invoiceId: target.invoiceId },
+      create: {
+        invoiceId: target.invoiceId,
+        fileName: `alma-expense-${(invoice.invoiceNumber ?? target.billId.slice(0, 8)).replace(/[^A-Za-z0-9-]+/g, '-')}.pdf`,
+        mimeType: 'application/pdf',
+        data: new Uint8Array(bytes)
+      },
+      update: {}
+    });
+    return true;
+  } catch (error) {
+    if (state.renderFailures.length < 3) {
+      state.renderFailures.push(`${target.label}: expense document generation failed (${safeErrorMessage(error)})`);
+    }
+    return false;
+  }
 }
 
 async function fetchAndStoreXeroBillAttachment(
@@ -3068,10 +3128,10 @@ async function fetchAndStoreXeroBillAttachment(
 
     const attachment = pickXeroBillAttachment(listed.data.Attachments ?? []);
     if (!attachment) {
-      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
     }
     if (typeof attachment.ContentLength === 'number' && attachment.ContentLength > XERO_ATTACHMENT_MAX_BYTES) {
-      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
     }
 
     const fileName = trimText(attachment.FileName);
@@ -3084,7 +3144,7 @@ async function fetchAndStoreXeroBillAttachment(
     );
     state.connection = binary.connection;
     if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) {
-      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
+      return (await generateExpensePdfDocument(state, target)) ? 'rendered' : 'no_attachment';
     }
 
     // create-or-skip: the pre-check above makes create the normal path; the
