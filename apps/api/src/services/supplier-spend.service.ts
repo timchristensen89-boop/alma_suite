@@ -225,6 +225,7 @@ export const supplierSpendService = {
         clamped,
         split,
         supplierWindowDays: SUPPLIER_WINDOW_DAYS,
+        cogsAccounts: spend.accounts,
         notes
       }
     };

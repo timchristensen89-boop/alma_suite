@@ -6808,6 +6808,8 @@ export type SupplierSpendPayload = {
     clamped: boolean;
     split: { food: number; beverage: number; other: number };
     supplierWindowDays: number;
+    /** Direct Costs accounts the shares were counted from, with their bucket. */
+    cogsAccounts: Array<{ name: string; bucket: SupplierSpendBucket; cents: number }>;
     notes: string[];
   };
 };

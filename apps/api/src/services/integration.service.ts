@@ -2169,7 +2169,7 @@ export type XeroPlTrend = {
 };
 
 const PL_BEV_PATTERN = /bever|liquor|wine|beer|spirit|drink|coffee|alcohol|keg|brew|bar\b/i;
-const PL_FOOD_PATTERN = /food|produce|meat|seafood|fish|bakery|dairy|grocer|kitchen|butch|veg|fruit|consumab/i;
+const PL_FOOD_PATTERN = /food|produce|meat|seafood|fish|bakery|dairy|grocer|kitchen|butch|veg|fruit|consumab|dry good|frozen|chill|pantry/i;
 
 function classifyPlAccount(name: string): XeroPlBucket {
   if (PL_BEV_PATTERN.test(name)) return 'beverage';
@@ -2299,10 +2299,37 @@ export type XeroSupplierSpendRow = {
   venue: string | null;
 };
 
+export type XeroCogsAccountUsage = {
+  name: string;
+  bucket: XeroPlBucket;
+  cents: number;
+};
+
 const XERO_BILL_STATUSES = new Set(['AUTHORISED', 'PAID', 'SUBMITTED']);
 const XERO_BILL_PAGE_CAP = 10; // 10 × 100 bills per tenant is months of history
 
-async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpendRow[] }> {
+// One vendor, several contact records. "X Pty Ltd T/AS Y" merges into Y
+// automatically; entities whose legal name shares nothing with the trading
+// name are mapped here (keys lowercase).
+const XERO_SUPPLIER_ALIASES: Record<string, string> = {
+  'whittaker distilleries': 'Manly Spirits Co',
+  'whittaker distilleries pty ltd': 'Manly Spirits Co'
+};
+
+// Merge key + display name for a Xero contact: trading name after T/AS or
+// T/A when present, then the alias table.
+function canonicalSupplierName(raw: string): { key: string; display: string } {
+  let display = raw.trim();
+  const tradingAs = display.match(/t\/a s?\.?\s+(.+)$/i) ?? display.match(/t\/as\.?\s+(.+)$/i) ?? display.match(/\bt\/a\.?\s+(.+)$/i) ?? display.match(/trading as\s+(.+)$/i);
+  if (tradingAs?.[1]) display = tradingAs[1].trim();
+  const alias = XERO_SUPPLIER_ALIASES[display.toLowerCase()] ?? XERO_SUPPLIER_ALIASES[raw.trim().toLowerCase()];
+  if (alias) display = alias;
+  return { key: display.toLowerCase(), display };
+}
+
+async function xeroSupplierSpend(
+  days: number
+): Promise<{ rows: XeroSupplierSpendRow[]; accounts: XeroCogsAccountUsage[] }> {
   const connection = await connectedXeroConnection();
   const tenantList = xeroTenantsFromConnection(connection);
   const tenants = tenantList.length > 0
@@ -2324,6 +2351,7 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
     string,
     { name: string; venue: string | null; byBucket: Map<XeroPlBucket, number> }
   >();
+  const accountUsage = new Map<string, XeroCogsAccountUsage>();
 
   let activeConnection = connection;
   for (const tenant of tenants) {
@@ -2334,13 +2362,13 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
       Accounts?: Array<{ Code?: string; Name?: string; Type?: string }>;
     }>('/api.xro/2.0/Accounts', { connection: activeConnection, tenantId: tenant.id });
     activeConnection = accountsResponse.connection;
-    const cogsBucketByCode = new Map<string, XeroPlBucket>();
+    const cogsBucketByCode = new Map<string, { bucket: XeroPlBucket; name: string }>();
     for (const account of accountsResponse.data.Accounts ?? []) {
       if (trimText(account.Type).toUpperCase() !== 'DIRECTCOSTS') continue;
       const code = optionalText(account.Code);
       const name = optionalText(account.Name);
       if (!code || !name) continue;
-      cogsBucketByCode.set(code, classifyPlAccount(name));
+      cogsBucketByCode.set(code, { bucket: classifyPlAccount(name), name });
     }
 
     for (let page = 1; page <= XERO_BILL_PAGE_CAP; page += 1) {
@@ -2358,16 +2386,23 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
         for (const line of invoice.LineItems ?? []) {
           const code = optionalText(line.AccountCode);
           if (!code) continue;
-          const bucket = cogsBucketByCode.get(code);
-          if (!bucket) continue; // not a Direct Costs line — rent, fees, etc.
+          const account = cogsBucketByCode.get(code);
+          if (!account) continue; // not a Direct Costs line — rent, fees, etc.
           const cents = Math.round((line.LineAmount ?? 0) * 100);
           if (cents === 0) continue;
-          const key = name.toLowerCase();
-          const entry = accumulator.get(key) ?? { name, venue, byBucket: new Map() };
+          const canonical = canonicalSupplierName(name);
+          const entry = accumulator.get(canonical.key) ?? { name: canonical.display, venue, byBucket: new Map() };
           // Prefer the mixed-case variant of the contact name for display.
-          if (entry.name === entry.name.toUpperCase() && name !== name.toUpperCase()) entry.name = name;
-          entry.byBucket.set(bucket, (entry.byBucket.get(bucket) ?? 0) + cents);
-          accumulator.set(key, entry);
+          if (entry.name === entry.name.toUpperCase() && canonical.display !== canonical.display.toUpperCase()) {
+            entry.name = canonical.display;
+          }
+          entry.byBucket.set(account.bucket, (entry.byBucket.get(account.bucket) ?? 0) + cents);
+          accumulator.set(canonical.key, entry);
+
+          const usageKey = account.name.toLowerCase();
+          const usage = accountUsage.get(usageKey) ?? { name: account.name, bucket: account.bucket, cents: 0 };
+          usage.cents += cents;
+          accountUsage.set(usageKey, usage);
         }
       }
       if (invoices.length < 100) break;
@@ -2376,20 +2411,20 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
 
   const rows: XeroSupplierSpendRow[] = [];
   for (const entry of accumulator.values()) {
-    let total = 0;
-    let bucket: XeroPlBucket = 'food';
-    let bestCents = -Infinity;
-    for (const [candidate, cents] of entry.byBucket) {
-      total += cents;
-      if (cents > bestCents) {
-        bestCents = cents;
-        bucket = candidate;
-      }
-    }
+    const foodCents = entry.byBucket.get('food') ?? 0;
+    const bevCents = entry.byBucket.get('beverage') ?? 0;
+    const otherCents = entry.byBucket.get('other') ?? 0;
+    const total = foodCents + bevCents + otherCents;
     if (total <= 0) continue;
+    // A real food/bev bucket always beats the generic "other" — a supplier
+    // with any classified spend belongs with its category even when some
+    // lines hit a generic Purchases account.
+    const bucket: XeroPlBucket =
+      foodCents > 0 || bevCents > 0 ? (bevCents > foodCents ? 'beverage' : 'food') : 'other';
     rows.push({ name: entry.name, cents: total, bucket, venue: entry.venue });
   }
-  return { rows };
+  const accounts = [...accountUsage.values()].sort((a, b) => b.cents - a.cents);
+  return { rows, accounts };
 }
 
 async function xeroProfitAndLossTrend(monthCount: number): Promise<XeroPlTrend> {
