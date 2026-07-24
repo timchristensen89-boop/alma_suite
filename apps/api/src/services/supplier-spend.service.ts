@@ -26,7 +26,10 @@ const querySchema = z.object({
   venue: z.string().trim().optional()
 });
 
-const SUPPLIER_WINDOW_DAYS = 84; // 12 weeks of invoice history for shares
+// 24 weeks of bill history for shares — wine and spirits ordering is lumpy
+// (quarterly buys are common), so a short window under-represents cellar
+// suppliers relative to weekly food deliveries.
+const SUPPLIER_WINDOW_DAYS = 168;
 const MIN_MONTH_SALES_CENTS = 100_000; // ignore months with < $1k sales (partial/closed)
 const MIN_SUPPLIER_SHARE = 0.02; // below 2% of bucket → grouped into "Other suppliers"
 const MAX_SUPPLIERS_PER_BUCKET = 12;
