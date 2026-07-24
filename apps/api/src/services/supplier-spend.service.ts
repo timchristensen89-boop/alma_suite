@@ -87,7 +87,21 @@ export const supplierSpendService = {
     const notes: string[] = [];
 
     // ── 1. COGS% trend from Xero P&L ────────────────────────────────────────
-    const trend = await integrationService.xeroProfitAndLossTrend(7);
+    let trend: Awaited<ReturnType<typeof integrationService.xeroProfitAndLossTrend>>;
+    try {
+      trend = await integrationService.xeroProfitAndLossTrend(7);
+    } catch (error) {
+      // A 401 from Xero on the Reports endpoint means the connection predates
+      // the accounting.reports.read scope — a reconnect grants it.
+      const message = error instanceof Error ? error.message : '';
+      if (/HTTP 401/.test(message)) {
+        throw new HttpError(
+          409,
+          'Xero needs to be reconnected to grant P&L report access (Admin, Integrations, Xero, Reconnect). One click by the owner, then this report goes live.'
+        );
+      }
+      throw error;
+    }
     let plMonths: XeroPlMonth[] = trend.months;
     let plSource: 'venue' | 'group' = 'group';
     if (venue && trend.perVenue[venue]?.length) {

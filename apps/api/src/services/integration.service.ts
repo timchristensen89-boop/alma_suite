@@ -69,6 +69,9 @@ const XERO_SCOPES = [
   'accounting.invoices.read',
   'accounting.contacts.read',
   'accounting.settings.read',
+  // P&L report totals for the projected supplier spend report. Connections
+  // authorised before this scope existed must be RECONNECTED once to grant it.
+  'accounting.reports.read',
   'payroll.employees.read',
   'payroll.timesheets.read'
 ];
