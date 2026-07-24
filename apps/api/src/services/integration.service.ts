@@ -3109,7 +3109,7 @@ async function fetchAndStoreXeroBillAttachment(
 async function fetchXeroAttachmentsForInvoices(
   connection: IntegrationConnection,
   targets: XeroAttachmentTarget[]
-): Promise<{ fetched: number; missing: number; warnings: string[]; authBlocked: boolean }> {
+): Promise<{ fetched: number; missing: number; rendered: number; warnings: string[]; authBlocked: boolean }> {
   const state = { connection };
   let fetched = 0;
   let missing = 0;
