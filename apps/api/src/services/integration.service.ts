@@ -66,7 +66,12 @@ const XERO_SCOPES = [
   'profile',
   'email',
   'offline_access',
-  'accounting.invoices.read',
+  // accounting.transactions.read covers invoice/bill reads. Xero has NO
+  // "accounting.invoices.read" scope — requesting one makes login.xero.com
+  // reject the whole authorise request with an opaque identity/error page
+  // (which is how the May 2026 "granular scope" edit silently broke
+  // reconnects while the stored refresh token kept working).
+  'accounting.transactions.read',
   'accounting.contacts.read',
   'accounting.settings.read',
   // P&L report totals for the projected supplier spend report. Connections
