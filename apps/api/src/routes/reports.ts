@@ -1,8 +1,19 @@
 import { Router } from 'express';
 import { requireManager } from '../lib/auth-middleware.js';
 import { reportsService } from '../services/reports.service.js';
+import { supplierSpendService } from '../services/supplier-spend.service.js';
 
 export const reportsRouter = Router();
+
+// Projected spend per supplier per week: Xero P&L COGS-vs-sales trend applied
+// to the sales forecast, split food/bev, then split by supplier share.
+reportsRouter.get('/projected-supplier-spend', requireManager, async (req, res, next) => {
+  try {
+    res.json(await supplierSpendService.projectedSpend(req.query, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
 
 reportsRouter.get('/overview', requireManager, async (req, res, next) => {
   try {

@@ -2135,6 +2135,211 @@ async function xeroContacts(limit: number, tenantId?: string) {
   };
 }
 
+// ── Xero Profit & Loss (monthly trend) ─────────────────────────────────────
+// Monthly Income + Cost of Sales totals straight from the Xero P&L report,
+// per tenant (venue) and summed for the group. This is the trusted basis for
+// COGS-vs-sales trending: P&L totals hold up even while individual supplier
+// invoice imports are still patchy.
+
+export type XeroPlBucket = 'food' | 'beverage' | 'other';
+
+export type XeroPlMonth = {
+  /** First day of the month, YYYY-MM-DD. */
+  month: string;
+  salesCents: number;
+  cogsCents: number;
+  foodCogsCents: number;
+  bevCogsCents: number;
+  otherCogsCents: number;
+  accounts: Array<{ name: string; cents: number; bucket: XeroPlBucket }>;
+};
+
+export type XeroPlTrend = {
+  months: XeroPlMonth[]; // ascending, group totals across tenants
+  perVenue: Record<string, XeroPlMonth[]>;
+  tenants: Array<{ id: string; name: string | null; venue: string | null }>;
+};
+
+const PL_BEV_PATTERN = /bever|liquor|wine|beer|spirit|drink|coffee|alcohol|keg|brew|bar\b/i;
+const PL_FOOD_PATTERN = /food|produce|meat|seafood|fish|bakery|dairy|grocer|kitchen|butch|veg|fruit|consumab/i;
+
+function classifyPlAccount(name: string): XeroPlBucket {
+  if (PL_BEV_PATTERN.test(name)) return 'beverage';
+  if (PL_FOOD_PATTERN.test(name)) return 'food';
+  return 'other';
+}
+
+type XeroReportCell = { Value?: string };
+type XeroReportRow = {
+  RowType?: string;
+  Title?: string;
+  Cells?: XeroReportCell[];
+  Rows?: XeroReportRow[];
+};
+
+function plCellCents(cell: XeroReportCell | undefined): number {
+  const raw = (cell?.Value ?? '').replace(/,/g, '').trim();
+  if (!raw) return 0;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) : 0;
+}
+
+function monthKeyFromUtc(date: Date): string {
+  return `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-01`;
+}
+
+// Parse one tenant's P&L report into monthly rows. Column order is taken from
+// the header row when its cells parse as dates; otherwise falls back to the
+// documented Xero ordering (primary period first, then one month back per
+// comparison column).
+function parseXeroProfitAndLoss(report: XeroReportRow | undefined, primaryMonthEnd: Date, columns: number): XeroPlMonth[] {
+  const rows = report?.Rows ?? [];
+  const monthKeys: string[] = [];
+  const header = rows.find((row) => row.RowType === 'Header');
+  const headerCells = header?.Cells?.slice(1) ?? [];
+  for (let i = 0; i < columns; i += 1) {
+    const parsed = headerCells[i]?.Value ? new Date(String(headerCells[i]!.Value)) : null;
+    if (parsed && !Number.isNaN(parsed.getTime())) {
+      monthKeys.push(monthKeyFromUtc(parsed));
+    } else {
+      const fallback = new Date(Date.UTC(primaryMonthEnd.getUTCFullYear(), primaryMonthEnd.getUTCMonth() - i, 1));
+      monthKeys.push(monthKeyFromUtc(fallback));
+    }
+  }
+
+  const months: XeroPlMonth[] = monthKeys.map((month) => ({
+    month,
+    salesCents: 0,
+    cogsCents: 0,
+    foodCogsCents: 0,
+    bevCogsCents: 0,
+    otherCogsCents: 0,
+    accounts: []
+  }));
+
+  const isIncomeSection = (title: string) => /income|revenue/i.test(title) && !/other income/i.test(title);
+  const isCogsSection = (title: string) => /cost of sales|cost of goods|direct cost/i.test(title);
+
+  for (const section of rows) {
+    if (section.RowType !== 'Section') continue;
+    const title = section.Title ?? '';
+    const income = isIncomeSection(title);
+    const cogs = isCogsSection(title);
+    if (!income && !cogs) continue;
+
+    const sectionRows = section.Rows ?? [];
+    const summary = sectionRows.find(
+      (row) => row.RowType === 'SummaryRow' && /^total/i.test(String(row.Cells?.[0]?.Value ?? ''))
+    );
+
+    for (let i = 0; i < months.length; i += 1) {
+      const target = months[i];
+      if (!target) continue;
+      // Prefer the section's Total summary row; fall back to summing rows.
+      let totalCents = 0;
+      if (summary) {
+        totalCents = plCellCents(summary.Cells?.[i + 1]);
+      } else {
+        for (const row of sectionRows) {
+          if (row.RowType !== 'Row') continue;
+          totalCents += plCellCents(row.Cells?.[i + 1]);
+        }
+      }
+      if (income) target.salesCents += totalCents;
+      if (cogs) target.cogsCents += totalCents;
+    }
+
+    if (cogs) {
+      for (const row of sectionRows) {
+        if (row.RowType !== 'Row') continue;
+        const name = String(row.Cells?.[0]?.Value ?? '').trim();
+        if (!name) continue;
+        const bucket = classifyPlAccount(name);
+        for (let i = 0; i < months.length; i += 1) {
+          const target = months[i];
+          if (!target) continue;
+          const cents = plCellCents(row.Cells?.[i + 1]);
+          if (cents === 0) continue;
+          if (bucket === 'beverage') target.bevCogsCents += cents;
+          else if (bucket === 'food') target.foodCogsCents += cents;
+          else target.otherCogsCents += cents;
+          const existing = target.accounts.find((account) => account.name === name);
+          if (existing) existing.cents += cents;
+          else target.accounts.push({ name, cents, bucket });
+        }
+      }
+    }
+  }
+
+  return months.reverse(); // newest-first from Xero → ascending
+}
+
+async function xeroProfitAndLossTrend(monthCount: number): Promise<XeroPlTrend> {
+  const connection = await connectedXeroConnection();
+  const columns = Math.max(2, Math.min(12, Math.floor(monthCount)));
+
+  // Primary period = last full calendar month (a part-month would drag the
+  // trend down); comparison periods walk backwards from it.
+  const now = new Date();
+  const primaryStart = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - 1, 1));
+  const primaryEnd = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 0));
+  const fmt = (date: Date) => date.toISOString().slice(0, 10);
+
+  const tenantList = xeroTenantsFromConnection(connection);
+  const tenants = tenantList.length > 0
+    ? tenantList
+    : connection.providerAccountId
+      ? [{ id: connection.providerAccountId, name: null }]
+      : [];
+  if (tenants.length === 0) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const venues = await configuredVenueNames();
+  const path =
+    `/api.xro/2.0/Reports/ProfitAndLoss?fromDate=${fmt(primaryStart)}&toDate=${fmt(primaryEnd)}` +
+    `&timeframe=MONTH&periods=${columns - 1}&standardLayout=true`;
+
+  const perVenue: Record<string, XeroPlMonth[]> = {};
+  const groupByMonth = new Map<string, XeroPlMonth>();
+  const tenantSummaries: XeroPlTrend['tenants'] = [];
+
+  let activeConnection = connection;
+  for (const tenant of tenants) {
+    const response = await xeroGetJson<{ Reports?: XeroReportRow[] }>(path, {
+      connection: activeConnection,
+      tenantId: tenant.id
+    });
+    activeConnection = response.connection;
+    const months = parseXeroProfitAndLoss(response.data.Reports?.[0], primaryEnd, columns);
+    const venue = resolveVenueFromTenantName(tenant.name, venues);
+    tenantSummaries.push({ id: tenant.id, name: tenant.name, venue });
+    if (venue) perVenue[venue] = months;
+
+    for (const month of months) {
+      const existing = groupByMonth.get(month.month);
+      if (!existing) {
+        groupByMonth.set(month.month, {
+          ...month,
+          accounts: month.accounts.map((account) => ({ ...account }))
+        });
+        continue;
+      }
+      existing.salesCents += month.salesCents;
+      existing.cogsCents += month.cogsCents;
+      existing.foodCogsCents += month.foodCogsCents;
+      existing.bevCogsCents += month.bevCogsCents;
+      existing.otherCogsCents += month.otherCogsCents;
+      for (const account of month.accounts) {
+        const merged = existing.accounts.find((entry) => entry.name === account.name);
+        if (merged) merged.cents += account.cents;
+        else existing.accounts.push({ ...account });
+      }
+    }
+  }
+
+  const months = [...groupByMonth.values()].sort((a, b) => a.month.localeCompare(b.month));
+  return { months, perVenue, tenants: tenantSummaries };
+}
+
 function defaultBillDates(query: Record<string, unknown>) {
   const end = parseXeroDate(query.endDate) ?? new Date();
   const start = parseXeroDate(query.startDate) ?? new Date(end);
@@ -2587,6 +2792,10 @@ async function recordWebhook(provider: Provider, rawBody: string, accountKey: Sq
 
 export const integrationService = {
   normaliseProvider,
+
+  // Monthly Income + Cost of Sales trend from the Xero P&L report (group +
+  // per-venue). Basis for projected supplier spend — see supplier-spend.service.
+  xeroProfitAndLossTrend,
 
   // Live open Square tickets for a venue — used by the Reserve service map. Walks
   // every connected Square account, finds the location(s) matching the venue, and

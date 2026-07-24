@@ -6759,6 +6759,59 @@ export type ForecastDay = {
   method: ForecastDayMethod;
 };
 
+// ── Projected supplier spend (reports) ─────────────────────────────────────
+
+export type SupplierSpendBucket = 'food' | 'beverage' | 'other';
+
+export type SupplierSpendWeek = {
+  weekStart: string; // Monday YYYY-MM-DD
+  salesForecastCents: number;
+  cogsCents: number;
+  foodCents: number;
+  bevCents: number;
+  otherCents: number;
+};
+
+export type SupplierSpendSupplier = {
+  name: string;
+  bucket: SupplierSpendBucket;
+  /** Share of its bucket, 0..1, from trailing invoice history. */
+  share: number;
+  /** Projected cents per week, aligned with payload.weeks. */
+  weekly: number[];
+  totalCents: number;
+  trailingCents: number;
+};
+
+export type SupplierSpendBasisMonth = {
+  month: string; // YYYY-MM-01
+  salesCents: number;
+  cogsCents: number;
+  cogsPct: number | null;
+  foodShare: number | null;
+  bevShare: number | null;
+  otherShare: number | null;
+};
+
+export type SupplierSpendPayload = {
+  generatedAt: string;
+  venue: string | null;
+  /** Venue names available for scoping (from the forecast outlook). */
+  venues: string[];
+  weeks: SupplierSpendWeek[];
+  suppliers: SupplierSpendSupplier[];
+  basis: {
+    plMonths: SupplierSpendBasisMonth[];
+    plSource: 'venue' | 'group';
+    projectedCogsPct: number;
+    cogsPctTrendPerMonth: number;
+    clamped: boolean;
+    split: { food: number; beverage: number; other: number };
+    supplierWindowDays: number;
+    notes: string[];
+  };
+};
+
 export type ForecastWeek = {
   weekStart: string; // Monday YYYY-MM-DD
   salesForecastCents: number;

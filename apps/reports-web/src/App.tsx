@@ -1,6 +1,7 @@
 import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { ForecastPage } from './pages/ForecastPage';
+import { SupplierSpendPage } from './pages/SupplierSpendPage';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -188,6 +189,7 @@ type ReportSectionId =
   | 'overview'
   | 'sales'
   | 'forecast'
+  | 'supplier-spend'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -240,6 +242,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecast',
     title: 'Forecast',
     description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'supplier-spend',
+    label: 'Supplier spend',
+    title: 'Projected supplier spend',
+    description: 'Projected spend per supplier per week: the COGS trend from Xero P&L totals applied to the sales forecast, split food and beverage, then by supplier share.',
     icon: <ChartIcon />,
     group: 'core'
   },
@@ -4335,6 +4345,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return renderSalesSection();
       case 'forecast':
         return <ForecastPage />;
+      case 'supplier-spend':
+        return <SupplierSpendPage />;
       case 'staff':
         return renderStaffSection();
       case 'compliance':

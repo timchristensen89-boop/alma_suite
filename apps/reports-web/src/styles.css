@@ -2418,3 +2418,28 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
 .report-active-section .cost-tile.is-warning  { background: color-mix(in srgb, var(--tone-warning-dot) 10%, var(--color-elevated)); }
 .report-active-section .cost-tile.is-danger   { background: color-mix(in srgb, var(--tone-danger-dot) 8%, var(--color-elevated)); }
 .report-active-section .cost-tile.is-neutral  { background: var(--color-elevated); }
+
+/* ── Projected supplier spend ─────────────────────────────────────────────── */
+
+.supplier-spend-bucket-row td {
+  background: var(--color-surface-muted);
+  border-top: 2px solid rgba(var(--ink-forest-rgb), 0.12);
+}
+
+.supplier-spend-total-row td {
+  border-top: 2px solid rgba(var(--ink-forest-rgb), 0.18);
+  background: var(--color-surface);
+}
+
+.supplier-spend-notes {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 12.5px;
+  display: grid;
+  gap: 4px;
+}
+
+.supplier-spend-method {
+  margin-top: 12px;
+  max-width: 72ch;
+}
