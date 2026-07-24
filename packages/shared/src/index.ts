@@ -2667,6 +2667,10 @@ export type XeroSupplierBillsImportResult = {
   duplicateCount: number;
   supplierCreatedCount: number;
   lineCount: number;
+  // Original PDF attachments pulled from Xero after import (optional —
+  // absent on synthetic results that never reached the attachment step).
+  attachmentsFetched?: number;
+  attachmentsMissing?: number;
   warnings: string[];
 };
 

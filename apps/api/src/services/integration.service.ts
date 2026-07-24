@@ -73,6 +73,12 @@ const XERO_SCOPES = [
   // invalid_scope page. The app's Configuration page lists exactly which
   // scopes it may request; check there before touching this list.
   'accounting.invoices.read',
+  // Original supplier PDF attached to each accountant-entered bill — the
+  // stock system's line extraction works from that PDF, so bill imports
+  // fetch it into SupplierInvoiceDocument. Connections authorised before
+  // this scope existed must be RECONNECTED once to grant it; until then the
+  // attachment fetch degrades to a warning and bill data still imports.
+  'accounting.attachments.read',
   'accounting.contacts.read',
   'accounting.settings.read',
   // P&L report totals for the projected supplier spend report. Connections
@@ -2439,6 +2445,67 @@ async function xeroGetJson<T>(
   };
 }
 
+// Binary twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
+// but returns the raw response body as a Buffer. Used to download bill
+// attachments (Xero returns the file bytes when Accept matches the
+// attachment's MimeType instead of application/json).
+async function xeroGetBinary(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    accept: string;
+    retryAfterUnauthorized?: boolean;
+    tenantId?: string;
+  }
+): Promise<{ data: Buffer; connection: IntegrationConnection; tokenStatus: 'healthy' | 'refreshed' }> {
+  const { accessToken, connection, tokenStatus } = await validXeroToken(input.connection);
+  const tenantId = input.tenantId ?? connection.providerAccountId ?? '';
+  if (!tenantId) {
+    throw new HttpError(409, 'Xero tenant is not selected.');
+  }
+
+  const response = await fetch(`https://api.xero.com${path}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': input.accept,
+      'xero-tenant-id': tenantId
+    }
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshXeroConnection(connection);
+    return xeroGetBinary(path, {
+      connection: refreshed,
+      accept: input.accept,
+      retryAfterUnauthorized: false,
+      tenantId: input.tenantId
+    });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Xero rate limit reached. Try again later.', {
+      category: 'rate_limited'
+    });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Xero request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
+  }
+
+  return {
+    data: Buffer.from(await response.arrayBuffer()),
+    connection,
+    tokenStatus
+  };
+}
+
 async function connectedXeroConnection() {
   const connection = await connectionSelect('XERO');
   if (!connection || connection.status !== 'CONNECTED') {
@@ -2863,6 +2930,176 @@ async function xeroBills(query: Record<string, unknown>, limit: number, tenantId
     end,
     bills: invoices
   };
+}
+
+// ── Xero bill PDF attachments ────────────────────────────────────────────
+// Accountant-entered bills in Xero carry the original supplier invoice as a
+// PDF attachment. The stock system's line extraction (OCR ripper) and the
+// manual key-in screen both work from that PDF, so bill imports pull it into
+// SupplierInvoiceDocument — the exact table the stock-api upload path writes
+// and stock-web serves back via GET /api/invoices/:id/document.
+
+type XeroAttachment = {
+  AttachmentID?: string;
+  FileName?: string;
+  Url?: string;
+  MimeType?: string;
+  ContentLength?: number;
+};
+
+// Guard the bytea column against absurd payloads. Xero rejects attachment
+// uploads above ~25MB, so anything larger than this is malformed anyway.
+const XERO_ATTACHMENT_MAX_BYTES = 25 * 1024 * 1024;
+
+function isXeroAuthError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  if (error.statusCode === 401 || error.statusCode === 403) return true;
+  const details = error.details as { status?: number; category?: string } | undefined;
+  return details?.status === 401 || details?.status === 403 ||
+    details?.category === 'unauthorized' || details?.category === 'forbidden';
+}
+
+function isXeroNotFoundError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  const details = error.details as { status?: number; category?: string } | undefined;
+  return details?.status === 404 || details?.category === 'not_found';
+}
+
+function isXeroRateLimitError(error: unknown) {
+  if (!(error instanceof HttpError)) return false;
+  const details = error.details as { category?: string } | undefined;
+  return error.statusCode === 429 || details?.category === 'rate_limited';
+}
+
+// Prefer the PDF (the original invoice); fall back to the first attachment so
+// a photo/scan still lands. Returns null when the bill has no usable file.
+function pickXeroBillAttachment(attachments: XeroAttachment[]): XeroAttachment | null {
+  const usable = attachments.filter((attachment) => optionalText(attachment.FileName));
+  if (usable.length === 0) return null;
+  const pdf = usable.find((attachment) =>
+    trimText(attachment.MimeType).toLowerCase() === 'application/pdf' ||
+    trimText(attachment.FileName).toLowerCase().endsWith('.pdf')
+  );
+  return pdf ?? usable[0] ?? null;
+}
+
+type XeroAttachmentTarget = {
+  invoiceId: string;
+  billId: string;
+  label: string;
+  // Tenant candidates in preference order. The attachments list 404s when the
+  // bill lives in a different org, so the fetch walks this list until one hits.
+  tenantIds: Array<string | undefined>;
+};
+
+// Fetches one bill's attachment and stores it against the SupplierInvoice.
+// `state.connection` is threaded through because Xero rotates refresh tokens —
+// callers must keep passing the freshest connection row between calls.
+async function fetchAndStoreXeroBillAttachment(
+  state: { connection: IntegrationConnection },
+  target: XeroAttachmentTarget
+): Promise<'stored' | 'already_stored' | 'no_attachment' | 'not_found'> {
+  // Idempotency: one document per invoice. Never clobber an existing one —
+  // it may be a manual upload a manager already keyed lines from.
+  const existing = await prisma.supplierInvoiceDocument.findUnique({
+    where: { invoiceId: target.invoiceId },
+    select: { id: true }
+  });
+  if (existing) return 'already_stored';
+
+  for (const tenantId of target.tenantIds) {
+    let listed: { data: { Attachments?: XeroAttachment[] }; connection: IntegrationConnection };
+    try {
+      listed = await xeroGetJson<{ Attachments?: XeroAttachment[] }>(
+        `/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}/Attachments`,
+        { connection: state.connection, tenantId }
+      );
+    } catch (error) {
+      if (isXeroNotFoundError(error)) continue; // bill lives in another tenant
+      throw error;
+    }
+    state.connection = listed.connection;
+
+    const attachment = pickXeroBillAttachment(listed.data.Attachments ?? []);
+    if (!attachment) return 'no_attachment';
+    if (typeof attachment.ContentLength === 'number' && attachment.ContentLength > XERO_ATTACHMENT_MAX_BYTES) {
+      return 'no_attachment';
+    }
+
+    const fileName = trimText(attachment.FileName);
+    // VERIFY: Xero documents MimeType on every attachment row; default kept
+    // as a belt-and-braces fallback only.
+    const mimeType = optionalText(attachment.MimeType) ?? 'application/pdf';
+    const binary = await xeroGetBinary(
+      `/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}/Attachments/${encodeURIComponent(fileName)}`,
+      { connection: state.connection, tenantId, accept: mimeType }
+    );
+    state.connection = binary.connection;
+    if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) {
+      return 'no_attachment';
+    }
+
+    // create-or-skip: the pre-check above makes create the normal path; the
+    // empty update guards a concurrent writer without overwriting its file.
+    // Copy into a fresh Uint8Array — Prisma 6 types Bytes columns as
+    // Uint8Array<ArrayBuffer>, which Buffer's ArrayBufferLike doesn't satisfy.
+    await prisma.supplierInvoiceDocument.upsert({
+      where: { invoiceId: target.invoiceId },
+      create: {
+        invoiceId: target.invoiceId,
+        fileName,
+        mimeType,
+        data: new Uint8Array(binary.data)
+      },
+      update: {}
+    });
+    return 'stored';
+  }
+  return 'not_found';
+}
+
+// Batch driver shared by the import path and the backfill job. Network-only —
+// call it AFTER the import transaction has committed. Auth failures (the
+// accounting.attachments.read scope not granted yet) and rate limits stop the
+// batch with a warning; everything else degrades per-bill so one bad
+// attachment never blocks the rest.
+async function fetchXeroAttachmentsForInvoices(
+  connection: IntegrationConnection,
+  targets: XeroAttachmentTarget[]
+): Promise<{ fetched: number; missing: number; warnings: string[]; authBlocked: boolean }> {
+  const state = { connection };
+  let fetched = 0;
+  let missing = 0;
+  const warnings: string[] = [];
+  let authBlocked = false;
+
+  for (const target of targets) {
+    try {
+      const outcome = await fetchAndStoreXeroBillAttachment(state, target);
+      if (outcome === 'stored') fetched += 1;
+      else if (outcome === 'no_attachment') missing += 1;
+      else if (outcome === 'not_found') {
+        missing += 1;
+        warnings.push(`${target.label}: bill was not found in any connected Xero org, so no PDF was fetched.`);
+      }
+      // 'already_stored' → idempotent re-run, nothing to do.
+    } catch (error) {
+      if (isXeroAuthError(error)) {
+        warnings.push(
+          'Xero needs reconnecting to grant attachment access (accounting.attachments.read) — bill data imported, PDFs skipped.'
+        );
+        authBlocked = true;
+        break;
+      }
+      if (isXeroRateLimitError(error)) {
+        warnings.push('Xero rate limit reached while fetching attachments — re-run the attachment backfill later to pick up the rest.');
+        break;
+      }
+      warnings.push(`${target.label}: attachment fetch failed (${safeErrorMessage(error)}).`);
+    }
+  }
+
+  return { fetched, missing, warnings, authBlocked };
 }
 
 function supplierContactPreview(contact: XeroContact, suppliers: ExistingSupplier[]): XeroSupplierContactPreview | null {
@@ -5157,6 +5394,10 @@ export const integrationService = {
       return null;
     };
     let excludedCount = 0;
+    // Bills created in this run, so their original PDF attachments can be
+    // fetched from Xero AFTER the transaction commits (network calls must
+    // never run inside the prisma transaction).
+    const createdForAttachments: XeroAttachmentTarget[] = [];
 
     await prisma.$transaction(async (tx) => {
       for (const bill of selectedBills) {
@@ -5230,9 +5471,18 @@ export const integrationService = {
               importedFrom: 'xero',
               reference: optionalText(bill.Reference),
               importedBy: actor.email ?? actor.id,
-              importedAt: new Date().toISOString()
+              importedAt: new Date().toISOString(),
+              // Which Xero org the bill came from — lets the attachment
+              // backfill hit the right tenant first instead of probing all.
+              xeroTenantId: options?.tenantId ?? connection.providerAccountId ?? null
             }
           }
+        });
+        createdForAttachments.push({
+          invoiceId: invoice.id,
+          billId: id,
+          label: billInvoiceNumber(bill) ?? maskIdentifier(id) ?? 'Xero bill',
+          tenantIds: [options?.tenantId]
         });
 
         for (const [index, line] of (bill.LineItems ?? []).entries()) {
@@ -5328,13 +5578,28 @@ export const integrationService = {
       });
     });
 
+    // Fetch each new bill's original PDF attachment from Xero now that the
+    // transaction has committed. The PDF lands in SupplierInvoiceDocument —
+    // the same storage the stock-api upload path writes — so the invoice
+    // screen's "open the original" link and the OCR line ripper work for
+    // Xero-imported bills. Failures degrade to warnings: the bill import
+    // itself has already succeeded and must stay succeeded.
+    let attachmentsFetched = 0;
+    let attachmentsMissing = 0;
+    if (createdForAttachments.length > 0) {
+      const attachmentResult = await fetchXeroAttachmentsForInvoices(connection, createdForAttachments);
+      attachmentsFetched = attachmentResult.fetched;
+      attachmentsMissing = attachmentResult.missing;
+      warnings.push(...attachmentResult.warnings);
+    }
+
     await recordEvent({
       provider: 'XERO',
       connectionId: connection.id,
       eventType: options?.eventType ?? 'SUPPLIER_BILLS_IMPORTED',
-      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped (${excludedCount} by exclusion rule), ${duplicateCount} duplicate.`,
+      summary: `Xero supplier bill import finished: ${importedCount} imported, ${skippedCount} skipped (${excludedCount} by exclusion rule), ${duplicateCount} duplicate, ${attachmentsFetched} PDF attachment${attachmentsFetched === 1 ? '' : 's'} stored.`,
       actor,
-      metadata: { importedCount, skippedCount, excludedCount, duplicateCount, supplierCreatedCount, lineCount, syncType: options?.syncType ?? 'MANUAL' }
+      metadata: { importedCount, skippedCount, excludedCount, duplicateCount, supplierCreatedCount, lineCount, attachmentsFetched, attachmentsMissing, syncType: options?.syncType ?? 'MANUAL' }
     });
 
     return {
@@ -5344,6 +5609,8 @@ export const integrationService = {
       duplicateCount,
       supplierCreatedCount,
       lineCount,
+      attachmentsFetched,
+      attachmentsMissing,
       warnings
     };
   },
@@ -7774,6 +8041,97 @@ export const integrationService = {
       tenantCount: result.tenantCount,
       billCandidates,
       billsImported,
+      warnings: result.warnings
+    };
+  },
+
+  // Fetch the original PDF attachment from Xero for existing XERO-source
+  // supplier invoices that have no stored document (bills imported before
+  // the attachment fetch shipped, or runs that hit the missing-scope
+  // warning). Secret-guarded via /api/integration-jobs. Idempotent —
+  // invoices that already have a document are skipped before any network
+  // call, so re-running never duplicates or overwrites files.
+  async backfillXeroBillAttachments(input: { days?: number; limit?: number } = {}) {
+    const days = clampLimit(input.days, 90, 365);
+    const limit = clampLimit(input.limit, 200, 1000);
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenantIds = recordedTenants.length > 0
+      ? recordedTenants.map((tenant) => tenant.id)
+      : connection.providerAccountId
+        ? [connection.providerAccountId]
+        : [];
+    if (tenantIds.length === 0) {
+      throw new HttpError(409, 'No Xero tenants are connected.');
+    }
+
+    const invoices = await prisma.supplierInvoice.findMany({
+      where: {
+        source: 'XERO',
+        externalInvoiceId: { not: null },
+        document: { is: null },
+        OR: [
+          { invoiceDate: { gte: cutoff } },
+          { invoiceDate: null, importedAt: { gte: cutoff } }
+        ]
+      },
+      select: { id: true, externalInvoiceId: true, invoiceNumber: true, sourceMetadata: true },
+      orderBy: { importedAt: 'desc' },
+      take: limit
+    });
+
+    const targets: XeroAttachmentTarget[] = invoices.map((invoice) => {
+      const metadata =
+        invoice.sourceMetadata && typeof invoice.sourceMetadata === 'object' && !Array.isArray(invoice.sourceMetadata)
+          ? invoice.sourceMetadata as Record<string, unknown>
+          : null;
+      const recordedTenantId = optionalText(metadata?.xeroTenantId);
+      // Hit the tenant the bill was imported from first. Older rows don't
+      // record one, so fall back to probing every connected org — the
+      // attachments list 404s on the wrong tenant and the fetch moves on.
+      const orderedTenantIds = recordedTenantId
+        ? [recordedTenantId, ...tenantIds.filter((id) => id !== recordedTenantId)]
+        : tenantIds;
+      return {
+        invoiceId: invoice.id,
+        billId: invoice.externalInvoiceId as string,
+        label: invoice.invoiceNumber ?? maskIdentifier(invoice.externalInvoiceId) ?? 'Xero bill',
+        tenantIds: orderedTenantIds
+      };
+    });
+
+    const result = await fetchXeroAttachmentsForInvoices(connection, targets);
+
+    await recordEvent({
+      provider: 'XERO',
+      connectionId: connection.id,
+      eventType: 'XERO_BILL_ATTACHMENTS_BACKFILLED',
+      summary: `Xero attachment backfill: ${result.fetched} PDF${result.fetched === 1 ? '' : 's'} stored, ${result.missing} without an attachment, ${targets.length} candidate bill${targets.length === 1 ? '' : 's'}.`,
+      actor: integrationSchedulerActor,
+      metadata: {
+        days,
+        limit,
+        candidates: targets.length,
+        attachmentsFetched: result.fetched,
+        attachmentsMissing: result.missing,
+        needsReconnect: result.authBlocked,
+        warnings: result.warnings.slice(0, 10)
+      }
+    });
+
+    return {
+      provider: 'xero' as const,
+      mode: 'attachments-backfill' as const,
+      generatedAt: new Date().toISOString(),
+      days,
+      limit,
+      candidates: targets.length,
+      attachmentsFetched: result.fetched,
+      attachmentsMissing: result.missing,
+      needsReconnect: result.authBlocked,
       warnings: result.warnings
     };
   },

@@ -88,6 +88,26 @@ integrationJobsRouter.post('/xero/import', async (req, res, next) => {
   }
 });
 
+// Backfill: fetch the original PDF attachment from Xero for existing
+// XERO-source supplier invoices that have no stored document. Body:
+// { days? (default 90), limit? (default 200) }. Idempotent — invoices that
+// already hold a document are skipped, so re-running is safe. Responds with
+// needsReconnect:true when Xero must be reconnected once to grant the
+// accounting.attachments.read scope.
+integrationJobsRouter.post('/xero/backfill-attachments', async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as Record<string, unknown>;
+    const days = Number(body.days);
+    const limit = Number(body.limit);
+    res.json(await integrationService.backfillXeroBillAttachments({
+      days: Number.isFinite(days) ? days : undefined,
+      limit: Number.isFinite(limit) ? limit : undefined
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Lightspeed O-Series (Kounta) POS sales sync — scheduled cron entrypoint.
 // Body: { lookbackDays? } (default 3). Sums order totals per site per Sydney
 // day into the same SalesActualEntry rows the Square sync writes. Responds
