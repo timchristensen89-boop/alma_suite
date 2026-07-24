@@ -3050,3 +3050,11 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .stock-demand-banner.is-down .stock-demand-icon {
   color: var(--tone-positive-fg, #047857);
 }
+
+/* ── Dashboard: paired panels (suite editorial vocabulary) ──
+   Needs attention + stocktakes-ready sit side by side in the shared
+   .ov-two grid; in a half-width column the tables may compress further
+   before falling back to their horizontal scroll container. */
+.st-dashboard-pair .stock-dashboard-table-scroll table {
+  min-width: 560px;
+}

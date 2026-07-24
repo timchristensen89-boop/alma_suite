@@ -70,6 +70,7 @@ import {
   Card,
   CapIcon,
   EditorialAppHeader,
+  EditorialPanel,
   ChartIcon,
   DocumentIcon,
   EmptyState,
@@ -1259,6 +1260,9 @@ function StaffHome({
         </div>
       </Card>
 
+      {/* Record expiry + training chase — two sides of the same follow-up
+          job, so they sit side by side in the suite's ov-two pair grid. */}
+      <div className="ov-two">
       {/* HR + compliance record expiry — bucketed callouts at 7/30/60/90 days */}
       {(() => {
         const today = new Date();
@@ -1361,6 +1365,7 @@ function StaffHome({
           </Card>
         );
       })()}
+      </div>
     </div>
   );
 }
@@ -14991,11 +14996,6 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
             })()}
           </span>
         </div>
-        <div className="live-hero-metric">
-          <span className="live-hero-label">Week ahead</span>
-          <span className="live-hero-value">{forecastToday.weekAheadCents > 0 ? formatCents(forecastToday.weekAheadCents) : '—'}</span>
-          <span className="live-hero-hint">{forecastToday.weekAheadCents > 0 ? 'Forecast sales, next 7 days' : 'Forecast warming up'}</span>
-        </div>
         <div className={`live-hero-metric ${wageTone}`}>
           <span className="live-hero-label">Wage cost</span>
           <span className="live-hero-value">{wagePercent == null ? '—' : `${wagePercent.toFixed(1)}%`}</span>
@@ -15036,6 +15036,30 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
         <button type="button" onClick={() => window.location.assign(RESERVE_WEB_URL || '/')}>
           <strong>{operations?.metrics.bookingsToday ?? 0}</strong><span>Bookings</span>
         </button>
+      </div>
+
+      {/* ── Forecast glance — the forward-looking block, so it wears the
+          suite's sage band with elevated white tiles. Same engine outlook
+          the hero pace note reads from. ── */}
+      <div className="sd-forecast-band">
+        <EditorialPanel
+          className="alma-band-sage"
+          eyebrow="Forecast glance · next 7 days"
+          title="The week ahead"
+        >
+          <div className="alma-page-grid-kpis">
+            <BigStat
+              eyebrow="Today's target"
+              value={forecastToday.todayCents > 0 ? formatCents(forecastToday.todayCents) : '—'}
+              sub={forecastToday.todayCents > 0 ? 'Forecast sales today' : 'Forecast warming up'}
+            />
+            <BigStat
+              eyebrow="Week ahead"
+              value={forecastToday.weekAheadCents > 0 ? formatCents(forecastToday.weekAheadCents) : '—'}
+              sub={forecastToday.weekAheadCents > 0 ? 'Forecast sales, next 7 days' : 'Forecast warming up'}
+            />
+          </div>
+        </EditorialPanel>
       </div>
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'} style={{ padding: '0 24px' }}>{message}</p> : null}

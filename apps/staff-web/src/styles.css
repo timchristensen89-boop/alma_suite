@@ -8419,3 +8419,20 @@ html[data-theme='dark'] .tips-distribution-card {
   border-color: var(--color-border, #30363d);
 }
 html[data-theme='dark'] .tips-distribution-avatar { background: var(--color-surface-muted, #22272e); }
+
+/* ── Manager dashboard: forecast glance sage band (suite editorial
+   vocabulary — .alma-band-sage lives in the shared stylesheet; these
+   rules only place the band inside the full-bleed live dashboard). ── */
+.sd-forecast-band {
+  padding: 16px 16px 0;
+}
+
+.sd-forecast-band .alma-page-grid-kpis {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+@media (max-width: 720px) {
+  .sd-forecast-band .alma-page-grid-kpis {
+    grid-template-columns: 1fr;
+  }
+}

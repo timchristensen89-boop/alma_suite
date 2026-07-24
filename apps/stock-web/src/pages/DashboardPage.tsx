@@ -206,7 +206,10 @@ export function DashboardPage() {
         </Link>
       </div>
 
-      <div className="stock-dashboard-grid">
+      {/* Needs attention + stocktakes awaiting review are two halves of the
+          same "what's off the shelf" question — paired via the suite's
+          ov-two grid instead of stacking. */}
+      <div className="ov-two st-dashboard-pair">
         <Card
           title="Needs attention"
           subtitle="Low-stock and out-of-stock items, sorted by most recent change."
