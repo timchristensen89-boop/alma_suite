@@ -2282,6 +2282,64 @@ function parseXeroProfitAndLoss(report: XeroReportRow | undefined, primaryMonthE
   return months.reverse(); // newest-first from Xero → ascending
 }
 
+// ── Xero supplier spend (bill totals per contact) ──────────────────────────
+// Trailing ACCPAY bill totals per supplier, straight from Xero. The local
+// SupplierInvoice table only holds what the import pipeline has matched (a
+// handful of suppliers) — Xero holds every bill, so supplier SHARE splits
+// must come from here. summaryOnly keeps the payload light; pages until empty.
+
+export type XeroSupplierSpendRow = {
+  name: string;
+  cents: number; // ex-GST (SubTotal, falling back to Total)
+  venue: string | null;
+};
+
+const XERO_BILL_STATUSES = new Set(['AUTHORISED', 'PAID', 'SUBMITTED']);
+const XERO_BILL_PAGE_CAP = 10; // 10 × 100 bills per tenant is months of history
+
+async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpendRow[] }> {
+  const connection = await connectedXeroConnection();
+  const tenantList = xeroTenantsFromConnection(connection);
+  const tenants = tenantList.length > 0
+    ? tenantList
+    : connection.providerAccountId
+      ? [{ id: connection.providerAccountId, name: null }]
+      : [];
+  if (tenants.length === 0) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const venues = await configuredVenueNames();
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const whereClause = encodeURIComponent(
+    `Type=="ACCPAY" AND Date >= DateTime(${since.getUTCFullYear()}, ${since.getUTCMonth() + 1}, ${since.getUTCDate()})`
+  );
+
+  const rows: XeroSupplierSpendRow[] = [];
+  let activeConnection = connection;
+  for (const tenant of tenants) {
+    const venue = resolveVenueFromTenantName(tenant.name, venues);
+    for (let page = 1; page <= XERO_BILL_PAGE_CAP; page += 1) {
+      const response = await xeroGetJson<{ Invoices?: XeroInvoice[] }>(
+        `/api.xro/2.0/Invoices?where=${whereClause}&order=Date%20DESC&page=${page}&summaryOnly=True`,
+        { connection: activeConnection, tenantId: tenant.id }
+      );
+      activeConnection = response.connection;
+      const invoices = response.data.Invoices ?? [];
+      for (const invoice of invoices) {
+        if (invoice.Type && invoice.Type !== 'ACCPAY') continue;
+        if (!XERO_BILL_STATUSES.has(trimText(invoice.Status).toUpperCase())) continue;
+        const name = optionalText(invoice.Contact?.Name);
+        if (!name) continue;
+        const dollars = invoice.SubTotal ?? invoice.Total ?? 0;
+        const cents = Math.round(dollars * 100);
+        if (cents <= 0) continue;
+        rows.push({ name, cents, venue });
+      }
+      if (invoices.length < 100) break;
+    }
+  }
+  return { rows };
+}
+
 async function xeroProfitAndLossTrend(monthCount: number): Promise<XeroPlTrend> {
   const connection = await connectedXeroConnection();
   const columns = Math.max(2, Math.min(12, Math.floor(monthCount)));
@@ -2804,6 +2862,11 @@ export const integrationService = {
   // Monthly Income + Cost of Sales trend from the Xero P&L report (group +
   // per-venue). Basis for projected supplier spend — see supplier-spend.service.
   xeroProfitAndLossTrend,
+
+  // Trailing ACCPAY bill totals per supplier straight from Xero — the share
+  // basis for projected supplier spend (local imports only cover a handful
+  // of suppliers; Xero has all of them).
+  xeroSupplierSpend,
 
   // Live open Square tickets for a venue — used by the Reserve service map. Walks
   // every connected Square account, finds the location(s) matching the venue, and

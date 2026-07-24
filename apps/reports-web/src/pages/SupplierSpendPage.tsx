@@ -302,10 +302,10 @@ export function SupplierSpendPage() {
           </table>
         </div>
         <p className="subtle supplier-spend-method">
-          Supplier shares come from the trailing {payload.basis.supplierWindowDays} days of finalised supplier
-          invoices — shares hold up even while some invoices are missing, because every supplier is affected
-          alike. Totals come from Xero P&L, never from summing invoices. Suppliers under 2% of their category
-          are grouped into “Other suppliers”.
+          Supplier shares come from the trailing {payload.basis.supplierWindowDays} days of supplier bills in
+          Xero — every supplier that bills there is counted, whether or not our invoice import has matched it
+          yet. Totals come from Xero P&L, never from summing bills. Suppliers under 2% of their category are
+          grouped into “Other suppliers”.
         </p>
       </Card>
     </div>
