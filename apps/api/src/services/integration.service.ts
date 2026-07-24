@@ -2316,6 +2316,13 @@ const XERO_SUPPLIER_ALIASES: Record<string, string> = {
   'whittaker distilleries pty ltd': 'Manly Spirits Co'
 };
 
+// Contacts whose bills are miscoded to Direct Costs accounts in Xero but are
+// NOT supplier COGS (professional costs etc.) — excluded from the spend split
+// until the bookkeeping recodes them. Keys lowercase, matched after aliasing.
+const XERO_SUPPLIER_EXCLUDE = new Set<string>([
+  'dtg migration services' // migration agent — professional cost, not COGS
+]);
+
 // Merge key + display name for a Xero contact: trading name after T/AS or
 // T/A when present, then the alias table.
 function canonicalSupplierName(raw: string): { key: string; display: string } {
@@ -2391,6 +2398,7 @@ async function xeroSupplierSpend(
           const cents = Math.round((line.LineAmount ?? 0) * 100);
           if (cents === 0) continue;
           const canonical = canonicalSupplierName(name);
+          if (XERO_SUPPLIER_EXCLUDE.has(canonical.key)) continue;
           const entry = accumulator.get(canonical.key) ?? { name: canonical.display, venue, byBucket: new Map() };
           // Prefer the mixed-case variant of the contact name for display.
           if (entry.name === entry.name.toUpperCase() && canonical.display !== canonical.display.toUpperCase()) {
