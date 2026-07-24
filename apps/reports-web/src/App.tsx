@@ -2358,65 +2358,75 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             const variancePct = primeTotals?.primeCostPercent != null
               ? primeTotals.primeCostPercent - primeCostTarget
               : null;
+            const salesIncomplete = primeTotals?.primeCostPercent != null && primeTotals.primeCostPercent > 120;
+            // Editorial headline: one plain-spoken line that carries the tone
+            // of the week (the design's "Running hot, worth a look.").
+            const headline = loading
+              ? 'Pulling the week together.'
+              : salesCentsForRange === 0
+                ? 'Waiting on the numbers.'
+                : salesIncomplete
+                  ? 'Sales look short, check the import.'
+                  : variancePct != null && variancePct > 5
+                    ? 'Running hot, worth a look.'
+                    : variancePct != null && variancePct > 0
+                      ? 'Warm, keep an eye on it.'
+                      : 'Inside the guides, good week.'
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
               if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
-              // Prime over ~120% of sales is impossible in a trading week — the
-              // sales import is short. Flag that, not a phantom cost blowout.
-              if (primeTotals?.primeCostPercent != null && primeTotals.primeCostPercent > 120) {
+              if (salesIncomplete) {
                 return 'Sales look incomplete for this week — check the Square import before trusting the cost %.';
               }
-              if (variancePct != null && variancePct > 5) {
-                return `Total operating cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — running hot vs the ${primeCostTarget.toFixed(0)}% target.`;
+              if (primeTotals?.primeCostPercent != null) {
+                return `Total operating cost is ${primeTotals.primeCostPercent.toFixed(1)}% of sales this week, against the ${primeCostTarget.toFixed(0)}% guide. Reports are read-only and scoped to the venues you have access to.`;
               }
-              if (variancePct != null && variancePct < -5) {
-                return `Total operating cost ${primeTotals?.primeCostPercent?.toFixed(1)}% — well inside guide for the week.`;
-              }
-              return `Signed in as ${user.firstName}`;
+              return 'Reports are read-only and scoped to the venues you have access to.';
             })();
+            const stocktakesWaiting = data.overview?.stock.stocktakesReadyForReview ?? 0;
             return (
-              <AlmaHomeBubble
-                app="reports"
-                appName="Reports"
-                appIcon={<ChartIcon />}
-                eyebrow="Reports command"
-                description="High-level attention signals across the suite. Reports are read-only and scoped to the venues you have access to."
-                statusLabel="Overview"
-                statusHint={sub}
-                statusDot={variancePct != null && variancePct > 5 ? 'terracotta' : variancePct != null && variancePct < -5 ? 'forest' : 'amber'}
-                actions={
-                  <>
-                    <button
-                      type="button"
-                      className="alma-home-bubble-btn alma-home-bubble-btn--primary"
-                      onClick={() => void load()}
-                    >
-                      Refresh →
-                    </button>
-                    <button
-                      type="button"
-                      className="alma-home-bubble-btn alma-home-bubble-btn--ghost"
-                      onClick={exportOverviewCsv}
-                    >
-                      Export overview
-                    </button>
-                  </>
-                }
-              />
+              <section className={`ov-hero is-${heroTone}`}>
+                <div className="ov-hero-top">
+                  <div className="ov-hero-main">
+                    <div className="ov-hero-eyebrow">Reports command · {weekWindowLabel}</div>
+                    <h2 className="ov-hero-headline">{headline}</h2>
+                    <p className="ov-hero-sub">{sub}</p>
+                  </div>
+                  <div className="ov-hero-pills">
+                    {primeTotals?.primeCostPercent != null && !salesIncomplete ? (
+                      <AlmaPill kind={heroTone === 'danger' ? 'danger' : heroTone === 'warning' ? 'warn' : 'success'}>
+                        Prime cost {primeTotals.primeCostPercent.toFixed(1)}%
+                      </AlmaPill>
+                    ) : null}
+                    {stocktakesWaiting > 0 ? (
+                      <AlmaPill kind="warn">{stocktakesWaiting} stocktake{stocktakesWaiting === 1 ? '' : 's'} awaiting review</AlmaPill>
+                    ) : null}
+                    {attentionCount > 0 ? (
+                      <AlmaPill kind="neutral">{attentionCount} attention item{attentionCount === 1 ? '' : 's'} open</AlmaPill>
+                    ) : null}
+                    <div className="ov-hero-actions">
+                      <button type="button" className="alma-home-bubble-btn alma-home-bubble-btn--primary" onClick={() => void load()}>
+                        Refresh →
+                      </button>
+                      <button type="button" className="alma-home-bubble-btn alma-home-bubble-btn--ghost" onClick={exportOverviewCsv}>
+                        Export overview
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                {/* Data lineage inside the band — when a number looks wrong,
+                    this is where the operator checks first. */}
+                <p className="ov-hero-sources" aria-label="Report data sources">
+                  <span className="ov-hero-sources-label">Sources</span>
+                  <span>Sales <strong>Square</strong></span>
+                  <span>Wages <strong>Alma roster + Xero pay rates</strong></span>
+                  <span>Bills <strong>Xero</strong></span>
+                  <span>Temperatures <strong>Govee</strong></span>
+                  <span>Stock <strong>Alma</strong></span>
+                </p>
+              </section>
             );
           })()}
-
-          {/* Data sources hairline — every report depends on data flowing
-              from external systems. Make the lineage visible so when a
-              number looks wrong, the operator knows where to check. */}
-          <p className="alma-reports-sources" aria-label="Report data sources">
-            <span className="alma-reports-sources-label">Sources</span>
-            <span>Sales <strong>Square</strong></span>
-            <span>Wages <strong>Alma roster + Xero pay rates</strong></span>
-            <span>Bills <strong>Xero</strong></span>
-            <span>Temperatures <strong>Govee</strong></span>
-            <span>Stock <strong>Alma</strong></span>
-          </p>
 
           {/* Stocktake status widget (Sprint 2.4 / Loaded replacement #16).
               Tells the operator whether stock value + COGS in this report
@@ -2454,8 +2464,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             />
           </div>
 
-          {/* Cost triangle — the three numbers a restaurant lives or dies on,
-              each read against its target as a plain traffic light. */}
+          {/* Prime cost feature — the one panel for the three numbers a
+              restaurant lives or dies on: total operating cost with a five
+              week trend, then labour and food read against their targets. */}
           {(() => {
             const primeTarget = (() => {
               const vals = Object.values(primeTargets);
@@ -2463,61 +2474,84 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             })();
             const costTone = (pct: number | null, target: number): 'positive' | 'warning' | 'danger' | 'neutral' =>
               pct == null ? 'neutral' : pct <= target ? 'positive' : pct <= target + 5 ? 'warning' : 'danger';
-            const tiles = [
-              {
-                label: 'Food & bev cost',
-                term: 'COGS',
-                pct: overviewTotalsRow?.cogsPercent ?? null,
-                target: COST_TARGETS.food,
-                hint: hasTheoretical ? 'Estimated from recipes × units sold' : 'From purchases this week'
-              },
-              {
-                label: 'Labour',
-                term: 'wages',
-                pct: primeTotals?.wagePercent ?? null,
-                target: COST_TARGETS.labour,
-                hint: 'Wages ÷ sales'
-              },
-              {
-                label: 'Total operating cost',
-                term: 'prime',
-                pct: overviewTotalsRow?.primeCostPercent ?? null,
-                target: primeTarget,
-                hint: 'Food + labour ÷ sales'
-              }
-            ];
             // A cost ratio above ~120% of sales can't happen in a trading
             // restaurant — it means sales didn't fully import for the window.
             // Say that plainly instead of flashing a false red alarm.
             const IMPLAUSIBLE = 120;
+            const primePct = overviewTotalsRow?.primeCostPercent ?? null;
+            const incomplete = primePct != null && primePct > IMPLAUSIBLE;
+            const primeToneNow = incomplete ? 'neutral' : costTone(primePct, primeTarget);
+            const columns = [
+              {
+                label: 'Labour · Wages',
+                pct: primeTotals?.wagePercent ?? null,
+                target: COST_TARGETS.labour,
+                hint: 'Wages divided by sales, against the target guide.'
+              },
+              {
+                label: 'Food & bev · COGS',
+                pct: overviewTotalsRow?.cogsPercent ?? null,
+                target: COST_TARGETS.food,
+                hint: hasTheoretical ? 'Estimated from recipes times units sold.' : 'From purchases this week.'
+              }
+            ];
             return (
-              <div className="cost-triangle" aria-label="Cost triangle for the week">
-                {tiles.map((tile) => {
-                  const incomplete = tile.pct != null && tile.pct > IMPLAUSIBLE;
-                  const tone = incomplete ? 'neutral' : costTone(tile.pct, tile.target);
-                  const over = tile.pct != null && tile.pct > tile.target;
+              <section className={`ov-prime is-${primeToneNow}`} aria-label="Cost triangle for the week">
+                <div className="ov-prime-main">
+                  <span className="ov-prime-label">Total operating cost · Prime</span>
+                  <div className="ov-prime-row">
+                    <span className="ov-prime-value">
+                      {primePct == null || incomplete ? '—' : `${primePct.toFixed(1)}%`}
+                    </span>
+                    <div className="ov-prime-trend" aria-label="5 week prime cost trend">
+                      {trendPoints.map((point, i) => {
+                        const pct = point.primeCostPercent;
+                        const height = pct != null ? Math.max(10, (pct / trendMaxPct) * 100) : 8;
+                        const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
+                        const isCurrent = i === trendPoints.length - 1;
+                        return (
+                          <div key={point.weekStart} className={`ov-prime-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
+                            <div className="ov-prime-bar-fill" style={{ height: `${height}%` }} />
+                            <span>{pct != null ? `${pct.toFixed(0)}` : '—'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <span className="ov-prime-note">
+                    {incomplete
+                      ? 'Sales data looks incomplete — check the Square import before trusting the cost %.'
+                      : primePct == null
+                        ? `Aim at or under ${primeTarget.toFixed(0)}% of sales.`
+                        : primePct > primeTarget
+                          ? <>{(primePct - primeTarget).toFixed(1)} pts over the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>
+                          : <>Inside the {primeTarget.toFixed(0)}% guide. Food + labour, divided by sales of <strong>{formatCurrency(primeTotals?.salesCents ?? 0)}</strong>.</>}
+                  </span>
+                </div>
+                {columns.map((column) => {
+                  const colIncomplete = column.pct != null && column.pct > IMPLAUSIBLE;
+                  const tone = colIncomplete ? 'neutral' : costTone(column.pct, column.target);
+                  const over = column.pct != null && column.pct > column.target;
                   return (
-                    <div key={tile.label} className={`cost-tile is-${tone}`}>
-                      <span className="cost-tile-label">
-                        {tile.label} <em>({tile.term})</em>
+                    <div key={column.label} className={`ov-prime-col is-${tone}`}>
+                      <span className="ov-prime-label">{column.label}</span>
+                      <span className="ov-prime-col-value">
+                        {column.pct == null || colIncomplete ? '—' : `${column.pct.toFixed(1)}%`}
                       </span>
-                      <span className="cost-tile-value">
-                        {tile.pct == null ? '—' : incomplete ? '— ' : `${tile.pct.toFixed(1)}%`}
-                      </span>
-                      <span className="cost-tile-target">
-                        {tile.pct == null
-                          ? `Aim ≤ ${tile.target.toFixed(0)}% of sales`
-                          : incomplete
-                            ? 'Sales data looks incomplete — check the Square import'
+                      <span className="ov-prime-col-pill">
+                        <AlmaPill kind={tone === 'danger' ? 'danger' : tone === 'warning' ? 'warn' : tone === 'positive' ? 'success' : 'neutral'}>
+                          {column.pct == null || colIncomplete
+                            ? 'Awaiting data'
                             : over
-                              ? `${(tile.pct - tile.target).toFixed(1)} pts over the ${tile.target.toFixed(0)}% target`
-                              : `On target — aim ≤ ${tile.target.toFixed(0)}%`}
+                              ? `${(column.pct - column.target).toFixed(1)} pts over target`
+                              : 'On target'}
+                        </AlmaPill>
                       </span>
-                      <span className="cost-tile-hint">{tile.hint}</span>
+                      <span className="ov-prime-col-hint">{column.hint}</span>
                     </div>
                   );
                 })}
-              </div>
+              </section>
             );
           })()}
 
@@ -2556,6 +2590,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
             })();
             return (
+              <div className="ov-forecast-band">
               <EditorialPanel
                 eyebrow="Week ahead · next 7 days"
                 title="What's coming"
@@ -2581,14 +2616,18 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   />
                 </div>
               </EditorialPanel>
+              </div>
             );
           })()}
 
-          {/* By venue — editorial panel using primeCost venues data */}
+          {/* Where the money went + group prime donut — paired, per the
+              overview redesign. The venue rows carry a small sales bar so
+              relative size reads without the separate bar chart. */}
           {venueRows.length > 0 && totalsRow ? (
+            <div className="ov-two">
             <EditorialPanel
               eyebrow={`This week · ${weekWindowLabel}`}
-              title="By venue"
+              title="Where the money went"
               actions={
                 <Button type="button" size="sm" variant="secondary" onClick={exportOverviewCsv}>
                   Export CSV
@@ -2605,7 +2644,16 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
                 {overviewVenueRows.map((row) => (
                   <div className="alma-venue-row" key={row.venue}>
-                    <span className="alma-venue-name">{row.venue}</span>
+                    <span className="alma-venue-name">
+                      {row.venue}
+                      <span className="ov-venue-bar" aria-hidden="true">
+                        <span
+                          style={{
+                            width: `${Math.round((row.salesCents / Math.max(...overviewVenueRows.map((r) => r.salesCents), 1)) * 100)}%`
+                          }}
+                        />
+                      </span>
+                    </span>
                     <span className="alma-venue-num">{formatCurrency(row.salesCents)}</span>
                     <span className="alma-venue-num">{formatPercent(row.wagePercent)}</span>
                     <span className="alma-venue-num">{formatPercent(row.cogsPercent)}</span>
@@ -2641,22 +2689,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 </div>
               </div>
             </EditorialPanel>
-          ) : null}
-
-          {venueRows.length > 0 && totalsRow ? (
-            <div className="report-chart-grid">
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Sales by venue · {weekWindowLabel}</h5>
-                <BarChart
-                  data={venueRows.map((r, i) => ({ label: r.venue, value: r.salesCents, color: CHART_PALETTE[i % CHART_PALETTE.length] }))}
-                  format={(v) => formatCurrency(v)}
-                  emptyLabel="No venue sales imported yet."
-                />
-              </div>
-              <div className="report-chart-panel">
-                <h5 className="report-chart-title">Group prime cost</h5>
+            <EditorialPanel eyebrow="This week" title="Group prime cost">
+              <div className="ov-donut">
                 <Donut
-                  size={130}
+                  size={140}
                   segments={[
                     { label: 'COGS', value: overviewGroupCogsCents, color: CHART_COLORS.danger },
                     { label: 'Wages', value: primeTotals?.approvedWageCents ?? actualApprovedWageCostCents, color: CHART_COLORS.accent },
@@ -2671,117 +2707,71 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   format={(v) => formatCurrency(v)}
                   emptyLabel="No prime cost data yet."
                 />
+                <p className="ov-donut-note">
+                  {formatCurrency(Math.max(0, totalsRow.salesCents - overviewGroupCogsCents - (primeTotals?.approvedWageCents ?? actualApprovedWageCostCents)))}{' '}
+                  gross profit left after food and labour this week.
+                </p>
               </div>
+            </EditorialPanel>
             </div>
           ) : null}
 
-          {/* Top dishes — editorial panel */}
-          {topDishes.length > 0 ? (
-            <EditorialPanel
-              eyebrow={`This week · ${weekWindowLabel}`}
-              title="Top dishes"
-              actions={
-                <Button type="button" size="sm" variant="ghost" onClick={() => selectReportSection('sales')}>
-                  Open sales detail
-                </Button>
-              }
-            >
-              <div className="alma-top-dishes">
-                {topDishes.map((dish, index) => (
-                  <div className="alma-top-dish-row" key={dish.name}>
-                    <span className="alma-top-dish-rank">{index + 1}</span>
-                    <span className="alma-top-dish-name">{dish.name}</span>
-                    <span className="alma-top-dish-count">{dish.quantity.toLocaleString()}</span>
-                    <span className="alma-top-dish-sales">{formatCurrency(dish.netSalesCents)}</span>
-                  </div>
+          {/* Top dishes + report library — paired, per the overview
+              redesign. The library replaces the old metric-card grids as the
+              way into each detailed report; the dollar figures those cards
+              carried now live in the prime feature panel above. */}
+          <div className="ov-two">
+            {topDishes.length > 0 ? (
+              <EditorialPanel
+                eyebrow={`This week · ${weekWindowLabel}`}
+                title="Top dishes"
+                actions={
+                  <Button type="button" size="sm" variant="ghost" onClick={() => selectReportSection('sales')}>
+                    Open sales detail
+                  </Button>
+                }
+              >
+                <div className="alma-top-dishes">
+                  {topDishes.map((dish, index) => (
+                    <div className="alma-top-dish-row" key={dish.name}>
+                      <span className="alma-top-dish-rank">{index + 1}</span>
+                      <span className="alma-top-dish-name">
+                        {dish.name}
+                        <span className="ov-dish-bar" aria-hidden="true">
+                          <span style={{ width: `${Math.round((dish.quantity / Math.max(topDishes[0]?.quantity ?? 1, 1)) * 100)}%` }} />
+                        </span>
+                      </span>
+                      <span className="alma-top-dish-count">{dish.quantity.toLocaleString()}</span>
+                      <span className="alma-top-dish-sales">{formatCurrency(dish.netSalesCents)}</span>
+                    </div>
+                  ))}
+                </div>
+                <p className="ov-dish-footnote">Units sold, Square actuals.</p>
+              </EditorialPanel>
+            ) : null}
+            <EditorialPanel eyebrow="Report library" title="Go deeper">
+              <div className="ov-library">
+                {REPORT_NAV_ITEMS.filter((item) =>
+                  ['monthly-recap', 'compliance', 'reserve', 'marketing', 'content', 'gift-cards', 'exports'].includes(item.id)
+                ).map((item) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    className="ov-library-row"
+                    onClick={() => selectReportSection(item.id)}
+                  >
+                    <span className="ov-library-initial">{item.label.charAt(0)}</span>
+                    <span className="ov-library-text">
+                      <span className="ov-library-name">{item.label}</span>
+                      <span className="ov-library-blurb">{item.description}</span>
+                    </span>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                      <path d="M7 17L17 7M9 7h8v8" />
+                    </svg>
+                  </button>
                 ))}
               </div>
             </EditorialPanel>
-          ) : null}
-
-          {/* Prime cost hero — the single most important metric */}
-          <button
-            type="button"
-            className={`prime-cost-hero is-${heroTone}`}
-            onClick={() => selectReportSection('stock')}
-            aria-label="Open prime cost detail"
-          >
-            <div className="prime-cost-hero-main">
-              <span className="prime-cost-hero-eyebrow">Total operating cost (prime) · {weekWindowLabel}</span>
-              <span className="prime-cost-hero-value">
-                {overviewTotalsRow?.primeCostPercent != null ? `${overviewTotalsRow.primeCostPercent.toFixed(1)}%` : '—'}
-              </span>
-              <span className="prime-cost-hero-split">
-                Labour {formatPercent(primeTotals?.wagePercent)}
-                <span aria-hidden="true">·</span>
-                Food &amp; bev {formatPercent(overviewTotalsRow?.cogsPercent)}
-                <span aria-hidden="true">·</span>
-                Sales {formatCurrency(primeTotals?.salesCents ?? 0)}
-              </span>
-            </div>
-            <div className="prime-cost-hero-trend" aria-label="5 week prime cost trend">
-              {trendPoints.map((point, i) => {
-                const pct = point.primeCostPercent;
-                const height = pct != null ? Math.max(8, (pct / trendMaxPct) * 100) : 6;
-                const barTone = pct == null ? 'muted' : pct >= 65 ? 'danger' : pct >= 55 ? 'warning' : 'positive';
-                const isCurrent = i === trendPoints.length - 1;
-                return (
-                  <div key={point.weekStart} className={`prime-cost-hero-bar is-${barTone}${isCurrent ? ' is-current' : ''}`}>
-                    <div className="prime-cost-hero-bar-fill" style={{ height: `${height}%` }} />
-                    <span className="prime-cost-hero-bar-label">
-                      {pct != null ? `${pct.toFixed(0)}%` : '—'}
-                    </span>
-                    <small>
-                      {new Date(point.weekStart).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })}
-                    </small>
-                  </div>
-                );
-              })}
-            </div>
-          </button>
-
-          {/* Venue comparison panel removed — replaced by the editorial
-              "By venue" panel above. The new panel uses the same primeCost
-              data with the editorial chrome (eyebrow + Cormorant title +
-              AlmaPill prime cost) and merges the group total row in. */}
-
-          <div className="stats-grid report-metric-grid">
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('compliance')} aria-label="Open attention reports">
-              <StatCard label="Attention items" value={attentionCount} hint="Across staff, compliance, stock, content, and gift cards" loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open staff reports">
-              <StatCard label="Active staff" value={data.overview?.staff.totalActiveStaff ?? 0} hint="Current staff profiles" loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('reserve')} aria-label="Open reserve reports">
-              <StatCard label="Bookings today" value={data.overview?.reserve.bookingsToday ?? 0} hint={`${data.overview?.reserve.coversToday ?? 0} covers`} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open stock reports">
-              <StatCard label="Low stock" value={data.overview?.stock.lowStockCount ?? 0} hint="Venue stock rows" loading={loading} />
-            </button>
-          </div>
-
-          <div className="stats-grid report-metric-grid">
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('sales')} aria-label="Open sales reports">
-              <StatCard label="Sales" value={formatCurrency(primeTotals?.salesCents ?? 0)} hint={data.primeCost?.sources.sales === 'missing' ? 'Missing sales import' : 'ex-GST net · Square Net Sales'} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('staff')} aria-label="Open labour reports">
-              <StatCard label="Labour (wages)" value={formatCurrency(primeTotals?.wageCents ?? 0)} hint={data.primeCost?.sources.wages === 'roster_estimate' ? 'Roster estimate' : `${formatPercent(primeTotals?.wagePercent)} of sales`} loading={loading} />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open food cost reports">
-              <StatCard
-                label="Food &amp; bev cost (COGS)"
-                value={formatCurrency(overviewCogsCents)}
-                hint={overviewCogsIsActual
-                  ? `${formatPercent(primeTotals?.cogsPercent)} of sales · actual`
-                  : theoreticalCogsCents != null
-                    ? `${formatPercent(theoreticalFoodCostPct)} of sales · theoretical (recipe × sales)`
-                    : 'Map Square items to recipes in Stock to see food cost'}
-                loading={loading}
-              />
-            </button>
-            <button type="button" className="stat-card-link" onClick={() => selectReportSection('stock')} aria-label="Open data quality detail">
-              <StatCard label="Data quality" value={qualityLabel(primeTotals?.sourceQuality) ?? '—'} hint="Sales · wages · COGS sources" loading={loading} />
-            </button>
           </div>
 
           <div className="report-detail-grid">
