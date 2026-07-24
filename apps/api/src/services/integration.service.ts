@@ -3002,7 +3002,7 @@ type XeroAttachmentTarget = {
 // behaviour for Type=ACCPAY confirmed empirically — a 4xx here degrades to
 // no_attachment rather than failing the batch.
 async function fetchXeroRenderedBillPdf(
-  state: { connection: IntegrationConnection },
+  state: { connection: IntegrationConnection; renderFailures: string[] },
   target: XeroAttachmentTarget,
   tenantId: string | undefined
 ): Promise<boolean> {
@@ -3015,6 +3015,11 @@ async function fetchXeroRenderedBillPdf(
     });
   } catch (error) {
     if (isXeroRateLimitError(error) || isXeroAuthError(error)) throw error;
+    // Surface a sample of render failures so an unsupported-render verdict is
+    // diagnosable from the backfill response instead of a silent zero.
+    if (state.renderFailures.length < 3) {
+      state.renderFailures.push(`${target.label}: render failed (${safeErrorMessage(error)})`);
+    }
     return false; // rendering unsupported or bill unrenderable — not fatal
   }
   state.connection = binary.connection;
@@ -3037,7 +3042,7 @@ async function fetchXeroRenderedBillPdf(
 }
 
 async function fetchAndStoreXeroBillAttachment(
-  state: { connection: IntegrationConnection },
+  state: { connection: IntegrationConnection; renderFailures: string[] },
   target: XeroAttachmentTarget
 ): Promise<'stored' | 'rendered' | 'already_stored' | 'no_attachment' | 'not_found'> {
   // Idempotency: one document per invoice. Never clobber an existing one —
@@ -3110,7 +3115,7 @@ async function fetchXeroAttachmentsForInvoices(
   connection: IntegrationConnection,
   targets: XeroAttachmentTarget[]
 ): Promise<{ fetched: number; missing: number; rendered: number; warnings: string[]; authBlocked: boolean }> {
-  const state = { connection };
+  const state = { connection, renderFailures: [] as string[] };
   let fetched = 0;
   let missing = 0;
   let rendered = 0;
@@ -3146,6 +3151,7 @@ async function fetchXeroAttachmentsForInvoices(
     }
   }
 
+  warnings.push(...state.renderFailures);
   return { fetched, missing, rendered, warnings, authBlocked };
 }
 
