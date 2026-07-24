@@ -2590,8 +2590,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               return vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : COST_TARGETS.prime;
             })();
             return (
-              <div className="ov-forecast-band">
               <EditorialPanel
+                className="alma-band-sage"
                 eyebrow="Week ahead · next 7 days"
                 title="What's coming"
                 actions={sectionButton('forecast', 'Open the full forecast')}
@@ -2616,7 +2616,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                   />
                 </div>
               </EditorialPanel>
-              </div>
             );
           })()}
 
