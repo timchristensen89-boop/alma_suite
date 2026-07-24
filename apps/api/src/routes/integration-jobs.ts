@@ -88,6 +88,24 @@ integrationJobsRouter.post('/xero/import', async (req, res, next) => {
   }
 });
 
+// Lightspeed O-Series (Kounta) POS sales sync — scheduled cron entrypoint.
+// Body: { lookbackDays? } (default 3). Sums order totals per site per Sydney
+// day into the same SalesActualEntry rows the Square sync writes. Responds
+// 200 { skipped: true, reason } when Lightspeed is not configured or not
+// connected, so the cron line can exist on the VPS before credentials do.
+integrationJobsRouter.post('/lightspeed/sales-sync', async (req, res, next) => {
+  try {
+    const lookbackDays = Number((req.body ?? {}).lookbackDays);
+    res.json(
+      await integrationService.runScheduledLightspeedSalesSync({
+        lookbackDays: Number.isFinite(lookbackDays) ? lookbackDays : undefined
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Deputy sync — invoked by Cloud Scheduler. Runs employee, document, and
 // roster sync in order so document sync can match newly-imported employees.
 integrationJobsRouter.post('/deputy/sync', async (_req, res, next) => {

@@ -163,6 +163,26 @@ export const env = {
       // Compared in constant time before recording the event.
       webhookSecret: process.env.DEPUTY_WEBHOOK_SECRET ?? ''
     },
+    lightspeed: {
+      // Lightspeed O-Series (formerly Kounta) POS. Wire details mirror the
+      // tested kounta client in alma-web-platform/packages/kounta: API + token
+      // endpoint live under https://api.kounta.com/v1, authorize on
+      // my.kounta.com. All hosts are env-overridable so a partner-provisioned
+      // base needs no code change.
+      clientId: process.env.LIGHTSPEED_CLIENT_ID ?? '',
+      clientSecret: process.env.LIGHTSPEED_CLIENT_SECRET ?? '',
+      redirectUrl:
+        process.env.LIGHTSPEED_REDIRECT_URL ??
+        `${process.env.API_PUBLIC_URL ?? process.env.API_URL ?? `http://localhost:${process.env.PORT ?? process.env.API_PORT ?? 3018}`}/api/integrations/lightspeed/callback`,
+      // VERIFY: authorize URL + accepted params (client_id, redirect_uri,
+      // response_type=code, state) against apidoc.kounta.com once partner
+      // credentials exist.
+      authorizeUrl: process.env.LIGHTSPEED_AUTHORIZE_URL ?? 'https://my.kounta.com/authorize',
+      // VERIFY: token endpoint is POST `${oauthBase}/token.json` with Basic
+      // client auth (matches the reference client's TokenManager).
+      oauthBase: process.env.LIGHTSPEED_OAUTH_BASE ?? 'https://api.kounta.com/v1',
+      apiBase: process.env.LIGHTSPEED_API_BASE ?? 'https://api.kounta.com/v1'
+    },
     meta: {
       appId: process.env.META_APP_ID ?? '',
       appSecret: process.env.META_APP_SECRET ?? '',

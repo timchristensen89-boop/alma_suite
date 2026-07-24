@@ -42,7 +42,7 @@ import {
 import { HttpError } from '../lib/http.js';
 import { deputyService } from './deputy.service.js';
 
-type Provider = 'SQUARE' | 'XERO' | 'DEPUTY';
+type Provider = 'SQUARE' | 'XERO' | 'DEPUTY' | 'LIGHTSPEED';
 type SquareAccountKey = 'primary' | 'secondary';
 type ImportRunMode = 'MANUAL' | 'SCHEDULED';
 
@@ -52,6 +52,7 @@ const DEFAULT_SCHEDULED_XERO_BILLS_LIMIT = 100;
 const DEFAULT_SCHEDULED_XERO_CONTACTS_LIMIT = 500;
 const DEFAULT_SCHEDULED_SQUARE_SALES_LOOKBACK_DAYS = 7;
 const DEFAULT_SQUARE_PAYMENT_IMPORT_LIMIT = 1000;
+const DEFAULT_SCHEDULED_LIGHTSPEED_SALES_LOOKBACK_DAYS = 3;
 
 const SQUARE_SCOPES = [
   'MERCHANT_PROFILE_READ',
@@ -82,6 +83,7 @@ const XERO_SCOPES = [
 ];
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
+const LIGHTSPEED_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 
 // Scoped to MESSAGING + INSIGHTS only. Publishing (pages_manage_posts /
 // instagram_content_publish) is intentionally NOT requested — social posts are
@@ -129,6 +131,12 @@ const PROVIDER_COPY: Record<Provider, {
     key: 'deputy',
     label: 'Deputy',
     powers: ['Roster shifts', 'employee records', 'compliance documents'],
+    requiredSetup: ['Client ID', 'client secret', 'redirect URL']
+  },
+  LIGHTSPEED: {
+    key: 'lightspeed',
+    label: 'Lightspeed POS',
+    powers: ['Live sales', 'product movement', 'site status'],
     requiredSetup: ['Client ID', 'client secret', 'redirect URL']
   }
 };
@@ -218,7 +226,7 @@ function readMetaState(state: string): { actorId: string | null } | null {
 
 function normaliseProvider(provider: string): Provider {
   const value = provider.trim().toUpperCase();
-  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY') return value;
+  if (value === 'SQUARE' || value === 'XERO' || value === 'DEPUTY' || value === 'LIGHTSPEED') return value;
   throw new HttpError(404, 'Integration provider not found.');
 }
 
@@ -309,6 +317,31 @@ function providerConfig(provider: Provider, accountKey: SquareAccountKey = 'prim
       apiBaseUrl: null,
       apiVersion: null,
       redirectUri: env.integrations.deputy.redirectUrl,
+      webhookUrl: null,
+      webhookConfigured: false
+    };
+  }
+  if (provider === 'LIGHTSPEED') {
+    const configured = Boolean(
+      env.integrations.lightspeed.clientId &&
+        env.integrations.lightspeed.clientSecret &&
+        env.integrations.lightspeed.redirectUrl
+    );
+    return {
+      configured,
+      oauthConfigured: configured,
+      missingConfig: null,
+      missingLabels: [],
+      missingEnvVars: [
+        env.integrations.lightspeed.clientId ? null : 'LIGHTSPEED_CLIENT_ID',
+        env.integrations.lightspeed.clientSecret ? null : 'LIGHTSPEED_CLIENT_SECRET',
+        env.integrations.lightspeed.redirectUrl ? null : 'LIGHTSPEED_REDIRECT_URL'
+      ].filter((value): value is string => Boolean(value)),
+      environment: null,
+      oauthBaseUrl: env.integrations.lightspeed.oauthBase,
+      apiBaseUrl: env.integrations.lightspeed.apiBase,
+      apiVersion: null,
+      redirectUri: env.integrations.lightspeed.redirectUrl,
       webhookUrl: null,
       webhookConfigured: false
     };
@@ -979,6 +1012,298 @@ async function exchangeDeputyToken(code: string): Promise<DeputyTokenResponse> {
     throw new HttpError(502, 'Deputy token exchange failed.', json);
   }
   return json as DeputyTokenResponse;
+}
+
+// ─── Lightspeed O-Series (formerly Kounta) POS ──────────────────────────────
+// The venues switched POS from Square to Lightspeed O-Series. Wire format
+// mirrors the tested kounta client in alma-web-platform/packages/kounta:
+// token endpoint POST {oauthBase}/token.json with Basic client auth, API under
+// https://api.kounta.com/v1, X-Next-Page cursor pagination, one refresh-then-
+// retry on 401. No live credentials existed when this was written, so every
+// unverifiable wire detail carries a // VERIFY marker — confirm each against
+// apidoc.kounta.com (Lightspeed O-Series API docs) once credentials exist.
+
+type LightspeedTokenResponse = {
+  access_token?: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+};
+
+type LightspeedCompany = {
+  id?: number | string;
+  name?: string;
+};
+
+type LightspeedSite = {
+  id?: number | string;
+  name?: string;
+};
+
+type LightspeedOrder = {
+  id?: number | string;
+  status?: string;
+  // VERIFY: order total field name/units. The reference kounta client treats
+  // money as GST-INCLUSIVE decimal dollars (string or number) — see
+  // KountaProduct.price / KountaOrder.total in packages/kounta/src/types.ts.
+  total?: number | string;
+  // VERIFY: field name for the GST portion of the order, if the payload
+  // provides one at all (used to store ex-GST sales exactly; otherwise we
+  // back out 10% AU GST from the inclusive total).
+  total_tax?: number | string;
+  created_at?: string;
+  updated_at?: string;
+  site_id?: number | string;
+};
+
+// VERIFY: the order-status vocabulary. Statuses that must NOT count as sales
+// (voided/cancelled/deleted) are excluded; anything else is summed. The
+// reference client only reads `status` opaquely, so this list is a guess.
+const LIGHTSPEED_ORDER_EXCLUDED_STATUSES = new Set(['DELETED', 'CANCELLED', 'VOIDED', 'REJECTED', 'REFUNDED']);
+
+function lightspeedApiBase() {
+  return env.integrations.lightspeed.apiBase.replace(/\/+$/, '');
+}
+
+async function exchangeLightspeedToken(code: string): Promise<LightspeedTokenResponse> {
+  const cfg = env.integrations.lightspeed;
+  const credentials = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
+  // VERIFY: authorization-code exchange — POST {oauthBase}/token.json with
+  // Basic client auth and grant_type=authorization_code, returning
+  // { access_token, refresh_token, expires_in }. The refresh-token grant on
+  // this endpoint is confirmed by the reference client (auth.ts); the
+  // authorization_code grant on the same endpoint is the standard pattern but
+  // has not been exercised against the live API.
+  const response = await fetch(`${cfg.oauthBase.replace(/\/+$/, '')}/token.json`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'authorization_code',
+      code,
+      redirect_uri: cfg.redirectUrl
+    })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Lightspeed token exchange failed.', body);
+  }
+  return body as LightspeedTokenResponse;
+}
+
+async function refreshLightspeedToken(refreshToken: string): Promise<LightspeedTokenResponse> {
+  const cfg = env.integrations.lightspeed;
+  const credentials = Buffer.from(`${cfg.clientId}:${cfg.clientSecret}`).toString('base64');
+  // Matches the reference client's TokenManager.refresh(): POST
+  // {oauthBase}/token.json, Basic client auth, grant_type=refresh_token →
+  // { access_token, expires_in }. VERIFY whether the response also carries a
+  // rotated refresh_token (Kounta rotates refresh tokens on use).
+  const response = await fetch(`${cfg.oauthBase.replace(/\/+$/, '')}/token.json`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Basic ${credentials}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+      'Accept': 'application/json'
+    },
+    body: new URLSearchParams({
+      grant_type: 'refresh_token',
+      refresh_token: refreshToken
+    })
+  });
+
+  const body = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new HttpError(502, 'Lightspeed token refresh failed.', {
+      status: response.status,
+      category: safeXeroErrorCategory(response.status)
+    });
+  }
+  return body as LightspeedTokenResponse;
+}
+
+async function refreshLightspeedConnection(connection: IntegrationConnection) {
+  if (!connection.refreshTokenEncrypted) {
+    throw new HttpError(409, 'Lightspeed refresh token is missing.');
+  }
+
+  const token = await refreshLightspeedToken(decryptIntegrationSecret(connection.refreshTokenEncrypted));
+  if (!token.access_token) {
+    throw new HttpError(502, 'Lightspeed did not return a refreshed access token.');
+  }
+
+  return prisma.integrationConnection.update({
+    where: { id: connection.id },
+    data: {
+      tokenEncrypted: encryptIntegrationSecret(token.access_token),
+      // Kounta ROTATES refresh tokens on use — when the refresh response
+      // carries a new refresh_token it MUST be persisted or the next refresh
+      // fails and the connection dies. VERIFY: whether every refresh response
+      // includes refresh_token; when it is omitted the stored one is kept
+      // (the reference client's refresh response only documents
+      // access_token + expires_in).
+      ...(token.refresh_token ? { refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token) } : {}),
+      tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+      scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : scopesFromJson(connection.scopes),
+      status: 'CONNECTED',
+      lastError: null
+    }
+  });
+}
+
+async function validLightspeedToken(connection: IntegrationConnection) {
+  const expiresAt = connection.tokenExpiresAt?.getTime();
+  const shouldRefresh =
+    !connection.tokenEncrypted ||
+    !expiresAt ||
+    expiresAt <= Date.now() + LIGHTSPEED_TOKEN_REFRESH_BUFFER_MS;
+
+  if (shouldRefresh) {
+    const refreshed = await refreshLightspeedConnection(connection);
+    if (!refreshed.tokenEncrypted) throw new HttpError(409, 'Lightspeed access token is missing after refresh.');
+    return {
+      accessToken: decryptIntegrationSecret(refreshed.tokenEncrypted),
+      connection: refreshed,
+      tokenStatus: 'refreshed' as const
+    };
+  }
+
+  if (!connection.tokenEncrypted) {
+    throw new HttpError(409, 'Lightspeed access token is missing.');
+  }
+
+  return {
+    accessToken: decryptIntegrationSecret(connection.tokenEncrypted),
+    connection,
+    tokenStatus: 'healthy' as const
+  };
+}
+
+type LightspeedPageResult<T> = {
+  data: T;
+  nextPage: string | null;
+  connection: IntegrationConnection;
+  tokenStatus: 'healthy' | 'refreshed';
+};
+
+async function lightspeedGetJson<T>(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<LightspeedPageResult<T>> {
+  const { accessToken, connection, tokenStatus } = await validLightspeedToken(input.connection);
+  const url = path.startsWith('http') ? path : `${lightspeedApiBase()}/${path.replace(/^\/+/, '')}`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    }
+  });
+
+  // Single retry after a forced refresh on 401 — mirrors the reference
+  // client's invalidate-then-retry and the suite's xeroGetJson.
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshLightspeedConnection(connection);
+    return lightspeedGetJson<T>(path, { connection: refreshed, retryAfterUnauthorized: false });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Lightspeed rate limit reached. Try again later.', { category: 'rate_limited' });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Lightspeed request failed (HTTP ${details.status})${detailText ? `: ${detailText.slice(0, 200)}` : ''}`,
+      details
+    );
+  }
+
+  return {
+    data: (await response.json().catch(() => null)) as T,
+    // VERIFY: Kounta paginates with an X-Next-Page header carrying the next
+    // page URL/path (confirmed in the reference client's http.ts).
+    nextPage: response.headers.get('x-next-page'),
+    connection,
+    tokenStatus
+  };
+}
+
+// Follow X-Next-Page cursors, concatenating JSON arrays — the Lightspeed
+// equivalent of the reference client's kountaRequestAll.
+async function lightspeedGetAll<T>(
+  path: string,
+  input: { connection: IntegrationConnection }
+): Promise<{ items: T[]; connection: IntegrationConnection }> {
+  const items: T[] = [];
+  let connection: IntegrationConnection = input.connection;
+  let nextPath: string | null = path;
+  let guard = 0;
+  while (nextPath && guard++ < 200) {
+    const page: LightspeedPageResult<T> = await lightspeedGetJson<T>(nextPath, { connection });
+    connection = page.connection;
+    if (Array.isArray(page.data)) items.push(...(page.data as T[]));
+    else if (page.data != null) items.push(page.data);
+    nextPath = page.nextPage;
+  }
+  return { items, connection };
+}
+
+// Company discovery after connect: which Kounta company this authorisation
+// covers. VERIFY: GET /companies/me.json → { id, name } (task brief; the
+// reference client is constructed with a known companyId and never calls it).
+async function fetchLightspeedCompany(accessToken: string): Promise<{ id: string | null; name: string | null }> {
+  const response = await fetch(`${lightspeedApiBase()}/companies/me.json`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json'
+    }
+  });
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    throw new HttpError(502, `Lightspeed company lookup failed (HTTP ${details.status}).`, details);
+  }
+  const body = (await response.json().catch(() => ({}))) as LightspeedCompany;
+  return {
+    id: body.id != null && trimText(body.id) ? String(body.id) : null,
+    name: optionalText(body.name)
+  };
+}
+
+async function connectedLightspeedConnection() {
+  const connection = await connectionSelect('LIGHTSPEED');
+  if (!connection || connection.status !== 'CONNECTED') {
+    throw new HttpError(409, 'Lightspeed is not connected.');
+  }
+  if (!connection.providerAccountId) {
+    throw new HttpError(409, 'Lightspeed company is not selected.');
+  }
+  return connection;
+}
+
+// Ex-GST cents for one Lightspeed order, mirroring the Square sales import's
+// "net sales ex GST" convention so SalesActualEntry rows stay comparable.
+function lightspeedOrderNetCents(order: LightspeedOrder) {
+  const totalCents = moneyToCents(order.total);
+  if (totalCents <= 0) return 0;
+  // Prefer the payload's own tax figure when present; otherwise assume the
+  // total is GST-inclusive (AU) and back out the 10% GST — the same
+  // AU_GST_DIVISOR treatment squarePaymentAmountCents applies. VERIFY both
+  // the inclusive-total assumption and the total_tax field name.
+  const taxCents = moneyToCents(order.total_tax);
+  if (taxCents > 0 && taxCents < totalCents) return totalCents - taxCents;
+  return Math.max(0, Math.round(totalCents / AU_GST_DIVISOR));
 }
 
 async function exchangeSquareToken(code: string, accountKey: SquareAccountKey) {
@@ -3179,11 +3504,12 @@ export const integrationService = {
   },
 
   async status(): Promise<IntegrationStatusPayload> {
-    const [primarySquare, secondarySquare, xero, deputy, xeroScheduledImport, syncRuns] = await Promise.all([
+    const [primarySquare, secondarySquare, xero, deputy, lightspeed, xeroScheduledImport, syncRuns] = await Promise.all([
       providerStatus('SQUARE', 'primary'),
       providerStatus('SQUARE', 'secondary'),
       providerStatus('XERO'),
       providerStatus('DEPUTY'),
+      providerStatus('LIGHTSPEED'),
       xeroScheduledImportStatus(),
       latestSyncRuns()
     ]);
@@ -3197,6 +3523,7 @@ export const integrationService = {
       },
       xero,
       deputy,
+      lightspeed,
       xeroScheduledImport,
       meta: await metaStatus(),
       latestSyncRuns: syncRuns,
@@ -5769,6 +6096,297 @@ export const integrationService = {
     };
   },
 
+  // Sites list for connection status / venue-mapping preview — which
+  // Lightspeed sites exist on the connected company and which configured
+  // venue each one resolves to. Read-only; no rows are written.
+  async lightspeedSites() {
+    const connection = await connectedLightspeedConnection();
+    const companyId = connection.providerAccountId ?? '';
+    // GET /companies/{companyId}/sites.json — path + X-Next-Page pagination
+    // confirmed by the tested reference client (packages/kounta/src/client.ts).
+    const sitesResult = await lightspeedGetAll<LightspeedSite>(`companies/${companyId}/sites.json`, { connection });
+    const venues = await configuredVenueNames();
+    return {
+      provider: 'lightspeed' as const,
+      generatedAt: new Date().toISOString(),
+      companyId,
+      companyName: connection.providerAccountName,
+      sites: sitesResult.items
+        .filter((site) => site.id != null)
+        .map((site) => {
+          const name = optionalText(site.name) ?? `Site ${site.id}`;
+          return {
+            id: String(site.id),
+            name,
+            // Same matching the Xero tenant resolver uses: exact, then
+            // contains either way, then freshwater→St Alma / avalon→Alma
+            // Avalon alias keywords.
+            venue: resolveVenueFromTenantName(name, venues)
+          };
+        })
+    };
+  },
+
+  // Scheduled Lightspeed sales sync — the Lightspeed counterpart of the
+  // Square scheduled sales import. Writes the SAME SalesActualEntry rows the
+  // Square sync writes (UTC-midnight serviceDate of the Sydney date key,
+  // idempotent per-venue/day/source upsert) so Reports dashboards and the
+  // Forecast engine keep working unchanged; readers aggregate SalesActualEntry
+  // across all sources without filtering, so 'lightspeed:{siteId}' rows are
+  // counted automatically. Returns { skipped: true, reason } instead of
+  // failing when Lightspeed is not configured/connected, so the cron line can
+  // exist before credentials do.
+  async runScheduledLightspeedSalesSync(input: Record<string, unknown> = {}) {
+    const lookbackDays = clampLimit(input.lookbackDays, DEFAULT_SCHEDULED_LIGHTSPEED_SALES_LOOKBACK_DAYS, 90);
+    const base = {
+      provider: 'lightspeed' as const,
+      mode: 'scheduled' as const,
+      generatedAt: new Date().toISOString(),
+      lookbackDays
+    };
+
+    const status = await providerStatus('LIGHTSPEED');
+    if (!status.configured || !status.connected) {
+      return {
+        ...base,
+        status: 'skipped' as const,
+        skipped: true,
+        reason: status.connectBlockedReason
+          ?? (!status.configured ? 'Lightspeed is not configured.' : 'Lightspeed is not connected.'),
+        sitesRead: 0,
+        ordersRead: 0,
+        skippedOrderCount: 0,
+        salesRowsUpserted: 0,
+        totalSalesCents: 0,
+        warnings: [] as string[]
+      };
+    }
+
+    let connection: IntegrationConnection | null = null;
+    try {
+      let conn: IntegrationConnection = await connectedLightspeedConnection();
+      connection = conn;
+      const companyId = conn.providerAccountId ?? '';
+      const venues = await configuredVenueNames();
+      const warnings: string[] = [];
+
+      // Window start pinned to Sydney local midnight so a Sydney service day
+      // is always replaced whole — the upsert below REPLACES each
+      // (venue, serviceDate, source, externalId) day-row, so a partial-day
+      // window would silently shrink that day's total.
+      const todaySydneyKey = dateKeyInTimeZone(new Date(), 'Australia/Sydney');
+      const windowStart = sydneyMidnightUtc(addSydneyDays(todaySydneyKey, 1 - lookbackDays));
+
+      const sitesResult = await lightspeedGetAll<LightspeedSite>(`companies/${companyId}/sites.json`, { connection: conn });
+      conn = sitesResult.connection;
+      connection = conn;
+      const sites = sitesResult.items.filter((site) => site.id != null);
+
+      const grouped = new Map<string, {
+        venue: string;
+        serviceDateKey: string;
+        serviceDate: Date;
+        source: string;
+        externalId: string;
+        salesCents: number;
+        orderCount: number;
+        siteId: string;
+        siteName: string;
+      }>();
+      let ordersRead = 0;
+      let skippedOrderCount = 0;
+
+      for (const site of sites) {
+        const siteId = String(site.id);
+        const siteName = optionalText(site.name) ?? `Site ${siteId}`;
+        const resolvedVenue = resolveVenueFromTenantName(siteName, venues);
+        if (!resolvedVenue) {
+          warnings.push(`Lightspeed site "${siteName}" did not match a configured venue — its sales were stored under the site name.`);
+        }
+        const venue = resolvedVenue ?? siteName;
+
+        // VERIFY: order-listing filter params. The reference client lists
+        // orders unfiltered (companies/{id}/orders.json, X-Next-Page paging);
+        // created_gte + site_id are assumed query params per the task brief —
+        // confirm names/format against apidoc.kounta.com. If a filter is not
+        // supported the loop still works (it just pages more and drops
+        // out-of-window orders below).
+        const ordersPath = `companies/${companyId}/orders.json?created_gte=${encodeURIComponent(windowStart.toISOString())}&site_id=${encodeURIComponent(siteId)}`;
+        const ordersResult = await lightspeedGetAll<LightspeedOrder>(ordersPath, { connection: conn });
+        conn = ordersResult.connection;
+        connection = conn;
+
+        for (const order of ordersResult.items) {
+          ordersRead += 1;
+          const orderStatus = trimText(order.status).toUpperCase();
+          if (orderStatus && LIGHTSPEED_ORDER_EXCLUDED_STATUSES.has(orderStatus)) {
+            skippedOrderCount += 1;
+            continue;
+          }
+          const orderDate = providerDate(order.created_at);
+          if (!orderDate || orderDate < windowStart) {
+            skippedOrderCount += 1;
+            continue;
+          }
+          const amountCents = lightspeedOrderNetCents(order);
+          if (amountCents <= 0) {
+            skippedOrderCount += 1;
+            continue;
+          }
+
+          const serviceDateKey = dateKeyInTimeZone(orderDate, 'Australia/Sydney');
+          // Source key shape 'lightspeed:{siteId}' parallels Square's
+          // 'square:{accountKey}'; externalId mirrors Square's
+          // `${source}:{locationId}:{dateKey}` day-bucket id. Reports read
+          // SalesActualEntry without filtering on source, so no reader
+          // changes are needed for these rows to count.
+          const source = `lightspeed:${siteId}`;
+          const externalId = `${source}:${serviceDateKey}`;
+          const key = `${venue}|${serviceDateKey}|${externalId}`;
+          const existing = grouped.get(key) ?? {
+            venue,
+            serviceDateKey,
+            serviceDate: startOfUtcDate(serviceDateKey),
+            source,
+            externalId,
+            salesCents: 0,
+            orderCount: 0,
+            siteId,
+            siteName
+          };
+          existing.salesCents += amountCents;
+          existing.orderCount += 1;
+          grouped.set(key, existing);
+        }
+      }
+
+      const rows = Array.from(grouped.values());
+      const connectionId = conn.id;
+      await prisma.$transaction(async (tx) => {
+        for (const row of rows) {
+          await tx.salesActualEntry.upsert({
+            where: {
+              venue_serviceDate_source_externalId: {
+                venue: row.venue,
+                serviceDate: row.serviceDate,
+                source: row.source,
+                externalId: row.externalId
+              }
+            },
+            create: {
+              venue: row.venue,
+              serviceDate: row.serviceDate,
+              salesCents: row.salesCents,
+              source: row.source,
+              externalId: row.externalId,
+              notes: `Lightspeed ${row.siteName}: net sales (ex GST) from ${row.orderCount} orders.`,
+              importedById: integrationSchedulerActor.id
+            },
+            update: {
+              salesCents: row.salesCents,
+              notes: `Lightspeed ${row.siteName}: net sales (ex GST) from ${row.orderCount} orders.`,
+              importedById: integrationSchedulerActor.id
+            }
+          });
+        }
+
+        await tx.integrationConnection.update({
+          where: { id: connectionId },
+          data: {
+            lastSyncAt: new Date(),
+            lastSyncStatus: 'SUCCESS',
+            lastError: null
+          }
+        });
+        await tx.integrationSyncRun.create({
+          data: {
+            provider: 'LIGHTSPEED',
+            connectionId,
+            syncType: 'SCHEDULED',
+            status: 'SUCCESS',
+            finishedAt: new Date(),
+            recordsImported: rows.length,
+            recordsUpdated: ordersRead,
+            errorSummary: warnings.length ? warnings.slice(0, 5).join(' | ') : null
+          }
+        });
+      });
+
+      await recordEvent({
+        provider: 'LIGHTSPEED',
+        connectionId,
+        eventType: 'SCHEDULED_LIGHTSPEED_SALES_IMPORTED',
+        summary: `Lightspeed sales sync finished: ${rows.length} day-rows from ${ordersRead} orders across ${sites.length} sites.`,
+        actor: integrationSchedulerActor,
+        metadata: {
+          lookbackDays,
+          sitesRead: sites.length,
+          ordersRead,
+          skippedOrderCount,
+          salesRowsUpserted: rows.length
+        }
+      });
+
+      return {
+        ...base,
+        status: 'synced' as const,
+        skipped: false,
+        sitesRead: sites.length,
+        ordersRead,
+        skippedOrderCount,
+        salesRowsUpserted: rows.length,
+        totalSalesCents: rows.reduce((sum, row) => sum + row.salesCents, 0),
+        rows: rows.map((row) => ({
+          venue: row.venue,
+          serviceDate: row.serviceDateKey,
+          source: row.source,
+          externalId: row.externalId,
+          salesCents: row.salesCents,
+          orderCount: row.orderCount,
+          siteId: row.siteId,
+          siteName: row.siteName
+        })),
+        warnings
+      };
+    } catch (error) {
+      // Mirror runScheduledSquareSync: a failed scheduled run records the
+      // error (sync run + event) and reports it in the response body rather
+      // than 500ing the scheduler.
+      if (connection) {
+        await prisma.integrationSyncRun.create({
+          data: {
+            provider: 'LIGHTSPEED',
+            connectionId: connection.id,
+            syncType: 'SCHEDULED',
+            status: 'ERROR',
+            finishedAt: new Date(),
+            errorSummary: safeErrorMessage(error).slice(0, 500)
+          }
+        }).catch(() => undefined);
+        await recordEvent({
+          provider: 'LIGHTSPEED',
+          connectionId: connection.id,
+          eventType: 'SCHEDULED_LIGHTSPEED_SALES_FAILED',
+          summary: 'Lightspeed scheduled sales sync failed.',
+          actor: integrationSchedulerActor,
+          metadata: { lookbackDays, message: safeErrorMessage(error) }
+        }).catch(() => undefined);
+      }
+      return {
+        ...base,
+        status: 'error' as const,
+        skipped: false,
+        message: safeErrorMessage(error),
+        sitesRead: 0,
+        ordersRead: 0,
+        skippedOrderCount: 0,
+        salesRowsUpserted: 0,
+        totalSalesCents: 0,
+        warnings: [] as string[]
+      };
+    }
+  },
+
   async runScheduledIntegrationImports(input: Record<string, unknown> = {}) {
     const includeSquare = input.includeSquare !== false;
     const includeXero = input.includeXero !== false;
@@ -5851,6 +6469,19 @@ export const integrationService = {
       url.searchParams.set('scope', env.integrations.deputy.scope);
       url.searchParams.set('state', rawState);
       return { provider: 'deputy', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
+    }
+
+    if (provider === 'LIGHTSPEED') {
+      // VERIFY: Kounta/Lightspeed O-Series authorize URL + params —
+      // https://my.kounta.com/authorize?client_id&redirect_uri&response_type=code&state.
+      // No scope param is sent: Kounta OAuth apps are granted app-level access
+      // rather than per-scope grants (VERIFY against apidoc.kounta.com).
+      const url = new URL(env.integrations.lightspeed.authorizeUrl);
+      url.searchParams.set('client_id', env.integrations.lightspeed.clientId);
+      url.searchParams.set('redirect_uri', env.integrations.lightspeed.redirectUrl);
+      url.searchParams.set('response_type', 'code');
+      url.searchParams.set('state', rawState);
+      return { provider: 'lightspeed', authorizationUrl: url.toString(), expiresAt: expiresAt.toISOString() };
     }
 
     const url = new URL('https://login.xero.com/identity/connect/authorize');
@@ -6021,6 +6652,56 @@ export const integrationService = {
           eventType: 'CONNECTED',
           summary: `Deputy connected — tenant endpoint ${token.endpoint}.`,
           metadata: { endpoint: token.endpoint }
+        });
+      } else if (provider === 'LIGHTSPEED') {
+        const config = providerConfig('LIGHTSPEED');
+        if (!config.oauthConfigured) throw new HttpError(503, 'Lightspeed OAuth configuration is missing.');
+        const token = await exchangeLightspeedToken(code);
+        if (!token.access_token || !token.refresh_token) throw new HttpError(502, 'Lightspeed did not return OAuth tokens.');
+        // Which Kounta company this authorisation covers — providerAccountId
+        // scopes every subsequent /companies/{id}/... API call.
+        const company = await fetchLightspeedCompany(token.access_token);
+        if (!company.id) throw new HttpError(502, 'Lightspeed did not return a company id.');
+        const existing = await connectionSelect('LIGHTSPEED');
+        const connection = await prisma.integrationConnection.upsert({
+          where: { id: existing?.id ?? '__new_lightspeed_connection__' },
+          update: {
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            disconnectedAt: null,
+            lastError: null,
+            providerAccountId: company.id,
+            providerAccountName: company.name ?? company.id,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { companyName: company.name },
+            updatedByUserId: stateRow.createdByUserId
+          },
+          create: {
+            provider: 'LIGHTSPEED',
+            status: 'CONNECTED',
+            connectedAt: new Date(),
+            providerAccountId: company.id,
+            providerAccountName: company.name ?? company.id,
+            scopes: token.scope ? token.scope.split(/\s+/).filter(Boolean) : [],
+            tokenEncrypted: encryptIntegrationSecret(token.access_token),
+            refreshTokenEncrypted: encryptIntegrationSecret(token.refresh_token),
+            tokenExpiresAt: token.expires_in ? new Date(Date.now() + token.expires_in * 1000) : null,
+            metadata: { companyName: company.name },
+            updatedByUserId: stateRow.createdByUserId
+          }
+        });
+        await prisma.integrationSyncRun.create({
+          data: { provider, connectionId: connection.id, syncType: 'OAUTH_CALLBACK', status: 'SUCCESS', finishedAt: new Date() }
+        });
+        await recordEvent({
+          provider,
+          connectionId: connection.id,
+          eventType: 'CONNECTED',
+          summary: `Lightspeed connected — company ${company.name ?? company.id}.`,
+          metadata: { companyId: company.id, companyName: company.name }
         });
       } else {
         const token = await exchangeXeroToken(code);

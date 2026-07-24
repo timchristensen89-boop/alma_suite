@@ -125,6 +125,32 @@ integrationsRouter.get('/deputy/connect', async (req, res, next) => {
   }
 });
 
+// Lightspeed O-Series (formerly Kounta) POS. The OAuth callback is handled by
+// the generic /:provider/callback route above (state validation + token
+// exchange live in integrationService.handleCallback), and connect /
+// disconnect / test flow through the generic /:provider routes below via
+// normaliseProvider — this GET mirrors the Square/Deputy browser-redirect
+// convenience only.
+integrationsRouter.get('/lightspeed/connect', async (req, res, next) => {
+  try {
+    const payload = await integrationService.startConnect('lightspeed', req.user!);
+    res.redirect(302, payload.authorizationUrl);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Sites preview for connection status / venue mapping — read-only list of the
+// connected company's sites and which configured venue each resolves to.
+// 409s with "Lightspeed is not connected." until OAuth completes.
+integrationsRouter.get('/lightspeed/sites', async (_req, res, next) => {
+  try {
+    res.json(await integrationService.lightspeedSites());
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.get('/', async (_req, res, next) => {
   try {
     res.json(await integrationService.status());
@@ -137,7 +163,15 @@ integrationsRouter.get('/:provider/status', async (_req, res, next) => {
   try {
     const payload = await integrationService.status();
     const provider = integrationService.normaliseProvider(String(_req.params.provider));
-    res.json(provider === 'SQUARE' ? (payload.squareAccounts ?? { primary: payload.square }) : payload.xero);
+    res.json(
+      provider === 'SQUARE'
+        ? (payload.squareAccounts ?? { primary: payload.square })
+        : provider === 'DEPUTY'
+          ? payload.deputy
+          : provider === 'LIGHTSPEED'
+            ? payload.lightspeed
+            : payload.xero
+    );
   } catch (error) {
     next(error);
   }

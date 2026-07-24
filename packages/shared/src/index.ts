@@ -2265,7 +2265,7 @@ export type HomeOperationalSummary = {
   };
 };
 
-export type IntegrationProviderKey = 'square' | 'xero' | 'deputy';
+export type IntegrationProviderKey = 'square' | 'xero' | 'deputy' | 'lightspeed';
 export type AdminMetaConnectedPage = {
   id: string;
   name: string;
@@ -2417,6 +2417,7 @@ export type IntegrationStatusPayload = {
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: IntegrationProviderStatus;
   deputy: IntegrationProviderStatus;
+  lightspeed: IntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];
@@ -2785,6 +2786,7 @@ export type AdminIntegrationsStatusPayload = {
   squareAccounts?: Record<SquareAccountKey, IntegrationProviderStatus>;
   xero: AdminIntegrationProviderStatus;
   deputy: AdminIntegrationProviderStatus;
+  lightspeed: AdminIntegrationProviderStatus;
   xeroScheduledImport?: XeroScheduledImportStatus;
   meta: AdminMetaIntegrationStatus;
   latestSyncRuns: IntegrationSyncRunSummary[];

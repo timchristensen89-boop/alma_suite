@@ -201,7 +201,7 @@ export function IntegrationHealthPage() {
     }
   }, [load]);
 
-  const connectProvider = useCallback(async (provider: 'deputy' | 'xero' | 'meta') => {
+  const connectProvider = useCallback(async (provider: 'deputy' | 'xero' | 'meta' | 'lightspeed') => {
     setBusyKey(provider);
     setMessage(null);
     try {
@@ -217,6 +217,7 @@ export function IntegrationHealthPage() {
   const connectDeputy = useCallback(() => connectProvider('deputy'), [connectProvider]);
   const connectXero = useCallback(() => connectProvider('xero'), [connectProvider]);
   const connectMeta = useCallback(() => connectProvider('meta'), [connectProvider]);
+  const connectLightspeed = useCallback(() => connectProvider('lightspeed'), [connectProvider]);
 
   const disconnectMeta = useCallback(async () => {
     if (!window.confirm('Disconnect Meta? Posting, messaging and insights will stop until you reconnect.')) return;
@@ -331,6 +332,29 @@ export function IntegrationHealthPage() {
       });
     }
 
+    // Lightspeed O-Series (Kounta) POS — the venues' Square replacement.
+    // Sales sync runs on the scheduler (integration-jobs/lightspeed/sales-sync),
+    // so the tile action is Connect/Reconnect like the Xero tile rather than a
+    // manual re-sync.
+    if (data.lightspeed) {
+      const status = data.lightspeed;
+      const connected = !!status.connected;
+      const hasError = !!status.lastError;
+      out.push({
+        id: 'lightspeed',
+        name: 'Lightspeed POS',
+        provider: 'Point of sale, live sales, site status',
+        status: statusLabel(connected, hasError, status.configured),
+        tone: statusTone(connected, hasError, status.configured),
+        lastSyncAt: status.lastSyncAt,
+        lastError: status.lastError,
+        detail: status.providerAccountName ?? null,
+        canResync: status.configured,
+        actionLabel: connected ? 'Reconnect' : 'Connect',
+        resyncAction: status.configured ? connectLightspeed : undefined
+      });
+    }
+
     // Meta (Facebook + Instagram)
     if (data.meta) {
       const m = data.meta;
@@ -417,7 +441,7 @@ export function IntegrationHealthPage() {
     }
 
     return out;
-  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, connectMeta, disconnectMeta, backfillSquare, backfillXero, backfillDeputy]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, connectMeta, connectLightspeed, disconnectMeta, backfillSquare, backfillXero, backfillDeputy]);
 
   const counts = useMemo(() => {
     const total = tiles.length;

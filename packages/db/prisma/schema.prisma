@@ -368,6 +368,7 @@ enum IntegrationProvider {
   DEPUTY
   META
   SEVENROOMS
+  LIGHTSPEED
 }
 
 enum IntegrationConnectionStatus {

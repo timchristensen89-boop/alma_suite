@@ -4161,7 +4161,13 @@ export function AdminPage({
                 : [
                     integrations.squareAccounts?.primary ?? integrations.square,
                     integrations.squareAccounts?.secondary,
-                    integrations.xero
+                    integrations.xero,
+                    // Lightspeed O-Series (Kounta) POS — the venues' Square
+                    // replacement. The generic IntegrationCard covers it:
+                    // Connect posts /api/integrations/lightspeed/connect and
+                    // follows authorizationUrl; Disconnect uses the generic
+                    // /:provider/disconnect route.
+                    integrations.lightspeed
                   ].filter((integration): integration is IntegrationProviderStatus => Boolean(integration))
               ).map((integration) => (
                 <IntegrationCard
