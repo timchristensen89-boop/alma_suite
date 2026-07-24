@@ -636,3 +636,19 @@ html[data-theme='dark'] {
 }
 .comms-board-actions { display: inline-flex; gap: 8px; }
 .comms-board-delete { color: #9A3A2E; }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Comms home · suite editorial vocabulary pass (ov-two, ov-library).
+   Shared primitives live in apps/web/src/styles.css; only the
+   Comms-specific glue lives here (cm- prefix).
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* ov-library rows render as NavLinks here — keep the row chrome, drop the
+   anchor underline, and give the list breathing room inside its panel. */
+.comms-page .alma-panel .ov-library {
+  padding: 8px;
+}
+
+.comms-page .ov-library-row {
+  text-decoration: none;
+}

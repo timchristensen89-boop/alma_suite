@@ -3061,3 +3061,17 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   background: var(--tone-danger-bg);
   color: var(--tone-danger-fg);
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Gift Cards back office · suite editorial vocabulary pass (ov-prime,
+   ov-two). Shared primitives live in apps/web/src/styles.css; only the
+   Gift Cards-specific glue lives here (gc- prefix). Public storefront
+   styles above are untouched.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+/* The ov-two pair (Order actions + Recent cards) sits in the admin page
+   grid; keep both columns top-aligned so the short actions panel doesn't
+   stretch to match the ledger. */
+.giftcards-page .ov-two > * {
+  min-width: 0;
+}

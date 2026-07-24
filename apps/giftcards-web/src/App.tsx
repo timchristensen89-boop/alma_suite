@@ -1905,6 +1905,28 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
         {message && !messageTarget ? <p className={message.includes('Could') || message.includes('not') || message.includes('low') ? 'error-text' : 'subtle'}>{message}</p> : null}
         {activeGiftCardPage === 'orders' ? (
           <>
+            {/* Pending orders — the screen's headline metric, in the suite's
+                ov-prime feature panel. Same count the Order actions panel
+                below acts on. */}
+            <section
+              className={`ov-prime is-${orderActionItems.length > 0 ? 'warning' : 'positive'}`}
+              aria-label="Gift card orders needing action"
+            >
+              <div className="ov-prime-main">
+                <span className="ov-prime-label">Fulfilment · Orders needing action</span>
+                <div className="ov-prime-row">
+                  <span className="ov-prime-value">{loading ? '—' : orderActionItems.length}</span>
+                </div>
+                <span className="ov-prime-note">
+                  {loading
+                    ? 'Loading card data…'
+                    : orderActionItems.length === 0
+                      ? 'No gift card orders need action.'
+                      : 'Cards that need payment, email, expiry, or manager follow-up.'}
+                </span>
+              </div>
+            </section>
+
             {/* Revenue dashboard — month-over-month view of issued/redeemed/outstanding */}
             {(() => {
               const now = new Date();
@@ -1973,6 +1995,8 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 <StatCard label="Outstanding" value={formatCents(data?.totals.activeBalanceCents ?? 0)} hint="Liability on the books" loading={loading} />
               </button>
             </div>
+            {/* Order actions + recent cards — paired panels (ov-two). */}
+            <div className="ov-two">
             <ActionPanel
               title="Order actions"
               description="Cards that need payment, email, expiry, or manager follow-up."
@@ -2022,6 +2046,7 @@ function GiftCardDashboard({ user, onLogout }: { user: AuthUser; onLogout: () =>
                 ))}
               </div>
             </Card>
+            </div>
           </>
         ) : null}
 

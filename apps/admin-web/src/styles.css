@@ -836,3 +836,23 @@ html[data-theme='dark'] {
   --color-accent-soft: #28292C;
   --color-accent-text: #ECEDF0;
 }
+
+/* ══════════════════════════════════════════════════════════════════════════
+   Admin overview · suite editorial vocabulary pass (ov-two pairing only).
+   The overview markup lives in the shared AdminPage, so the pairing is
+   applied here, presentation-only: "Known gaps" and "Recent releases" are
+   two related stacked panels — pair them side by side on wide screens,
+   exactly like the shared .ov-two grid. The operational-debt list itself
+   is deliberately left unstyled.
+   ══════════════════════════════════════════════════════════════════════════ */
+
+.admin-section:has(> .admin-debt-card + .admin-release-notes) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.admin-section:has(> .admin-debt-card + .admin-release-notes) > .admin-release-notes {
+  margin-top: 0;
+}

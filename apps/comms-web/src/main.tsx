@@ -15,6 +15,7 @@ import {
   Button,
   Card,
   CommsGlyph,
+  EditorialPanel,
   Input,
   ProductLogo,
   SUITE_APPS,
@@ -443,35 +444,57 @@ function HomePage() {
         }
       />
 
-      <div className="comms-grid">
+      {/* Needs attention + comms library — paired panels (ov-two). The
+          library rows replace the old launcher cards with the suite's
+          ov-library treatment; same links, same destinations. */}
+      <div className="ov-two">
         <Card>
-          <h2>Inbox</h2>
-          <p className="comms-muted">Messages, announcements, handovers, and follow-ups that need attention.</p>
-          <NavLink className="comms-button ghost" to="/inbox">Open inbox</NavLink>
-        </Card>
-        <Card>
-          <h2>Venue handover</h2>
-          <p className="comms-muted">Keep opening, service, and closing notes visible for the next person.</p>
-          <NavLink className="comms-button ghost" to="/handover">Open handover</NavLink>
-        </Card>
-        <Card>
-          <h2>Alerts</h2>
-          <p className="comms-muted">COGS, stock variance, fridge temperature, and failed checks will land here first.</p>
-          <NavLink className="comms-button ghost" to="/tasks">Review alerts</NavLink>
-        </Card>
-      </div>
-
-      <Card>
-        <div className="section-heading">
-          <div>
-            <h2>Needs attention</h2>
-            <p className="comms-muted">Urgent, high-priority, or action-required threads.</p>
+          <div className="section-heading">
+            <div>
+              <h2>Needs attention</h2>
+              <p className="comms-muted">Urgent, high-priority, or action-required threads.</p>
+            </div>
           </div>
-        </div>
-        {loading ? <p>Loading…</p> : null}
-        {message ? <p className="comms-error">{message}</p> : null}
-        {!loading && !message ? <ThreadList threads={urgentThreads} /> : null}
-      </Card>
+          {loading ? <p>Loading…</p> : null}
+          {message ? <p className="comms-error">{message}</p> : null}
+          {!loading && !message ? <ThreadList threads={urgentThreads} /> : null}
+        </Card>
+
+        <EditorialPanel eyebrow="Comms library" title="Go deeper">
+          <div className="ov-library" aria-label="Comms sections">
+            <NavLink className="ov-library-row" to="/inbox">
+              <span className="ov-library-initial">I</span>
+              <span className="ov-library-text">
+                <span className="ov-library-name">Inbox</span>
+                <span className="ov-library-blurb">Messages, announcements, handovers, and follow-ups that need attention.</span>
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                <path d="M7 17L17 7M9 7h8v8" />
+              </svg>
+            </NavLink>
+            <NavLink className="ov-library-row" to="/handover">
+              <span className="ov-library-initial">V</span>
+              <span className="ov-library-text">
+                <span className="ov-library-name">Venue handover</span>
+                <span className="ov-library-blurb">Keep opening, service, and closing notes visible for the next person.</span>
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                <path d="M7 17L17 7M9 7h8v8" />
+              </svg>
+            </NavLink>
+            <NavLink className="ov-library-row" to="/tasks">
+              <span className="ov-library-initial">A</span>
+              <span className="ov-library-text">
+                <span className="ov-library-name">Alerts</span>
+                <span className="ov-library-blurb">COGS, stock variance, fridge temperature, and failed checks will land here first.</span>
+              </span>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" aria-hidden="true">
+                <path d="M7 17L17 7M9 7h8v8" />
+              </svg>
+            </NavLink>
+          </div>
+        </EditorialPanel>
+      </div>
     </section>
   );
 }
