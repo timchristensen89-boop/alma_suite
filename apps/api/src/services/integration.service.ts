@@ -2995,10 +2995,51 @@ type XeroAttachmentTarget = {
 // Fetches one bill's attachment and stores it against the SupplierInvoice.
 // `state.connection` is threaded through because Xero rotates refresh tokens —
 // callers must keep passing the freshest connection row between calls.
+// Fallback when a bill has no attachment: ask Xero to RENDER the bill itself
+// as a PDF (Accept: application/pdf on the invoice endpoint). Bills that
+// entered Xero through feeds (no scanned original) still get a readable
+// document this way. VERIFY: PDF rendering is documented for invoices; live
+// behaviour for Type=ACCPAY confirmed empirically — a 4xx here degrades to
+// no_attachment rather than failing the batch.
+async function fetchXeroRenderedBillPdf(
+  state: { connection: IntegrationConnection },
+  target: XeroAttachmentTarget,
+  tenantId: string
+): Promise<boolean> {
+  let binary: { data: Buffer; connection: IntegrationConnection };
+  try {
+    binary = await xeroGetBinary(`/api.xro/2.0/Invoices/${encodeURIComponent(target.billId)}`, {
+      connection: state.connection,
+      tenantId,
+      accept: 'application/pdf'
+    });
+  } catch (error) {
+    if (isXeroRateLimitError(error) || isXeroAuthError(error)) throw error;
+    return false; // rendering unsupported or bill unrenderable — not fatal
+  }
+  state.connection = binary.connection;
+  if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) return false;
+  // Sanity: a real PDF starts with %PDF — protects against an HTML error page
+  // slipping through with a 200.
+  if (binary.data.subarray(0, 5).toString('utf8') !== '%PDF-') return false;
+
+  await prisma.supplierInvoiceDocument.upsert({
+    where: { invoiceId: target.invoiceId },
+    create: {
+      invoiceId: target.invoiceId,
+      fileName: `xero-rendered-${target.billId.slice(0, 8)}.pdf`,
+      mimeType: 'application/pdf',
+      data: new Uint8Array(binary.data)
+    },
+    update: {}
+  });
+  return true;
+}
+
 async function fetchAndStoreXeroBillAttachment(
   state: { connection: IntegrationConnection },
   target: XeroAttachmentTarget
-): Promise<'stored' | 'already_stored' | 'no_attachment' | 'not_found'> {
+): Promise<'stored' | 'rendered' | 'already_stored' | 'no_attachment' | 'not_found'> {
   // Idempotency: one document per invoice. Never clobber an existing one —
   // it may be a manual upload a manager already keyed lines from.
   const existing = await prisma.supplierInvoiceDocument.findUnique({
@@ -3021,9 +3062,11 @@ async function fetchAndStoreXeroBillAttachment(
     state.connection = listed.connection;
 
     const attachment = pickXeroBillAttachment(listed.data.Attachments ?? []);
-    if (!attachment) return 'no_attachment';
+    if (!attachment) {
+      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
+    }
     if (typeof attachment.ContentLength === 'number' && attachment.ContentLength > XERO_ATTACHMENT_MAX_BYTES) {
-      return 'no_attachment';
+      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
     }
 
     const fileName = trimText(attachment.FileName);
@@ -3036,7 +3079,7 @@ async function fetchAndStoreXeroBillAttachment(
     );
     state.connection = binary.connection;
     if (binary.data.byteLength === 0 || binary.data.byteLength > XERO_ATTACHMENT_MAX_BYTES) {
-      return 'no_attachment';
+      return (await fetchXeroRenderedBillPdf(state, target, tenantId)) ? 'rendered' : 'no_attachment';
     }
 
     // create-or-skip: the pre-check above makes create the normal path; the
@@ -3070,6 +3113,7 @@ async function fetchXeroAttachmentsForInvoices(
   const state = { connection };
   let fetched = 0;
   let missing = 0;
+  let rendered = 0;
   const warnings: string[] = [];
   let authBlocked = false;
 
@@ -3077,7 +3121,10 @@ async function fetchXeroAttachmentsForInvoices(
     try {
       const outcome = await fetchAndStoreXeroBillAttachment(state, target);
       if (outcome === 'stored') fetched += 1;
-      else if (outcome === 'no_attachment') missing += 1;
+      else if (outcome === 'rendered') {
+        fetched += 1;
+        rendered += 1;
+      } else if (outcome === 'no_attachment') missing += 1;
       else if (outcome === 'not_found') {
         missing += 1;
         warnings.push(`${target.label}: bill was not found in any connected Xero org, so no PDF was fetched.`);
@@ -3099,7 +3146,7 @@ async function fetchXeroAttachmentsForInvoices(
     }
   }
 
-  return { fetched, missing, warnings, authBlocked };
+  return { fetched, missing, rendered, warnings, authBlocked };
 }
 
 function supplierContactPreview(contact: XeroContact, suppliers: ExistingSupplier[]): XeroSupplierContactPreview | null {
@@ -8109,13 +8156,14 @@ export const integrationService = {
       provider: 'XERO',
       connectionId: connection.id,
       eventType: 'XERO_BILL_ATTACHMENTS_BACKFILLED',
-      summary: `Xero attachment backfill: ${result.fetched} PDF${result.fetched === 1 ? '' : 's'} stored, ${result.missing} without an attachment, ${targets.length} candidate bill${targets.length === 1 ? '' : 's'}.`,
+      summary: `Xero attachment backfill: ${result.fetched} PDF${result.fetched === 1 ? '' : 's'} stored (${result.rendered} rendered by Xero), ${result.missing} with no document possible, ${targets.length} candidate bill${targets.length === 1 ? '' : 's'}.`,
       actor: integrationSchedulerActor,
       metadata: {
         days,
         limit,
         candidates: targets.length,
         attachmentsFetched: result.fetched,
+        attachmentsRendered: result.rendered,
         attachmentsMissing: result.missing,
         needsReconnect: result.authBlocked,
         warnings: result.warnings.slice(0, 10)
@@ -8130,6 +8178,7 @@ export const integrationService = {
       limit,
       candidates: targets.length,
       attachmentsFetched: result.fetched,
+      attachmentsRendered: result.rendered,
       attachmentsMissing: result.missing,
       needsReconnect: result.authBlocked,
       warnings: result.warnings
