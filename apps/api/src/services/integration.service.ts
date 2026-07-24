@@ -66,17 +66,17 @@ const XERO_SCOPES = [
   'profile',
   'email',
   'offline_access',
-  // accounting.transactions.read covers invoice/bill reads. Xero has NO
-  // "accounting.invoices.read" scope — requesting one makes login.xero.com
-  // reject the whole authorise request with an opaque identity/error page
-  // (which is how the May 2026 "granular scope" edit silently broke
-  // reconnects while the stored refresh token kept working).
-  'accounting.transactions.read',
+  // The "Alma Control" Xero app was created after 2 March 2026, so it can
+  // ONLY request the new GRANULAR scopes — the broad accounting.transactions
+  // / accounting.reports scopes are rejected by login.xero.com with an opaque
+  // invalid_scope page. The app's Configuration page lists exactly which
+  // scopes it may request; check there before touching this list.
+  'accounting.invoices.read',
   'accounting.contacts.read',
   'accounting.settings.read',
   // P&L report totals for the projected supplier spend report. Connections
   // authorised before this scope existed must be RECONNECTED once to grant it.
-  'accounting.reports.read',
+  'accounting.reports.profitandloss.read',
   'payroll.employees.read',
   'payroll.timesheets.read'
 ];
