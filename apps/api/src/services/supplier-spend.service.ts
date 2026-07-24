@@ -9,7 +9,6 @@
 //   4. Split each bucket across suppliers by their trailing share of invoiced
 //      spend (shares are robust to missing invoices in a way totals are not).
 
-import { prisma } from '@alma/db';
 import type {
   AuthUser,
   SupplierSpendBucket,
@@ -32,11 +31,6 @@ const MIN_MONTH_SALES_CENTS = 100_000; // ignore months with < $1k sales (partia
 const MIN_SUPPLIER_SHARE = 0.02; // below 2% of bucket → grouped into "Other suppliers"
 const MAX_SUPPLIERS_PER_BUCKET = 12;
 
-const BEV_NAME_PATTERN = /bever|liquor|wine|beer|spirit|drink|coffee|roaster|alcohol|keg|brew|cellar|vintner|distill/i;
-const FOOD_NAME_PATTERN = /food|produce|meat|seafood|fish|bakery|dairy|grocer|butch|veg|fruit|farm|poultry|smallgood/i;
-// Bills that are clearly not COGS (processors, utilities, landlords, insurers)
-// still show up as ACCPAY contacts — keep them out of the food/bev splits.
-const NON_COGS_NAME_PATTERN = /square|stripe|paypal|bank|insur|energy|electric|telstra|optus|vodafone|council|rent|realty|real estate|lease|waste|clean|account|legal|lawyer|xero|deputy|lightspeed|google|meta\b|canva|adobe/i;
 
 function leastSquares(values: number[]): { intercept: number; slope: number } {
   const n = values.length;
@@ -52,29 +46,6 @@ function leastSquares(values: number[]): { intercept: number; slope: number } {
   }
   const slope = denominator === 0 ? 0 : numerator / denominator;
   return { intercept: yMean - slope * xMean, slope };
-}
-
-function classifySupplier(name: string, categoryVotes: Map<SupplierSpendBucket, number>): SupplierSpendBucket {
-  // Stock-category cents votes first (strongest signal), then name keywords.
-  let best: SupplierSpendBucket | null = null;
-  let bestCents = 0;
-  for (const [bucket, cents] of categoryVotes) {
-    if (cents > bestCents) {
-      best = bucket;
-      bestCents = cents;
-    }
-  }
-  if (best) return best;
-  if (NON_COGS_NAME_PATTERN.test(name)) return 'other';
-  if (BEV_NAME_PATTERN.test(name)) return 'beverage';
-  if (FOOD_NAME_PATTERN.test(name)) return 'food';
-  return 'food'; // hospitality default: unclassified suppliers are almost always food
-}
-
-function bucketFromCategoryName(category: string): SupplierSpendBucket {
-  if (BEV_NAME_PATTERN.test(category)) return 'beverage';
-  if (FOOD_NAME_PATTERN.test(category)) return 'food';
-  return 'other';
 }
 
 export const supplierSpendService = {
@@ -163,50 +134,15 @@ export const supplierSpendService = {
       throw new HttpError(409, 'No forecast weeks available — run the forecast first.');
     }
 
-    // ── 4. Supplier shares from trailing Xero bills ─────────────────────────
-    // Straight from Xero (every supplier bills there); the local import table
-    // only covers the handful of suppliers the ripper has matched, which is
-    // how the wine suppliers went missing from the first cut of this report.
+    // ── 4. Supplier shares from trailing Xero COGS bill lines ──────────────
+    // Straight from Xero (every supplier bills there), counting only lines
+    // posted to Direct Costs accounts — landlords, processors and utilities
+    // never enter the split. Buckets come from the same account classifier
+    // as the P&L trend, so shares and totals share one basis.
     const spend = await integrationService.xeroSupplierSpend(SUPPLIER_WINDOW_DAYS);
     const spendRows = venue ? spend.rows.filter((row) => row.venue === venue || row.venue === null) : spend.rows;
-
-    // Local invoice lines still carry the best classification signal where a
-    // supplier's items are linked to stock categories — use them as votes
-    // only, never as spend totals.
-    const windowStart = new Date(Date.now() - SUPPLIER_WINDOW_DAYS * 24 * 60 * 60 * 1000);
-    const voteLines = await prisma.supplierInvoiceLine.findMany({
-      where: {
-        invoice: { invoiceDate: { gte: windowStart }, status: { not: 'DRAFT' } },
-        item: { isNot: null }
-      },
-      select: {
-        lineAmountCents: true,
-        invoice: { select: { supplierName: true } },
-        item: { select: { category: { select: { name: true } } } }
-      }
-    });
-    const votesBySupplier = new Map<string, Map<SupplierSpendBucket, number>>();
-    for (const line of voteLines) {
-      const name = (line.invoice.supplierName ?? '').trim().toLowerCase();
-      const category = line.item?.category?.name;
-      if (!name || !category) continue;
-      const votes = votesBySupplier.get(name) ?? new Map<SupplierSpendBucket, number>();
-      const bucket = bucketFromCategoryName(category);
-      votes.set(bucket, (votes.get(bucket) ?? 0) + (line.lineAmountCents ?? 0));
-      votesBySupplier.set(name, votes);
-    }
-
-    const bySupplier = new Map<string, { cents: number; votes: Map<SupplierSpendBucket, number> }>();
-    for (const row of spendRows) {
-      const entry = bySupplier.get(row.name) ?? {
-        cents: 0,
-        votes: votesBySupplier.get(row.name.toLowerCase()) ?? new Map<SupplierSpendBucket, number>()
-      };
-      entry.cents += row.cents;
-      bySupplier.set(row.name, entry);
-    }
-    if (bySupplier.size === 0) {
-      notes.push('No supplier bills found in Xero for the trailing 12 weeks — supplier split unavailable, showing bucket totals only.');
+    if (spendRows.length === 0) {
+      notes.push('No supplier bills on Direct Costs accounts found in Xero for the trailing 12 weeks — supplier split unavailable, showing bucket totals only.');
     }
     if (venue) {
       notes.push('Supplier bills are attributed to the venue via each Xero organisation; bills from an unmatched organisation are included in every venue view.');
@@ -214,10 +150,9 @@ export const supplierSpendService = {
 
     const bucketTotals: Record<SupplierSpendBucket, number> = { food: 0, beverage: 0, other: 0 };
     const classified: Array<{ name: string; bucket: SupplierSpendBucket; cents: number }> = [];
-    for (const [name, entry] of bySupplier) {
-      const bucket = classifySupplier(name, entry.votes);
-      bucketTotals[bucket] += entry.cents;
-      classified.push({ name, bucket, cents: entry.cents });
+    for (const row of spendRows) {
+      bucketTotals[row.bucket] += row.cents;
+      classified.push({ name: row.name, bucket: row.bucket, cents: row.cents });
     }
 
     // ── Assemble weekly matrix ──────────────────────────────────────────────

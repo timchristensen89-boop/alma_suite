@@ -2282,15 +2282,20 @@ function parseXeroProfitAndLoss(report: XeroReportRow | undefined, primaryMonthE
   return months.reverse(); // newest-first from Xero → ascending
 }
 
-// ── Xero supplier spend (bill totals per contact) ──────────────────────────
-// Trailing ACCPAY bill totals per supplier, straight from Xero. The local
-// SupplierInvoice table only holds what the import pipeline has matched (a
-// handful of suppliers) — Xero holds every bill, so supplier SHARE splits
-// must come from here. summaryOnly keeps the payload light; pages until empty.
+// ── Xero supplier spend (COGS bill lines per contact) ──────────────────────
+// Trailing ACCPAY spend per supplier, straight from Xero, counting ONLY the
+// bill lines posted to Direct Costs (COGS) accounts — so landlords, card
+// processors and utilities never pollute the food/beverage splits. Each COGS
+// account is bucketed food/bev with the SAME name classifier the P&L trend
+// uses, keeping supplier shares consistent with the P&L basis. The local
+// SupplierInvoice table is NOT the source (it only holds the handful of
+// suppliers the import pipeline has matched).
 
 export type XeroSupplierSpendRow = {
   name: string;
-  cents: number; // ex-GST (SubTotal, falling back to Total)
+  /** Ex-GST cents posted to Direct Costs accounts only. */
+  cents: number;
+  bucket: XeroPlBucket;
   venue: string | null;
 };
 
@@ -2313,13 +2318,34 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
     `Type=="ACCPAY" AND Date >= DateTime(${since.getUTCFullYear()}, ${since.getUTCMonth() + 1}, ${since.getUTCDate()})`
   );
 
-  const rows: XeroSupplierSpendRow[] = [];
+  // Accumulate per contact, case-insensitively — the same supplier often has
+  // differently-cased contact records across the two organisations.
+  const accumulator = new Map<
+    string,
+    { name: string; venue: string | null; byBucket: Map<XeroPlBucket, number> }
+  >();
+
   let activeConnection = connection;
   for (const tenant of tenants) {
     const venue = resolveVenueFromTenantName(tenant.name, venues);
+
+    // COGS account codes for this org: Type DIRECTCOSTS, bucketed by name.
+    const accountsResponse = await xeroGetJson<{
+      Accounts?: Array<{ Code?: string; Name?: string; Type?: string }>;
+    }>('/api.xro/2.0/Accounts', { connection: activeConnection, tenantId: tenant.id });
+    activeConnection = accountsResponse.connection;
+    const cogsBucketByCode = new Map<string, XeroPlBucket>();
+    for (const account of accountsResponse.data.Accounts ?? []) {
+      if (trimText(account.Type).toUpperCase() !== 'DIRECTCOSTS') continue;
+      const code = optionalText(account.Code);
+      const name = optionalText(account.Name);
+      if (!code || !name) continue;
+      cogsBucketByCode.set(code, classifyPlAccount(name));
+    }
+
     for (let page = 1; page <= XERO_BILL_PAGE_CAP; page += 1) {
       const response = await xeroGetJson<{ Invoices?: XeroInvoice[] }>(
-        `/api.xro/2.0/Invoices?where=${whereClause}&order=Date%20DESC&page=${page}&summaryOnly=True`,
+        `/api.xro/2.0/Invoices?where=${whereClause}&order=Date%20DESC&page=${page}`,
         { connection: activeConnection, tenantId: tenant.id }
       );
       activeConnection = response.connection;
@@ -2329,13 +2355,39 @@ async function xeroSupplierSpend(days: number): Promise<{ rows: XeroSupplierSpen
         if (!XERO_BILL_STATUSES.has(trimText(invoice.Status).toUpperCase())) continue;
         const name = optionalText(invoice.Contact?.Name);
         if (!name) continue;
-        const dollars = invoice.SubTotal ?? invoice.Total ?? 0;
-        const cents = Math.round(dollars * 100);
-        if (cents <= 0) continue;
-        rows.push({ name, cents, venue });
+        for (const line of invoice.LineItems ?? []) {
+          const code = optionalText(line.AccountCode);
+          if (!code) continue;
+          const bucket = cogsBucketByCode.get(code);
+          if (!bucket) continue; // not a Direct Costs line — rent, fees, etc.
+          const cents = Math.round((line.LineAmount ?? 0) * 100);
+          if (cents === 0) continue;
+          const key = name.toLowerCase();
+          const entry = accumulator.get(key) ?? { name, venue, byBucket: new Map() };
+          // Prefer the mixed-case variant of the contact name for display.
+          if (entry.name === entry.name.toUpperCase() && name !== name.toUpperCase()) entry.name = name;
+          entry.byBucket.set(bucket, (entry.byBucket.get(bucket) ?? 0) + cents);
+          accumulator.set(key, entry);
+        }
       }
       if (invoices.length < 100) break;
     }
+  }
+
+  const rows: XeroSupplierSpendRow[] = [];
+  for (const entry of accumulator.values()) {
+    let total = 0;
+    let bucket: XeroPlBucket = 'food';
+    let bestCents = -Infinity;
+    for (const [candidate, cents] of entry.byBucket) {
+      total += cents;
+      if (cents > bestCents) {
+        bestCents = cents;
+        bucket = candidate;
+      }
+    }
+    if (total <= 0) continue;
+    rows.push({ name: entry.name, cents: total, bucket, venue: entry.venue });
   }
   return { rows };
 }
