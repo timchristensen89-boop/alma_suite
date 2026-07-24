@@ -9011,9 +9011,11 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
   flex-shrink: 0;
 }
 
-/* Filled + ghost button variants for inside the bubble */
+/* Filled + ghost button variants for inside the bubble (and the ov-hero
+   band, which reuses the same button chrome outside the bubble). */
 .alma-home-bubble-actions .btn,
-.alma-home-bubble-actions .alma-home-bubble-btn {
+.alma-home-bubble-actions .alma-home-bubble-btn,
+.ov-hero-actions .alma-home-bubble-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -9033,20 +9035,30 @@ html[data-theme='dark'] .alma-roster-publish:hover:not(:disabled) {
   transition: transform 160ms ease, opacity 160ms ease, background 160ms ease;
 }
 
-.alma-home-bubble-actions .alma-home-bubble-btn--primary {
+.alma-home-bubble-actions .alma-home-bubble-btn--primary,
+.ov-hero-actions .alma-home-bubble-btn--primary {
   background: var(--bubble-btn);
   color: var(--bubble-btn-text);
 }
 
-.alma-home-bubble-actions .alma-home-bubble-btn--ghost {
+.alma-home-bubble-actions .alma-home-bubble-btn--ghost,
+.ov-hero-actions .alma-home-bubble-btn--ghost {
   background: transparent;
   border-color: rgba(var(--ink-forest-rgb), 0.22);
   color: var(--bubble-fg);
 }
 
 .alma-home-bubble-actions .alma-home-bubble-btn--primary:hover,
-.alma-home-bubble-actions .alma-home-bubble-btn--ghost:hover {
+.alma-home-bubble-actions .alma-home-bubble-btn--ghost:hover,
+.ov-hero-actions .alma-home-bubble-btn--primary:hover,
+.ov-hero-actions .alma-home-bubble-btn--ghost:hover {
   transform: translateY(-1px);
+}
+
+.alma-home-bubble-actions .alma-home-bubble-btn:focus-visible,
+.ov-hero-actions .alma-home-bubble-btn:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 /* Per-app variants — soft pastel gradients per the design screenshot */
@@ -11932,8 +11944,15 @@ html[data-theme='dark'] .ov-hero {
 
 .ov-hero-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 6px;
+  /* Button palette for the reused home-bubble button chrome — the hero
+     band sits outside .alma-home-bubble, so it supplies its own values
+     (ink-forest fill flips to cream on dark via the tokens). */
+  --bubble-fg: var(--color-ink-forest);
+  --bubble-btn: var(--color-ink-forest);
+  --bubble-btn-text: var(--color-bg);
 }
 
 .ov-hero-sources {
@@ -11975,6 +11994,8 @@ html[data-theme='dark'] .ov-hero {
 
 .ov-prime.is-danger { border-color: rgba(154, 58, 46, 0.3); }
 .ov-prime.is-warning { border-color: rgba(181, 119, 47, 0.35); }
+html[data-theme='dark'] .ov-prime.is-danger { border-color: rgba(241, 148, 142, 0.3); }
+html[data-theme='dark'] .ov-prime.is-warning { border-color: rgba(244, 206, 124, 0.3); }
 
 .ov-prime-main,
 .ov-prime-col {
@@ -12095,6 +12116,13 @@ html[data-theme='dark'] .ov-prime-col.is-warning .ov-prime-col-value { color: #f
   align-items: start;
 }
 
+/* Pair children must be allowed to shrink below their content's min width,
+   otherwise a wide table inside a panel forces the page to scroll sideways
+   instead of the table's own scroll container. */
+.ov-two > * {
+  min-width: 0;
+}
+
 .ov-venue-bar {
   display: block;
   height: 4px;
@@ -12110,6 +12138,10 @@ html[data-theme='dark'] .ov-prime-col.is-warning .ov-prime-col-value { color: #f
   height: 100%;
   border-radius: 9999px;
   background: #4f6b47;
+}
+
+html[data-theme='dark'] .ov-venue-bar > span {
+  background: var(--tone-positive-fg);
 }
 
 .ov-donut {
@@ -12145,6 +12177,10 @@ html[data-theme='dark'] .ov-prime-col.is-warning .ov-prime-col-value { color: #f
   background: #4f6b47;
 }
 
+html[data-theme='dark'] .ov-dish-bar > span {
+  background: var(--tone-positive-fg);
+}
+
 .ov-dish-footnote {
   font-size: 11px;
   color: rgba(var(--ink-forest-rgb), 0.45);
@@ -12159,6 +12195,12 @@ html[data-theme='dark'] .ov-prime-col.is-warning .ov-prime-col-value { color: #f
   flex-direction: column;
 }
 
+/* When the library sits directly inside an editorial panel, give the rows a
+   little breathing room against the panel edges. */
+.alma-panel > .ov-library {
+  padding: 8px;
+}
+
 .ov-library-row {
   display: flex;
   align-items: center;
@@ -12169,12 +12211,18 @@ html[data-theme='dark'] .ov-prime-col.is-warning .ov-prime-col-value { color: #f
   background: transparent;
   cursor: pointer;
   text-align: left;
+  text-decoration: none;
   color: rgba(var(--ink-forest-rgb), 0.4);
   transition: background 180ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .ov-library-row:hover {
   background: rgba(var(--ink-forest-rgb), 0.045);
+}
+
+.ov-library-row:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
 }
 
 .ov-library-initial {
@@ -12213,6 +12261,10 @@ html[data-theme='dark'] .ov-library-initial {
 
 @media (max-width: 720px) {
   .ov-hero-pills { align-items: flex-start; }
+  /* Stack the prime panel — the border swap below assumes a single column,
+     and the fixed track minimums (280px + 220px) would otherwise force the
+     page to scroll sideways on small screens. */
+  .ov-prime { grid-template-columns: minmax(0, 1fr); }
   .ov-prime-main, .ov-prime-col { border-right: 0; border-bottom: 1px solid rgba(var(--ink-forest-rgb), 0.08); }
   .ov-prime-col:last-child { border-bottom: 0; }
 }

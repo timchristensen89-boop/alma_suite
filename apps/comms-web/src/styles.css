@@ -643,12 +643,6 @@ html[data-theme='dark'] {
    Comms-specific glue lives here (cm- prefix).
    ══════════════════════════════════════════════════════════════════════════ */
 
-/* ov-library rows render as NavLinks here — keep the row chrome, drop the
-   anchor underline, and give the list breathing room inside its panel. */
-.comms-page .alma-panel .ov-library {
-  padding: 8px;
-}
-
-.comms-page .ov-library-row {
-  text-decoration: none;
-}
+/* ov-library rows render as NavLinks here — the shared .ov-library-row rule
+   already drops the anchor underline, and .alma-panel > .ov-library carries
+   the breathing room, so no Comms-specific glue is needed. */

@@ -674,8 +674,5 @@ html[data-theme='dark'] {
   border-left-color: #A87E3F;
 }
 
-/* ov-library rows sit inside an EditorialPanel; give the list a little
-   breathing room against the panel edges. */
-.marketing-page .alma-panel .ov-library {
-  padding: 8px;
-}
+/* ov-library breathing room inside panels comes from the shared
+   .alma-panel > .ov-library rule. */
