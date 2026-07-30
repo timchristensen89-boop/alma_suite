@@ -639,6 +639,16 @@ html[data-theme='dark'] .integration-health-tile.is-warning {
   line-height: 1.45;
 }
 
+/* Paused is deliberate, not a fault — amber, not red. */
+.integration-health-paused {
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(180, 130, 30, 0.1);
+  color: #8A6210;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
 .integration-health-tile-actions {
   display: flex;
   flex-wrap: wrap;

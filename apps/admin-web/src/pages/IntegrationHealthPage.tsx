@@ -50,6 +50,10 @@ type Tile = {
   actionLabel?: string;
   resyncAction?: () => Promise<void>;
   backfillAction?: () => Promise<void>;
+  /** ISO timestamp while syncing is deliberately paused (tokens still held). */
+  syncPausedAt?: string | null;
+  syncPausedReason?: string | null;
+  pauseAction?: () => Promise<void>;
 };
 
 export function IntegrationHealthPage() {
@@ -236,6 +240,35 @@ export function IntegrationHealthPage() {
     }
   }, [load]);
 
+  // Pause keeps the OAuth grant and just stops the data. The reason it exists:
+  // reports sum SalesActualEntry.salesCents across sources for a venue+day, so
+  // a POS feed left running while a venue enters sales by hand doubles the day.
+  const setPaused = useCallback(
+    async (tileId: string, provider: string, account: string | null | undefined, paused: boolean) => {
+      if (paused && !window.confirm(`Pause ${provider} syncing? The connection is kept, so resuming is one click.`)) {
+        return;
+      }
+      setBusyKey(tileId);
+      setMessage(null);
+      try {
+        const query = account ? `?account=${encodeURIComponent(account)}` : '';
+        await api(`/api/integrations/${provider}/${paused ? 'pause' : 'resume'}${query}`, {
+          method: 'POST',
+          body: JSON.stringify(paused ? { reason: 'Sales entered manually' } : {})
+        });
+        setMessage(paused ? 'Syncing paused. The connection is kept.' : 'Syncing resumed.');
+        setTone('success');
+        await load();
+      } catch (error) {
+        setMessage(error instanceof Error ? error.message : 'Could not change the pause state');
+        setTone('error');
+      } finally {
+        setBusyKey(null);
+      }
+    },
+    [load]
+  );
+
   const tiles = useMemo<Tile[]>(() => {
     if (!data) return [];
     const out: Tile[] = [];
@@ -258,7 +291,12 @@ export function IntegrationHealthPage() {
           account: accountKey,
           canResync: connected,
           resyncAction: connected ? () => resyncSquare(accountKey) : undefined,
-          backfillAction: connected ? () => backfillSquare(accountKey) : undefined
+          backfillAction: connected ? () => backfillSquare(accountKey) : undefined,
+          syncPausedAt: status.syncPausedAt,
+          syncPausedReason: status.syncPausedReason,
+          pauseAction: connected
+            ? () => setPaused(`square-${accountKey}`, 'square', accountKey, !status.syncPausedAt)
+            : undefined
         });
       }
     } else if (data.square) {
@@ -276,7 +314,10 @@ export function IntegrationHealthPage() {
         detail: status.providerAccountName ?? null,
         canResync: connected,
         resyncAction: connected ? () => resyncSquare() : undefined,
-        backfillAction: connected ? () => backfillSquare() : undefined
+        backfillAction: connected ? () => backfillSquare() : undefined,
+        syncPausedAt: status.syncPausedAt,
+        syncPausedReason: status.syncPausedReason,
+        pauseAction: connected ? () => setPaused('square', 'square', null, !status.syncPausedAt) : undefined
       });
     }
 
@@ -351,7 +392,10 @@ export function IntegrationHealthPage() {
         detail: status.providerAccountName ?? null,
         canResync: status.configured,
         actionLabel: connected ? 'Reconnect' : 'Connect',
-        resyncAction: status.configured ? connectLightspeed : undefined
+        resyncAction: status.configured ? connectLightspeed : undefined,
+        syncPausedAt: status.syncPausedAt,
+        syncPausedReason: status.syncPausedReason,
+        pauseAction: connected ? () => setPaused('lightspeed', 'lightspeed', null, !status.syncPausedAt) : undefined
       });
     }
 
@@ -441,7 +485,7 @@ export function IntegrationHealthPage() {
     }
 
     return out;
-  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, connectMeta, connectLightspeed, disconnectMeta, backfillSquare, backfillXero, backfillDeputy]);
+  }, [data, resyncSquare, syncDeputy, connectDeputy, connectXero, connectMeta, connectLightspeed, disconnectMeta, backfillSquare, backfillXero, backfillDeputy, setPaused]);
 
   const counts = useMemo(() => {
     const total = tiles.length;
@@ -496,6 +540,13 @@ export function IntegrationHealthPage() {
                       <strong>{tile.detail}</strong>
                     </div>
                   ) : null}
+                  {tile.syncPausedAt ? (
+                    <div className="integration-health-paused">
+                      Syncing paused since {new Date(tile.syncPausedAt).toLocaleDateString('en-AU')}
+                      {tile.syncPausedReason ? ` — ${tile.syncPausedReason}` : ''}. The connection is kept, so
+                      resuming does not need a re-authorisation.
+                    </div>
+                  ) : null}
                   {tile.lastError ? (
                     <div className="integration-health-error">{tile.lastError}</div>
                   ) : null}
@@ -510,6 +561,22 @@ export function IntegrationHealthPage() {
                       disabled={busyKey === tile.id}
                     >
                       {busyKey === tile.id ? 'Working...' : tile.actionLabel ?? 'Re-sync'}
+                    </Button>
+                  ) : null}
+                  {tile.pauseAction ? (
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={tile.syncPausedAt ? 'secondary' : 'ghost'}
+                      onClick={() => void tile.pauseAction!()}
+                      disabled={busyKey === tile.id}
+                      title={
+                        tile.syncPausedAt
+                          ? 'Resume syncing from this provider'
+                          : 'Stop syncing without disconnecting — use while sales are entered by hand'
+                      }
+                    >
+                      {busyKey === tile.id ? 'Working...' : tile.syncPausedAt ? 'Resume syncing' : 'Pause syncing'}
                     </Button>
                   ) : null}
                   {tile.backfillAction ? (

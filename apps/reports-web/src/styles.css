@@ -2630,3 +2630,29 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   display: grid;
   gap: 14px;
 }
+
+/* Deliberate conflict warning — the day already has another source. */
+.se-warning {
+  margin-top: 12px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(180, 130, 30, 0.1);
+  border: 1px solid rgba(180, 130, 30, 0.28);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.se-warning p {
+  margin: 4px 0 8px;
+}
+
+.se-warning ul {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.se-recorded {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}

@@ -42,6 +42,9 @@ function toCents(raw: string): number | null {
 const GST_DIVISOR = 1.1;
 const toExGst = (cents: number, basis: GstBasis) => (basis === 'INCLUSIVE' ? Math.round(cents / GST_DIVISOR) : cents);
 
+/** The source written by the manual grid. Re-saving a day replaces this row. */
+const MANUAL_SOURCE = 'manual';
+
 export function SalesEntryPage() {
   // Venue names come from settings, the same source the API validates against.
   const [venues, setVenues] = useState<string[]>([]);
@@ -49,7 +52,10 @@ export function SalesEntryPage() {
   const [basis, setBasis] = useState<GstBasis>('INCLUSIVE');
   const [weekStart, setWeekStart] = useState(() => mondayOf(new Date(Date.now() - 7 * DAY_MS)));
   const [values, setValues] = useState<Record<string, string>>({});
-  const [existing, setExisting] = useState<Record<string, { salesCents: number; source: string }>>({});
+  // Every entry per day, NOT one — reports sum salesCents across sources, so a
+  // day holding both a POS figure and a manual one is counted twice. The grid
+  // has to show all of them or the double count is invisible.
+  const [existing, setExisting] = useState<Record<string, Array<{ salesCents: number; source: string }>>>({});
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState<{ tone: 'success' | 'error'; text: string } | null>(null);
@@ -87,9 +93,10 @@ export function SalesEntryPage() {
       const data = await staffApi<{ entries: Array<{ serviceDate: string; venue: string; salesCents: number; source: string }> }>(
         `/api/reports/sales/range?venue=${encodeURIComponent(venue)}&from=${from}&to=${to}`,
       );
-      const map: Record<string, { salesCents: number; source: string }> = {};
+      const map: Record<string, Array<{ salesCents: number; source: string }>> = {};
       for (const entry of data.entries) {
-        if (entry.venue === venue) map[entry.serviceDate] = { salesCents: entry.salesCents, source: entry.source };
+        if (entry.venue !== venue) continue;
+        (map[entry.serviceDate] ??= []).push({ salesCents: entry.salesCents, source: entry.source });
       }
       setExisting(map);
       setValues({});
@@ -108,6 +115,10 @@ export function SalesEntryPage() {
     const key = iso(date);
     const typed = values[key] ?? '';
     const cents = toCents(typed);
+    const dayEntries = existing[key] ?? [];
+    // A figure already recorded by something other than manual entry. Saving
+    // alongside it adds to it rather than replacing it.
+    const otherSources = dayEntries.filter((entry) => entry.source !== MANUAL_SOURCE);
     return {
       key,
       date,
@@ -115,13 +126,16 @@ export function SalesEntryPage() {
       cents,
       invalid: typed.trim() !== '' && cents === null,
       exGstCents: cents === null ? null : toExGst(cents, basis),
-      existing: existing[key] ?? null,
+      entries: dayEntries,
+      otherSources,
     };
   });
 
   const enteredRows = rows.filter((row) => row.cents !== null && !row.invalid);
   const weekTotalExGst = enteredRows.reduce((sum, row) => sum + (row.exGstCents ?? 0), 0);
   const hasInvalid = rows.some((row) => row.invalid);
+  // Days about to be entered that a POS feed already covers.
+  const clashes = enteredRows.filter((row) => row.otherSources.length > 0);
 
   async function saveWeek() {
     if (enteredRows.length === 0 || hasInvalid) return;
@@ -277,12 +291,17 @@ export function SalesEntryPage() {
                       </td>
                       <td className="num">{row.exGstCents === null ? '—' : money(row.exGstCents)}</td>
                       <td>
-                        {row.existing ? (
-                          <span className="subtle">
-                            {money(row.existing.salesCents)} <Badge tone="neutral">{row.existing.source}</Badge>
-                          </span>
-                        ) : (
+                        {row.entries.length === 0 ? (
                           <span className="subtle">—</span>
+                        ) : (
+                          <div className="se-recorded">
+                            {row.entries.map((entry) => (
+                              <span key={entry.source} className="subtle">
+                                {money(entry.salesCents)}{' '}
+                                <Badge tone={entry.source === MANUAL_SOURCE ? 'neutral' : 'warning'}>{entry.source}</Badge>
+                              </span>
+                            ))}
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -301,6 +320,26 @@ export function SalesEntryPage() {
               </Button>
             </div>
             {hasInvalid ? <p className="error-text">One or more amounts are not valid numbers.</p> : null}
+            {clashes.length > 0 ? (
+              <div className="se-warning">
+                <strong>
+                  {clashes.length} day{clashes.length === 1 ? '' : 's'} already {clashes.length === 1 ? 'has' : 'have'} a
+                  figure from another source.
+                </strong>
+                <p>
+                  Reports add every source together for a day, so saving here counts that day twice. Remove the other
+                  figure under Reports → Sales first, or leave these days blank.
+                </p>
+                <ul>
+                  {clashes.map((row) => (
+                    <li key={row.key}>
+                      {row.key} — already {money(row.otherSources[0]!.salesCents)} from{' '}
+                      <strong>{row.otherSources.map((entry) => entry.source).join(', ')}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <p className="subtle se-note">
               Saving a day that is already recorded updates it rather than adding a second entry, so re-entering a week
               cannot double count.
@@ -352,6 +391,27 @@ export function SalesEntryPage() {
               <div className="stat-card"><div className="stat-card-label">Will import</div><div className="stat-card-value">{preview.validRows}</div></div>
               <div className={`stat-card${preview.errorRows ? ' tone-danger' : ''}`}><div className="stat-card-label">Problems</div><div className="stat-card-value">{preview.errorRows}</div></div>
             </div>
+
+            {preview.clashes?.length ? (
+              <div className="se-warning">
+                <strong>
+                  {preview.clashes.length} of these days already {preview.clashes.length === 1 ? 'has' : 'have'} a figure
+                  from another source.
+                </strong>
+                <p>
+                  Reports add every source together for a day, so importing these counts them twice. Remove the other
+                  figures under Reports → Sales first, or cut those rows from the file.
+                </p>
+                <ul>
+                  {preview.clashes.slice(0, 8).map((clash: any) => (
+                    <li key={`${clash.venue}-${clash.serviceDate}-${clash.source}`}>
+                      {clash.serviceDate} · {clash.venue} — already {money(clash.salesCents)} from{' '}
+                      <strong>{clash.source}</strong>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
 
             {preview.basisFromFile ? (
               <p className="subtle">The file named its own GST basis per column, so that was used instead of the selector above.</p>

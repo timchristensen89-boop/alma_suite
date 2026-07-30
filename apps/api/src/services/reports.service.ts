@@ -1846,10 +1846,30 @@ export const reportsService = {
     }
     errors.sort((a, b) => a.rowNumber - b.rowNumber);
 
+    // Reports SUM salesCents across sources for a venue+day, so importing a day
+    // a POS feed already covers double counts it. Surface those days before
+    // anything is written rather than letting the total quietly inflate.
+    const clashes = rows.length
+      ? await prisma.salesActualEntry.findMany({
+          where: {
+            source: { not: source },
+            OR: rows.map((row) => ({ venue: row.venue, serviceDate: row.serviceDate }))
+          },
+          select: { venue: true, serviceDate: true, salesCents: true, source: true },
+          orderBy: { serviceDate: 'asc' }
+        })
+      : [];
+
     const summary = {
       totalRows: parsed.totalRows,
       validRows: rows.length,
       errorRows: errors.length,
+      clashes: clashes.map((entry) => ({
+        venue: entry.venue,
+        serviceDate: entry.serviceDate.toISOString().slice(0, 10),
+        salesCents: entry.salesCents,
+        source: entry.source
+      })),
       duplicateRows: parsed.duplicateRowNumbers.length,
       gstBasis: basis,
       basisFromFile: parsed.basisFromFile,

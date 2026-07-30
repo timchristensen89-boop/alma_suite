@@ -410,6 +410,38 @@ integrationsRouter.post('/:provider/disconnect', async (req, res, next) => {
   }
 });
 
+// Pause / resume syncing while KEEPING the OAuth grant, so switching a venue
+// between POS systems does not require a full re-authorisation to come back.
+integrationsRouter.post('/:provider/pause', async (req, res, next) => {
+  try {
+    res.json(
+      await integrationService.setSyncPaused(
+        String(req.params.provider),
+        { paused: true, reason: typeof req.body?.reason === 'string' ? req.body.reason : null },
+        req.user!,
+        req.query.account ?? req.body?.account
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+integrationsRouter.post('/:provider/resume', async (req, res, next) => {
+  try {
+    res.json(
+      await integrationService.setSyncPaused(
+        String(req.params.provider),
+        { paused: false },
+        req.user!,
+        req.query.account ?? req.body?.account
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 integrationsRouter.post('/:provider/test', async (req, res, next) => {
   try {
     res.json(await integrationService.test(String(req.params.provider), req.user!, req.query.account ?? req.body?.account));

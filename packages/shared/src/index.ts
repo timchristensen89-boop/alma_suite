@@ -2344,6 +2344,9 @@ export type IntegrationProviderStatus = {
   lastSyncAt: string | null;
   lastSyncStatus: IntegrationSyncStatus | null;
   lastError: string | null;
+  /** Set while syncing is deliberately paused; the OAuth grant is still held. */
+  syncPausedAt?: string | null;
+  syncPausedReason?: string | null;
   scopes: string[];
   environment: string | null;
   apiVersion?: string | null;

@@ -2312,6 +2312,12 @@ model IntegrationConnection {
   lastSyncAt            DateTime?
   lastSyncStatus        IntegrationSyncStatus?
   lastError             String?
+  // Paused keeps the connection CONNECTED (tokens stay valid and keep
+  // refreshing) but stops every sync and provider call. Used when a venue is
+  // between POS systems and sales are being entered by hand: an unpaused feed
+  // writing its own rows would be summed on top of the manual ones.
+  syncPausedAt          DateTime?
+  syncPausedReason      String?
   providerAccountId     String?
   providerAccountName   String?
   scopes                Json                        @default("[]")

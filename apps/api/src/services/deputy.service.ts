@@ -248,6 +248,14 @@ async function connectedDeputyConnection(): Promise<IntegrationConnection> {
   if (!connection || (!connection.tokenEncrypted && !connection.refreshTokenEncrypted)) {
     throw new HttpError(409, 'Deputy is not connected. Connect it from admin > integrations.');
   }
+  // A paused connection keeps its tokens (so the check above passes) but must
+  // not sync. Unlike an ERROR status this is deliberate, so it does not
+  // self-heal — only an explicit resume clears it.
+  if (connection.syncPausedAt) {
+    const since = connection.syncPausedAt.toISOString().slice(0, 10);
+    const reason = connection.syncPausedReason ? ` (${connection.syncPausedReason})` : '';
+    throw new HttpError(409, `Deputy syncing is paused since ${since}${reason}. Resume it under Admin → Integrations.`);
+  }
   return connection;
 }
 

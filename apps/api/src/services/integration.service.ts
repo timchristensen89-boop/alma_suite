@@ -886,6 +886,8 @@ async function providerStatus(provider: Provider, accountKey: SquareAccountKey =
     lastSyncAt: toIso(connection?.lastSyncAt),
     lastSyncStatus: connection?.lastSyncStatus ?? null,
     lastError: connection?.lastError ?? null,
+    syncPausedAt: connection?.syncPausedAt?.toISOString() ?? null,
+    syncPausedReason: connection?.syncPausedReason ?? null,
     scopes: scopesFromJson(connection?.scopes),
     environment: config.environment,
     apiVersion: config.apiVersion,
@@ -1296,6 +1298,7 @@ async function connectedLightspeedConnection() {
   if (!connection.providerAccountId) {
     throw new HttpError(409, 'Lightspeed company is not selected.');
   }
+  assertNotPaused(connection, 'Lightspeed');
   return connection;
 }
 
@@ -1443,11 +1446,28 @@ async function squareGetJsonWithAccessToken<T>(path: string, accessToken: string
   return response.json() as Promise<T>;
 }
 
+/**
+ * Refuse to touch a provider whose sync is paused.
+ *
+ * Every provider call funnels through the connected*Connection() helpers, so
+ * this is the one place that cannot be bypassed — scheduled jobs, "sync now",
+ * and backfills all hit it. That matters because reports sum
+ * SalesActualEntry.salesCents across sources for a venue+day: a feed left
+ * running while a venue enters sales by hand silently doubles the day.
+ */
+function assertNotPaused(connection: { syncPausedAt: Date | null; syncPausedReason: string | null }, label: string) {
+  if (!connection.syncPausedAt) return;
+  const since = connection.syncPausedAt.toISOString().slice(0, 10);
+  const reason = connection.syncPausedReason ? ` (${connection.syncPausedReason})` : '';
+  throw new HttpError(409, `${label} syncing is paused since ${since}${reason}. Resume it under Admin → Integrations.`);
+}
+
 async function connectedSquareConnection(accountKey: SquareAccountKey) {
   const connection = await connectionSelect('SQUARE', accountKey);
   if (!connection || connection.status !== 'CONNECTED') {
     throw new HttpError(409, `${squareAccountConfig(accountKey).label} Square is not connected.`);
   }
+  assertNotPaused(connection, `${squareAccountConfig(accountKey).label} Square`);
   return connection;
 }
 
@@ -2515,6 +2535,7 @@ async function connectedXeroConnection() {
   if (!connection.providerAccountId) {
     throw new HttpError(409, 'Xero tenant is not selected.');
   }
+  assertNotPaused(connection, 'Xero');
   return connection;
 }
 
@@ -7235,6 +7256,53 @@ export const integrationService = {
       metadata: provider === 'SQUARE' && accountKey ? { accountKey } : {}
     });
     return { ok: true };
+  },
+
+  /**
+   * Pause or resume syncing without disconnecting.
+   *
+   * Disconnecting clears the OAuth tokens, so coming back means a full
+   * re-authorisation in the provider's dashboard. Pausing leaves the grant
+   * intact and just stops the data flowing, which is what a venue between POS
+   * systems actually needs: reports sum SalesActualEntry across sources for a
+   * venue+day, so a feed left running alongside hand-entered sales counts the
+   * day twice.
+   */
+  async setSyncPaused(
+    providerInput: string,
+    input: { paused: boolean; reason?: string | null },
+    actor: AuthUser,
+    accountInput?: unknown
+  ) {
+    const provider = normaliseProvider(providerInput);
+    const accountKey = provider === 'SQUARE' ? normaliseSquareAccountKey(accountInput) : undefined;
+    const connection = await connectionSelect(provider, accountKey);
+    if (!connection) throw new HttpError(404, 'Integration connection not found.');
+
+    const label = provider === 'SQUARE' && accountKey
+      ? `${squareAccountConfig(accountKey).label} Square`
+      : PROVIDER_COPY[provider].label;
+    const reason = input.reason?.trim() || null;
+
+    await prisma.integrationConnection.update({
+      where: { id: connection.id },
+      data: {
+        syncPausedAt: input.paused ? (connection.syncPausedAt ?? new Date()) : null,
+        syncPausedReason: input.paused ? reason : null,
+        updatedByUserId: actor.id
+      }
+    });
+    await recordEvent({
+      provider,
+      connectionId: connection.id,
+      eventType: input.paused ? 'SYNC_PAUSED' : 'SYNC_RESUMED',
+      summary: input.paused
+        ? `${label} syncing paused${reason ? ` — ${reason}` : ''}. Tokens kept.`
+        : `${label} syncing resumed.`,
+      actor,
+      metadata: accountKey ? { accountKey } : {}
+    });
+    return { ok: true, provider: PROVIDER_COPY[provider].key, paused: input.paused };
   },
 
   async test(providerInput: string, actor: AuthUser, accountInput?: unknown) {
