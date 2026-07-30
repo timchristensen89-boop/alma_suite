@@ -2116,39 +2116,39 @@ model StaffTipPaymentRunLine {
 
 // @domain: shared | home: suite
 model AppSettings {
-  id                   String   @id @default("singleton")
-  orgName              String   @default("Alma Hospitality")
-  primaryContactName   String?
-  primaryContactEmail  String?
-  primaryContactPhone  String?
-  venues               Json     @default("[]")
-  handbookContent      Json     @default("{}")
-  onboardingSettings   Json     @default("{}")
-  staffDefaults        Json     @default("{}")
-  giftCardSettings     Json     @default("{}")
+  id                       String    @id @default("singleton")
+  orgName                  String    @default("Alma Hospitality")
+  primaryContactName       String?
+  primaryContactEmail      String?
+  primaryContactPhone      String?
+  venues                   Json      @default("[]")
+  handbookContent          Json      @default("{}")
+  onboardingSettings       Json      @default("{}")
+  staffDefaults            Json      @default("{}")
+  giftCardSettings         Json      @default("{}")
   // ABA (direct-entry) bank-file details for paying staff tips, set in-app via
   // Settings. Read by staff.service buildAbaConfig (with env-var fallback).
-  tipsAbaSettings      Json     @default("{}")
+  tipsAbaSettings          Json      @default("{}")
   // Loaded replacement tracking — stores LoadedCutoverCheck statuses + notes
   // keyed by check id, plus comparison data and free-text notes per section.
   // See loaded-replacement.service.ts for the shape.
-  loadedCutoverState   Json     @default("{}")
+  loadedCutoverState       Json      @default("{}")
   // Superannuation guarantee rate as a percent (e.g. 12 = 12%). National rate
   // that steps up over time, so it's admin-editable rather than hardcoded. Read
   // by the costing engine (staff-pay-rates) to bake super into every costed hour.
-  superGuaranteePercent Float   @default(12)
+  superGuaranteePercent    Float     @default(12)
   // Concurrency claim for the marketing-automation runner — set to NOW() while a
   // run is in progress so a scheduler retry / overlapping invocation no-ops.
   // Reclaimable after 1h in case a run crashed mid-flight.
   marketingAutomationRunAt DateTime?
-  goveeApiKey          String?
-  goveeBaseUrl         String?  @default("https://openapi.api.govee.com")
-  notifyEmail          String?
-  notifyOverdueIssues  Boolean  @default(true)
-  notifyExpiringStaff  Boolean  @default(true)
-  notifyOutOfRangeTemp Boolean  @default(true)
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  goveeApiKey              String?
+  goveeBaseUrl             String?   @default("https://openapi.api.govee.com")
+  notifyEmail              String?
+  notifyOverdueIssues      Boolean   @default(true)
+  notifyExpiringStaff      Boolean   @default(true)
+  notifyOutOfRangeTemp     Boolean   @default(true)
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
 }
 
 // @domain: people-core | home: suite
@@ -2481,40 +2481,40 @@ model StockCategory {
 
 // @domain: stock | home: suite
 model StockItem {
-  id                 String                    @id @default(cuid())
-  legacyId           String?                   @unique
-  sku                String?                   @unique
-  name               String
-  categoryId         String?
-  unit               String // purchase unit (e.g. case, bottle, kg)
-  countUnit          String? // sale/count unit (e.g. each, ml, g) — defaults to unit when null
-  conversionFactor   Float                     @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
-  countArea          String? // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
-  measurePerCountUnit Float?  // net measurable amount in ONE count/cost unit, e.g. a punnet ≈ 250 (g). Bridges weight/volume recipe lines to count-unit items.
-  measureUnit        String?  // 'g' or 'ml' — the unit measurePerCountUnit is expressed in
-  latestCostCents    Int? // most recent landed cost per purchase unit
-  latestCostAt       DateTime? // when latestCostCents was last updated — drives staleness warnings
-  onHand             Float                     @default(0)
-  parLevel           Float                     @default(0)
-  reorderPoint       Float?
-  avgCostCents       Int?
-  status             StockItemStatus           @default(ACTIVE)
-  notes              String?
-  createdAt          DateTime                  @default(now())
-  updatedAt          DateTime                  @updatedAt
-  category           StockCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-  venueStock         VenueStockItem[]
-  recipeLines        RecipeLine[]
-  stocktakeLines     StocktakeLine[]
-  movements          InventoryMovement[]
-  invoiceLines       SupplierInvoiceLine[]
-  wastageRecords     StockWastageRecord[]
-  deliveryCheckItems StockDeliveryCheckItem[]
-  reorderNotices     StockReorderNotice[]
-  squareMenuMappings SquareMenuRecipeMapping[]
-  transfers          StockTransfer[]
-  purchaseOrderLines PurchaseOrderLine[]
-  priceListItems     SupplierPriceListItem[]
+  id                  String                    @id @default(cuid())
+  legacyId            String?                   @unique
+  sku                 String?                   @unique
+  name                String
+  categoryId          String?
+  unit                String // purchase unit (e.g. case, bottle, kg)
+  countUnit           String? // sale/count unit (e.g. each, ml, g) — defaults to unit when null
+  conversionFactor    Float                     @default(1) // sale/count units per purchase unit; purchase cost ÷ factor = sale/count unit cost
+  countArea           String? // physical walking-order grouping for stocktake (Bar, Kitchen, Cool room…)
+  measurePerCountUnit Float? // net measurable amount in ONE count/cost unit, e.g. a punnet ≈ 250 (g). Bridges weight/volume recipe lines to count-unit items.
+  measureUnit         String? // 'g' or 'ml' — the unit measurePerCountUnit is expressed in
+  latestCostCents     Int? // most recent landed cost per purchase unit
+  latestCostAt        DateTime? // when latestCostCents was last updated — drives staleness warnings
+  onHand              Float                     @default(0)
+  parLevel            Float                     @default(0)
+  reorderPoint        Float?
+  avgCostCents        Int?
+  status              StockItemStatus           @default(ACTIVE)
+  notes               String?
+  createdAt           DateTime                  @default(now())
+  updatedAt           DateTime                  @updatedAt
+  category            StockCategory?            @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  venueStock          VenueStockItem[]
+  recipeLines         RecipeLine[]
+  stocktakeLines      StocktakeLine[]
+  movements           InventoryMovement[]
+  invoiceLines        SupplierInvoiceLine[]
+  wastageRecords      StockWastageRecord[]
+  deliveryCheckItems  StockDeliveryCheckItem[]
+  reorderNotices      StockReorderNotice[]
+  squareMenuMappings  SquareMenuRecipeMapping[]
+  transfers           StockTransfer[]
+  purchaseOrderLines  PurchaseOrderLine[]
+  priceListItems      SupplierPriceListItem[]
 
   @@index([categoryId])
   @@index([status])
@@ -2922,8 +2922,8 @@ model RecipeLine {
 
 // @domain: stock | home: suite
 model Supplier {
-  id             String               @id @default(cuid())
-  legacyId       String?              @unique
+  id             String                  @id @default(cuid())
+  legacyId       String?                 @unique
   name           String
   contactName    String?
   email          String?
@@ -2933,9 +2933,9 @@ model Supplier {
   accountNumber  String?
   paymentTerms   String?
   notes          String?
-  status         SupplierStatus       @default(ACTIVE)
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  status         SupplierStatus          @default(ACTIVE)
+  createdAt      DateTime                @default(now())
+  updatedAt      DateTime                @updatedAt
   invoices       SupplierInvoice[]
   deliveryChecks StockDeliveryCheck[]
   purchaseOrders PurchaseOrder[]
@@ -2958,24 +2958,24 @@ enum PurchaseOrderStatus {
 }
 
 model PurchaseOrder {
-  id             String              @id @default(cuid())
-  supplierId     String?
-  supplierName   String
-  venue          String?
-  reference      String?
-  status         PurchaseOrderStatus @default(DRAFT)
-  orderedAt      DateTime?
-  expectedAt     DateTime?
-  receivedAt     DateTime?
-  notes          String?
-  subtotalCents  Int                 @default(0)
+  id               String              @id @default(cuid())
+  supplierId       String?
+  supplierName     String
+  venue            String?
+  reference        String?
+  status           PurchaseOrderStatus @default(DRAFT)
+  orderedAt        DateTime?
+  expectedAt       DateTime?
+  receivedAt       DateTime?
+  notes            String?
+  subtotalCents    Int                 @default(0)
   matchedInvoiceId String?
-  createdById    String?
-  createdAt      DateTime            @default(now())
-  updatedAt      DateTime            @updatedAt
-  supplier       Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  matchedInvoice SupplierInvoice?    @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
-  lines          PurchaseOrderLine[]
+  createdById      String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+  supplier         Supplier?           @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  matchedInvoice   SupplierInvoice?    @relation(fields: [matchedInvoiceId], references: [id], onDelete: SetNull)
+  lines            PurchaseOrderLine[]
 
   @@index([supplierId])
   @@index([venue, status])
@@ -3019,8 +3019,8 @@ model SupplierPriceListItem {
 
 // @domain: stock | home: suite
 model SupplierInvoice {
-  id                       String                @id @default(cuid())
-  source                   String                @default("XERO")
+  id                       String                   @id @default(cuid())
+  source                   String                   @default("XERO")
   invoiceKey               String
   externalInvoiceId        String?
   invoiceNumber            String?
@@ -3030,25 +3030,25 @@ model SupplierInvoice {
   venue                    String?
   invoiceDate              DateTime?
   dueDate                  DateTime?
-  currencyCode             String                @default("AUD")
-  status                   String                @default("DRAFT")
-  subtotalCents            Int                   @default(0)
-  taxCents                 Int                   @default(0)
-  totalCents               Int                   @default(0)
+  currencyCode             String                   @default("AUD")
+  status                   String                   @default("DRAFT")
+  subtotalCents            Int                      @default(0)
+  taxCents                 Int                      @default(0)
+  totalCents               Int                      @default(0)
   sourceFileName           String?
   sourceFileType           String?
   sourceMetadata           Json?
-  triageStatus             String                @default("PENDING")
+  triageStatus             String                   @default("PENDING")
   triagedAt                DateTime?
   triagedByStaffProfileId  String?
   assignedToStaffProfileId String?
   triageNotes              String?
-  importedAt               DateTime              @default(now())
-  createdAt                DateTime              @default(now())
-  updatedAt                DateTime              @updatedAt
-  supplier                 Supplier?             @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  triagedBy                StaffProfile?         @relation("SupplierInvoiceTriagedBy", fields: [triagedByStaffProfileId], references: [id], onDelete: SetNull)
-  assignedTo               StaffProfile?         @relation("SupplierInvoiceAssignedTo", fields: [assignedToStaffProfileId], references: [id], onDelete: SetNull)
+  importedAt               DateTime                 @default(now())
+  createdAt                DateTime                 @default(now())
+  updatedAt                DateTime                 @updatedAt
+  supplier                 Supplier?                @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  triagedBy                StaffProfile?            @relation("SupplierInvoiceTriagedBy", fields: [triagedByStaffProfileId], references: [id], onDelete: SetNull)
+  assignedTo               StaffProfile?            @relation("SupplierInvoiceAssignedTo", fields: [assignedToStaffProfileId], references: [id], onDelete: SetNull)
   lines                    SupplierInvoiceLine[]
   matchedPurchaseOrders    PurchaseOrder[]
   document                 SupplierInvoiceDocument?
@@ -3444,4 +3444,964 @@ model InvoiceExclusionRule {
   updatedAt  DateTime @updatedAt
 
   @@index([enabled])
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// FORECASTING MODULE (fc_*)
+//
+// Entity-first by design. Every table below carries a REQUIRED companyId, so
+// no forecasting query can accidentally span Two Cooked Chooks Pty Ltd and
+// Alma Freshwater Pty Ltd. Venue is secondary and optional. See
+// docs/forecasting-module.md for why this is additive rather than a retrofit
+// onto the 58 venue-keyed models.
+//
+// Money is integer cents. Rates are Decimal, never Float — these figures
+// drive a creditor distribution.
+// ═══════════════════════════════════════════════════════════════════════════
+
+/// How a figure came to exist. Every value surfaced in the UI carries one.
+enum FcProvenance {
+  ACTUAL /// a source transaction (Square, Xero, bank, lodged BAS)
+  ACCOUNTING_ESTIMATE /// derived from accounting data by a stated method
+  MANAGEMENT_ASSUMPTION /// entered by management
+  MODEL_FORECAST /// produced by a model, carries an interval
+  MANUAL_OVERRIDE /// deliberate override with author, reason, expiry
+  PROPOSAL_TERM /// a creditor proposal term, not a prediction
+}
+
+enum FcSourceSystem {
+  SQUARE
+  XERO
+  LIGHTSPEED
+  MANUAL
+  CSV_IMPORT
+  BANK
+  DERIVED
+}
+
+enum FcNormalisationStatus {
+  PENDING
+  NORMALISED
+  FAILED
+  IGNORED
+}
+
+enum FcSeverity {
+  INFORMATIONAL
+  WARNING
+  BLOCKING
+}
+
+/// Operational grouping that Xero accounts and suppliers are mapped into.
+enum FcOperationalGroup {
+  SALES
+  FOOD_COGS
+  BEVERAGE_COGS
+  WAGES
+  SUPER
+  RENT
+  CLEANING
+  SOFTWARE
+  UTILITIES
+  MERCHANT_FEES
+  INSURANCE
+  REPAIRS
+  MAINTENANCE
+  FINANCE_REPAYMENTS
+  INTEREST
+  TAX_PAYMENTS
+  CREDITOR_DISTRIBUTIONS
+  CAPITAL_EXPENDITURE
+  DIRECTOR_TRANSACTIONS
+  INTERCOMPANY
+  EXCLUDED
+  UNMAPPED
+}
+
+/// Creditor classes. Only EXTERNAL_TRADE (and anything explicitly switched on)
+/// participates in the external dividend calculation.
+enum FcCreditorClass {
+  EXTERNAL_TRADE
+  DIRECTOR_LOAN
+  INTERCOMPANY
+  SECURED
+  PRIORITY_EMPLOYEE
+  RELATED_PARTY
+  CONTINGENT
+  STATUTORY
+}
+
+// ── Entities ───────────────────────────────────────────────────────────────
+
+/// A legal entity. Cash, creditors and liabilities NEVER cross this boundary.
+model FcCompany {
+  id           String   @id @default(cuid())
+  code         String   @unique /// "TCC" | "AF"
+  legalName    String /// "Two Cooked Chooks Pty Ltd"
+  tradingName  String /// "Alma Avalon"
+  abn          String?
+  /// Xero tenant this entity's accounting lives in.
+  xeroTenantId String?
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  venues               FcVenue[]
+  assumptions          FcAssumption[]
+  overrides            FcOverride[]
+  creditorClaims       FcCreditorClaim[]
+  creditorProposals    FcCreditorProposal[]
+  forecastRuns         FcForecastRun[]
+  bankBalances         FcBankBalanceSnapshot[]
+  taxObligations       FcTaxObligation[]
+  recurringCommitments FcRecurringCommitment[]
+  importJobs           FcImportJob[]
+  auditEvents          FcAuditEvent[]
+  dataQualityIssues    FcDataQualityIssue[]
+  scenarios            FcScenario[]
+
+  @@map("fc_companies")
+}
+
+/// A trading venue. Belongs to exactly one legal entity.
+model FcVenue {
+  id               String  @id @default(cuid())
+  companyId        String
+  code             String  @unique /// "AVALON" | "FRESHWATER"
+  name             String /// "Alma Avalon"
+  /// Bridge to the legacy venue-keyed models ("St Alma" | "Alma Avalon").
+  legacyVenueName  String? @unique
+  squareLocationId String?
+  active           Boolean @default(true)
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId])
+  @@map("fc_venues")
+}
+
+// ── Canonical ingestion layer ──────────────────────────────────────────────
+
+/// Immutable raw payload as received. Never edited except for retention.
+model FcRawSourceRecord {
+  id                  String                @id @default(cuid())
+  companyId           String
+  venueId             String?
+  sourceSystem        FcSourceSystem
+  sourceEntity        String /// "order" | "payment" | "payout" | "invoice" …
+  sourceId            String
+  /// Dedupe key — unique per source system. Re-ingesting is a no-op.
+  idempotencyKey      String
+  sourceTimestamp     DateTime?
+  businessDate        DateTime?
+  payload             Json
+  payloadHash         String
+  normalisationStatus FcNormalisationStatus @default(PENDING)
+  normalisationError  String?
+  importedAt          DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  @@unique([sourceSystem, idempotencyKey])
+  @@index([companyId, businessDate])
+  @@index([sourceSystem, sourceEntity, sourceId])
+  @@index([normalisationStatus])
+  @@map("fc_raw_source_records")
+}
+
+model FcImportJob {
+  id             String    @id @default(cuid())
+  companyId      String
+  datasetKey     String /// "sales_daily" | "bills_due" | …
+  fileName       String
+  fileHash       String
+  mappingProfile Json?
+  dryRun         Boolean   @default(true)
+  allOrNothing   Boolean   @default(true)
+  status         String    @default("PENDING") /// PENDING|VALIDATING|APPLIED|ROLLED_BACK|FAILED
+  totalRows      Int       @default(0)
+  validRows      Int       @default(0)
+  errorRows      Int       @default(0)
+  appliedRows    Int       @default(0)
+  duplicateRows  Int       @default(0)
+  startedAt      DateTime  @default(now())
+  finishedAt     DateTime?
+  rolledBackAt   DateTime?
+  createdById    String?
+  createdByLabel String?
+
+  company FcCompany       @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  rows    FcImportRow[]
+  errors  FcImportError[]
+
+  @@index([companyId, datasetKey, startedAt])
+  @@map("fc_import_jobs")
+}
+
+model FcImportRow {
+  id             String  @id @default(cuid())
+  importJobId    String
+  rowNumber      Int
+  raw            Json
+  normalised     Json?
+  /// Set when the row was applied, so a rollback knows exactly what to undo.
+  targetTable    String?
+  targetRecordId String?
+  duplicateOf    String?
+  applied        Boolean @default(false)
+
+  job FcImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@index([importJobId, rowNumber])
+  @@map("fc_import_rows")
+}
+
+model FcImportError {
+  id          String     @id @default(cuid())
+  importJobId String
+  rowNumber   Int?
+  column      String?
+  severity    FcSeverity @default(BLOCKING)
+  code        String
+  message     String
+
+  job FcImportJob @relation(fields: [importJobId], references: [id], onDelete: Cascade)
+
+  @@index([importJobId])
+  @@map("fc_import_errors")
+}
+
+/// Xero account code → operational group. Editable in the UI, never in code.
+model FcAccountMapping {
+  id               String             @id @default(cuid())
+  companyId        String
+  accountCode      String
+  accountName      String
+  operationalGroup FcOperationalGroup @default(UNMAPPED)
+  isCashflowItem   Boolean            @default(true)
+  notes            String?
+  updatedAt        DateTime           @updatedAt
+  updatedByLabel   String?
+
+  @@unique([companyId, accountCode])
+  @@index([companyId, operationalGroup])
+  @@map("fc_account_mappings")
+}
+
+model FcSupplierMapping {
+  id               String             @id @default(cuid())
+  companyId        String
+  supplierName     String
+  normalisedName   String
+  operationalGroup FcOperationalGroup @default(UNMAPPED)
+  relatedParty     Boolean            @default(false)
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([companyId, normalisedName])
+  @@map("fc_supplier_mappings")
+}
+
+model FcCategoryMapping {
+  id               String             @id @default(cuid())
+  companyId        String
+  sourceCategory   String
+  operationalGroup FcOperationalGroup @default(UNMAPPED)
+  isBeverage       Boolean            @default(false)
+  updatedAt        DateTime           @updatedAt
+
+  @@unique([companyId, sourceCategory])
+  @@map("fc_category_mappings")
+}
+
+// ── Sales (Square canonical) ───────────────────────────────────────────────
+
+model FcSalesOrder {
+  id                 String         @id @default(cuid())
+  companyId          String
+  venueId            String?
+  sourceSystem       FcSourceSystem @default(SQUARE)
+  sourceId           String
+  businessDate       DateTime
+  closedAt           DateTime?
+  /// GST-INCLUSIVE gross. Never add this to a GST-exclusive Xero figure.
+  grossSalesCents    Int            @default(0)
+  netSalesExGstCents Int            @default(0)
+  gstCents           Int            @default(0)
+  discountsCents     Int            @default(0)
+  serviceChargeCents Int            @default(0)
+  tipsCents          Int            @default(0)
+  refundsCents       Int            @default(0)
+  covers             Int?
+  transactionCount   Int            @default(1)
+  rawRecordId        String?
+  createdAt          DateTime       @default(now())
+
+  lines FcSalesOrderLine[]
+
+  @@unique([sourceSystem, sourceId])
+  @@index([companyId, businessDate])
+  @@index([venueId, businessDate])
+  @@map("fc_sales_orders")
+}
+
+model FcSalesOrderLine {
+  id                 String   @id @default(cuid())
+  orderId            String
+  companyId          String
+  venueId            String?
+  businessDate       DateTime
+  itemSourceId       String?
+  itemName           String
+  category           String?
+  quantity           Decimal  @db.Decimal(12, 3)
+  grossSalesCents    Int      @default(0)
+  netSalesExGstCents Int      @default(0)
+  discountsCents     Int      @default(0)
+  refundsCents       Int      @default(0)
+  menuPriceCents     Int?
+  unitCogsCents      Int?
+
+  order FcSalesOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, businessDate])
+  @@index([orderId])
+  @@map("fc_sales_order_lines")
+}
+
+model FcSalesPayment {
+  id            String         @id @default(cuid())
+  companyId     String
+  venueId       String?
+  sourceSystem  FcSourceSystem @default(SQUARE)
+  sourceId      String
+  orderSourceId String?
+  businessDate  DateTime
+  createdAt     DateTime       @default(now())
+  completedAt   DateTime?
+  amountCents   Int
+  tipCents      Int            @default(0)
+  feeCents      Int            @default(0)
+  tenderType    String?
+  status        String?
+  payoutId      String?
+
+  @@unique([sourceSystem, sourceId])
+  @@index([companyId, businessDate])
+  @@index([payoutId])
+  @@map("fc_sales_payments")
+}
+
+model FcSalesRefund {
+  id              String         @id @default(cuid())
+  companyId       String
+  venueId         String?
+  sourceSystem    FcSourceSystem @default(SQUARE)
+  sourceId        String
+  paymentSourceId String?
+  businessDate    DateTime
+  amountCents     Int
+  reason          String?
+  status          String?
+
+  @@unique([sourceSystem, sourceId])
+  @@index([companyId, businessDate])
+  @@map("fc_sales_refunds")
+}
+
+/// Actual Square→bank settlement. Cash timing comes from HERE, not sales dates.
+model FcSquarePayout {
+  id                 String    @id @default(cuid())
+  companyId          String
+  venueId            String?
+  sourceId           String    @unique
+  payoutDate         DateTime
+  arrivalDate        DateTime?
+  grossAmountCents   Int       @default(0)
+  feesCents          Int       @default(0)
+  refundsCents       Int       @default(0)
+  adjustmentsCents   Int       @default(0)
+  netPayoutCents     Int
+  destinationAccount String?
+  status             String?
+  /// Set when reconciled to a Xero bank transaction.
+  matchedBankTxnId   String?
+  createdAt          DateTime  @default(now())
+
+  entries FcSquarePayoutEntry[]
+
+  @@index([companyId, arrivalDate])
+  @@map("fc_square_payouts")
+}
+
+model FcSquarePayoutEntry {
+  id              String    @id @default(cuid())
+  payoutId        String
+  companyId       String
+  sourceId        String    @unique
+  type            String?
+  amountCents     Int
+  feeCents        Int       @default(0)
+  effectiveAt     DateTime?
+  paymentSourceId String?
+
+  payout FcSquarePayout @relation(fields: [payoutId], references: [id], onDelete: Cascade)
+
+  @@index([payoutId])
+  @@map("fc_square_payout_entries")
+}
+
+// ── Xero canonical ─────────────────────────────────────────────────────────
+
+model FcXeroAccount {
+  id        String   @id @default(cuid())
+  companyId String
+  sourceId  String
+  code      String?
+  name      String
+  type      String?
+  taxType   String?
+  isBank    Boolean  @default(false)
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, sourceId])
+  @@index([companyId, code])
+  @@map("fc_xero_accounts")
+}
+
+/// Accounts receivable (ACCREC).
+model FcXeroInvoice {
+  id               String    @id @default(cuid())
+  companyId        String
+  sourceId         String    @unique
+  invoiceNumber    String?
+  contactName      String?
+  issueDate        DateTime?
+  dueDate          DateTime?
+  /// Xero P&L figures are GST EXCLUSIVE. netAmount is ex-GST; gross includes.
+  netAmountCents   Int       @default(0)
+  taxAmountCents   Int       @default(0)
+  grossAmountCents Int       @default(0)
+  amountDueCents   Int       @default(0)
+  status           String?
+  updatedAt        DateTime  @updatedAt
+
+  @@index([companyId, dueDate])
+  @@map("fc_xero_invoices")
+}
+
+/// Accounts payable (ACCPAY).
+model FcXeroBill {
+  id               String             @id @default(cuid())
+  companyId        String
+  sourceId         String             @unique
+  invoiceNumber    String?
+  supplierName     String?
+  operationalGroup FcOperationalGroup @default(UNMAPPED)
+  issueDate        DateTime?
+  dueDate          DateTime?
+  netAmountCents   Int                @default(0)
+  taxAmountCents   Int                @default(0)
+  grossAmountCents Int                @default(0)
+  amountDueCents   Int                @default(0)
+  status           String?
+  paymentTermsDays Int?
+  priority         String?
+  updatedAt        DateTime           @updatedAt
+
+  @@index([companyId, dueDate])
+  @@index([companyId, status])
+  @@map("fc_xero_bills")
+}
+
+model FcXeroPayment {
+  id              String    @id @default(cuid())
+  companyId       String
+  sourceId        String    @unique
+  paidDate        DateTime?
+  amountCents     Int
+  invoiceSourceId String?
+  billSourceId    String?
+  bankAccountId   String?
+  updatedAt       DateTime  @updatedAt
+
+  @@index([companyId, paidDate])
+  @@map("fc_xero_payments")
+}
+
+model FcXeroBankTransaction {
+  id              String   @id @default(cuid())
+  companyId       String
+  sourceId        String   @unique
+  bankAccountId   String?
+  bankAccountName String?
+  txnDate         DateTime
+  amountCents     Int /// signed: positive receipt, negative payment
+  type            String?
+  contactName     String?
+  reference       String?
+  reconciled      Boolean  @default(false)
+  updatedAt       DateTime @updatedAt
+
+  @@index([companyId, txnDate])
+  @@map("fc_xero_bank_transactions")
+}
+
+// ── Operating data ─────────────────────────────────────────────────────────
+
+/// Starting point for every cash forecast. Actual, not modelled.
+model FcBankBalanceSnapshot {
+  id             String         @id @default(cuid())
+  companyId      String
+  asAt           DateTime
+  bankAccount    String
+  balanceCents   Int
+  sourceSystem   FcSourceSystem @default(XERO)
+  provenance     FcProvenance   @default(ACTUAL)
+  enteredByLabel String?
+  notes          String?
+  createdAt      DateTime       @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, bankAccount, asAt])
+  @@index([companyId, asAt])
+  @@map("fc_bank_balance_snapshots")
+}
+
+/// Gross wages ALREADY CONTAIN PAYG. PAYG is recorded for BAS timing only and
+/// must never be added again as a wage cost.
+model FcPayrollPeriod {
+  id                   String       @id @default(cuid())
+  companyId            String
+  venueId              String?
+  weekStart            DateTime
+  weekEnd              DateTime
+  grossWagesCents      Int
+  superCents           Int          @default(0)
+  paygWithheldCents    Int          @default(0)
+  hours                Decimal?     @db.Decimal(10, 2)
+  headcount            Int?
+  overtimeHours        Decimal?     @db.Decimal(10, 2)
+  kitchenWagesCents    Int?
+  fohWagesCents        Int?
+  managementWagesCents Int?
+  provenance           FcProvenance @default(ACTUAL)
+  notes                String?
+
+  @@unique([companyId, venueId, weekStart])
+  @@index([companyId, weekStart])
+  @@map("fc_payroll_periods")
+}
+
+model FcStocktake {
+  id                String       @id @default(cuid())
+  companyId         String
+  venueId           String?
+  stocktakeDate     DateTime
+  category          String
+  openingStockCents Int          @default(0)
+  purchasesCents    Int          @default(0)
+  transfersInCents  Int          @default(0)
+  transfersOutCents Int          @default(0)
+  wastageCents      Int          @default(0)
+  staffMealsCents   Int          @default(0)
+  closingStockCents Int          @default(0)
+  provenance        FcProvenance @default(ACTUAL)
+
+  @@unique([companyId, venueId, stocktakeDate, category])
+  @@index([companyId, stocktakeDate])
+  @@map("fc_stocktakes")
+}
+
+model FcInventoryMovement {
+  id           String   @id @default(cuid())
+  companyId    String
+  venueId      String?
+  movementDate DateTime
+  category     String
+  movementType String /// PURCHASE|TRANSFER_IN|TRANSFER_OUT|WASTAGE|STAFF_MEAL
+  amountCents  Int
+  reference    String?
+
+  @@index([companyId, movementDate])
+  @@map("fc_inventory_movements")
+}
+
+model FcBookingsSnapshot {
+  id            String   @id @default(cuid())
+  companyId     String
+  venueId       String?
+  serviceDate   DateTime
+  snapshotDate  DateTime
+  lunchCovers   Int      @default(0)
+  dinnerCovers  Int      @default(0)
+  totalCovers   Int      @default(0)
+  capacity      Int?
+  cancellations Int      @default(0)
+  noShows       Int      @default(0)
+  eventName     String?
+
+  @@unique([companyId, venueId, serviceDate, snapshotDate])
+  @@index([companyId, serviceDate])
+  @@map("fc_bookings_snapshots")
+}
+
+/// Closures, reduced hours, promotions, one-offs. Feeds the abnormal-day flag
+/// so the model does not learn from an event it has not been told about.
+model FcBusinessEvent {
+  id                         String   @id @default(cuid())
+  companyId                  String
+  venueId                    String?
+  dateFrom                   DateTime
+  dateTo                     DateTime
+  eventType                  String /// CLOSURE|REDUCED_HOURS|PROMOTION|EVENT|MENU_PRICE_CHANGE|ABNORMAL
+  expectedSalesImpactPercent Decimal? @db.Decimal(6, 3)
+  expectedCostImpactCents    Int?
+  excludeFromTraining        Boolean  @default(false)
+  approvedForLearning        Boolean  @default(false)
+  description                String?
+  createdByLabel             String?
+  createdAt                  DateTime @default(now())
+
+  @@index([companyId, dateFrom])
+  @@map("fc_business_events")
+}
+
+model FcRecurringCommitment {
+  id           String             @id @default(cuid())
+  companyId    String
+  venueId      String?
+  description  String
+  category     FcOperationalGroup
+  startDate    DateTime
+  endDate      DateTime?
+  frequency    String /// WEEKLY|FORTNIGHTLY|MONTHLY|QUARTERLY|ANNUAL|ONE_OFF
+  amountCents  Int
+  gstTreatment String             @default("EXCLUSIVE") /// EXCLUSIVE|INCLUSIVE|FREE
+  paymentDay   Int?
+  priority     String?
+  scenarioId   String?
+  active       Boolean            @default(true)
+  provenance   FcProvenance       @default(MANAGEMENT_ASSUMPTION)
+  createdAt    DateTime           @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, active])
+  @@map("fc_recurring_commitments")
+}
+
+/// BAS / PAYG / super obligations. Historical ATO and SGC balances are
+/// CREDITOR CLAIMS, not recurring operating expenses — those live in
+/// fc_creditor_claims instead.
+model FcTaxObligation {
+  id                  String       @id @default(cuid())
+  companyId           String
+  obligationType      String /// BAS|PAYG|SUPER|INCOME_TAX
+  periodStart         DateTime
+  periodEnd           DateTime
+  accountingBasis     String       @default("CASH")
+  g1GrossSalesCents   Int?
+  gst1ACents          Int?
+  gst1BCents          Int?
+  netGstCents         Int?
+  paygCents           Int?
+  totalStatementCents Int?
+  dueDate             DateTime?
+  paidDate            DateTime?
+  status              String       @default("ESTIMATED") /// ESTIMATED|DRAFT|LODGED|PAID
+  provenance          FcProvenance @default(MODEL_FORECAST)
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, obligationType, periodStart])
+  @@index([companyId, dueDate])
+  @@map("fc_tax_obligations")
+}
+
+// ── Creditors ──────────────────────────────────────────────────────────────
+
+model FcCreditorClaim {
+  id                       String          @id @default(cuid())
+  companyId                String
+  creditorName             String
+  creditorClass            FcCreditorClass @default(EXTERNAL_TRADE)
+  relatedParty             Boolean         @default(false)
+  secured                  Boolean         @default(false)
+  priority                 Boolean         @default(false)
+  claimedAmountCents       Int             @default(0)
+  admittedAmountCents      Int?
+  /// Explicit exclusion, on top of the class-based default participation.
+  excludedFromDistribution Boolean         @default(false)
+  proofOfDebtStatus        String          @default("CLAIMED") /// CLAIMED|ADMITTED|REJECTED|WITHDRAWN
+  notes                    String?
+  updatedAt                DateTime        @updatedAt
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, creditorClass])
+  @@map("fc_creditor_claims")
+}
+
+model FcCreditorProposal {
+  id                      String       @id @default(cuid())
+  companyId               String
+  name                    String
+  /// Fixed contribution, contractual.
+  fixedTotalCents         Int
+  termMonths              Int          @default(36)
+  /// Performance contribution: share of free cash above the agreed base.
+  performanceSharePercent Decimal      @default(25) @db.Decimal(6, 3)
+  performanceCapCents     Int
+  /// Deed costs funded from the proposal (reduce what reaches creditors).
+  deedCostsCents          Int          @default(0)
+  /// Participation switches. Director loans and intercompany default OFF.
+  includeDirectorLoans    Boolean      @default(false)
+  includeIntercompany     Boolean      @default(false)
+  includeSecuredShortfall Boolean      @default(false)
+  includePriorityClaims   Boolean      @default(false)
+  includeContingentClaims Boolean      @default(false)
+  status                  String       @default("DRAFT")
+  provenance              FcProvenance @default(PROPOSAL_TERM)
+  createdAt               DateTime     @default(now())
+  updatedAt               DateTime     @updatedAt
+
+  company   FcCompany                   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  schedules FcCreditorPaymentSchedule[]
+
+  @@index([companyId])
+  @@map("fc_creditor_proposals")
+}
+
+model FcCreditorPaymentSchedule {
+  id               String    @id @default(cuid())
+  proposalId       String
+  companyId        String
+  yearNumber       Int
+  periodStart      DateTime
+  periodEnd        DateTime
+  fixedCents       Int       @default(0)
+  performanceCents Int       @default(0)
+  paidCents        Int       @default(0)
+  paidDate         DateTime?
+  status           String    @default("SCHEDULED")
+
+  proposal FcCreditorProposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@index([proposalId])
+  @@map("fc_creditor_payment_schedules")
+}
+
+// ── Assumptions, overrides, scenarios ──────────────────────────────────────
+
+/// Versioned and editable. Nothing about the model is hardcoded permanently.
+model FcAssumption {
+  id             String       @id @default(cuid())
+  companyId      String
+  venueId        String?
+  key            String /// "annual_base_sales_cents" | "cogs_target_percent" …
+  version        Int          @default(1)
+  effectiveFrom  DateTime
+  effectiveTo    DateTime?
+  valueNumeric   Decimal?     @db.Decimal(18, 4)
+  valueText      String?
+  unit           String? /// "cents" | "percent" | "cents_per_week" …
+  provenance     FcProvenance @default(MANAGEMENT_ASSUMPTION)
+  /// False until signed off against the creditor workbook.
+  confirmed      Boolean      @default(false)
+  sourceNote     String?
+  authorLabel    String?
+  supersededById String?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, venueId, key, version])
+  @@index([companyId, key, active])
+  @@map("fc_assumptions")
+}
+
+/// Sits above forecasts, NEVER above an actual source transaction.
+model FcOverride {
+  id              String       @id @default(cuid())
+  companyId       String
+  venueId         String?
+  metric          String
+  adjustmentType  String /// FIXED_REPLACEMENT|DOLLAR_ADJUSTMENT|PERCENT_ADJUSTMENT
+  adjustmentValue Decimal      @db.Decimal(18, 4)
+  dateFrom        DateTime
+  dateTo          DateTime
+  priority        Int          @default(100)
+  reason          String
+  authorLabel     String
+  expiresAt       DateTime?
+  active          Boolean      @default(true)
+  provenance      FcProvenance @default(MANUAL_OVERRIDE)
+  createdAt       DateTime     @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, metric, active])
+  @@map("fc_overrides")
+}
+
+model FcScenario {
+  id          String   @id @default(cuid())
+  companyId   String
+  key         String /// BASE|CONSERVATIVE|RECOVERY|custom
+  name        String
+  description String?
+  /// Scenario adjustments as a typed bag; never mutates base assumptions.
+  adjustments Json     @default("{}")
+  isDefault   Boolean  @default(false)
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@unique([companyId, key])
+  @@map("fc_scenarios")
+}
+
+// ── Forecast runs and model governance ─────────────────────────────────────
+
+model FcModelVersion {
+  id              String    @id @default(cuid())
+  family          String /// SALES|MARGIN|CASHFLOW|PAYOUT_TIMING
+  version         Int
+  algorithm       String /// SEASONAL_NAIVE|MOVING_AVERAGE|TREND_SEASONAL|GBM|ENSEMBLE
+  hyperparams     Json      @default("{}")
+  features        Json      @default("[]")
+  isChampion      Boolean   @default(false)
+  promotedAt      DateTime?
+  promotedByLabel String?
+  retiredAt       DateTime?
+  createdAt       DateTime  @default(now())
+
+  runs     FcForecastRun[]
+  accuracy FcModelAccuracyResult[]
+
+  @@unique([family, version])
+  @@index([family, isChampion])
+  @@map("fc_model_versions")
+}
+
+/// One reproducible forecast execution.
+model FcForecastRun {
+  id                 String    @id @default(cuid())
+  companyId          String
+  scenarioId         String?
+  modelVersionId     String?
+  family             String
+  horizonStart       DateTime
+  horizonEnd         DateTime
+  granularity        String /// DAILY|WEEKLY|MONTHLY
+  /// Everything needed to reproduce this run byte for byte.
+  assumptionSnapshot Json      @default("{}")
+  overrideSnapshot   Json      @default("[]")
+  featureSet         Json      @default("[]")
+  sourceDataCutoff   DateTime
+  trainingStart      DateTime?
+  trainingEnd        DateTime?
+  selectionReason    String?
+  generatedAt        DateTime  @default(now())
+  generatedByLabel   String?
+
+  company      FcCompany         @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  modelVersion FcModelVersion?   @relation(fields: [modelVersionId], references: [id])
+  points       FcForecastPoint[]
+
+  @@index([companyId, family, generatedAt])
+  @@map("fc_forecast_runs")
+}
+
+model FcForecastPoint {
+  id           String       @id @default(cuid())
+  runId        String
+  companyId    String
+  venueId      String?
+  periodStart  DateTime
+  periodEnd    DateTime
+  metric       String
+  centralCents Int
+  lower80Cents Int?
+  upper80Cents Int?
+  lower95Cents Int?
+  upper95Cents Int?
+  provenance   FcProvenance @default(MODEL_FORECAST)
+  /// Set when a manual override changed this point, for the audit trail.
+  overrideId   String?
+
+  run FcForecastRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, metric, periodStart])
+  @@index([companyId, metric, periodStart])
+  @@map("fc_forecast_points")
+}
+
+model FcModelAccuracyResult {
+  id                  String   @id @default(cuid())
+  modelVersionId      String
+  companyId           String
+  family              String
+  metric              String
+  windowStart         DateTime
+  windowEnd           DateTime
+  wape                Decimal? @db.Decimal(10, 4)
+  mae                 Decimal? @db.Decimal(18, 4)
+  rmse                Decimal? @db.Decimal(18, 4)
+  bias                Decimal? @db.Decimal(18, 4)
+  mape                Decimal? @db.Decimal(10, 4)
+  directionalAccuracy Decimal? @db.Decimal(10, 4)
+  sampleCount         Int      @default(0)
+  computedAt          DateTime @default(now())
+
+  modelVersion FcModelVersion @relation(fields: [modelVersionId], references: [id], onDelete: Cascade)
+
+  @@index([companyId, family, windowStart])
+  @@map("fc_model_accuracy_results")
+}
+
+// ── Quality and audit ──────────────────────────────────────────────────────
+
+model FcDataQualityIssue {
+  id              String     @id @default(cuid())
+  companyId       String
+  checkKey        String
+  severity        FcSeverity @default(WARNING)
+  entityType      String?
+  entityId        String?
+  businessDate    DateTime?
+  message         String
+  detail          Json?
+  resolved        Boolean    @default(false)
+  resolvedAt      DateTime?
+  resolvedByLabel String?
+  detectedAt      DateTime   @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, severity, resolved])
+  @@index([checkKey])
+  @@map("fc_data_quality_issues")
+}
+
+model FcAuditEvent {
+  id         String   @id @default(cuid())
+  companyId  String
+  entityType String
+  entityId   String?
+  action     String
+  before     Json?
+  after      Json?
+  reason     String?
+  actorId    String?
+  actorLabel String?
+  createdAt  DateTime @default(now())
+
+  company FcCompany @relation(fields: [companyId], references: [id], onDelete: Restrict)
+
+  @@index([companyId, entityType, createdAt])
+  @@map("fc_audit_events")
 }
