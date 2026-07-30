@@ -1,0 +1,3 @@
+stocktake_date,company_code,venue_code,category,opening_stock,purchases,transfers_in,transfers_out,wastage,staff_meals,closing_stock
+2026-06-30,TCC,AVALON,Food,18500.00,42000.00,0.00,450.00,620.00,980.00,19100.00
+2026-06-30,AF,FRESHWATER,Beverage,24200.00,31000.00,450.00,0.00,180.00,120.00,23800.00

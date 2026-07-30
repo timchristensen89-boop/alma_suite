@@ -1,0 +1,3 @@
+date,company_code,contact,account_code,account_name,description,transaction_type,invoice_number,invoice_date,due_date,gross_amount,net_amount,tax_amount,tax_rate,status,bank_account,tracking_category,source_id
+2026-07-01,TCC,FoodByUs,310,Purchases Kitchen,Weekly produce,ACCPAY,INV-1042,2026-07-01,2026-07-31,1100.00,1000.00,100.00,GST on Expenses,AUTHORISED,NAB Business,Avalon,xero-txn-0001
+2026-07-02,AF,Paramount Liquor,312,Purchases Bar,Beverage order,SPEND,INV-1043,2026-07-02,2026-08-01,550.00,500.00,50.00,GST on Expenses,PAID,NAB Business,Freshwater,xero-txn-0002

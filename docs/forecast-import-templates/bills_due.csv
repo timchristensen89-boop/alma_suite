@@ -1,0 +1,3 @@
+company_code,bill_id,supplier,invoice_date,due_date,amount_due,gst,payment_terms_days,status,priority,category,notes
+TCC,BILL-2001,FoodByUs,2026-07-01,2026-07-31,2310.00,210.00,30,AUTHORISED,NORMAL,FOOD_COGS,Weekly account
+AF,BILL-2002,Paramount Liquor,2026-07-03,2026-08-02,1650.00,150.00,14,AUTHORISED,CRITICAL,BEVERAGE_COGS,On hold pending credit

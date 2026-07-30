@@ -1,0 +1,3 @@
+week_start,week_end,company_code,venue_code,gross_wages,super,payg,hours,headcount,overtime_hours,kitchen_wages,foh_wages,management_wages,notes
+2026-06-29,2026-07-05,TCC,AVALON,7000.00,840.00,1400.00,286.5,14,6.5,3200.00,2900.00,900.00,Public holiday loading
+2026-07-06,2026-07-12,AF,FRESHWATER,9000.00,1080.00,1850.00,372.0,18,12.0,4100.00,3800.00,1100.00,

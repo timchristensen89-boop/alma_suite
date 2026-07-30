@@ -1,0 +1,3 @@
+company_code,creditor_name,creditor_class,related_party,secured,priority,claimed_amount,admitted_amount,excluded_from_distribution,notes
+TCC,FoodByUs,EXTERNAL_TRADE,false,false,false,42150.00,42150.00,false,Trade supplier
+AF,Director loan account,DIRECTOR_LOAN,true,false,false,180000.00,,true,Excluded per proposal
