@@ -194,3 +194,75 @@ export function buildPaymentSchedule(
     return { yearNumber: index + 1, fixedCents: fixed, performanceCents: perf, totalCents: fixed + perf };
   });
 }
+
+// ─── Rate-based proposals ────────────────────────────────────────────────────
+//
+// The v5 creditor proposal (30 July 2026) inverts the model above. Instead of
+// committing a fixed dollar total and deriving the return, it commits a RATE —
+// 10 cents in the dollar base, plus a contingent 5 cents — against the admitted
+// external pool. Its section 7 is explicit about why: "each distribution
+// recalculates automatically if the admitted pool changes, so no renegotiation
+// of the rate is required as claims are adjudicated."
+//
+// So the dollar amount is an OUTPUT here, not an input, and it moves as proofs
+// of debt are admitted.
+
+/** Distribution for a rate against an admitted pool. `centsInDollar` is 0–100. */
+export function distributionAtRateCents(admittedExternalPoolCents: number, centsInDollar: number): number {
+  const pool = Math.max(0, Math.round(admittedExternalPoolCents));
+  const rate = Math.min(100, Math.max(0, centsInDollar));
+  return Math.round((pool * rate) / 100);
+}
+
+export interface SeasonalInstalment {
+  yearNumber: number;
+  month: "DECEMBER" | "JANUARY";
+  cents: number;
+}
+
+export interface SeasonalScheduleInput {
+  totalCents: number;
+  /**
+   * Share of the total paid in each proposal year. A leading 0 defers a year
+   * entirely — Avalon pays nothing in year one because its conservative case
+   * dips negative in the winter trough before recovering.
+   */
+  yearShares: readonly number[];
+  /** Share of each year's amount paid in December; the rest falls in January. */
+  decemberShare?: number;
+}
+
+/**
+ * Split a distribution across December and January instalments.
+ *
+ * Every instalment is integer cents and the schedule sums to `totalCents`
+ * EXACTLY: each year takes the residual of the years before it, and January
+ * takes the residual within its year. Rounding each instalment independently
+ * instead is what leaves a schedule that misses its own total — the published
+ * v5 Avalon year-three subtotal is a cent above the sum of its two instalments
+ * for precisely that reason.
+ */
+export function buildSeasonalSchedule(input: SeasonalScheduleInput): SeasonalInstalment[] {
+  const total = Math.max(0, Math.round(input.totalCents));
+  const decemberShare = input.decemberShare ?? 0.4;
+  const instalments: SeasonalInstalment[] = [];
+
+  let allocated = 0;
+  input.yearShares.forEach((share, index) => {
+    const isFinalYear = index === input.yearShares.length - 1;
+    const yearCents = isFinalYear ? total - allocated : Math.round(total * share);
+    allocated += yearCents;
+    if (yearCents <= 0) return;
+
+    const december = Math.round(yearCents * decemberShare);
+    const january = yearCents - december;
+    if (december > 0) instalments.push({ yearNumber: index + 1, month: "DECEMBER", cents: december });
+    if (january > 0) instalments.push({ yearNumber: index + 1, month: "JANUARY", cents: january });
+  });
+
+  return instalments;
+}
+
+/** Sum a schedule, for asserting it reconciles to the committed distribution. */
+export const scheduleTotalCents = (instalments: readonly SeasonalInstalment[]): number =>
+  instalments.reduce((sum, instalment) => sum + instalment.cents, 0);
