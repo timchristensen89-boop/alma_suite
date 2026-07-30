@@ -96,12 +96,35 @@ this document.
 
 - [x] Phase 0 — repository audit (this note)
 - [ ] Phase 1 — data foundation (schema, migration, seeds, audit log)
-- [ ] Phase 2 — integrations (Square payouts, Xero incremental sync)
+- [~] Phase 2 — integrations: resilient sync core landed (retry/rate-limit,
+      pagination, payout↔bank reconciliation, cursors). Provider service
+      wiring (Square payouts/orders/payments, Xero accounts/bank/invoices
+      into the fc_* tables) still to do.
 - [ ] Phase 3 — manual and bulk imports
 - [ ] Phase 4 — forecast engines
 - [ ] Phase 5 — scenarios and creditors
 - [ ] Phase 6 — UI
 - [ ] Phase 7 — verification
+
+## Sync design (Phase 2)
+
+`apps/api/src/lib/forecast/` holds the provider-agnostic core, deliberately
+separate from the existing `integration.service.ts` so the working Square and
+Xero syncs are untouched:
+
+- `http.ts` — retry with full-jitter backoff. 429/408/5xx retry, other 4xx do
+  not (retrying a revoked token just burns rate limit). `Retry-After` wins over
+  our own curve. Rate-limit headers surfaced for logging.
+- `paginate.ts` — cursor walks (Square) and page walks (Xero). Both resumable:
+  they report where they stopped. A repeated cursor ends the walk but is
+  reported as TRUNCATED, never as a completed walk — claiming completeness we
+  cannot verify would understate a cash position.
+- `reconcile.ts` — Square payout ↔ Xero bank deposit matching, greedy
+  best-first on amount then date. One bank line can satisfy only one payout,
+  debits are never treated as a payout landing, and an unmatched payout is
+  reported rather than guessed at. Cash arrival uses the ACTUAL arrival date
+  where Square supplies one, otherwise the observed median settlement lag —
+  never the sales date.
 
 ## Assumptions needing management confirmation
 

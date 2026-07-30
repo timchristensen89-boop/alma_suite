@@ -4405,3 +4405,50 @@ model FcAuditEvent {
   @@index([companyId, entityType, createdAt])
   @@map("fc_audit_events")
 }
+
+/// Resumable sync position per company/source/entity. A sync that dies
+/// mid-run restarts from here rather than re-downloading history.
+model FcSyncCursor {
+  id                String         @id @default(cuid())
+  companyId         String
+  sourceSystem      FcSourceSystem
+  /// "payouts" | "orders" | "bank_transactions" | "invoices" …
+  sourceEntity      String
+  /// Opaque provider cursor (Square) — resume token within a page walk.
+  cursor            String?
+  /// High-water mark for modified-since style incremental sync (Xero).
+  lastModifiedAt    DateTime?
+  /// Newest business date successfully ingested.
+  lastBusinessDate  DateTime?
+  lastSuccessfulAt  DateTime?
+  lastError         String?
+  consecutiveErrors Int            @default(0)
+  updatedAt         DateTime       @updatedAt
+
+  @@unique([companyId, sourceSystem, sourceEntity])
+  @@index([companyId, sourceSystem])
+  @@map("fc_sync_cursors")
+}
+
+/// One sync execution, for the visible last-successful-sync status.
+model FcSyncRun {
+  id                String         @id @default(cuid())
+  companyId         String
+  sourceSystem      FcSourceSystem
+  sourceEntity      String
+  status            String         @default("RUNNING") /// RUNNING|SUCCESS|PARTIAL|FAILED
+  startedAt         DateTime       @default(now())
+  finishedAt        DateTime?
+  pagesFetched      Int            @default(0)
+  recordsFetched    Int            @default(0)
+  recordsWritten    Int            @default(0)
+  duplicatesSkipped Int            @default(0)
+  rateLimitHits     Int            @default(0)
+  windowStart       DateTime?
+  windowEnd         DateTime?
+  error             String?
+  triggeredBy       String? /// "cron" | "manual" | "webhook" | "backfill"
+
+  @@index([companyId, sourceSystem, startedAt])
+  @@map("fc_sync_runs")
+}
