@@ -2,6 +2,7 @@ import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState
 import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { ForecastPage } from './pages/ForecastPage';
 import { SupplierSpendPage } from './pages/SupplierSpendPage';
+import { ForecastModulePage } from './pages/ForecastModulePage';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -190,6 +191,7 @@ type ReportSectionId =
   | 'sales'
   | 'forecast'
   | 'supplier-spend'
+  | 'forecast-module'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -242,6 +244,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecast',
     title: 'Forecast',
     description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'forecast-module',
+    label: 'Forecasting',
+    title: 'Forecasting module',
+    description: 'Entity-separated cash, margin and creditor modelling for Two Cooked Chooks and Alma Freshwater.',
     icon: <ChartIcon />,
     group: 'core'
   },
@@ -4429,6 +4439,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return <ForecastPage />;
       case 'supplier-spend':
         return <SupplierSpendPage />;
+      case 'forecast-module':
+        return <ForecastModulePage />;
       case 'staff':
         return renderStaffSection();
       case 'compliance':

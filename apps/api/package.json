@@ -7,7 +7,7 @@
     "dev": "tsx watch src/server.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/apps/api/src/server.js",
-    "test": "node --import tsx --test src/lib/forecast-math.test.ts src/lib/cogs-quality.test.ts src/lib/forecast/creditors.test.ts src/lib/forecast/gst.test.ts src/lib/forecast/sync.test.ts src/lib/forecast/normalise.test.ts src/lib/forecast/import.test.ts src/lib/forecast/models.test.ts src/lib/forecast/margin-cash.test.ts",
+    "test": "node --import tsx --test src/lib/forecast-math.test.ts src/lib/cogs-quality.test.ts src/lib/forecast/creditors.test.ts src/lib/forecast/gst.test.ts src/lib/forecast/sync.test.ts src/lib/forecast/normalise.test.ts src/lib/forecast/import.test.ts src/lib/forecast/models.test.ts src/lib/forecast/margin-cash.test.ts src/lib/forecast/scenarios.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "generate:import-templates": "node --import tsx scripts/generate-import-templates.ts"
   },

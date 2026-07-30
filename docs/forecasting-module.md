@@ -94,17 +94,55 @@ this document.
 
 ## Phase status
 
-- [x] Phase 0 — repository audit (this note)
-- [ ] Phase 1 — data foundation (schema, migration, seeds, audit log)
-- [~] Phase 2 — integrations: resilient sync core landed (retry/rate-limit,
-      pagination, payout↔bank reconciliation, cursors). Provider service
-      wiring (Square payouts/orders/payments, Xero accounts/bank/invoices
-      into the fc_* tables) still to do.
-- [ ] Phase 3 — manual and bulk imports
-- [ ] Phase 4 — forecast engines
-- [ ] Phase 5 — scenarios and creditors
-- [ ] Phase 6 — UI
-- [ ] Phase 7 — verification
+- [x] Phase 0 — repository audit
+- [x] Phase 1 — data foundation: 42 `fc_*` tables, additive migration, seeds
+- [x] Phase 2 — sync core (retry/rate-limit/pagination/reconciliation) and
+      provider normalisers. **Not done:** the HTTP callers that actually pull
+      Square and Xero into the `fc_*` tables — see Known limitations.
+- [x] Phase 3 — 13 import templates, validation, error reports
+- [x] Phase 4 — sales, margin and cash engines with walk-forward backtesting
+      and champion/challenger promotion
+- [x] Phase 5 — scenarios and the creditor distribution engine
+- [x] Phase 6 — UI at Reports → Forecasting (10 sections)
+- [x] Phase 7 — verification (163 tests, typechecks, builds, migration replay)
+
+## Verification results
+
+| Gate | Result |
+| --- | --- |
+| API unit tests | 163 passing, 0 failing |
+| API typecheck | clean |
+| reports-web typecheck | clean |
+| Production builds | reports-web, web, staff-web, stock-web all build |
+| Prisma schema | valid |
+| Migration replay (clean DB) | all 110 migrations apply; 42 `fc_*` tables created |
+| Pre-existing tables preserved | RecipeSalePrice, StockSupplierOrder, StockSupplierOrderItem intact |
+
+## Known limitations — read before relying on this
+
+1. **No live data has flowed through this module.** The engines, normalisers
+   and validators are unit-tested against fixtures. The HTTP callers that pull
+   Square payouts/orders/payments and Xero accounts/bank/invoices into the
+   `fc_*` tables are NOT written — the resilient core they will sit on is, and
+   is tested. Until that lands and runs, every screen shows seeded assumptions
+   rather than actuals.
+2. **The creditor workbook was never supplied.** Nothing is reconciled against
+   it. All seeds are `confirmed = false` and the UI says so.
+3. **Square account → company and Xero tenant → company are unmapped.** Both
+   were asked for and not answered; `FcCompany.xeroTenantId` and
+   `FcVenue.squareLocationId` are null. Mapping a payout to the wrong entity
+   would misstate the wrong company's cash, so sync must not run until these
+   are set.
+4. **A forecast is not made reliable by the code running.** No model has been
+   trained on real trading history here; accuracy figures appear only after
+   forecast runs have actuals to compare against.
+5. **Pre-existing schema drift is unresolved.** `prisma migrate diff` still
+   wants to drop RecipeSalePrice, StockSupplierOrder and
+   StockSupplierOrderItem. This module's migration is filtered to additive-only
+   and proven safe, but the drift will bite the next person who generates a
+   migration.
+6. **Manual entry forms are API-complete but UI-light.** Import handles bulk
+   entry; per-record manual forms beyond assumptions are not built.
 
 ## Sync design (Phase 2)
 
