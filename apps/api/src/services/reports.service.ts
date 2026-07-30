@@ -35,6 +35,7 @@ import { mailService } from './mail.service.js';
 import { integrationService } from './integration.service.js';
 import { deputyService } from './deputy.service.js';
 import { configuredSuperRateFraction } from './settings.service.js';
+import { buildSalesErrorCsv, parseSalesCsv, salesTemplateCsv, type GstBasis } from '../lib/sales-import.js';
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
@@ -1785,6 +1786,150 @@ export const reportsService = {
     }
 
     return { imported };
+  },
+
+  /**
+   * Preview or apply a sales CSV.
+   *
+   * With Square disconnected and the Lightspeed API not paid for, this and the
+   * manual grid are the PRIMARY way sales reach the forecast. Two safeguards
+   * matter most: the GST basis is explicit (SalesActualEntry stores ex-GST, and
+   * till takings are GST inclusive), and the write reuses the existing
+   * idempotent upsert so re-uploading a file cannot double count a day.
+   */
+  async importActualSalesCsv(
+    input: {
+      csv?: string;
+      gstBasis?: string;
+      venue?: string | null;
+      source?: string;
+      dryRun?: boolean;
+    },
+    actor?: AuthUser
+  ) {
+    if (typeof input.csv !== 'string' || input.csv.trim() === '') {
+      throw new HttpError(400, 'No CSV content was supplied.');
+    }
+    const basis: GstBasis = input.gstBasis === 'EXCLUSIVE' ? 'EXCLUSIVE' : 'INCLUSIVE';
+    const source = (input.source ?? 'csv').trim() || 'csv';
+
+    const venues = (await prisma.venue.findMany({ select: { name: true }, orderBy: { name: 'asc' } })).map((v) => v.name);
+    if (venues.length === 0) throw new HttpError(409, 'No venues are configured.');
+
+    // The selected venue is a FALLBACK for rows that do not name one — never a
+    // filter. Dropping a row because it names the other venue would lose a
+    // day's takings silently, which is the one thing this feed must not do.
+    // Also throws for a venue-scoped manager who selected someone else's venue.
+    const fallbackVenue = salesVenueScope(actor, input.venue ?? null);
+
+    const parsed = parseSalesCsv(input.csv, {
+      defaultBasis: basis,
+      venues,
+      defaultVenue: fallbackVenue
+    });
+
+    // Permission is enforced per row, and a refusal is reported rather than
+    // quietly skipped.
+    const rows: typeof parsed.rows = [];
+    const errors = [...parsed.errors];
+    for (const row of parsed.rows) {
+      try {
+        salesVenueScope(actor, row.venue);
+        rows.push(row);
+      } catch {
+        errors.push({
+          rowNumber: row.rowNumber,
+          column: 'venue',
+          message: `You do not have access to ${row.venue}, so this row was not imported.`
+        });
+      }
+    }
+    errors.sort((a, b) => a.rowNumber - b.rowNumber);
+
+    const summary = {
+      totalRows: parsed.totalRows,
+      validRows: rows.length,
+      errorRows: errors.length,
+      duplicateRows: parsed.duplicateRowNumbers.length,
+      gstBasis: basis,
+      basisFromFile: parsed.basisFromFile,
+      errors: errors.slice(0, 200),
+      errorReportCsv: errors.length ? buildSalesErrorCsv(errors) : null,
+      preview: rows.slice(0, 14).map((row) => ({
+        rowNumber: row.rowNumber,
+        venue: row.venue,
+        serviceDate: row.serviceDate.toISOString().slice(0, 10),
+        enteredCents: row.enteredCents,
+        enteredBasis: row.enteredBasis,
+        salesCents: row.salesCents
+      }))
+    };
+
+    if (input.dryRun !== false) {
+      return { ...summary, applied: false, imported: 0 };
+    }
+
+    let imported = 0;
+    for (const row of rows) {
+      const externalId = `${row.venue}:${row.serviceDate.toISOString().slice(0, 10)}:${source}`;
+      await prisma.salesActualEntry.upsert({
+        where: {
+          venue_serviceDate_source_externalId: {
+            venue: row.venue,
+            serviceDate: row.serviceDate,
+            source,
+            externalId
+          }
+        },
+        create: {
+          venue: row.venue,
+          serviceDate: row.serviceDate,
+          salesCents: row.salesCents,
+          source,
+          externalId,
+          notes: row.notes,
+          importedById: actor?.id || null
+        },
+        update: {
+          salesCents: row.salesCents,
+          notes: row.notes,
+          importedById: actor?.id || null
+        }
+      });
+      imported += 1;
+    }
+
+    return { ...summary, applied: true, imported };
+  },
+
+  /** The tiny template a venue downloads. */
+  salesTemplate() {
+    return salesTemplateCsv();
+  },
+
+  /** Existing entries for a date range, so the grid can prefill. */
+  async listActualSalesRange(input: { venue?: string | null; from: string; to: string }, actor?: AuthUser) {
+    const venue = salesVenueScope(actor, input.venue ?? null);
+    const from = parseDate(input.from, 'From date');
+    const to = parseDate(input.to, 'To date');
+    const entries = await prisma.salesActualEntry.findMany({
+      where: {
+        serviceDate: { gte: from, lte: to },
+        ...(venue ? { venue } : {})
+      },
+      orderBy: [{ serviceDate: 'asc' }, { venue: 'asc' }]
+    });
+    return {
+      entries: entries.map((entry) => ({
+        id: entry.id,
+        venue: entry.venue,
+        serviceDate: entry.serviceDate.toISOString().slice(0, 10),
+        salesCents: entry.salesCents,
+        source: entry.source,
+        notes: entry.notes
+      })),
+      note: 'Stored figures are GST exclusive.'
+    };
   },
 
   async deleteActualSalesEntry(id: string, actor?: AuthUser) {

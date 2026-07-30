@@ -2544,3 +2544,89 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   max-width: 42ch;
   font-size: 11.5px;
 }
+
+/* ── Sales entry ────────────────────────────────────────────────────────── */
+
+.se-basis {
+  display: flex;
+  align-items: flex-end;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 16px;
+  border-radius: 14px;
+  background: var(--color-surface-muted);
+  border: 1px solid rgba(var(--ink-forest-rgb), 0.1);
+  margin-bottom: 12px;
+}
+
+.se-basis-label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 13.5px;
+}
+
+.se-basis-label .subtle {
+  font-size: 12px;
+}
+
+.se-input {
+  width: 100%;
+  max-width: 160px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-elevated);
+  color: var(--color-text);
+  font-size: 15px;
+  font-variant-numeric: tabular-nums;
+}
+
+.se-input:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 1px;
+}
+
+.se-input.is-invalid {
+  border-color: var(--tone-danger-dot);
+  background: var(--tone-danger-bg);
+}
+
+.se-grid td {
+  vertical-align: middle;
+}
+
+.se-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-top: 14px;
+}
+
+.se-note {
+  margin: 10px 0 0;
+  font-size: 12px;
+}
+
+.se-success {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: var(--tone-positive-bg);
+  color: var(--tone-positive-fg);
+  font-size: 13.5px;
+}
+
+.se-file {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 13.5px;
+}
+
+.se-preview {
+  margin-top: 16px;
+  display: grid;
+  gap: 14px;
+}

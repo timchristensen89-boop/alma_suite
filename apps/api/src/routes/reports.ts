@@ -155,6 +155,41 @@ reportsRouter.post('/sales/import', requireManager, async (req, res, next) => {
   }
 });
 
+// Sales CSV upload. Defaults to a DRY RUN: nothing is written unless the
+// caller explicitly sets dryRun false, so a preview can never surprise anyone.
+reportsRouter.post('/sales/import-csv', requireManager, async (req, res, next) => {
+  try {
+    res.json(await reportsService.importActualSalesCsv(req.body ?? {}, req.user!));
+  } catch (error) {
+    next(error);
+  }
+});
+
+reportsRouter.get('/sales/template.csv', requireManager, (_req, res) => {
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="alma-sales-template.csv"');
+  res.send(reportsService.salesTemplate());
+});
+
+// Existing entries for a range, so the manual grid can prefill rather than
+// silently overwrite what is already recorded.
+reportsRouter.get('/sales/range', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await reportsService.listActualSalesRange(
+        {
+          venue: typeof req.query.venue === 'string' ? req.query.venue : null,
+          from: String(req.query.from ?? ''),
+          to: String(req.query.to ?? '')
+        },
+        req.user!
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 reportsRouter.post('/sales/clear', requireManager, async (req, res, next) => {
   try {
     res.json(await reportsService.clearActualSales(req.body, req.user!));

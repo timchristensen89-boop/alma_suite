@@ -103,6 +103,29 @@ export function stockApi<T>(path: string, init?: RequestInit) {
   return request<T>(STOCK_API_BASE_URL, 'Stock', path, init);
 }
 
+/**
+ * Same base URL and bearer token as `staffApi`, but returns the raw body.
+ *
+ * For file downloads (CSV templates, exports). A plain <a href> cannot be used
+ * for these: the frontend and the API are on different origins, and the anchor
+ * would carry no Authorization header.
+ */
+export async function staffApiText(path: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(`${STAFF_API_BASE_URL}${normalisePath(STAFF_API_BASE_URL, path)}`, {
+    credentials: 'include',
+    ...init,
+    headers: requestHeaders('Staff', init)
+  });
+  if (!response.ok) {
+    if (response.status === 401) {
+      setStaffApiAuthToken(null);
+      throw new ApiError('Please sign in again.', response.status);
+    }
+    throw new ApiError('Download failed', response.status);
+  }
+  return response.text();
+}
+
 function urlWithSuiteToken(href: string, token: string) {
   const url = new URL(href, window.location.origin);
   url.searchParams.set('suite_token', token);

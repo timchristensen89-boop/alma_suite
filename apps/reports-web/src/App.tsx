@@ -3,6 +3,7 @@ import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
 import { ForecastPage } from './pages/ForecastPage';
 import { SupplierSpendPage } from './pages/SupplierSpendPage';
 import { ForecastModulePage } from './pages/ForecastModulePage';
+import { SalesEntryPage } from './pages/SalesEntryPage';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -192,6 +193,7 @@ type ReportSectionId =
   | 'forecast'
   | 'supplier-spend'
   | 'forecast-module'
+  | 'sales-entry'
   | 'staff'
   | 'compliance'
   | 'stock'
@@ -244,6 +246,14 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     label: 'Forecast',
     title: 'Forecast',
     description: 'The weeks ahead: covers, sales, wages, COGS and the 13-week cash runway — predicted from your own trading history.',
+    icon: <ChartIcon />,
+    group: 'core'
+  },
+  {
+    id: 'sales-entry',
+    label: 'Enter sales',
+    title: 'Sales entry',
+    description: 'Type takings by hand or upload a file. This is what feeds the forecast now the POS is not connected.',
     icon: <ChartIcon />,
     group: 'core'
   },
@@ -2385,7 +2395,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       : 'Inside the guides, good week.'
             const sub = (() => {
               if (loading) return 'Loading the week in numbers.';
-              if (salesCentsForRange === 0) return 'No sales imported for the period yet — connect a source to see this week shape up.';
+              if (salesCentsForRange === 0) return 'No sales recorded for the period yet — enter this week\u2019s takings under Enter sales.';
               if (salesIncomplete) {
                 return 'Sales look incomplete for this week — check the Square import before trusting the cost %.';
               }
@@ -2450,7 +2460,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <BigStat
               eyebrow={`Takings · ${weekWindowLabel}`}
               value={formatCurrency(salesCentsForRange)}
-              sub={data.primeCost?.sources.sales === 'missing' ? 'Sales import missing' : 'Group total'}
+              sub={data.primeCost?.sources.sales === 'missing' ? 'No sales recorded yet' : 'Group total'}
               delta={takingsDelta}
               trend={salesTrend}
               sparkColor="#684A4A"
@@ -2465,7 +2475,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <BigStat
               eyebrow="Avg per cover"
               value={avgPerCoverCents > 0 ? formatCurrency(avgPerCoverCents) : '—'}
-              sub={coversForRange > 0 ? `${coversForRange.toLocaleString()} covers` : 'Awaiting Square import'}
+              sub={coversForRange > 0 ? `${coversForRange.toLocaleString()} covers` : 'No covers recorded'}
             />
             <BigStat
               eyebrow="No-show rate"
@@ -4441,6 +4451,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         return <SupplierSpendPage />;
       case 'forecast-module':
         return <ForecastModulePage />;
+      case 'sales-entry':
+        return <SalesEntryPage />;
       case 'staff':
         return renderStaffSection();
       case 'compliance':
