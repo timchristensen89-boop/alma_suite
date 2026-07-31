@@ -4152,8 +4152,21 @@ model FcCreditorProposal {
   id                      String       @id @default(cuid())
   companyId               String
   name                    String
-  /// Fixed contribution, contractual.
+  /// Fixed contribution, contractual. A SNAPSHOT of the rate applied to the
+  /// pool estimate below — recompute it when the admitted pool changes.
   fixedTotalCents         Int
+  /// The v5 proposal commits a RATE, not a dollar total, so the distribution
+  /// recalculates as proofs of debt are admitted with no renegotiation.
+  /// Cents per dollar of admitted external claim, 0-100.
+  baseCentsInDollar       Decimal?     @db.Decimal(6, 3)
+  /// Contingent performance increment, also expressed as cents in the dollar.
+  performanceCentsInDollar Decimal?    @db.Decimal(6, 3)
+  /// Working estimate of the admitted external pool the rate is applied to.
+  estimatedExternalPoolCents Int?
+  /// Share of the distribution paid in each proposal year, e.g. [0, 0.35, 0.65].
+  yearShares              Json         @default("[]")
+  /// Share of each year's amount falling in December; the rest in January.
+  decemberShare           Decimal?     @db.Decimal(6, 3)
   termMonths              Int          @default(36)
   /// Performance contribution: share of free cash above the agreed base.
   performanceSharePercent Decimal      @default(25) @db.Decimal(6, 3)

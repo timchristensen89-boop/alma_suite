@@ -203,10 +203,15 @@ export function ForecastModulePage() {
         ) : null}
 
         {unconfirmed > 0 ? (
+          // The API composes this from the actual counts and reasons, so the
+          // wording stays true as figures are evidenced and confirmed.
           <p className="fc-warning">
-            <strong>{unconfirmed} assumptions are unconfirmed.</strong> They come from the written brief and have not
-            been reconciled against the creditor workbook. Treat every figure below as a management assumption, not
-            verified data.
+            {assumptions?.warning ?? (
+              <>
+                <strong>{unconfirmed} assumptions are not yet evidenced.</strong> Treat them as management assumptions
+                rather than demonstrated results.
+              </>
+            )}
           </p>
         ) : null}
 
@@ -383,12 +388,26 @@ function CreditorsSection({ data }: { data: any }) {
         <div className="table-scroll">
           <table className="forecast-table">
             <thead>
-              <tr><th>Year</th><th className="num">Fixed</th><th className="num">Performance</th><th className="num">Total</th></tr>
+              <tr><th>Instalment</th><th>Year</th><th className="num">Fixed</th><th className="num">Performance</th><th className="num">Total</th></tr>
             </thead>
             <tbody>
-              {data.schedule.map((row: any) => (
-                <tr key={row.yearNumber}>
-                  <td>Year {row.yearNumber}</td>
+              {/* A proposal year holds two instalments (December and January),
+                  so the month is what distinguishes the rows — keying or
+                  labelling by year alone renders them as duplicates. */}
+              {data.schedule.map((row: any, index: number) => (
+                <tr key={row.periodStart ?? `${row.yearNumber}-${index}`}>
+                  <td>
+                    <strong>
+                      {row.periodStart
+                        ? new Date(`${row.periodStart}T00:00:00Z`).toLocaleDateString('en-AU', {
+                            month: 'long',
+                            year: 'numeric',
+                            timeZone: 'UTC',
+                          })
+                        : `Instalment ${index + 1}`}
+                    </strong>
+                  </td>
+                  <td className="subtle">Year {row.yearNumber}</td>
                   <td className="num">{money(row.fixedCents)}</td>
                   <td className="num">{money(row.performanceCents)}</td>
                   <td className="num"><strong>{money(row.totalCents)}</strong></td>

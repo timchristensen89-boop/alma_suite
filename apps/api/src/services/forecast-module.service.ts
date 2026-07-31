@@ -145,7 +145,7 @@ export const forecastModuleService = {
       unconfirmedCount: unconfirmed.length,
       warning:
         unconfirmed.length > 0
-          ? `${unconfirmed.length} assumptions have not been confirmed against the creditor workbook. Treat these figures as management assumptions, not verified data.`
+          ? `${unconfirmed.length} of ${provenance.length} assumptions are not yet evidenced — operating targets, estimates and proxies such as the COGS rate, the wage structure and the menu-price uplift. Each carries its source; treat them as management assumptions rather than demonstrated results.`
           : null
     };
   },
@@ -257,7 +257,15 @@ export const forecastModuleService = {
       excludedFromDistribution: claim.excludedFromDistribution
     }));
 
-    const pool = admittedExternalPoolCents(claimInputs, switches);
+    // Before any proof of debt is admitted there are no claims, so a pool
+    // computed from claims alone is zero — and a zero pool reports a 0 cent
+    // return, the opposite of what is being offered. Fall back to the
+    // proposal's working estimate, and say which one is in use so an estimate
+    // is never mistaken for an adjudicated figure.
+    const poolFromClaims = admittedExternalPoolCents(claimInputs, switches);
+    const usingEstimate = poolFromClaims === 0 && (proposal.estimatedExternalPoolCents ?? 0) > 0;
+    const pool = usingEstimate ? proposal.estimatedExternalPoolCents! : poolFromClaims;
+
     const distribution = computeDistribution({
       fixedTotalCents: proposal.fixedTotalCents,
       performanceCapCents: proposal.performanceCapCents,
@@ -267,11 +275,14 @@ export const forecastModuleService = {
 
     const schedules = await prisma.fcCreditorPaymentSchedule.findMany({
       where: { proposalId: proposal.id },
-      orderBy: { yearNumber: 'asc' }
+      // By period, not year: a year holds two instalments (December and
+      // January) and ordering by year alone leaves them in no fixed order.
+      orderBy: { periodStart: 'asc' }
     });
     const schedule = schedules.length
       ? schedules.map((row) => ({
           yearNumber: row.yearNumber,
+          periodStart: row.periodStart.toISOString().slice(0, 10),
           fixedCents: row.fixedCents,
           performanceCents: row.performanceCents,
           totalCents: row.fixedCents + row.performanceCents
@@ -293,9 +304,15 @@ export const forecastModuleService = {
         fixedTotalCents: proposal.fixedTotalCents,
         performanceCapCents: proposal.performanceCapCents,
         deedCostsCents: proposal.deedCostsCents,
+        // The contractual term is a RATE, so the dollar figures above move with
+        // the admitted pool rather than being renegotiated.
+        baseCentsInDollar: proposal.baseCentsInDollar ? Number(proposal.baseCentsInDollar) : null,
+        performanceCentsInDollar: proposal.performanceCentsInDollar ? Number(proposal.performanceCentsInDollar) : null,
+        estimatedExternalPoolCents: proposal.estimatedExternalPoolCents,
         participation: switches
       },
       distribution,
+      poolSource: usingEstimate ? 'PROPOSAL_ESTIMATE' : 'ADMITTED_CLAIMS',
       schedule,
       claimsByClass: claims.reduce<Record<string, { count: number; claimedCents: number; admittedCents: number }>>(
         (acc, claim) => {
@@ -308,7 +325,9 @@ export const forecastModuleService = {
         },
         {}
       ),
-      note: 'Distribution is capped at 100 cents in the dollar of admitted external claims.'
+      note: usingEstimate
+        ? 'No proofs of debt are admitted yet, so this uses the proposal\'s working pool estimate. Returns recalculate automatically as claims are admitted — the rate is the committed term, not the dollar amount.'
+        : 'Distribution is capped at 100 cents in the dollar of admitted external claims.'
     };
   },
 
