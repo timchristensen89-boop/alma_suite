@@ -2,23 +2,25 @@
 //
 // PROVENANCE. Every value below is traceable to one of two documents:
 //
-//   MODEL — "Alma Creditor Model — Rebuilt Clean", Inputs sheet. Full
-//           precision, the workbook the proposal names as its financial model.
+//   MODEL — "Alma Creditor Model — Corrected v2", Inputs sheet. Full
+//           precision. Supersedes "Rebuilt Clean", which is stale.
+//   SCHED — "Alma Cost Reduction Schedule", sourced from FY2026 Xero account
+//           transactions. Itemises the reductions and the ledger-verified
+//           cleaning and software savings.
 //   V5    — "Alma Group Indicative Creditor Funding Proposal v5", 30 July 2026,
-//           prepared for Cameron Gray, Voluntary Administrator, HM Advisory.
+//           for Cameron Gray, Voluntary Administrator, HM Advisory.
 //
-// Where the two agree, the MODEL value is used because it carries full
-// precision. Where they DISAGREE, the V5 value is used — it is the operative
-// document, it is the more conservative of the two, and it is what creditors
-// would see — and the conflict is recorded in the sourceNote so it is visible
-// in the UI rather than buried here.
+// The earlier Freshwater conflict is RESOLVED. Corrected v2 adopts annual sales
+// of $1,602,751.93 and an FY2026 software base of $30,524.81 — both the V5
+// figures — and its historical stress case now reproduces V5 exactly for both
+// entities. V5 was right and "Rebuilt Clean" was stale.
 //
-// UNRESOLVED. Avalon reconciles to the model to the cent. Freshwater does NOT:
-// the two documents disagree on annual sales ($1,628,470.48 model vs
-// $1,602,752 V5) and on software ($2,367.57/mo vs $2,543.73/mo), and V5's
-// 36-month cash figures sit $58k–$89k below the model's across all three
-// cases. Both cannot be right. Until that is settled against the FY2026 Xero
-// P&L, every contested Freshwater row is seeded confirmed = false.
+// CAUTION: V5 is now itself out of date against corrected v2. V5 states that
+// cleaning and software are carried at full FY2026 cost with no saving assumed;
+// corrected v2 takes $22,141.81 p.a. of ledger-verified savings, and moves the
+// other-operating rates from 7.0%/7.5% to 7.75%/8.25%. Its base and
+// conservative cash figures no longer match. The values below follow corrected
+// v2, not V5.
 //
 // These are versioned rows in fc_assumptions, not constants. The forecasting
 // services read the active version at a given date; they never import from
@@ -64,13 +66,10 @@ export type SeedCompany = {
   };
 };
 
-const MODEL = "Alma Creditor Model — Rebuilt Clean, Inputs sheet.";
+const MODEL = "Alma Creditor Model — Corrected v2, Inputs sheet.";
 const V5 = "Indicative Creditor Funding Proposal v5, 30 Jul 2026.";
+const SCHED = "Alma Cost Reduction Schedule, from FY2026 Xero account transactions.";
 const BOTH = `${MODEL} Agrees with ${V5}`;
-
-/** Flags a figure the two source documents disagree on. */
-const CONFLICT = (modelValue: string, v5Value: string) =>
-  `CONFLICT — model says ${modelValue}, ${V5} says ${v5Value}. V5 value seeded (operative and more conservative). Settle against the FY2026 Xero P&L.`;
 
 export const SEED_COMPANIES: SeedCompany[] = [
   {
@@ -87,8 +86,8 @@ export const SEED_COMPANIES: SeedCompany[] = [
       { key: "super_percent", valueNumeric: 12, unit: "percent", sourceNote: BOTH, confirmed: true },
       { key: "monthly_rent_ex_gst", valueNumeric: cents(12_828.772727), unit: "cents_per_month", sourceNote: `${BOTH} FY2026 run rate, no adjustment — $153,945 forecast against $154,042 actual.`, confirmed: true },
       { key: "monthly_cleaning", valueNumeric: cents(1_534.246667), unit: "cents_per_month", sourceNote: `${BOTH} FULL FY2026 run rate — no saving assumed.`, confirmed: true },
-      { key: "monthly_software", valueNumeric: cents(1_415.058333), unit: "cents_per_month", sourceNote: `${BOTH} FULL FY2026 run rate — no saving assumed.`, confirmed: true },
-      { key: "other_operating_percent", valueNumeric: 7, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
+      { key: "monthly_software", valueNumeric: cents(831.725), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $1,415.06/mo less $7,000 p.a. of ledger-verified savings (SevenRooms plan change $4,000, Deputy replaced by the in-house platform $3,000). ${SCHED} NOTE: V5 still says full run rate with no saving.`, confirmed: false },
+      { key: "other_operating_percent", valueNumeric: 7.75, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.0% so the revised allowance ($111,264 with maintenance) covers the $107,846 of continuing costs itemised in ${SCHED} V5 Appendix A still shows 7.0%.`, confirmed: true },
       { key: "maintenance_reserve_percent", valueNumeric: 1, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
       { key: "nab_repayment_monthly", valueNumeric: cents(11_656), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment.`, confirmed: true },
       { key: "plenti_repayment_monthly", valueNumeric: cents(815.5), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment.`, confirmed: true },
@@ -117,27 +116,15 @@ export const SEED_COMPANIES: SeedCompany[] = [
     tradingName: "St Alma",
     venue: { code: "FRESHWATER", name: "St Alma", legacyVenueName: "St Alma" },
     assumptions: [
-      {
-        key: "annual_base_sales",
-        valueNumeric: cents(1_602_752),
-        unit: "cents",
-        sourceNote: CONFLICT("$1,628,470.48", "$1,602,752") + " A $25,718 difference that moves every downstream Freshwater figure.",
-        confirmed: false,
-      },
+      { key: "annual_base_sales", valueNumeric: cents(1_602_751.93), unit: "cents", sourceNote: `${MODEL} FY2026 Xero trading income. RESOLVED — corrected v2 adopts the V5 figure; the earlier "Rebuilt Clean" value of $1,628,470.48 was stale.`, confirmed: true },
       { key: "annual_growth_percent", valueNumeric: 2, unit: "percent", sourceNote: `${BOTH} Management assumption.`, confirmed: true },
       { key: "cogs_target_percent", valueNumeric: 25.5, unit: "percent", sourceNote: `${BOTH} Of GST-EXCLUSIVE base sales. OPERATING TARGET — below the FY2026 actual of 26.79%, not yet evidenced.`, confirmed: false },
       { key: "gross_wages_weekly", valueNumeric: cents(10_000), unit: "cents_per_week", sourceNote: `${BOTH} GROSS — already contains PAYG withholding, so labour = gross + super only.`, confirmed: false },
       { key: "super_percent", valueNumeric: 12, unit: "percent", sourceNote: BOTH, confirmed: true },
       { key: "monthly_rent_ex_gst", valueNumeric: cents(11_067.5), unit: "cents_per_month", sourceNote: `${BOTH} RECURRING BASE RENT only. The FY2026 Xero account of $144,694 also contains outgoings and arrears; the $11,884 difference is an expense reclassification, not a saving. Tie the split to the lease before circulation.`, confirmed: false },
-      { key: "monthly_cleaning", valueNumeric: cents(2_552.233333), unit: "cents_per_month", sourceNote: `${BOTH} FULL FY2026 run rate — no saving assumed.`, confirmed: true },
-      {
-        key: "monthly_software",
-        valueNumeric: cents(2_543.73),
-        unit: "cents_per_month",
-        sourceNote: CONFLICT("$2,367.57/mo ($28,410.81 p.a.)", "$2,543.73/mo ($30,525 p.a.)"),
-        confirmed: false,
-      },
-      { key: "other_operating_percent", valueNumeric: 7.5, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
+      { key: "monthly_cleaning", valueNumeric: cents(1_794.96), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $2,552.23/mo less $9,087.28 p.a. — external cleaners (Horizon Cleaning Group) moved to rostered staff. ${SCHED} NOTE: V5 still says full run rate with no saving.`, confirmed: false },
+      { key: "monthly_software", valueNumeric: cents(2_039.19), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 base $30,524.81 p.a. (the V5 figure — RESOLVED) less $6,054.53 of ledger-verified savings: Loaded replaced by the in-house platform $3,372.68, SevenRooms plan change $2,681.85. ${SCHED}`, confirmed: false },
+      { key: "other_operating_percent", valueNumeric: 8.25, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.5% so the revised allowance ($148,255 with maintenance) covers the $146,006 of continuing costs itemised in ${SCHED} V5 Appendix A still shows 7.5%.`, confirmed: true },
       { key: "maintenance_reserve_percent", valueNumeric: 1, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
       { key: "annual_menu_price_uplift", valueNumeric: cents(45_739.975241), unit: "cents", sourceNote: `${BOTH} MANAGEMENT PROXY pending actual Square item quantities — v5 calls it unverified. Contributes roughly $140,000 across the 36 months.`, confirmed: false },
       { key: "administration_fee_total", valueNumeric: cents(25_000), unit: "cents", sourceNote: `${BOTH} HM Advisory allowance, drawn evenly across the first 12 months.`, confirmed: false },
