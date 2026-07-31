@@ -15,12 +15,13 @@
 // figures — and its historical stress case now reproduces V5 exactly for both
 // entities. V5 was right and "Rebuilt Clean" was stale.
 //
-// CAUTION: V5 is now itself out of date against corrected v2. V5 states that
-// cleaning and software are carried at full FY2026 cost with no saving assumed;
-// corrected v2 takes $22,141.81 p.a. of ledger-verified savings, and moves the
-// other-operating rates from 7.0%/7.5% to 7.75%/8.25%. Its base and
-// conservative cash figures no longer match. The values below follow corrected
-// v2, not V5.
+// V5 (31 Jul revision) and corrected v2 now AGREE on every figure below. V5
+// dropped the "no saving assumed" claim for cleaning and software and now
+// states they carry ledger-verified savings only; its Appendix A carries the
+// revised rates; and its cash tables reproduce corrected v2 to the dollar.
+// The finance reclassification is sound: the director confirmed on 31 Jul 2026
+// that the NAB and Plenti lines are principal AND interest, so removing the
+// FY2026 interest from residual opex does not drop it twice.
 //
 // These are versioned rows in fc_assumptions, not constants. The forecasting
 // services read the active version at a given date; they never import from
@@ -86,11 +87,11 @@ export const SEED_COMPANIES: SeedCompany[] = [
       { key: "super_percent", valueNumeric: 12, unit: "percent", sourceNote: BOTH, confirmed: true },
       { key: "monthly_rent_ex_gst", valueNumeric: cents(12_828.772727), unit: "cents_per_month", sourceNote: `${BOTH} FY2026 run rate, no adjustment — $153,945 forecast against $154,042 actual.`, confirmed: true },
       { key: "monthly_cleaning", valueNumeric: cents(1_534.246667), unit: "cents_per_month", sourceNote: `${BOTH} FULL FY2026 run rate — no saving assumed.`, confirmed: true },
-      { key: "monthly_software", valueNumeric: cents(831.725), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $1,415.06/mo less $7,000 p.a. of ledger-verified savings (SevenRooms plan change $4,000, Deputy replaced by the in-house platform $3,000). ${SCHED} NOTE: V5 still says full run rate with no saving.`, confirmed: false },
-      { key: "other_operating_percent", valueNumeric: 7.75, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.0% so the revised allowance ($111,264 with maintenance) covers the $107,846 of continuing costs itemised in ${SCHED} V5 Appendix A still shows 7.0%.`, confirmed: true },
+      { key: "monthly_software", valueNumeric: cents(831.725), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $1,415.06/mo less $7,000 p.a. of ledger-verified savings (SevenRooms plan change $4,000, Deputy replaced by the in-house platform $3,000). ${SCHED} V5 Appendix A agrees ($831.73/mo).`, confirmed: true },
+      { key: "other_operating_percent", valueNumeric: 7.75, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.0% so the revised allowance ($111,264 with maintenance) covers the $107,846 of continuing costs itemised in ${SCHED} V5 Appendix A agrees (7.75%, revised 31 Jul 2026).`, confirmed: true },
       { key: "maintenance_reserve_percent", valueNumeric: 1, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
-      { key: "nab_repayment_monthly", valueNumeric: cents(11_656), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment.`, confirmed: true },
-      { key: "plenti_repayment_monthly", valueNumeric: cents(815.5), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment.`, confirmed: true },
+      { key: "nab_repayment_monthly", valueNumeric: cents(11_656), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment — PRINCIPAL AND INTEREST (director confirmed 31 Jul 2026). The FY2026 interest is therefore excluded from residual opex without being dropped twice.`, confirmed: true },
+      { key: "plenti_repayment_monthly", valueNumeric: cents(815.5), unit: "cents_per_month", sourceNote: `${BOTH} Continuing finance commitment — PRINCIPAL AND INTEREST (director confirmed 31 Jul 2026). The FY2026 interest is therefore excluded from residual opex without being dropped twice.`, confirmed: true },
       { key: "annual_menu_price_uplift", valueNumeric: cents(35_715.891909), unit: "cents", sourceNote: `${BOTH} Square item-volume estimate, net of GST and merchant fees. ESTIMATE.`, confirmed: false },
       { key: "administration_fee_total", valueNumeric: cents(25_000), unit: "cents", sourceNote: `${BOTH} HM Advisory allowance, drawn evenly across the first 12 months. Additional to creditor distributions.`, confirmed: false },
       { key: "opening_cash", valueNumeric: 0, unit: "cents", sourceNote: `${BOTH} Model carries nil; confirm the actual bank balance.`, confirmed: false },
@@ -122,9 +123,9 @@ export const SEED_COMPANIES: SeedCompany[] = [
       { key: "gross_wages_weekly", valueNumeric: cents(10_000), unit: "cents_per_week", sourceNote: `${BOTH} GROSS — already contains PAYG withholding, so labour = gross + super only.`, confirmed: false },
       { key: "super_percent", valueNumeric: 12, unit: "percent", sourceNote: BOTH, confirmed: true },
       { key: "monthly_rent_ex_gst", valueNumeric: cents(11_067.5), unit: "cents_per_month", sourceNote: `${BOTH} RECURRING BASE RENT only. The FY2026 Xero account of $144,694 also contains outgoings and arrears; the $11,884 difference is an expense reclassification, not a saving. Tie the split to the lease before circulation.`, confirmed: false },
-      { key: "monthly_cleaning", valueNumeric: cents(1_794.96), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $2,552.23/mo less $9,087.28 p.a. — external cleaners (Horizon Cleaning Group) moved to rostered staff. ${SCHED} NOTE: V5 still says full run rate with no saving.`, confirmed: false },
-      { key: "monthly_software", valueNumeric: cents(2_039.19), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 base $30,524.81 p.a. (the V5 figure — RESOLVED) less $6,054.53 of ledger-verified savings: Loaded replaced by the in-house platform $3,372.68, SevenRooms plan change $2,681.85. ${SCHED}`, confirmed: false },
-      { key: "other_operating_percent", valueNumeric: 8.25, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.5% so the revised allowance ($148,255 with maintenance) covers the $146,006 of continuing costs itemised in ${SCHED} V5 Appendix A still shows 7.5%.`, confirmed: true },
+      { key: "monthly_cleaning", valueNumeric: cents(1_794.96), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 run rate $2,552.23/mo less $9,087.28 p.a. — external cleaners (Horizon Cleaning Group) moved to rostered staff. ${SCHED} V5 Appendix A agrees ($1,794.96/mo).`, confirmed: true },
+      { key: "monthly_software", valueNumeric: cents(2_039.19), unit: "cents_per_month", sourceNote: `${MODEL} FY2026 base $30,524.81 p.a. (the V5 figure — RESOLVED) less $6,054.53 of ledger-verified savings: Loaded replaced by the in-house platform $3,372.68, SevenRooms plan change $2,681.85. ${SCHED} V5 Appendix A agrees ($2,039.19/mo).`, confirmed: true },
+      { key: "other_operating_percent", valueNumeric: 8.25, unit: "percent", sourceNote: `${MODEL} Of base sales. Raised from 7.5% so the revised allowance ($148,255 with maintenance) covers the $146,006 of continuing costs itemised in ${SCHED} V5 Appendix A agrees (8.25%, revised 31 Jul 2026).`, confirmed: true },
       { key: "maintenance_reserve_percent", valueNumeric: 1, unit: "percent", sourceNote: `${BOTH} Of base sales.`, confirmed: true },
       { key: "annual_menu_price_uplift", valueNumeric: cents(45_739.975241), unit: "cents", sourceNote: `${BOTH} MANAGEMENT PROXY pending actual Square item quantities — v5 calls it unverified. Contributes roughly $140,000 across the 36 months.`, confirmed: false },
       { key: "administration_fee_total", valueNumeric: cents(25_000), unit: "cents", sourceNote: `${BOTH} HM Advisory allowance, drawn evenly across the first 12 months.`, confirmed: false },
