@@ -72,7 +72,8 @@ const CLOSED_DAY_THRESHOLD_CENTS = 20_000; // < $200 median = venue not trading
 const MIN_COVERS_FOR_SPEND_SAMPLE = 10;
 const DEFAULT_WAGE_PCT = 32;
 const DEFAULT_COGS_PCT = 30;
-// Sales data older than this many days means the Square sync is stalled —
+// Sales data older than this many days means the feed has stalled — a POS
+// sync, or hand entry that has not been kept up —
 // baselines then anchor to the last real day and the payload carries a warning.
 const STALE_SALES_AFTER_DAYS = 2;
 
@@ -366,7 +367,7 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
     const sales = salesByVenue.get(venue) ?? new Map<string, number>();
     const covers = coversByVenue.get(venue) ?? new Map<string, number>();
 
-    // Stale-feed guard: if the Square sync has stalled, anchor all history
+    // Stale-feed guard: if the sales feed has stalled, anchor all history
     // sampling to the last real trading day instead of today, so a run of
     // missing days doesn't read as a collapse in trade.
     const latestSaleKey = [...sales.keys()].sort().at(-1) ?? null;
@@ -375,10 +376,14 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
       const staleDays = Math.round((today.getTime() - dateFromKey(latestSaleKey).getTime()) / DAY_MS);
       if (staleDays > STALE_SALES_AFTER_DAYS) {
         sampleAnchor = addDaysUtc(dateFromKey(latestSaleKey), 1);
-        warnings.push(`${venue}: no Square sales recorded since ${latestSaleKey} — check the Square sync. Baselines are anchored to the last recorded day.`);
+        warnings.push(
+          `${venue}: no sales recorded since ${latestSaleKey} (${staleDays} days). Enter the missing days under Reports > Enter sales, or check the POS sync if one is connected. Baselines are anchored to the last recorded day, so the gap does not read as a fall in trade — but the forecast ages with it.`
+        );
       }
     } else {
-      warnings.push(`${venue}: no sales history at all — forecasts fall back to bookings and targets.`);
+      warnings.push(
+        `${venue}: no sales history at all — forecasts fall back to bookings and venue targets. Enter takings under Reports > Enter sales to forecast from actual trade.`
+      );
     }
 
     // History stats.

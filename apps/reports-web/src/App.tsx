@@ -214,6 +214,9 @@ type ReportNavItem = {
   // 'core' = the daily P&L reports an operator lives in; 'more' = secondary
   // reports tucked behind a group so they don't crowd the nav.
   group: 'core' | 'more';
+  // Reachable by id, but deliberately not listed anywhere in the UI. The route
+  // stays live so existing links keep working; it simply is not advertised.
+  hidden?: boolean;
 };
 
 // Plain-restaurant cost targets (% of sales) used for the at-a-glance tone on
@@ -263,7 +266,10 @@ const REPORT_NAV_ITEMS: ReportNavItem[] = [
     title: 'Forecasting module',
     description: 'Entity-separated cash, margin and creditor modelling for Two Cooked Chooks and Alma Freshwater.',
     icon: <ChartIcon />,
-    group: 'core'
+    group: 'core',
+    // Unlinked on purpose: this is the creditor-facing model, not an operating
+    // report. The route still resolves for anyone who has the link.
+    hidden: true
   },
   {
     id: 'supplier-spend',
@@ -1052,7 +1058,7 @@ function SidebarNav({
         className={`sidebar-nav ${mobileMenuOpen ? 'mobile-open' : ''}`}
       >
         <li className="sidebar-nav-section">Reports</li>
-        {REPORT_NAV_ITEMS.filter((item) => item.group === 'core').map((item) => (
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'core' && !item.hidden).map((item) => (
           <li key={item.id}>
             <a
               href={reportHash(item.id)}
@@ -1069,7 +1075,7 @@ function SidebarNav({
           </li>
         ))}
         <li className="sidebar-nav-section">More</li>
-        {REPORT_NAV_ITEMS.filter((item) => item.group === 'more').map((item) => (
+        {REPORT_NAV_ITEMS.filter((item) => item.group === 'more' && !item.hidden).map((item) => (
           <li key={item.id}>
             <a
               href={reportHash(item.id)}
@@ -2870,7 +2876,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel">
               <h4>Open detailed reports</h4>
               <div className="report-shortcut-grid">
-                {REPORT_NAV_ITEMS.filter((item) => item.id !== 'overview').map((item) => (
+                {REPORT_NAV_ITEMS.filter((item) => item.id !== 'overview' && !item.hidden).map((item) => (
                   <button
                     key={item.id}
                     type="button"

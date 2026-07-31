@@ -15,6 +15,45 @@ import { TrendLine } from '../components/Charts';
 
 const WEEKDAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
+/**
+ * Named scenarios, defined rather than left as a bare percentage.
+ *
+ * A slider that only moves sales flatters a downside case: in a genuine
+ * downturn the COGS rate drifts up as waste and small orders bite, and labour
+ * does not fall in step because the roster is already published. So each case
+ * states exactly what it stresses, and the same definitions are used in the
+ * creditor model — a conservative week here means the same thing there.
+ */
+type ScenarioKey = 'BASE' | 'CONSERVATIVE' | 'STRETCH';
+
+const SCENARIOS: Record<
+  ScenarioKey,
+  { label: string; description: string; salesPercent: number; cogsPointDelta: number; labourPercent: number }
+> = {
+  BASE: {
+    label: 'Base',
+    description: 'The forecast as predicted from your own trading history.',
+    salesPercent: 0,
+    cogsPointDelta: 0,
+    labourPercent: 0,
+  },
+  CONSERVATIVE: {
+    label: 'Conservative',
+    description:
+      'Sales 10% lower, COGS 2 percentage points worse and labour 2% higher. Rostered wages move only half way with sales, because a published roster is a commitment.',
+    salesPercent: -10,
+    cogsPointDelta: 2,
+    labourPercent: 2,
+  },
+  STRETCH: {
+    label: 'Stretch',
+    description: 'Sales 10% higher with cost rates held. Shows the upside without assuming margins improve as well.',
+    salesPercent: 10,
+    cogsPointDelta: 0,
+    labourPercent: 0,
+  },
+};
+
 function money(cents: number | null | undefined, decimals = 0) {
   if (cents === null || cents === undefined) return '—';
   return new Intl.NumberFormat(undefined, {
@@ -221,7 +260,7 @@ export function ForecastPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [activeVenue, setActiveVenue] = useState<string | 'all'>('all');
-  const [scenarioPct, setScenarioPct] = useState(0);
+  const [scenarioKey, setScenarioKey] = useState<ScenarioKey>('BASE');
   const [cashReload, setCashReload] = useState(0);
 
   // Each panel loads independently: a failure in accuracy or config must
@@ -277,7 +316,7 @@ export function ForecastPage() {
 
   const venues = outlook?.venues ?? [];
   const visibleVenues: ForecastVenueOutlook[] = activeVenue === 'all' ? venues : venues.filter((v) => v.venue === activeVenue);
-  const scenarioFactor = 1 + scenarioPct / 100;
+  const scenario = SCENARIOS[scenarioKey];
 
   // Next-14-days rows for the daily grid (per selected venue, or summed).
   const next14 = useMemo(() => {
@@ -325,13 +364,20 @@ export function ForecastPage() {
 
   const weeklyRows = useMemo(() => {
     const base = activeVenue === 'all' ? outlook?.totals.weeks ?? [] : visibleVenues[0]?.weeks ?? [];
-    if (scenarioPct === 0) return base;
+    if (scenarioKey === 'BASE') return base;
+    const salesFactor = 1 + scenario.salesPercent / 100;
     return base.map((week) => {
-      const sales = Math.round(week.salesForecastCents * scenarioFactor);
-      // Wages scale only partially with sales (rosters are committed): scale the
-      // ratio half-way; COGS is variable, so it scales fully.
-      const wages = Math.round(week.wagesForecastCents * (1 + (scenarioFactor - 1) * 0.5));
-      const cogs = Math.round(week.cogsForecastCents * scenarioFactor);
+      const sales = Math.round(week.salesForecastCents * salesFactor);
+      // Wages scale only partially with sales — a published roster is a
+      // commitment, not a variable cost — then take the scenario's own labour
+      // stress on top. COGS is variable, so it moves with sales, plus the
+      // scenario's percentage-point deterioration in the COGS rate.
+      const wages = Math.round(
+        week.wagesForecastCents * (1 + (salesFactor - 1) * 0.5) * (1 + scenario.labourPercent / 100),
+      );
+      const cogs = Math.round(
+        week.cogsForecastCents * salesFactor + (sales * scenario.cogsPointDelta) / 100,
+      );
       return {
         ...week,
         salesForecastCents: sales,
@@ -342,7 +388,7 @@ export function ForecastPage() {
         primePct: sales > 0 ? Math.round(((wages + cogs) / sales) * 1000) / 10 : null
       };
     });
-  }, [outlook, visibleVenues, activeVenue, scenarioPct, scenarioFactor]);
+  }, [outlook, visibleVenues, activeVenue, scenarioKey, scenario]);
 
   if (loading) {
     return (
@@ -548,14 +594,15 @@ export function ForecastPage() {
           <div className="forecast-outlook-actions">
             <div className="forecast-scenario">
               <span className="subtle">What if sales move…</span>
-              {[-10, 0, 10].map((pct) => (
+              {(Object.keys(SCENARIOS) as ScenarioKey[]).map((key) => (
                 <button
-                  key={pct}
+                  key={key}
                   type="button"
-                  className={scenarioPct === pct ? 'is-active' : ''}
-                  onClick={() => setScenarioPct(pct)}
+                  className={scenarioKey === key ? 'is-active' : ''}
+                  onClick={() => setScenarioKey(key)}
+                  title={SCENARIOS[key].description}
                 >
-                  {pct === 0 ? 'Base' : `${pct > 0 ? '+' : ''}${pct}%`}
+                  {SCENARIOS[key].label}
                 </button>
               ))}
             </div>
@@ -611,8 +658,8 @@ export function ForecastPage() {
           The range under each forecast is the likely band — {backtest && backtest.sampleWeeks > 0
             ? `built from this model's own measured accuracy (±${backtest.salesMapePct}% on the last ${backtest.sampleWeeks} venue-weeks)`
             : 'a conservative ±12% until enough history accumulates to measure it'}, widening the further out you look.
-          {scenarioPct !== 0
-            ? ` Scenario view: sales ${scenarioPct > 0 ? 'up' : 'down'} ${Math.abs(scenarioPct)}% — rostered wages move half as far (the roster is a commitment); COGS moves with sales.`
+          {scenarioKey !== 'BASE'
+            ? ` ${SCENARIOS[scenarioKey].label}: ${SCENARIOS[scenarioKey].description}`
             : ''}
         </p>
       </Card>
@@ -711,8 +758,10 @@ export function ForecastPage() {
             </div>
           ))}
           <p className="subtle" style={{ marginBottom: 0 }}>
-            Baselines come from your last 8 weeks of Square takings per weekday, blended 70/30 with the same week last year, adjusted by the
-            recent trend. Booked covers from Reserve act as a floor. Weeks with a roster are costed shift by shift.
+            Baselines come from your last 8 weeks of recorded takings per weekday — whatever the source, POS sync or hand entry under
+            Enter sales — blended 70/30 with the same week last year and adjusted by the recent trend. Booked covers from Reserve act as a
+            floor. Weeks with a roster are costed shift by shift. A forecast is only as current as the last day of sales recorded, so a gap
+            in entry shows up as a warning above rather than as a fall in trade.
           </p>
         </div>
 
