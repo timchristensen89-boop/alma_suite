@@ -8460,3 +8460,47 @@ html[data-theme='dark'] .tips-distribution-avatar { background: var(--color-surf
   outline: 2px solid var(--color-focus, currentColor);
   outline-offset: 2px;
 }
+
+/* Availability — a fixed week of seven rows. Everyone has the same seven days,
+   so a fixed shape reads back faster than a list you build up. */
+.availability-week {
+  display: grid;
+  gap: 8px;
+}
+
+.availability-day {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) minmax(130px, 1fr) 110px 110px minmax(140px, 1.4fr);
+  gap: 10px;
+  align-items: end;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-surface);
+}
+
+/* A day that has been set reads as committed; the rest stay quiet. */
+.availability-day.is-set {
+  border-color: rgba(var(--ink-forest-rgb, 37 51 38), 0.34);
+  background: var(--color-surface-muted);
+}
+
+.availability-day-name {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding-bottom: 6px;
+}
+
+.availability-day-name .subtle {
+  font-size: 11.5px;
+}
+
+@media (max-width: 860px) {
+  .availability-day {
+    grid-template-columns: 1fr 1fr;
+  }
+  .availability-day-name {
+    grid-column: 1 / -1;
+  }
+}

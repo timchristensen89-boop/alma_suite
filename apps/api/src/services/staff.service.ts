@@ -3550,9 +3550,15 @@ export const staffService = {
    */
   /** Someone's stated availability, for the staff app and the manager view. */
   async listAvailability(staffProfileId: string, actor?: AuthUser) {
-    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
-    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+    // Anyone may read their own, whatever their role — a manager looking at
+    // their own availability must not be sent through the manager-scope check
+    // for a profile that is simply themselves.
+    const isSelf = actor?.id === staffProfileId;
+    if (!isSelf && actor?.role === 'STAFF') {
       throw new HttpError(403, 'You can only view your own availability.');
+    }
+    if (!isSelf && actor && actor.role !== 'STAFF') {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
     }
     const [rules, blocks] = await Promise.all([
       prisma.staffAvailability.findMany({ where: { staffProfileId }, orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }] }),
@@ -3569,10 +3575,13 @@ export const staffService = {
    * partial update leave a half-stated week that reads as real.
    */
   async replaceAvailability(staffProfileId: string, input: unknown, actor?: AuthUser) {
-    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+    const isSelf = actor?.id === staffProfileId;
+    if (!isSelf && actor?.role === 'STAFF') {
       throw new HttpError(403, 'You can only change your own availability.');
     }
-    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    if (!isSelf && actor && actor.role !== 'STAFF') {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    }
 
     const parsed = z.object({
       rules: z.array(z.object({
@@ -3612,10 +3621,13 @@ export const staffService = {
 
   /** Add a one-off date range someone cannot work. */
   async addUnavailability(staffProfileId: string, input: unknown, actor?: AuthUser) {
-    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+    const isSelf = actor?.id === staffProfileId;
+    if (!isSelf && actor?.role === 'STAFF') {
       throw new HttpError(403, 'You can only change your own availability.');
     }
-    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    if (!isSelf && actor && actor.role !== 'STAFF') {
+      await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    }
     const parsed = z.object({
       startsAt: z.string(),
       endsAt: z.string(),

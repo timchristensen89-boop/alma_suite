@@ -418,6 +418,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     icon: <IconCalendarClock />
   },
   {
+    to: '/availability',
+    label: 'Availability',
+    description: 'When you can and cannot work',
+    icon: <IconCalendarCheck />
+  },
+  {
     to: '/leave',
     label: 'Leave',
     description: 'Request leave and view approvals',
@@ -2602,6 +2608,237 @@ function StaffMemberLeavePage() {
             </div>
           ))}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+
+const WEEKDAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+
+/** "17:30" -> 1050. Empty string means "no bound". */
+function timeToMinute(value: string): number | null {
+  if (!value.trim()) return null;
+  const [h, m] = value.split(':').map(Number);
+  if (!Number.isFinite(h) || !Number.isFinite(m)) return null;
+  return h * 60 + m;
+}
+
+function minuteToTime(minute: number | null | undefined): string {
+  if (minute == null) return '';
+  const h = Math.floor(minute / 60) % 24;
+  return `${String(h).padStart(2, '0')}:${String(minute % 60).padStart(2, '0')}`;
+}
+
+type AvailabilityDraftRow = { weekday: number; start: string; end: string; available: boolean; note: string };
+
+/**
+ * Staff-facing availability.
+ *
+ * Deliberately a week of seven rows rather than a list you add to: everyone
+ * has exactly seven days, and a fixed shape is quicker to fill in and quicker
+ * to read back than a builder. "All day" is the default for a day you mark,
+ * because most people think in days first and hours second.
+ *
+ * Saying nothing is a valid answer and is what an untouched week means — the
+ * roster treats no rows as no objection, so a blank week is not a trap.
+ */
+function StaffMemberAvailabilityPage() {
+  const [rows, setRows] = useState<AvailabilityDraftRow[]>(() =>
+    WEEKDAY_NAMES.map((_, weekday) => ({ weekday, start: '', end: '', available: true, note: '' }))
+  );
+  const [touched, setTouched] = useState<Set<number>>(new Set());
+  const [blocks, setBlocks] = useState<Array<{ id: string; startsAt: string; endsAt: string; reason: string | null }>>([]);
+  const [blockStart, setBlockStart] = useState('');
+  const [blockEnd, setBlockEnd] = useState('');
+  const [blockReason, setBlockReason] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const data = await api<{
+        rules: Array<{ weekday: number; startMinute: number | null; endMinute: number | null; available: boolean; note: string | null }>;
+        blocks: Array<{ id: string; startsAt: string; endsAt: string; reason: string | null }>;
+      }>('/api/staff/me/availability');
+      const next = WEEKDAY_NAMES.map((_, weekday) => ({ weekday, start: '', end: '', available: true, note: '' }));
+      const stated = new Set<number>();
+      for (const rule of data.rules) {
+        next[rule.weekday] = {
+          weekday: rule.weekday,
+          start: minuteToTime(rule.startMinute),
+          end: minuteToTime(rule.endMinute),
+          available: rule.available,
+          note: rule.note ?? ''
+        };
+        stated.add(rule.weekday);
+      }
+      setRows(next);
+      setTouched(stated);
+      setBlocks(data.blocks);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load your availability.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { void load(); }, [load]);
+
+  function update(weekday: number, patch: Partial<AvailabilityDraftRow>) {
+    setRows((current) => current.map((row) => (row.weekday === weekday ? { ...row, ...patch } : row)));
+    setTouched((current) => new Set(current).add(weekday));
+  }
+
+  async function save() {
+    setMessageTarget('availability');
+    setSaving(true);
+    setMessage(null);
+    try {
+      // Only days actually touched are sent. An untouched day stays unstated,
+      // which is not the same as being available all day.
+      const payload = rows
+        .filter((row) => touched.has(row.weekday))
+        .map((row) => ({
+          weekday: row.weekday,
+          startMinute: timeToMinute(row.start),
+          endMinute: timeToMinute(row.end),
+          available: row.available,
+          note: row.note.trim() || null
+        }));
+      const invalid = payload.find((r) => r.startMinute != null && r.endMinute != null && r.endMinute <= r.startMinute);
+      if (invalid) {
+        setMessage(`${WEEKDAY_NAMES[invalid.weekday]}: the finish time needs to be after the start time.`);
+        setSaving(false);
+        return;
+      }
+      await api('/api/staff/me/availability', { method: 'PUT', body: JSON.stringify({ rules: payload }) });
+      setMessage('Availability saved. Your manager sees this when building the roster.');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save your availability.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addBlock() {
+    setMessageTarget('block');
+    if (!blockStart || !blockEnd || blockEnd < blockStart) {
+      setMessage('Pick a start and finish date for the time you are away.');
+      return;
+    }
+    setSaving(true);
+    try {
+      await api('/api/staff/me/unavailability', {
+        method: 'POST',
+        body: JSON.stringify({
+          startsAt: new Date(`${blockStart}T00:00:00`).toISOString(),
+          // Inclusive of the last day: away "14th to 16th" means you are back on the 17th.
+          endsAt: new Date(`${blockEnd}T23:59:59`).toISOString(),
+          reason: blockReason.trim() || null
+        })
+      });
+      setBlockStart(''); setBlockEnd(''); setBlockReason('');
+      setMessage('Added. Your manager will see this on the roster.');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save that.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function removeBlock(id: string) {
+    setSaving(true);
+    try {
+      await api(`/api/staff/unavailability/${id}`, { method: 'DELETE' });
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not remove that.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const statedDays = rows.filter((row) => touched.has(row.weekday)).length;
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Availability"
+        title="My availability"
+        description="Tell your manager when you can and cannot work. This guides the roster — it does not lock it, so talk to your manager about anything that matters."
+      />
+
+      <div className="stats-grid">
+        <StatCard label="Days set" value={statedDays} hint="Untouched days stay unstated" loading={loading} />
+        <StatCard label="Away periods" value={blocks.length} hint="One-off dates you cannot work" loading={loading} />
+      </div>
+
+      {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
+
+      <Card
+        title="A normal week"
+        subtitle="Only the days you set are sent. Leave a day untouched if it varies or you would rather talk about it."
+      >
+        {loading ? <Spinner label="Loading…" /> : (
+          <div className="availability-week">
+            {rows.map((row) => (
+              <div key={row.weekday} className={`availability-day${touched.has(row.weekday) ? ' is-set' : ''}`}>
+                <div className="availability-day-name">
+                  <strong>{WEEKDAY_NAMES[row.weekday]}</strong>
+                  {touched.has(row.weekday) ? null : <span className="subtle">not set</span>}
+                </div>
+                <Select
+                  label=""
+                  value={row.available ? 'yes' : 'no'}
+                  onChange={(event) => update(row.weekday, { available: event.currentTarget.value === 'yes' })}
+                  options={[{ label: 'Can work', value: 'yes' }, { label: 'Cannot work', value: 'no' }]}
+                />
+                <Input label="From" type="time" value={row.start} onChange={(event) => update(row.weekday, { start: event.currentTarget.value })} />
+                <Input label="Until" type="time" value={row.end} onChange={(event) => update(row.weekday, { end: event.currentTarget.value })} />
+                <Input label="Note" value={row.note} placeholder="optional" onChange={(event) => update(row.weekday, { note: event.currentTarget.value })} />
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="subtle">Leave both times blank for a whole day.</p>
+        <div className="toolbar-right">
+          <Button type="button" disabled={saving || loading} onClick={() => void save()}>
+            {saving ? 'Saving…' : 'Save my week'}
+          </Button>
+          <ActionFeedback message={messageTarget === 'availability' ? message : null} tone={message?.includes('Could') || message?.includes('needs to be') ? 'error' : 'success'} />
+        </div>
+      </Card>
+
+      <Card title="Away on specific dates" subtitle="A wedding, a trip, exams — anything that is not formal leave.">
+        <div className="form-grid two">
+          <Input label="From" type="date" value={blockStart} onChange={(event) => setBlockStart(event.currentTarget.value)} />
+          <Input label="Until" type="date" value={blockEnd} onChange={(event) => setBlockEnd(event.currentTarget.value)} />
+          <Input label="Reason" value={blockReason} placeholder="optional" onChange={(event) => setBlockReason(event.currentTarget.value)} />
+        </div>
+        <div className="toolbar-right">
+          <Button type="button" variant="secondary" disabled={saving} onClick={() => void addBlock()}>Add</Button>
+          <ActionFeedback message={messageTarget === 'block' ? message : null} tone={message?.includes('Could') || message?.includes('Pick a') ? 'error' : 'success'} />
+        </div>
+        {blocks.length > 0 ? (
+          <div className="staff-expiry-list">
+            {blocks.map((block) => (
+              <div key={block.id} className="staff-expiry-row">
+                <span>
+                  <strong>{formatRange(new Date(block.startsAt), new Date(block.endsAt))}</strong>
+                  {block.reason ? <span className="subtle">{block.reason}</span> : null}
+                </span>
+                <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void removeBlock(block.id)}>Remove</Button>
+              </div>
+            ))}
+          </div>
+        ) : null}
+        <p className="subtle">Taking paid leave? Use the Leave page instead so it is approved and recorded.</p>
       </Card>
     </div>
   );
@@ -17709,6 +17946,7 @@ function StaffShell() {
           <Route path="/" element={<StaffMemberHome staff={staff} loading={loading} reload={reload} />} />
           <Route path="/roster" element={<StaffMemberRosterPage />} />
           <Route path="/clock" element={<StaffMemberClockPage />} />
+          <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />

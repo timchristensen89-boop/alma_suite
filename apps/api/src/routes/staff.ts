@@ -577,6 +577,35 @@ staffRouter.get('/roster', async (req, res, next) => {
   }
 });
 
+// The staff app's own view — no id in the URL, so a staff member never needs
+// to know their profile id to manage their own availability.
+staffRouter.get('/me/availability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.listAvailability(req.user.id, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.put('/me/availability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.json(await staffService.replaceAvailability(req.user.id, req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/unavailability', async (req, res, next) => {
+  try {
+    if (!req.user) throw new HttpError(401, 'Not authenticated');
+    res.status(201).json(await staffService.addUnavailability(req.user.id, req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ── Availability ────────────────────────────────────────────────────────────
 // Staff manage their own; managers can view and edit anyone in their scope.
 // The service enforces that split, so these stay unguarded by requireManager —

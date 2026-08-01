@@ -115,6 +115,12 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path === '/api/device/pin-logout' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/pin' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/leave' && req.method === 'POST') return true;
+  // Availability is the staff member's own to state. The service still checks
+  // ownership on every one of these — this allowlist only decides whether a
+  // non-manager may attempt the write at all.
+  if (req.path === '/api/staff/me/availability' && req.method === 'PUT') return true;
+  if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
+  if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock/out' && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/clock-in' && req.method === 'POST') return true;
