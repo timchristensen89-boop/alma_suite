@@ -1199,7 +1199,13 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       });
       if (menuVenue) menuProfitabilityParams.set('venue', menuVenue);
       if (menuCategory) menuProfitabilityParams.set('category', menuCategory);
-      const [overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips] = await Promise.all([
+      // allSettled, not all: twelve reports load here, and with Promise.all a
+      // single failing endpoint rejected the batch, skipped setData entirely
+      // and left the whole page showing one error with no figures — even
+      // though eleven had returned fine. A report you cannot see is worse than
+      // a report with one section missing, so what arrives is rendered and
+      // what did not is named.
+      const settled = await Promise.allSettled([
         staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
@@ -1213,6 +1219,37 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
+
+      const SECTION_LABELS = [
+        'overview', 'suite summary', 'staff', 'timesheets', 'roster', 'roster forecast',
+        'sales', 'item sales', 'menu profitability', 'menu COGS', 'prime cost', 'tips'
+      ];
+      const value = <T,>(index: number): T | null =>
+        settled[index]!.status === 'fulfilled' ? ((settled[index] as PromiseFulfilledResult<T>).value) : null;
+      const missing = SECTION_LABELS.filter((_, index) => settled[index]!.status === 'rejected');
+
+      // ReportsData already declares every one of these nullable, so a missing
+      // section flows through as null and its panel renders its own empty
+      // state — which is why partial loading is safe here rather than a
+      // deferred crash.
+      const overview = value<ReportsOverviewPayload>(0);
+      const summary = value<SuiteSummary>(1);
+      const staff = value<StaffProfile[]>(2) ?? [];
+      const timesheets = value<Timesheet[]>(3) ?? [];
+      const roster = value<RosterShift[]>(4) ?? [];
+      const rosterForecastSnapshots = value<RosterForecastSnapshot[]>(5) ?? [];
+      const actualSales = value<SalesActualSummary>(6);
+      const itemSales = value<SalesItemActualSummary>(7);
+      const menuProfitability = value<ReportsMenuProfitabilityPayload>(8);
+      const menuCogs = value<MenuCogsPayload>(9);
+      const primeCost = value<ReportsPrimeCostPayload>(10);
+      const tips = value<StaffTipsSummary>(11);
+
+      setMessage(
+        missing.length === 0
+          ? null
+          : `Could not load ${missing.join(', ')}. Everything else below is current — reload to try again.`
+      );
 
       let stockValue: StockValueByCategory | null = null;
       let stockSummary: StockItemsSummary | null = null;
