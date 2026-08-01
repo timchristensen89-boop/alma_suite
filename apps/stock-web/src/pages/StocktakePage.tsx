@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type {
   ApplyStocktakeResult,
@@ -1161,6 +1161,34 @@ function StocktakeForm({
     setDraft((current) => ({ ...current, [key]: value }));
   }
 
+  // One map, not a find() per row. Each count line looked its item up with
+  // items.find() over the whole catalogue, so a 716-line count did roughly
+  // half a million comparisons on every keystroke.
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  // One stable onChange per row index. An inline arrow would be a new function
+  // on every render, which defeats the memo on StockItemPicker entirely.
+  // Points at the latest selectLineItem so the cached per-row handlers never
+  // close over stale draft state.
+  const selectLineItemRef = useRef<(index: number, itemId: string) => void>(() => {});
+  const updateLineRef = useRef<(index: number, patch: Partial<LineDraft>) => void>(() => {});
+  const removeLineRef = useRef<(index: number) => void>(() => {});
+  const selectHandlers = useRef(new Map<number, (itemId: string) => void>());
+  // Pass these, never `ref.current` directly: the ref is reassigned on every
+  // render, so handing `.current` to a memoised child changes the prop every
+  // time and defeats the memo completely — which is exactly what happened on
+  // the first attempt here.
+  const onUpdateLine = useCallback((index: number, patch: Partial<LineDraft>) => updateLineRef.current(index, patch), []);
+  const onRemoveLine = useCallback((index: number) => removeLineRef.current(index), []);
+
+  const makeSelectLineItem = useCallback((index: number) => {
+    const existing = selectHandlers.current.get(index);
+    if (existing) return existing;
+    const handler = (itemId: string) => selectLineItemRef.current(index, itemId);
+    selectHandlers.current.set(index, handler);
+    return handler;
+  }, []);
+
   function updateLine(index: number, patch: Partial<LineDraft>) {
     setDraft((current) => ({
       ...current,
@@ -1168,8 +1196,12 @@ function StocktakeForm({
     }));
   }
 
+  selectLineItemRef.current = (index: number, itemId: string) => selectLineItem(index, itemId);
+  updateLineRef.current = updateLine;
+  removeLineRef.current = removeLine;
+
   function selectLineItem(index: number, itemId: string) {
-    const item = items.find((candidate) => candidate.id === itemId);
+    const item = itemsById.get(itemId);
     updateLine(index, {
       itemId,
       label: item?.name ?? '',
@@ -1298,46 +1330,17 @@ function StocktakeForm({
           const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
           const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
           return (
-            <div key={index}>
-              {showAreaHeader ? (
-                <div className="stocktake-area-header">{line.location || 'No location'}</div>
-              ) : null}
-              <div className="stocktake-count-line">
-                <StockItemPicker
-                  label="Item"
-                  items={items}
-                  value={line.itemId}
-                  onChange={(itemId) => selectLineItem(index, itemId)}
-                />
-                <Input label="Label" required value={line.label} onChange={(event) => updateLine(index, { label: event.currentTarget.value })} />
-                <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => updateLine(index, { countedQty: event.currentTarget.value })} />
-                <Input label="Unit" value={line.unit} onChange={(event) => updateLine(index, { unit: event.currentTarget.value })} />
-                <Input label="Location" value={line.location} onChange={(event) => updateLine(index, { location: event.currentTarget.value })} />
-                <Button type="button" variant="ghost" size="sm" onClick={() => removeLine(index)}>
-                  Remove
-                </Button>
-              </div>
-              {(() => {
-                const lineItem = line.itemId ? items.find((candidate) => candidate.id === line.itemId) : undefined;
-                if (!lineItem) return null;
-                const countRaw = String(line.countedQty ?? '').trim();
-                const countedQty = countRaw === '' ? null : Number(countRaw);
-                const estimate = estimateLineValueCents(lineItem, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null);
-                if (estimate.unitCostCents === null) {
-                  return <div className="stocktake-count-cost is-missing">No cost set for {lineItem.name} — value can't be checked</div>;
-                }
-                return (
-                  <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
-                    <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
-                    {estimate.unitMismatch ? (
-                      <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
-                    ) : estimate.cents !== null ? (
-                      <strong>line value {formatCurrency(estimate.cents)}</strong>
-                    ) : null}
-                  </div>
-                );
-              })()}
-            </div>
+            <CountLineRow
+              key={index}
+              index={index}
+              line={line}
+              item={line.itemId ? itemsById.get(line.itemId) : undefined}
+              items={items}
+              showAreaHeader={showAreaHeader}
+              onSelectItem={makeSelectLineItem(index)}
+              onUpdate={onUpdateLine}
+              onRemove={onRemoveLine}
+            />
           );
         })}
       </div>
@@ -1356,6 +1359,72 @@ function StocktakeForm({
     </form>
   );
 }
+
+
+/**
+ * One count line, memoised.
+ *
+ * A full stocktake is one row per active item — 716 of them. Every row used to
+ * re-render on every keystroke anywhere in the count, each re-running the value
+ * estimate and re-rendering its item picker. updateLine replaces only the line
+ * being edited and leaves the other objects untouched, so comparing on `line`
+ * identity lets the other 715 rows sit still.
+ */
+const CountLineRow = memo(function CountLineRow({
+  index,
+  line,
+  item,
+  items,
+  showAreaHeader,
+  onSelectItem,
+  onUpdate,
+  onRemove
+}: {
+  index: number;
+  line: LineDraft;
+  item: StockItem | undefined;
+  items: StockItem[];
+  showAreaHeader: boolean;
+  onSelectItem: (itemId: string) => void;
+  onUpdate: (index: number, patch: Partial<LineDraft>) => void;
+  onRemove: (index: number) => void;
+}) {
+  const countRaw = String(line.countedQty ?? '').trim();
+  const countedQty = countRaw === '' ? null : Number(countRaw);
+  const estimate = item
+    ? estimateLineValueCents(item, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null)
+    : null;
+
+  return (
+    <div>
+      {showAreaHeader ? <div className="stocktake-area-header">{line.location || 'No location'}</div> : null}
+      <div className="stocktake-count-line">
+        <StockItemPicker label="Item" items={items} value={line.itemId} onChange={onSelectItem} />
+        <Input label="Label" required value={line.label} onChange={(event) => onUpdate(index, { label: event.currentTarget.value })} />
+        <Input label="Qty" type="number" step="0.01" value={line.countedQty} onChange={(event) => onUpdate(index, { countedQty: event.currentTarget.value })} />
+        <Input label="Unit" value={line.unit} onChange={(event) => onUpdate(index, { unit: event.currentTarget.value })} />
+        <Input label="Location" value={line.location} onChange={(event) => onUpdate(index, { location: event.currentTarget.value })} />
+        <Button type="button" variant="ghost" size="sm" onClick={() => onRemove(index)}>
+          Remove
+        </Button>
+      </div>
+      {item && estimate ? (
+        estimate.unitCostCents === null ? (
+          <div className="stocktake-count-cost is-missing">No cost set for {item.name} — value can&apos;t be checked</div>
+        ) : (
+          <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
+            <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
+            {estimate.unitMismatch ? (
+              <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
+            ) : estimate.cents !== null ? (
+              <strong>line value {formatCurrency(estimate.cents)}</strong>
+            ) : null}
+          </div>
+        )
+      ) : null}
+    </div>
+  );
+});
 
 // Response shape from GET /api/stocktake/:id/variance (the expected-vs-counted
 // usage analytic). Typed inline — the endpoint has no shared type yet.

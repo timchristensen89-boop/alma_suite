@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import type { StockItem } from '@alma/shared';
 
 const USAGE_KEY = 'alma.stock.itemUsage';
@@ -40,7 +40,16 @@ type Props = {
  * this device). Replaces the plain <Select> wherever an item is chosen, so long
  * catalogues are searchable rather than an unwieldy dropdown.
  */
-export function StockItemPicker({ items, value, onChange, label = 'Item', placeholder = 'Search stock items…', disabled }: Props) {
+/**
+ * Memoised on purpose.
+ *
+ * A stocktake renders one of these per count line — 716 of them for a full
+ * count. Without memo, typing a quantity in any single line re-rendered every
+ * picker on the page, each of them re-reading usage from localStorage and
+ * re-scanning the whole catalogue. The parent passes stable callbacks so this
+ * actually holds.
+ */
+function StockItemPickerImpl({ items, value, onChange, label = 'Item', placeholder = 'Search stock items…', disabled }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [usageTick, setUsageTick] = useState(0);
@@ -150,3 +159,5 @@ export function StockItemPicker({ items, value, onChange, label = 'Item', placeh
     </div>
   );
 }
+
+export const StockItemPicker = memo(StockItemPickerImpl);
