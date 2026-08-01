@@ -1141,6 +1141,52 @@ function StocktakeForm({
     );
   }, [draft.lines, walkByArea]);
 
+  // One map, not a find() per row. Each count line looked its item up with
+  // items.find() over the whole catalogue, so a 716-line count did roughly
+  // half a million comparisons on every keystroke.
+  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
+
+  /**
+   * Count lines grouped by category, one collapsible section each.
+   *
+   * A full stocktake is a line per active item — 716 of them — and opening it
+   * as one flat list meant scrolling past everything to reach the section you
+   * were actually counting, with 3,500 inputs live in the DOM. Sections start
+   * closed, so the screen opens as ten headings and you open the one you are
+   * standing in front of. Collapsed lines are still part of the draft and
+   * still save; they are simply not rendered.
+   */
+  const categoryGroups = useMemo(() => {
+    const map = new Map<string, number[]>();
+    for (const index of orderedIndices) {
+      const line = draft.lines[index];
+      if (!line) continue;
+      const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+      const key = item?.category?.name ?? item?.categoryName ?? 'Uncategorised';
+      const bucket = map.get(key);
+      if (bucket) bucket.push(index);
+      else map.set(key, [index]);
+    }
+    return [...map.entries()]
+      .map(([name, indices]) => ({
+        name,
+        indices,
+        counted: indices.filter((i) => String(draft.lines[i]?.countedQty ?? '').trim() !== '').length
+      }))
+      // Uncategorised last: it is a data-quality tail, not somewhere you walk to.
+      .sort((a, b) => (a.name === 'Uncategorised' ? 1 : b.name === 'Uncategorised' ? -1 : a.name.localeCompare(b.name)));
+  }, [orderedIndices, draft.lines, itemsById]);
+
+  const [openCategories, setOpenCategories] = useState<Set<string>>(new Set());
+  const toggleCategory = useCallback((name: string) => {
+    setOpenCategories((current) => {
+      const next = new Set(current);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+  }, []);
+
   function toggleBlind(next: boolean) {
     setBlind(next);
     setDraft((current) => ({
@@ -1160,11 +1206,6 @@ function StocktakeForm({
   function update<K extends keyof StocktakeDraft>(key: K, value: StocktakeDraft[K]) {
     setDraft((current) => ({ ...current, [key]: value }));
   }
-
-  // One map, not a find() per row. Each count line looked its item up with
-  // items.find() over the whole catalogue, so a 716-line count did roughly
-  // half a million comparisons on every keystroke.
-  const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
 
   // One stable onChange per row index. An inline arrow would be a new function
   // on every render, which defeats the memo on StockItemPicker entirely.
@@ -1323,13 +1364,28 @@ function StocktakeForm({
       </div>
 
       <div className="stocktake-count-lines">
-        {orderedIndices.map((index, displayPos) => {
-          const line = draft.lines[index];
-          if (!line) return null;
-          const prevIdx = displayPos > 0 ? orderedIndices[displayPos - 1] : undefined;
-          const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
-          const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
+        {categoryGroups.map((group) => {
+          const open = openCategories.has(group.name);
           return (
+            <div key={group.name} className="stocktake-category-group">
+              <button
+                type="button"
+                className={`stocktake-category-header${open ? ' is-open' : ''}`}
+                onClick={() => toggleCategory(group.name)}
+                aria-expanded={open}
+              >
+                <span className="stocktake-category-name">{open ? '▾' : '▸'} {group.name}</span>
+                <span className="stocktake-category-count">
+                  {group.counted} of {group.indices.length} counted
+                </span>
+              </button>
+              {open ? group.indices.map((index, displayPos) => {
+                const line = draft.lines[index];
+                if (!line) return null;
+                const prevIdx = displayPos > 0 ? group.indices[displayPos - 1] : undefined;
+                const prevLine = prevIdx !== undefined ? draft.lines[prevIdx] ?? null : null;
+                const showAreaHeader = walkByArea && (!prevLine || (prevLine.location || '') !== (line.location || ''));
+                return (
             <CountLineRow
               key={index}
               index={index}
@@ -1338,9 +1394,12 @@ function StocktakeForm({
               items={items}
               showAreaHeader={showAreaHeader}
               onSelectItem={makeSelectLineItem(index)}
-              onUpdate={onUpdateLine}
-              onRemove={onRemoveLine}
-            />
+                    onUpdate={onUpdateLine}
+                    onRemove={onRemoveLine}
+                  />
+                );
+              }) : null}
+            </div>
           );
         })}
       </div>

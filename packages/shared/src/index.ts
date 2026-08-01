@@ -5157,6 +5157,9 @@ export type StockItem = {
   name: string;
   categoryId: string | null;
   category: Pick<StockCategory, 'id' | 'name'> | null;
+  /** Flattened category name. Present on the picker payload, which omits the
+   *  nested category object; read it with `category?.name ?? categoryName`. */
+  categoryName?: string | null;
   unit: string;
   countUnit: string | null;
   conversionFactor: number;
