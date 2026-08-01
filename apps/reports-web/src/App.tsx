@@ -1,9 +1,4 @@
-import { FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { StaffCostingReportPage } from './pages/StaffCostingReportPage';
-import { ForecastPage } from './pages/ForecastPage';
-import { SupplierSpendPage } from './pages/SupplierSpendPage';
-import { ForecastModulePage } from './pages/ForecastModulePage';
-import { SalesEntryPage } from './pages/SalesEntryPage';
+import { Suspense, lazy, FormEvent, ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { SortableTable } from './components/SortableTable';
 import { RecipePreviewModal } from './components/RecipePreviewModal';
 import type {
@@ -70,6 +65,16 @@ import {
 import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
+
+// The heavy report pages load on demand. They are whole reports in their own
+// right — the forecasting module alone is 581 lines plus its charts — and
+// most visits never open them.
+const StaffCostingReportPage = lazy(() => import('./pages/StaffCostingReportPage').then((m) => ({ default: m.StaffCostingReportPage })));
+const ForecastPage = lazy(() => import('./pages/ForecastPage').then((m) => ({ default: m.ForecastPage })));
+const SupplierSpendPage = lazy(() => import('./pages/SupplierSpendPage').then((m) => ({ default: m.SupplierSpendPage })));
+const ForecastModulePage = lazy(() => import('./pages/ForecastModulePage').then((m) => ({ default: m.ForecastModulePage })));
+const SalesEntryPage = lazy(() => import('./pages/SalesEntryPage').then((m) => ({ default: m.SalesEntryPage })));
+
 
 type SuiteSummary = {
   incidents?: { total?: number; open?: number; followUp?: number };
@@ -3416,7 +3421,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
             <div className="report-panel" style={{ gridColumn: '1 / -1' }}>
               <h4>Staff costing detail</h4>
               <p className="subtle">Wage cost, cost per hour, section mix, variance, and labour charts. Moved here from Admin so wage reporting lives in one place.</p>
-              <StaffCostingReportPage />
+              <Suspense fallback={<div className="report-section-loading"><Spinner /></div>}>
+                <StaffCostingReportPage />
+              </Suspense>
             </div>
           </div>
         </div>
@@ -4472,7 +4479,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       <div className="page-stack reports-page">
         {message ? <p className="error-text">{message}</p> : null}
         {loading ? <Spinner label={`Loading ${activeReport.label.toLowerCase()} reports`} /> : null}
-        {renderActiveReportSection()}
+        <Suspense
+          fallback={
+            <div className="report-section-loading" role="status" aria-live="polite">
+              <Spinner /> Loading report…
+            </div>
+          }
+        >
+          {renderActiveReportSection()}
+        </Suspense>
 
         <Card title="Report controls" subtitle="Choose the reporting range without changing production data.">
           <div className="reports-week-controls">

@@ -2656,3 +2656,15 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   flex-direction: column;
   gap: 3px;
 }
+
+/* Report chunk loading — holds the section's place while it arrives. */
+.report-section-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 240px;
+  padding: 40px 0;
+  color: var(--color-text-muted, inherit);
+  font-size: 13.5px;
+}

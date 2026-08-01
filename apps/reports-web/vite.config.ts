@@ -13,6 +13,16 @@ export default defineConfig({
       '@alma/ui': path.resolve(__dirname, '../../packages/ui/src/index.ts')
     }
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // React and the router are identical between deploys — keeping them in
+        // their own chunk means a reports release does not invalidate the
+        // framework a browser already has.
+        manualChunks: { 'react-vendor': ['react', 'react-dom', 'react-router-dom'] }
+      }
+    }
+  },
   server: {
     port: Number(process.env.REPORTS_WEB_PORT ?? 5176)
   }
