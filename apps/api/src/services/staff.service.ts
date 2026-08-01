@@ -3548,6 +3548,98 @@ export const staffService = {
    *
    * `list()` is untouched — the People and HR screens genuinely need the rest.
    */
+  /** Someone's stated availability, for the staff app and the manager view. */
+  async listAvailability(staffProfileId: string, actor?: AuthUser) {
+    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+      throw new HttpError(403, 'You can only view your own availability.');
+    }
+    const [rules, blocks] = await Promise.all([
+      prisma.staffAvailability.findMany({ where: { staffProfileId }, orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }] }),
+      prisma.staffUnavailability.findMany({ where: { staffProfileId, endsAt: { gte: new Date() } }, orderBy: [{ startsAt: 'asc' }] })
+    ]);
+    return { staffProfileId, rules, blocks };
+  },
+
+  /**
+   * Replace someone's recurring availability wholesale.
+   *
+   * A full replace rather than per-row edits: availability is a small weekly
+   * picture that people edit as a whole, and diffing rows would let a failed
+   * partial update leave a half-stated week that reads as real.
+   */
+  async replaceAvailability(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+      throw new HttpError(403, 'You can only change your own availability.');
+    }
+    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+
+    const parsed = z.object({
+      rules: z.array(z.object({
+        weekday: z.number().int().min(0).max(6),
+        startMinute: z.number().int().min(0).max(1440).nullable().optional(),
+        endMinute: z.number().int().min(0).max(1440).nullable().optional(),
+        available: z.boolean().default(true),
+        note: z.string().max(200).optional().nullable(),
+        effectiveFrom: z.string().optional().nullable(),
+        effectiveTo: z.string().optional().nullable()
+      })).max(50)
+    }).parse(input ?? {});
+
+    for (const rule of parsed.rules) {
+      if (rule.startMinute != null && rule.endMinute != null && rule.endMinute <= rule.startMinute) {
+        throw new HttpError(400, 'Availability end time must be after the start time.');
+      }
+    }
+
+    await prisma.$transaction([
+      prisma.staffAvailability.deleteMany({ where: { staffProfileId } }),
+      prisma.staffAvailability.createMany({
+        data: parsed.rules.map((rule) => ({
+          staffProfileId,
+          weekday: rule.weekday,
+          startMinute: rule.startMinute ?? null,
+          endMinute: rule.endMinute ?? null,
+          available: rule.available,
+          note: rule.note?.trim() || null,
+          effectiveFrom: rule.effectiveFrom ? new Date(rule.effectiveFrom) : null,
+          effectiveTo: rule.effectiveTo ? new Date(rule.effectiveTo) : null
+        }))
+      })
+    ]);
+    return staffService.listAvailability(staffProfileId, actor);
+  },
+
+  /** Add a one-off date range someone cannot work. */
+  async addUnavailability(staffProfileId: string, input: unknown, actor?: AuthUser) {
+    if (actor?.role === 'STAFF' && actor.id !== staffProfileId) {
+      throw new HttpError(403, 'You can only change your own availability.');
+    }
+    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(staffProfileId, actor);
+    const parsed = z.object({
+      startsAt: z.string(),
+      endsAt: z.string(),
+      reason: z.string().max(200).optional().nullable()
+    }).parse(input ?? {});
+    const startsAt = new Date(parsed.startsAt);
+    const endsAt = new Date(parsed.endsAt);
+    if (!(endsAt > startsAt)) throw new HttpError(400, 'The end of an unavailable period must be after its start.');
+    return prisma.staffUnavailability.create({
+      data: { staffProfileId, startsAt, endsAt, reason: parsed.reason?.trim() || null, createdById: actor?.id ?? null }
+    });
+  },
+
+  async removeUnavailability(id: string, actor?: AuthUser) {
+    const row = await prisma.staffUnavailability.findUnique({ where: { id } });
+    if (!row) throw new HttpError(404, 'That unavailable period no longer exists.');
+    if (actor?.role === 'STAFF' && actor.id !== row.staffProfileId) {
+      throw new HttpError(403, 'You can only change your own availability.');
+    }
+    if (actor && actor.role !== 'STAFF') await assertManagerCanAccessStaffProfile(row.staffProfileId, actor);
+    await prisma.staffUnavailability.delete({ where: { id } });
+    return { ok: true };
+  },
+
   async rosterBoard(start?: string, end?: string, actor?: AuthUser) {
     const [staff, shifts] = await Promise.all([
       prisma.staffProfile.findMany({
@@ -3575,12 +3667,24 @@ export const staffService = {
       staffService.listRoster(start, end, undefined, actor)
     ]);
 
+    // Availability travels with the board so the manager sees it while placing
+    // shifts, rather than finding out after publishing.
+    const windowStart = start ? new Date(start) : new Date();
+    const windowEnd = end ? new Date(end) : new Date(windowStart.getTime() + 14 * 24 * 60 * 60 * 1000);
+    const availability = await loadAvailabilityFor(staff.map((member) => member.id), windowStart, windowEnd);
+
     // Pay is permission-gated the same way as everywhere else: a manager
     // without the pay permission gets the board without rates rather than a
     // different, secretly-costed board.
     const redacted = staff.map((member) => redactStaffProfileFields(member, actor));
 
-    return { staff: redacted, shifts, generatedAt: new Date().toISOString() };
+    return {
+      staff: redacted,
+      shifts,
+      availability: availability.rules,
+      unavailability: availability.blocks,
+      generatedAt: new Date().toISOString()
+    };
   },
 
   // Read-only published roster for the whole venue team — any authenticated
@@ -6499,3 +6603,27 @@ export const staffService = {
     return devices;
   }
 };
+
+// ─── Availability ────────────────────────────────────────────────────────────
+
+/** Availability + one-off unavailability for a set of people over a window. */
+export async function loadAvailabilityFor(staffProfileIds: string[], from: Date, to: Date) {
+  if (staffProfileIds.length === 0) return { rules: [], blocks: [] };
+  const [rules, blocks] = await Promise.all([
+    prisma.staffAvailability.findMany({
+      where: {
+        staffProfileId: { in: staffProfileIds },
+        AND: [
+          { OR: [{ effectiveFrom: null }, { effectiveFrom: { lte: to } }] },
+          { OR: [{ effectiveTo: null }, { effectiveTo: { gte: from } }] }
+        ]
+      },
+      orderBy: [{ weekday: 'asc' }, { startMinute: 'asc' }]
+    }),
+    prisma.staffUnavailability.findMany({
+      where: { staffProfileId: { in: staffProfileIds }, startsAt: { lt: to }, endsAt: { gt: from } },
+      orderBy: [{ startsAt: 'asc' }]
+    })
+  ]);
+  return { rules, blocks };
+}

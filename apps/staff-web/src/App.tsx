@@ -50,6 +50,8 @@ import type {
   TrainingOverview
 } from '@alma/shared';
 import {
+  checkAvailability,
+  type AvailabilityRule,
   AWARD_RATE_SETS,
   DEFAULT_STAFF_AWARD_CODE,
   DEFAULT_STAFF_AWARD_CLASSIFICATION,
@@ -9440,6 +9442,10 @@ function RosterPage({
   // Times for click-to-add. They follow the last shift placed or edited, so
   // rostering a row of identical shifts is a row of single clicks.
   const [quickTimes, setQuickTimes] = useState({ start: '10:00', end: '16:00', breakMinutes: '30' });
+  // Stated availability, loaded with the board so it is visible while placing
+  // shifts rather than discovered after publishing.
+  const [availabilityRules, setAvailabilityRules] = useState<Array<AvailabilityRule & { staffProfileId: string }>>([]);
+  const [unavailability, setUnavailability] = useState<Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>>([]);
   // One level of undo for the last board action. Quick-add makes a stray click
   // cheap to make, so it has to be cheap to take back.
   const [lastUndo, setLastUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
@@ -9450,8 +9456,14 @@ function RosterPage({
   /** Refresh just the board, without the global loading flash. */
   const refreshBoard = useCallback(async (start: Date, end: Date) => {
     const query = `?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
-    const board = await api<{ shifts: RosterShift[] }>(`/api/staff/roster-board${query}`);
+    const board = await api<{
+      shifts: RosterShift[];
+      availability?: Array<AvailabilityRule & { staffProfileId: string }>;
+      unavailability?: Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>;
+    }>(`/api/staff/roster-board${query}`);
     setShifts(board.shifts);
+    setAvailabilityRules(board.availability ?? []);
+    setUnavailability(board.unavailability ?? []);
   }, []);
 
   /**
@@ -9510,6 +9522,26 @@ function RosterPage({
   );
   // O(1) pay-rate lookups — avoids O(N) staff.find() inside every reduce/map
   const staffById = useMemo(() => new Map(staff.map((m) => [m.id, m])), [staff]);
+
+  /**
+   * Availability verdict for a proposed shift.
+   *
+   * Deliberately advisory: a manager who has spoken to someone must still be
+   * able to place the shift. Leave clashes and double-bookings stay hard
+   * blocks; stated availability is a warning, because it goes stale and the
+   * manager is the one holding the conversation.
+   */
+  const availabilityFor = useCallback(
+    (memberId: string, startsAt: Date, endsAt: Date) => checkAvailability(
+      startsAt,
+      endsAt,
+      availabilityRules.filter((rule) => rule.staffProfileId === memberId),
+      unavailability
+        .filter((block) => block.staffProfileId === memberId)
+        .map((block) => ({ startsAt: new Date(block.startsAt), endsAt: new Date(block.endsAt), reason: block.reason }))
+    ),
+    [availabilityRules, unavailability]
+  );
   const venueRoster = useMemo(() => shifts
     .filter((shift) => venueFilter === 'all' || shift.venue === venueFilter || shift.staffProfile?.venue === venueFilter)
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
@@ -10573,7 +10605,12 @@ function RosterPage({
     );
     if (created === null) return;
 
-    setMessage(`${member.firstName} · ${quickTimes.start}–${quickTimes.end}`);
+    const verdict = availabilityFor(member.id, range.startsAt, range.endsAt);
+    setMessage(
+      verdict.kind === 'AVAILABLE' || verdict.kind === 'NOT_STATED'
+        ? `${member.firstName} · ${quickTimes.start}–${quickTimes.end}`
+        : `${member.firstName} · ${quickTimes.start}–${quickTimes.end} — heads up, ${member.firstName} is ${verdict.detail}.`
+    );
     setLastUndo({
       label: `Undo ${member.firstName}'s shift`,
       run: async () => {

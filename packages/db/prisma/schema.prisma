@@ -667,6 +667,8 @@ model StaffProfile {
   records                      StaffComplianceRecord[]
   hrRecords                    StaffHrRecord[]
   managerNotes                 StaffManagerNote[]
+  availability                 StaffAvailability[]
+  unavailability               StaffUnavailability[]
   payProfile                   StaffPayProfile?
   managementEvents             StaffManagementEvent[]
   leaveRequests                StaffLeaveRequest[]
@@ -841,6 +843,57 @@ model StaffHrDocumentTemplate {
 }
 
 // @domain: workforce | home: workforce
+/// Recurring weekly availability — "I can work Tuesdays 5pm to close".
+///
+/// Absence of a row means nothing is stated, NOT unavailable: a venue that
+/// never fills these in must keep rostering exactly as before. Rostering
+/// outside stated availability warns, it does not block — a manager who has
+/// spoken to someone must still be able to place the shift.
+model StaffAvailability {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  /// 0 = Sunday .. 6 = Saturday, matching JS getDay().
+  weekday        Int
+  /// Minutes from midnight. 0..1440. Null start AND end means all day.
+  startMinute    Int?
+  endMinute      Int?
+  /// False records a recurring UNavailability (e.g. every Monday, at uni).
+  available      Boolean  @default(true)
+  note           String?
+  /// Optional bounds, for "from the start of term" style changes.
+  effectiveFrom  DateTime?
+  effectiveTo    DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, weekday])
+  @@map("staff_availability")
+}
+
+/// A one-off date range someone cannot work, distinct from formal leave.
+///
+/// Leave is an HR record that gets approved and may be paid. This is "I have a
+/// wedding on the 14th" — no approval, no balance, it simply shows on the
+/// board so a manager does not roster into it.
+model StaffUnavailability {
+  id             String   @id @default(cuid())
+  staffProfileId String
+  startsAt       DateTime
+  endsAt         DateTime
+  reason         String?
+  createdById    String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  @@index([staffProfileId, startsAt])
+  @@index([startsAt, endsAt])
+  @@map("staff_unavailability")
+}
+
 model StaffLeaveRequest {
   id                String       @id @default(cuid())
   staffProfileId    String

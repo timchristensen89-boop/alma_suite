@@ -577,6 +577,42 @@ staffRouter.get('/roster', async (req, res, next) => {
   }
 });
 
+// ── Availability ────────────────────────────────────────────────────────────
+// Staff manage their own; managers can view and edit anyone in their scope.
+// The service enforces that split, so these stay unguarded by requireManager —
+// a staff member editing their own availability is the primary use.
+staffRouter.get('/:id/availability', async (req, res, next) => {
+  try {
+    res.json(await staffService.listAvailability(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.put('/:id/availability', async (req, res, next) => {
+  try {
+    res.json(await staffService.replaceAvailability(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/:id/unavailability', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.addUnavailability(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.delete('/unavailability/:id', async (req, res, next) => {
+  try {
+    res.json(await staffService.removeUnavailability(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Everything the roster board needs in one call: the shift-eligible team with
 // only the fields the board renders, plus the shifts for the window. Replaces
 // the board's old GET /api/staff (63 fields and embedded relations per person)
