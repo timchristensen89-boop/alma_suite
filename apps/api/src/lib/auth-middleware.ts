@@ -119,6 +119,9 @@ function isStaffWriteAllowed(req: Request) {
   // ownership on every one of these — this allowlist only decides whether a
   // non-manager may attempt the write at all.
   if (req.path === '/api/staff/me/availability' && req.method === 'PUT') return true;
+  // Claiming an open shift is a request, not an assignment — the service still
+  // refuses clashes, leave and other venues, and a manager decides the outcome.
+  if (/^\/api\/staff\/me\/open-shifts\/[^/]+\/(claim|withdraw)$/.test(req.path) && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
   if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;

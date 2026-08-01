@@ -226,6 +226,10 @@ async function buildOutlook(options: BuildOptions): Promise<ForecastOutlookPaylo
 
   const sortedShifts = [...shiftRows].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   for (const shift of sortedShifts) {
+    // An open shift has nobody on it, so it carries no wage cost and belongs
+    // to no one's hours. It is counted as work that still needs filling, not
+    // as work someone is doing.
+    if (!shift.staffProfile || !shift.staffProfileId) continue;
     const dayKey = sydneyKeyForInstant(shift.startsAt);
     const day = dateFromKey(dayKey);
     if (day < weekStart || day >= horizonEnd) continue;

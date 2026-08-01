@@ -8504,3 +8504,71 @@ html[data-theme='dark'] .tips-distribution-avatar { background: var(--color-surf
     grid-column: 1 / -1;
   }
 }
+
+/* Board week stepper — spans the full grid width as its own top row so the
+   ‹ › are reachable without scrolling back to the page header. */
+.deputy-board-weeknav {
+  grid-column: 1 / -1;
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+}
+
+.deputy-board-weeknav-steps {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.deputy-board-weeknav-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 26px;
+  height: 26px;
+  padding: 0 6px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.deputy-board-weeknav-btn:hover {
+  background: var(--color-surface-muted, rgba(148, 163, 184, 0.12));
+  border-color: var(--color-text-muted, rgba(148, 163, 184, 0.6));
+}
+
+.deputy-board-weeknav-btn svg {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.deputy-board-weeknav-btn--text {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.deputy-board-weeknav-range {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+}
+
+.deputy-board-weeknav-now {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, rgba(148, 163, 184, 0.9));
+}

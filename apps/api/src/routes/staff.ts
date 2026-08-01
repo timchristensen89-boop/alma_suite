@@ -606,6 +606,47 @@ staffRouter.post('/me/unavailability', async (req, res, next) => {
   }
 });
 
+// ── Open shifts and claims ──────────────────────────────────────────────────
+staffRouter.get('/me/open-shifts', async (req, res, next) => {
+  try {
+    res.json(await staffService.listOpenShifts(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/open-shifts/:id/claim', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.claimOpenShift(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/open-shifts/:id/withdraw', async (req, res, next) => {
+  try {
+    res.json(await staffService.withdrawClaim(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.get('/roster/claims', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.listPendingClaims(req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/roster/claims/:id/decide', requireManager, async (req, res, next) => {
+  try {
+    res.json(await staffService.decideClaim(String(req.params.id), req.body?.approve !== false, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 // ── Availability ────────────────────────────────────────────────────────────
 // Staff manage their own; managers can view and edit anyone in their scope.
 // The service enforces that split, so these stay unguarded by requireManager —

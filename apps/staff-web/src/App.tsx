@@ -34,6 +34,8 @@ import type {
   StaffManagementEvent,
   StaffManagerDashboardPayload,
   StaffMyRosterPayload,
+  StaffOpenShift,
+  StaffShiftClaim,
   StaffAwardEmploymentType,
   ManualFullTimePayFrequency,
   StaffPayProfileInput,
@@ -2167,6 +2169,8 @@ function StaffMemberRosterPage() {
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
+      <OpenShiftsCard onClaimApproved={loadRoster} />
+
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
         {!loading && upcoming.length === 0 ? <EmptyState title="No upcoming shifts" description="Published shifts will appear here once they’re assigned." /> : null}
@@ -2213,6 +2217,241 @@ function StaffMemberRosterPage() {
 
       <PublishedRosterView />
     </div>
+  );
+}
+
+// Manager side of open shifts: who has put their hand up, and the decision.
+// Approving assigns the shift and closes every other request on it in one
+// transaction, so two people can never both be told yes.
+function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
+  const [claims, setClaims] = useState<StaffShiftClaim[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    try {
+      setClaims(await api<StaffShiftClaim[]>('/api/staff/roster/claims'));
+    } catch {
+      // A manager who cannot see claims (or an older API) should not break the
+      // roster board — the panel simply stays hidden.
+      setClaims([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function decide(claim: StaffShiftClaim, approve: boolean) {
+    setBusyId(claim.id);
+    setMessage(null);
+    setMessageTarget(claim.id);
+    try {
+      await api(`/api/staff/roster/claims/${claim.id}/decide`, { method: 'POST', body: JSON.stringify({ approve }) });
+      await Promise.all([load(), onDecided()]);
+      setMessage(approve ? 'Shift assigned.' : 'Request declined.');
+      setMessageTarget(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not save that decision.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (claims.length === 0) return null;
+
+  // Several people can ask for the same shift, so group by shift: the decision
+  // is really "who gets this one", not a queue of unrelated approvals.
+  const byShift = new Map<string, StaffShiftClaim[]>();
+  for (const claim of claims) {
+    if (!claim.shift) continue;
+    const list = byShift.get(claim.shift.id) ?? [];
+    list.push(claim);
+    byShift.set(claim.shift.id, list);
+  }
+
+  return (
+    <Card
+      title="Shift requests"
+      subtitle="Staff who have offered to work an open shift. Approving assigns it and declines the rest."
+      padding="none"
+      action={<Badge tone="warning">{claims.length} waiting</Badge>}
+    >
+      {message && !messageTarget ? <p className="subtle" style={{ padding: '0 1rem' }}>{message}</p> : null}
+      <div className="staff-mobile-shift-list">
+        {[...byShift.values()].map((group) => {
+          const shift = group[0]!.shift!;
+          return (
+            <div key={shift.id} className="staff-mobile-shift-card" style={{ flexDirection: 'column', alignItems: 'stretch', gap: '0.5rem' }}>
+              <span>
+                <strong>
+                  {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} · {timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}
+                </strong>
+                <span className="subtle">
+                  {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}
+                  {group.length > 1 ? ` · ${group.length} people want it` : ''}
+                </span>
+              </span>
+              {group.map((claim) => (
+                <span key={claim.id} className="staff-row-actions" style={{ justifyContent: 'space-between' }}>
+                  <span>
+                    <strong>{claim.staffProfile?.firstName} {claim.staffProfile?.lastName}</strong>
+                    <span className="subtle">
+                      {claim.staffProfile?.roleTitle || 'No role'}
+                      {claim.note ? ` · “${claim.note}”` : ''}
+                    </span>
+                  </span>
+                  <span className="staff-row-actions">
+                    <Button type="button" size="sm" disabled={busyId === claim.id} onClick={() => void decide(claim, true)}>
+                      {busyId === claim.id ? 'Saving…' : 'Give them the shift'}
+                    </Button>
+                    <Button type="button" size="sm" variant="ghost" disabled={busyId === claim.id} onClick={() => void decide(claim, false)}>
+                      Decline
+                    </Button>
+                    <ActionFeedback message={messageTarget === claim.id ? message : null} tone="error" />
+                  </span>
+                </span>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// Shifts published with nobody on them. Staff put their hand up here; a
+// manager decides. Hidden entirely when there is nothing open, so the roster
+// page doesn't carry a permanently empty box.
+function OpenShiftsCard({ onClaimApproved }: { onClaimApproved: () => Promise<void> }) {
+  const [shifts, setShifts] = useState<StaffOpenShift[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  const [noteFor, setNoteFor] = useState<string | null>(null);
+  const [note, setNote] = useState('');
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setShifts(await api<StaffOpenShift[]>('/api/staff/me/open-shifts'));
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load open shifts.');
+      setMessageTarget(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function claim(shift: StaffOpenShift) {
+    setBusyId(shift.id);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/open-shifts/${shift.id}/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ note: noteFor === shift.id ? note.trim() || null : null })
+      });
+      setNoteFor(null);
+      setNote('');
+      await load();
+      setMessage('Requested. Your manager will confirm.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not request that shift.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function withdraw(shift: StaffOpenShift) {
+    setBusyId(shift.id);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/open-shifts/${shift.id}/withdraw`, { method: 'POST', body: JSON.stringify({}) });
+      await load();
+      // An approved claim that gets withdrawn frees the shift again, so the
+      // viewer's own roster above may now be out of date.
+      await onClaimApproved();
+      setMessage('Request withdrawn.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not withdraw that request.');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  if (!loading && shifts.length === 0) return null;
+
+  return (
+    <Card
+      title="Open shifts"
+      subtitle="Shifts that still need somebody. Put your hand up and a manager will confirm."
+      padding="none"
+      action={<Badge tone="warning">{shifts.length} open</Badge>}
+    >
+      {loading ? <Spinner label="Loading open shifts…" /> : null}
+      {message && !messageTarget ? <p className="error-text" style={{ padding: '0 1rem' }}>{message}</p> : null}
+      <div className="staff-mobile-shift-list">
+        {shifts.map((shift) => (
+          <div key={shift.id} className="staff-mobile-shift-card">
+            <span>
+              <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+              <span className="subtle">{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}</span>
+              <span className="subtle">
+                {shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break planned'}
+                {shift.claimCount > 0 ? ` · ${shift.claimCount} ${shift.claimCount === 1 ? 'person has' : 'people have'} asked` : ' · Nobody has asked yet'}
+                {shift.notes ? ` · ${shift.notes}` : ''}
+              </span>
+              {noteFor === shift.id ? (
+                <Input
+                  autoFocus
+                  placeholder="Anything your manager should know? (optional)"
+                  value={note}
+                  maxLength={300}
+                  onChange={(event) => setNote(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter') void claim(shift);
+                    if (event.key === 'Escape') { setNoteFor(null); setNote(''); }
+                  }}
+                />
+              ) : null}
+            </span>
+            <span className="staff-row-actions">
+              {shift.myClaimStatus === 'PENDING' ? (
+                <>
+                  <Badge tone="info">Requested</Badge>
+                  <Button type="button" size="sm" variant="ghost" disabled={busyId === shift.id} onClick={() => void withdraw(shift)}>
+                    {busyId === shift.id ? 'Working…' : 'Withdraw'}
+                  </Button>
+                </>
+              ) : noteFor === shift.id ? (
+                <>
+                  <Button type="button" size="sm" disabled={busyId === shift.id} onClick={() => void claim(shift)}>
+                    {busyId === shift.id ? 'Sending…' : 'Send request'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setNoteFor(null); setNote(''); }}>Cancel</Button>
+                </>
+              ) : (
+                <>
+                  <Button type="button" size="sm" disabled={busyId === shift.id} onClick={() => void claim(shift)}>
+                    {busyId === shift.id ? 'Sending…' : 'I can work this'}
+                  </Button>
+                  <Button type="button" size="sm" variant="ghost" onClick={() => { setNoteFor(shift.id); setNote(''); }}>Add note</Button>
+                </>
+              )}
+              <ActionFeedback message={messageTarget === shift.id ? message : null} tone={message?.includes('Could') || message?.includes('already') ? 'error' : 'success'} />
+            </span>
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
 
@@ -9686,8 +9925,6 @@ function RosterPage({
   // One level of undo for the last board action. Quick-add makes a stray click
   // cheap to make, so it has to be cheap to take back.
   const [lastUndo, setLastUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
-  // Seed from the parent's load, and whenever the parent genuinely refetches.
-  useEffect(() => { setShifts(roster); }, [roster]);
   const [boardBusy, setBoardBusy] = useState(false);
 
   /** Refresh just the board, without the global loading flash. */
@@ -9955,7 +10192,7 @@ function RosterPage({
     [visibleRoster]
   );
   const unallocatedShiftCount = useMemo(
-    () => visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length,
+    () => visibleRoster.filter(isOpenShift).length,
     [visibleRoster]
   );
   const hiddenAreaNames = useMemo(() => new Set(rosterAreaSettings.hidden.map(normaliseRosterAreaKey)), [rosterAreaSettings.hidden]);
@@ -10042,7 +10279,7 @@ function RosterPage({
     };
   }), [averageRateCents, dailyForecastSales, days, forecastSales, forecastVenues, staffById, targetWagePercent, venueFilter, visibleRoster]);
   const publishWarnings = useMemo(() => {
-    const unallocatedCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+    const unallocatedCount = visibleRoster.filter(isOpenShift).length;
     const noVenueCount = visibleRoster.filter((shift) => !shift.venue && !shift.staffProfile?.venue).length;
     const overlapCount = countRosterOverlaps(visibleRoster);
     return [
@@ -10203,6 +10440,21 @@ function RosterPage({
   useEffect(() => {
     if (!staffProfileId && activeStaff[0]) setStaffProfileId(activeStaff[0].id);
   }, [activeStaff, staffProfileId]);
+
+  // Seed from the parent's load, and whenever the parent genuinely refetches.
+  //
+  // The parent fetches the roster without a window, so its prop holds every
+  // shift it knows about. Taking it wholesale made every board aggregate —
+  // shift count, hours, labour cost, wage % against budget — sum months of
+  // roster while the header said one week, and put shifts from other weeks in
+  // the "needs filling" queue. Narrow it to the window on screen; the board
+  // fetch below then replaces it with the server's authoritative rows.
+  useEffect(() => {
+    setShifts(roster.filter((shift) => {
+      const startsAt = new Date(shift.startsAt);
+      return startsAt >= weekStart && startsAt < weekEnd;
+    }));
+  }, [roster, weekEnd, weekStart]);
 
   // Changing week fetches the board for that window only. It used to refetch
   // the entire staff list as well and raise the global loading flag, so paging
@@ -10523,7 +10775,7 @@ function RosterPage({
       confirmMessage = `RESET ALL ROSTER DATA for ${venueLabel}? This permanently deletes every shift across every week. This cannot be undone.`;
       body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'reset-all' };
     } else if (scope === 'unallocated') {
-      scopeCount = visibleRoster.filter((shift) => isUnallocatedProfile(shift.staffProfile)).length;
+      scopeCount = visibleRoster.filter(isOpenShift).length;
       confirmMessage = `Delete ${scopeCount} unallocated shift${scopeCount === 1 ? '' : 's'} for ${venueLabel} this week? This cannot be undone.`;
       body = { start: weekStart.toISOString(), end: weekEnd.toISOString(), venue: venueParam, filter: 'unallocated' };
     } else {
@@ -11392,6 +11644,8 @@ function RosterPage({
         </div>
       ) : null}
 
+      <ShiftClaimsPanel onDecided={reload} />
+
       {historicalOpen ? (
         <div
           className="alma-historical-modal"
@@ -11639,7 +11893,46 @@ function RosterPage({
             {/* The global day-head and day-summary rows are gone — each
                 venue now carries its own day labels + per-day summary
                 in the venue header row beneath. No group total at the
-                top until we add a per-venue comparison view. */}
+                top until we add a per-venue comparison view.
+
+                What stays is a slim week stepper, so you can jump a week
+                either way without scrolling back up to the page header. */}
+            <div className="deputy-board-weeknav">
+              <div className="deputy-board-weeknav-steps">
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn"
+                  aria-label="Previous week"
+                  onClick={() => setRosterWeek(addDays(weekStart, -7))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><polyline points="15 6 9 12 15 18" /></svg>
+                </button>
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn"
+                  aria-label="Next week"
+                  onClick={() => setRosterWeek(addDays(weekStart, 7))}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true"><polyline points="9 6 15 12 9 18" /></svg>
+                </button>
+              </div>
+              <span className="deputy-board-weeknav-range">{formatRange(weekStart, rosterRangeEnd)}</span>
+              {sameDay(weekStart, startOfWeek(new Date())) ? (
+                <span className="deputy-board-weeknav-now">This week</span>
+              ) : (
+                <button
+                  type="button"
+                  className="deputy-board-weeknav-btn deputy-board-weeknav-btn--text"
+                  onClick={() => {
+                    const today = new Date();
+                    setRosterWeek(startOfWeek(today));
+                    setMobileSelectedDay(toDateInput(today));
+                  }}
+                >
+                  Back to this week
+                </button>
+              )}
+            </div>
 
             {scheduleRows.length === 0 ? (
               <div className="deputy-schedule-empty">No rows match the current filters.</div>
@@ -11797,7 +12090,7 @@ function RosterPage({
                               draggable
                               role="button"
                               tabIndex={0}
-                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isUnallocatedProfile(shift.staffProfile) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''}`}
+                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isOpenShift(shift) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''}`}
                               style={areaStyle(shift.area || row.label)}
                               onDragStart={(event) => handleDragStart(event, shift)}
                               onDragEnd={() => setDraggingShiftId(null)}
@@ -12024,7 +12317,7 @@ function RosterPage({
                     // Roster Redesign 1C: "Needs filling" queue — every unallocated
                     // shift this week as a prioritised, one-tap list.
                     const openShifts = visibleRoster
-                      .filter((shift) => isUnallocatedProfile(shift.staffProfile) && shift.status !== 'CANCELLED')
+                      .filter((shift) => isOpenShift(shift) && shift.status !== 'CANCELLED')
                       .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime());
                     if (!openShifts.length) return null;
                     return (
@@ -12302,7 +12595,7 @@ function RosterPage({
                         <strong>{shift.staffProfile?.firstName ?? 'Unallocated'} {shift.staffProfile?.lastName ?? ''}</strong>
                         <small>{shift.venue || shift.staffProfile?.venue || 'No venue set'}</small>
                       </span>
-                      <Badge tone={isUnallocatedProfile(shift.staffProfile) ? 'warning' : 'info'}>
+                      <Badge tone={isOpenShift(shift) ? 'warning' : 'info'}>
                         {roundHours(shiftHours(shift))}
                       </Badge>
                     </button>
@@ -12702,7 +12995,7 @@ function MobileRosterView({
                               onClick={() => onOpenShift(shift)}
                             >
                               <span className="mobile-shift-avatar" aria-hidden="true">
-                                {shift.staffProfile && !isUnallocatedProfile(shift.staffProfile) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
+                                {shift.staffProfile && !isOpenShift(shift) ? initials(shift.staffProfile) : shiftArea.slice(0, 2).toUpperCase()}
                               </span>
                               <span className={`mobile-shift-status-dot is-${mobileRosterGroupClass(statusGroup)}`} aria-hidden="true" />
                               <span className="mobile-shift-main">
@@ -12780,7 +13073,7 @@ function rosterHourlyRateCents(member: StaffProfile): number | null {
 }
 
 function mobileRosterStatusGroup(shift: RosterShift): MobileRosterGroupKey {
-  if (isUnallocatedProfile(shift.staffProfile)) return 'unassigned';
+  if (isOpenShift(shift)) return 'unassigned';
   if (shift.status === 'COMPLETED' || shift.status === 'CANCELLED') return 'completed';
   const startsAt = new Date(shift.startsAt).getTime();
   const endsAt = new Date(shift.endsAt).getTime();
@@ -12807,7 +13100,7 @@ function mobileRosterStatusText(shift: RosterShift, group: MobileRosterGroupKey)
 }
 
 function rosterShiftStaffName(shift: RosterShift) {
-  if (isUnallocatedProfile(shift.staffProfile)) return 'Unassigned shift';
+  if (isOpenShift(shift)) return 'Unassigned shift';
   return `${shift.staffProfile?.firstName ?? ''} ${shift.staffProfile?.lastName ?? ''}`.trim() || 'Unassigned shift';
 }
 
@@ -12993,6 +13286,16 @@ function isDeputyImportedProfile(member: { notes?: string | null; email?: string
 
 function isUnallocatedProfile(member: { firstName?: string | null; notes?: string | null } | null | undefined) {
   return Boolean(member?.firstName === 'Unallocated' || member?.notes?.includes('Deputy unallocated placeholder'));
+}
+
+/**
+ * A shift nobody is on. The real answer is a null staffProfileId; the
+ * placeholder-profile check stays for rosters imported from Deputy before the
+ * open-shift migration converted them.
+ */
+function isOpenShift(shift: { staffProfileId?: string | null; staffProfile?: { firstName?: string | null; notes?: string | null } | null }) {
+  if (shift.staffProfileId === null) return true;
+  return isUnallocatedProfile(shift.staffProfile);
 }
 
 function staffClockStateTone(state: StaffManagerOperationsPayload['todaysStaff'][number]['state']) {

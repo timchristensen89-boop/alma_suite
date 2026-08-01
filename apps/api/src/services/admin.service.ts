@@ -455,6 +455,10 @@ export const adminService = {
     }
 
     for (const shift of rosterShifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const venue = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
       const area = shift.area?.trim() || 'Unassigned area';
       const roleTitle = shift.roleTitle?.trim() || shift.staffProfile.roleTitle?.trim() || 'Unassigned role';
@@ -509,6 +513,10 @@ export const adminService = {
       });
       const hoursByStaffVenue = new Map<string, Map<string, number>>();
       for (const shift of allVenueShifts) {
+        // An open shift has nobody on it, so it carries no wage cost and belongs
+        // to no one's hours. It is counted as work that still needs filling, not
+        // as work someone is doing.
+        if (!shift.staffProfile || !shift.staffProfileId) continue;
         const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
         const h = hoursBetween(shift.startsAt, shift.endsAt, shift.breakMinutes);
         const m = hoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();

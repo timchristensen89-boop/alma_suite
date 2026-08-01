@@ -847,6 +847,10 @@ export async function recapWageCents(venue: string | null, start: Date, end: Dat
       select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
     });
     for (const shift of shifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
       const h = rosterHours(shift);
       const m = rosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();
@@ -1121,6 +1125,10 @@ export const reportsService = {
       if (entry.status === 'APPROVED' || entry.status === 'EXPORTED') row.approvedWageCents += cost;
     }
     for (const shift of rosterShifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const row = rowFor(shift.venue || shift.staffProfile.venue);
       const hours = rosterHours(shift);
       const rate = staffCostingRate(shift.staffProfile, superRate);
@@ -1148,6 +1156,10 @@ export const reportsService = {
         select: { staffProfileId: true, venue: true, startsAt: true, endsAt: true, breakMinutes: true, staffProfile: { select: { venue: true } } }
       });
       for (const shift of salariedShifts) {
+        // An open shift has nobody on it, so it carries no wage cost and belongs
+        // to no one's hours. It is counted as work that still needs filling, not
+        // as work someone is doing.
+        if (!shift.staffProfile || !shift.staffProfileId) continue;
         const v = shift.venue?.trim() || shift.staffProfile.venue?.trim() || 'Unassigned';
         const h = rosterHours(shift);
         const m = salariedRosterHoursByStaffVenue.get(shift.staffProfileId) ?? new Map<string, number>();

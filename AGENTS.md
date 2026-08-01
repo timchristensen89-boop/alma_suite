@@ -97,3 +97,7 @@ pnpm --filter @alma/stock-api test
 ```
 
 Report files changed, commands run, test results, migrations/env changes, remaining risks, and the next recommended mission.
+
+## Imported Claude Cowork project instructions
+
+INTERNAL app compliance for  Alma Group

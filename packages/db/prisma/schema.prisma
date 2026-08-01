@@ -667,6 +667,7 @@ model StaffProfile {
   records                      StaffComplianceRecord[]
   hrRecords                    StaffHrRecord[]
   managerNotes                 StaffManagerNote[]
+  shiftClaims                  RosterShiftClaim[]
   availability                 StaffAvailability[]
   unavailability               StaffUnavailability[]
   payProfile                   StaffPayProfile?
@@ -1083,7 +1084,11 @@ model StaffTrainingRecord {
 // @domain: workforce | home: workforce
 model RosterShift {
   id                   String                   @id @default(cuid())
-  staffProfileId       String
+  /// NULL means the shift is OPEN — nobody is on it yet. Open shifts are how
+  /// a manager publishes work that needs filling, and what staff can claim.
+  /// Before this was nullable, "open" was faked with placeholder staff
+  /// profiles named Unallocated, which put fake people in the team list.
+  staffProfileId       String?
   venue                String?
   area                 String?
   roleTitle            String?
@@ -1094,13 +1099,14 @@ model RosterShift {
   notes                String?
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
-  staffProfile         StaffProfile             @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  staffProfile         StaffProfile?            @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
   shiftConfirmations   StaffShiftConfirmation[]
   shiftTaskAssignments ShiftTaskAssignment[]
   clockSessions        StaffClockSession[]
 
   @@index([staffProfileId, startsAt])
   @@index([startsAt, endsAt])
+  claims               RosterShiftClaim[]
 }
 
 // @domain: bridge | home: suite
@@ -1168,6 +1174,32 @@ model ShiftTaskAssignment {
 }
 
 // @domain: workforce | home: workforce
+/// A staff member putting their hand up for an open shift.
+///
+/// A claim is a request, not an assignment: two people can claim the same
+/// shift and a manager decides. That is deliberate — auto-assigning to
+/// whoever taps first rewards whoever happens to be holding their phone,
+/// and hides the choice from the person accountable for the roster.
+model RosterShiftClaim {
+  id             String    @id @default(cuid())
+  rosterShiftId  String
+  staffProfileId String
+  status         String    @default("PENDING") /// PENDING|APPROVED|DECLINED|WITHDRAWN
+  note           String?
+  decidedAt      DateTime?
+  decidedByUserId String?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  rosterShift  RosterShift  @relation(fields: [rosterShiftId], references: [id], onDelete: Cascade)
+  staffProfile StaffProfile @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+
+  /// One claim per person per shift; re-claiming updates the existing row.
+  @@unique([rosterShiftId, staffProfileId])
+  @@index([staffProfileId, status])
+  @@map("roster_shift_claims")
+}
+
 model StaffShiftConfirmation {
   id             String       @id @default(cuid())
   rosterShiftId  String

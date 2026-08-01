@@ -1226,7 +1226,8 @@ function toStaffShiftConfirmation(row: {
 
 function toRosterShiftPayload(row: {
   id: string;
-  staffProfileId: string;
+  /** Null on an OPEN shift — nobody is on it yet. */
+  staffProfileId: string | null;
   venue: string | null;
   area: string | null;
   roleTitle: string | null;
@@ -1324,7 +1325,8 @@ function toClockSessionPayload(row: {
   }>;
   rosterShift?: {
     id: string;
-    staffProfileId: string;
+    /** Null when the linked shift is still open. */
+    staffProfileId: string | null;
     venue: string | null;
     area: string | null;
     roleTitle: string | null;
@@ -3652,6 +3654,175 @@ export const staffService = {
     return { ok: true };
   },
 
+  // ─── Open shifts and claims ───────────────────────────────────────────────
+
+  /**
+   * Published open shifts a staff member could pick up.
+   *
+   * Only PUBLISHED: a draft roster is the manager's working copy, and showing
+   * drafts to staff would have people claiming shifts that may not survive to
+   * publication. Only future shifts, and only their own venue.
+   */
+  async listOpenShifts(actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const venue = actor.role === 'STAFF' ? actor.venue : scopeVenueForActor(undefined, actor);
+    const shifts = await prisma.rosterShift.findMany({
+      where: {
+        staffProfileId: null,
+        status: 'PUBLISHED',
+        startsAt: { gt: new Date() },
+        ...(venue ? { venue } : {})
+      },
+      orderBy: [{ startsAt: 'asc' }],
+      include: { claims: { where: { status: { in: ['PENDING', 'APPROVED'] } } } }
+    });
+
+    return shifts.map((shift) => ({
+      id: shift.id,
+      venue: shift.venue,
+      area: shift.area,
+      roleTitle: shift.roleTitle,
+      startsAt: shift.startsAt.toISOString(),
+      endsAt: shift.endsAt.toISOString(),
+      breakMinutes: shift.breakMinutes,
+      notes: shift.notes,
+      claimCount: shift.claims.length,
+      // Whether THIS person has already put their hand up, so the app shows
+      // "requested" rather than offering the button again.
+      myClaimStatus: shift.claims.find((claim) => claim.staffProfileId === actor.id)?.status ?? null
+    }));
+  },
+
+  /** Put your hand up for an open shift. */
+  async claimOpenShift(shiftId: string, input: unknown, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const note = z.object({ note: z.string().max(300).optional().nullable() }).parse(input ?? {}).note?.trim() || null;
+
+    const shift = await prisma.rosterShift.findUnique({ where: { id: shiftId } });
+    if (!shift) throw new HttpError(404, 'That shift no longer exists.');
+    if (shift.staffProfileId) throw new HttpError(409, 'Someone has already been given that shift.');
+    if (shift.status !== 'PUBLISHED') throw new HttpError(409, 'That shift is not open for claiming yet.');
+    if (shift.startsAt <= new Date()) throw new HttpError(409, 'That shift has already started.');
+    if (actor.role === 'STAFF' && actor.venue && shift.venue && shift.venue !== actor.venue) {
+      throw new HttpError(403, 'That shift is at another venue.');
+    }
+
+    // The same hard blocks a manager gets when assigning: claiming must not be
+    // a way around a double-booking or approved leave.
+    const clash = await prisma.rosterShift.findFirst({
+      where: {
+        staffProfileId: actor.id,
+        status: { not: 'CANCELLED' },
+        startsAt: { lt: shift.endsAt },
+        endsAt: { gt: shift.startsAt }
+      }
+    });
+    if (clash) throw new HttpError(409, 'You are already rostered at that time.');
+
+    const leave = await prisma.staffLeaveRequest.findFirst({
+      where: {
+        staffProfileId: actor.id,
+        status: { in: ['PENDING', 'APPROVED'] },
+        startDate: { lte: shift.endsAt },
+        endDate: { gte: shift.startsAt }
+      }
+    });
+    if (leave) throw new HttpError(409, 'You have leave booked over that shift.');
+
+    return prisma.rosterShiftClaim.upsert({
+      where: { rosterShiftId_staffProfileId: { rosterShiftId: shiftId, staffProfileId: actor.id } },
+      create: { rosterShiftId: shiftId, staffProfileId: actor.id, note, status: 'PENDING' },
+      update: { status: 'PENDING', note, decidedAt: null, decidedByUserId: null }
+    });
+  },
+
+  /** Take your hand back down. */
+  async withdrawClaim(shiftId: string, actor?: AuthUser) {
+    if (!actor) throw new HttpError(401, 'Not authenticated');
+    const claim = await prisma.rosterShiftClaim.findUnique({
+      where: { rosterShiftId_staffProfileId: { rosterShiftId: shiftId, staffProfileId: actor.id } }
+    });
+    if (!claim) throw new HttpError(404, 'You have not claimed that shift.');
+    if (claim.status === 'APPROVED') throw new HttpError(409, 'That shift is already yours — speak to your manager.');
+    await prisma.rosterShiftClaim.update({
+      where: { id: claim.id },
+      data: { status: 'WITHDRAWN', decidedAt: new Date() }
+    });
+    return { ok: true };
+  },
+
+  /** Every pending claim a manager needs to decide on. */
+  async listPendingClaims(actor?: AuthUser) {
+    const venue = scopeVenueForActor(undefined, actor);
+    const claims = await prisma.rosterShiftClaim.findMany({
+      where: {
+        status: 'PENDING',
+        rosterShift: { staffProfileId: null, startsAt: { gt: new Date() }, ...(venue ? { venue } : {}) }
+      },
+      include: {
+        staffProfile: { select: { id: true, firstName: true, lastName: true, roleTitle: true, venue: true } },
+        rosterShift: { select: { id: true, venue: true, area: true, roleTitle: true, startsAt: true, endsAt: true, breakMinutes: true } }
+      },
+      orderBy: [{ createdAt: 'asc' }]
+    });
+    return claims.map((claim) => ({
+      id: claim.id,
+      note: claim.note,
+      requestedAt: claim.createdAt.toISOString(),
+      staffProfile: claim.staffProfile,
+      shift: claim.rosterShift && {
+        ...claim.rosterShift,
+        startsAt: claim.rosterShift.startsAt.toISOString(),
+        endsAt: claim.rosterShift.endsAt.toISOString()
+      }
+    }));
+  },
+
+  /**
+   * Approve a claim: the shift becomes theirs, and every other claim on it is
+   * declined in the same transaction so two people can never both be told yes.
+   */
+  async decideClaim(claimId: string, approve: boolean, actor?: AuthUser) {
+    const claim = await prisma.rosterShiftClaim.findUnique({
+      where: { id: claimId },
+      include: { rosterShift: true }
+    });
+    if (!claim) throw new HttpError(404, 'That request no longer exists.');
+    if (claim.status !== 'PENDING') throw new HttpError(409, 'That request has already been decided.');
+    if (!claim.rosterShift) throw new HttpError(404, 'That shift no longer exists.');
+
+    if (!approve) {
+      await prisma.rosterShiftClaim.update({
+        where: { id: claimId },
+        data: { status: 'DECLINED', decidedAt: new Date(), decidedByUserId: actor?.id ?? null }
+      });
+      return { ok: true, approved: false };
+    }
+
+    if (claim.rosterShift.staffProfileId) {
+      throw new HttpError(409, 'That shift has already been filled.');
+    }
+
+    // One transaction: assign the shift AND close every other claim on it.
+    // Split apart, a crash between the two would leave a filled shift with
+    // other people still believing they were in the running.
+    await prisma.$transaction([
+      prisma.rosterShift.update({
+        where: { id: claim.rosterShiftId },
+        data: { staffProfileId: claim.staffProfileId }
+      }),
+      prisma.rosterShiftClaim.update({
+        where: { id: claimId },
+        data: { status: 'APPROVED', decidedAt: new Date(), decidedByUserId: actor?.id ?? null }
+      }),
+      prisma.rosterShiftClaim.updateMany({
+        where: { rosterShiftId: claim.rosterShiftId, id: { not: claimId }, status: 'PENDING' },
+        data: { status: 'DECLINED', decidedAt: new Date(), decidedByUserId: actor?.id ?? null }
+      })
+    ]);
+    return { ok: true, approved: true };
+  },
+
   async rosterBoard(start?: string, end?: string, actor?: AuthUser) {
     const [staff, shifts] = await Promise.all([
       prisma.staffProfile.findMany({
@@ -4170,6 +4341,10 @@ export const staffService = {
     }
 
     for (const shift of rosterShifts) {
+      // An open shift has nobody on it, so it carries no wage cost and belongs
+      // to no one's hours. It is counted as work that still needs filling, not
+      // as work someone is doing.
+      if (!shift.staffProfile || !shift.staffProfileId) continue;
       const shiftVenue = shift.venue || 'Unassigned';
       const current = wagesByVenueMap.get(shiftVenue) ?? {
         venue: shiftVenue,

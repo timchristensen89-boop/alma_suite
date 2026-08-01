@@ -4476,6 +4476,40 @@ export type StaffMyRosterPayload = {
   pendingConfirmationCount: number;
 };
 
+/**
+ * A published shift with nobody on it, offered to the team. `myClaimStatus` is
+ * this viewer's own request on it, so the app can show "requested" instead of
+ * offering the button a second time.
+ */
+export type StaffOpenShift = {
+  id: string;
+  venue: string | null;
+  area: string | null;
+  roleTitle: string | null;
+  startsAt: string;
+  endsAt: string;
+  breakMinutes: number;
+  notes: string | null;
+  claimCount: number;
+  myClaimStatus: 'PENDING' | 'APPROVED' | 'DECLINED' | 'WITHDRAWN' | null;
+};
+
+export type StaffShiftClaim = {
+  id: string;
+  note: string | null;
+  requestedAt: string;
+  staffProfile: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue'> | null;
+  shift: {
+    id: string;
+    venue: string | null;
+    area: string | null;
+    roleTitle: string | null;
+    startsAt: string;
+    endsAt: string;
+    breakMinutes: number;
+  } | null;
+};
+
 export type StaffClockStatusPayload = {
   activeSession: StaffClockSession | null;
   currentShift: RosterShift | null;
