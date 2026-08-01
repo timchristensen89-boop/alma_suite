@@ -25,6 +25,7 @@ import type {
   StockItemsPayload,
   StockItemsSummary,
   StocktakesSummary,
+  StockValueByCategory,
   Timesheet
 } from '@alma/shared';
 import { defaultCasualRateCents } from '@alma/shared';
@@ -120,7 +121,7 @@ type ReportsData = {
   menuCogs: MenuCogsPayload | null;
   primeCost: ReportsPrimeCostPayload | null;
   tips: StaffTipsSummary | null;
-  stockItems: StockItemsPayload | null;
+  stockValue: StockValueByCategory | null;
   stockSummary: StockItemsSummary | null;
   stocktakes: StocktakesSummary | null;
   recipes: RecipesSummary | null;
@@ -1158,7 +1159,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     menuCogs: null,
     primeCost: null,
     tips: null,
-    stockItems: null,
+    stockValue: null,
     stockSummary: null,
     stocktakes: null,
     recipes: null
@@ -1208,14 +1209,17 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
       ]);
 
-      let stockItems: StockItemsPayload | null = null;
+      let stockValue: StockValueByCategory | null = null;
       let stockSummary: StockItemsSummary | null = null;
       let stocktakes: StocktakesSummary | null = null;
       let recipes: RecipesSummary | null = null;
 
       try {
-        [stockItems, stockSummary, stocktakes, recipes] = await Promise.all([
-          stockApi<StockItemsPayload>('/api/items'),
+        [stockValue, stockSummary, stocktakes, recipes] = await Promise.all([
+          // Was stockApi<StockItemsPayload>('/api/items') — the full 402 KB
+          // catalogue, downloaded only to total stock value and group it by
+          // category. The server does the arithmetic now.
+          stockApi<StockValueByCategory>('/api/items/value-by-category'),
           stockApi<StockItemsSummary>('/api/items/summary'),
           stockApi<StocktakesSummary>('/api/stocktake/summary'),
           stockApi<RecipesSummary>('/api/recipes/summary')
@@ -1224,7 +1228,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
         setStockMessage(error instanceof Error ? error.message : 'Could not load stock reports.');
       }
 
-      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockItems, stockSummary, stocktakes, recipes });
+      setData({ overview, summary, staff, timesheets, roster, rosterForecastSnapshots, actualSales, itemSales, menuProfitability, menuCogs, primeCost, tips, stockValue, stockSummary, stocktakes, recipes });
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Could not load reports.');
     } finally {
@@ -1965,58 +1969,10 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     ...salesDailyRows.flatMap((day) => day.venues.flatMap((row) => [row.actualSalesCents, row.forecastSalesCents, row.historicalSalesCents]))
   );
 
-  const venueStockValueRows = (data.stockItems?.venueStockItems ?? []).filter(
-    (row) => row.active && row.stockItem?.status === 'ACTIVE'
-  );
-  const stockCostUsesVenueRows = venueStockValueRows.length > 0;
-  const stockValueCents = stockCostUsesVenueRows
-    ? venueStockValueRows.reduce(
-        (sum, row) => sum + Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0)),
-        0
-      )
-    : data.stockItems?.items.reduce(
-        (sum, item) => sum + Math.round(item.onHand * (item.avgCostCents ?? 0)),
-        0
-      ) ?? 0;
+  const stockCostUsesVenueRows = data.stockValue?.basis === 'VENUE_ROWS';
+  const stockValueCents = data.stockValue?.totalValueCents ?? 0;
 
-  const categoryValueRows = (
-    stockCostUsesVenueRows
-      ? Array.from(
-          venueStockValueRows
-            .reduce((map, row) => {
-              const category = row.stockItem?.category?.name ?? 'Uncategorised';
-              const current =
-                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
-              const threshold =
-                row.reorderPoint ??
-                row.parLevel ??
-                row.stockItem?.reorderPoint ??
-                row.stockItem?.parLevel ??
-                0;
-              current.itemCount += 1;
-              current.valueCents += Math.round((row.onHand ?? 0) * (row.stockItem?.avgCostCents ?? 0));
-              if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) {
-                current.lowStock += 1;
-              }
-              map.set(category, current);
-              return map;
-            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
-            .values()
-        )
-      : Array.from(
-          (data.stockItems?.items ?? [])
-            .reduce((map, item) => {
-              const category = item.category?.name ?? 'Uncategorised';
-              const current =
-                map.get(category) ?? { category, itemCount: 0, valueCents: 0, lowStock: 0 };
-              current.itemCount += 1;
-              current.valueCents += Math.round(item.onHand * (item.avgCostCents ?? 0));
-              map.set(category, current);
-              return map;
-            }, new Map<string, { category: string; itemCount: number; valueCents: number; lowStock: number }>())
-            .values()
-        )
-  ).sort((a, b) => b.valueCents - a.valueCents);
+  const categoryValueRows = data.stockValue?.categories ?? [];
   const stockCategoryCountLabel = stockCostUsesVenueRows ? 'Venue rows' : 'Items';
   const stockLowStockLabel = stockCostUsesVenueRows ? 'Low stock venue rows' : 'Low stock';
 

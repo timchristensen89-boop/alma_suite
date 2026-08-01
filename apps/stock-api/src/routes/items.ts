@@ -22,6 +22,16 @@ itemsRouter.get('/picker', async (req, res, next) => {
   }
 });
 
+// Stock value and per-category rollup. Reports used to compute this in the
+// browser from the full catalogue.
+itemsRouter.get('/value-by-category', async (req, res, next) => {
+  try {
+    res.json(await itemsService.valueByCategory(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/export.csv', async (req, res, next) => {
   try {
     const { filename, csv } = await itemsService.exportCsv();

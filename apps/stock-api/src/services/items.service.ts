@@ -488,6 +488,89 @@ export const itemsService = {
     };
   },
 
+  /**
+   * Stock value and the per-category rollup, computed here.
+   *
+   * Reports downloaded the entire 402 KB catalogue to work these out in the
+   * browser: a total of onHand x avgCost, and counts/value/low-stock grouped by
+   * category. It is an aggregation, so it belongs on this side of the wire —
+   * the answer is about a kilobyte.
+   *
+   * The venue-rows-vs-items fallback is reproduced exactly as Reports had it:
+   * when active venue stock rows exist they are the source of truth (they hold
+   * the real per-venue holding), and only when there are none does it fall back
+   * to the item-level onHand. Changing that would change the stock value shown
+   * on the dashboard, which is a different kind of change from making it fast.
+   */
+  async valueByCategory(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const venueRows = await prisma.venueStockItem.findMany({
+      where: {
+        ...(venue ? { venue } : {}),
+        active: true,
+        stockItem: { status: 'ACTIVE' }
+      },
+      select: {
+        onHand: true,
+        parLevel: true,
+        reorderPoint: true,
+        stockItem: {
+          select: {
+            avgCostCents: true,
+            parLevel: true,
+            reorderPoint: true,
+            category: { select: { name: true } }
+          }
+        }
+      }
+    });
+
+    type Row = { category: string; itemCount: number; valueCents: number; lowStock: number };
+    const buckets = new Map<string, Row>();
+    const bucket = (name: string) => {
+      const existing = buckets.get(name);
+      if (existing) return existing;
+      const created: Row = { category: name, itemCount: 0, valueCents: 0, lowStock: 0 };
+      buckets.set(name, created);
+      return created;
+    };
+
+    let totalValueCents = 0;
+    const usesVenueRows = venueRows.length > 0;
+
+    if (usesVenueRows) {
+      for (const row of venueRows) {
+        const value = Math.round((row.onHand ?? 0) * (row.stockItem.avgCostCents ?? 0));
+        totalValueCents += value;
+        const entry = bucket(row.stockItem.category?.name ?? 'Uncategorised');
+        entry.itemCount += 1;
+        entry.valueCents += value;
+        const threshold = row.reorderPoint ?? row.parLevel ?? row.stockItem.reorderPoint ?? row.stockItem.parLevel ?? 0;
+        if (row.onHand !== null && threshold > 0 && row.onHand <= threshold) entry.lowStock += 1;
+      }
+    } else {
+      const items = await prisma.stockItem.findMany({
+        select: { onHand: true, avgCostCents: true, category: { select: { name: true } } }
+      });
+      for (const item of items) {
+        const value = Math.round(item.onHand * (item.avgCostCents ?? 0));
+        totalValueCents += value;
+        const entry = bucket(item.category?.name ?? 'Uncategorised');
+        entry.itemCount += 1;
+        entry.valueCents += value;
+      }
+    }
+
+    return {
+      totalValueCents,
+      // Tells Reports which basis produced these numbers, so the label it shows
+      // ("Venue rows" vs "Items") stays truthful.
+      basis: usesVenueRows ? ('VENUE_ROWS' as const) : ('ITEMS' as const),
+      categories: [...buckets.values()].sort((a, b) => b.valueCents - a.valueCents),
+      venue
+    };
+  },
+
   // Full-catalogue CSV export — every item with its current category, count
   // area, unit, status and latest cost. Column names line up with the
   // categorize-items helper (item / sku / category) so it round-trips.

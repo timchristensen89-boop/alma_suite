@@ -6987,3 +6987,13 @@ export type ForecastBacktestPayload = {
   salesBiasPct: number | null;
   weeks: ForecastAccuracyWeekRow[];
 };
+
+
+/** Server-computed stock value rollup (GET /api/items/value-by-category). */
+export type StockValueByCategory = {
+  totalValueCents: number;
+  /** Which source produced the figures: per-venue rows, or item-level on hand. */
+  basis: 'VENUE_ROWS' | 'ITEMS';
+  categories: Array<{ category: string; itemCount: number; valueCents: number; lowStock: number }>;
+  venue: string | null;
+};
