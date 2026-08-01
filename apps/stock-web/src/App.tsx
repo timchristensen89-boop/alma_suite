@@ -1,26 +1,9 @@
-import { useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
-import { ItemsPage } from './pages/ItemsPage';
-import { ConfigHealthPage } from './pages/ConfigHealthPage';
-import { StocktakePage } from './pages/StocktakePage';
-import { StocktakeTemplatesPage } from './pages/StocktakeTemplatesPage';
-import { TransfersPage } from './pages/TransfersPage';
-import { SuppliersPage } from './pages/SuppliersPage';
-import { InvoicesPage } from './pages/InvoicesPage';
-import { DeliveriesPage } from './pages/DeliveriesPage';
-import { PurchaseOrdersPage } from './pages/PurchaseOrdersPage';
-import { RecipesPage } from './pages/RecipesPage';
-import { DishMarginPage } from './pages/DishMarginPage';
-import { PriceMovementPage } from './pages/PriceMovementPage';
-import { ReorderNoticesPage } from './pages/ReorderNoticesPage';
-import { SettingsPage } from './pages/SettingsPage';
-import { WastagePage } from './pages/WastagePage';
-import { StaffUsagePage } from './pages/StaffUsagePage';
 import { LoginPage } from './pages/LoginPage';
-import { NotFoundPage } from './pages/NotFoundPage';
 import { StockBrand } from './components/StockBrand';
 import { NAV_ITEMS, type NavItem } from './config/navigation';
 import { HubLayout, type HubTab } from './components/HubTabs';
@@ -29,6 +12,29 @@ import { useDocumentTitle } from './hooks/useDocumentTitle';
 import { IconChevronDown, IconExternal } from './lib/icons';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
+
+// Routes load on demand. Every page used to ship in one chunk, so opening the
+// stocktake screen also downloaded recipes, invoices, dish margin and the rest —
+// on a phone in a cool room, over venue wifi. Dashboard and Login stay eager:
+// they are the first paint and the gate in front of it.
+const ItemsPage = lazy(() => import('./pages/ItemsPage').then((m) => ({ default: m.ItemsPage })));
+const ConfigHealthPage = lazy(() => import('./pages/ConfigHealthPage').then((m) => ({ default: m.ConfigHealthPage })));
+const StocktakePage = lazy(() => import('./pages/StocktakePage').then((m) => ({ default: m.StocktakePage })));
+const StocktakeTemplatesPage = lazy(() => import('./pages/StocktakeTemplatesPage').then((m) => ({ default: m.StocktakeTemplatesPage })));
+const TransfersPage = lazy(() => import('./pages/TransfersPage').then((m) => ({ default: m.TransfersPage })));
+const SuppliersPage = lazy(() => import('./pages/SuppliersPage').then((m) => ({ default: m.SuppliersPage })));
+const InvoicesPage = lazy(() => import('./pages/InvoicesPage').then((m) => ({ default: m.InvoicesPage })));
+const DeliveriesPage = lazy(() => import('./pages/DeliveriesPage').then((m) => ({ default: m.DeliveriesPage })));
+const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage').then((m) => ({ default: m.PurchaseOrdersPage })));
+const RecipesPage = lazy(() => import('./pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
+const DishMarginPage = lazy(() => import('./pages/DishMarginPage').then((m) => ({ default: m.DishMarginPage })));
+const PriceMovementPage = lazy(() => import('./pages/PriceMovementPage').then((m) => ({ default: m.PriceMovementPage })));
+const ReorderNoticesPage = lazy(() => import('./pages/ReorderNoticesPage').then((m) => ({ default: m.ReorderNoticesPage })));
+const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
+const WastagePage = lazy(() => import('./pages/WastagePage').then((m) => ({ default: m.WastagePage })));
+const StaffUsagePage = lazy(() => import('./pages/StaffUsagePage').then((m) => ({ default: m.StaffUsagePage })));
+const NotFoundPage = lazy(() => import('./pages/NotFoundPage').then((m) => ({ default: m.NotFoundPage })));
+
 
 const suiteApps = withSuiteAppLinks(SUITE_APPS);
 
@@ -223,6 +229,13 @@ function StockAppShell() {
       topBar={<TopBarWithContext />}
     >
       <AppAccessGate user={user} appId="STOCK" appName="Stock" apps={suiteApps}>
+      <Suspense
+        fallback={
+          <div className="route-loading" role="status" aria-live="polite">
+            <Spinner />
+          </div>
+        }
+      >
       <Routes>
         <Route path="/" element={<DashboardPage />} />
         <Route path="/settings" element={<SettingsPage />} />
@@ -258,6 +271,7 @@ function StockAppShell() {
 
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
+      </Suspense>
       </AppAccessGate>
     </AppShell>
   );

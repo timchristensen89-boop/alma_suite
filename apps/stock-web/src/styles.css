@@ -3058,3 +3058,13 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .st-dashboard-pair .stock-dashboard-table-scroll table {
   min-width: 560px;
 }
+
+/* Route chunk loading — keeps the shell steady while a page arrives instead
+   of collapsing the layout to nothing. */
+.route-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 320px;
+  padding: 48px 0;
+}
