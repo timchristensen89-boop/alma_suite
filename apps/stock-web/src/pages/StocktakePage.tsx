@@ -353,7 +353,7 @@ export function StocktakePage() {
       const [list, sum, itemPayload, quality] = await Promise.all([
         api<StocktakesPayload>('/api/stocktake'),
         api<StocktakesSummary>('/api/stocktake/summary'),
-        api<StockItemsPayload>('/api/items'),
+        api<StockItemsPayload>('/api/items/picker'),
         // Data quality is optional — gracefully degrade if the endpoint
         // isn't deployed yet so older builds don't break.
         api<DataQualityPayload>('/api/items/data-quality').catch(() => null)

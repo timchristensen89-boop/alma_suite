@@ -147,7 +147,7 @@ export function InvoicesPage() {
     try {
       const [invoicePayload, itemPayload, invoiceSummary, assigneePayload] = await Promise.all([
         api<StockInvoicesPayload>(`/api/invoices${showNoItem ? '?includeNoItem=1' : ''}`),
-        api<StockItemsPayload>('/api/items'),
+        api<StockItemsPayload>('/api/items/picker'),
         api<StockInvoicesSummary>('/api/invoices/summary'),
         api<StockInvoiceAssigneesPayload>('/api/invoices/assignees')
       ]);

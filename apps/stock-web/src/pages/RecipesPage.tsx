@@ -311,7 +311,7 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
       const [list, sum, itemPayload] = await Promise.all([
         api<RecipesPayload>('/api/recipes'),
         api<RecipesSummary>('/api/recipes/summary'),
-        api<StockItemsPayload>('/api/items')
+        api<StockItemsPayload>('/api/items/picker')
       ]);
       setData(list);
       setSummary(sum);

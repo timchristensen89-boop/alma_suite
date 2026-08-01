@@ -162,7 +162,7 @@ export function PurchaseOrdersPage() {
   // Stock items power the line picker; invoices power the match picker. Both non-fatal.
   useEffect(() => {
     let cancelled = false;
-    api<{ items: StockItem[] }>('/api/items')
+    api<{ items: StockItem[] }>('/api/items/picker')
       .then((payload) => { if (!cancelled) setItems(payload.items ?? []); })
       .catch(() => { if (!cancelled) setItems([]); });
     api<StockInvoicesPayload>('/api/invoices')

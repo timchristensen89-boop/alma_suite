@@ -43,6 +43,9 @@ export function TransfersPage() {
   const [ok, setOk] = useState<string | null>(null);
 
   async function loadCatalogue() {
+    // Transfers needs the per-venue stock rows to show how much sits at each
+    // venue before moving any, and the picker payload deliberately omits them.
+    // This one screen stays on the full catalogue.
     const payload = await api<StockItemsPayload>('/api/items');
     setCatalogue(payload);
     return payload;

@@ -80,7 +80,7 @@ export function StocktakeTemplatesPage() {
   // Stock items power the include/exclude pickers and resolve chip names. Non-fatal.
   useEffect(() => {
     let cancelled = false;
-    api<StockItemsPayload>('/api/items')
+    api<StockItemsPayload>('/api/items/picker')
       .then((payload) => { if (!cancelled) setItems(payload.items ?? []); })
       .catch(() => { if (!cancelled) setItems([]); });
     return () => { cancelled = true; };

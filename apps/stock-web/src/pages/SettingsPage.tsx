@@ -88,7 +88,7 @@ export function SettingsPage({ section }: { section?: 'stock' | 'recipe' } = {})
     setLoading(true);
     try {
       const [itemsPayload, recipeCategoryPayload] = await Promise.all([
-        api<StockItemsPayload>('/api/items'),
+        api<StockItemsPayload>('/api/items/picker'),
         api<RecipeCategory[]>('/api/recipes/categories')
       ]);
 

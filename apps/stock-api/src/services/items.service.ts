@@ -419,6 +419,75 @@ export const itemsService = {
     };
   },
 
+  /**
+   * The catalogue as a picker sees it.
+   *
+   * Seven screens — stocktake, recipes, invoices, purchase orders, transfers,
+   * templates and settings — loaded the full list() payload purely to fill an
+   * item dropdown. That is 437 KB for 716 items here, and more in production
+   * where list() also returns every VenueStockItem with a nested copy of its
+   * item. None of those screens read createdAt, notes, par levels, reorder
+   * points or the category object; they read a name, a unit, a conversion and
+   * a cost.
+   *
+   * The Items page itself still uses list() — it genuinely edits every field.
+   *
+   * Venue scoping and the on-hand merge are identical to list(), so a picker
+   * shows the same stock position the items page does. A leaner payload must
+   * not mean a differently-scoped one.
+   */
+  async picker(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const [items, categories, venueStockItems, totalsRaw] = await Promise.all([
+      prisma.stockItem.findMany({
+        select: {
+          id: true,
+          name: true,
+          sku: true,
+          unit: true,
+          countUnit: true,
+          conversionFactor: true,
+          measurePerCountUnit: true,
+          measureUnit: true,
+          avgCostCents: true,
+          latestCostCents: true,
+          onHand: true,
+          status: true,
+          categoryId: true,
+          category: { select: { id: true, name: true } }
+        },
+        orderBy: [{ status: 'asc' }, { name: 'asc' }]
+      }),
+      prisma.stockCategory.findMany({ orderBy: { name: 'asc' } }),
+      prisma.venueStockItem.findMany({
+        where: scopedVenueStockWhere(actor, requestedVenue),
+        orderBy: [{ venue: 'asc' }, { updatedAt: 'desc' }]
+      }),
+      prisma.venueStockItem.groupBy({ by: ['stockItemId'], _sum: { onHand: true } })
+    ]);
+
+    const scopedByItemId = venue
+      ? new Map(venueStockItems.filter((row) => row.venue === venue).map((row) => [row.stockItemId, row]))
+      : new Map<string, (typeof venueStockItems)[number]>();
+    const totalOnHandByItem = new Map(totalsRaw.map((row) => [row.stockItemId, row._sum.onHand ?? 0]));
+
+    return {
+      items: items.map((item) => {
+        const scoped = scopedByItemId.get(item.id);
+        return {
+          ...item,
+          categoryName: item.category?.name ?? null,
+          category: undefined,
+          totalOnHand: totalOnHandByItem.get(item.id) ?? item.onHand,
+          venueStock: scoped ? { venue: scoped.venue, onHand: scoped.onHand } : undefined
+        };
+      }),
+      categories: categories.map(toCategoryPayload),
+      venue,
+      scope: { venue, admin: isAdminActor(actor), stockItemsVenueScoped: true }
+    };
+  },
+
   // Full-catalogue CSV export — every item with its current category, count
   // area, unit, status and latest cost. Column names line up with the
   // categorize-items helper (item / sku / category) so it round-trips.

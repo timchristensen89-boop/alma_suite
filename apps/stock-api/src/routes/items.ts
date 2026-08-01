@@ -12,6 +12,16 @@ itemsRouter.get('/', async (req, res, next) => {
   }
 });
 
+// Lean catalogue for item pickers. Same venue scoping and on-hand merge as
+// GET /, without the fields only the Items editor reads.
+itemsRouter.get('/picker', async (req, res, next) => {
+  try {
+    res.json(await itemsService.picker(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/export.csv', async (req, res, next) => {
   try {
     const { filename, csv } = await itemsService.exportCsv();
