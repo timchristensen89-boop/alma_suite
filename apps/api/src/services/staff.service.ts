@@ -3536,6 +3536,53 @@ export const staffService = {
     return options?.includeConfirmations ? rows.map((row) => toRosterShiftPayload(row)) : rows;
   },
 
+  /**
+   * Everything the roster board needs, in one small response.
+   *
+   * The board previously loaded `list()` for its staff, which returns 63 fields
+   * per profile plus embedded roster shifts, training records, HR records, app
+   * access and the pay profile — around 5 KB per person, so roughly 2 MB across
+   * a full team, and it was refetched after every single edit. The board reads
+   * eight of those fields. This returns those eight, so an edit reconciles
+   * against something in the tens of kilobytes instead.
+   *
+   * `list()` is untouched — the People and HR screens genuinely need the rest.
+   */
+  async rosterBoard(start?: string, end?: string, actor?: AuthUser) {
+    const [staff, shifts] = await Promise.all([
+      prisma.staffProfile.findMany({
+        where: {
+          ...staffProfileScope(actor),
+          // Only people who could actually take a shift. ARCHIVED and
+          // TERMINATED never appear on a board, so they are not shipped.
+          employmentStatus: { notIn: ['ARCHIVED', 'TERMINATED'] }
+        },
+        orderBy: [{ lastName: 'asc' }, { firstName: 'asc' }],
+        select: {
+          id: true,
+          firstName: true,
+          lastName: true,
+          roleTitle: true,
+          venue: true,
+          employmentStatus: true,
+          employmentType: true,
+          defaultArea: true,
+          // Rate drives the live wage-cost readout as shifts are placed.
+          payRateCents: true,
+          trainingPayRateCents: true
+        }
+      }),
+      staffService.listRoster(start, end, undefined, actor)
+    ]);
+
+    // Pay is permission-gated the same way as everywhere else: a manager
+    // without the pay permission gets the board without rates rather than a
+    // different, secretly-costed board.
+    const redacted = staff.map((member) => redactStaffProfileFields(member, actor));
+
+    return { staff: redacted, shifts, generatedAt: new Date().toISOString() };
+  },
+
   // Read-only published roster for the whole venue team — any authenticated
   // user (incl. staff) can see the live published shifts, NOT drafts or
   // cancellations. Venue-scoped to the actor. Powers the staff-facing

@@ -577,6 +577,24 @@ staffRouter.get('/roster', async (req, res, next) => {
   }
 });
 
+// Everything the roster board needs in one call: the shift-eligible team with
+// only the fields the board renders, plus the shifts for the window. Replaces
+// the board's old GET /api/staff (63 fields and embedded relations per person)
+// + GET /api/staff/roster pair, which was refetched after every edit.
+staffRouter.get('/roster-board', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await staffService.rosterBoard(
+        typeof req.query.start === 'string' ? req.query.start : undefined,
+        typeof req.query.end === 'string' ? req.query.end : undefined,
+        req.user
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Read-only published team roster — visible to every authenticated user
 // (staff included) so they can see a copy of the live roster. Published
 // shifts only, venue-scoped. No manager guard.

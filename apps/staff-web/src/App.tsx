@@ -9411,6 +9411,67 @@ function RosterPage({
   } | null>(null);
   const [mobileSelectedDay, setMobileSelectedDay] = useState(() => toDateInput(new Date()));
   const isMobileRoster = useRosterMobileMode();
+
+  // ── Optimistic board state ────────────────────────────────────────────────
+  //
+  // The board owns its shifts. Every edit used to POST and then refetch the
+  // whole staff list AND the whole roster (~335 KB here, far more on a full
+  // team), with a global loading flag that blanked the board mid-edit. Placing
+  // a shift now paints immediately and reconciles with the server's row when
+  // it lands; if the request fails the board snaps back and says why.
+  const [shifts, setShifts] = useState<RosterShift[]>(roster);
+  // Seed from the parent's load, and whenever the parent genuinely refetches.
+  useEffect(() => { setShifts(roster); }, [roster]);
+  const [boardBusy, setBoardBusy] = useState(false);
+
+  /** Refresh just the board, without the global loading flash. */
+  const refreshBoard = useCallback(async (start: Date, end: Date) => {
+    const query = `?start=${encodeURIComponent(start.toISOString())}&end=${encodeURIComponent(end.toISOString())}`;
+    const board = await api<{ shifts: RosterShift[] }>(`/api/staff/roster-board${query}`);
+    setShifts(board.shifts);
+  }, []);
+
+  /**
+   * Apply a change immediately, then run the server call.
+   *
+   * On failure the previous shifts are restored, so a rejected save can never
+   * leave the board showing a shift that does not exist. `settle` folds the
+   * server's authoritative row back in — ids, computed fields and all.
+   */
+  const optimistic = useCallback(
+    async <T,>(
+      apply: (current: RosterShift[]) => RosterShift[],
+      request: () => Promise<T>,
+      settle?: (result: T, current: RosterShift[]) => RosterShift[],
+    ): Promise<T | null> => {
+      let snapshot: RosterShift[] = [];
+      setShifts((current) => { snapshot = current; return apply(current); });
+      setBoardBusy(true);
+      try {
+        const result = await request();
+        if (settle) setShifts((current) => settle(result, current));
+        return result;
+      } catch (error) {
+        setShifts(snapshot);
+        // Clear the target so the failure lands in the board's own message
+        // area. Targeted messages only render beside the control that set
+        // them, and a rolled-back edit must never revert silently — the shift
+        // disappearing and reappearing with no explanation is worse than the
+        // slow version it replaced.
+        setMessageTarget(null);
+        const reason = error instanceof Error ? error.message.replace(/\.\s*$/, '') : '';
+        setMessage(
+          reason
+            ? `Could not save that change — ${reason}. The board has been put back as it was.`
+            : 'Could not save that change. The board has been put back as it was.'
+        );
+        return null;
+      } finally {
+        setBoardBusy(false);
+      }
+    },
+    [],
+  );
   const days = useMemo(() => weekDays(weekStart, boardDays), [boardDays, weekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, boardDays), [boardDays, weekStart]);
   const venues = useMemo(() => uniqueValues(staff.map((member) => member.venue).filter(Boolean) as string[]), [staff]);
@@ -9426,10 +9487,10 @@ function RosterPage({
   );
   // O(1) pay-rate lookups — avoids O(N) staff.find() inside every reduce/map
   const staffById = useMemo(() => new Map(staff.map((m) => [m.id, m])), [staff]);
-  const venueRoster = useMemo(() => roster
+  const venueRoster = useMemo(() => shifts
     .filter((shift) => venueFilter === 'all' || shift.venue === venueFilter || shift.staffProfile?.venue === venueFilter)
     .sort((a, b) => new Date(a.startsAt).getTime() - new Date(b.startsAt).getTime()),
-    [roster, venueFilter]
+    [shifts, venueFilter]
   );
   const visibleRoster = useMemo(() => venueRoster
     .filter((shift) => statusFilter === 'all' || shift.status === statusFilter),
@@ -9750,7 +9811,7 @@ function RosterPage({
   const selectedShiftHours = shiftTimeRange(date, startTime, endTime);
   const shiftConflicts = useMemo(() => {
     if (!selectedShiftHours || !staffProfileId) return [];
-    return roster.filter((shift) => {
+    return shifts.filter((shift) => {
       if (shift.id === editingShift?.id) return false;
       if (shift.staffProfileId !== staffProfileId) return false;
       if (shift.status === 'CANCELLED') return false;
@@ -9761,7 +9822,7 @@ function RosterPage({
         new Date(shift.endsAt)
       );
     });
-  }, [editingShift?.id, roster, selectedShiftHours, staffProfileId]);
+  }, [editingShift?.id, shifts, selectedShiftHours, staffProfileId]);
   // Leave clashes — if the staff is on approved/pending leave during the
   // shift window, surface it so we can hard-block the save.
   const shiftLeaveClashes = useMemo(() => {
@@ -9845,9 +9906,14 @@ function RosterPage({
     if (!staffProfileId && activeStaff[0]) setStaffProfileId(activeStaff[0].id);
   }, [activeStaff, staffProfileId]);
 
+  // Changing week fetches the board for that window only. It used to refetch
+  // the entire staff list as well and raise the global loading flag, so paging
+  // between weeks blanked the screen for a payload the board never read.
   useEffect(() => {
-    void reload(weekStart, weekEnd);
-  }, [reload, weekEnd, weekStart]);
+    void refreshBoard(weekStart, weekEnd).catch(() => {
+      setMessage('Could not load that week. Check your connection and try again.');
+    });
+  }, [refreshBoard, weekEnd, weekStart]);
 
   // Pull leave overlapping the displayed roster window — PENDING and
   // APPROVED only, so cancelled/rejected leave doesn't ghost the cells.
@@ -10008,22 +10074,42 @@ function RosterPage({
     setMessage(null);
     try {
       const member = staff.find((item) => item.id === effectiveStaffProfileId);
-      await api(editingShift ? `/api/staff/roster/${editingShift.id}` : '/api/staff/roster', {
-        method: editingShift ? 'PATCH' : 'POST',
-        body: JSON.stringify({
-          staffProfileId: effectiveStaffProfileId,
-          venue: shiftVenue || member?.venue || '',
-          area: area || 'Floor',
-          roleTitle: roleTitle || member?.roleTitle || '',
-          startsAt: range.startsAt.toISOString(),
-          endsAt: range.endsAt.toISOString(),
-          breakMinutes: Number(breakMinutes) || 0,
-          status: shiftStatus,
-          notes: shiftNotes.trim()
-        })
-      });
-      await reload(weekStart, weekEnd);
-      setMessage(editingShift ? 'Shift updated.' : 'Shift added to the draft roster.');
+      const body = {
+        staffProfileId: effectiveStaffProfileId,
+        venue: shiftVenue || member?.venue || '',
+        area: area || 'Floor',
+        roleTitle: roleTitle || member?.roleTitle || '',
+        startsAt: range.startsAt.toISOString(),
+        endsAt: range.endsAt.toISOString(),
+        breakMinutes: Number(breakMinutes) || 0,
+        status: shiftStatus,
+        notes: shiftNotes.trim()
+      };
+      const editingId = editingShift?.id ?? null;
+      // Painted straight away under a temporary id, then swapped for the
+      // server's row. The temp id is only ever local, so a failed save leaves
+      // nothing behind.
+      const tempId = `pending-${Date.now()}`;
+      const draft: RosterShift = {
+        ...(editingShift ?? {}),
+        ...body,
+        id: editingId ?? tempId,
+        staffProfile: member
+          ? { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus }
+          : editingShift?.staffProfile
+      } as RosterShift;
+
+      const saved = await optimistic(
+        (current) => (editingId ? current.map((s) => (s.id === editingId ? draft : s)) : [...current, draft]),
+        () => api<RosterShift>(editingId ? `/api/staff/roster/${editingId}` : '/api/staff/roster', {
+          method: editingId ? 'PATCH' : 'POST',
+          body: JSON.stringify(body)
+        }),
+        (result, current) => current.map((s) => (s.id === (editingId ?? tempId) ? { ...s, ...result } : s))
+      );
+      if (saved === null) return;
+
+      setMessage(editingId ? 'Shift updated.' : 'Shift added to the draft roster.');
       setEditingShift(null);
       closeShiftPanel();
       setRoleTitle('');
@@ -10060,8 +10146,11 @@ function RosterPage({
     setMessage(null);
     setMessageTarget('shift-delete');
     try {
-      await api(`/api/staff/roster/${shift.id}`, { method: 'DELETE' });
-      await reload(weekStart, weekEnd);
+      const removed = await optimistic(
+        (current) => current.filter((s) => s.id !== shift.id),
+        () => api(`/api/staff/roster/${shift.id}`, { method: 'DELETE' })
+      );
+      if (removed === null) return;
       if (editingShift?.id === shift.id) {
         closeShiftPanel();
       }
@@ -10137,7 +10226,7 @@ function RosterPage({
         method: 'POST',
         body: JSON.stringify(body)
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(`Deleted ${deleted} shift${deleted === 1 ? '' : 's'}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not delete shifts.');
@@ -10189,7 +10278,7 @@ function RosterPage({
           }
         })
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setPublishPreviewOpen(false);
       setMessage('Draft roster published.');
     } catch (err) {
@@ -10219,7 +10308,7 @@ function RosterPage({
           notes: shift.notes ?? ''
         })
       });
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage('Shift copied as a draft.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not copy shift.');
@@ -10262,7 +10351,7 @@ function RosterPage({
       if (result.roster) parts.push(`${result.roster.shiftsCreated} shifts`);
       if (result.employees) parts.push(`${result.employees.created} new staff, ${result.employees.updated} updated`);
       if (result.documents) parts.push(`${result.documents.complianceCreated + result.documents.reviewsCreated} docs`);
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(`Deputy sync complete${parts.length ? ` — ${parts.join(', ')}` : ''}.`);
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not sync Deputy.');
@@ -10311,7 +10400,7 @@ function RosterPage({
           });
         })
       );
-      await reload(weekStart, weekEnd);
+      await refreshBoard(weekStart, weekEnd);
       setMessage(shiftsToCopy.length ? `Copied ${shiftsToCopy.length} shifts from last week.` : 'No uncopied shifts found last week.');
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not copy last week.');
@@ -10425,30 +10514,32 @@ function RosterPage({
     const movedEndsAt =
       endsAt <= startsAt ? addDays(endsAt, 1) : endsAt;
 
-    setSaving(true);
     setMessage(null);
-    try {
-      await api(`/api/staff/roster/${shift.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          staffProfileId: targetMember?.id ?? shift.staffProfileId,
-          venue: targetVenue,
-          area: targetArea,
-          roleTitle: shift.roleTitle ?? targetMember?.roleTitle ?? '',
-          startsAt: startsAt.toISOString(),
-          endsAt: movedEndsAt.toISOString(),
-          breakMinutes: shift.breakMinutes,
-          status: shift.status,
-          notes: shift.notes ?? ''
-        })
-      });
-      await reload(weekStart, weekEnd);
+    const body = {
+      staffProfileId: targetMember?.id ?? shift.staffProfileId,
+      venue: targetVenue,
+      area: targetArea,
+      roleTitle: shift.roleTitle ?? targetMember?.roleTitle ?? '',
+      startsAt: startsAt.toISOString(),
+      endsAt: movedEndsAt.toISOString(),
+      breakMinutes: shift.breakMinutes,
+      status: shift.status,
+      notes: shift.notes ?? ''
+    };
+    // The card lands where it was dropped on this frame. Waiting for a round
+    // trip before the shift moves is what made dragging feel broken.
+    const moved = await optimistic(
+      (current) => current.map((s) => (s.id === shift.id
+        ? { ...s, ...body, staffProfile: targetMember
+            ? { id: targetMember.id, firstName: targetMember.firstName, lastName: targetMember.lastName, roleTitle: targetMember.roleTitle, venue: targetMember.venue, employmentStatus: targetMember.employmentStatus }
+            : s.staffProfile } as RosterShift
+        : s)),
+      () => api<RosterShift>(`/api/staff/roster/${shift.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === shift.id ? { ...s, ...result } : s))
+    );
+    setDraggingShiftId(null);
+    if (moved !== null) {
       setMessage(`Moved shift to ${row.label} on ${day.toLocaleDateString(undefined, { weekday: 'short' })}.`);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not move shift.');
-    } finally {
-      setSaving(false);
-      setDraggingShiftId(null);
     }
   }
 
@@ -10477,30 +10568,26 @@ function RosterPage({
     const memberId = data.slice('staff:'.length);
     const member = staffById.get(memberId);
     if (!member) return;
-    setSaving(true);
     setMessage(null);
-    try {
-      await api(`/api/staff/roster/${shift.id}`, {
-        method: 'PATCH',
-        body: JSON.stringify({
-          staffProfileId: member.id,
-          venue: member.venue ?? shift.venue,
-          area: shift.area,
-          roleTitle: member.roleTitle ?? shift.roleTitle ?? '',
-          startsAt: shift.startsAt,
-          endsAt: shift.endsAt,
-          breakMinutes: shift.breakMinutes,
-          status: shift.status,
-          notes: shift.notes ?? ''
-        })
-      });
-      await reload(weekStart, weekEnd);
-      setMessage(`Assigned ${member.firstName} ${member.lastName} to shift.`);
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not reassign shift.');
-    } finally {
-      setSaving(false);
-    }
+    const body = {
+      staffProfileId: member.id,
+      venue: member.venue ?? shift.venue,
+      area: shift.area,
+      roleTitle: member.roleTitle ?? shift.roleTitle ?? '',
+      startsAt: shift.startsAt,
+      endsAt: shift.endsAt,
+      breakMinutes: shift.breakMinutes,
+      status: shift.status,
+      notes: shift.notes ?? ''
+    };
+    const assigned = await optimistic(
+      (current) => current.map((s) => (s.id === shift.id
+        ? { ...s, ...body, staffProfile: { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus } } as RosterShift
+        : s)),
+      () => api<RosterShift>(`/api/staff/roster/${shift.id}`, { method: 'PATCH', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === shift.id ? { ...s, ...result } : s))
+    );
+    if (assigned !== null) setMessage(`Assigned ${member.firstName} ${member.lastName} to shift.`);
   }
 
   async function handleDrop(event: DragEvent<HTMLButtonElement>, row: (typeof scheduleRows)[number], day: Date) {
@@ -11869,7 +11956,7 @@ function RosterPage({
         <DeputyImportModal
           onClose={() => setDeputyImportOpen(false)}
           onSuccess={async () => {
-            await reload(weekStart, weekEnd);
+            await refreshBoard(weekStart, weekEnd);
           }}
         />
       ) : null}
