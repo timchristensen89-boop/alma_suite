@@ -4719,7 +4719,15 @@ export type StaffProfile = {
   payProfile: StaffPayProfile | null;
   records: StaffComplianceRecord[];
   appAccess: StaffAppAccess[];
-  rosterShifts: RosterShift[];
+  /**
+   * Present on the DETAIL response (GET /api/staff/:id) only.
+   *
+   * The list response omits it — it was 68% of that payload and unbounded —
+   * so anything reading this from a list row must tolerate undefined and use
+   * `_count.rosterShifts` for a total instead.
+   */
+  rosterShifts?: RosterShift[];
+  _count?: { rosterShifts?: number };
   trainingRecords: StaffTrainingRecord[];
   // Field-level redaction sidecar (#16). Lists the field GROUPS the server
   // nulled out before sending — so the UI can show "Hidden — needs

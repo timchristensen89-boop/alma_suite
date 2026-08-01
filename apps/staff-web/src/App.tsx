@@ -3574,6 +3574,18 @@ function StaffProfileWorkspacePage({
   canOpenPayChanges: boolean;
 }) {
   const { staffId, section } = useParams();
+  // The list response no longer carries every profile's shifts (it was 68% of
+  // that payload). A profile page wants them, so it asks for its own member.
+  const [memberDetail, setMemberDetail] = useState<StaffProfile | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    setMemberDetail(null);
+    if (!staffId) return;
+    void api<StaffProfile>(`/api/staff/${staffId}`)
+      .then((full) => { if (!cancelled) setMemberDetail(full); })
+      .catch(() => { if (!cancelled) setMemberDetail(null); });
+    return () => { cancelled = true; };
+  }, [staffId]);
   const navigate = useNavigate();
   const { user } = useAuth();
   const activeSection = normaliseStaffProfileSection(section);
@@ -3641,7 +3653,7 @@ function StaffProfileWorkspacePage({
   });
   const rightToWorkRecords = profileHrRecords.filter((record) => record.recordType === 'RIGHT_TO_WORK' && canOpenRightToWork);
   const payRecords = profileHrRecords.filter((record) => record.recordType === 'PAY_CHANGE' && canOpenPayChanges);
-  const recentShifts = [...member.rosterShifts]
+  const recentShifts = [...(memberDetail?.rosterShifts ?? member.rosterShifts ?? [])]
     .sort((left, right) => new Date(right.startsAt).getTime() - new Date(left.startsAt).getTime())
     .slice(0, 6);
   const sectionTitle = STAFF_PROFILE_SECTIONS.find((item) => item.id === activeSection)?.label ?? 'Personal';
@@ -4562,7 +4574,7 @@ function StaffProfileWorkspacePage({
           <div className="stats-grid staff-profile-stats">
             <StatCard label="Documents" value={member.records.length + visibleHrRecords.length} hint={`${attentionDocuments} need attention`} />
             <StatCard label="Training" value={member.trainingRecords.length} hint={`Level ${member.trainingLevel ?? 0}`} />
-            <StatCard label="Shifts" value={member.rosterShifts.length} hint="Roster records" />
+            <StatCard label="Shifts" value={member._count?.rosterShifts ?? memberDetail?.rosterShifts?.length ?? 0} hint="Roster records" />
             <StatCard label="PIN" value={member.pinUpdatedAt ? 'Set' : 'Not set'} hint={member.pinUpdatedAt ? profileDate(member.pinUpdatedAt) : 'Staff iPad access'} />
           </div>
           {renderSection()}
@@ -6799,11 +6811,13 @@ function CommunicationsPage({ staff, reload }: { staff: StaffProfile[]; reload: 
 
 function AdminPage({
   staff,
+  roster,
   selectedId,
   setSelectedId,
   reload
 }: {
   staff: StaffProfile[];
+  roster: RosterShift[];
   selectedId: string;
   setSelectedId: (id: string) => void;
   reload: () => Promise<void>;
@@ -6863,9 +6877,12 @@ function AdminPage({
     () => new Set(closedDaysByScope[rosterSettingsScopeKey] ?? []),
     [closedDaysByScope, rosterSettingsScopeKey]
   );
+  // Areas come from the roster itself. They used to be read off a copy of the
+  // shifts embedded in every staff profile; with that copy gone this reads the
+  // real roster, which is the same data one step closer to source.
   const rosterAreaSource = useMemo(
-    () => staff.flatMap((member) => (member.rosterShifts ?? []).map((shift) => shift.area || 'Shift')),
-    [staff]
+    () => roster.map((shift) => shift.area || 'Shift'),
+    [roster]
   );
   const adminRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, rosterAreaSource),
@@ -14850,7 +14867,7 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
   );
 }
 
-function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
+function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster: RosterShift[] }) {
   const navigate = useNavigate();
   const [dashboard, setDashboard] = useState<StaffManagerDashboardPayload | null>(null);
   const [operations, setOperations] = useState<StaffManagerOperationsPayload | null>(null);
@@ -14984,8 +15001,9 @@ function ManagerDashboardPage({ staff }: { staff: StaffProfile[] }) {
   const dayOfWeek = launchMonday.getDay();
   launchMonday.setDate(launchMonday.getDate() + (dayOfWeek === 1 ? 0 : dayOfWeek === 0 ? 1 : 8 - dayOfWeek));
   const launchMondayEnd = addDays(launchMonday, 1);
-  const mondayShiftCount = activeLaunchStaff
-    .flatMap((member) => member.rosterShifts ?? [])
+  const activeLaunchStaffIds = new Set(activeLaunchStaff.map((member) => member.id));
+  const mondayShiftCount = roster
+    .filter((shift) => activeLaunchStaffIds.has(shift.staffProfileId))
     .filter((shift) => {
       const startsAt = new Date(shift.startsAt);
       return startsAt >= launchMonday && startsAt < launchMondayEnd && shift.status !== 'CANCELLED';
@@ -17490,12 +17508,12 @@ function StaffShell() {
           <Route path="/" element={<StaffHome staff={staff} loading={loading} onSelect={setSelectedId} reload={reload} />} />
           <Route path="/brief" element={<HubLayout tabs={TODAY_TABS}><ManagerDailyBriefPage staff={staff} /></HubLayout>} />
           <Route path="/readiness" element={<HubLayout tabs={TODAY_TABS}><VenueReadinessPage staff={staff} /></HubLayout>} />
-          <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} /></HubLayout>} />
+          <Route path="/manager" element={<HubLayout tabs={TODAY_TABS}><ManagerDashboardPage staff={staff} roster={roster} /></HubLayout>} />
           <Route path="/clock" element={<HubLayout tabs={TODAY_TABS}><StaffMemberClockPage /></HubLayout>} />
           <Route path="/profiles" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><StaffProfilesPage staff={staff} roleTemplates={roleTemplates} loading={loading} onSelect={setSelectedId} reload={reload} /></HubLayout>} />
           <Route path="/invites" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><InvitesPage staff={staff} roleTemplates={roleTemplates} reloadStaff={reload} /></HubLayout>} />
           <Route path="/approvals" element={<HubLayout tabs={peopleTabsFor(canOpenHr)}><ApprovalsPage staff={staff} reload={reload} /></HubLayout>} />
-          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
+          <Route path="/settings" element={canOpenSettings ? <AdminPage staff={staff} roster={roster} selectedId={selectedId} setSelectedId={setSelectedId} reload={reload} /> : <Navigate to="/" replace />} />
           <Route path="/admin" element={canOpenSettings ? <AlmaAdminRedirect /> : <Navigate to="/" replace />} />
           <Route path="/access" element={<Navigate to="/profiles" replace />} />
           <Route path="/staff/:staffId" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />

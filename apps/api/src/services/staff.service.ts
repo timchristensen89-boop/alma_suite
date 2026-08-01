@@ -1899,14 +1899,14 @@ export const staffService = {
         records: {
           orderBy: [{ expiryDate: 'asc' }, { createdAt: 'desc' }]
         },
-        rosterShifts: {
-          where: {
-            startsAt: {
-              gte: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-            }
-          },
-          orderBy: [{ startsAt: 'asc' }]
-        },
+        // rosterShifts is deliberately NOT embedded here. It was 68% of this
+        // response (151 KB of 222 KB across 40 people) and unbounded — every
+        // shift from a week ago forward, growing as the roster is built out,
+        // on a payload the app loads at startup for every screen. The roster
+        // itself is already fetched separately by the board and the dashboard;
+        // this was a second copy of it. A count is kept for the profile
+        // header, which is all the list ever displayed.
+        _count: { select: { rosterShifts: true } },
         trainingRecords: {
           include: { module: true },
           orderBy: [{ updatedAt: 'desc' }]
