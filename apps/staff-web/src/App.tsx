@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { HubLayout, useHubTabBadge, type HubTab } from './components/HubTabs';
@@ -9668,7 +9668,13 @@ function RosterPage({
   const mobileSelectedDate = useMemo(() => new Date(`${mobileSelectedDay}T00:00:00`), [mobileSelectedDay]);
   const mobileSelectedSummary = useMemo(() => dailySummaries.find((summary) => sameDay(summary.day, mobileSelectedDate)), [dailySummaries, mobileSelectedDate]);
   const mobileDayShifts = useMemo(() => visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), mobileSelectedDate)), [mobileSelectedDate, visibleRoster]);
-  const rowSearch = useMemo(() => search.trim().toLowerCase(), [search]);
+  // The input stays on `search` so typing is never laggy; the row rebuild —
+  // which filters and regroups every shift on the board — runs off the
+  // deferred copy and is allowed to fall a frame behind. Without this every
+  // keystroke recomputed the whole board synchronously before the character
+  // appeared.
+  const deferredSearch = useDeferredValue(search);
+  const rowSearch = useMemo(() => deferredSearch.trim().toLowerCase(), [deferredSearch]);
   const allRosterAreas = useMemo(
     () => mergeRosterAreas(rosterAreaSettings, visibleRoster.map((shift) => shift.area || 'Shift')),
     [rosterAreaSettings, visibleRoster]
@@ -15750,35 +15756,60 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     setMessage('Roster shift loaded. Adjust actual times before submitting.');
   }
 
+  /**
+   * Approving refetched the whole timesheet list — 122 KB here, and a manager
+   * approving a fortnight one row at a time paid it every time. The row now
+   * flips on the click and only rolls back if the server refuses.
+   */
   async function approve(id: string) {
-    setSaving(true);
     setMessage(null);
     setMessageTarget(`approve:${id}`);
+    const snapshot = timesheets;
+    setTimesheets((current) => current.map((sheet) =>
+      sheet.id === id ? { ...sheet, status: 'APPROVED', approvedAt: new Date().toISOString() } : sheet));
     try {
       await api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) });
       setMessage('Timesheet approved.');
-      await loadTimesheets();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve timesheet.');
-    } finally {
-      setSaving(false);
+      setTimesheets(snapshot);
+      setMessage(err instanceof Error ? `Could not approve — ${err.message.replace(/\.\s*$/, '')}. Put back as it was.` : 'Could not approve timesheet.');
     }
   }
 
-  // Bulk-approve a whole group's outstanding timesheets in parallel.
+  /**
+   * Bulk-approve a group.
+   *
+   * This used Promise.all, so a single rejected row failed the whole call and
+   * the manager was told nothing was approved — while the rest had in fact
+   * gone through. The list then refetched and silently disagreed with the
+   * message. Now every row is attempted, only the ones that actually failed
+   * are put back, and the count reported is the count that succeeded.
+   */
   async function approveGroup(ids: string[]) {
     if (ids.length === 0) return;
     setMessageTarget('approve-group');
     setSaving(true);
     setMessage(null);
+    const snapshot = timesheets;
+    const pending = new Set(ids);
+    setTimesheets((current) => current.map((sheet) =>
+      pending.has(sheet.id) ? { ...sheet, status: 'APPROVED', approvedAt: new Date().toISOString() } : sheet));
     try {
-      await Promise.all(
+      const results = await Promise.allSettled(
         ids.map((id) => api(`/api/staff/timesheets/${id}/approve`, { method: 'POST', body: JSON.stringify({}) }))
       );
-      setMessage(`Approved ${ids.length} timesheet${ids.length === 1 ? '' : 's'}.`);
-      await loadTimesheets();
-    } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve timesheets.');
+      const failedIds = ids.filter((_, index) => results[index]!.status === 'rejected');
+      if (failedIds.length > 0) {
+        const failed = new Set(failedIds);
+        const before = new Map(snapshot.map((sheet) => [sheet.id, sheet]));
+        setTimesheets((current) => current.map((sheet) => (failed.has(sheet.id) ? before.get(sheet.id) ?? sheet : sheet)));
+      }
+      const approved = ids.length - failedIds.length;
+      setMessage(
+        failedIds.length === 0
+          ? `Approved ${approved} timesheet${approved === 1 ? '' : 's'}.`
+          : `Approved ${approved} of ${ids.length}. ${failedIds.length} could not be approved and ${failedIds.length === 1 ? 'has' : 'have'} been left as ${failedIds.length === 1 ? 'it was' : 'they were'}.`
+      );
     } finally {
       setSaving(false);
     }
@@ -15789,15 +15820,25 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     setSaving(true);
     setMessage(null);
     setMessageTarget(`reject:${id}`);
+    const snapshot = timesheets;
+    setTimesheets((current) => current.map((sheet) =>
+      sheet.id === id ? { ...sheet, status: 'REJECTED', rejectedAt: new Date().toISOString(), rejectionReason: reason } : sheet));
     try {
       await api(`/api/staff/timesheets/${id}/reject`, {
         method: 'POST',
         body: JSON.stringify({ reason })
       });
       setMessage('Timesheet rejected.');
-      await loadTimesheets();
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not reject timesheet.');
+      // Without this the row keeps showing REJECTED after a failed call, which
+      // is worse than the refetch it replaced: the manager moves on believing
+      // the rejection stuck.
+      setTimesheets(snapshot);
+      setMessage(
+        err instanceof Error
+          ? `Could not reject — ${err.message.replace(/\.\s*$/, '')}. Put back as it was.`
+          : 'Could not reject timesheet.'
+      );
     } finally {
       setSaving(false);
     }
