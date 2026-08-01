@@ -9437,6 +9437,12 @@ function RosterPage({
   // a shift now paints immediately and reconciles with the server's row when
   // it lands; if the request fails the board snaps back and says why.
   const [shifts, setShifts] = useState<RosterShift[]>(roster);
+  // Times for click-to-add. They follow the last shift placed or edited, so
+  // rostering a row of identical shifts is a row of single clicks.
+  const [quickTimes, setQuickTimes] = useState({ start: '10:00', end: '16:00', breakMinutes: '30' });
+  // One level of undo for the last board action. Quick-add makes a stray click
+  // cheap to make, so it has to be cheap to take back.
+  const [lastUndo, setLastUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
   // Seed from the parent's load, and whenever the parent genuinely refetches.
   useEffect(() => { setShifts(roster); }, [roster]);
   const [boardBusy, setBoardBusy] = useState(false);
@@ -10126,6 +10132,7 @@ function RosterPage({
       );
       if (saved === null) return;
 
+      setQuickTimes({ start: startTime, end: endTime, breakMinutes: String(Number(breakMinutes) || 0) });
       setMessage(editingId ? 'Shift updated.' : 'Shift added to the draft roster.');
       setEditingShift(null);
       closeShiftPanel();
@@ -10172,6 +10179,32 @@ function RosterPage({
         closeShiftPanel();
       }
       setMessage('Shift deleted.');
+      setMessageTarget(null);
+      setLastUndo({
+        label: 'Undo delete',
+        run: async () => {
+          // Recreated rather than restored: the row is gone server-side, so
+          // this posts the same shift back and the board takes the new id.
+          const body = {
+            staffProfileId: shift.staffProfileId,
+            venue: shift.venue ?? '',
+            area: shift.area ?? 'Floor',
+            roleTitle: shift.roleTitle ?? '',
+            startsAt: shift.startsAt,
+            endsAt: shift.endsAt,
+            breakMinutes: shift.breakMinutes,
+            status: shift.status,
+            notes: shift.notes ?? ''
+          };
+          const tempId = `pending-${Date.now()}`;
+          await optimistic(
+            (current) => [...current, { ...shift, id: tempId } as RosterShift],
+            () => api<RosterShift>('/api/staff/roster', { method: 'POST', body: JSON.stringify(body) }),
+            (result, current) => current.map((s) => (s.id === tempId ? { ...s, ...result } : s))
+          );
+          setMessage('Shift restored.');
+        }
+      });
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not delete shift.');
     } finally {
@@ -10444,6 +10477,106 @@ function RosterPage({
       const next = new Set(prev);
       if (next.has(venue)) next.delete(venue); else next.add(venue);
       return next;
+    });
+  }
+
+  /**
+   * Click an empty cell, get a shift.
+   *
+   * Building a week meant opening the shift modal once per shift and
+   * confirming it — sixty times for a full roster. Deputy's speed comes from
+   * placing a shift on the click and correcting it after, so that is what this
+   * does: the times carry over from the last shift placed, so a run of
+   * identical shifts is a run of single clicks. The modal is still there for a
+   * fully specified shift, and clicking an existing card still opens it.
+   *
+   * The same leave, closed-venue and double-booking guards as the modal apply.
+   * Nothing is placed silently that the modal would have refused.
+   */
+  async function quickAddShift(row: (typeof scheduleRows)[number], day: Date) {
+    if ('isVenueHeader' in row && row.isVenueHeader) {
+      setMessage('Choose an area row under this venue before adding a shift.');
+      return;
+    }
+    const targetVenue = scheduleRowVenue(row);
+    if (isVenueClosedOnDate(targetVenue, day)) {
+      setMessage(`${targetVenue || 'This venue'} is marked closed. Re-open that venue day before adding shifts.`);
+      return;
+    }
+
+    const member = viewMode === 'team' && row.member
+      ? row.member
+      : activeStaff.find((m) => m.id === staffProfileId && (!row.venue || m.venue === row.venue))
+        ?? activeStaff.find((m) => m.venue === row.venue)
+        ?? activeStaff[0];
+    if (!member) {
+      setMessage('No one is available to roster here yet. Add a team member first.');
+      return;
+    }
+
+    const range = shiftTimeRange(toDateInput(day), quickTimes.start, quickTimes.end);
+    if (!range) {
+      setMessage('Check the default shift times.');
+      return;
+    }
+
+    // Same hard blocks the modal enforces — a faster path must not be a
+    // looser one.
+    const onLeave = leaveOverlays.find(
+      (leave) => leave.staffProfileId === member.id
+        && leave.status !== 'CANCELLED' && leave.status !== 'DECLINED'
+        && leaveOverlapsDay(leave, range.startsAt)
+    );
+    if (onLeave) {
+      setMessage(`${member.firstName} is on ${onLeave.type.toLowerCase().replace('_', ' ')} that day. Resolve the leave first.`);
+      return;
+    }
+    const clash = shifts.find(
+      (shift) => shift.staffProfileId === member.id
+        && shift.status !== 'CANCELLED'
+        && rangesOverlap(range.startsAt, range.endsAt, new Date(shift.startsAt), new Date(shift.endsAt))
+    );
+    if (clash) {
+      setMessage(`${member.firstName} is already rostered ${timeOf(clash.startsAt)}–${timeOf(clash.endsAt)}. Pick another person or time.`);
+      return;
+    }
+
+    const body = {
+      staffProfileId: member.id,
+      venue: row.venue || member.venue || '',
+      area: (viewMode === 'team' ? area : row.area || row.label) || 'Floor',
+      roleTitle: member.roleTitle || '',
+      startsAt: range.startsAt.toISOString(),
+      endsAt: range.endsAt.toISOString(),
+      breakMinutes: Number(quickTimes.breakMinutes) || 0,
+      status: 'DRAFT' as RosterShift['status'],
+      notes: ''
+    };
+    const tempId = `pending-${Date.now()}`;
+    const draft = {
+      ...body,
+      id: tempId,
+      staffProfile: { id: member.id, firstName: member.firstName, lastName: member.lastName, roleTitle: member.roleTitle, venue: member.venue, employmentStatus: member.employmentStatus }
+    } as RosterShift;
+
+    setMessageTarget(null);
+    const created = await optimistic(
+      (current) => [...current, draft],
+      () => api<RosterShift>('/api/staff/roster', { method: 'POST', body: JSON.stringify(body) }),
+      (result, current) => current.map((s) => (s.id === tempId ? { ...s, ...result } : s))
+    );
+    if (created === null) return;
+
+    setMessage(`${member.firstName} · ${quickTimes.start}–${quickTimes.end}`);
+    setLastUndo({
+      label: `Undo ${member.firstName}'s shift`,
+      run: async () => {
+        await optimistic(
+          (current) => current.filter((s) => s.id !== created.id && s.id !== tempId),
+          () => api(`/api/staff/roster/${created.id}`, { method: 'DELETE' })
+        );
+        setMessage('Shift removed.');
+      }
     });
   }
 
@@ -11103,6 +11236,15 @@ function RosterPage({
       {message && !messageTarget ? (
         <div className="deputy-roster-summary">
           <span className="deputy-roster-message">{message}</span>
+          {lastUndo ? (
+            <button
+              type="button"
+              className="roster-undo-button"
+              onClick={() => { const undo = lastUndo; setLastUndo(null); void undo.run(); }}
+            >
+              {lastUndo.label}
+            </button>
+          ) : null}
         </div>
       ) : null}
 
@@ -11349,7 +11491,7 @@ function RosterPage({
                           type="button"
                           className={`deputy-schedule-cell ${cellShifts.length ? 'has-shifts' : ''} ${isClosed ? 'is-closed' : ''}${memberLeave ? ` has-leave is-leave-${memberLeave.status.toLowerCase()}` : ''}${isWeekend ? ' is-weekend' : ''}`}
                           aria-disabled={isClosed}
-                          onClick={() => prefillCell(row, day)}
+                          onClick={() => void quickAddShift(row, day)}
                           onDragOver={(event) => {
                             event.preventDefault();
                             event.dataTransfer.dropEffect = 'move';

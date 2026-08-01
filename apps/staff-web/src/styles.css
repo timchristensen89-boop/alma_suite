@@ -8436,3 +8436,27 @@ html[data-theme='dark'] .tips-distribution-avatar { background: var(--color-surf
     grid-template-columns: 1fr;
   }
 }
+
+/* Undo beside the board message — quick-add makes a stray click cheap to
+   make, so taking it back has to be equally cheap and always in reach. */
+.roster-undo-button {
+  margin-left: 12px;
+  padding: 4px 12px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.roster-undo-button:hover {
+  background: rgba(0, 0, 0, 0.06);
+}
+
+.roster-undo-button:focus-visible {
+  outline: 2px solid var(--color-focus, currentColor);
+  outline-offset: 2px;
+}
