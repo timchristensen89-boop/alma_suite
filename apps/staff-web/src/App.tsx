@@ -16532,6 +16532,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       const result = await api<{
         pushed: number;
         failed: number;
+        skipped: number;
+        markedExported: number;
         results: { employee: string; status: string; message: string }[];
       }>('/api/staff/timesheets/push/xero', {
         method: 'POST',
@@ -16541,12 +16543,20 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
           venue: venueFilter
         })
       });
+      // A push can partly succeed — one employee missing a Xero link doesn't
+      // stop the rest — so the message has to carry who failed and why, not
+      // just a count. That reason is the only thing that says what to fix.
       const failures = result.results
         .filter((entry) => entry.status === 'failed')
         .map((entry) => `${entry.employee}: ${entry.message}`);
+      const parts = [
+        `Pushed ${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts`,
+        result.markedExported ? `${result.markedExported} shifts marked exported` : null,
+        result.skipped ? `${result.skipped} skipped (no hours)` : null
+      ].filter(Boolean);
       setMessage(
-        `Pushed ${result.pushed} employee timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts${
-          result.failed ? `. ${result.failed} failed — ${failures.join('; ')}` : '.'
+        `${parts.join(' · ')}.${
+          result.failed ? ` ${result.failed} failed — ${failures.join('; ')}` : ''
         }`
       );
       await loadTimesheets();

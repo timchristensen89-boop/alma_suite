@@ -892,6 +892,27 @@ staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, nex
   }
 });
 
+// Push approved timesheets into Xero Payroll as drafts. The CSV export above
+// is the fallback for when the Xero connection can't be used; this is the path
+// the "Push to Xero" button has always called.
+staffRouter.post('/timesheets/push/xero', requireManager, async (req, res, next) => {
+  try {
+    const body = (req.body ?? {}) as { start?: unknown; end?: unknown; venue?: unknown };
+    if (typeof body.start !== 'string' || typeof body.end !== 'string') {
+      res.status(400).json({ message: 'Push start and end dates are required.' });
+      return;
+    }
+    const result = await integrationService.pushTimesheetsToXero(req.user!, {
+      start: body.start,
+      end: body.end,
+      venue: typeof body.venue === 'string' ? body.venue : null
+    });
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/tips/me', async (req, res, next) => {
   try {
     if (!req.user?.id) {

@@ -24,14 +24,20 @@ import type {
   XeroSupplierContactsImportResult,
   XeroSupplierContactsPreviewPayload,
   XeroSupplierContactPreview,
-  XeroConnectionHealthPayload
+  XeroConnectionHealthPayload,
+  XeroTimesheetPushResult,
+  XeroTimesheetPushRow
 } from '@alma/shared';
 import {
   squareMenuAutoMatchInputSchema,
   squareMenuMappingQuerySchema,
   squareMenuMappingUpdateSchema,
   xeroSupplierBillsImportInputSchema,
-  xeroSupplierContactsImportInputSchema
+  xeroSupplierContactsImportInputSchema,
+  entryHours,
+  groupIntoPeriods,
+  hasHours,
+  unitsForPeriod
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -86,7 +92,12 @@ const XERO_SCOPES = [
   // authorised before this scope existed must be RECONNECTED once to grant it.
   'accounting.reports.profitandloss.read',
   'payroll.employees.read',
-  'payroll.timesheets.read'
+  'payroll.timesheets.read',
+  // Write scope, for pushing approved Alma timesheets into Xero as drafts.
+  // Read alone is not enough — Xero rejects the POST with a bare 403 and no
+  // hint that a scope is the reason, so pushTimesheetsToXero checks the
+  // recorded grant first and asks for a reconnect by name.
+  'payroll.timesheets'
 ];
 const XERO_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
 const SQUARE_TOKEN_REFRESH_BUFFER_MS = 5 * 60 * 1000;
@@ -2464,6 +2475,90 @@ async function xeroGetJson<T>(
     connection,
     tokenStatus
   };
+}
+
+// Writing twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
+// for the one place the suite sends data TO Xero (payroll timesheet drafts).
+//
+// Payroll write errors are worth surfacing verbatim. Xero answers a rejected
+// timesheet with a per-object ValidationErrors array, and the message inside
+// it ("Timesheet period does not match the employee's payroll calendar") is
+// the only thing that tells a manager what to fix — a generic "Xero request
+// failed" sends them to their accountant instead.
+async function xeroPostJson<T>(
+  path: string,
+  input: {
+    connection: IntegrationConnection;
+    body: unknown;
+    tenantId?: string;
+    retryAfterUnauthorized?: boolean;
+  }
+): Promise<{ data: T; connection: IntegrationConnection }> {
+  const { accessToken, connection } = await validXeroToken(input.connection);
+  const tenantId = input.tenantId ?? connection.providerAccountId ?? '';
+  if (!tenantId) throw new HttpError(409, 'Xero tenant is not selected.');
+
+  const response = await fetch(`https://api.xero.com${path}`, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${accessToken}`,
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      'xero-tenant-id': tenantId
+    },
+    body: JSON.stringify(input.body)
+  });
+
+  if (response.status === 401 && input.retryAfterUnauthorized !== false) {
+    const refreshed = await refreshXeroConnection(connection);
+    return xeroPostJson<T>(path, {
+      connection: refreshed,
+      body: input.body,
+      tenantId: input.tenantId,
+      retryAfterUnauthorized: false
+    });
+  }
+
+  if (response.status === 429) {
+    throw new HttpError(429, 'Xero rate limit reached. Try again later.', { category: 'rate_limited' });
+  }
+
+  if (!response.ok) {
+    const details = await safeResponseDetails(response);
+    const detailText = typeof details.detail === 'string' ? details.detail.trim() : '';
+    throw new HttpError(
+      502,
+      `Xero rejected the request (HTTP ${details.status})${detailText ? `: ${xeroValidationMessage(detailText)}` : ''}`,
+      details
+    );
+  }
+
+  return { data: await response.json() as T, connection };
+}
+
+/**
+ * Pull the human-readable line out of a Xero payroll error body.
+ *
+ * Xero returns either { Message } or { Elements: [{ ValidationErrors: [{ Message }] }] }
+ * depending on which layer rejected it. Falling back to the raw text keeps
+ * unknown shapes visible rather than swallowing them.
+ */
+function xeroValidationMessage(body: string): string {
+  try {
+    const parsed = JSON.parse(body) as {
+      Message?: string;
+      Elements?: Array<{ ValidationErrors?: Array<{ Message?: string }> }>;
+    };
+    const validation = (parsed.Elements ?? [])
+      .flatMap((element) => element.ValidationErrors ?? [])
+      .map((error) => error.Message)
+      .filter((message): message is string => Boolean(message));
+    if (validation.length > 0) return validation.join('; ').slice(0, 300);
+    if (parsed.Message) return parsed.Message.slice(0, 300);
+  } catch {
+    // Not JSON — fall through to the raw body.
+  }
+  return body.slice(0, 200);
 }
 
 // Binary twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
@@ -7495,6 +7590,274 @@ export const integrationService = {
       updated,
       unmatched
     };
+  },
+
+  // Push approved Alma timesheets INTO Xero Payroll as draft timesheets, so a
+  // pay run can be prepared from Alma's approvals without anyone rekeying a
+  // CSV. The opposite direction of syncXeroTimesheets.
+  //
+  // Xero's shape dictates the work: one timesheet per employee per *pay
+  // period*, boundaries set by that employee's payroll calendar, hours as a
+  // flat array of one number per day across the whole period. A week selected
+  // in Alma can therefore split across two Xero periods, and does whenever a
+  // fortnightly calendar cuts mid-week. The arithmetic lives in @alma/shared
+  // where it is tested; this function is the plumbing around it.
+  //
+  // Drafts, never approved timesheets: the pay run is the payroll operator's
+  // decision, and a draft is reversible in Xero while an approved one is a
+  // support ticket.
+  async pushTimesheetsToXero(
+    actor: AuthUser,
+    input: { start: string; end: string; venue?: string | null }
+  ): Promise<XeroTimesheetPushResult> {
+    const start = new Date(input.start);
+    const end = new Date(input.end);
+    if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) {
+      throw new HttpError(400, 'Push start and end dates are required.');
+    }
+    if (end <= start) throw new HttpError(400, 'Push end date must be after the start date.');
+
+    // Same venue rule the CSV export applies: an admin sees what they ask for,
+    // a manager only ever their own venue. Payroll is the last place to let a
+    // request parameter widen someone's reach.
+    const requestedVenue = input.venue?.trim() || '';
+    let scopedVenue: string | undefined;
+    if (actor.isAdmin || actor.role === 'ADMIN') {
+      scopedVenue = requestedVenue || undefined;
+    } else {
+      if (!actor.venue) throw new HttpError(403, 'Manager venue access is not configured.');
+      if (requestedVenue && requestedVenue !== actor.venue) {
+        throw new HttpError(403, 'Managers cannot push another venue’s timesheets.');
+      }
+      scopedVenue = actor.venue;
+    }
+
+    const connection = await connectedXeroConnection();
+    const tenantId = connection.providerAccountId;
+    if (!tenantId) throw new HttpError(409, 'No Xero tenant is connected.');
+
+    // Xero answers a POST made without the write scope with a bare 403 and no
+    // indication that the scope is why. Check the recorded grant first so the
+    // manager is told to reconnect rather than left guessing.
+    const grantedScopes = scopesFromJson(connection.scopes).map((scope) => scope.toLowerCase());
+    if (grantedScopes.length > 0 && !grantedScopes.includes('payroll.timesheets')) {
+      throw new HttpError(
+        409,
+        'Your Xero connection can read payroll but not write to it, so timesheets can’t be pushed. Disconnect Xero in Admin and reconnect it — you’ll be asked to grant timesheet access — then push again.'
+      );
+    }
+
+    const warnings: string[] = [];
+    const results: XeroTimesheetPushRow[] = [];
+
+    const entries = await prisma.timesheet.findMany({
+      where: {
+        status: 'APPROVED',
+        paymentMethod: { not: 'CASH' },
+        workDate: { gte: start, lt: end },
+        ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
+      },
+      orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
+      include: {
+        staffProfile: {
+          select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true, xeroEarningsRateId: true }
+        }
+      }
+    });
+
+    if (entries.length === 0) {
+      return { pushed: 0, failed: 0, skipped: 0, markedExported: 0, results: [], warnings: ['No approved timesheets in this period.'] };
+    }
+
+    type XeroPayrollEmployee = {
+      EmployeeID: string;
+      FirstName: string;
+      LastName: string;
+      Status?: string;
+      PayrollCalendarID?: string;
+      OrdinaryEarningsRateID?: string;
+      PayTemplate?: { EarningsLines?: Array<{ EarningsRateID?: string }> };
+    };
+    type XeroPayrollCalendar = { PayrollCalendarID: string; CalendarType: string; StartDate?: string };
+
+    const calendarResponse = await xeroGetJson<{ PayrollCalendars?: XeroPayrollCalendar[] }>(
+      '/payroll.xro/1.0/PayrollCalendars',
+      { connection, tenantId }
+    );
+    const calendarsById = new Map(
+      (calendarResponse.data.PayrollCalendars ?? []).map((calendar) => [calendar.PayrollCalendarID.toLowerCase(), calendar])
+    );
+
+    // Employees are fetched one at a time, not from the list endpoint. Xero's
+    // employee LIST returns a summary with no pay template, and the ordinary
+    // earnings rate lives in the template — so a list-based lookup would fail
+    // every employee whose rate isn't also filled in on their Alma profile,
+    // which today is all of them. The individual record carries both the
+    // calendar and the rate, and we only fetch the handful being pushed.
+    const employeeCache = new Map<string, XeroPayrollEmployee | null>();
+    const fetchEmployee = async (id: string): Promise<XeroPayrollEmployee | null> => {
+      const key = id.toLowerCase();
+      const cached = employeeCache.get(key);
+      if (cached !== undefined) return cached;
+      let employee: XeroPayrollEmployee | null = null;
+      try {
+        const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+          { connection, tenantId }
+        );
+        employee = response.data.Employees?.[0] ?? null;
+      } catch {
+        // A 404 here means the id doesn't exist in this org — reported per
+        // employee below rather than aborting everyone else's payroll.
+        employee = null;
+      }
+      employeeCache.set(key, employee);
+      return employee;
+    };
+
+    // Group Alma rows by staff member; one employee can produce several Xero
+    // timesheets when the window spans more than one of their pay periods.
+    const byStaff = new Map<string, typeof entries>();
+    for (const entry of entries) {
+      const list = byStaff.get(entry.staffProfileId) ?? [];
+      list.push(entry);
+      byStaff.set(entry.staffProfileId, list);
+    }
+
+    const exportBatchId = `xero-push-${Date.now()}`;
+    const exportedIds: string[] = [];
+    let pushed = 0;
+    let failed = 0;
+    let skipped = 0;
+
+    for (const [staffProfileId, staffEntries] of byStaff) {
+      const profile = staffEntries[0]?.staffProfile;
+      if (!profile) continue;
+      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      const fail = (message: string) => {
+        failed += 1;
+        results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
+      };
+
+      const xeroEmployeeId = staffEntries.find((entry) => entry.xeroEmployeeId)?.xeroEmployeeId ?? profile.xeroEmployeeId;
+      if (!xeroEmployeeId) {
+        fail('No Xero employee is linked to this staff profile. Link them in Admin → Xero employees, then push again.');
+        continue;
+      }
+      const employee = await fetchEmployee(xeroEmployeeId);
+      if (!employee) {
+        fail(`Xero has no employee ${xeroEmployeeId} in this organisation. Re-link the staff profile, then push again.`);
+        continue;
+      }
+
+      const calendar = employee.PayrollCalendarID ? calendarsById.get(employee.PayrollCalendarID.toLowerCase()) : undefined;
+      if (!calendar) {
+        fail('This employee is not on a Xero payroll calendar, so Xero has no pay period to file the hours against.');
+        continue;
+      }
+      const calendarStart = parseXeroDate(calendar.StartDate);
+      if (!calendarStart) {
+        fail(`Xero payroll calendar "${calendar.CalendarType}" has no start date, so its pay periods can’t be worked out.`);
+        continue;
+      }
+
+      // Earnings rate: the timesheet's own override, then the staff profile's,
+      // then whatever Xero says is the employee's ordinary rate. Without one
+      // there is no valid line to send.
+      const earningsRateId =
+        staffEntries.find((entry) => entry.xeroEarningsRateId)?.xeroEarningsRateId ??
+        profile.xeroEarningsRateId ??
+        employee.OrdinaryEarningsRateID ??
+        employee.PayTemplate?.EarningsLines?.find((line) => line.EarningsRateID)?.EarningsRateID;
+      if (!earningsRateId) {
+        fail('No Xero earnings rate for this employee. Set an ordinary earnings rate on their Xero pay template, or fill the Xero earnings rate field on their Alma profile.');
+        continue;
+      }
+
+      const groups = groupIntoPeriods(
+        staffEntries.map((entry) => ({ workDate: entry.workDate, hours: entryHours(entry), id: entry.id })),
+        calendarStart,
+        calendar.CalendarType
+      );
+      if (groups.length === 0) {
+        fail(`Xero payroll calendar type "${calendar.CalendarType}" doesn’t take timesheets. Only weekly, fortnightly and four-weekly calendars do.`);
+        continue;
+      }
+
+      for (const group of groups) {
+        const units = unitsForPeriod(group.entries, group.period);
+        if (!hasHours(units)) {
+          skipped += 1;
+          results.push({ employee: name, staffProfileId, status: 'skipped', message: 'No paid hours in this pay period.', hours: 0, periodStart: group.period.start, periodEnd: group.period.end, xeroTimesheetId: null });
+          continue;
+        }
+
+        const totalHours = Math.round(units.reduce((sum, value) => sum + value, 0) * 100) / 100;
+        try {
+          const response = await xeroPostJson<{ Timesheets?: Array<{ TimesheetID?: string; Status?: string }> }>(
+            '/payroll.xro/1.0/Timesheets',
+            {
+              connection,
+              tenantId,
+              body: {
+                Timesheets: [
+                  {
+                    EmployeeID: employee.EmployeeID,
+                    StartDate: group.period.start,
+                    EndDate: group.period.end,
+                    Status: 'DRAFT',
+                    TimesheetLines: [{ EarningsRateID: earningsRateId, NumberOfUnits: units }]
+                  }
+                ]
+              }
+            }
+          );
+          const created = response.data.Timesheets?.[0];
+          pushed += 1;
+          exportedIds.push(...group.entries.map((entry) => entry.id));
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'pushed',
+            message: `${totalHours.toFixed(2)}h as a draft timesheet.`,
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: created?.TimesheetID ?? null
+          });
+        } catch (error) {
+          // One employee's rejection must not abandon the rest of the payroll.
+          failed += 1;
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'failed',
+            message: error instanceof Error ? error.message : 'Xero rejected this timesheet.',
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: null
+          });
+        }
+      }
+    }
+
+    // Only rows Xero actually accepted are marked exported. Marking on a
+    // partial failure would hide the unpushed hours from the next attempt.
+    let markedExported = 0;
+    if (exportedIds.length > 0) {
+      const updated = await prisma.timesheet.updateMany({
+        where: { id: { in: exportedIds } },
+        data: { status: 'EXPORTED', exportedAt: new Date(), xeroExportBatchId: exportBatchId }
+      });
+      markedExported = updated.count;
+    }
+
+    if (failed > 0) {
+      warnings.push('Pushed timesheets are drafts in Xero — review them there before running pay.');
+    }
+
+    return { pushed, failed, skipped, markedExported, results, warnings };
   },
 
   // Import worked hours FROM Xero Payroll timesheets into Alma's Timesheet
