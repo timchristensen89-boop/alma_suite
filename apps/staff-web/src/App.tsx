@@ -3251,14 +3251,20 @@ function NoticeboardPage() {
             <Input
               label="Title"
               value={draft.title}
-              onChange={(event) => setDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+              onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, title: value }));
+              }}
               required
             />
             <Textarea
               label="Message"
               rows={4}
               value={draft.body}
-              onChange={(event) => setDraft((current) => ({ ...current, body: event.currentTarget.value }))}
+              onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, body: value }));
+              }}
               required
             />
             <div className="notice-form-row">
@@ -3266,7 +3272,10 @@ function NoticeboardPage() {
                 <input
                   type="checkbox"
                   checked={draft.pinned}
-                  onChange={(event) => setDraft((current) => ({ ...current, pinned: event.currentTarget.checked }))}
+                  onChange={(event) => {
+                    const { checked } = event.currentTarget;
+                    setDraft((current) => ({ ...current, pinned: checked }));
+                  }}
                 />
                 Pin to the top
               </label>
@@ -3274,7 +3283,10 @@ function NoticeboardPage() {
                 label="Clear it after (optional)"
                 type="date"
                 value={draft.expiresAt}
-                onChange={(event) => setDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))}
+                onChange={(event) => {
+                const { value } = event.currentTarget;
+                setDraft((current) => ({ ...current, expiresAt: value }));
+              }}
               />
             </div>
             <Button type="submit" disabled={saving}>
@@ -17285,13 +17297,15 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                             type="checkbox"
                             aria-label={`Include ${group.name} in the Xero push`}
                             checked={pushSelection.includes(group.id)}
-                            onChange={(event) =>
+                            onChange={(event) => {
+                              // Read `checked` before the updater runs: React
+                              // nulls currentTarget once the handler returns,
+                              // and a functional setState executes after that.
+                              const { checked } = event.currentTarget;
                               setPushSelection((current) =>
-                                event.currentTarget.checked
-                                  ? [...current, group.id]
-                                  : current.filter((id) => id !== group.id)
-                              )
-                            }
+                                checked ? [...current, group.id] : current.filter((id) => id !== group.id)
+                              );
+                            }}
                           />
                         </td>
                       ) : null}

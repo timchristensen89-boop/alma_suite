@@ -1064,25 +1064,68 @@ export const giftCardService = {
       data: { status: 'EXPIRED' }
     });
 
-    // Only ever cancel a pending card that never got a payment reference —
-    // one carrying a Stripe session may still be settling.
-    const abandoned = await prisma.giftCard.updateMany({
-      where: {
-        status: 'PENDING_PAYMENT',
-        createdAt: { lt: abandonedBefore },
-        OR: [{ stripePaymentIntentId: null }, { stripePaymentIntentId: '' }]
-      },
-      data: {
-        status: 'CANCELLED',
-        balanceCents: 0,
-        cancelledAt: now,
-        cancelReason: `Checkout abandoned — no payment within ${abandonedAfterHours}h.`
-      }
+    // Stale pending cards are NOT simply cancelled. A buyer who paid and then
+    // closed the tab before the success page loaded, on a webhook that never
+    // arrived, has a paid card sitting in PENDING_PAYMENT — cancelling that on
+    // a timer would take money and give nothing back. Stripe is the authority,
+    // so ask it about every stale card that got as far as a checkout session.
+    const stale = await prisma.giftCard.findMany({
+      where: { status: 'PENDING_PAYMENT', createdAt: { lt: abandonedBefore } },
+      select: { id: true, stripeCheckoutSessionId: true },
+      take: 200
     });
+
+    let abandoned = 0;
+    let recovered = 0;
+    let unresolved = 0;
+    for (const card of stale) {
+      if (!card.stripeCheckoutSessionId || !stripe) {
+        // Never reached Stripe at all — safe to close off.
+        const closed = await prisma.giftCard.updateMany({
+          where: { id: card.id, status: 'PENDING_PAYMENT' },
+          data: {
+            status: 'CANCELLED',
+            balanceCents: 0,
+            cancelledAt: now,
+            cancelReason: `Checkout abandoned — no payment within ${abandonedAfterHours}h.`
+          }
+        });
+        abandoned += closed.count;
+        continue;
+      }
+      try {
+        const session = await stripe.checkout.sessions.retrieve(card.stripeCheckoutSessionId, {
+          expand: ['payment_intent']
+        });
+        if (isStripePaymentConfirmed(session)) {
+          // The webhook was lost. Activate and send it now — late is recoverable,
+          // cancelled is not.
+          await this.handleCheckoutCompleted(session);
+          recovered += 1;
+        } else if (session.status === 'expired' || session.payment_status === 'unpaid') {
+          await this.disregardUnconfirmedCheckout(session, `Checkout abandoned — Stripe reports no payment after ${abandonedAfterHours}h.`);
+          abandoned += 1;
+        } else {
+          // Still open at Stripe. Leave it and look again tomorrow.
+          unresolved += 1;
+        }
+      } catch (error) {
+        // A Stripe outage must never cancel a card. Leave it pending.
+        unresolved += 1;
+        console.error('[gift-cards] lifecycle sweep could not reach Stripe', {
+          giftCardId: card.id,
+          reason: error instanceof Error ? error.message : 'unknown'
+        });
+      }
+    }
 
     return {
       expired: expired.count,
-      abandoned: abandoned.count,
+      abandoned,
+      /** Paid cards whose webhook never arrived, activated by this sweep. */
+      recovered,
+      /** Still open at Stripe, or Stripe was unreachable — left pending. */
+      unresolved,
       abandonedAfterHours,
       generatedAt: now.toISOString()
     };
