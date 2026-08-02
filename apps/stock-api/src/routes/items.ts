@@ -90,6 +90,25 @@ itemsRouter.get('/config-health', async (req, res, next) => {
   }
 });
 
+// The catalogue as a buyer sees it: who supplies each item and what was last
+// paid, derived from the invoices already entered rather than a price list
+// nobody maintains (0 rows in production).
+itemsRouter.get('/by-supplier', async (req, res, next) => {
+  try {
+    res.json(await itemsService.bySupplier(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
+itemsRouter.get('/:id/purchase-history', async (req, res, next) => {
+  try {
+    res.json(await itemsService.purchaseFactsForItem(String(req.params.id)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 itemsRouter.get('/:id/usage-history', async (req, res, next) => {
   try {
     res.json(await itemsService.usageHistory(String(req.params.id), {

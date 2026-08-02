@@ -2,6 +2,7 @@ export * from './availability.js';
 export * from './shift-claims.js';
 export * from './rostering-guards.js';
 export * from './invoice-matching.js';
+export * from './purchase-history.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,

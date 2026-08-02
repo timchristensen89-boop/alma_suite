@@ -4,7 +4,10 @@ import {
   aliasKey,
   isNonStockLine,
   matchInvoiceLine,
+  packFormat,
   productTokens,
+  sizeSignature,
+  describesDifferentProduct,
   suggestItems,
   type MatchCandidate
 } from '@alma/shared';
@@ -233,4 +236,60 @@ test('a contradicting item is still suggested, but never ranked as a fit', () =>
   const [top] = suggestItems('CHICKEN THIGH FILLETS SKIN ON', chicken);
   assert.ok(top, 'the near neighbour should still be offered');
   assert.ok(top.confidence < 0.7, `should not read as a fit, got ${top.confidence}`);
+});
+
+/* ---------------------------------------------------------------- */
+/* Pack size and pack format discriminate                            */
+/* ---------------------------------------------------------------- */
+
+test('a pack size stated on both sides must agree', () => {
+  // Found in production: stripping sizes made 1kg and 2kg butter the same
+  // item, so a $27 line and a $12 line both wrote onto one product.
+  const butter: MatchCandidate[] = [{ id: '1kg', name: 'BUTTER UNSALTED 1KG (Devondale)' }];
+  assert.equal(matchInvoiceLine({ description: 'BUTTER UNSALTED COOKING 2KG (Pepe Saya) EA (2)' }, butter).itemId, null);
+  assert.equal(matchInvoiceLine({ description: 'BUTTER UNSALTED 1KG (Devondale)' }, butter).itemId, '1kg');
+});
+
+test('sizes compare across units, so 1kg and 1000gm agree', () => {
+  assert.equal(sizeSignature('BUTTER 1KG'), sizeSignature('BUTTER 1000GM'));
+  assert.equal(sizeSignature('JUICE 1LT'), sizeSignature('JUICE 1000ML'));
+  assert.equal(sizeSignature('CHOCOLATE WHITE 2.5KG'), '2500g');
+  assert.equal(sizeSignature('Lettuce Iceberg'), null);
+});
+
+test('a size on only one side is not a disagreement', () => {
+  // Most item names carry no size at all; requiring one would refuse
+  // nearly every honest match.
+  const generic: MatchCandidate[] = [{ id: 'coconut', name: 'Coconut Milk' }];
+  assert.equal(matchInvoiceLine({ description: 'COCONUT MILK 400ML (Royal Line) EA (24)' }, generic).itemId, 'coconut');
+});
+
+test('a box is not a bunch', () => {
+  // The $55 box of carrots matched to a $4.28 bunch, because "box" was
+  // discarded as packaging noise.
+  const carrots: MatchCandidate[] = [{ id: 'box', name: 'Carrots Dutch Box' }];
+  assert.equal(matchInvoiceLine({ description: 'Carrots Dutch Rainbow Bunch' }, carrots).itemId, null);
+});
+
+test('format synonyms still agree — a carton is a box', () => {
+  assert.equal(packFormat('TOMATO box LRG'), packFormat('TOMATOES CTN'));
+  assert.equal(packFormat('OIL 4LT CARTON'), 'box');
+  assert.equal(packFormat('Lettuce Iceberg'), null);
+});
+
+test('a one-word item name does not swallow longer descriptions', () => {
+  // "Cabbage Each" reduces to the single word "cabbage", which appears in
+  // every cabbage product the supplier sells.
+  const cabbage: MatchCandidate[] = [{ id: 'each', name: 'Cabbage Each' }];
+  assert.equal(matchInvoiceLine({ description: 'Cabbage Sugar Loaf Tray' }, cabbage).itemId, null);
+  assert.equal(matchInvoiceLine({ description: 'Cabbage Shredded 1kg' }, cabbage).itemId, null);
+  // The plain thing still matches.
+  assert.equal(matchInvoiceLine({ description: 'Cabbage' }, cabbage).itemId, 'each');
+});
+
+test('describesDifferentProduct is the single place all three checks live', () => {
+  assert.equal(describesDifferentProduct('BUTTER 1KG', 'BUTTER 2KG'), true);
+  assert.equal(describesDifferentProduct('Carrots Box', 'Carrots Bunch'), true);
+  assert.equal(describesDifferentProduct('CHICKEN SKIN ON', 'CHICKEN SKIN OFF'), true);
+  assert.equal(describesDifferentProduct('Coconut Milk', 'COCONUT MILK 400ML (Royal Line) EA'), false);
 });

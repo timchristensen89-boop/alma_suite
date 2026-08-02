@@ -1,6 +1,9 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  summarisePurchases,
+  type PurchaseFacts,
+  type PurchaseLine,
   stockCategoryCreateInputSchema,
   stockCategoryUpdateInputSchema,
   stockItemBulkDeleteInputSchema,
@@ -599,6 +602,151 @@ export const itemsService = {
 
     const csv = [headers, ...rows].map((row) => row.map(csvCell).join(',')).join('\n');
     return { filename: 'alma-stock-items.csv', csv };
+  },
+
+  /**
+   * Where each item is bought from and what it costs, derived from the
+   * invoices already entered.
+   *
+   * The supplier price list is where this "should" live and it holds 0 rows in
+   * production, because it is a second catalogue somebody would have to keep
+   * up by hand next to the invoices they already process. Reading the invoices
+   * asks for the data once.
+   *
+   * Only covers items whose invoice lines have been matched — 123 of 716
+   * today, growing as the review queue is cleared. An item with no history
+   * reports nothing rather than a guess.
+   */
+  async purchaseFacts(itemIds?: string[]): Promise<Map<string, PurchaseFacts>> {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        itemId: itemIds?.length ? { in: itemIds } : { not: null },
+        unitAmountCents: { gt: 0 },
+        // A line somebody actively set aside as a charge is not a purchase of
+        // this item, even if it somehow carries an itemId.
+        matchingStatus: { not: 'NON_STOCK' }
+      },
+      select: {
+        itemId: true,
+        unitAmountCents: true,
+        lineAmountCents: true,
+        quantity: true,
+        // Needed because the importer frequently records quantity as 1 and
+        // leaves the real figure only in the supplier's own wording.
+        description: true,
+        invoice: { select: { supplierId: true, supplierName: true, invoiceDate: true, createdAt: true } }
+      }
+    });
+
+    const grouped = new Map<string, PurchaseLine[]>();
+    for (const line of lines) {
+      if (!line.itemId) continue;
+      const list = grouped.get(line.itemId) ?? [];
+      list.push({
+        supplierId: line.invoice?.supplierId ?? null,
+        supplierName: line.invoice?.supplierName ?? null,
+        unitAmountCents: line.unitAmountCents,
+        lineAmountCents: line.lineAmountCents,
+        quantity: line.quantity,
+        description: line.description,
+        // The invoice date is when the price was actually paid. Falling back to
+        // createdAt would order purchases by when somebody got round to
+        // importing them, which is not the same thing.
+        purchasedAt: line.invoice?.invoiceDate ?? line.invoice?.createdAt ?? new Date(0)
+      });
+      grouped.set(line.itemId, list);
+    }
+
+    const out = new Map<string, PurchaseFacts>();
+    for (const [itemId, itemLines] of grouped) {
+      out.set(itemId, summarisePurchases(itemLines));
+    }
+    return out;
+  },
+
+  /**
+   * The catalogue seen the way a buyer sees it: grouped by who supplies each
+   * item, with what was last paid.
+   *
+   * Items nothing has ever been bought for are grouped separately rather than
+   * hidden — "we have no idea where this comes from" is a real answer a buyer
+   * needs, and today it is most of the catalogue.
+   */
+  async bySupplier(actor?: AuthUser | null, requestedVenue?: string | null) {
+    const venue = actorVenueScope(actor, requestedVenue);
+    const [items, facts] = await Promise.all([
+      prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: {
+          id: true, name: true, unit: true, countUnit: true, conversionFactor: true,
+          parLevel: true, reorderPoint: true, onHand: true,
+          latestCostCents: true, latestCostAt: true,
+          category: { select: { id: true, name: true } },
+          venueStock: venue
+            ? { where: { venue }, select: { onHand: true, parLevel: true, reorderPoint: true } }
+            : false
+        },
+        orderBy: [{ name: 'asc' }]
+      }),
+      this.purchaseFacts()
+    ]);
+
+    const groups = new Map<string, {
+      supplierId: string | null;
+      supplierName: string;
+      items: Array<Record<string, unknown>>;
+    }>();
+
+    for (const item of items) {
+      const fact = facts.get(item.id) ?? null;
+      const key = fact?.supplierId ?? '__none__';
+      if (!groups.has(key)) {
+        groups.set(key, {
+          supplierId: fact?.supplierId ?? null,
+          supplierName: fact?.supplierName ?? 'No purchase history',
+          items: []
+        });
+      }
+      const venueRow = Array.isArray(item.venueStock) ? item.venueStock[0] : null;
+      groups.get(key)!.items.push({
+        id: item.id,
+        name: item.name,
+        unit: item.unit,
+        countUnit: item.countUnit,
+        conversionFactor: item.conversionFactor,
+        category: item.category,
+        // Venue figures win when a venue is in scope; the item-level numbers
+        // are the group-wide fallback.
+        onHand: venueRow?.onHand ?? item.onHand,
+        parLevel: venueRow?.parLevel ?? item.parLevel,
+        reorderPoint: venueRow?.reorderPoint ?? item.reorderPoint,
+        latestCostCents: item.latestCostCents,
+        latestCostAt: item.latestCostAt ? item.latestCostAt.toISOString() : null,
+        purchase: fact
+      });
+    }
+
+    const ordered = [...groups.values()].sort((a, b) => {
+      // Items nobody knows the source of sort last: they are a data gap to
+      // work through, not a supplier to order from.
+      if (a.supplierId === null) return 1;
+      if (b.supplierId === null) return -1;
+      return a.supplierName.localeCompare(b.supplierName);
+    });
+
+    return {
+      venue,
+      suppliers: ordered,
+      itemsWithHistory: facts.size,
+      itemsTotal: items.length,
+      generatedAt: new Date().toISOString()
+    };
+  },
+
+  /** One item's purchase history, for the item detail view. */
+  async purchaseFactsForItem(itemId: string): Promise<PurchaseFacts | null> {
+    const facts = await this.purchaseFacts([itemId]);
+    return facts.get(itemId) ?? null;
   },
 
   async summary(actor?: AuthUser | null, requestedVenue?: string | null): Promise<StockItemsSummary> {

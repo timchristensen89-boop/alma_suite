@@ -58,11 +58,62 @@ export function isNonStockLine(description: string, supplierName?: string | null
  * nonsense — "FRESH" would tie a snapper fillet to fresh cream.
  */
 const NOISE_TOKENS = new Set([
-  'ea', 'ctn', 'pkt', 'pk', 'bx', 'box', 'bag', 'btl', 'bottle', 'case', 'each',
-  'kg', 'g', 'gm', 'gms', 'ml', 'lt', 'ltr', 'l', 'mm', 'cm', 'pc', 'pcs', 'piece', 'pieces',
+  'kg', 'g', 'gm', 'gms', 'ml', 'lt', 'ltr', 'l', 'mm', 'cm',
   'x', 'of', 'the', 'and', 'with', 'per', 'approx', 'fresh', 'frozen', 'chilled',
-  'ordered', 'supplied', 'qty', 'unit', 'units', 'sleeve', 'pack', 'packet'
+  'ordered', 'supplied', 'qty', 'unit', 'units'
 ]);
+
+/**
+ * How a product is packaged, canonicalised so synonyms agree. A carton and a
+ * box are the same shape of thing; a box and a bunch are not.
+ *
+ * These used to be discarded as noise, which made "Carrots Dutch Box" and
+ * "Carrots Dutch Rainbow Bunch" identical — a $55 box matched to a $4 bunch.
+ */
+const PACK_FORMATS: Record<string, string> = {
+  box: 'box', bx: 'box', ctn: 'box', carton: 'box', case: 'box',
+  ea: 'each', each: 'each', pc: 'each', pcs: 'each', piece: 'each', pieces: 'each',
+  bunch: 'bunch', bunches: 'bunch',
+  bag: 'bag', sack: 'bag',
+  punnet: 'punnet',
+  tray: 'tray',
+  tub: 'tub',
+  bottle: 'bottle', btl: 'bottle',
+  can: 'can', tin: 'can',
+  jar: 'jar',
+  roll: 'roll',
+  pkt: 'pack', pk: 'pack', pack: 'pack', packet: 'pack', sleeve: 'pack'
+};
+
+/** The pack format a name states, or null when it does not say. */
+export function packFormat(text: string): string | null {
+  for (const word of text.toLowerCase().split(/[^a-z]+/)) {
+    const format = PACK_FORMATS[word];
+    if (format) return format;
+  }
+  return null;
+}
+
+/**
+ * The pack SIZE a name states, normalised to a base unit so 1KG and 1000GM
+ * compare equal.
+ *
+ * Stripping sizes without keeping them made "BUTTER UNSALTED 1KG" and "BUTTER
+ * UNSALTED COOKING 2KG" the same product, and likewise 1KG and 2.5KG
+ * chocolate.
+ */
+export function sizeSignature(text: string): string | null {
+  const match = text.toLowerCase().match(/(\d+(?:\.\d+)?)\s*(kg|g|gm|gms|ml|lt|ltr|l)\b/);
+  if (!match) return null;
+  const amount = Number(match[1]);
+  if (!Number.isFinite(amount) || amount <= 0) return null;
+  switch (match[2]) {
+    case 'kg': return `${amount * 1000}g`;
+    case 'g': case 'gm': case 'gms': return `${amount}g`;
+    case 'lt': case 'ltr': case 'l': return `${amount * 1000}ml`;
+    default: return `${amount}ml`;
+  }
+}
 
 /**
  * Strip a supplier catalogue string back to the words that identify the
@@ -90,7 +141,14 @@ export function productTokens(description: string): string[] {
   return text
     .split(' ')
     .map((token) => token.trim())
-    .filter((token) => token.length > 1 && !/^\d+$/.test(token) && !NOISE_TOKENS.has(token));
+    .filter((token) =>
+      token.length > 1 &&
+      !/^\d+$/.test(token) &&
+      !NOISE_TOKENS.has(token) &&
+      // Packaging words are compared separately, as a format, so that they
+      // discriminate instead of being silently discarded.
+      !(token in PACK_FORMATS)
+    );
 }
 
 /* ------------------------------------------------------------------ */
@@ -131,6 +189,26 @@ const OPPOSING_TOKEN_GROUPS: string[][] = [
  * simply says nothing about size is not contradicted by a description that
  * does — silence is not disagreement.
  */
+/**
+ * Do two names describe different products?
+ *
+ * Combines the three ways two names can disagree: a qualifier (skin on vs
+ * off), a pack size (1kg vs 2kg), and a pack format (box vs bunch). In each
+ * case only a stated disagreement counts — silence on one side is not
+ * disagreement, or the check would refuse most honest matches.
+ */
+export function describesDifferentProduct(itemName: string, description: string): boolean {
+  const itemSize = sizeSignature(itemName);
+  const lineSize = sizeSignature(description);
+  if (itemSize && lineSize && itemSize !== lineSize) return true;
+
+  const itemFormat = packFormat(itemName);
+  const lineFormat = packFormat(description);
+  if (itemFormat && lineFormat && itemFormat !== lineFormat) return true;
+
+  return contradicts(new Set(productTokens(itemName)), new Set(productTokens(description)));
+}
+
 export function contradicts(a: Set<string>, b: Set<string>): boolean {
   for (const group of OPPOSING_TOKEN_GROUPS) {
     const inA = group.filter((token) => a.has(token));
@@ -218,10 +296,15 @@ export function matchInvoiceLine(
   for (const item of items) {
     const itemTokens = productTokens(item.name);
     if (itemTokens.length === 0) continue;
-    // Skin on is not skin off, however many other words agree.
-    if (contradicts(new Set(itemTokens), lineTokens)) continue;
+    // Skin on is not skin off; 1kg is not 2kg; a box is not a bunch.
+    if (describesDifferentProduct(item.name, description)) continue;
     const hits = itemTokens.filter((token) => lineTokens.has(token)).length;
     if (hits === 0) continue;
+    // An item name of one meaningful word matches any description containing
+    // that word — "Cabbage Each" swallowed "Cabbage Sugar Loaf Tray". With
+    // nothing else to go on, only an exact reduction to the same word is
+    // evidence rather than coincidence.
+    if (itemTokens.length === 1 && !(lineTokens.size === 1 && lineTokens.has(itemTokens[0]!))) continue;
     // Share of the ITEM's own words that the description accounted for. Scoring
     // the other way round would favour short descriptions over the right item.
     const score = hits / itemTokens.length;
@@ -267,7 +350,7 @@ export function suggestItems(
       const score = hits / itemTokens.length;
       // Still offered — a person can see that "skin off" is the near neighbour
       // of "skin on" and may want it — but never ranked as though it fits.
-      const penalty = contradicts(new Set(itemTokens), lineTokens) ? 0.5 : 1;
+      const penalty = describesDifferentProduct(item.name, description) ? 0.5 : 1;
       return { item, confidence: Number((score * penalty).toFixed(2)) };
     })
     .filter((row) => row.confidence > 0)

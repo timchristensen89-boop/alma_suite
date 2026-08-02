@@ -28,6 +28,7 @@ const DeliveriesPage = lazy(() => import('./pages/DeliveriesPage').then((m) => (
 const PurchaseOrdersPage = lazy(() => import('./pages/PurchaseOrdersPage').then((m) => ({ default: m.PurchaseOrdersPage })));
 const RecipesPage = lazy(() => import('./pages/RecipesPage').then((m) => ({ default: m.RecipesPage })));
 const DishMarginPage = lazy(() => import('./pages/DishMarginPage').then((m) => ({ default: m.DishMarginPage })));
+const BuyingPage = lazy(() => import('./pages/BuyingPage').then((m) => ({ default: m.BuyingPage })));
 const PriceMovementPage = lazy(() => import('./pages/PriceMovementPage').then((m) => ({ default: m.PriceMovementPage })));
 const ReorderNoticesPage = lazy(() => import('./pages/ReorderNoticesPage').then((m) => ({ default: m.ReorderNoticesPage })));
 const SettingsPage = lazy(() => import('./pages/SettingsPage').then((m) => ({ default: m.SettingsPage })));
@@ -57,6 +58,7 @@ const PURCHASING_TABS: HubTab[] = [
   { to: '/purchase-orders', label: 'Purchase orders' },
   { to: '/deliveries', label: 'Deliveries' },
   { to: '/suppliers', label: 'Suppliers' },
+  { to: '/buying', label: 'Buying' },
   { to: '/price-movement', label: 'Price changes' }
 ];
 const RECIPE_TABS: HubTab[] = [
@@ -258,6 +260,7 @@ function StockAppShell() {
         <Route path="/purchase-orders" element={<HubLayout tabs={PURCHASING_TABS}><PurchaseOrdersPage /></HubLayout>} />
         <Route path="/deliveries" element={<HubLayout tabs={PURCHASING_TABS}><DeliveriesPage /></HubLayout>} />
         <Route path="/suppliers" element={<HubLayout tabs={PURCHASING_TABS}><SuppliersPage /></HubLayout>} />
+        <Route path="/buying" element={<HubLayout tabs={PURCHASING_TABS}><BuyingPage /></HubLayout>} />
         <Route path="/price-movement" element={<HubLayout tabs={PURCHASING_TABS}><PriceMovementPage /></HubLayout>} />
 
         {/* Recipes hub */}
