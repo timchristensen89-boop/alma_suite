@@ -502,6 +502,11 @@ model ChecklistTemplate {
   legacyId             String?                 @unique
   name                 String
   area                 String?
+  // How often the daily scheduler should raise a run from this template.
+  // DAILY | WEEKDAYS | WEEKLY | MONTHLY | MANUAL. cadenceDay is the weekday
+  // (0 = Sunday) for WEEKLY and the day of the month for MONTHLY.
+  cadence              String                  @default("DAILY")
+  cadenceDay           Int?
   items                ChecklistItemTemplate[]
   runs                 ChecklistRun[]
   shiftTaskRules       ShiftTaskRule[]

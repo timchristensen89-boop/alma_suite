@@ -1,3 +1,4 @@
+import { describeChecklistCadence, isChecklistCadence, isChecklistDue } from '@alma/shared';
 import { prisma } from '@alma/db';
 import {
   ALMA_IMPORTED_CHECKLIST_TEMPLATES,
@@ -397,6 +398,19 @@ export const checklistService = {
       // Skip if no items
       if (template.items.length === 0) {
         skipped.push({ templateId: template.id, templateName: template.name, reason: 'no items' });
+        continue;
+      }
+
+      // Only raise what is actually due today. Generating every template every
+      // day put four SOP reviews and a weekly walk on the board each morning,
+      // which is how the two lists that matter get ignored.
+      const cadence = isChecklistCadence(template.cadence) ? template.cadence : 'DAILY';
+      if (!isChecklistDue(now, cadence, template.cadenceDay)) {
+        skipped.push({
+          templateId: template.id,
+          templateName: template.name,
+          reason: cadence === 'MANUAL' ? 'started by hand only' : `not due today (${describeChecklistCadence(cadence, template.cadenceDay).toLowerCase()})`
+        });
         continue;
       }
 
