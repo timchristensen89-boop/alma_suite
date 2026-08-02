@@ -7608,7 +7608,7 @@ export const integrationService = {
   // support ticket.
   async pushTimesheetsToXero(
     actor: AuthUser,
-    input: { start: string; end: string; venue?: string | null; dryRun?: boolean }
+    input: { start: string; end: string; venue?: string | null; dryRun?: boolean; staffProfileIds?: string[] }
   ): Promise<XeroTimesheetPushResult> {
     const start = new Date(input.start);
     const end = new Date(input.end);
@@ -7660,11 +7660,17 @@ export const integrationService = {
     const warnings: string[] = [];
     const results: XeroTimesheetPushRow[] = [];
 
+    // An empty list means "everyone in the window" — a caller that wants to
+    // push nobody simply doesn't call. Only a non-empty selection narrows it,
+    // so a UI bug that sends [] can never silently push the whole payroll.
+    const selectedStaffIds = (input.staffProfileIds ?? []).filter((id) => typeof id === 'string' && id.length > 0);
+
     const entries = await prisma.timesheet.findMany({
       where: {
         status: 'APPROVED',
         paymentMethod: { not: 'CASH' },
         workDate: { gte: start, lt: end },
+        ...(selectedStaffIds.length > 0 ? { staffProfileId: { in: selectedStaffIds } } : {}),
         ...(scopedVenue ? { OR: [{ venue: scopedVenue }, { venue: null, staffProfile: { venue: scopedVenue } }] } : {})
       },
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
@@ -7676,7 +7682,18 @@ export const integrationService = {
     });
 
     if (entries.length === 0) {
-      return { pushed: 0, failed: 0, skipped: 0, markedExported: 0, results: [], warnings: ['No approved timesheets in this period.'] };
+      return {
+        pushed: 0,
+        failed: 0,
+        skipped: 0,
+        markedExported: 0,
+        results: [],
+        warnings: [
+          selectedStaffIds.length > 0
+            ? 'No approved timesheets for the selected staff in this period.'
+            : 'No approved timesheets in this period. Only APPROVED shifts are pushed — approve them first.'
+        ]
+      };
     }
 
     type XeroPayrollEmployee = {

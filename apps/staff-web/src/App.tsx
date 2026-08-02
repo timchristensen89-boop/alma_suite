@@ -16209,6 +16209,34 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   const [showSubmitModal, setShowSubmitModal] = useState(false);
   // Explorer rail selection (all / a venue / a staff member).
   const [selection, setSelection] = useState<TimesheetSelection>({ type: 'all' });
+  // Week review is a tall table and a manager reviewing one person doesn't
+  // want to scroll past everyone else. Collapsed state is remembered so it
+  // survives week navigation rather than springing open on every arrow press.
+  // Who gets pushed. Empty = everyone in the window, which is the common case;
+  // ticking anyone narrows it so a manager can push one person's corrected week
+  // without re-sending the whole payroll.
+  const [pushSelection, setPushSelection] = useState<string[]>([]);
+  // The per-employee outcome of the last push/preview. A one-line summary hid
+  // the only thing that matters when 11 of 19 fail — which people, and why.
+  const [pushResult, setPushResult] = useState<
+    | {
+        preview: boolean;
+        pushed: number;
+        failed: number;
+        skipped: number;
+        markedExported: number;
+        rows: { employee: string; status: string; message: string; periodStart: string | null; periodEnd: string | null }[];
+      }
+    | null
+  >(null);
+  const [reviewOpen, setReviewOpen] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    return window.localStorage.getItem('alma.timesheets.reviewOpen') !== 'closed';
+  });
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('alma.timesheets.reviewOpen', reviewOpen ? 'open' : 'closed');
+  }, [reviewOpen]);
   // A STAFF member only ever sees their own hours (server forces this), so hide
   // the manager-only approval/payroll affordances from them.
   const { user: timesheetsViewer } = useAuth();
@@ -16278,11 +16306,31 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   // Roster & pay Turn 2: surface the needs-review count on the hub's Timesheets tab.
   useHubTabBadge('/timesheets', overallCounts.submitted);
 
-  // Roster & pay Turn 2: rostered hours per staff member inside the current
-  // range, from the roster prop the page already receives (no new API calls).
+  // The roster prop is loaded once, for the fortnight starting this Monday.
+  // Payroll review is always looking at a week that has already finished, so
+  // that window never contains the shifts being reviewed and every Rostered
+  // cell read "—". This page fetches the roster for its own range instead.
+  const [rangeRoster, setRangeRoster] = useState<RosterShift[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    const params = new URLSearchParams({ start: rangeStart.toISOString(), end: rangeEnd.toISOString() });
+    api<RosterShift[]>(`/api/staff/roster?${params.toString()}`)
+      .then((shifts) => {
+        if (!cancelled) setRangeRoster(shifts);
+      })
+      .catch(() => {
+        // Fall back to the prop rather than blanking the column outright.
+        if (!cancelled) setRangeRoster(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [rangeStart, rangeEnd]);
+
+  // Rostered hours per staff member inside the current range.
   const rosteredHoursByStaff = useMemo(() => {
     const map = new Map<string, number>();
-    for (const shift of roster) {
+    for (const shift of rangeRoster ?? roster) {
       if (!shift.staffProfileId || shift.status === 'CANCELLED') continue;
       const startsAt = new Date(shift.startsAt);
       const endsAt = new Date(shift.endsAt);
@@ -16291,7 +16339,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       map.set(shift.staffProfileId, (map.get(shift.staffProfileId) ?? 0) + hours);
     }
     return map;
-  }, [roster, rangeStart, rangeEnd]);
+  }, [rangeRoster, roster, rangeStart, rangeEnd]);
 
   // Groups filtered to the current explorer selection (shown in the detail pane).
   const visibleGroups = useMemo(() => {
@@ -16530,6 +16578,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
     }
     setSaving(true);
     setMessage(null);
+    setPushResult(null);
     setMessageTarget('push');
     try {
       const result = await api<{
@@ -16537,35 +16586,39 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         failed: number;
         skipped: number;
         markedExported: number;
-        results: { employee: string; status: string; message: string }[];
+        results: { employee: string; status: string; message: string; periodStart: string | null; periodEnd: string | null }[];
+        warnings: string[];
       }>('/api/staff/timesheets/push/xero', {
         method: 'POST',
         body: JSON.stringify({
-          start: weekStart.toISOString(),
-          end: weekEnd.toISOString(),
+          start: rangeStart.toISOString(),
+          end: rangeEnd.toISOString(),
           venue: venueFilter,
-          dryRun: preview
+          dryRun: preview,
+          staffProfileIds: pushSelection
         })
       });
       // A push can partly succeed — one employee missing a Xero link doesn't
-      // stop the rest — so the message has to carry who failed and why, not
-      // just a count. That reason is the only thing that says what to fix.
-      const failures = result.results
-        .filter((entry) => entry.status === 'failed')
-        .map((entry) => `${entry.employee}: ${entry.message}`);
+      // stop the rest — so the outcome is kept per employee and rendered as a
+      // list. The reason on a failed row is the only thing that says what to fix.
+      setPushResult({
+        preview,
+        pushed: result.pushed,
+        failed: result.failed,
+        skipped: result.skipped,
+        markedExported: result.markedExported,
+        rows: result.results
+      });
       const parts = [
         preview
           ? `${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} ready to push`
           : `Pushed ${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts`,
         result.markedExported ? `${result.markedExported} shifts marked exported` : null,
-        result.skipped ? `${result.skipped} skipped (no hours)` : null
+        result.skipped ? `${result.skipped} skipped (no hours)` : null,
+        result.failed ? `${result.failed} failed` : null
       ].filter(Boolean);
-      setMessage(
-        `${parts.join(' · ')}.${
-          result.failed ? ` ${result.failed} failed — ${failures.join('; ')}` : ''
-        }`
-      );
-      await loadTimesheets();
+      setMessage(result.results.length === 0 ? (result.warnings[0] ?? 'Nothing to push.') : `${parts.join(' · ')}.`);
+      if (!preview) await loadTimesheets();
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not push timesheets to Xero.');
     } finally {
@@ -16849,10 +16902,10 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               Export CSV
             </Button>
             <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void pushToXero(true)}>
-              Preview push
+              {pushSelection.length ? `Preview ${pushSelection.length}` : 'Preview push'}
             </Button>
             <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
-              Push to Xero
+              {pushSelection.length ? `Push ${pushSelection.length} to Xero` : 'Push all to Xero'}
             </Button>
           </div>
         ) : null}
@@ -16905,17 +16958,60 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         <p className={message.includes('Could') || message.includes('failed') ? 'error-text' : 'subtle'}>{message}</p>
       ) : null}
 
+      {/* Per-employee push outcome. A preview and a real push produce the same
+          shape, so a manager can read the list, fix the failures, and run it
+          again without guessing which name the summary was talking about. */}
+      {pushResult ? (
+        <div className="ts-push-result">
+          <div className="ts-push-result-head">
+            <strong>{pushResult.preview ? 'Preview — nothing sent to Xero yet' : 'Pushed to Xero'}</strong>
+            <span className="subtle">
+              {pushResult.preview ? `${pushResult.pushed} ready` : `${pushResult.pushed} sent`}
+              {pushResult.failed ? ` · ${pushResult.failed} failed` : ''}
+              {pushResult.skipped ? ` · ${pushResult.skipped} skipped` : ''}
+            </span>
+            <button type="button" className="ts-push-result-close" onClick={() => setPushResult(null)} aria-label="Dismiss">
+              ×
+            </button>
+          </div>
+          <ul className="ts-push-result-list">
+            {pushResult.rows.map((row, index) => (
+              <li key={`${row.employee}-${row.periodStart ?? index}`} className={`is-${row.status}`}>
+                <span className="ts-push-result-name">{row.employee}</span>
+                <span className="ts-push-result-period">
+                  {row.periodStart ? `${row.periodStart} → ${row.periodEnd}` : '—'}
+                </span>
+                <span className="ts-push-result-message">{row.message}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {/* Roster & pay Turn 2: week review table — at-a-glance rostered vs worked
           per staff member, with per-staff and bulk approval (existing endpoints). */}
       {!loading && timesheets.length > 0 ? (
-        <div className="ts-review">
+        <div className={`ts-review ${reviewOpen ? '' : 'is-collapsed'}`}>
           <div className="pay-section-head">
+            <button
+              type="button"
+              className="ts-review-toggle"
+              aria-expanded={reviewOpen}
+              onClick={() => setReviewOpen((open) => !open)}
+            >
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.6" aria-hidden="true">
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+              <span className="sr-only">{reviewOpen ? 'Collapse week review' : 'Expand week review'}</span>
+            </button>
             <div className="pay-section-head-text">
               <h3 className="pay-section-title">Week review</h3>
               <p className="pay-section-note">
                 {overallCounts.submitted > 0
                   ? `${overallCounts.submitted} shift${overallCounts.submitted === 1 ? ' needs' : 's need'} a look before pay runs Tuesday.`
                   : 'All clear.'}
+                {/* Collapsed, the totals are the only thing worth showing. */}
+                {reviewOpen ? null : ` · ${roundHours(allGroups.reduce((sum, group) => sum + group.totalHours, 0))}h worked across ${allGroups.length} staff.`}
               </p>
             </div>
             {isManagerView && overallCounts.submitted > 0 ? (
@@ -16935,10 +17031,27 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
               </button>
             ) : null}
           </div>
-          <div className="ts-review-card">
+          <div className="ts-review-card" hidden={!reviewOpen}>
             <table className="ts-review-table">
               <thead>
                 <tr>
+                  {isManagerView ? (
+                    <th className="ts-review-pick">
+                      <input
+                        type="checkbox"
+                        aria-label="Select all staff for the Xero push"
+                        checked={pushSelection.length > 0 && pushSelection.length === allGroups.length}
+                        ref={(node) => {
+                          // Partial selection reads as indeterminate, not unchecked —
+                          // an unchecked box next to five ticked rows is a lie.
+                          if (node) node.indeterminate = pushSelection.length > 0 && pushSelection.length < allGroups.length;
+                        }}
+                        onChange={(event) =>
+                          setPushSelection(event.currentTarget.checked ? allGroups.map((group) => group.id) : [])
+                        }
+                      />
+                    </th>
+                  ) : null}
                   <th>Staff</th>
                   <th className="is-num">Rostered</th>
                   <th className="is-num">Worked</th>
@@ -16965,7 +17078,23 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                         : null;
                   const restingStatus = group.entries[0]?.status ?? '';
                   return (
-                    <tr key={group.id}>
+                    <tr key={group.id} className={pushSelection.includes(group.id) ? 'is-picked' : undefined}>
+                      {isManagerView ? (
+                        <td className="ts-review-pick">
+                          <input
+                            type="checkbox"
+                            aria-label={`Include ${group.name} in the Xero push`}
+                            checked={pushSelection.includes(group.id)}
+                            onChange={(event) =>
+                              setPushSelection((current) =>
+                                event.currentTarget.checked
+                                  ? [...current, group.id]
+                                  : current.filter((id) => id !== group.id)
+                              )
+                            }
+                          />
+                        </td>
+                      ) : null}
                       <td>
                         <span className="ts-review-staff" style={areaStyle(group.roleTitle || '')}>
                           <span className="ts-review-avatar" aria-hidden>
@@ -17044,6 +17173,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
                   );
                   return (
                     <tr>
+                      {isManagerView ? <td className="ts-review-pick" /> : null}
                       <td>Week total</td>
                       <td className="is-num">{totals.hasRostered ? `${roundHours(totals.rostered)}h` : '—'}</td>
                       <td className="is-num ts-review-worked">{roundHours(totals.worked)}h</td>

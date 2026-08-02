@@ -897,7 +897,13 @@ staffRouter.post('/timesheets/export/xero', requireManager, async (req, res, nex
 // the "Push to Xero" button has always called.
 staffRouter.post('/timesheets/push/xero', requireManager, async (req, res, next) => {
   try {
-    const body = (req.body ?? {}) as { start?: unknown; end?: unknown; venue?: unknown; dryRun?: unknown };
+    const body = (req.body ?? {}) as {
+      start?: unknown;
+      end?: unknown;
+      venue?: unknown;
+      dryRun?: unknown;
+      staffProfileIds?: unknown;
+    };
     if (typeof body.start !== 'string' || typeof body.end !== 'string') {
       res.status(400).json({ message: 'Push start and end dates are required.' });
       return;
@@ -908,7 +914,10 @@ staffRouter.post('/timesheets/push/xero', requireManager, async (req, res, next)
       venue: typeof body.venue === 'string' ? body.venue : null,
       // Preview: same lookups, no write. Worth having in front of a pay run —
       // it names the employees who would fail before anything lands in Xero.
-      dryRun: body.dryRun === true
+      dryRun: body.dryRun === true,
+      staffProfileIds: Array.isArray(body.staffProfileIds)
+        ? body.staffProfileIds.filter((id): id is string => typeof id === 'string')
+        : undefined
     });
     res.json(result);
   } catch (error) {
