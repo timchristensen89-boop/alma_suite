@@ -1,5 +1,6 @@
 export * from './availability.js';
 export * from './shift-claims.js';
+export * from './rostering-guards.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,

@@ -3,9 +3,14 @@ import { prisma } from '@alma/db';
 import type { Prisma } from '@prisma/client';
 import { z } from 'zod';
 import {
+  CERTIFICATION_RECORD_TYPES,
   canApproveClaim,
   canClaimShift,
   canOfferShift,
+  checkFatigue,
+  type FatigueWarning,
+  describeCertificationBlock,
+  expiredCertificationsForShift,
   normaliseOnboardingSettings,
   rosterShiftInputSchema,
   rosterPublishInputSchema,
@@ -1163,6 +1168,37 @@ const staffLeaveQuerySchema = z.object({
  * >= 19 Aug 18:00, so the guard silently passes and the person gets rostered
  * on their day off. Compare against the START OF THE SHIFT'S DAY instead.
  */
+/**
+ * Refuse to put somebody on a shift their certification no longer covers.
+ *
+ * Only fires on a certificate with a RECORDED expiry date that has passed by
+ * the time the shift starts, or one somebody has explicitly marked expired.
+ * A missing certificate, or one with no expiry recorded, is not treated as
+ * expired: most certificates in this data carry no expiry date, so inferring
+ * one would refuse almost every shift and the check would have to be removed.
+ *
+ * The fix for a genuine block is to update the certificate record, which is
+ * the thing that is actually out of date.
+ */
+async function assertCertifiedForShift(staffProfileId: string | null | undefined, startsAt: Date) {
+  if (!staffProfileId) return;
+  const records = await prisma.staffComplianceRecord.findMany({
+    where: { staffProfileId, recordType: { in: [...CERTIFICATION_RECORD_TYPES] } },
+    select: { recordType: true, title: true, status: true, expiryDate: true }
+  });
+  const blocked = expiredCertificationsForShift(records, startsAt);
+  if (blocked.length === 0) return;
+  const profile = await prisma.staffProfile.findUnique({
+    where: { id: staffProfileId },
+    select: { firstName: true }
+  });
+  const who = profile?.firstName ?? 'That team member';
+  throw new HttpError(
+    409,
+    `${who} cannot work that shift: ${blocked.map(describeCertificationBlock).join(', ')}. Update the certificate to roster them.`
+  );
+}
+
 function leaveOverlapWhere(staffProfileId: string, startsAt: Date, endsAt: Date) {
   const shiftStartDay = new Date(`${startsAt.toISOString().slice(0, 10)}T00:00:00.000Z`);
   return {
@@ -3816,6 +3852,10 @@ export const staffService = {
     });
     if (leave) throw new HttpError(409, 'You have leave booked over that shift.');
 
+    // Told now rather than at approval: there is no point letting somebody ask
+    // for a shift that can never be given to them.
+    await assertCertifiedForShift(actor.id, shift.startsAt);
+
     return prisma.rosterShiftClaim.upsert({
       where: { rosterShiftId_staffProfileId: { rosterShiftId: shiftId, staffProfileId: actor.id } },
       create: { rosterShiftId: shiftId, staffProfileId: actor.id, note, status: 'PENDING' },
@@ -3936,6 +3976,8 @@ export const staffService = {
     });
     if (leave) throw new HttpError(409, 'They now have leave booked over that shift.');
 
+    await assertCertifiedForShift(claim.staffProfileId, claim.rosterShift.startsAt);
+
     // One transaction: assign the shift, clear any swap offer, AND close every
     // other claim on it. Split apart, a crash between them would leave a
     // filled shift with other people still believing they were in the running,
@@ -4006,11 +4048,41 @@ export const staffService = {
     // different, secretly-costed board.
     const redacted = staff.map((member) => redactStaffProfileFields(member, actor));
 
+    // Fatigue is computed here rather than in the browser because the answer
+    // depends on shifts OUTSIDE the displayed week: a run of days and a rest
+    // gap both straddle the week boundary, and the board only holds one week.
+    // Reaching a few days either side is the difference between "6 days" and
+    // the 9-day run the manager actually just created.
+    const fatigueWindowStart = new Date(windowStart.getTime() - 8 * 24 * 60 * 60 * 1000);
+    const fatigueWindowEnd = new Date(windowEnd.getTime() + 8 * 24 * 60 * 60 * 1000);
+    const neighbouring = await prisma.rosterShift.findMany({
+      where: {
+        staffProfileId: { in: staff.map((member) => member.id) },
+        status: { not: 'CANCELLED' },
+        startsAt: { gte: fatigueWindowStart, lt: fatigueWindowEnd }
+      },
+      select: { id: true, staffProfileId: true, startsAt: true, endsAt: true, breakMinutes: true, status: true }
+    });
+    const byStaff = new Map<string, typeof neighbouring>();
+    for (const row of neighbouring) {
+      if (!row.staffProfileId) continue;
+      const list = byStaff.get(row.staffProfileId) ?? [];
+      list.push(row);
+      byStaff.set(row.staffProfileId, list);
+    }
+    const fatigue: Array<{ shiftId: string; staffProfileId: string; warnings: FatigueWarning[] }> = [];
+    for (const shift of shifts) {
+      if (!shift.staffProfileId || shift.status === 'CANCELLED') continue;
+      const warnings = checkFatigue(shift, byStaff.get(shift.staffProfileId) ?? []);
+      if (warnings.length) fatigue.push({ shiftId: shift.id, staffProfileId: shift.staffProfileId, warnings });
+    }
+
     return {
       staff: redacted,
       shifts,
       availability: availability.rules,
       unavailability: availability.blocks,
+      fatigue,
       generatedAt: new Date().toISOString()
     };
   },
@@ -4079,6 +4151,7 @@ export const staffService = {
     if (endsAt <= startsAt) {
       throw new HttpError(400, 'Roster shift must end after it starts');
     }
+    await assertCertifiedForShift(data.staffProfileId, startsAt);
 
     return prisma.rosterShift.create({
       data: {
@@ -4157,6 +4230,12 @@ export const staffService = {
     if (actor && !actor.isAdmin && actor.role !== 'ADMIN' && actor.venue && targetVenue && targetVenue !== actor.venue) {
       throw new HttpError(403, 'Managers cannot move shifts outside their venue.');
     }
+    // Checked on every update, not just reassignment: moving a shift later can
+    // push it past an expiry that the original time was inside.
+    await assertCertifiedForShift(
+      data.staffProfileId !== undefined ? data.staffProfileId : existing.staffProfileId,
+      effectiveStart
+    );
 
     return prisma.rosterShift.update({
       where: { id },

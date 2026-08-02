@@ -33,6 +33,7 @@ import type {
   StaffLeaveType,
   StaffManagementEvent,
   StaffManagerDashboardPayload,
+  FatigueWarning,
   StaffMyRosterPayload,
   StaffOpenShift,
   StaffShiftClaim,
@@ -9991,6 +9992,10 @@ function RosterPage({
   // shifts rather than discovered after publishing.
   const [availabilityRules, setAvailabilityRules] = useState<Array<AvailabilityRule & { staffProfileId: string }>>([]);
   const [unavailability, setUnavailability] = useState<Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>>([]);
+  // Fatigue is computed by the API, which can see the shifts either side of the
+  // displayed week. A run of days or a short rest gap straddles the boundary,
+  // so the board cannot work it out from what it holds.
+  const [fatigue, setFatigue] = useState<Array<{ shiftId: string; staffProfileId: string; warnings: FatigueWarning[] }>>([]);
   // One level of undo for the last board action. Quick-add makes a stray click
   // cheap to make, so it has to be cheap to take back.
   const [lastUndo, setLastUndo] = useState<{ label: string; run: () => Promise<void> } | null>(null);
@@ -10003,10 +10008,12 @@ function RosterPage({
       shifts: RosterShift[];
       availability?: Array<AvailabilityRule & { staffProfileId: string }>;
       unavailability?: Array<{ staffProfileId: string; startsAt: string; endsAt: string; reason: string | null }>;
+      fatigue?: Array<{ shiftId: string; staffProfileId: string; warnings: FatigueWarning[] }>;
     }>(`/api/staff/roster-board${query}`);
     setShifts(board.shifts);
     setAvailabilityRules(board.availability ?? []);
     setUnavailability(board.unavailability ?? []);
+    setFatigue(board.fatigue ?? []);
   }, []);
 
   /**
@@ -10084,6 +10091,10 @@ function RosterPage({
         .map((block) => ({ startsAt: new Date(block.startsAt), endsAt: new Date(block.endsAt), reason: block.reason }))
     ),
     [availabilityRules, unavailability]
+  );
+  const fatigueByShift = useMemo(
+    () => new Map(fatigue.map((entry) => [entry.shiftId, entry.warnings])),
+    [fatigue]
   );
   const venueRoster = useMemo(() => shifts
     .filter((shift) => venueFilter === 'all' || shift.venue === venueFilter || shift.staffProfile?.venue === venueFilter)
@@ -12164,7 +12175,8 @@ function RosterPage({
                               draggable
                               role="button"
                               tabIndex={0}
-                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isOpenShift(shift) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''}`}
+                              className={`deputy-shift-card deputy-shift-${shift.status.toLowerCase()} ${isDeputyImportedShift(shift) ? 'is-deputy-import' : ''} ${isOpenShift(shift) ? 'is-unallocated' : ''} ${draggingShiftId === shift.id ? 'is-dragging' : ''} ${staffDropTargetShiftId === shift.id ? 'is-staff-drop-target' : ''} ${fatigueByShift.has(shift.id) ? 'has-fatigue' : ''}`}
+                              title={fatigueByShift.get(shift.id)?.map((w) => w.message).join('\n')}
                               style={areaStyle(shift.area || row.label)}
                               onDragStart={(event) => handleDragStart(event, shift)}
                               onDragEnd={() => setDraggingShiftId(null)}
@@ -12190,6 +12202,14 @@ function RosterPage({
                             >
                               <span className="deputy-shift-topline">
                                 <strong>{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}</strong>
+                                {fatigueByShift.has(shift.id) ? (
+                                  <em
+                                    className="deputy-shift-fatigue-flag"
+                                    aria-label={fatigueByShift.get(shift.id)!.map((w) => w.message).join(' ')}
+                                  >
+                                    !
+                                  </em>
+                                ) : null}
                                 <em className={`deputy-shift-status-pill is-${shift.status.toLowerCase()}`}>
                                   {shift.status === 'PUBLISHED' ? 'Live' : shift.status.toLowerCase()}
                                 </em>
