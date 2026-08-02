@@ -3364,24 +3364,25 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   display: grid;
   gap: 3px;
   padding: 14px 16px;
-  /* Same 56px floor as the rest of this screen — it is used at arm's length,
-     one-handed, by someone mid-service. */
+  /* Same generous floor as the rest of this screen — it is used at arm's
+     length, one-handed, by someone mid-service. */
   min-height: 68px;
-  border: 1px solid rgba(31, 53, 36, 0.18);
+  border: 1px solid rgba(231, 205, 139, 0.32);
   border-radius: 14px;
-  background: #fff;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
   text-align: left;
   font: inherit;
   cursor: pointer;
 }
 .counter-tenders button strong { font-size: 15px; }
-.counter-tenders button small { font-size: 12px; opacity: 0.65; }
+.counter-tenders button small { font-size: 12px; opacity: 0.62; }
 .counter-tenders button.is-on {
-  border-color: #1f3524;
-  background: #1f3524;
-  color: #f6f2e9;
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
 }
-.counter-tenders button.is-on small { opacity: 0.8; }
+.counter-tenders button.is-on small { opacity: 0.75; }
 
 .counter-pay { text-align: center; }
 .counter-qr {
@@ -3409,4 +3410,88 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   font-size: 24px;
   letter-spacing: 0.12em;
   text-transform: uppercase;
+}
+
+
+/* ── Counter on a phone ───────────────────────────────────────────────── */
+/*
+ * The counter was built for an iPad on the pass. On an iPhone the same screen
+ * is held one-handed, mid-service, and three things break: the shell runs
+ * under the Dynamic Island and the home indicator, the header eats a fifth of
+ * the screen, and the button you came to press is below the fold behind a
+ * scroll.
+ */
+.counter {
+  /* dvh, not vh: iOS Safari's toolbar shrinks the viewport as you scroll, and
+     vh keeps measuring the tall version — leaving the bottom of the screen
+     under the browser chrome. */
+  height: 100dvh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  box-sizing: border-box;
+}
+
+@media (max-width: 560px) {
+  .counter-bar {
+    padding: 12px 16px;
+    gap: 10px;
+  }
+  /* The wordmark is the first thing to go — whoever is holding the phone
+     knows what app they opened. */
+  .counter-brand { display: none; }
+  .counter-modes {
+    width: 100%;
+    gap: 6px;
+  }
+  .counter-modes button {
+    flex: 1;
+    min-height: 48px;
+    padding: 0 10px;
+    font-size: 14px;
+    white-space: nowrap;
+  }
+
+  .counter-body { padding: 20px 16px 10px; }
+
+  .counter-amounts { gap: 8px; }
+  .counter-amounts button { min-height: 60px; font-size: 20px; }
+
+  .counter-tenders {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .counter-tenders button {
+    min-height: 60px;
+    padding: 10px 12px;
+  }
+  .counter-tenders button strong { font-size: 14px; }
+  .counter-tenders button small { font-size: 11px; }
+
+  /* The action follows you down the page instead of hiding under the fold.
+     Held one-handed, the bottom of the screen is the only place a thumb
+     reliably reaches. */
+  .counter-primary {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin-top: auto;
+    /* The page scrolls underneath a sticky element, so it needs its own solid
+       ground and a fade above it — otherwise the tender buttons read straight
+       through the label. */
+    box-shadow:
+      0 -10px 0 0 #16210f,
+      0 -30px 26px -12px rgba(18, 28, 16, 0.95);
+  }
+
+  .counter-code { font-size: 34px; letter-spacing: 0.1em; }
+  .counter-qr { width: 200px; height: 200px; }
+}
+
+/* Landscape on a phone is short, not narrow — claw back vertical space. */
+@media (max-height: 480px) and (max-width: 900px) {
+  .counter-bar { padding: 8px 16px; }
+  .counter-body { padding: 14px 16px; }
+  .counter-amounts button { min-height: 52px; }
 }
