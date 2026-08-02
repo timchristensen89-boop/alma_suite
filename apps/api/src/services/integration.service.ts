@@ -7843,7 +7843,15 @@ export const integrationService = {
       orderBy: [{ workDate: 'asc' }, { clockInAt: 'asc' }],
       include: {
         staffProfile: {
-          select: { id: true, firstName: true, lastName: true, email: true, xeroEmployeeId: true, xeroEarningsRateId: true }
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            xeroEmployeeId: true,
+            xeroEarningsRateId: true,
+            mergedIntoStaffProfileId: true
+          }
         }
       }
     });
@@ -7958,13 +7966,34 @@ export const integrationService = {
       return resolved;
     };
 
-    // Group Alma rows by staff member; one employee can produce several Xero
-    // timesheets when the window spans more than one of their pay periods.
+    // A merged duplicate keeps its own roster and timesheet history by design —
+    // the merge archives the profile rather than moving the rows. Payroll
+    // identity, though, belongs to the surviving profile: the Xero employee
+    // link and earnings rate live there. Resolve through the merge pointer so
+    // a person's shifts from both profiles push as one employee, and group by
+    // the surviving id so they land in a single timesheet per pay period
+    // instead of two competing ones.
+    const mergedTargetIds = [
+      ...new Set(
+        entries
+          .map((entry) => entry.staffProfile.mergedIntoStaffProfileId)
+          .filter((id): id is string => Boolean(id))
+      )
+    ];
+    const canonicalProfiles = mergedTargetIds.length
+      ? await prisma.staffProfile.findMany({
+          where: { id: { in: mergedTargetIds } },
+          select: { id: true, firstName: true, lastName: true, xeroEmployeeId: true, xeroEarningsRateId: true }
+        })
+      : [];
+    const canonicalById = new Map(canonicalProfiles.map((profile) => [profile.id, profile]));
+
     const byStaff = new Map<string, typeof entries>();
     for (const entry of entries) {
-      const list = byStaff.get(entry.staffProfileId) ?? [];
+      const key = entry.staffProfile.mergedIntoStaffProfileId ?? entry.staffProfileId;
+      const list = byStaff.get(key) ?? [];
       list.push(entry);
-      byStaff.set(entry.staffProfileId, list);
+      byStaff.set(key, list);
     }
 
     let publicHolidayWarned = false;
@@ -7975,9 +8004,16 @@ export const integrationService = {
     let skipped = 0;
 
     for (const [staffProfileId, staffEntries] of byStaff) {
-      const profile = staffEntries[0]?.staffProfile;
-      if (!profile) continue;
-      const name = `${profile.firstName} ${profile.lastName}`.trim();
+      const ownProfile = staffEntries[0]?.staffProfile;
+      if (!ownProfile) continue;
+      // The surviving profile when these rows came from a merged duplicate.
+      const canonical = canonicalById.get(staffProfileId);
+      const profile = canonical
+        ? { ...ownProfile, xeroEmployeeId: canonical.xeroEmployeeId, xeroEarningsRateId: canonical.xeroEarningsRateId }
+        : ownProfile;
+      const name = canonical
+        ? `${canonical.firstName} ${canonical.lastName}`.trim()
+        : `${ownProfile.firstName} ${ownProfile.lastName}`.trim();
       const fail = (message: string) => {
         failed += 1;
         results.push({ employee: name, staffProfileId, status: 'failed', message, hours: 0, periodStart: null, periodEnd: null, xeroTimesheetId: null });
