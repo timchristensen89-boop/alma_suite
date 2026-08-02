@@ -122,6 +122,10 @@ function isStaffWriteAllowed(req: Request) {
   // Claiming an open shift is a request, not an assignment — the service still
   // refuses clashes, leave and other venues, and a manager decides the outcome.
   if (/^\/api\/staff\/me\/open-shifts\/[^/]+\/(claim|withdraw)$/.test(req.path) && req.method === 'POST') return true;
+  // Offering your own shift for swap is likewise a request, not a handover:
+  // the shift stays yours, and stays costed against you, until a manager
+  // approves someone taking it. The service checks you own the shift.
+  if (/^\/api\/staff\/me\/shifts\/[^/]+\/(offer-swap|cancel-swap)$/.test(req.path) && req.method === 'POST') return true;
   if (req.path === '/api/staff/me/unavailability' && req.method === 'POST') return true;
   if (/^\/api\/staff\/unavailability\/[^/]+$/.test(req.path) && req.method === 'DELETE') return true;
   if (req.path === '/api/staff/me/clock/in' && req.method === 'POST') return true;

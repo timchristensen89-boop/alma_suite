@@ -1,4 +1,5 @@
 export * from './availability.js';
+export * from './shift-claims.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,
@@ -890,7 +891,13 @@ export const suiteChatMessageUpdateSchema = z.object({
 });
 
 export const rosterShiftInputSchema = z.object({
-  staffProfileId: z.string().min(1),
+  /**
+   * NULL creates an OPEN shift — published work with nobody on it, which staff
+   * can then claim. Without this a manager could only ever roster a named
+   * person, and the only open shifts in the system would be ones the Deputy
+   * import happened to create.
+   */
+  staffProfileId: z.string().min(1).nullable(),
   venue: z.string().optional().or(z.literal('')),
   area: z.string().optional().or(z.literal('')),
   roleTitle: z.string().optional().or(z.literal('')),
@@ -3431,7 +3438,8 @@ export type SuiteChatMessageUpdateInput = z.infer<typeof suiteChatMessageUpdateS
 
 export type RosterShift = {
   id: string;
-  staffProfileId: string;
+  /** NULL means the shift is open — nobody is on it yet. */
+  staffProfileId: string | null;
   venue: string | null;
   area: string | null;
   roleTitle: string | null;
@@ -3440,6 +3448,9 @@ export type RosterShift = {
   breakMinutes: number;
   status: RosterShiftStatus;
   notes: string | null;
+  /** Set when the holder has offered this shift to the team for swap. */
+  offeredAt?: string | null;
+  offerNote?: string | null;
   createdAt: string;
   updatedAt: string;
   staffProfile?: Pick<StaffProfile, 'id' | 'firstName' | 'lastName' | 'roleTitle' | 'venue' | 'employmentStatus'>;
@@ -4492,6 +4503,10 @@ export type StaffOpenShift = {
   notes: string | null;
   claimCount: number;
   myClaimStatus: 'PENDING' | 'APPROVED' | 'DECLINED' | 'WITHDRAWN' | null;
+  /** True when this is somebody's shift they have offered to swap away. */
+  isSwap: boolean;
+  offeredBy: { id: string; firstName: string; lastName: string } | null;
+  offerNote: string | null;
 };
 
 export type StaffShiftClaim = {
@@ -4507,6 +4522,9 @@ export type StaffShiftClaim = {
     startsAt: string;
     endsAt: string;
     breakMinutes: number;
+    isSwap: boolean;
+    offeredBy: { id: string; firstName: string; lastName: string } | null;
+    offerNote: string | null;
   } | null;
 };
 

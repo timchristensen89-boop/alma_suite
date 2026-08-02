@@ -2109,6 +2109,9 @@ function StaffMemberRosterPage() {
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [messageTarget, setMessageTarget] = useState<string | null>(null);
+  // Offering or cancelling changes what the open-shifts card should show, and
+  // that card owns its own fetch. Bumping this re-pulls it.
+  const [swapRefresh, setSwapRefresh] = useState(0);
 
   const loadRoster = useCallback(async () => {
     setLoading(true);
@@ -2152,6 +2155,44 @@ function StaffMemberRosterPage() {
     }
   }
 
+  // Offering is not dropping: the shift stays yours, and stays costed against
+  // you, until a manager approves somebody taking it.
+  async function offerSwap(shift: RosterShift) {
+    const note = window.prompt('Anything your team should know? (optional)') ?? '';
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/shifts/${shift.id}/offer-swap`, {
+        method: 'POST',
+        body: JSON.stringify({ note: note.trim() || null })
+      });
+      await loadRoster();
+      setSwapRefresh((n) => n + 1);
+      setMessage('Offered to the team. It stays yours until someone takes it.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not offer that shift.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function cancelSwap(shift: RosterShift) {
+    setSaving(true);
+    setMessage(null);
+    setMessageTarget(shift.id);
+    try {
+      await api(`/api/staff/me/shifts/${shift.id}/cancel-swap`, { method: 'POST', body: JSON.stringify({}) });
+      await loadRoster();
+      setSwapRefresh((n) => n + 1);
+      setMessage('Taken back off the board.');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not cancel that offer.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   return (
     <div className="page-stack">
       <PageHeader
@@ -2169,7 +2210,7 @@ function StaffMemberRosterPage() {
 
       {message && !messageTarget ? <p className={message.includes('Could') ? 'error-text' : 'subtle'}>{message}</p> : null}
 
-      <OpenShiftsCard onClaimApproved={loadRoster} />
+      <OpenShiftsCard onClaimApproved={loadRoster} refreshKey={swapRefresh} />
 
       <Card title="Upcoming shifts" subtitle="Upcoming rostered shifts and confirmations." padding="none">
         {loading ? <Spinner label="Loading roster…" /> : null}
@@ -2188,6 +2229,18 @@ function StaffMemberRosterPage() {
                 {!shift.confirmation && shift.status === 'PUBLISHED' ? (
                   <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void confirmShift(shift)}>
                     {saving ? 'Saving…' : 'Confirm'}
+                  </Button>
+                ) : null}
+                {shift.status === 'PUBLISHED' && shift.offeredAt ? (
+                  <>
+                    <Badge tone="info">Offered to team</Badge>
+                    <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void cancelSwap(shift)}>
+                      Take back
+                    </Button>
+                  </>
+                ) : shift.status === 'PUBLISHED' ? (
+                  <Button type="button" size="sm" variant="ghost" disabled={saving} onClick={() => void offerSwap(shift)}>
+                    Offer swap
                   </Button>
                 ) : null}
                 <ActionFeedback message={messageTarget === shift.id ? message : null} tone={message?.includes('Could') ? 'error' : 'success'} />
@@ -2274,7 +2327,7 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
   return (
     <Card
       title="Shift requests"
-      subtitle="Staff who have offered to work an open shift. Approving assigns it and declines the rest."
+      subtitle="Staff asking to work an open shift, or to take a shift a teammate has offered to swap. Approving assigns it and declines the rest."
       padding="none"
       action={<Badge tone="warning">{claims.length} waiting</Badge>}
     >
@@ -2287,10 +2340,17 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
               <span>
                 <strong>
                   {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })} · {timeOf(shift.startsAt)}-{timeOf(shift.endsAt)}
+                  {shift.isSwap ? <Badge tone="info">Swap</Badge> : null}
                 </strong>
                 <span className="subtle">
                   {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}
                   {group.length > 1 ? ` · ${group.length} people want it` : ''}
+                </span>
+                <span className="subtle">
+                  {shift.isSwap && shift.offeredBy
+                    ? `Currently ${shift.offeredBy.firstName} ${shift.offeredBy.lastName}’s shift — approving moves it off them`
+                    : 'Nobody rostered on'}
+                  {shift.offerNote ? ` — “${shift.offerNote}”` : ''}
                 </span>
               </span>
               {group.map((claim) => (
@@ -2304,7 +2364,7 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
                   </span>
                   <span className="staff-row-actions">
                     <Button type="button" size="sm" disabled={busyId === claim.id} onClick={() => void decide(claim, true)}>
-                      {busyId === claim.id ? 'Saving…' : 'Give them the shift'}
+                      {busyId === claim.id ? 'Saving…' : shift.isSwap ? 'Approve swap' : 'Give them the shift'}
                     </Button>
                     <Button type="button" size="sm" variant="ghost" disabled={busyId === claim.id} onClick={() => void decide(claim, false)}>
                       Decline
@@ -2324,7 +2384,7 @@ function ShiftClaimsPanel({ onDecided }: { onDecided: () => Promise<void> }) {
 // Shifts published with nobody on them. Staff put their hand up here; a
 // manager decides. Hidden entirely when there is nothing open, so the roster
 // page doesn't carry a permanently empty box.
-function OpenShiftsCard({ onClaimApproved }: { onClaimApproved: () => Promise<void> }) {
+function OpenShiftsCard({ onClaimApproved, refreshKey = 0 }: { onClaimApproved: () => Promise<void>; refreshKey?: number }) {
   const [shifts, setShifts] = useState<StaffOpenShift[]>([]);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -2347,7 +2407,7 @@ function OpenShiftsCard({ onClaimApproved }: { onClaimApproved: () => Promise<vo
 
   useEffect(() => {
     void load();
-  }, [load]);
+  }, [load, refreshKey]);
 
   async function claim(shift: StaffOpenShift) {
     setBusyId(shift.id);
@@ -2391,10 +2451,10 @@ function OpenShiftsCard({ onClaimApproved }: { onClaimApproved: () => Promise<vo
 
   return (
     <Card
-      title="Open shifts"
-      subtitle="Shifts that still need somebody. Put your hand up and a manager will confirm."
+      title="Shifts you can pick up"
+      subtitle="Shifts that still need somebody, and shifts your team have offered to swap. Put your hand up and a manager will confirm."
       padding="none"
-      action={<Badge tone="warning">{shifts.length} open</Badge>}
+      action={<Badge tone="warning">{shifts.length} available</Badge>}
     >
       {loading ? <Spinner label="Loading open shifts…" /> : null}
       {message && !messageTarget ? <p className="error-text" style={{ padding: '0 1rem' }}>{message}</p> : null}
@@ -2402,8 +2462,17 @@ function OpenShiftsCard({ onClaimApproved }: { onClaimApproved: () => Promise<vo
         {shifts.map((shift) => (
           <div key={shift.id} className="staff-mobile-shift-card">
             <span>
-              <strong>{new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}</strong>
+              <strong>
+                {new Date(shift.startsAt).toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'short' })}
+                {shift.isSwap ? <Badge tone="info">Swap</Badge> : null}
+              </strong>
               <span className="subtle">{timeOf(shift.startsAt)}-{timeOf(shift.endsAt)} · {shift.area || shift.roleTitle || 'Shift'} · {shift.venue || 'No venue'}</span>
+              <span className="subtle">
+                {shift.isSwap && shift.offeredBy
+                  ? `${shift.offeredBy.firstName} ${shift.offeredBy.lastName} wants to swap this`
+                  : 'Nobody rostered on'}
+                {shift.offerNote ? ` — “${shift.offerNote}”` : ''}
+              </span>
               <span className="subtle">
                 {shift.breakMinutes ? `${shift.breakMinutes}m break` : 'No break planned'}
                 {shift.claimCount > 0 ? ` · ${shift.claimCount} ${shift.claimCount === 1 ? 'person has' : 'people have'} asked` : ' · Nobody has asked yet'}
@@ -10036,7 +10105,7 @@ function RosterPage({
     return rates.length ? Math.round(rates.reduce((sum, rate) => sum + rate, 0) / rates.length) : 3200;
   }, [activeStaff]);
   const rosterCostCents = useMemo(() => visibleRoster.reduce((sum, shift) => {
-    const member = staffById.get(shift.staffProfileId);
+    const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
     // Use the staffer's effective hourly cost; fall back to the roster average
     // when they have no usable rate (or it was clamped away as bad data).
     const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
@@ -10152,7 +10221,7 @@ function RosterPage({
   const dailySummaries = useMemo(() => days.map((day) => {
     const shifts = visibleRoster.filter((shift) => sameDay(new Date(shift.startsAt), day));
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staffById.get(shift.staffProfileId);
+      const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
       const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
@@ -10252,7 +10321,7 @@ function RosterPage({
     const shifts = visibleRoster.filter((shift) => shift.venue === venue || shift.staffProfile?.venue === venue);
     const plannedHours = shifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
     const plannedCostCents = shifts.reduce((sum, shift) => {
-      const member = staffById.get(shift.staffProfileId);
+      const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
       const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
       return sum + Math.round(shiftHours(shift) * rateCents);
     }, 0);
@@ -10590,8 +10659,12 @@ function RosterPage({
 
   async function saveShift() {
     setMessageTarget('shift-save');
-    const effectiveStaffProfileId = staffProfileId || activeStaff[0]?.id || '';
-    if (!effectiveStaffProfileId) {
+    // Editing a shift that is deliberately open must not quietly hand it to
+    // whoever happens to be first in the list. On an open shift, "nobody
+    // chosen" means it stays open — the manager has to pick someone on purpose.
+    const editingOpenShift = editingShift != null && editingShift.staffProfileId == null;
+    const effectiveStaffProfileId = staffProfileId || (editingOpenShift ? '' : activeStaff[0]?.id || '');
+    if (!effectiveStaffProfileId && !editingOpenShift) {
       setMessage('Choose a team member before adding the shift.');
       return;
     }
@@ -10625,7 +10698,8 @@ function RosterPage({
     try {
       const member = staff.find((item) => item.id === effectiveStaffProfileId);
       const body = {
-        staffProfileId: effectiveStaffProfileId,
+        // Empty means open: the API takes null and leaves the shift unfilled.
+        staffProfileId: effectiveStaffProfileId || null,
         venue: shiftVenue || member?.venue || '',
         area: area || 'Floor',
         roleTitle: roleTitle || member?.roleTitle || '',
@@ -10676,7 +10750,7 @@ function RosterPage({
     setShiftContextMenu(null);
     setEditingShift(shift);
     openShiftPanel();
-    setStaffProfileId(shift.staffProfileId);
+    setStaffProfileId(shift.staffProfileId ?? '');
     setShiftVenue(shift.venue ?? shift.staffProfile?.venue ?? '');
     setDate(toDateInput(new Date(shift.startsAt)));
     setStartTime(toTimeInput(new Date(shift.startsAt)));
@@ -11962,7 +12036,7 @@ function RosterPage({
                         const dayShifts = row.shifts.filter((shift) => sameDay(new Date(shift.startsAt), day));
                         const dayHours = dayShifts.reduce((sum, shift) => sum + shiftHours(shift), 0);
                         const dayCostCents = dayShifts.reduce((sum, shift) => {
-                          const member = staffById.get(shift.staffProfileId);
+                          const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
                           const rateCents = (member ? rosterHourlyRateCents(member) : null) ?? averageRateCents;
                           return sum + Math.round(shiftHours(shift) * rateCents);
                         }, 0);
@@ -13107,11 +13181,12 @@ function rosterShiftStaffName(shift: RosterShift) {
 function countRosterOverlaps(shifts: RosterShift[]) {
   let conflicts = 0;
   const byStaff = shifts
-    .filter((shift) => shift.status !== 'CANCELLED')
+    // An open shift is on nobody's roster, so it cannot clash with anything.
+    .filter((shift) => shift.status !== 'CANCELLED' && shift.staffProfileId !== null)
     .reduce((groups, shift) => {
-      const group = groups.get(shift.staffProfileId) ?? [];
+      const group = groups.get(shift.staffProfileId!) ?? [];
       group.push(shift);
-      groups.set(shift.staffProfileId, group);
+      groups.set(shift.staffProfileId!, group);
       return groups;
     }, new Map<string, RosterShift[]>());
 
@@ -15728,7 +15803,7 @@ function ManagerDashboardPage({ staff, roster }: { staff: StaffProfile[]; roster
   const launchMondayEnd = addDays(launchMonday, 1);
   const activeLaunchStaffIds = new Set(activeLaunchStaff.map((member) => member.id));
   const mondayShiftCount = roster
-    .filter((shift) => activeLaunchStaffIds.has(shift.staffProfileId))
+    .filter((shift) => shift.staffProfileId !== null && activeLaunchStaffIds.has(shift.staffProfileId))
     .filter((shift) => {
       const startsAt = new Date(shift.startsAt);
       return startsAt >= launchMonday && startsAt < launchMondayEnd && shift.status !== 'CANCELLED';
@@ -16323,7 +16398,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   function prefillFromShift(shift: RosterShift) {
     setMessageTarget(`prefill:${shift.id}`);
     setSelectedRosterShiftId(shift.id);
-    setStaffProfileId(shift.staffProfileId);
+    setStaffProfileId(shift.staffProfileId ?? '');
     setWorkDate(toDateInput(new Date(shift.startsAt)));
     setStartTime(toTimeInput(new Date(shift.startsAt)));
     setEndTime(toTimeInput(new Date(shift.endsAt)));

@@ -631,6 +631,23 @@ staffRouter.post('/me/open-shifts/:id/withdraw', async (req, res, next) => {
   }
 });
 
+// Offer one of your own shifts to the team, or take the offer back down.
+staffRouter.post('/me/shifts/:id/offer-swap', async (req, res, next) => {
+  try {
+    res.status(201).json(await staffService.offerShiftForSwap(String(req.params.id), req.body, req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
+staffRouter.post('/me/shifts/:id/cancel-swap', async (req, res, next) => {
+  try {
+    res.json(await staffService.cancelShiftSwap(String(req.params.id), req.user));
+  } catch (error) {
+    next(error);
+  }
+});
+
 staffRouter.get('/roster/claims', requireManager, async (req, res, next) => {
   try {
     res.json(await staffService.listPendingClaims(req.user));

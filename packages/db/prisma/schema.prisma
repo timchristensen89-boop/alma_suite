@@ -678,6 +678,7 @@ model StaffProfile {
   roleTemplateId               String?
   roleTemplate                 StaffRoleTemplate?         @relation(fields: [roleTemplateId], references: [id], onDelete: SetNull)
   rosterShifts                 RosterShift[]
+  offeredRosterShifts          RosterShift[]                @relation("RosterShiftOfferedBy")
   shiftTaskAssignments         ShiftTaskAssignment[]
   shiftConfirmations           StaffShiftConfirmation[]
   clockSessions                StaffClockSession[]
@@ -1097,9 +1098,17 @@ model RosterShift {
   breakMinutes         Int                      @default(0)
   status               RosterShiftStatus        @default(DRAFT)
   notes                String?
+  /// A shift whose holder has offered to swap it away. offeredAt being set is
+  /// what makes it visible to the rest of the team; offeredByStaffProfileId
+  /// records WHO offered it, so a manager reassigning the shift while an offer
+  /// is live cannot make it read as though the new holder offered it.
+  offeredAt            DateTime?
+  offeredByStaffProfileId String?
+  offerNote            String?
   createdAt            DateTime                 @default(now())
   updatedAt            DateTime                 @updatedAt
   staffProfile         StaffProfile?            @relation(fields: [staffProfileId], references: [id], onDelete: Cascade)
+  offeredBy            StaffProfile?            @relation("RosterShiftOfferedBy", fields: [offeredByStaffProfileId], references: [id], onDelete: SetNull)
   shiftConfirmations   StaffShiftConfirmation[]
   shiftTaskAssignments ShiftTaskAssignment[]
   clockSessions        StaffClockSession[]
