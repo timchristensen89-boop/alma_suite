@@ -1,6 +1,7 @@
 export * from './availability.js';
 export * from './shift-claims.js';
 export * from './rostering-guards.js';
+export * from './invoice-matching.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,
@@ -109,7 +110,13 @@ export const stockReorderNoticeStatusSchema = z.enum(['OPEN', 'RESOLVED', 'DISMI
 export const stockInvoiceMatchingStatusSchema = z.enum([
   'AUTO_MATCHED',
   'MANUAL_MATCHED',
-  'NEEDS_REVIEW'
+  'NEEDS_REVIEW',
+  /**
+   * A charge, fee or header line — real on the invoice, but not a product and
+   * never matchable. Distinct from NEEDS_REVIEW so it stops asking for work
+   * nobody can do: these were a quarter of the production review queue.
+   */
+  'NON_STOCK'
 ]);
 export const stockInvoiceTriageStatusSchema = z.enum([
   'PENDING',

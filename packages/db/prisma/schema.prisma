@@ -2615,6 +2615,7 @@ model StockItem {
   transfers           StockTransfer[]
   purchaseOrderLines  PurchaseOrderLine[]
   priceListItems      SupplierPriceListItem[]
+  aliases             StockItemAlias[]
 
   @@index([categoryId])
   @@index([status])
@@ -3040,6 +3041,7 @@ model Supplier {
   deliveryChecks StockDeliveryCheck[]
   purchaseOrders PurchaseOrder[]
   priceListItems SupplierPriceListItem[]
+  itemAliases    StockItemAlias[]
 
   @@index([status])
   @@index([name])
@@ -3176,6 +3178,32 @@ model SupplierInvoiceDocument {
 }
 
 // @domain: stock | home: suite
+/// A supplier's wording for a product, tied to the stock item somebody
+/// confirmed it means. Invoice descriptions repeat verbatim month after month
+/// — in production the same string recurred up to 13 times — so remembering a
+/// human's answer once removes that work permanently.
+// @domain: stock | home: stock
+model StockItemAlias {
+  id           String    @id @default(cuid())
+  /// Normalised supplier description. See aliasKey() in @alma/shared.
+  aliasKey     String
+  /// NULL means "this wording applies whoever sends it".
+  supplierId   String?
+  stockItemId  String
+  /// The description exactly as it arrived, for a human reviewing the alias.
+  sourceText   String
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  supplier  Supplier?  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  stockItem StockItem  @relation(fields: [stockItemId], references: [id], onDelete: Cascade)
+
+  @@unique([aliasKey, supplierId])
+  @@index([stockItemId])
+  @@map("stock_item_aliases")
+}
+
 model SupplierInvoiceLine {
   id                String          @id @default(cuid())
   supplierInvoiceId String

@@ -4,7 +4,11 @@ import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
   invoiceExclusionRuleInputSchema,
+  aliasKey,
+  matchInvoiceLine,
+  suggestItems,
   normaliseSupplierName,
+  stockInvoiceMatchingStatusSchema,
   stockInvoiceDeleteInputSchema,
   stockInvoiceImportInputSchema,
   stockInvoiceLineRematchInputSchema,
@@ -212,14 +216,11 @@ function buildHash(parts: Array<string | number | null | undefined>) {
 }
 
 function matchingStatus(value: string): StockInvoiceMatchingStatus {
-  if (
-    value === 'AUTO_MATCHED' ||
-    value === 'MANUAL_MATCHED' ||
-    value === 'NEEDS_REVIEW'
-  ) {
-    return value;
-  }
-  return 'NEEDS_REVIEW';
+  // Parsed against the schema rather than a second hand-written list — the
+  // duplicate list here silently coerced NON_STOCK back to NEEDS_REVIEW, so
+  // charge lines kept reappearing in the queue after being set aside.
+  const parsed = stockInvoiceMatchingStatusSchema.safeParse(value);
+  return parsed.success ? parsed.data : 'NEEDS_REVIEW';
 }
 
 function triageStatusValue(value: string): StockInvoiceTriageStatus {
@@ -360,30 +361,24 @@ function normaliseInvoice(
   };
 }
 
+/**
+ * Wraps the shared matcher so the service, its tests and any review screen all
+ * decide a match the same way. The old logic here was exact SKU, exact name,
+ * or item-name-as-substring — which left 71% of production lines unmatched
+ * because supplier descriptions interleave brand, pack size and order
+ * commentary through the product name.
+ */
 function findItemMatch(
   line: NormalisedLine,
-  items: MatchItemRow[]
+  items: MatchItemRow[],
+  context: { supplierName?: string | null; aliases?: Map<string, string> } = {}
 ): { itemId: string | null; status: StockInvoiceMatchingStatus } {
-  const code = normaliseKey(line.itemCode ?? '');
-  if (code) {
-    const skuMatch = items.find((item) => item.sku && normaliseKey(item.sku) === code);
-    if (skuMatch) return { itemId: skuMatch.id, status: 'AUTO_MATCHED' };
-  }
-
-  const description = normaliseMatchText(line.description);
-  const exact = items.find((item) => normaliseMatchText(item.name) === description);
-  if (exact) return { itemId: exact.id, status: 'AUTO_MATCHED' };
-
-  const contained = [...items]
-    .filter((item) => {
-      const name = normaliseMatchText(item.name);
-      return name.length >= 4 && description.includes(name);
-    })
-    .sort((a, b) => b.name.length - a.name.length)[0];
-
-  return contained
-    ? { itemId: contained.id, status: 'AUTO_MATCHED' }
-    : { itemId: null, status: 'NEEDS_REVIEW' };
+  const match = matchInvoiceLine(
+    { description: line.description, itemCode: line.itemCode },
+    items.map((item) => ({ id: item.id, name: item.name, sku: item.sku })),
+    context
+  );
+  return { itemId: match.itemId, status: match.status };
 }
 
 async function ensureSupplier(
@@ -1181,6 +1176,20 @@ export const invoicesService = {
           });
         }
 
+        // Matches somebody already confirmed for this supplier's wording, so an
+        // import never re-asks a question that has been answered.
+        const aliasRows = await tx.stockItemAlias.findMany({
+          where: { OR: [{ supplierId: null }, ...(invoice.supplierId ? [{ supplierId: invoice.supplierId }] : [])] },
+          select: { aliasKey: true, supplierId: true, stockItemId: true }
+        });
+        const importAliases = new Map<string, string>();
+        for (const row of aliasRows) {
+          // A supplier-specific alias wins over a global one: the same words
+          // can mean different products in two catalogues.
+          if (row.supplierId === null && importAliases.has(row.aliasKey)) continue;
+          importAliases.set(row.aliasKey, row.stockItemId);
+        }
+
         const lineKeys = invoiceInput.lines.map((line) => line.lineKey);
         await tx.supplierInvoiceLine.deleteMany({
           where: {
@@ -1198,7 +1207,10 @@ export const invoicesService = {
               }
             }
           });
-          const autoMatch = findItemMatch(line, matchItems);
+          const autoMatch = findItemMatch(line, matchItems, {
+            supplierName: invoiceInput.supplierName,
+            aliases: importAliases
+          });
           const preserveManualMatch =
             existingLine?.matchingStatus === 'MANUAL_MATCHED' && existingLine.itemId;
           const itemId = preserveManualMatch ? existingLine.itemId : autoMatch.itemId;
@@ -1310,7 +1322,135 @@ export const invoicesService = {
       include: { item: { select: lineItemSelect } }
     });
 
+    // Remember the answer. The same supplier wording recurs verbatim month
+    // after month, and without this every occurrence asks again — which is why
+    // the review queue never shrank however much of it got cleared.
+    if (itemId) {
+      const invoice = await prisma.supplierInvoice.findUnique({
+        where: { id: existing.supplierInvoiceId },
+        select: { supplierId: true }
+      });
+      const key = aliasKey(existing.description);
+      if (key) {
+        // Not an upsert: the unique key includes a nullable supplierId, and a
+        // NULL cannot be targeted by a compound unique lookup.
+        const supplierId = invoice?.supplierId ?? null;
+        const current = await prisma.stockItemAlias.findFirst({ where: { aliasKey: key, supplierId } });
+        if (current) {
+          await prisma.stockItemAlias.update({
+            where: { id: current.id },
+            data: { stockItemId: itemId, sourceText: existing.description }
+          });
+        } else {
+          await prisma.stockItemAlias.create({
+            data: { aliasKey: key, supplierId, stockItemId: itemId, sourceText: existing.description }
+          });
+        }
+      }
+    }
+
     return toLinePayload(line);
+  },
+
+  /**
+   * Load remembered matches for a supplier. A supplier-specific alias wins over
+   * a global one for the same wording — the same words can mean different
+   * products in two catalogues.
+   */
+  async loadAliases(supplierId: string | null): Promise<Map<string, string>> {
+    const rows = await prisma.stockItemAlias.findMany({
+      where: { OR: [{ supplierId: null }, ...(supplierId ? [{ supplierId }] : [])] },
+      select: { aliasKey: true, supplierId: true, stockItemId: true }
+    });
+    const map = new Map<string, string>();
+    for (const row of rows) {
+      if (row.supplierId === null && map.has(row.aliasKey)) continue;
+      map.set(row.aliasKey, row.stockItemId);
+    }
+    return map;
+  },
+
+  /**
+   * Re-run matching over lines that never found an item.
+   *
+   * Needed because matching improves — a better matcher, a new alias, or a
+   * stock item that did not exist when the invoice arrived. Without this the
+   * backlog stays exactly as wrong as the day it was imported.
+   *
+   * Only ever touches NEEDS_REVIEW lines: a match a human made is never
+   * second-guessed by a machine.
+   */
+  async rematchUnresolved(options: { invoiceId?: string | null; dryRun?: boolean } = {}) {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: {
+        matchingStatus: 'NEEDS_REVIEW',
+        ...(options.invoiceId ? { supplierInvoiceId: options.invoiceId } : {})
+      },
+      select: {
+        id: true, description: true, itemCode: true,
+        invoice: { select: { supplierId: true, supplierName: true } }
+      }
+    });
+    const items = await prisma.stockItem.findMany({ where: { status: 'ACTIVE' }, select: matchItemSelect });
+    const candidates = items.map((item) => ({ id: item.id, name: item.name, sku: item.sku }));
+
+    const aliasCache = new Map<string, Map<string, string>>();
+    let matched = 0;
+    let nonStock = 0;
+    const updates: Array<{ id: string; itemId: string | null; status: StockInvoiceMatchingStatus }> = [];
+
+    for (const line of lines) {
+      const supplierId = line.invoice?.supplierId ?? null;
+      const cacheKey = supplierId ?? '__global__';
+      if (!aliasCache.has(cacheKey)) aliasCache.set(cacheKey, await this.loadAliases(supplierId));
+      const result = matchInvoiceLine(
+        { description: line.description, itemCode: line.itemCode },
+        candidates,
+        { supplierName: line.invoice?.supplierName ?? null, aliases: aliasCache.get(cacheKey) }
+      );
+      if (result.status === 'NON_STOCK') {
+        nonStock += 1;
+        updates.push({ id: line.id, itemId: null, status: 'NON_STOCK' });
+      } else if (result.itemId) {
+        matched += 1;
+        updates.push({ id: line.id, itemId: result.itemId, status: 'AUTO_MATCHED' });
+      }
+    }
+
+    if (!options.dryRun) {
+      for (const update of updates) {
+        await prisma.supplierInvoiceLine.update({
+          where: { id: update.id },
+          data: { itemId: update.itemId, matchingStatus: update.status }
+        });
+      }
+    }
+
+    return {
+      examined: lines.length,
+      matched,
+      nonStock,
+      stillNeedsReview: lines.length - matched - nonStock,
+      dryRun: Boolean(options.dryRun)
+    };
+  },
+
+  /** Ranked candidates for a line a human has to decide. */
+  async suggestionsForLine(lineId: string) {
+    const line = await prisma.supplierInvoiceLine.findUnique({
+      where: { id: lineId },
+      select: { description: true }
+    });
+    if (!line) throw new HttpError(404, 'Invoice line not found');
+    const items = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      select: { id: true, name: true, sku: true, unit: true }
+    });
+    return suggestItems(line.description, items, 6).map((row) => ({
+      itemId: row.item.id,
+      name: row.item.name,
+      confidence: row.confidence
+    }));
   },
 
   async applyLineCost(lineId: string): Promise<StockSupplierInvoiceLine> {

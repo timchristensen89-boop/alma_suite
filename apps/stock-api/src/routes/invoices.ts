@@ -181,6 +181,32 @@ invoicesRouter.delete('/:id', async (req, res, next) => {
   }
 });
 
+// Re-run matching over everything that never found an item. Matching improves
+// — a better matcher, a newly-learned alias, a stock item that did not exist
+// when the invoice arrived — and without this the backlog stays as wrong as
+// the day it was imported. `?dryRun=1` reports what would change.
+invoicesRouter.post('/rematch-unresolved', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.rematchUnresolved({
+      invoiceId: typeof req.body?.invoiceId === 'string' ? req.body.invoiceId : null,
+      dryRun: req.query.dryRun === '1' || req.body?.dryRun === true
+    }));
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Ranked candidates for a line somebody has to decide, so the common case is
+// one tap rather than searching 716 items.
+invoicesRouter.get('/lines/:lineId/suggestions', async (req, res, next) => {
+  try {
+    res.json(await invoicesService.suggestionsForLine(String(req.params.lineId)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.post('/lines/:lineId/rematch', async (req, res, next) => {
   try {
     requireStockManager(req.user);

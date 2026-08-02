@@ -94,6 +94,8 @@ function replaceLine(
     ...invoice,
     lines,
     matchedLineCount: lines.filter((line) => line.itemId).length,
+    // NON_STOCK lines are charges and fees. Counting them as needing review
+    // asks for work that cannot be done — a quarter of the queue was these.
     needsReviewLineCount: lines.filter((line) => line.matchingStatus === 'NEEDS_REVIEW').length,
     lineCount: lines.length
   };
@@ -867,6 +869,8 @@ export function InvoicesPage() {
         />
       </div>
 
+      <RematchBacklog canManage={canManage} onDone={() => void loadInvoices()} />
+
       <Card
         title="Add invoices"
         subtitle="Paste a Xero invoice or plain invoice text, then review item matches before costs are applied."
@@ -1245,6 +1249,132 @@ type ItemSearchSelectProps = {
   disabled?: boolean;
 };
 
+/**
+ * Re-run matching over every line that never found an item.
+ *
+ * Matching gets better over time — an improved matcher, a newly-learned alias,
+ * a stock item created after the invoice arrived. Without a way to re-run it,
+ * the backlog stays exactly as wrong as the day it was imported, which is how
+ * 995 lines accumulated.
+ *
+ * Shows what it WILL do before doing it, because the alternative is a button
+ * that silently rewrites hundreds of rows.
+ */
+function RematchBacklog({ canManage, onDone }: { canManage: boolean; onDone: () => void }) {
+  type Result = { examined: number; matched: number; nonStock: number; stillNeedsReview: number; dryRun: boolean };
+  const [preview, setPreview] = useState<Result | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+
+  async function run(dryRun: boolean) {
+    setBusy(true);
+    setMessage(null);
+    try {
+      const result = await api<Result>(`/api/invoices/rematch-unresolved${dryRun ? '?dryRun=1' : ''}`, {
+        method: 'POST',
+        body: JSON.stringify({})
+      });
+      if (dryRun) {
+        setPreview(result);
+      } else {
+        setPreview(null);
+        setMessage(`Matched ${result.matched}, set ${result.nonStock} aside as charges. ${result.stillNeedsReview} still need a decision.`);
+        onDone();
+      }
+    } catch (err) {
+      setMessage(err instanceof ApiError ? err.message : 'Could not re-run matching.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!canManage) return null;
+
+  return (
+    <Card
+      title="Unmatched lines"
+      subtitle="Re-run matching over lines that never found a stock item. A match somebody made by hand is never overwritten."
+    >
+      <div className="stock-invoice-suggestions">
+        <Button type="button" size="sm" variant="secondary" disabled={busy} onClick={() => void run(true)}>
+          {busy ? 'Checking...' : 'Check what would change'}
+        </Button>
+        {preview ? (
+          <>
+            <span className="subtle">
+              {preview.examined} unmatched · would match {preview.matched} · {preview.nonStock} are charges, not stock · {preview.stillNeedsReview} still need a person
+            </span>
+            <Button type="button" size="sm" disabled={busy} onClick={() => void run(false)}>
+              Apply
+            </Button>
+          </>
+        ) : null}
+        {message ? <span className="subtle">{message}</span> : null}
+      </div>
+    </Card>
+  );
+}
+
+/**
+ * Ranked candidates for a line nobody has matched yet.
+ *
+ * The alternative is searching a 716-item catalogue by hand for every line,
+ * which is why 995 of them were still sitting unmatched. Loaded per line and
+ * only for lines that need it, so opening an invoice does not fetch
+ * suggestions nobody will look at.
+ */
+function LineSuggestions({
+  lineId,
+  disabled,
+  onPick
+}: {
+  lineId: string;
+  disabled: boolean;
+  onPick: (itemId: string) => void;
+}) {
+  const [suggestions, setSuggestions] = useState<Array<{ itemId: string; name: string; confidence: number }>>([]);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const rows = await api<Array<{ itemId: string; name: string; confidence: number }>>(
+          `/api/invoices/lines/${lineId}/suggestions`
+        );
+        if (!cancelled) setSuggestions(rows);
+      } catch {
+        // A line with no suggestions is the normal case for an unknown
+        // product, and is not worth an error message.
+        if (!cancelled) setSuggestions([]);
+      } finally {
+        if (!cancelled) setLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [lineId]);
+
+  if (!loaded || suggestions.length === 0) return null;
+
+  return (
+    <div className="stock-invoice-suggestions">
+      <span className="subtle">Did you mean</span>
+      {suggestions.map((suggestion) => (
+        <button
+          key={suggestion.itemId}
+          type="button"
+          className="stock-invoice-suggestion"
+          disabled={disabled}
+          onClick={() => onPick(suggestion.itemId)}
+          title={`${Math.round(suggestion.confidence * 100)}% of this item's name appears in the description`}
+        >
+          {suggestion.name}
+        </button>
+      ))}
+    </div>
+  );
+}
+
 function ItemSearchSelect({ items, value, onChange, onCreateNew, disabled }: ItemSearchSelectProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -1528,10 +1658,24 @@ function InvoiceLineReview({
                   Qty {line.quantity} {line.unit ?? ''} - unit {formatCurrency(line.unitAmountCents, invoice.currencyCode)} - line {formatCurrency(line.lineAmountCents, invoice.currencyCode)}
                 </p>
               </div>
-              <Badge tone={line.matchingStatus === 'NEEDS_REVIEW' ? 'warning' : 'positive'} dot>
-                {line.matchingStatus === 'NEEDS_REVIEW' ? 'Needs review' : 'Matched'}
+              <Badge
+                tone={line.matchingStatus === 'NEEDS_REVIEW' ? 'warning' : line.matchingStatus === 'NON_STOCK' ? 'neutral' : 'positive'}
+                dot
+              >
+                {line.matchingStatus === 'NEEDS_REVIEW'
+                  ? 'Needs review'
+                  : line.matchingStatus === 'NON_STOCK'
+                    ? 'Not stock'
+                    : 'Matched'}
               </Badge>
             </div>
+            {line.matchingStatus === 'NEEDS_REVIEW' ? (
+              <LineSuggestions
+                lineId={line.id}
+                disabled={!canManage}
+                onPick={(itemId) => onDraftChange(line.id, itemId)}
+              />
+            ) : null}
             <div className="stock-invoice-line-actions">
               <ItemSearchSelect
                 items={items}
