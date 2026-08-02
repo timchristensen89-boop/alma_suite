@@ -155,6 +155,22 @@ integrationJobsRouter.post('/gift-cards/drain', async (_req, res, next) => {
   }
 });
 
+// Moves gift cards to the state time has already put them in: past their
+// three-year expiry, or an abandoned checkout that never paid. Nightly is
+// often enough — both are day-scale facts, not minute-scale.
+integrationJobsRouter.post('/gift-cards/sweep', async (req, res, next) => {
+  try {
+    const hours = Number((req.body ?? {}).abandonedAfterHours);
+    res.json(
+      await giftCardService.sweepGiftCardLifecycle(
+        Number.isFinite(hours) ? { abandonedAfterHours: hours } : {}
+      )
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 // Govee temperature pull — invoked hourly by Cloud Scheduler so the dashboard
 // stays current without anyone clicking "Sync".
 integrationJobsRouter.post('/govee/sync', async (_req, res, next) => {

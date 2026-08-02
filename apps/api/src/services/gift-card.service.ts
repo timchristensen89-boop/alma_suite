@@ -1038,6 +1038,56 @@ export const giftCardService = {
   // Returns counts so the scheduler logs are useful. Designed to be
   // safely re-runnable: if a send fails the card stays in the queue
   // (emailedAt stays null + emailError is set by sendGiftCardEmail).
+  /**
+   * Move gift cards to the state they have actually reached.
+   *
+   * Two transitions had no owner. A card past its three-year expiry stayed
+   * ACTIVE forever — the counter refused it, but it still counted as an
+   * outstanding liability on every report, and cancel() guarded on an EXPIRED
+   * status nothing could ever produce. And a checkout the buyer abandoned sat
+   * in PENDING_PAYMENT indefinitely, inflating what looked like sold cards.
+   *
+   * Both are time-based facts, so a sweep is the right shape. Nothing here
+   * touches money: an expired card keeps its balance so the figure survives
+   * for anyone who has to honour it as a goodwill gesture, and an abandoned
+   * checkout is cancelled with a reason rather than deleted.
+   */
+  async sweepGiftCardLifecycle(input: { abandonedAfterHours?: number } = {}) {
+    const now = new Date();
+    // Long enough that a slow Stripe redirect or a buyer who wandered off mid
+    // payment is never cancelled out from under a real payment.
+    const abandonedAfterHours = Math.min(Math.max(input.abandonedAfterHours ?? 24, 1), 24 * 30);
+    const abandonedBefore = new Date(now.getTime() - abandonedAfterHours * 3600_000);
+
+    const expired = await prisma.giftCard.updateMany({
+      where: { status: 'ACTIVE', expiresAt: { lt: now, not: null } },
+      data: { status: 'EXPIRED' }
+    });
+
+    // Only ever cancel a pending card that never got a payment reference —
+    // one carrying a Stripe session may still be settling.
+    const abandoned = await prisma.giftCard.updateMany({
+      where: {
+        status: 'PENDING_PAYMENT',
+        createdAt: { lt: abandonedBefore },
+        OR: [{ stripePaymentIntentId: null }, { stripePaymentIntentId: '' }]
+      },
+      data: {
+        status: 'CANCELLED',
+        balanceCents: 0,
+        cancelledAt: now,
+        cancelReason: `Checkout abandoned — no payment within ${abandonedAfterHours}h.`
+      }
+    });
+
+    return {
+      expired: expired.count,
+      abandoned: abandoned.count,
+      abandonedAfterHours,
+      generatedAt: now.toISOString()
+    };
+  },
+
   async drainScheduledGiftCardSends() {
     const settings = await getGiftCardSettings();
     const due = await prisma.giftCard.findMany({
