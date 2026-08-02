@@ -45,7 +45,6 @@ const configuredCorsOrigins = unique([
   ...parseCorsOrigins(process.env.MARKETING_WEB_URL),
   ...parseCorsOrigins(process.env.GIFTCARDS_WEB_URL),
   ...parseCorsOrigins(process.env.GIFT_CARDS_WEB_URL),
-  ...parseCorsOrigins(process.env.COMMS_WEB_URL),
   // Admin app (alma-suite-admin.web.app) — was missing from the CORS
   // allowlist, which meant the API never sent
   // Access-Control-Allow-Origin in response to admin-web. Most calls
@@ -67,7 +66,7 @@ if (isProduction) {
   }
   if (configuredCorsOrigins.length === 0) {
     throw new Error(
-      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, GIFTCARDS_WEB_URL, or COMMS_WEB_URL'
+      'At least one production frontend origin is required via CORS_ORIGIN, FRONTEND_URL, COMPLIANCE_WEB_URL, STOCK_WEB_URL, STAFF_WEB_URL, REPORTS_WEB_URL, RESERVE_WEB_URL, MARKETING_WEB_URL, or GIFTCARDS_WEB_URL'
     );
   }
   const localOrigin = configuredCorsOrigins.find(isLocalHttpUrl);

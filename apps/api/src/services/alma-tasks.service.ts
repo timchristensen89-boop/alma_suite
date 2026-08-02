@@ -94,7 +94,8 @@ const TASK_APP_URLS: Record<AlmaTaskSourceApp, string> = {
   GIFTCARDS: process.env.GIFTCARDS_WEB_URL ?? 'https://alma-giftcards.web.app',
   REPORTS: process.env.REPORTS_WEB_URL ?? 'https://alma-reports.web.app',
   ADMIN: process.env.ADMIN_WEB_URL ?? 'https://alma-suite-admin.web.app',
-  COMMS: process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app'
+  // The Comms app is retired; its notices live on the Staff noticeboard.
+  COMMS: process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app'
 };
 
 // Deep-link a task to the record that raised it. Known source types route to

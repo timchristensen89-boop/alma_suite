@@ -56,7 +56,8 @@ export type SuiteNotification = {
 const APP_URLS = {
   compliance: (process.env.COMPLIANCE_WEB_URL ?? process.env.FRONTEND_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, ''),
   staff: (process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app').replace(/\/+$/, ''),
-  comms: (process.env.COMMS_WEB_URL ?? 'https://alma-comms.web.app').replace(/\/+$/, ''),
+  // The Comms app is retired; its notices live on the Staff noticeboard.
+  comms: (process.env.STAFF_WEB_URL ?? 'https://alma-staff.web.app').replace(/\/+$/, ''),
   admin: (process.env.ADMIN_WEB_URL ?? 'https://alma-suite-admin.web.app').replace(/\/+$/, '')
 };
 
