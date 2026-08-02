@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useEffect, useRef, useState, type CSSProperties } from 'react';
 import { Emblem, type GiftCardEmblem } from './emblems';
 import { Glyph, Group, Ink, Label, Salmon, Word } from './primitives';
 import {
@@ -45,7 +45,11 @@ export type AlmaCardProps = {
   noFish?: boolean;
   /** Rounded corners and a drop shadow — off for print, where it bleeds. */
   chrome?: boolean;
-  /** Rendered width; the card scales to it. */
+  /**
+   * Rendered width. Omit to fill the parent — every surface in the app wraps
+   * the card in a box with the card's own aspect ratio and expects it to fill,
+   * so measuring is the behaviour callers already assume.
+   */
   width?: number;
   className?: string;
 };
@@ -73,22 +77,50 @@ export function AlmaCard({
   emblem = 'none',
   noFish = false,
   chrome = true,
-  width = CARD_W,
+  width,
   className
 }: AlmaCardProps) {
   const t = PALETTES[palette] ?? PALETTES.heritage;
-  const scale = width / CARD_W;
+  const hostRef = useRef<HTMLDivElement>(null);
+  const [measured, setMeasured] = useState<number | null>(null);
+
+  // When no width is given, follow the parent. A ResizeObserver rather than a
+  // one-off read, because these sit in flex and grid layouts that settle after
+  // first paint — a single measurement lands on the pre-layout width and the
+  // card renders at the wrong size until something else forces a re-render.
+  useEffect(() => {
+    if (width !== undefined) return;
+    const host = hostRef.current;
+    if (!host) return;
+    // Read the laid-out box, not contentRect: the observer's first callback can
+    // arrive with a zero width while the parent is still resolving, and if
+    // nothing resizes afterwards that zero is the only reading it ever gets —
+    // leaving the card stuck at full size inside a smaller frame.
+    const read = () => {
+      const next = host.getBoundingClientRect().width;
+      if (next > 0) setMeasured(next);
+    };
+    read();
+    const observer = new ResizeObserver(read);
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [width]);
+
+  const rendered = width ?? measured;
+  const scale = (rendered ?? CARD_W) / CARD_W;
 
   return (
     <div
+      ref={hostRef}
       className={className}
       style={{
-        width,
-        height: CARD_H * scale,
-        flex: 'none',
-        // The whole card is authored at 900x567 and scaled as one unit, so
-        // every inset, type size and shadow keeps its exact relationship.
-        ...(scale !== 1 ? { position: 'relative', overflow: 'hidden' } : null)
+        // Given a width, take it. Otherwise fill the parent and hold the
+        // card's own ratio so the box is the right shape before it is measured.
+        ...(width !== undefined
+          ? { width, height: CARD_H * scale, flex: 'none' }
+          : { width: '100%', aspectRatio: `${CARD_W} / ${CARD_H}` }),
+        position: 'relative',
+        overflow: 'hidden'
       }}
     >
       <div

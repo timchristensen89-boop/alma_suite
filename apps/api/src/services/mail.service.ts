@@ -112,24 +112,60 @@ function formatMoney(cents: number) {
   return new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(cents / 100);
 }
 
+/**
+ * Designs the email knows how to colour — the current set plus the retired
+ * ones, which an older row can still name. Anything else falls through to the
+ * settings colours rather than being forced into a design it is not.
+ */
+const EMAIL_KNOWN_DESIGNS = [
+  'heritage', 'bold', 'minimal', 'thanks', 'birthday', 'congrats', 'love', 'celebrate',
+  'forest', 'shell', 'avalon', 'stalma', 'summer'
+];
+
 function normaliseGiftCardDesign(value: string | null | undefined) {
-  return ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'].includes(value ?? '') ? value! : 'forest';
+  return EMAIL_KNOWN_DESIGNS.includes(value ?? '') ? value! : 'heritage';
 }
 
+/**
+ * Email colours for a design.
+ *
+ * The email cannot use the real artwork — mail clients have no CSS masks and
+ * no background-clip — so it renders a simplified card in the design's own
+ * colours. Kept in step with cardArt/palettes.ts by hand; the two cannot share
+ * code across the API/web boundary, so the pairing is stated here explicitly.
+ *
+ * Retired designs still map, because an old row can still name one.
+ */
 function giftCardPalette(design: string | null | undefined, primaryColor: string, accentColor: string) {
+  const heritage = { background: '#1a2717', foreground: '#efe0cf', accent: '#e7cd8b', label: 'Heritage' };
+  const bold = { background: '#f5dcce', foreground: '#22301f', accent: '#4a5c40', label: 'Bold' };
+  const minimal = { background: '#efe8db', foreground: '#4a3f3a', accent: '#8a736b', label: 'Minimal' };
+
   switch (normaliseGiftCardDesign(design)) {
-    case 'shell':
-      return { background: '#f5dcce', foreground: '#3d2a2a', accent: '#684a4a', label: 'Coastal shell' };
-    case 'avalon':
-      return { background: '#244f2a', foreground: '#fff1e6', accent: '#d6e0cd', label: 'Alma Avalon' };
-    case 'stalma':
-      return { background: '#3d2a2a', foreground: '#fff1e6', accent: '#f5dcce', label: 'St Alma' };
-    case 'thanks':
-      return { background: '#efe8dc', foreground: '#14241a', accent: '#796042', label: 'Thank you' };
+    case 'bold':
+    case 'birthday':
+    case 'celebrate':
+    // Retired, mapped the same way the web artwork maps them.
     case 'summer':
-      return { background: '#a85432', foreground: '#fff1e6', accent: '#ffd0b2', label: 'Long afternoons' };
+      return bold;
+    case 'minimal':
+    case 'congrats':
+    case 'shell':
+    case 'stalma':
+      return minimal;
+    case 'heritage':
+    case 'thanks':
+    case 'love':
+    case 'forest':
+    case 'avalon':
+      return heritage;
     default:
-      return { background: primaryColor || '#1f3524', foreground: '#fff1e6', accent: accentColor || '#b98216', label: 'Forest classic' };
+      return {
+        background: primaryColor || heritage.background,
+        foreground: heritage.foreground,
+        accent: accentColor || heritage.accent,
+        label: heritage.label
+      };
   }
 }
 

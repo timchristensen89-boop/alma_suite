@@ -1705,7 +1705,25 @@ export const googleReserveIntegrationSettingInputSchema = z.object({
   lastError: z.string().optional().or(z.literal(''))
 });
 
-export const GIFT_CARD_DESIGNS = ['forest', 'shell', 'avalon', 'stalma', 'thanks', 'summer'] as const;
+/**
+ * The designs a buyer can choose, from the AlmaCard artwork.
+ *
+ * Three finishes of the salmon lockup, then the greetings. The old six
+ * (forest / shell / avalon / stalma / thanks / summer) were retired when the
+ * new artwork landed — no issued card was using them, so nothing had to be
+ * kept alive for cards already in the wild. Anything unrecognised still falls
+ * back to heritage rather than rendering nothing.
+ */
+export const GIFT_CARD_DESIGNS = [
+  'heritage',
+  'bold',
+  'minimal',
+  'thanks',
+  'birthday',
+  'congrats',
+  'love',
+  'celebrate'
+] as const;
 export type GiftCardDesign = (typeof GIFT_CARD_DESIGNS)[number];
 export const giftCardDesignSchema = z.enum(GIFT_CARD_DESIGNS);
 

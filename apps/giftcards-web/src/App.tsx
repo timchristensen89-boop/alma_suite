@@ -19,7 +19,7 @@ import {
   type GiftCardPublic,
   type GiftCardSettings
 } from '@alma/shared';
-import { GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign } from './giftCardArt';
+import { DEFAULT_GIFT_CARD_DESIGN, GIFT_CARD_DESIGN_META, GiftCardArt, isGiftCardDesign, resolveGiftCardDesign } from './giftCardArt';
 import {
   AppShell,
   ActionFeedback,
@@ -276,7 +276,7 @@ function PublicGiftCardShop() {
   const [walletConfig, setWalletConfig] = useState<WalletConfig | null>(null);
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
-  const [design, setDesign] = useState<GiftCardDesign>('forest');
+  const [design, setDesign] = useState<GiftCardDesign>(DEFAULT_GIFT_CARD_DESIGN);
   // Scheduled delivery — when deliverMode='later', deliverDate (YYYY-MM-DD)
   // is resolved to 07:00 venue-local and posted as scheduledDeliveryAt.
   // Server defers the email until the /jobs/gift-cards/drain scheduler
@@ -595,7 +595,7 @@ function PublicGiftCardShop() {
               <div className="alma-giftcards-checkout__complete">
                 <div className="alma-giftcards-checkout__art">
                   <GiftCardArt
-                    design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                    design={resolveGiftCardDesign(paidCard.design)}
                     amount={Math.round(paidCard.initialValueCents / 100)}
                     code={paidCard.code}
                     recipient={paidCard.recipientName ?? undefined}
@@ -637,7 +637,7 @@ function PublicGiftCardShop() {
             </h2>
             <div style={{ maxWidth: 480, margin: '8px 0', position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
               <GiftCardArt
-                design={isGiftCardDesign(paidCard.design) ? paidCard.design : 'forest'}
+                design={resolveGiftCardDesign(paidCard.design)}
                 amount={Math.round(paidCard.initialValueCents / 100)}
                 code={paidCard.code}
                 recipient={paidCard.recipientName ?? undefined}
@@ -700,7 +700,7 @@ function PublicGiftCardShop() {
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--back" aria-hidden="true" />
               <div className="alma-giftcards-cardstack__bg alma-giftcards-cardstack__bg--mid" aria-hidden="true" />
               <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-                <GiftCardArt design="forest" amount={120} code="ALMA-7C92F0" />
+                <GiftCardArt design={DEFAULT_GIFT_CARD_DESIGN} amount={120} code="ALMA-7C92F0" />
               </div>
             </div>
           </div>
@@ -1291,7 +1291,7 @@ function PrintableGiftCardPage() {
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
           <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
             <GiftCardArt
-              design={isGiftCardDesign(card.design) ? card.design : 'forest'}
+              design={resolveGiftCardDesign(card.design)}
               amount={Math.round(card.balanceCents / 100)}
               code={card.code}
               recipient={card.recipientName ?? undefined}
