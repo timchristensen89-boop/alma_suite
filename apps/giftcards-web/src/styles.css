@@ -3068,3 +3068,273 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
    the .ov-two > * min-width guard); no Gift Cards-specific glue is needed.
    Public storefront styles above are untouched.
    ══════════════════════════════════════════════════════════════════════════ */
+
+/* ==================================================================
+   Counter screen — the iPad on the pass.
+
+   Sized for a thumb on a wet hand and for reading across the pass, so
+   every target is at least 56px and the numbers that matter (the card
+   number, the balance) are the largest thing on screen. Dark, because
+   it sits in a room where a bright white screen is a nuisance.
+   ================================================================== */
+.counter {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(135% 120% at 26% 18%, #2f3f2b 0%, #243421 44%, #1a2717 78%, #121c10 100%);
+  color: #efe0cf;
+  font-family: 'Jost', system-ui, sans-serif;
+  /* A counter iPad is handled constantly — a stray long-press selecting
+     text and popping the magnifier is pure noise mid-service. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.counter-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 26px;
+  border-bottom: 1px solid rgba(231, 205, 139, 0.22);
+}
+
+.counter-brand {
+  font-size: 13px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #cdb488;
+}
+
+.counter-modes {
+  display: flex;
+  gap: 8px;
+}
+
+.counter-modes button {
+  min-height: 56px;
+  padding: 0 26px;
+  border: 1px solid rgba(231, 205, 139, 0.3);
+  border-radius: 999px;
+  background: transparent;
+  color: #cdb488;
+  font: inherit;
+  font-size: 17px;
+  cursor: pointer;
+}
+
+.counter-modes button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-body {
+  flex: 1;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  padding: 30px 26px 44px;
+  max-width: 720px;
+  width: 100%;
+  margin: 0 auto;
+}
+
+.counter-kicker {
+  margin: 0;
+  font-size: 12px;
+  letter-spacing: 0.34em;
+  text-transform: uppercase;
+  color: #cdb488;
+}
+
+/* Amount buttons: three across on an iPad, two on a phone. */
+.counter-amounts {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.counter-amounts button {
+  min-height: 78px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 16px;
+  background: rgba(255, 251, 238, 0.04);
+  color: #efe0cf;
+  font: inherit;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.counter-amounts button.is-on {
+  background: #e7cd8b;
+  border-color: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-field {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.counter-field span {
+  font-size: 13px;
+  letter-spacing: 0.06em;
+  color: #cdb488;
+}
+
+.counter-field input {
+  min-height: 64px;
+  padding: 0 18px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 251, 238, 0.05);
+  color: #efe0cf;
+  font: inherit;
+  /* 16px or larger, or iOS zooms the whole page on focus. */
+  font-size: 22px;
+}
+
+.counter-field input:focus {
+  outline: 2px solid #e7cd8b;
+  outline-offset: 1px;
+}
+
+.counter-optional {
+  display: grid;
+  gap: 14px;
+}
+
+.counter-primary,
+.counter-secondary {
+  min-height: 74px;
+  border-radius: 16px;
+  font: inherit;
+  font-size: 21px;
+  cursor: pointer;
+}
+
+.counter-primary {
+  border: none;
+  background: #e7cd8b;
+  color: #1a2717;
+}
+
+.counter-primary:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+.counter-secondary {
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  background: transparent;
+  color: #cdb488;
+}
+
+.counter-note {
+  margin: 0;
+  font-size: 15px;
+  line-height: 1.5;
+  color: rgba(239, 224, 207, 0.66);
+}
+
+.counter-error {
+  margin: 0;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: rgba(190, 74, 60, 0.18);
+  border: 1px solid rgba(224, 122, 95, 0.5);
+  color: #f3c9bd;
+  font-size: 17px;
+}
+
+.counter-lookup {
+  display: flex;
+  gap: 12px;
+}
+
+.counter-code-input {
+  flex: 1;
+  min-height: 74px;
+  padding: 0 20px;
+  border: 1px solid rgba(231, 205, 139, 0.32);
+  border-radius: 14px;
+  background: rgba(255, 251, 238, 0.05);
+  color: #efe0cf;
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 26px;
+  letter-spacing: 0.08em;
+}
+
+.counter-lookup button {
+  min-width: 120px;
+  min-height: 74px;
+  border: none;
+  border-radius: 14px;
+  background: #e7cd8b;
+  color: #1a2717;
+  font: inherit;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.counter-card-found {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  padding: 22px;
+  border: 1px solid rgba(231, 205, 139, 0.26);
+  border-radius: 20px;
+  background: rgba(255, 251, 238, 0.04);
+}
+
+/* The balance is what the guest leans over to read. */
+.counter-balance {
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 76px;
+  line-height: 0.9;
+  color: #efe0cf;
+}
+
+.counter-issued {
+  align-items: center;
+  text-align: center;
+  justify-content: center;
+}
+
+/* The number staff copy onto the physical card. Monospace so a 0 is never
+   mistaken for an O while somebody is writing it by hand. */
+.counter-code {
+  margin: 0;
+  font-family: ui-monospace, 'IBM Plex Mono', monospace;
+  font-size: 64px;
+  letter-spacing: 0.06em;
+  color: #e7cd8b;
+  word-break: break-all;
+}
+
+.counter-issued-value {
+  margin: 0;
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 34px;
+  color: #efe0cf;
+}
+
+.counter-issued .counter-primary {
+  width: 100%;
+  max-width: 380px;
+  margin-top: 12px;
+}
+
+@media (max-width: 560px) {
+  .counter-amounts { grid-template-columns: repeat(2, 1fr); }
+  .counter-code { font-size: 44px; }
+  .counter-balance { font-size: 60px; }
+  .counter-bar { flex-direction: column; align-items: stretch; }
+}

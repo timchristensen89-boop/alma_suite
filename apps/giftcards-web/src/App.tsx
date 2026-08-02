@@ -1,4 +1,5 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CounterApp } from './CounterApp';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
@@ -2281,12 +2282,18 @@ function GiftCardAdminApp() {
 }
 
 export function App() {
+  // The counter screen is the in-venue iPad: sell a card to somebody standing
+  // there, or take one off a bill. Deliberately its own route rather than a
+  // tab inside the manager dashboard, which is a desk tool full of controls a
+  // busy floor should not be able to reach.
+  const isCounterPath = window.location.pathname.startsWith('/counter');
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
   const isOrdersPath = window.location.pathname.startsWith('/orders');
   const isAdminPath = window.location.pathname.startsWith('/admin');
   const isPrintPath = window.location.pathname.startsWith('/print');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
+  if (isCounterPath) return <CounterApp />;
   if (!isRedeemPath && !isOrdersPath && !isAdminPath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }

@@ -389,6 +389,23 @@ async function readSettingsImage(field: string): Promise<{ mimeType: string; bod
   return { mimeType: match[1]!, body: Buffer.from(match[2]!, 'base64') };
 }
 
+/**
+ * A card number nobody is using yet.
+ *
+ * Retries on collision rather than trusting one draw: the code is only 8 hex
+ * characters, and handing a guest a number that already belongs to somebody
+ * else's balance is the one failure that must not happen. Ten attempts is far
+ * past the point of paranoia and still costs nothing.
+ */
+async function issueUnusedCode(): Promise<string> {
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const candidate = `ALMA-${randomBytes(4).toString('hex').toUpperCase()}`;
+    const taken = await prisma.giftCard.findUnique({ where: { code: candidate }, select: { id: true } });
+    if (!taken) return candidate;
+  }
+  throw new HttpError(500, 'Could not issue a free card number. Try again.');
+}
+
 export const giftCardService = {
   canManagePromoCodes,
   readSettingsImage,
@@ -832,7 +849,13 @@ export const giftCardService = {
       throw new HttpError(400, 'Activation payload required');
     }
     const data = input as Record<string, unknown>;
-    const codeRaw = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
+    // A counter sale can go two ways round. Either the venue has pre-printed
+    // cards and staff type the code from the one they just handed over, or
+    // they have blanks and need the system to issue a number to write on.
+    // Only the first was possible before, which is the wrong way round for a
+    // venue that has not ordered pre-printed stock yet.
+    const typedCode = typeof data.code === 'string' ? data.code.trim().toUpperCase() : '';
+    const codeRaw = typedCode || (await issueUnusedCode());
     const initialValueCents = typeof data.initialValueCents === 'number' ? Math.round(data.initialValueCents) : NaN;
     const purchaserName = typeof data.purchaserName === 'string' && data.purchaserName.trim()
       ? data.purchaserName.trim()
@@ -848,7 +871,7 @@ export const giftCardService = {
       : null;
 
     if (!codeRaw || !/^[A-Z0-9-]+$/.test(codeRaw)) {
-      throw new HttpError(400, 'Card code is required and must contain only letters, numbers, and dashes.');
+      throw new HttpError(400, 'A card code may only contain letters, numbers and dashes.');
     }
     if (!Number.isFinite(initialValueCents) || initialValueCents < 500) {
       throw new HttpError(400, 'Initial value must be at least $5.');
