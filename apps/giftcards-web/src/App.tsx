@@ -1177,7 +1177,7 @@ function PublicGiftCardShop() {
           </details>
           <details className="alma-giftcards-faq__item">
             <summary>What if the amount doesn't get used in one visit?</summary>
-            <p>The remaining balance stays on the same reference for next time. We'll show it on the receipt. They can check the balance at any time by emailing hello@alma.com.au with the reference, or asking at either venue.</p>
+            <p>The remaining balance stays on the same reference for next time. We'll show it on the receipt. They can check the balance at any time by emailing enquiries@almagroup.com.au with the reference, or asking at either venue.</p>
           </details>
           <details className="alma-giftcards-faq__item">
             <summary>Can I send it to someone overseas?</summary>

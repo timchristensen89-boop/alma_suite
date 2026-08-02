@@ -40,7 +40,7 @@ export const GIFT_CARD_DESIGN_META: Record<GiftCardDesign, {
   forest:  { label: 'Forest classic',   tagline: 'House',          swatchBg: 'linear-gradient(160deg, #233628 0%, #14241A 100%)', swatchFg: SHELL },
   shell:   { label: 'Coastal shell',    tagline: 'For dinner',     swatchBg: 'linear-gradient(160deg, #F5DCCE 0%, #ECBFA8 100%)', swatchFg: COCOA_DEEP },
   avalon:  { label: 'alma Avalon',      tagline: 'Restaurant & Bar', swatchBg: 'linear-gradient(160deg, #3D5C3F 0%, #244F2A 100%)', swatchFg: SHELL },
-  stalma:  { label: 'st.alma Newport',  tagline: 'Counter restaurant', swatchBg: 'linear-gradient(160deg, #684A4A 0%, #3D2A2A 100%)', swatchFg: SHELL },
+  stalma:  { label: 'st.alma Freshwater',  tagline: 'Counter restaurant', swatchBg: 'linear-gradient(160deg, #684A4A 0%, #3D2A2A 100%)', swatchFg: SHELL },
   thanks:  { label: 'Thank you',        tagline: 'Quiet bone',     swatchBg: 'linear-gradient(160deg, #EFE8DC 0%, #E2D9C5 100%)', swatchFg: FOREST_DEEP },
   summer:  { label: 'Long afternoons',  tagline: 'Summer ’26',     swatchBg: 'linear-gradient(160deg, #C9764C 0%, #A85432 100%)', swatchFg: PEACH_ONDARK }
 };
@@ -192,7 +192,7 @@ function ForestBack({ code }: { code: string }) {
           <CodeBlock code={code} fg={SHELL} bg="rgba(245,220,206,0.08)" borderColor="rgba(245,220,206,0.18)" />
         </div>
         <div style={{ fontFamily: sansFont, fontSize: 10, color: 'rgba(245,220,206,0.55)', lineHeight: 1.55 }}>
-          Redeemable at any Alma Group venue. Not refundable for cash. Treat like cash &mdash; we cannot replace if lost. Balance check at <span style={{ color: SHELL }}>alma.com.au/cards</span>.
+          Redeemable at any Alma Group venue. Not refundable for cash. Treat like cash &mdash; we cannot replace if lost. Balance check at <span style={{ color: SHELL }}>almagroup.com.au/gift-cards</span>.
         </div>
         <Eyebrow color="rgba(245,220,206,0.55)" size={10}>alma <span style={{ fontFamily: serifFont, fontStyle: 'italic', letterSpacing: 0 }}>group</span></Eyebrow>
       </div>
@@ -218,7 +218,7 @@ function ShellFront({ amount }: { amount: string }) {
         <LogoMark height={56} tone="light" />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <Eyebrow color="rgba(61,42,42,0.55)" size={9} tracking="0.30em">Restaurant &amp; bar</Eyebrow>
-          <Eyebrow color="rgba(61,42,42,0.4)" size={9} tracking="0.30em">Avalon · Newport</Eyebrow>
+          <Eyebrow color="rgba(61,42,42,0.4)" size={9} tracking="0.30em">Avalon · Freshwater</Eyebrow>
         </div>
       </div>
     </Frame>
@@ -234,7 +234,7 @@ function ShellBack({ code }: { code: string }) {
           <CodeBlock code={code} fg={COCOA_DEEP} bg="rgba(255,255,255,0.5)" borderColor="rgba(61,42,42,0.18)" />
         </div>
         <div style={{ fontFamily: sansFont, fontSize: 10, color: 'rgba(61,42,42,0.65)', lineHeight: 1.55 }}>
-          Redeem at alma Avalon or st.alma Newport. Carries no expiry. Lost cards may be reissued if the original code is provided. Balance check at alma.com.au/cards.
+          Redeem at alma Avalon or st.alma Freshwater. Valid three years from issue. Lost cards may be reissued if the original code is provided. Balance check at almagroup.com.au/gift-cards.
         </div>
         <Eyebrow color="rgba(61,42,42,0.55)" size={10}>alma <span style={{ fontFamily: serifFont, fontStyle: 'italic', letterSpacing: 0 }}>group</span></Eyebrow>
       </div>
@@ -294,7 +294,7 @@ function StAlmaFront({ amount }: { amount: string }) {
     <Frame bg={`linear-gradient(160deg, ${COCOA} 0%, ${COCOA_DEEP} 100%)`} fg={SHELL} accent="rgba(245,220,206,0.20)" sheen="dark">
       <div style={{ position: 'absolute', left: '7%', top: '8%', bottom: '8%', width: 1, background: 'rgba(245,220,206,0.20)' }} />
       <div style={{ position: 'relative', padding: '8% 9% 8% 13%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-        <Eyebrow color="rgba(245,220,206,0.55)" size={10}>Counter restaurant · Newport</Eyebrow>
+        <Eyebrow color="rgba(245,220,206,0.55)" size={10}>Counter restaurant · Freshwater</Eyebrow>
         <div>
           <Wordmark color={SHELL} size={72}>st.alma</Wordmark>
           <div style={{ marginTop: 8, fontFamily: serifFont, fontSize: '4%', color: 'rgba(245,220,206,0.80)', lineHeight: 1.35, fontStyle: 'italic' }}>
@@ -360,7 +360,7 @@ function ThanksBack({ code }: { code: string }) {
           <CodeBlock code={code} fg={FOREST_DEEP} bg="rgba(255,255,255,0.7)" borderColor="rgba(20,36,26,0.16)" />
         </div>
         <div style={{ fontFamily: sansFont, fontSize: 10, color: 'rgba(20,36,26,0.65)', lineHeight: 1.55 }}>
-          Redeemable at any Alma Group venue. Treat like cash. No expiry. Balance &amp; full terms at alma.com.au/cards.
+          Redeemable at any Alma Group venue. Treat like cash. Valid three years from issue. Balance &amp; full terms at almagroup.com.au/gift-cards.
         </div>
         <Eyebrow color="rgba(20,36,26,0.55)" size={10}>alma <span style={{ fontFamily: serifFont, fontStyle: 'italic', letterSpacing: 0 }}>group</span></Eyebrow>
       </div>

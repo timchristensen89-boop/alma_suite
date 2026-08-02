@@ -48,6 +48,11 @@ const PUBLIC_PREFIXES = [
   '/api/staff/invites/by-token/',
   '/api/reserve/public-widget/',
   '/api/reserve/public/',
+  // Gift card artwork for the public buy page. Read-only image bytes the venue
+  // chose to publish, and the buy page is unauthenticated by definition — the
+  // whole point is that a stranger can use it. The service only ever serves
+  // the two known settings image fields, never an arbitrary key.
+  '/api/gift-cards/assets/',
   '/api/public/venue-snapshot'
 ];
 

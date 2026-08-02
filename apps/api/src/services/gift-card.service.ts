@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import type { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
@@ -338,15 +338,67 @@ async function createGiftCardReservingPromo(
   });
 }
 
+/**
+ * An image the venue uploaded, held inline in the settings JSON as a base64
+ * data URL.
+ *
+ * Serving it that way put 103.5 KB of the public config's 104 KB on the wire
+ * for every single visitor to the buy page — 99.5% of the payload, repeated on
+ * every load, and impossible to cache or put behind a CDN because it lives
+ * inside a JSON API response.
+ *
+ * These helpers swap the blob for a URL pointing at an endpoint that serves
+ * the same bytes once, with a long cache. Nothing has to be migrated: the
+ * bytes stay where they are, they just stop travelling with the config.
+ */
+const INLINE_IMAGE_FIELDS = ['heroImageUrl', 'artworkUrl'] as const;
+type InlineImageField = (typeof INLINE_IMAGE_FIELDS)[number];
+
+function isInlineImage(value: unknown): value is string {
+  return typeof value === 'string' && value.startsWith('data:image/');
+}
+
+/**
+ * Replace inline images with a URL to the asset endpoint.
+ *
+ * The URL carries a short hash of the content, so a new upload is a new URL
+ * and the cached copy of the old one is never served in its place.
+ */
+function withHostedImages<T extends Record<string, unknown>>(settings: T): T {
+  const out = { ...settings };
+  for (const field of INLINE_IMAGE_FIELDS) {
+    const value = out[field];
+    if (!isInlineImage(value)) continue;
+    const fingerprint = createHash('sha256').update(value).digest('hex').slice(0, 16);
+    // Absolute, because the buy page is served from a different origin to the
+    // API — a relative path would resolve against the site and 404.
+    (out as Record<string, unknown>)[field] =
+      `${env.publicApiUrl.replace(/\/$/, '')}/api/gift-cards/assets/${field}/${fingerprint}`;
+  }
+  return out;
+}
+
+/** The bytes behind one of those URLs, for the asset endpoint to send. */
+async function readSettingsImage(field: string): Promise<{ mimeType: string; body: Buffer } | null> {
+  if (!INLINE_IMAGE_FIELDS.includes(field as InlineImageField)) return null;
+  const settings = await getGiftCardSettings();
+  const value = (settings as Record<string, unknown>)[field];
+  if (!isInlineImage(value)) return null;
+  const match = value.match(/^data:([^;]+);base64,(.*)$/s);
+  if (!match) return null;
+  return { mimeType: match[1]!, body: Buffer.from(match[2]!, 'base64') };
+}
+
 export const giftCardService = {
   canManagePromoCodes,
+  readSettingsImage,
 
   async getPublicSettings() {
-    return getGiftCardSettings();
+    return withHostedImages(await getGiftCardSettings());
   },
 
   async getPublicConfig(): Promise<GiftCardPublicConfig> {
-    const settings = await getGiftCardSettings();
+    const settings = withHostedImages(await getGiftCardSettings());
     if (settings.testCheckoutEnabled) {
       return {
         settings,

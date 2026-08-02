@@ -51,6 +51,24 @@ giftCardsRouter.get('/public/config', async (_req, res, next) => {
   }
 });
 
+// Settings images, served once and cached, instead of riding along inside the
+// public config on every page load. The fingerprint in the path means a new
+// upload gets a new URL, so a long cache can never serve a stale card.
+giftCardsRouter.get('/assets/:field/:fingerprint', async (req, res, next) => {
+  try {
+    const asset = await giftCardService.readSettingsImage(String(req.params.field));
+    if (!asset) {
+      res.status(404).json({ message: 'No such image.' });
+      return;
+    }
+    res.setHeader('Content-Type', asset.mimeType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+    res.send(asset.body);
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/public/orders', async (req, res, next) => {
   try {
     res.status(201).json(await giftCardService.createCheckout(req.body));
