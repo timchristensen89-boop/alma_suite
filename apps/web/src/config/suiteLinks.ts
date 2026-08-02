@@ -13,7 +13,6 @@ export const STAFF_WEB_URL = envUrl('VITE_STAFF_WEB_URL', 'http://localhost:5175
 export const REPORTS_WEB_URL = envUrl('VITE_REPORTS_WEB_URL', 'http://localhost:5176');
 export const RESERVE_WEB_URL = envUrl('VITE_RESERVE_WEB_URL', 'http://localhost:5177');
 export const MARKETING_WEB_URL = envUrl('VITE_MARKETING_WEB_URL', 'http://localhost:5178');
-export const COMMS_WEB_URL = (import.meta.env.VITE_COMMS_WEB_URL || 'https://alma-comms.web.app').replace(/\/+$/, '');
 export const GIFTCARDS_WEB_URL = envUrl('VITE_GIFTCARDS_WEB_URL', 'http://localhost:5179');
 export const SETTINGS_WEB_URL = envUrl('VITE_SETTINGS_WEB_URL', 'http://localhost:5180');
 
@@ -58,23 +57,14 @@ export function suiteAppHref(app: SuiteAppIdentity) {
     if (suiteUrls.settings) return `${trimTrailingSlash(suiteUrls.settings)}/`;
     return suiteUrls.compliance ? adminHref(suiteUrls.compliance) : undefined;
   }
-  if (app.id === 'comms') {
-    return COMMS_WEB_URL;
-  }
-
   return suiteUrls.compliance ? `${trimTrailingSlash(suiteUrls.compliance)}/apps/${app.id}/login` : undefined;
 }
 
 export function withSuiteAppLinks(apps: SuiteAppIdentity[]) {
-  return apps.map((app) => forceCommsLink({
+  return apps.map((app) => ({
     ...app,
     href: suiteAppHref(app)
   }));
 }
 
 
-export function forceCommsLink<T extends { id?: string; href?: string; url?: string }>(app: T): T {
-  return app.id === 'comms'
-    ? { ...app, href: COMMS_WEB_URL, url: COMMS_WEB_URL }
-    : app;
-}

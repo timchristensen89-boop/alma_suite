@@ -1762,7 +1762,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       const shifts = data.roster.filter((shift) => (shift.venue ?? shift.staffProfile?.venue ?? 'Unassigned') === venue);
       const planned = shifts.reduce(
         (total, shift) => {
-          const member = staffById.get(shift.staffProfileId);
+          // An open shift has nobody on it yet; it still costs hours, priced at
+          // the average rate rather than dropped from the plan.
+          const member = shift.staffProfileId ? staffById.get(shift.staffProfileId) : undefined;
           const rateCents = resolvedWage(member).rateCents || averageRateCents;
           const hours = rosterShiftHours(shift);
           total.hours += hours;

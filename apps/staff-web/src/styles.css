@@ -8710,3 +8710,87 @@ html[data-theme='dark'] .deputy-shift-fatigue-flag {
 }
 
 
+
+
+/* ── Noticeboard ─────────────────────────────────────────────────────── */
+.notice-list {
+  display: grid;
+  gap: 14px;
+}
+.notice {
+  background: var(--color-elevated, #fff);
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-radius: 16px;
+  padding: 18px 20px;
+  display: grid;
+  gap: 10px;
+}
+/* A pinned notice earns a left rule, not a different card — the board should
+   read as one surface with some things held at the top. */
+.notice.is-pinned { border-left: 3px solid var(--color-accent, #2f5d3a); }
+.notice-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.notice-head h3 {
+  margin: 0;
+  font-size: 17px;
+  line-height: 1.25;
+}
+.notice-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.65;
+  /* Notices are typed as plain text; keep the author's line breaks. */
+  white-space: pre-wrap;
+  color: var(--color-text, #1f2937);
+}
+.notice-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+  border-top: 1px solid rgba(31, 53, 36, 0.08);
+  padding-top: 10px;
+}
+.notice-actions {
+  margin-left: auto;
+  display: flex;
+  gap: 12px;
+}
+.notice-actions button {
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+  cursor: pointer;
+  text-decoration: underline;
+}
+.notice-actions button:disabled { opacity: 0.5; cursor: default; }
+.notice-actions button.is-destructive { color: #b23c3c; }
+
+.notice-form { display: grid; gap: 14px; }
+.notice-form-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 220px);
+  gap: 16px;
+  align-items: end;
+}
+.notice-form-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+}
+@media (max-width: 640px) {
+  .notice-form-row { grid-template-columns: 1fr; align-items: start; }
+  .notice-meta { font-size: 11.5px; }
+  .notice-actions { margin-left: 0; }
+}
+
+html[data-theme='dark'] .notice { background: var(--color-elevated, #1c2027); }

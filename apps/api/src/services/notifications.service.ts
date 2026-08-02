@@ -1,6 +1,6 @@
 import type { AuthUser } from '@alma/shared';
 import { prisma } from '@alma/db';
-import { listCommsInbox } from './comms.service.js';
+import { listInboxForUser } from './messaging.service.js';
 
 export type NotificationTone = 'danger' | 'warning' | 'info' | 'positive';
 
@@ -105,7 +105,7 @@ export const notificationsService = {
     const notifications: SuiteNotification[] = [];
     const mutedCategories = await this.mutedCategorySet(actor);
 
-    const commsThreads = await listCommsInbox(actor).catch(() => []);
+    const commsThreads = await listInboxForUser(actor).catch(() => []);
     for (const thread of commsThreads.filter((item) => item.unread || item.actionRequired).slice(0, 12)) {
       notifications.push(notification({
         id: `comms-${thread.id}`,

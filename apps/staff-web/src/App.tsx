@@ -1,5 +1,5 @@
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react';
-import type { CSSProperties, DragEvent, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, DragEvent, FormEvent, MouseEvent, ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { HubLayout, useHubTabBadge, type HubTab } from './components/HubTabs';
 import type {
@@ -351,9 +351,10 @@ const NAV_ITEMS = [
     match: ['/academy']
   },
   {
-    to: 'https://alma-comms.web.app',
-    label: 'Comms',
-    description: 'Announcements, group chats, and messaging permissions',
+    // The standalone Comms app is gone; the board it existed for lives here.
+    to: '/noticeboard',
+    label: 'Noticeboard',
+    description: 'Notices from managers, pinned for the team',
     icon: <IconMail />
   },
   {
@@ -3149,6 +3150,197 @@ function StaffMemberAvailabilityPage() {
         ) : null}
         <p className="subtle">Taking paid leave? Use the Leave page instead so it is approved and recorded.</p>
       </Card>
+    </div>
+  );
+}
+
+/**
+ * The noticeboard: what a venue would have pinned by the roster.
+ *
+ * Everyone signed in can read it; managers post, pin and clear notices from
+ * the same screen rather than a separate admin surface. Pinned notices sit
+ * first, then newest — the same order the API returns, which is the order a
+ * board is actually read in.
+ */
+function NoticeboardPage() {
+  const { user } = useAuth();
+  const canPost = canManageCommunications(user);
+  const [notices, setNotices] = useState<SuiteAnnouncement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
+  const [composing, setComposing] = useState(false);
+  const [draft, setDraft] = useState({ title: '', body: '', pinned: false, expiresAt: '' });
+
+  const loadNotices = useCallback(async () => {
+    setLoading(true);
+    try {
+      const payload = await api<{ notices: SuiteAnnouncement[] }>('/api/communications/notices?appId=STAFF');
+      setNotices(payload.notices);
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the noticeboard.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadNotices();
+  }, [loadNotices]);
+
+  async function postNotice(event: FormEvent) {
+    event.preventDefault();
+    if (!draft.title.trim() || !draft.body.trim() || saving) return;
+    setSaving(true);
+    try {
+      await api('/api/communications/announcements', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: draft.title.trim(),
+          body: draft.body.trim(),
+          appId: 'STAFF',
+          pinned: draft.pinned,
+          expiresAt: draft.expiresAt || undefined
+        })
+      });
+      setDraft({ title: '', body: '', pinned: false, expiresAt: '' });
+      setComposing(false);
+      await loadNotices();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not post the notice.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function mutate(id: string, init: RequestInit) {
+    setSaving(true);
+    try {
+      await api(`/api/communications/announcements/${id}`, init);
+      await loadNotices();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not update the notice.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  const pinned = notices.filter((notice) => notice.pinned);
+
+  return (
+    <div className="page-stack staff-noticeboard-page">
+      <PageHeader
+        eyebrow="Noticeboard"
+        title="What the team needs to know"
+        description="Notices from managers — rosters, closures, changes and anything worth reading before service."
+        actions={
+          canPost ? (
+            <Button type="button" onClick={() => setComposing((open) => !open)}>
+              {composing ? 'Cancel' : 'Post a notice'}
+            </Button>
+          ) : undefined
+        }
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      {canPost && composing ? (
+        <Card title="New notice" subtitle="Everyone with Staff access sees this.">
+          <form className="notice-form" onSubmit={postNotice}>
+            <Input
+              label="Title"
+              value={draft.title}
+              onChange={(event) => setDraft((current) => ({ ...current, title: event.currentTarget.value }))}
+              required
+            />
+            <Textarea
+              label="Message"
+              rows={4}
+              value={draft.body}
+              onChange={(event) => setDraft((current) => ({ ...current, body: event.currentTarget.value }))}
+              required
+            />
+            <div className="notice-form-row">
+              <label className="notice-form-check">
+                <input
+                  type="checkbox"
+                  checked={draft.pinned}
+                  onChange={(event) => setDraft((current) => ({ ...current, pinned: event.currentTarget.checked }))}
+                />
+                Pin to the top
+              </label>
+              <Input
+                label="Clear it after (optional)"
+                type="date"
+                value={draft.expiresAt}
+                onChange={(event) => setDraft((current) => ({ ...current, expiresAt: event.currentTarget.value }))}
+              />
+            </div>
+            <Button type="submit" disabled={saving}>
+              {saving ? 'Posting…' : 'Post notice'}
+            </Button>
+          </form>
+        </Card>
+      ) : null}
+
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : notices.length === 0 ? (
+        <EmptyState
+          title="Nothing on the board"
+          description={canPost ? 'Post the first notice — it shows up for everyone with Staff access.' : 'Managers will post here when there is something to say.'}
+        />
+      ) : (
+        <div className="notice-list">
+          {notices.map((notice) => (
+            <article key={notice.id} className={`notice ${notice.pinned ? 'is-pinned' : ''}`}>
+              <header className="notice-head">
+                <h3>{notice.title}</h3>
+                {notice.pinned ? <Badge tone="positive">Pinned</Badge> : null}
+              </header>
+              {/* Notices are typed as plain text with line breaks — respecting
+                  them is the difference between a list and a wall of words. */}
+              <p className="notice-body">{notice.body}</p>
+              <footer className="notice-meta">
+                <span>
+                  {notice.createdByName || 'ALMA'} · {formatDateTime(notice.createdAt)}
+                  {notice.expiresAt ? ` · clears ${new Date(notice.expiresAt).toLocaleDateString()}` : ''}
+                </span>
+                {canPost ? (
+                  <span className="notice-actions">
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={() => void mutate(notice.id, { method: 'PATCH', body: JSON.stringify({ pinned: !notice.pinned }) })}
+                    >
+                      {notice.pinned ? 'Unpin' : 'Pin'}
+                    </button>
+                    <button
+                      type="button"
+                      className="is-destructive"
+                      disabled={saving}
+                      onClick={() => {
+                        if (window.confirm(`Remove "${notice.title}" from the board?`)) {
+                          void mutate(notice.id, { method: 'DELETE' });
+                        }
+                      }}
+                    >
+                      Remove
+                    </button>
+                  </span>
+                ) : null}
+              </footer>
+            </article>
+          ))}
+        </div>
+      )}
+
+      {pinned.length > 3 ? (
+        <p className="subtle">
+          {pinned.length} notices are pinned. A board where everything is pinned reads the same as one where nothing is.
+        </p>
+      ) : null}
     </div>
   );
 }
@@ -15676,7 +15868,7 @@ function ManagerDailyBriefPage({ staff }: { staff: StaffProfile[] }) {
             <strong>Sit with the team for 5 minutes.</strong> Three things: who's on, what we're pushing, what to watch.
           </li>
           <li>
-            <strong>Reply to last shift's handover.</strong> If anything's outstanding, acknowledge it in <a href="https://alma-comms.web.app/handover">Comms · Handover</a>.
+            <strong>Reply to last shift's handover.</strong> If anything's outstanding, acknowledge it on the <a href="/noticeboard">noticeboard</a>.
           </li>
           <li>
             <strong>Pre-walkthrough bookings.</strong> Open <a href="https://alma-reserve.web.app">Reserve</a> and read the night's notes.
@@ -18503,6 +18695,7 @@ function StaffShell() {
           <Route path="/clock" element={<StaffMemberClockPage />} />
           <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
+          <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
@@ -18533,6 +18726,7 @@ function StaffShell() {
           <Route path="/staff/:staffId/:section" element={<StaffProfileWorkspacePage staff={staff} roleTemplates={roleTemplates} hrRecords={hrRecords} loading={loading} reload={reload} reloadHr={loadHrRecords} canOpenHr={canOpenHr} canManageHr={canManageHr} canOpenRightToWork={canAccessRightToWorkHr(user)} canManageRightToWork={canManageRightToWorkHr} canOpenPayChanges={canAccessPayChangeHr(user)} />} />
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
+          <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />

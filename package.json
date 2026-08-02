@@ -48,9 +48,7 @@
     "build": "pnpm -r --if-present build",
     "start": "pnpm --filter @alma/api start",
     "typecheck": "pnpm -r --if-present typecheck",
-    "lint": "pnpm -r --if-present lint",
-    "dev:comms": "concurrently \"pnpm --filter @alma/api dev\" \"pnpm --filter @alma/comms-web dev\"",
-    "dev:comms-web": "pnpm --filter @alma/comms-web dev"
+    "lint": "pnpm -r --if-present lint"
   },
   "devDependencies": {
     "@types/jsonwebtoken": "^9.0.10",

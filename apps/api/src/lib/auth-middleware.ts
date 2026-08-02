@@ -109,7 +109,6 @@ function isStaffWriteAllowed(req: Request) {
   if (req.path.startsWith('/api/audits/runs') && !req.path.includes('/export/')) return true;
   if (req.path === '/api/communications/chat' && req.method === 'POST') return true;
   if (req.path.startsWith('/api/messages/threads') && req.method === 'POST') return true;
-  if (req.path === '/api/comms/threads' && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/messages$/.test(req.path) && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/read$/.test(req.path) && req.method === 'POST') return true;
   if (/^\/api\/messages\/threads\/[^/]+\/acknowledge$/.test(req.path) && req.method === 'POST') return true;
@@ -234,7 +233,7 @@ export async function authMiddleware(
       if (!hasAnyEnabledAppAccess(req.user, ['GIFTCARDS', 'COMPLIANCE'])) {
         return next(new HttpError(403, 'Gift Cards isn’t enabled on your account. Ask a manager.'));
       }
-    } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/comms') || req.path.startsWith('/api/communications')) {
+    } else if (req.path.startsWith('/api/notifications') || req.path.startsWith('/api/messages') || req.path.startsWith('/api/communications')) {
       if (!hasAnyEnabledAppAccess(req.user, ['COMPLIANCE', 'STOCK', 'STAFF', 'REPORTS', 'RESERVE', 'MARKETING', 'GIFTCARDS', 'TRAINING', 'SETTINGS'])) {
         return next(new HttpError(403, 'Your Alma Suite access is turned off. Ask an Alma admin.'));
       }
