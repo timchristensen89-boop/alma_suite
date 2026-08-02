@@ -12,6 +12,16 @@ purchaseOrdersRouter.get('/', async (req, res, next) => {
   }
 });
 
+// What needs ordering, grouped by supplier, priced from what was last paid.
+// The step the app never had: 664 low-stock notices and no way to act on them.
+purchaseOrdersRouter.get('/suggestions', async (req, res, next) => {
+  try {
+    res.json(await purchaseOrdersService.suggestions(req.user, typeof req.query.venue === 'string' ? req.query.venue : null));
+  } catch (error) {
+    next(error);
+  }
+});
+
 purchaseOrdersRouter.get('/price-list', async (req, res, next) => {
   try {
     res.json(await purchaseOrdersService.listPriceList(req.user, typeof req.query.supplierId === 'string' ? req.query.supplierId : null));
