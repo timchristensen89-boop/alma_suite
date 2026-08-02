@@ -7608,7 +7608,7 @@ export const integrationService = {
   // support ticket.
   async pushTimesheetsToXero(
     actor: AuthUser,
-    input: { start: string; end: string; venue?: string | null }
+    input: { start: string; end: string; venue?: string | null; dryRun?: boolean }
   ): Promise<XeroTimesheetPushResult> {
     const start = new Date(input.start);
     const end = new Date(input.end);
@@ -7633,8 +7633,18 @@ export const integrationService = {
     }
 
     const connection = await connectedXeroConnection();
-    const tenantId = connection.providerAccountId;
-    if (!tenantId) throw new HttpError(409, 'No Xero tenant is connected.');
+    // Alma runs more than one Xero organisation (one per entity), and a single
+    // OAuth grant covers them all. An employee exists in exactly one of them,
+    // so every lookup and the POST itself have to be aimed at the tenant that
+    // actually holds them — asking only the default tenant made every employee
+    // in the other organisation look like they had been deleted from Xero.
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenants = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (tenants.length === 0) throw new HttpError(409, 'No Xero tenant is connected.');
 
     // Xero answers a POST made without the write scope with a bare 403 and no
     // indication that the scope is why. Check the recorded grant first so the
@@ -7680,13 +7690,26 @@ export const integrationService = {
     };
     type XeroPayrollCalendar = { PayrollCalendarID: string; CalendarType: string; StartDate?: string };
 
-    const calendarResponse = await xeroGetJson<{ PayrollCalendars?: XeroPayrollCalendar[] }>(
-      '/payroll.xro/1.0/PayrollCalendars',
-      { connection, tenantId }
-    );
-    const calendarsById = new Map(
-      (calendarResponse.data.PayrollCalendars ?? []).map((calendar) => [calendar.PayrollCalendarID.toLowerCase(), calendar])
-    );
+    // Payroll calendars are per-organisation, fetched once each on first use.
+    const calendarsByTenant = new Map<string, Map<string, XeroPayrollCalendar>>();
+    const calendarsFor = async (tenant: string) => {
+      const cached = calendarsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroPayrollCalendar>();
+      try {
+        const response = await xeroGetJson<{ PayrollCalendars?: XeroPayrollCalendar[] }>(
+          '/payroll.xro/1.0/PayrollCalendars',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayrollCalendars ?? []).map((calendar) => [calendar.PayrollCalendarID.toLowerCase(), calendar])
+        );
+      } catch (error) {
+        warnings.push(`Could not read payroll calendars for ${tenant}: ${error instanceof Error ? error.message : 'unknown error'}`);
+      }
+      calendarsByTenant.set(tenant, byId);
+      return byId;
+    };
 
     // Employees are fetched one at a time, not from the list endpoint. Xero's
     // employee LIST returns a summary with no pay template, and the ordinary
@@ -7694,25 +7717,35 @@ export const integrationService = {
     // every employee whose rate isn't also filled in on their Alma profile,
     // which today is all of them. The individual record carries both the
     // calendar and the rate, and we only fetch the handful being pushed.
-    const employeeCache = new Map<string, XeroPayrollEmployee | null>();
-    const fetchEmployee = async (id: string): Promise<XeroPayrollEmployee | null> => {
+    //
+    // Each id is tried against every connected organisation until one answers,
+    // and the winning tenant travels with the employee so the timesheet is
+    // posted to the org that actually employs them.
+    type ResolvedEmployee = { employee: XeroPayrollEmployee; tenantId: string; tenantName: string | null };
+    const employeeCache = new Map<string, ResolvedEmployee | null>();
+    const fetchEmployee = async (id: string): Promise<ResolvedEmployee | null> => {
       const key = id.toLowerCase();
       const cached = employeeCache.get(key);
       if (cached !== undefined) return cached;
-      let employee: XeroPayrollEmployee | null = null;
-      try {
-        const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
-          `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
-          { connection, tenantId }
-        );
-        employee = response.data.Employees?.[0] ?? null;
-      } catch {
-        // A 404 here means the id doesn't exist in this org — reported per
-        // employee below rather than aborting everyone else's payroll.
-        employee = null;
+      let resolved: ResolvedEmployee | null = null;
+      for (const tenant of tenants) {
+        try {
+          const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+            `/payroll.xro/1.0/Employees/${encodeURIComponent(id)}`,
+            { connection, tenantId: tenant.id }
+          );
+          const employee = response.data.Employees?.[0];
+          if (employee) {
+            resolved = { employee, tenantId: tenant.id, tenantName: tenant.name };
+            break;
+          }
+        } catch {
+          // A 404 just means "not this organisation" — keep asking the others,
+          // and report per employee below rather than aborting the payroll.
+        }
       }
-      employeeCache.set(key, employee);
-      return employee;
+      employeeCache.set(key, resolved);
+      return resolved;
     };
 
     // Group Alma rows by staff member; one employee can produce several Xero
@@ -7744,12 +7777,16 @@ export const integrationService = {
         fail('No Xero employee is linked to this staff profile. Link them in Admin → Xero employees, then push again.');
         continue;
       }
-      const employee = await fetchEmployee(xeroEmployeeId);
-      if (!employee) {
-        fail(`Xero has no employee ${xeroEmployeeId} in this organisation. Re-link the staff profile, then push again.`);
+      const resolved = await fetchEmployee(xeroEmployeeId);
+      if (!resolved) {
+        fail(
+          `Xero has no employee ${xeroEmployeeId} in ${tenants.length === 1 ? 'the connected organisation' : `any of the ${tenants.length} connected organisations`}. Re-link the staff profile, then push again.`
+        );
         continue;
       }
+      const { employee, tenantId: employeeTenantId } = resolved;
 
+      const calendarsById = await calendarsFor(employeeTenantId);
       const calendar = employee.PayrollCalendarID ? calendarsById.get(employee.PayrollCalendarID.toLowerCase()) : undefined;
       if (!calendar) {
         fail('This employee is not on a Xero payroll calendar, so Xero has no pay period to file the hours against.');
@@ -7793,12 +7830,31 @@ export const integrationService = {
         }
 
         const totalHours = Math.round(units.reduce((sum, value) => sum + value, 0) * 100) / 100;
+
+        // A dry run does every lookup and builds the real payload, but stops
+        // before writing. It is the only way to see which employees would fail
+        // without creating drafts in Xero that someone then has to delete.
+        if (input.dryRun) {
+          pushed += 1;
+          results.push({
+            employee: name,
+            staffProfileId,
+            status: 'pushed',
+            message: `Would send ${totalHours.toFixed(2)}h to ${resolved.tenantName ?? employeeTenantId} on earnings rate ${earningsRateId}.`,
+            hours: totalHours,
+            periodStart: group.period.start,
+            periodEnd: group.period.end,
+            xeroTimesheetId: null
+          });
+          continue;
+        }
+
         try {
           const response = await xeroPostJson<{ Timesheets?: Array<{ TimesheetID?: string; Status?: string }> }>(
             '/payroll.xro/1.0/Timesheets',
             {
               connection,
-              tenantId,
+              tenantId: employeeTenantId,
               body: {
                 Timesheets: [
                   {
@@ -7819,7 +7875,7 @@ export const integrationService = {
             employee: name,
             staffProfileId,
             status: 'pushed',
-            message: `${totalHours.toFixed(2)}h as a draft timesheet.`,
+            message: `${totalHours.toFixed(2)}h as a draft timesheet in ${resolved.tenantName ?? employeeTenantId}.`,
             hours: totalHours,
             periodStart: group.period.start,
             periodEnd: group.period.end,
@@ -7845,7 +7901,7 @@ export const integrationService = {
     // Only rows Xero actually accepted are marked exported. Marking on a
     // partial failure would hide the unpushed hours from the next attempt.
     let markedExported = 0;
-    if (exportedIds.length > 0) {
+    if (exportedIds.length > 0 && !input.dryRun) {
       const updated = await prisma.timesheet.updateMany({
         where: { id: { in: exportedIds } },
         data: { status: 'EXPORTED', exportedAt: new Date(), xeroExportBatchId: exportBatchId }

@@ -16517,8 +16517,11 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
   }
 
   // Push approved Xero timesheets straight into Xero as draft timesheets.
-  async function pushToXero() {
+  // `preview` runs every lookup without writing, which is how you find out
+  // who isn't linked to a Xero employee before anything lands in the pay run.
+  async function pushToXero(preview = false) {
     if (
+      !preview &&
       !window.confirm(
         'Push approved Xero timesheets for this period straight into Xero as draft timesheets? Review them in Xero before the pay run.'
       )
@@ -16540,7 +16543,8 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         body: JSON.stringify({
           start: weekStart.toISOString(),
           end: weekEnd.toISOString(),
-          venue: venueFilter
+          venue: venueFilter,
+          dryRun: preview
         })
       });
       // A push can partly succeed — one employee missing a Xero link doesn't
@@ -16550,7 +16554,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         .filter((entry) => entry.status === 'failed')
         .map((entry) => `${entry.employee}: ${entry.message}`);
       const parts = [
-        `Pushed ${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts`,
+        preview
+          ? `${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} ready to push`
+          : `Pushed ${result.pushed} timesheet${result.pushed === 1 ? '' : 's'} to Xero as drafts`,
         result.markedExported ? `${result.markedExported} shifts marked exported` : null,
         result.skipped ? `${result.skipped} skipped (no hours)` : null
       ].filter(Boolean);
@@ -16841,6 +16847,9 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
             </Button>
             <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void exportXero(true)}>
               Export CSV
+            </Button>
+            <Button type="button" size="sm" variant="secondary" disabled={saving} onClick={() => void pushToXero(true)}>
+              Preview push
             </Button>
             <Button type="button" size="sm" disabled={saving} onClick={() => void pushToXero()}>
               Push to Xero
