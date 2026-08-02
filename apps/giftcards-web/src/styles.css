@@ -3338,3 +3338,16 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   .counter-balance { font-size: 60px; }
   .counter-bar { flex-direction: column; align-items: stretch; }
 }
+
+/* Gift card artwork — gradient-filled text (the gold foil, and the flat inks).
+   As a real class rather than an inline style: React does not reliably emit
+   -webkit-background-clip, so inline the property computed to border-box and
+   the gradient painted the whole box instead of the glyphs — a solid bar where
+   the amount should be. */
+.alma-card-ink {
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  /* Callers set background-IMAGE, never the `background` shorthand — the
+     shorthand resets background-clip and the gradient fills the whole box. */
+}

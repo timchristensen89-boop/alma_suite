@@ -1,4 +1,5 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
@@ -2286,6 +2287,10 @@ export function App() {
   // there, or take one off a bill. Deliberately its own route rather than a
   // tab inside the manager dashboard, which is a desk tool full of controls a
   // busy floor should not be able to reach.
+  // A contact sheet of every layout in every palette. Not linked from
+  // anywhere — it exists so the artwork can be judged side by side rather
+  // than one card at a time inside the buy flow.
+  const isArtPath = window.location.pathname.startsWith('/card-art');
   const isCounterPath = window.location.pathname.startsWith('/counter');
   const isRedeemPath = window.location.pathname.startsWith('/redeem');
   const isOrdersPath = window.location.pathname.startsWith('/orders');
@@ -2293,6 +2298,7 @@ export function App() {
   const isPrintPath = window.location.pathname.startsWith('/print');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
+  if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
   if (!isRedeemPath && !isOrdersPath && !isAdminPath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
