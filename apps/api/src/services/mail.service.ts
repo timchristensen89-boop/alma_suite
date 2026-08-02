@@ -204,8 +204,17 @@ async function deliverEmail(input: {
   text: string;
   html: string;
   attachments?: EmailAttachment[];
+  /**
+   * Overrides the house sender for this message.
+   *
+   * The default is the operational address staff mail goes out from, which is
+   * right for a roster reminder and wrong for a customer who just paid for a
+   * gift card — they should hear from the venue, not from onboarding@.
+   */
+  from?: string;
 }): Promise<EmailDeliveryResult> {
-  if (resendApiKey && resendFrom) {
+  const sender = input.from?.trim() || resendFrom;
+  if (resendApiKey && sender) {
     try {
       const attachments = input.attachments?.map((attachment) => ({
         filename: attachment.filename,
@@ -221,7 +230,7 @@ async function deliverEmail(input: {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          from: resendFrom,
+          from: sender,
           to: [input.to],
           reply_to: replyTo || undefined,
           subject: input.subject,
@@ -241,7 +250,7 @@ async function deliverEmail(input: {
           status: response.status,
           to: input.to,
           subject: input.subject,
-          from: resendFrom,
+          from: sender,
           reason: message,
           body: errorBody
         });
@@ -264,7 +273,7 @@ async function deliverEmail(input: {
 
   try {
     await transporter.sendMail({
-      from: mailFrom,
+      from: input.from?.trim() || mailFrom,
       replyTo,
       to: input.to,
       subject: input.subject,
@@ -578,7 +587,17 @@ export const mailService = {
       </div>
     `;
 
-    return deliverEmail({ to: input.to, subject, text, html, attachments });
+    // A gift card is the one email here a customer receives, so it goes out
+    // from the venue's own address rather than the staff operations one.
+    // GIFTCARD_FROM overrides; otherwise the house sender still applies.
+    return deliverEmail({
+      to: input.to,
+      subject,
+      text,
+      html,
+      attachments,
+      from: process.env.GIFTCARD_FROM?.trim() || undefined
+    });
   },
 
   /**
