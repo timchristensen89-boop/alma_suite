@@ -37,7 +37,9 @@ import {
   entryHours,
   groupIntoPeriods,
   hasHours,
-  unitsForPeriod
+  unitsForPeriod,
+  splitUnitsByDay,
+  classifyEarningsRateName
 } from '@alma/shared';
 import { env } from '../env.js';
 import {
@@ -7872,6 +7874,32 @@ export const integrationService = {
     };
     type XeroPayrollCalendar = { PayrollCalendarID: string; CalendarType: string; StartDate?: string };
 
+    // Pay items are per-organisation and carry the award rate NAMES, which are
+    // the only way to tell a Saturday rate from a weekday one — Xero types them
+    // all as ORDINARYTIMEEARNINGS. Fetched once per organisation on first use.
+    type XeroEarningsRateItem = { EarningsRateID: string; Name?: string };
+    const payItemsByTenant = new Map<string, Map<string, XeroEarningsRateItem>>();
+    const payItemsForTenant = async (tenant: string) => {
+      const cached = payItemsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroEarningsRateItem>();
+      try {
+        const response = await xeroGetJson<{ PayItems?: { EarningsRates?: XeroEarningsRateItem[] } }>(
+          '/payroll.xro/1.0/PayItems',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayItems?.EarningsRates ?? []).map((rate) => [rate.EarningsRateID.toLowerCase(), rate])
+        );
+      } catch {
+        // Without pay items every hour lands on the weekday rate, which is the
+        // old behaviour rather than a failure — warn instead of aborting.
+        warnings.push(`Could not read pay items for ${tenant}; weekend hours went on the ordinary rate.`);
+      }
+      payItemsByTenant.set(tenant, byId);
+      return byId;
+    };
+
     // Payroll calendars are per-organisation, fetched once each on first use.
     const calendarsByTenant = new Map<string, Map<string, XeroPayrollCalendar>>();
     const calendarsFor = async (tenant: string) => {
@@ -7939,6 +7967,7 @@ export const integrationService = {
       byStaff.set(entry.staffProfileId, list);
     }
 
+    let publicHolidayWarned = false;
     const exportBatchId = `xero-push-${Date.now()}`;
     const exportedIds: string[] = [];
     let pushed = 0;
@@ -7993,6 +8022,32 @@ export const integrationService = {
         continue;
       }
 
+      // Weekend hours are paid on their own award rate, and Xero models that
+      // as a separate earnings rate rather than a loading — so a Saturday
+      // shift needs its own timesheet line or it is silently paid at the
+      // weekday rate. The rates available to this employee are whatever their
+      // pay template lists; classification is by name, because every one of
+      // them is ORDINARYTIMEEARNINGS to Xero.
+      const templateRateIds = (employee.PayTemplate?.EarningsLines ?? [])
+        .map((line) => line.EarningsRateID)
+        .filter((id): id is string => Boolean(id));
+      const tenantPayItems = await payItemsForTenant(employeeTenantId);
+      const rateIdFor: Partial<Record<'weekday' | 'saturday' | 'sunday' | 'publicHoliday', string>> = {};
+      for (const id of templateRateIds) {
+        const kind = classifyEarningsRateName(tenantPayItems.get(id.toLowerCase())?.Name);
+        if (kind && !rateIdFor[kind]) rateIdFor[kind] = id;
+      }
+      // The employee's nominated ordinary rate wins for weekdays — it is the
+      // one payroll chose for them, whatever its name happens to be.
+      rateIdFor.weekday = earningsRateId;
+      if (rateIdFor.publicHoliday && !publicHolidayWarned) {
+        // A date alone doesn't say whether it was a public holiday, and
+        // guessing one wrong is a payroll error. Say so rather than silently
+        // paying a holiday at the weekday rate.
+        warnings.push('Public holiday hours are not detected — they go on the ordinary rate. Check those days on the drafts in Xero.');
+        publicHolidayWarned = true;
+      }
+
       const groups = groupIntoPeriods(
         staffEntries.map((entry) => ({ workDate: entry.workDate, hours: entryHours(entry), id: entry.id })),
         calendarStart,
@@ -8005,6 +8060,27 @@ export const integrationService = {
 
       for (const group of groups) {
         const units = unitsForPeriod(group.entries, group.period);
+        const byDay = splitUnitsByDay(group.entries, group.period);
+        // One line per rate that actually has hours. A weekend rate the
+        // employee doesn't have falls back to the weekday rate rather than
+        // dropping the hours — underpaying is bad, losing them is worse.
+        const lines: Array<{ EarningsRateID: string; NumberOfUnits: number[] }> = [];
+        const weekdayUnits = [...byDay.weekday];
+        for (const kind of ['saturday', 'sunday'] as const) {
+          const kindUnits = byDay[kind];
+          if (!hasHours(kindUnits)) continue;
+          const rateId = rateIdFor[kind];
+          if (rateId && rateId !== rateIdFor.weekday) {
+            lines.push({ EarningsRateID: rateId, NumberOfUnits: kindUnits });
+          } else {
+            kindUnits.forEach((value, index) => {
+              weekdayUnits[index] = Math.round(((weekdayUnits[index] ?? 0) + value) * 100) / 100;
+            });
+          }
+        }
+        if (hasHours(weekdayUnits)) {
+          lines.unshift({ EarningsRateID: rateIdFor.weekday!, NumberOfUnits: weekdayUnits });
+        }
         if (!hasHours(units)) {
           skipped += 1;
           results.push({ employee: name, staffProfileId, status: 'skipped', message: 'No paid hours in this pay period.', hours: 0, periodStart: group.period.start, periodEnd: group.period.end, xeroTimesheetId: null });
@@ -8012,6 +8088,15 @@ export const integrationService = {
         }
 
         const totalHours = Math.round(units.reduce((sum, value) => sum + value, 0) * 100) / 100;
+        const rateSummary = ([
+          hasHours(weekdayUnits) ? `${weekdayUnits.reduce((a, b) => a + b, 0).toFixed(2)}h weekday` : null,
+          hasHours(byDay.saturday) && rateIdFor.saturday && rateIdFor.saturday !== rateIdFor.weekday
+            ? `${byDay.saturday.reduce((a, b) => a + b, 0).toFixed(2)}h Saturday`
+            : null,
+          hasHours(byDay.sunday) && rateIdFor.sunday && rateIdFor.sunday !== rateIdFor.weekday
+            ? `${byDay.sunday.reduce((a, b) => a + b, 0).toFixed(2)}h Sunday`
+            : null
+        ].filter(Boolean) as string[]).join(', ');
 
         // A dry run does every lookup and builds the real payload, but stops
         // before writing. It is the only way to see which employees would fail
@@ -8022,7 +8107,7 @@ export const integrationService = {
             employee: name,
             staffProfileId,
             status: 'pushed',
-            message: `Would send ${totalHours.toFixed(2)}h to ${resolved.tenantName ?? employeeTenantId} on earnings rate ${earningsRateId}.`,
+            message: `Would send ${totalHours.toFixed(2)}h to ${resolved.tenantName ?? employeeTenantId} across ${lines.length} rate${lines.length === 1 ? '' : 's'} (${rateSummary}).`,
             hours: totalHours,
             periodStart: group.period.start,
             periodEnd: group.period.end,
@@ -8047,7 +8132,7 @@ export const integrationService = {
                   StartDate: group.period.start,
                   EndDate: group.period.end,
                   Status: 'DRAFT',
-                  TimesheetLines: [{ EarningsRateID: earningsRateId, NumberOfUnits: units }]
+                  TimesheetLines: lines
                 }
               ]
             }
@@ -8059,7 +8144,7 @@ export const integrationService = {
             employee: name,
             staffProfileId,
             status: 'pushed',
-            message: `${totalHours.toFixed(2)}h as a draft timesheet in ${resolved.tenantName ?? employeeTenantId}.`,
+            message: `${totalHours.toFixed(2)}h as a draft timesheet in ${resolved.tenantName ?? employeeTenantId} (${rateSummary}).`,
             hours: totalHours,
             periodStart: group.period.start,
             periodEnd: group.period.end,

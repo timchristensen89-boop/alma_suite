@@ -119,6 +119,75 @@ export function unitsForPeriod(entries: PushableEntry[], period: PayPeriod): num
   return units.map((value) => Math.round(value * 100) / 100);
 }
 
+/**
+ * Which award rate a day's hours belong on.
+ *
+ * Hospitality awards pay a different rate on weekends, and Xero models that as
+ * separate earnings rates rather than a loading — so the hours have to be split
+ * across several timesheet lines, one per rate. Sending everything on the
+ * ordinary rate underpays every weekend shift.
+ *
+ * Public holidays are a fourth rate that this cannot detect: the date alone
+ * doesn't say whether it was a holiday, and a wrong guess is a payroll error.
+ * They stay on the weekday rate and the push warns when an employee has a
+ * public-holiday rate available, so someone checks the draft in Xero.
+ */
+export type DayRateKind = 'weekday' | 'saturday' | 'sunday';
+
+/** The kind of day a YYYY-MM-DD falls on, read in UTC. */
+export function dayRateKind(day: Date | string): DayRateKind {
+  const weekday = dayStart(day).getUTCDay();
+  if (weekday === 6) return 'saturday';
+  if (weekday === 0) return 'sunday';
+  return 'weekday';
+}
+
+/**
+ * One NumberOfUnits array per rate kind, each the full length of the period
+ * with zeros on the days that belong to a different rate. Xero wants a line
+ * per earnings rate, and every line spans the whole period.
+ */
+export function splitUnitsByDay(
+  entries: PushableEntry[],
+  period: PayPeriod
+): Record<DayRateKind, number[]> {
+  const start = dayStart(period.start);
+  const out: Record<DayRateKind, number[]> = {
+    weekday: new Array<number>(period.days).fill(0),
+    saturday: new Array<number>(period.days).fill(0),
+    sunday: new Array<number>(period.days).fill(0)
+  };
+  for (const entry of entries) {
+    const index = Math.floor((dayStart(entry.workDate).getTime() - start.getTime()) / 86_400_000);
+    if (index < 0 || index >= period.days) continue;
+    const bucket = out[dayRateKind(entry.workDate)];
+    bucket[index] = (bucket[index] ?? 0) + entry.hours;
+  }
+  for (const kind of ['weekday', 'saturday', 'sunday'] as DayRateKind[]) {
+    out[kind] = out[kind]!.map((value) => Math.round(value * 100) / 100);
+  }
+  return out;
+}
+
+/**
+ * Classify a Xero earnings rate by its name.
+ *
+ * Every one of these is ORDINARYTIMEEARNINGS to Xero — the award distinction
+ * lives only in the name a payroll admin typed ("Casual F&B Gr2 Saturday").
+ * That makes name matching the only signal available, so it is deliberately
+ * narrow: anything it doesn't recognise stays on the weekday rate rather than
+ * being guessed onto a penalty rate.
+ */
+export function classifyEarningsRateName(name: string | undefined | null): DayRateKind | 'publicHoliday' | null {
+  const text = (name ?? '').toLowerCase();
+  if (!text) return null;
+  if (/public\s*hol|\bph\b/.test(text)) return 'publicHoliday';
+  if (/saturday|\bsat\b/.test(text)) return 'saturday';
+  if (/sunday|\bsun\b/.test(text)) return 'sunday';
+  if (/weekday|ordinary|monday|mon\s*[-–]\s*fri/.test(text)) return 'weekday';
+  return null;
+}
+
 /** Whether a period has any hours worth sending. */
 export function hasHours(units: number[]): boolean {
   return units.some((value) => value > 0);

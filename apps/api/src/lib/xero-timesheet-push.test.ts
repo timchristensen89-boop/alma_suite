@@ -1,11 +1,14 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  classifyEarningsRateName,
+  dayRateKind,
   entryHours,
   groupIntoPeriods,
   hasHours,
   parseXeroDate,
   payPeriodFor,
+  splitUnitsByDay,
   unitsForPeriod
 } from '@alma/shared';
 
@@ -173,4 +176,64 @@ test('parseXeroDate returns null rather than an Invalid Date', () => {
   assert.equal(parseXeroDate(null), null);
   assert.equal(parseXeroDate(''), null);
   assert.equal(parseXeroDate('not a date'), null);
+});
+
+test('dayRateKind names the award rate a day belongs on', () => {
+  // 2026-07-25 is a Saturday, 2026-07-26 a Sunday, 2026-07-27 a Monday.
+  assert.equal(dayRateKind('2026-07-25'), 'saturday');
+  assert.equal(dayRateKind('2026-07-26'), 'sunday');
+  assert.equal(dayRateKind('2026-07-27'), 'weekday');
+  assert.equal(dayRateKind('2026-07-24'), 'weekday');
+});
+
+test('splitUnitsByDay puts weekend hours on their own lines', () => {
+  // Week of Mon 2026-07-20: Sat is index 5, Sun index 6.
+  const period = { start: '2026-07-20', end: '2026-07-26', days: 7 };
+  const split = splitUnitsByDay(
+    [
+      { workDate: '2026-07-21', hours: 8 },
+      { workDate: '2026-07-25', hours: 6 },
+      { workDate: '2026-07-26', hours: 5 }
+    ],
+    period
+  );
+  assert.deepEqual(split.weekday, [0, 8, 0, 0, 0, 0, 0]);
+  assert.deepEqual(split.saturday, [0, 0, 0, 0, 0, 6, 0]);
+  assert.deepEqual(split.sunday, [0, 0, 0, 0, 0, 0, 5]);
+});
+
+test('splitUnitsByDay keeps every line the full length of the period', () => {
+  const period = { start: '2026-07-01', end: '2026-07-14', days: 14 };
+  const split = splitUnitsByDay([{ workDate: '2026-07-04', hours: 4 }], period);
+  assert.equal(split.weekday.length, 14);
+  assert.equal(split.saturday.length, 14);
+  assert.equal(split.sunday.length, 14);
+});
+
+test('splitUnitsByDay sums two shifts on one weekend day', () => {
+  const period = { start: '2026-07-20', end: '2026-07-26', days: 7 };
+  const split = splitUnitsByDay(
+    [
+      { workDate: '2026-07-25', hours: 4 },
+      { workDate: '2026-07-25', hours: 3.5 }
+    ],
+    period
+  );
+  assert.equal(split.saturday[5], 7.5);
+});
+
+test('classifyEarningsRateName reads the award names Xero actually carries', () => {
+  assert.equal(classifyEarningsRateName('Casual F&B Gr2 Saturday'), 'saturday');
+  assert.equal(classifyEarningsRateName('Casual F&B Gr2 Sunday'), 'sunday');
+  assert.equal(classifyEarningsRateName('Casual F&B Gr2 Weekdays '), 'weekday');
+  assert.equal(classifyEarningsRateName('Casual F&B Gr2 Public Holiday'), 'publicHoliday');
+  assert.equal(classifyEarningsRateName('Ordinary Hours'), 'weekday');
+});
+
+test('classifyEarningsRateName refuses to guess', () => {
+  // An unrecognised rate must not be promoted onto a penalty rate.
+  assert.equal(classifyEarningsRateName('Overtime Hours (exempt from super)'), null);
+  assert.equal(classifyEarningsRateName('Redundancy'), null);
+  assert.equal(classifyEarningsRateName(''), null);
+  assert.equal(classifyEarningsRateName(null), null);
 });
