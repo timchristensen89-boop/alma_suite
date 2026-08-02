@@ -16593,7 +16593,7 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
         body: JSON.stringify({
           start: rangeStart.toISOString(),
           end: rangeEnd.toISOString(),
-          venue: venueFilter,
+          venue: venueFilter === 'all' ? '' : venueFilter,
           dryRun: preview,
           staffProfileIds: pushSelection
         })
@@ -16964,11 +16964,19 @@ function TimesheetsPage({ staff, roster = [] }: { staff: StaffProfile[]; roster?
       {pushResult ? (
         <div className="ts-push-result">
           <div className="ts-push-result-head">
-            <strong>{pushResult.preview ? 'Preview — nothing sent to Xero yet' : 'Pushed to Xero'}</strong>
+            <strong>
+              {pushResult.rows.length === 0
+                ? 'Nothing to push'
+                : pushResult.preview
+                  ? 'Preview — nothing sent to Xero yet'
+                  : 'Pushed to Xero'}
+            </strong>
             <span className="subtle">
-              {pushResult.preview ? `${pushResult.pushed} ready` : `${pushResult.pushed} sent`}
-              {pushResult.failed ? ` · ${pushResult.failed} failed` : ''}
-              {pushResult.skipped ? ` · ${pushResult.skipped} skipped` : ''}
+              {pushResult.rows.length === 0
+                ? (message ?? 'No approved timesheets matched.')
+                : `${pushResult.preview ? `${pushResult.pushed} ready` : `${pushResult.pushed} sent`}${
+                    pushResult.failed ? ` · ${pushResult.failed} failed` : ''
+                  }${pushResult.skipped ? ` · ${pushResult.skipped} skipped` : ''}`}
             </span>
             <button type="button" className="ts-push-result-close" onClick={() => setPushResult(null)} aria-label="Dismiss">
               ×

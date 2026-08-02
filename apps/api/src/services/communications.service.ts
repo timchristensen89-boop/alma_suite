@@ -463,12 +463,26 @@ export const communicationsService = {
 
   // Staff noticeboard read view — active announcements, pinned first. Any
   // signed-in user can read; posting/editing stays manager-gated.
-  async listNotices(_user?: AuthUser): Promise<SuiteNoticesPayload> {
+  /**
+   * The noticeboard as one reader sees it.
+   *
+   * A notice with no app or venue set is for everyone; one that names either
+   * is only for that audience. Scoping here rather than in the UI means a
+   * Freshwater notice never lands on an Avalon board, and it means the same
+   * answer whichever surface asks.
+   */
+  async listNotices(user?: AuthUser, options: { appId?: AlmaAppId } = {}): Promise<SuiteNoticesPayload> {
     const now = new Date();
+    const venue = clean(user?.venue ?? undefined);
+    const appId = options.appId;
     const notices = await prisma.suiteAnnouncement.findMany({
       where: {
         deletedAt: null,
-        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }]
+        OR: [{ expiresAt: null }, { expiresAt: { gt: now } }],
+        AND: [
+          { OR: [{ appId: null }, ...(appId ? [{ appId }] : [])] },
+          { OR: [{ venue: null }, { venue: '' }, ...(venue ? [{ venue }] : [])] }
+        ]
       },
       orderBy: [{ pinned: 'desc' }, { createdAt: 'desc' }],
       take: 100

@@ -2544,6 +2544,7 @@ async function xeroPostJson<T>(
  * unknown shapes visible rather than swallowing them.
  */
 function xeroValidationMessage(body: string): string {
+  const LIMIT = 600;
   try {
     const parsed = JSON.parse(body) as {
       Message?: string;
@@ -2553,12 +2554,23 @@ function xeroValidationMessage(body: string): string {
       .flatMap((element) => element.ValidationErrors ?? [])
       .map((error) => error.Message)
       .filter((message): message is string => Boolean(message));
-    if (validation.length > 0) return validation.join('; ').slice(0, 300);
-    if (parsed.Message) return parsed.Message.slice(0, 300);
+    if (validation.length > 0) return validation.join('; ').slice(0, LIMIT);
+    if (parsed.Message) return parsed.Message.slice(0, LIMIT);
   } catch {
-    // Not JSON — fall through to the raw body.
+    // Not JSON. Payroll answers some rejections in XML, where the sentence
+    // worth reading is inside <Message>.
+    const xml = /<Message>([\s\S]*?)<\/Message>/.exec(body);
+    if (xml?.[1]) {
+      return xml[1]
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&amp;/g, '&')
+        .trim()
+        .slice(0, LIMIT);
+    }
   }
-  return body.slice(0, 200);
+  return body.slice(0, LIMIT);
 }
 
 // Binary twin of xeroGetJson — same auth/tenant/401-refresh-retry discipline,
@@ -7445,33 +7457,114 @@ export const integrationService = {
     return recordWebhook('SQUARE', rawBody, accountKey);
   },
 
-  async syncXeroPayRates(actor: AuthUser): Promise<XeroPayRateSyncResult> {
+  /**
+   * Pull each employee's ordinary hourly rate out of Xero Payroll onto their
+   * Alma profile.
+   *
+   * Two things make this less obvious than it looks. Xero's employee LIST is a
+   * summary and carries no pay template, so the rate has to come from the
+   * individual employee record — reading it off the list silently skipped
+   * every single employee. And a group with more than one Xero organisation
+   * has its people split across them, so the list has to be walked per tenant.
+   *
+   * Detail records are only fetched for employees that matched an Alma profile
+   * and are actually rate-managed, so the call count stays close to the number
+   * of people whose rate we intend to write.
+   */
+  /**
+   * Pull each employee's ordinary hourly rate out of Xero Payroll onto their
+   * Alma profile.
+   *
+   * Two things make this less obvious than it looks. Xero's employee LIST is a
+   * summary and carries no pay template, so the rate has to come from the
+   * individual employee record — reading it off the list silently skipped
+   * every single employee. And a group with more than one Xero organisation
+   * has its people split across them, so the list has to be walked per tenant.
+   *
+   * Detail records are only fetched for employees that matched an Alma profile
+   * and are actually rate-managed, so the call count stays close to the number
+   * of people whose rate we intend to write.
+   */
+  /**
+   * Read-only payroll dump for one employee, plus the organisation's pay items.
+   * Diagnostic only — used when a rate doesn't come across and the question is
+   * what shape Xero is actually returning.
+   */
+  async debugXeroPayroll(_actor: AuthUser, name: string) {
     const connection = await connectedXeroConnection();
+    const tenants = xeroTenantsFromConnection(connection);
+    const out: unknown[] = [];
+    for (const tenant of tenants) {
+      const list = await xeroGetJson<{ Employees?: Array<{ EmployeeID: string; FirstName: string; LastName: string; Status: string }> }>(
+        '/payroll.xro/1.0/Employees',
+        { connection, tenantId: tenant.id }
+      );
+      const match = (list.data.Employees ?? []).find(
+        (e) => e.Status === 'ACTIVE' && `${e.FirstName} ${e.LastName}`.toLowerCase().includes(name.toLowerCase())
+      );
+      if (!match) continue;
+      const detail = await xeroGetJson<unknown>(`/payroll.xro/1.0/Employees/${match.EmployeeID}`, { connection, tenantId: tenant.id });
+      const payItems = await xeroGetJson<unknown>('/payroll.xro/1.0/PayItems', { connection, tenantId: tenant.id });
+      out.push({ tenant: tenant.name, employee: detail.data, payItems: payItems.data });
+    }
+    return out;
+  },
 
+  async syncXeroPayRates(actor: AuthUser, options: { dryRun?: boolean } = {}): Promise<XeroPayRateSyncResult> {
+    const connection = await connectedXeroConnection();
+    const recordedTenants = xeroTenantsFromConnection(connection);
+    const tenants = recordedTenants.length > 0
+      ? recordedTenants
+      : connection.providerAccountId
+        ? [{ id: connection.providerAccountId, name: connection.providerAccountName ?? null }]
+        : [];
+    if (tenants.length === 0) throw new HttpError(409, 'No Xero tenant is connected.');
+
+    type XeroEarningsLine = {
+      EarningsRateID?: string;
+      EarningsType?: string;
+      RatePerUnit?: number;
+      NormalNumberOfUnits?: number;
+    };
     type XeroPayrollEmployee = {
       EmployeeID: string;
       FirstName: string;
       LastName: string;
       Email?: string;
       Status: string;
-      PayTemplate?: {
-        EarningsLines?: Array<{
-          EarningsRateID?: string;
-          EarningsType?: string;
-          RatePerUnit?: number;
-          NormalNumberOfUnits?: number;
-        }>;
-      };
+      OrdinaryEarningsRateID?: string;
+      PayTemplate?: { EarningsLines?: XeroEarningsLine[] };
+    };
+    type XeroEarningsRate = {
+      EarningsRateID: string;
+      Name?: string;
+      EarningsType?: string;
+      RatePerUnit?: number;
     };
 
-    const response = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
-      '/payroll.xro/1.0/Employees',
-      { connection }
-    );
-
-    const xeroEmployees = (response.data.Employees ?? []).filter(
-      (e) => e.Status === 'ACTIVE'
-    );
+    // The hourly rate usually is NOT on the employee. Alma's staff are on award
+    // pay items ("Casual F&B Gr2 Weekdays", $33.85/hr) and their template lines
+    // just say CalculationType: USEEARNINGSRATE — the money lives on the pay
+    // item they point at. Reading only the employee found no rate for anyone.
+    const payItemsByTenant = new Map<string, Map<string, XeroEarningsRate>>();
+    const payItemsFor = async (tenant: string) => {
+      const cached = payItemsByTenant.get(tenant);
+      if (cached) return cached;
+      let byId = new Map<string, XeroEarningsRate>();
+      try {
+        const response = await xeroGetJson<{ PayItems?: { EarningsRates?: XeroEarningsRate[] } }>(
+          '/payroll.xro/1.0/PayItems',
+          { connection, tenantId: tenant }
+        );
+        byId = new Map(
+          (response.data.PayItems?.EarningsRates ?? []).map((rate) => [rate.EarningsRateID.toLowerCase(), rate])
+        );
+      } catch {
+        // Reported per employee below as "no rate found".
+      }
+      payItemsByTenant.set(tenant, byId);
+      return byId;
+    };
 
     const staffProfiles = await prisma.staffProfile.findMany({
       where: { mergedIntoStaffProfileId: null },
@@ -7487,20 +7580,16 @@ export const integrationService = {
     });
 
     const byXeroId = new Map(
-      staffProfiles
-        .filter((p) => p.xeroEmployeeId)
-        .map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
+      staffProfiles.filter((p) => p.xeroEmployeeId).map((p) => [p.xeroEmployeeId!.toLowerCase(), p])
     );
     const byEmail = new Map(
-      staffProfiles
-        .filter((p) => p.email)
-        .map((p) => [p.email!.toLowerCase(), p])
+      staffProfiles.filter((p) => p.email).map((p) => [p.email!.toLowerCase(), p])
     );
     // Name fallback (accent/case-insensitive) for staff with no Xero ID and a
     // non-matching/absent email — catches the bulk that would otherwise be
     // left unmatched. Only used when the name is unambiguous (one staffer).
     const xeroNameKey = (first: string, last: string) =>
-      `${first} ${last}`.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+      `${first} ${last}`.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
     const byName = new Map<string, typeof staffProfiles>();
     for (const p of staffProfiles) {
       const key = xeroNameKey(p.firstName, p.lastName);
@@ -7511,84 +7600,156 @@ export const integrationService = {
 
     const updated: XeroPayRateSyncResult['updated'] = [];
     const unmatched: XeroPayRateSyncResult['unmatched'] = [];
-    let skipped = 0;
+    const skippedDetail: NonNullable<XeroPayRateSyncResult['skippedDetail']> = [];
+    const tenantResults: NonNullable<XeroPayRateSyncResult['tenants']> = [];
+    // One Alma profile must not be written twice if two organisations both
+    // claim the same person — first tenant to match wins.
+    const handledProfileIds = new Set<string>();
+    let lastConnectionId = connection.id;
 
-    for (const emp of xeroEmployees) {
-      const earningsLine = emp.PayTemplate?.EarningsLines?.find(
-        (l) => l.EarningsType === 'ORDINARYTIMEEARNINGS'
-      ) ?? emp.PayTemplate?.EarningsLines?.[0];
+    for (const tenant of tenants) {
+      let tenantEmployees = 0;
+      let tenantError: string | null = null;
+      try {
+        const listResponse = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+          '/payroll.xro/1.0/Employees',
+          { connection, tenantId: tenant.id }
+        );
+        lastConnectionId = listResponse.connection.id;
+        const active = (listResponse.data.Employees ?? []).filter((employee) => employee.Status === 'ACTIVE');
+        tenantEmployees = active.length;
 
-      const ratePerUnit = earningsLine?.RatePerUnit;
-      if (!ratePerUnit || ratePerUnit <= 0) {
-        skipped++;
-        continue;
-      }
+        for (const emp of active) {
+          const nameList = byName.get(xeroNameKey(emp.FirstName, emp.LastName)) ?? [];
+          const profile =
+            byXeroId.get(emp.EmployeeID.toLowerCase()) ??
+            (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
+            (nameList.length === 1 ? nameList[0] : undefined);
 
-      const nameList = byName.get(xeroNameKey(emp.FirstName, emp.LastName)) ?? [];
-      const profile =
-        byXeroId.get(emp.EmployeeID.toLowerCase()) ??
-        (emp.Email ? byEmail.get(emp.Email.toLowerCase()) : undefined) ??
-        (nameList.length === 1 ? nameList[0] : undefined);
+          if (!profile) {
+            unmatched.push({
+              xeroEmployeeId: emp.EmployeeID,
+              firstName: emp.FirstName,
+              lastName: emp.LastName,
+              email: emp.Email ?? null
+            });
+            continue;
+          }
+          if (handledProfileIds.has(profile.id)) continue;
 
-      if (!profile) {
-        unmatched.push({
-          xeroEmployeeId: emp.EmployeeID,
-          firstName: emp.FirstName,
-          lastName: emp.LastName,
-          email: emp.Email ?? null
-        });
-        continue;
-      }
+          const displayName = `${profile.firstName} ${profile.lastName}`.trim();
 
-      // The Alma profile is the source of truth for salaried and cash-paid
-      // staff: if a manager has set a manual full-time salary or cash wages,
-      // don't let Xero's hourly rate clobber it. Still stamp the Xero link.
-      if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH') {
-        if (!profile.xeroEmployeeId) {
-          await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
+          // The Alma profile is the source of truth for salaried and cash-paid
+          // staff: if a manager has set a manual full-time salary or cash wages,
+          // don't let Xero's hourly rate clobber it. Still stamp the Xero link.
+          if (profile.payProfile?.payMode === 'MANUAL_FULL_TIME' || profile.payProfile?.payMode === 'CASH') {
+            if (!profile.xeroEmployeeId && !options.dryRun) {
+              await prisma.staffProfile.update({ where: { id: profile.id }, data: { xeroEmployeeId: emp.EmployeeID } });
+            }
+            handledProfileIds.add(profile.id);
+            skippedDetail.push({ name: displayName, reason: `Paid as ${profile.payProfile.payMode === 'CASH' ? 'cash' : 'salary'} in Alma — rate left alone.` });
+            continue;
+          }
+
+          // The rate lives on the pay template, which only the individual
+          // employee record carries.
+          let detail: XeroPayrollEmployee | null = null;
+          try {
+            const detailResponse = await xeroGetJson<{ Employees?: XeroPayrollEmployee[] }>(
+              `/payroll.xro/1.0/Employees/${encodeURIComponent(emp.EmployeeID)}`,
+              { connection, tenantId: tenant.id }
+            );
+            detail = detailResponse.data.Employees?.[0] ?? null;
+          } catch (error) {
+            skippedDetail.push({ name: displayName, reason: `Xero would not return their record: ${error instanceof Error ? error.message : 'unknown error'}` });
+            handledProfileIds.add(profile.id);
+            continue;
+          }
+
+          const lines = detail?.PayTemplate?.EarningsLines ?? [];
+          const payItems = await payItemsFor(tenant.id);
+          const rateOf = (id: string | undefined) =>
+            id ? payItems.get(id.toLowerCase())?.RatePerUnit : undefined;
+
+          // Order matters. An explicit rate typed onto the employee's own line
+          // overrides the pay item; otherwise their nominated ordinary rate;
+          // otherwise the first ordinary-time line that resolves to a rate.
+          const ordinaryRateId = detail?.OrdinaryEarningsRateID ?? emp.OrdinaryEarningsRateID;
+          const ratePerUnit =
+            lines.find((line) => (line.RatePerUnit ?? 0) > 0)?.RatePerUnit ??
+            rateOf(ordinaryRateId) ??
+            lines
+              .map((line) => ({ line, item: line.EarningsRateID ? payItems.get(line.EarningsRateID.toLowerCase()) : undefined }))
+              .find((entry) => entry.item?.EarningsType === 'ORDINARYTIMEEARNINGS' && (entry.item?.RatePerUnit ?? 0) > 0)
+              ?.item?.RatePerUnit;
+
+          if (!ratePerUnit || ratePerUnit <= 0) {
+            handledProfileIds.add(profile.id);
+            skippedDetail.push({
+              name: displayName,
+              reason: lines.length === 0
+                ? 'No pay template in Xero — set their ordinary earnings rate there.'
+                : ordinaryRateId
+                  ? 'Their ordinary earnings rate has no hourly amount set in Xero.'
+                  : 'No ordinary earnings rate is nominated for them in Xero.'
+            });
+            continue;
+          }
+
+          handledProfileIds.add(profile.id);
+          const newPayRateCents = Math.round(ratePerUnit * 100);
+          if (!options.dryRun) {
+            await prisma.staffProfile.update({
+              where: { id: profile.id },
+              // Stamp the Xero link so future syncs match by id even when first
+              // matched by name/email.
+              data: { payRateCents: newPayRateCents, xeroEmployeeId: emp.EmployeeID }
+            });
+          }
+
+          updated.push({
+            staffId: profile.id,
+            firstName: profile.firstName,
+            lastName: profile.lastName,
+            previousPayRateCents: profile.payRateCents,
+            newPayRateCents,
+            xeroEmployeeId: emp.EmployeeID
+          });
         }
-        skipped++;
-        continue;
+      } catch (error) {
+        // One organisation failing must not lose the other's rates.
+        tenantError = error instanceof Error ? error.message : 'Xero request failed.';
       }
-
-      const newPayRateCents = Math.round(ratePerUnit * 100);
-      await prisma.staffProfile.update({
-        where: { id: profile.id },
-        // Stamp the Xero link so future syncs match by id even when first
-        // matched by name/email.
-        data: { payRateCents: newPayRateCents, xeroEmployeeId: emp.EmployeeID }
-      });
-
-      updated.push({
-        staffId: profile.id,
-        firstName: profile.firstName,
-        lastName: profile.lastName,
-        previousPayRateCents: profile.payRateCents,
-        newPayRateCents,
-        xeroEmployeeId: emp.EmployeeID
-      });
+      tenantResults.push({ tenantId: tenant.id, tenantName: tenant.name, employees: tenantEmployees, error: tenantError });
     }
 
-    await recordEvent({
-      provider: 'XERO',
-      connectionId: response.connection.id,
-      eventType: 'DATA_IMPORTED',
-      summary: `Xero pay rates synced: ${updated.length} updated, ${unmatched.length} unmatched, ${skipped} skipped.`,
-      actor,
-      metadata: {
-        tokenStatus: response.tokenStatus,
-        synced: updated.length,
-        unmatched: unmatched.length,
-        skipped
-      }
-    });
+    const skipped = skippedDetail.length;
+
+    if (!options.dryRun) {
+      await recordEvent({
+        provider: 'XERO',
+        connectionId: lastConnectionId,
+        eventType: 'DATA_IMPORTED',
+        summary: `Xero pay rates synced: ${updated.length} updated, ${unmatched.length} unmatched, ${skipped} skipped.`,
+        actor,
+        metadata: {
+          synced: updated.length,
+          unmatched: unmatched.length,
+          skipped,
+          tenants: tenantResults.length
+        }
+      });
+    }
 
     return {
       synced: updated.length,
       skipped,
       notMatched: unmatched.length,
       updated,
-      unmatched
+      unmatched,
+      skippedDetail,
+      tenants: tenantResults,
+      dryRun: options.dryRun === true
     };
   },
 
@@ -7620,7 +7781,11 @@ export const integrationService = {
     // Same venue rule the CSV export applies: an admin sees what they ask for,
     // a manager only ever their own venue. Payroll is the last place to let a
     // request parameter widen someone's reach.
-    const requestedVenue = input.venue?.trim() || '';
+    // 'all' is this app's sentinel for "every venue", not a venue name. Passed
+    // through it becomes `venue = 'all'`, which matches nothing and reports a
+    // silent zero — the timesheet list guards the same way.
+    const rawVenue = input.venue?.trim() || '';
+    const requestedVenue = rawVenue === 'all' ? '' : rawVenue;
     let scopedVenue: string | undefined;
     if (actor.isAdmin || actor.role === 'ADMIN') {
       scopedVenue = requestedVenue || undefined;
@@ -7872,17 +8037,19 @@ export const integrationService = {
             {
               connection,
               tenantId: employeeTenantId,
-              body: {
-                Timesheets: [
-                  {
-                    EmployeeID: employee.EmployeeID,
-                    StartDate: group.period.start,
-                    EndDate: group.period.end,
-                    Status: 'DRAFT',
-                    TimesheetLines: [{ EarningsRateID: earningsRateId, NumberOfUnits: units }]
-                  }
-                ]
-              }
+              // A bare array, not { Timesheets: [...] }. The AU Payroll API
+              // wraps collections on the way out but expects the raw array on
+              // the way in, and rejects the wrapped form with a deserialization
+              // error that never names the property it choked on.
+              body: [
+                {
+                  EmployeeID: employee.EmployeeID,
+                  StartDate: group.period.start,
+                  EndDate: group.period.end,
+                  Status: 'DRAFT',
+                  TimesheetLines: [{ EarningsRateID: earningsRateId, NumberOfUnits: units }]
+                }
+              ]
             }
           );
           const created = response.data.Timesheets?.[0];

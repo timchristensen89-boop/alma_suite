@@ -5623,7 +5623,9 @@ export const staffService = {
     const data = timesheetExportInputSchema.parse(input);
     const startDate = parseDate(data.start, 'Export start date');
     const endDate = parseDate(data.end, 'Export end date');
-    const scopedVenue = scopeVenueForActor(data.venue || undefined, actor);
+    // 'all' means every venue, not a venue called "all" — without this the
+    // export runs clean and produces an empty CSV.
+    const scopedVenue = scopeVenueForActor(data.venue && data.venue !== 'all' ? data.venue : undefined, actor);
     const entries = await prisma.timesheet.findMany({
       where: {
         status: 'APPROVED',

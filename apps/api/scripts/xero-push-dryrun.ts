@@ -12,7 +12,7 @@
 import { integrationService } from '../src/services/integration.service.js';
 import type { AuthUser } from '@alma/shared';
 
-const [start, end] = process.argv.slice(2);
+const [start, end, venue] = process.argv.slice(2);
 if (!start || !end) {
   console.error('Usage: xero-push-dryrun.ts <start YYYY-MM-DD> <end YYYY-MM-DD>');
   process.exit(1);
@@ -21,7 +21,7 @@ if (!start || !end) {
 const actor = { id: 'dry-run', role: 'ADMIN', isAdmin: true, venue: null } as unknown as AuthUser;
 
 try {
-  const result = await integrationService.pushTimesheetsToXero(actor, { start, end, dryRun: true });
+  const result = await integrationService.pushTimesheetsToXero(actor, { start, end, venue, dryRun: true });
   console.log(`\nwould push: ${result.pushed}   failed: ${result.failed}   skipped: ${result.skipped}\n`);
   for (const row of result.results) {
     console.log(`  [${row.status.padEnd(7)}] ${row.employee.padEnd(24)} ${row.periodStart ?? '—'}..${row.periodEnd ?? '—'}  ${row.message}`);

@@ -2747,6 +2747,16 @@ export type XeroPayRateSyncResult = {
     lastName: string;
     email: string | null;
   }>;
+  /**
+   * Why each skipped employee was skipped. A bare count can't distinguish
+   * "correctly left alone because they're salaried" from "Xero had no rate
+   * for them", and those need opposite responses.
+   */
+  skippedDetail?: Array<{ name: string; reason: string }>;
+  /** Xero organisations the sync actually read, for a multi-entity group. */
+  tenants?: Array<{ tenantId: string; tenantName: string | null; employees: number; error: string | null }>;
+  /** True when nothing was written — a preview run. */
+  dryRun?: boolean;
 };
 
 export type XeroTimesheetSyncResult = {

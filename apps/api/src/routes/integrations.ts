@@ -270,7 +270,10 @@ integrationsRouter.post('/xero/health-check', async (req, res, next) => {
 
 integrationsRouter.post('/xero/sync-pay-rates', async (req, res, next) => {
   try {
-    res.json(await integrationService.syncXeroPayRates(req.user!));
+    // dryRun reads everything and writes nothing — a rate sync overwrites what
+    // managers see on every profile, so being able to look first matters.
+    const dryRun = (req.body ?? {}).dryRun === true;
+    res.json(await integrationService.syncXeroPayRates(req.user!, { dryRun }));
   } catch (error) {
     next(error);
   }

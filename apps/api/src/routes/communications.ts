@@ -35,7 +35,7 @@ communicationsRouter.get('/admin', requireManager, async (req, res, next) => {
 // Staff noticeboard read view — any signed-in user.
 communicationsRouter.get('/notices', async (req, res, next) => {
   try {
-    res.json(await communicationsService.listNotices(req.user));
+    res.json(await communicationsService.listNotices(req.user, { appId: appIdFromQuery(req.query.appId) }));
   } catch (error) {
     next(error);
   }
