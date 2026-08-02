@@ -143,6 +143,10 @@ export const checklistService = {
       data: {
         name: data.name,
         area: data.area || null,
+        cadence: data.cadence,
+        // A day is only meaningful for the two cadences that use one; storing
+        // a stale weekday against a DAILY template would confuse the next edit.
+        cadenceDay: data.cadence === 'WEEKLY' || data.cadence === 'MONTHLY' ? data.cadenceDay ?? null : null,
         items: {
           create: data.items.map((item, index) => ({
             label: item.label,
@@ -162,7 +166,12 @@ export const checklistService = {
     return prisma.$transaction(async (tx) => {
       await tx.checklistTemplate.update({
         where: { id: existing.id },
-        data: { name: data.name, area: data.area || null }
+        data: {
+          name: data.name,
+          area: data.area || null,
+          cadence: data.cadence,
+          cadenceDay: data.cadence === 'WEEKLY' || data.cadence === 'MONTHLY' ? data.cadenceDay ?? null : null
+        }
       });
 
       // Replace items fully. Safe because ChecklistItem (from runs) references the

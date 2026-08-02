@@ -5,6 +5,7 @@ export * from './invoice-matching.js';
 export * from './purchase-history.js';
 export * from './xero-timesheet-push.js';
 export * from './checklist-cadence.js';
+import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {
   AWARD_RATE_SETS,
@@ -279,6 +280,11 @@ export const checklistTemplateItemInputSchema = z.object({
 export const checklistTemplateInputSchema = z.object({
   name: z.string().min(2),
   area: z.string().optional().or(z.literal('')),
+  // How often the daily scheduler raises a run from this template. Defaults to
+  // DAILY so an existing caller that doesn't send one keeps its behaviour.
+  cadence: z.enum(CHECKLIST_CADENCES).optional().default('DAILY'),
+  // Weekday (0 = Sunday) for WEEKLY, day of the month for MONTHLY.
+  cadenceDay: z.coerce.number().int().min(0).max(31).optional().nullable(),
   items: z.array(checklistTemplateItemInputSchema).min(1)
 });
 
@@ -4967,6 +4973,10 @@ export type ChecklistTemplate = {
   id: string;
   name: string;
   area: string | null;
+  /** How often the scheduler raises a run. See CHECKLIST_CADENCES. */
+  cadence: ChecklistCadence;
+  /** Weekday (0 = Sunday) for WEEKLY, day of the month for MONTHLY. */
+  cadenceDay: number | null;
   createdAt: string;
   updatedAt: string;
   items: ChecklistTemplateItem[];

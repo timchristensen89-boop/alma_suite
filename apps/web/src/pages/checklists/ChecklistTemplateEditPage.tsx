@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import type { ChecklistTemplate } from '@alma/shared';
+import type { ChecklistCadence, ChecklistTemplate } from '@alma/shared';
+import {
+  CHECKLIST_CADENCES,
+  CHECKLIST_CADENCE_LABELS,
+  WEEKDAY_NAMES,
+  describeChecklistCadence,
+  isChecklistCadence
+} from '@alma/shared';
 import {
   ActionFeedback,
   Button,
@@ -9,6 +16,7 @@ import {
   IconButton,
   Input,
   PageHeader,
+  Select,
   Spinner,
   Textarea
 } from '@alma/ui';
@@ -24,6 +32,9 @@ type ItemDraft = {
 type TemplateDraft = {
   name: string;
   area: string;
+  cadence: ChecklistCadence;
+  /** Weekday for WEEKLY, day of the month for MONTHLY. Ignored otherwise. */
+  cadenceDay: number;
   items: ItemDraft[];
 };
 
@@ -39,6 +50,8 @@ function emptyDraft(): TemplateDraft {
   return {
     name: '',
     area: '',
+    cadence: 'DAILY',
+    cadenceDay: 1,
     items: [emptyItem(), emptyItem(), emptyItem()]
   };
 }
@@ -47,6 +60,8 @@ function templateToDraft(template: ChecklistTemplate): TemplateDraft {
   return {
     name: template.name,
     area: template.area ?? '',
+    cadence: isChecklistCadence(template.cadence) ? template.cadence : 'DAILY',
+    cadenceDay: template.cadenceDay ?? 1,
     items: template.items
       .slice()
       .sort((a, b) => a.position - b.position)
@@ -137,6 +152,8 @@ export function ChecklistTemplateEditPage() {
       const payload = {
         name: draft.name.trim(),
         area: draft.area.trim(),
+        cadence: draft.cadence,
+        cadenceDay: draft.cadence === 'WEEKLY' || draft.cadence === 'MONTHLY' ? draft.cadenceDay : null,
         items: draft.items
           .map((item, index) => ({
             label: item.label.trim(),
@@ -216,7 +233,44 @@ export function ChecklistTemplateEditPage() {
             onChange={(event) => setDraft((d) => ({ ...d, area: event.target.value }))}
             placeholder="e.g. Kitchen, Bar, Floor"
           />
+          {/* Cadence decides whether the 04:30 scheduler raises this template.
+              An SOP nobody runs daily belongs on MANUAL, not on the board every
+              morning drowning out the opening checks. */}
+          <Select
+            label="How often"
+            value={draft.cadence}
+            onChange={(event) =>
+              setDraft((d) => ({ ...d, cadence: event.target.value as ChecklistCadence }))
+            }
+            options={CHECKLIST_CADENCES.map((cadence) => ({
+              value: cadence,
+              label: CHECKLIST_CADENCE_LABELS[cadence]
+            }))}
+          />
+          {draft.cadence === 'WEEKLY' ? (
+            <Select
+              label="Which day"
+              value={String(draft.cadenceDay)}
+              onChange={(event) => setDraft((d) => ({ ...d, cadenceDay: Number(event.target.value) }))}
+              options={WEEKDAY_NAMES.map((name, index) => ({ value: String(index), label: name }))}
+            />
+          ) : null}
+          {draft.cadence === 'MONTHLY' ? (
+            <Input
+              label="Day of the month"
+              type="number"
+              min={1}
+              max={31}
+              value={String(draft.cadenceDay)}
+              onChange={(event) => setDraft((d) => ({ ...d, cadenceDay: Number(event.target.value) || 1 }))}
+            />
+          ) : null}
         </div>
+        <p className="muted">
+          {draft.cadence === 'MANUAL'
+            ? 'Nothing is raised automatically — someone starts this when they need it.'
+            : `Raised automatically at 4:30am · ${describeChecklistCadence(draft.cadence, draft.cadenceDay).toLowerCase()}.`}
+        </p>
       </Card>
 
       <Card
