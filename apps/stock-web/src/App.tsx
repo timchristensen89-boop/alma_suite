@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteFeedbackWidget, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
+import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
@@ -206,7 +206,6 @@ function TopBarWithContext() {
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={user.role !== 'STAFF'}
             />
-            <SuiteFeedbackWidget appId="STOCK" api={api} userName={`${user.firstName} ${user.lastName}`} />
             <ThemeToggle />
             <SuiteClock />
             <SuiteSignOutButton

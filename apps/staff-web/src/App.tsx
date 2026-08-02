@@ -91,7 +91,6 @@ import {
   SuiteAppSwitcher,
   accessibleSuiteApps,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
@@ -798,11 +797,6 @@ function TopBarWithContext() {
               venue={user.venue}
               userName={`${user.firstName} ${user.lastName}`}
               canAnnounce={canManageCommunications(user)}
-            />
-            <SuiteFeedbackWidget
-              appId="STAFF"
-              api={api}
-              userName={`${user.firstName} ${user.lastName}`}
             />
             <ThemeToggle />
             <SuiteClock />

@@ -2028,6 +2028,16 @@ model GiftCard {
   refundNote              String?
   cancelledById           String?
   paidAt                  DateTime?
+  // How the sale happened. ONLINE is the public buy page; COUNTER is a staff
+  // member selling face to face.
+  saleChannel             String               @default("ONLINE")
+  // What the money came in as: STRIPE, CARD, CASH, EFTPOS or COMP. Counter
+  // sales rung through the venue's own POS record the tender here so the gift
+  // card reconciles against takings instead of floating free.
+  tender                  String?
+  // POS receipt number, last four digits, or whatever the venue writes down.
+  tenderReference         String?
+  soldByStaffId           String?
   expiresAt               DateTime?
   createdAt               DateTime             @default(now())
   updatedAt               DateTime             @updatedAt

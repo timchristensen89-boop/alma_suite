@@ -3351,3 +3351,62 @@ html[data-theme='dark'] .giftcards-revenue-delta.is-danger {
   /* Callers set background-IMAGE, never the `background` shorthand — the
      shorthand resets background-clip and the gradient fills the whole box. */
 }
+
+
+/* ── Counter: tender picker, Stripe hand-off, balance ─────────────────── */
+.counter-tenders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+.counter-tenders button {
+  display: grid;
+  gap: 3px;
+  padding: 14px 16px;
+  /* Same 56px floor as the rest of this screen — it is used at arm's length,
+     one-handed, by someone mid-service. */
+  min-height: 68px;
+  border: 1px solid rgba(31, 53, 36, 0.18);
+  border-radius: 14px;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+}
+.counter-tenders button strong { font-size: 15px; }
+.counter-tenders button small { font-size: 12px; opacity: 0.65; }
+.counter-tenders button.is-on {
+  border-color: #1f3524;
+  background: #1f3524;
+  color: #f6f2e9;
+}
+.counter-tenders button.is-on small { opacity: 0.8; }
+
+.counter-pay { text-align: center; }
+.counter-qr {
+  width: 220px;
+  height: 220px;
+  margin: 8px auto 18px;
+  display: block;
+  border-radius: 16px;
+  background: #fff;
+  padding: 10px;
+}
+.counter-secondary {
+  min-height: 56px;
+  padding: 0 26px;
+  border-radius: 999px;
+  border: 1px solid rgba(31, 53, 36, 0.25);
+  background: transparent;
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.counter-balance { text-align: center; margin-top: 26px; }
+.counter-code-input {
+  font-size: 24px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}

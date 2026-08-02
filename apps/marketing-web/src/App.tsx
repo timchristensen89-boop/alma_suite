@@ -45,7 +45,6 @@ import {
   SUITE_APPS,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   Textarea,
   ThemeToggle,
@@ -1446,7 +1445,6 @@ function MarketingWorkspace({ user, onLogout }: { user: AuthUser; onLogout: () =
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteFeedbackWidget appId="MARKETING" api={api} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
               <SuiteSignOutButton onClick={() => void onLogout()} />

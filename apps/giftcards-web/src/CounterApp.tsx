@@ -29,8 +29,18 @@ const money = (cents: number) =>
 /** Amounts a venue actually sells. Anything else goes in the keypad. */
 const QUICK_AMOUNTS = [50, 100, 150, 200, 250, 500];
 
+type Tender = 'CARD' | 'CASH' | 'EFTPOS' | 'STRIPE' | 'COMP';
+
+const TENDERS: Array<{ id: Tender; label: string; hint: string }> = [
+  { id: 'CARD', label: 'Card on the till', hint: 'Rung through the venue POS' },
+  { id: 'EFTPOS', label: 'EFTPOS', hint: 'Rung through the venue POS' },
+  { id: 'CASH', label: 'Cash', hint: 'Into the drawer' },
+  { id: 'STRIPE', label: 'Card now', hint: 'Guest taps on their own phone' },
+  { id: 'COMP', label: 'Comp', hint: 'No money taken' }
+];
+
 export function CounterApp() {
-  const [mode, setMode] = useState<'sell' | 'redeem'>('sell');
+  const [mode, setMode] = useState<'sell' | 'balance' | 'redeem'>('sell');
 
   return (
     <div className="counter">
@@ -49,6 +59,15 @@ export function CounterApp() {
           <button
             type="button"
             role="tab"
+            aria-selected={mode === 'balance'}
+            className={mode === 'balance' ? 'is-on' : ''}
+            onClick={() => setMode('balance')}
+          >
+            Check balance
+          </button>
+          <button
+            type="button"
+            role="tab"
             aria-selected={mode === 'redeem'}
             className={mode === 'redeem' ? 'is-on' : ''}
             onClick={() => setMode('redeem')}
@@ -57,7 +76,7 @@ export function CounterApp() {
           </button>
         </div>
       </header>
-      {mode === 'sell' ? <SellPanel /> : <RedeemPanel />}
+      {mode === 'sell' ? <SellPanel /> : mode === 'balance' ? <BalancePanel /> : <RedeemPanel />}
     </div>
   );
 }
@@ -74,6 +93,12 @@ function SellPanel() {
   const [busy, setBusy] = useState(false);
   const [issued, setIssued] = useState<Card | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // How the money is coming in. CARD/CASH/EFTPOS are rung on the venue's own
+  // till and recorded here so the card reconciles against takings; STRIPE
+  // takes the payment now, on the customer's phone.
+  const [tender, setTender] = useState<Tender>('CARD');
+  const [reference, setReference] = useState('');
+  const [pay, setPay] = useState<{ url: string; sessionId: string } | null>(null);
 
   const cents = useMemo(() => {
     if (amount !== null) return amount * 100;
@@ -81,9 +106,70 @@ function SellPanel() {
     return Number.isFinite(parsed) && parsed > 0 ? Math.round(parsed * 100) : 0;
   }, [amount, custom]);
 
+  /**
+   * Take the payment through Stripe on the customer's own phone.
+   *
+   * They scan the QR and pay there, so no card details touch this iPad and the
+   * venue needs no reader hardware. We poll the session until Stripe confirms,
+   * then show the code exactly as a till-paid sale does.
+   */
+  async function payByCard() {
+    if (cents < 500) {
+      setError('A card has to be at least $5.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const session = await api<{ checkoutUrl: string; checkoutSessionId: string }>(
+        '/api/gift-cards/counter/checkout',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            amountCents: cents,
+            purchaserName: recipient.trim() || 'Counter sale',
+            purchaserEmail: email.trim() || 'counter@almagroup.com.au',
+            recipientName: recipient.trim() || '',
+            recipientEmail: email.trim() || ''
+          })
+        }
+      );
+      setPay({ url: session.checkoutUrl, sessionId: session.checkoutSessionId });
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not start that payment.');
+      setBusy(false);
+    }
+  }
+
+  // Poll only while a payment is on screen. The session endpoint 404s until
+  // Stripe confirms, so a miss is the normal state, not an error.
+  useEffect(() => {
+    if (!pay) return;
+    let cancelled = false;
+    const timer = setInterval(async () => {
+      try {
+        const card = await api<Card>(`/api/gift-cards/session/${encodeURIComponent(pay.sessionId)}`);
+        if (cancelled) return;
+        setIssued(card);
+        setPay(null);
+        setBusy(false);
+      } catch {
+        // Not paid yet.
+      }
+    }, 2500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [pay]);
+
   async function sell() {
     if (cents < 500) {
       setError('A card has to be at least $5.');
+      return;
+    }
+    if (tender === 'STRIPE') {
+      await payByCard();
       return;
     }
     setBusy(true);
@@ -97,7 +183,9 @@ function SellPanel() {
           initialValueCents: cents,
           purchaserName: 'Counter sale',
           recipientName: recipient.trim() || null,
-          recipientEmail: email.trim() || null
+          recipientEmail: email.trim() || null,
+          tender,
+          tenderReference: reference.trim() || null
         })
       });
       setIssued(card);
@@ -115,6 +203,26 @@ function SellPanel() {
     setRecipient('');
     setEmail('');
     setError(null);
+    setReference('');
+    setPay(null);
+    setBusy(false);
+  }
+
+  if (pay) {
+    // A QR the guest scans with their own camera. Their phone is the card
+    // terminal — nothing sensitive passes through this iPad.
+    const qr = `https://api.qrserver.com/v1/create-qr-code/?size=440x440&margin=8&data=${encodeURIComponent(pay.url)}`;
+    return (
+      <main className="counter-body counter-pay">
+        <p className="counter-kicker">Ask them to scan this</p>
+        <img className="counter-qr" src={qr} alt="Scan to pay" width={220} height={220} />
+        <p className="counter-issued-value">{money(cents)} to pay</p>
+        <p className="counter-note">Waiting for the payment… the card issues itself the moment it lands.</p>
+        <button type="button" className="counter-secondary" onClick={reset}>
+          Cancel
+        </button>
+      </main>
+    );
   }
 
   if (issued) {
@@ -175,12 +283,126 @@ function SellPanel() {
         </label>
       </div>
 
+      <p className="counter-kicker">How are they paying?</p>
+      <div className="counter-tenders">
+        {TENDERS.map((option) => (
+          <button
+            key={option.id}
+            type="button"
+            className={tender === option.id ? 'is-on' : ''}
+            onClick={() => setTender(option.id)}
+          >
+            <strong>{option.label}</strong>
+            <small>{option.hint}</small>
+          </button>
+        ))}
+      </div>
+
+      {/* Only worth asking for on a till sale — it is the thread back to the
+          POS receipt when the takings are reconciled. */}
+      {tender === 'CARD' || tender === 'EFTPOS' || tender === 'CASH' ? (
+        <label className="counter-field">
+          <span>Receipt or last 4 (optional)</span>
+          <input value={reference} onChange={(event) => setReference(event.target.value)} />
+        </label>
+      ) : null}
+
       {error ? <p className="counter-error">{error}</p> : null}
 
       <button type="button" className="counter-primary" disabled={busy || cents < 500} onClick={() => void sell()}>
-        {busy ? 'Issuing…' : cents > 0 ? `Issue a ${money(cents)} card` : 'Choose an amount'}
+        {busy
+          ? tender === 'STRIPE' ? 'Starting payment…' : 'Issuing…'
+          : cents > 0
+            ? tender === 'STRIPE' ? `Take ${money(cents)} by card` : `Issue a ${money(cents)} card`
+            : 'Choose an amount'}
       </button>
-      <p className="counter-note">Take the payment on the till first, then issue the card.</p>
+      <p className="counter-note">
+        {tender === 'STRIPE'
+          ? 'The guest pays on their phone. The card issues itself once Stripe confirms.'
+          : tender === 'COMP'
+            ? 'No payment recorded — this card will not count towards takings.'
+            : 'Ring the payment through the till, then issue the card.'}
+      </p>
+    </main>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Balance                                                             */
+/* ------------------------------------------------------------------ */
+
+/**
+ * Read-only balance lookup.
+ *
+ * Its own screen on purpose. "What's left on this?" is the most common
+ * question at the counter, and answering it inside the redeem flow puts a
+ * spend button under the thumb of someone who only meant to look.
+ */
+function BalancePanel() {
+  const [code, setCode] = useState('');
+  const [card, setCard] = useState<Card | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function look() {
+    const value = code.trim().toUpperCase();
+    if (!value) return;
+    setBusy(true);
+    setError(null);
+    setCard(null);
+    try {
+      setCard(await api<Card>(`/api/gift-cards/cards/${encodeURIComponent(value)}`));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'No card with that number.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const spent = card ? card.initialValueCents - card.balanceCents : 0;
+
+  return (
+    <main className="counter-body">
+      <p className="counter-kicker">Card number</p>
+      <label className="counter-field">
+        <span className="sr-only">Card number</span>
+        <input
+          className="counter-code-input"
+          autoCapitalize="characters"
+          placeholder="ALMA-XXXXXXXX"
+          value={code}
+          onChange={(event) => setCode(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') void look();
+          }}
+        />
+      </label>
+      <button type="button" className="counter-primary" disabled={busy || !code.trim()} onClick={() => void look()}>
+        {busy ? 'Looking…' : 'Check balance'}
+      </button>
+
+      {error ? <p className="counter-error">{error}</p> : null}
+
+      {card ? (
+        <div className="counter-balance">
+          {/* The balance is the answer; everything else is context. */}
+          <p className="counter-code">{money(card.balanceCents)}</p>
+          <p className="counter-issued-value">
+            {card.status === 'ACTIVE'
+              ? 'Good to use'
+              : card.status === 'REDEEMED'
+                ? 'Fully used'
+                : card.status.replace('_', ' ').toLowerCase()}
+          </p>
+          <p className="counter-note">
+            {money(card.initialValueCents)} originally
+            {spent > 0 ? ` · ${money(spent)} spent` : ' · nothing spent yet'}
+            {card.expiresAt
+              ? ` · valid until ${new Date(card.expiresAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' })}`
+              : ''}
+          </p>
+        </div>
+      ) : null}
     </main>
   );
 }

@@ -533,7 +533,13 @@ export const giftCardService = {
     return quote;
   },
 
-  async createCheckout(input: unknown) {
+  /**
+   * `counter` marks a sale a staff member is ringing up face to face. The
+   * customer still pays through Stripe — they scan a QR and tap on their own
+   * phone — so no card details ever touch the iPad, and the venue needs no
+   * reader hardware. The flag only changes how the sale is labelled.
+   */
+  async createCheckout(input: unknown, options: { counter?: boolean; soldByStaffId?: string | null } = {}) {
     const data = giftCardCheckoutInputSchema.parse(input);
     const settings = await getGiftCardSettings();
     const promoResult = data.promoCode?.trim()
@@ -624,6 +630,9 @@ export const giftCardService = {
         design: data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
+        saleChannel: options.counter ? 'COUNTER' : 'ONLINE',
+        tender: 'STRIPE',
+        soldByStaffId: options.counter ? options.soldByStaffId ?? null : null,
         expiresAt,
         scheduledDeliveryAt
       },
@@ -870,6 +879,17 @@ export const giftCardService = {
       ? data.recipientEmail.trim().toLowerCase()
       : null;
 
+    // How the money was taken. A counter sale usually goes through the venue's
+    // own POS, and recording that here is what lets gift card revenue reconcile
+    // against takings instead of appearing from nowhere. COMP is a giveaway —
+    // real card, no money, and worth being able to tell apart later.
+    const TENDERS = ['CARD', 'CASH', 'EFTPOS', 'STRIPE', 'COMP'] as const;
+    const tenderRaw = typeof data.tender === 'string' ? data.tender.trim().toUpperCase() : '';
+    const tender = (TENDERS as readonly string[]).includes(tenderRaw) ? tenderRaw : 'CARD';
+    const tenderReference = typeof data.tenderReference === 'string' && data.tenderReference.trim()
+      ? data.tenderReference.trim().slice(0, 64)
+      : null;
+
     if (!codeRaw || !/^[A-Z0-9-]+$/.test(codeRaw)) {
       throw new HttpError(400, 'A card code may only contain letters, numbers and dashes.');
     }
@@ -896,7 +916,6 @@ export const giftCardService = {
         initialValueCents,
         balanceCents: initialValueCents,
         discountCents: 0,
-        amountPaidCents: initialValueCents,
         currency: 'aud',
         purchaserName,
         purchaserEmail,
@@ -907,7 +926,14 @@ export const giftCardService = {
         promoCodeSnapshot: 'PHYSICAL_COUNTER',
         testMode: false,
         stripeCheckoutSessionId: `physical:${Date.now()}`,
-        paidAt: new Date(),
+        // A comped card was never paid for. Leaving paidAt set would put it in
+        // the sold-value total and overstate what the venue actually took.
+        paidAt: tender === 'COMP' ? null : new Date(),
+        amountPaidCents: tender === 'COMP' ? 0 : initialValueCents,
+        saleChannel: 'COUNTER',
+        tender,
+        tenderReference,
+        soldByStaffId: actor?.id ?? null,
         expiresAt
       },
       include: { redemptions: true }

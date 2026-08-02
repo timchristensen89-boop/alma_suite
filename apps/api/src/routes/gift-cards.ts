@@ -199,6 +199,22 @@ giftCardsRouter.get('/cards/:code', requireManager, async (req, res, next) => {
   }
 });
 
+// Counter sale paid by card through Stripe. Staff show the returned URL as a
+// QR; the customer pays on their own phone, so no card details reach the iPad
+// and no reader hardware is needed. Poll /session/:id to see it land.
+giftCardsRouter.post('/counter/checkout', requireManager, async (req, res, next) => {
+  try {
+    res.json(
+      await giftCardService.createCheckout(req.body, {
+        counter: true,
+        soldByStaffId: req.user?.id ?? null
+      })
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.post('/physical/activate', requireManager, async (req, res, next) => {
   try {
     res.status(201).json(await giftCardService.activatePhysicalCard(req.body, req.user));

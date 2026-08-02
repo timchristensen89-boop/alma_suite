@@ -46,7 +46,6 @@ import {
   accessibleSuiteApps,
   SuiteAppSwitcher,
   SuiteClock,
-  SuiteFeedbackWidget,
   SuiteInboxWidget,
   ThemeToggle,
   TopBar,
@@ -4506,7 +4505,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                 userName={`${user.firstName} ${user.lastName}`}
                 canAnnounce={user.role !== 'STAFF'}
               />
-              <SuiteFeedbackWidget appId="REPORTS" api={staffApi} userName={`${user.firstName} ${user.lastName}`} />
               <ThemeToggle />
               <SuiteClock />
               <ReportsUserMenu user={user} onLogout={onLogout} />
