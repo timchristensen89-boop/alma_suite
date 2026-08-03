@@ -5,7 +5,19 @@ import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+/**
+ * The same app ships two ways: served from Firebase Hosting, and bundled
+ * inside the native shell.
+ *
+ * Capacitor loads the built files from the app bundle, where there is no site
+ * root — absolute asset paths resolve against capacitor://localhost and 404.
+ * A relative base works in both places, so the native build is the web build
+ * rather than a second artefact that can drift.
+ */
+const NATIVE = process.env.ALMA_NATIVE === '1';
+
 export default defineConfig({
+  base: NATIVE ? './' : '/',
   plugins: [react()],
   resolve: {
     alias: {

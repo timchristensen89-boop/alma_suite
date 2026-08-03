@@ -15,16 +15,32 @@ function requiredUrl(names: string[], localFallback: string) {
 const API_BASE_URL = requiredUrl(['VITE_API_URL', 'VITE_API_BASE_URL'], 'http://localhost:3018');
 const AUTH_TOKEN_KEY = 'alma.staff.session';
 
+/**
+ * Mirrors token writes into the native durable store.
+ *
+ * Injected rather than imported so this module stays free of Capacitor — the
+ * web build should not pull a native SDK into its bundle. main.tsx wires it
+ * when running inside the shell.
+ */
+let persistToken: (token: string | null) => void = () => undefined;
+
+export function setTokenPersister(fn: (token: string | null) => void) {
+  persistToken = fn;
+}
+
 export function setApiAuthToken(token: string | null | undefined) {
   if (!token) {
     window.localStorage.removeItem(AUTH_TOKEN_KEY);
+    persistToken(null);
     return;
   }
   window.localStorage.setItem(AUTH_TOKEN_KEY, token);
+  persistToken(token);
 }
 
 export function clearApiAuthToken() {
   window.localStorage.removeItem(AUTH_TOKEN_KEY);
+  persistToken(null);
 }
 
 function requestHeaders(init?: RequestInit) {
