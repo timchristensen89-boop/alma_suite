@@ -473,14 +473,6 @@ function periodFromPreset(key: PeriodPresetKey, now: Date = new Date()): { start
   }
 }
 
-// Map a period span (in days) to the closest overview-range bucket the API
-// accepts ('7' | '30' | '90'), so the overview widens to match the chosen period.
-function overviewRangeForSpan(start: Date, end: Date): '7' | '30' | '90' {
-  const spanDays = Math.round((end.getTime() - start.getTime()) / 86400000);
-  if (spanDays <= 7) return '7';
-  if (spanDays <= 31) return '30';
-  return '90';
-}
 
 function formatCurrency(cents: number) {
   return new Intl.NumberFormat(undefined, {
@@ -1106,7 +1098,6 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [selectedWeekStart, setSelectedWeekStart] = useState(() => isoDate(startOfWeek(new Date())));
   const weekStart = useMemo(() => startOfWeek(new Date(`${selectedWeekStart}T00:00:00`)), [selectedWeekStart]);
   const weekEnd = useMemo(() => addDays(weekStart, 7), [weekStart]);
-  const [overviewRange, setOverviewRange] = useState<'7' | '30' | '90'>('30');
   // Recipe popup opened from a clickable menu-profitability row.
   const [recipePreview, setRecipePreview] = useState<{ id: string; title: string | null } | null>(null);
   // Menu-engineering buckets that are expanded (collapsed by default).
@@ -1129,12 +1120,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       window.open(href, '_blank', 'noopener');
     }
   }
-  // Top-of-report period preset (drives the date-range state below).
+  // Top-of-report period preset — the single source of truth for every figure
+  // on the page that is measured over a span of time.
+  //
+  // It used not to be. The money reports (sales, item sales, menu profitability,
+  // menu COGS, prime cost, tips) were all fetched with weekStart..weekEnd, which
+  // is always exactly seven days, while the overview cards were fetched with a
+  // separate 7/30/90 selector. So choosing "Last financial year" showed one
+  // week of revenue beside ninety days of stock, under a heading saying "Last
+  // financial year". Three controls, three different windows, one page.
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
-  const periodLabel = useMemo(
-    () => PERIOD_PRESETS.find((preset) => preset.key === periodPreset)?.label ?? 'This week',
-    [periodPreset]
-  );
+  const period = useMemo(() => periodFromPreset(periodPreset), [periodPreset]);
+  const periodLabel = period.label;
+  const periodStartIso = period.start.toISOString();
+  const periodEndIso = period.end.toISOString();
   // Menu Engineering filters persist across refreshes (like the forecast inputs)
   // so an analyst doesn't re-pick account/venue/category/mapping every visit.
   const storedMenuFilters = loadJsonDraft<{
@@ -1182,7 +1181,9 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   // 8-week forecast vs actual history for the sales section chart.
   const [forecastHistory, setForecastHistory] = useState<Array<{ weekStart: string; forecastCents: number; actualCents: number; variance: number | null }>>([]);
   const activeReport = REPORT_NAV_ITEMS.find((item) => item.id === activeSection) ?? REPORT_NAV_ITEMS[0]!;
-  const overviewWindowLabel = `Last ${data.overview?.rangeDays ?? overviewRange} days`;
+  // The heading now names the period being shown rather than a bucket that
+  // may not have matched it.
+  const overviewWindowLabel = periodLabel;
   const weekWindowLabel = `${isoDate(weekStart)} to ${isoDate(addDays(weekEnd, -1))}`;
 
   const load = useCallback(async () => {
@@ -1191,8 +1192,8 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setStockMessage(null);
     try {
       const menuProfitabilityParams = new URLSearchParams({
-        start: weekStart.toISOString(),
-        end: weekEnd.toISOString(),
+        start: periodStartIso,
+        end: periodEndIso,
         accountKey: menuAccountKey,
         mappingStatus: menuMappingStatus
       });
@@ -1205,18 +1206,24 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
       // a report with one section missing, so what arrives is rendered and
       // what did not is named.
       const settled = await Promise.allSettled([
-        staffApi<ReportsOverviewPayload>(`/api/reports/overview?range=${overviewRange}`),
+        staffApi<ReportsOverviewPayload>(
+          `/api/reports/overview?start=${encodeURIComponent(periodStartIso)}&end=${encodeURIComponent(periodEndIso)}`
+        ),
         staffApi<SuiteSummary>('/api/summary'),
         staffApi<StaffProfile[]>('/api/staff'),
         staffApi<Timesheet[]>(`/api/staff/timesheets?start=${isoDate(weekStart)}&end=${isoDate(weekEnd)}&status=all`),
         staffApi<RosterShift[]>(`/api/staff/roster?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
         staffApi<RosterForecastSnapshot[]>(`/api/staff/roster/forecast-snapshots?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<SalesActualSummary>(`/api/reports/sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
+        // Money is measured over the chosen period, not over whichever week the
+        // period happens to start in. Roster, timesheets and the forecast above
+        // stay on the week, because those panels have their own week navigator
+        // and a roster only means anything a week at a time.
+        staffApi<SalesActualSummary>(`/api/reports/sales?start=${periodStartIso}&end=${periodEndIso}`),
+        staffApi<SalesItemActualSummary>(`/api/reports/item-sales?start=${periodStartIso}&end=${periodEndIso}`),
         staffApi<ReportsMenuProfitabilityPayload>(`/api/reports/menu-profitability?${menuProfitabilityParams.toString()}`),
-        staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
-        staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`),
-        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${weekStart.toISOString()}&end=${weekEnd.toISOString()}`)
+        staffApi<MenuCogsPayload>(`/api/reports/menu-cogs?start=${periodStartIso}&end=${periodEndIso}${menuVenue ? `&venue=${encodeURIComponent(menuVenue)}` : ''}`).catch(() => null),
+        staffApi<ReportsPrimeCostPayload>(`/api/reports/prime-cost?start=${periodStartIso}&end=${periodEndIso}`),
+        staffApi<StaffTipsSummary>(`/api/staff/tips?start=${periodStartIso}&end=${periodEndIso}`)
       ]);
 
       const SECTION_LABELS = [
@@ -1275,7 +1282,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     } finally {
       setLoading(false);
     }
-  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, overviewRange, weekEnd, weekStart]);
+  }, [menuAccountKey, menuCategory, menuMappingStatus, menuVenue, periodStartIso, periodEndIso, weekEnd, weekStart]);
 
   useEffect(() => {
     void load();
@@ -2026,16 +2033,12 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     setPeriodPreset('this-week');
   }
 
-  // Apply a top-of-report period preset. Aligns the week-shaped reports to the
-  // week containing the preset's start, and widens the overview range to match
-  // the preset span so the existing data-loading effect refetches accordingly.
+  // Apply a top-of-report period preset. Everything measured over a span now
+  // reads the preset directly, so the only thing left to do here is move the
+  // week-shaped panels (roster, timesheets) to the week the period starts in.
   function applyPeriodPreset(key: PeriodPresetKey) {
-    const period = periodFromPreset(key);
-    const alignedWeekStart = isoDate(startOfWeek(period.start));
-    const nextOverviewRange = overviewRangeForSpan(period.start, period.end);
     setPeriodPreset(key);
-    setSelectedWeekStart(alignedWeekStart);
-    setOverviewRange(nextOverviewRange);
+    setSelectedWeekStart(isoDate(startOfWeek(periodFromPreset(key).start)));
   }
 
   function selectReportSection(section: ReportSectionId) {
@@ -4526,18 +4529,15 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           {renderActiveReportSection()}
         </Suspense>
 
-        <Card title="Report controls" subtitle="Choose the reporting range without changing production data.">
+        {/*
+          The "Overview range" select used to live here, offering 7/30/90 days
+          alongside the period picker at the top of the report. Two controls,
+          two answers, no way to tell which a given card was showing. The period
+          picker now drives every figure measured over a span, so this is the
+          week navigator for the roster-shaped panels and nothing else.
+        */}
+        <Card title="Report controls" subtitle={`Showing ${periodLabel.toLowerCase()}. The week below moves the roster and timesheet panels.`}>
           <div className="reports-week-controls">
-            <Select
-              label="Overview range"
-              value={overviewRange}
-              onChange={(event) => setOverviewRange(event.currentTarget.value as '7' | '30' | '90')}
-              options={[
-                { label: 'Last 7 days', value: '7' },
-                { label: 'Last 30 days', value: '30' },
-                { label: 'Last 90 days', value: '90' }
-              ]}
-            />
             <Button type="button" variant="secondary" size="sm" onClick={() => moveWeek(-7)}>
               Prev week
             </Button>

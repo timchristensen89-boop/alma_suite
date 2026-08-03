@@ -39,6 +39,14 @@ import { buildSalesErrorCsv, parseSalesCsv, salesTemplateCsv, type GstBasis } fr
 
 const reportsOverviewQuerySchema = z.object({
   range: z.coerce.number().int().optional().default(30),
+  /**
+   * The period actually being looked at. `range` could only ever say 7, 30 or
+   * 90 days back from now, so a page asking for "last financial year" was
+   * answered with the last 90 days and a page asking for "this month" on the
+   * 28th was answered with the last 30 — neither the period the user chose.
+   */
+  start: z.string().optional().or(z.literal('')),
+  end: z.string().optional().or(z.literal('')),
   venue: z.string().optional().or(z.literal(''))
 });
 
@@ -84,13 +92,35 @@ function salesVenueScope(actor?: AuthUser | null, requestedVenue?: string | null
 
 function rangeFromInput(input: unknown) {
   const query = reportsOverviewQuerySchema.parse(input ?? {});
+  const requestedVenue = query.venue?.trim() || null;
+
+  // An explicit period wins. The caller knows what it is showing a heading for;
+  // this used to throw that away and answer with a bucket measured back from
+  // now, so every preset except "this week" was answered with the wrong window.
+  if (query.start && query.end) {
+    const start = parseDate(query.start, 'start');
+    const end = parseDate(query.end, 'end');
+    if (end.getTime() <= start.getTime()) {
+      throw new HttpError(400, 'end must be after start');
+    }
+    const spanDays = Math.max(1, Math.round((end.getTime() - start.getTime()) / 86_400_000));
+    return {
+      // rangeDays is what the payload reports back; keep it truthful about the
+      // window actually used rather than the bucket that was asked for.
+      rangeDays: spanDays as ReportsRangeDays,
+      requestedVenue,
+      start,
+      end
+    };
+  }
+
   const allowed = new Set([7, 30, 90]);
   const rangeDays = (allowed.has(query.range) ? query.range : 30) as ReportsRangeDays;
   const end = new Date();
   const start = new Date(end.getTime() - rangeDays * 24 * 60 * 60 * 1000);
   return {
     rangeDays,
-    requestedVenue: query.venue?.trim() || null,
+    requestedVenue,
     start,
     end
   };
@@ -484,18 +514,35 @@ async function buildStockSummary(
       orderBy: [{ submittedAt: 'desc' }, { updatedAt: 'desc' }],
       take: 6
     }),
+    // No `take` here, and deliberately.
+    //
+    // This used to take 100 with no orderBy, then sort those 100 by variance
+    // and show the top 8 — so "the highest variance lines" were the highest of
+    // an arbitrary hundred, in whatever order Postgres handed back. Measured
+    // against production: 2,287 lines qualified, the card showed a largest
+    // variance of 20 while the real largest was 1,093, and it listed the same
+    // item six times.
+    //
+    // Variance is `countedQty - onHand`, where on-hand is resolved per venue
+    // below, so it cannot be ordered or limited in the query. The whole
+    // candidate set has to come back to be ranked honestly. It is a few
+    // thousand narrow rows over one range and it is the only way the figure
+    // means what it says.
     prisma.stocktakeLine.findMany({
       where: {
         stocktake: {
           AND: [scope, { status: 'SUBMITTED', updatedAt: { gte: start } }]
         },
-        itemId: { not: null }
+        itemId: { not: null },
+        countedQty: { not: null }
       },
-      include: {
+      select: {
+        countedQty: true,
+        unit: true,
+        label: true,
         stocktake: { select: { id: true, name: true, venue: true, submittedAt: true, updatedAt: true } },
         item: { select: { id: true, name: true, onHand: true, unit: true } }
-      },
-      take: 100
+      }
     })
   ]);
 
@@ -531,8 +578,17 @@ async function buildStockSummary(
       };
     })
     .filter((line) => line.variance != null && Math.abs(line.variance) > 0.0001)
-    .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0))
-    .slice(0, 8);
+    .sort((a, b) => Math.abs(b.variance ?? 0) - Math.abs(a.variance ?? 0));
+
+  // One row per item, worst first. An item counted in six stocktakes over the
+  // range produced six rows, and the card filled up with a single tequila
+  // repeated — eight rows that named one problem instead of eight.
+  const worstByItem = new Map<string, (typeof highestVarianceLines)[number]>();
+  for (const line of highestVarianceLines) {
+    const key = `${line.venue ?? ''}:${line.itemName}`;
+    if (!worstByItem.has(key)) worstByItem.set(key, line);
+  }
+  const topVarianceLines = [...worstByItem.values()].slice(0, 8);
 
   return {
     activeStockItems: activeCatalogueItems,
@@ -545,7 +601,7 @@ async function buildStockSummary(
     recentlySubmittedStocktakes: recentlySubmittedStocktakes.map((row) =>
       toStocktakeReviewPayload(row, reviewVenueOnHandByKey)
     ),
-    highestVarianceLines,
+    highestVarianceLines: topVarianceLines,
     stockItemsVenueScoped: true
   };
 }

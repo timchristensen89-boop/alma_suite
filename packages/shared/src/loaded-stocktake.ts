@@ -269,11 +269,13 @@ export function parseLoadedStocktake(rows: PdfRow[]): LoadedStocktake {
   let sawAnyQuantityColumn = false;
 
   for (const [index, cells] of cleaned.entries()) {
-    const first = cells[0];
+    // `cleaned` drops empty cells, so a surviving row always has a first cell —
+    // but under noUncheckedIndexedAccess that has to be said rather than assumed.
+    const first = cells[0] ?? '';
 
     // The venue is the first line of the document, above "View Stocktake".
     if (venue === null && index === 0 && cells.length === 1) {
-      venue = first;
+      venue = first || null;
       continue;
     }
     if (first === 'Date' && cells[1]) {
@@ -304,7 +306,7 @@ export function parseLoadedStocktake(rows: PdfRow[]): LoadedStocktake {
 
     // A lone cell that is not money is a category heading.
     if (cells.length === 1) {
-      if (moneyToCents(first) === null) category = first;
+      if (first && moneyToCents(first) === null) category = first;
       continue;
     }
 

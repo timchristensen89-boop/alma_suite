@@ -6632,7 +6632,16 @@ export type StockDashboardPayload = {
   recentSubmittedStocktakes: StocktakeReviewItem[];
 };
 
-export type ReportsRangeDays = 7 | 30 | 90;
+/**
+ * How many days the overview covers.
+ *
+ * Was `7 | 30 | 90`, which was the whole problem: the page offers "this month",
+ * "year to date (FY)" and "last financial year", and every one of them had to
+ * be squashed into one of three buckets measured back from now. "Last financial
+ * year" became the last 90 days. The overview now takes the real period, so
+ * this is simply the number of days it covers.
+ */
+export type ReportsRangeDays = number;
 
 export type ReportsStaffSummary = {
   totalActiveStaff: number;
