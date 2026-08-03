@@ -1949,7 +1949,14 @@
 }
 
 /* ── Preview column (sticky) ── */
-.alma-giftcards-preview { position: sticky; top: 110px; }
+.alma-giftcards-preview {
+  position: sticky;
+  top: 110px;
+  /* A gift card is a physical object about the size of a hand. Letting the
+     preview fill a wide column rendered it half a metre across on a desktop,
+     which reads as a banner rather than the thing you are buying. */
+  max-width: 480px;
+}
 .alma-giftcards-preview__head {
   display: flex;
   justify-content: space-between;
