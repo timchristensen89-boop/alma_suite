@@ -1284,6 +1284,35 @@ export const reportsService = {
         openingStockAvailable: false, closingStockAvailable: false, source: 'purchases_only', quality: 'estimated'
       };
 
+    /**
+     * How much of the period the purchase data actually covers.
+     *
+     * Prime cost read 31.8% for FY25/26 — wages 29.1% plus COGS 2.7% — against
+     * a real hospitality figure nearer 60%. Nothing was miscalculated: supplier
+     * invoices only begin in April 2026, so three months of purchases were
+     * being divided by twelve months of sales. The report already warned that
+     * COGS was purchases-only, but a warning beside a confident number loses;
+     * people read the number.
+     *
+     * A percentage of sales is only meaningful when both sides span the same
+     * days, so the covered fraction is measured and the COGS and prime-cost
+     * percentages are withheld when it does not. A blank says "we cannot tell
+     * you this" — which is true — where 2.7% says something false.
+     */
+    const firstInvoice = await prisma.supplierInvoice.findFirst({
+      where: { invoiceDate: { lt: end } },
+      orderBy: { invoiceDate: 'asc' },
+      select: { invoiceDate: true }
+    });
+    const periodMs = Math.max(1, end.getTime() - start.getTime());
+    const coveredFrom = firstInvoice?.invoiceDate
+      ? new Date(Math.max(start.getTime(), firstInvoice.invoiceDate.getTime()))
+      : end;
+    const purchaseCoverage = Math.min(1, Math.max(0, (end.getTime() - coveredFrom.getTime()) / periodMs));
+    /** Below this, a COGS percentage of sales is not a fact about the period. */
+    const MIN_PURCHASE_COVERAGE = 0.9;
+    const purchasesCoverPeriod = purchaseCoverage >= MIN_PURCHASE_COVERAGE;
+
     const venues = Array.from(rows.values()).map((row) => {
       const wageCents = row.wageCents || row.rosterWageEstimateCents;
       const cogs = cogsFor(row.venue);
@@ -1304,9 +1333,12 @@ export const reportsService = {
         cogsSource: cogs.source,
         cogsQuality: cogs.quality,
         primeCostCents,
+        // Wages span the whole period, so their percentage always stands.
         wagePercent: pct(wageCents, row.salesCents),
-        cogsPercent: pct(cogsCents, row.salesCents),
-        primeCostPercent: pct(primeCostCents, row.salesCents),
+        // COGS and prime cost do not, when purchases only cover part of it.
+        cogsPercent: purchasesCoverPeriod ? pct(cogsCents, row.salesCents) : null,
+        primeCostPercent: purchasesCoverPeriod ? pct(primeCostCents, row.salesCents) : null,
+        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
         timesheetHours: Math.round(row.timesheetHours * 100) / 100,
         rosterHours: Math.round(row.rosterHours * 100) / 100,
         salesDays: row.salesDays.size,
@@ -1359,8 +1391,10 @@ export const reportsService = {
         cogsSource: allVenuesCogs.source,
         cogsQuality: allVenuesCogs.quality,
         wagePercent: pct(totalBase.wageCents, totalBase.salesCents),
-        cogsPercent: pct(totalBase.cogsCents, totalBase.salesCents),
-        primeCostPercent: pct(totalBase.primeCostCents, totalBase.salesCents),
+        cogsPercent: purchasesCoverPeriod ? pct(totalBase.cogsCents, totalBase.salesCents) : null,
+        primeCostPercent: purchasesCoverPeriod ? pct(totalBase.primeCostCents, totalBase.salesCents) : null,
+        purchaseCoverage: Math.round(purchaseCoverage * 100) / 100,
+        purchasesFrom: firstInvoice?.invoiceDate?.toISOString() ?? null,
         timesheetHours: Math.round(totalBase.timesheetHours * 100) / 100,
         rosterHours: Math.round(totalBase.rosterHours * 100) / 100,
         ...totalQuality
@@ -1373,6 +1407,19 @@ export const reportsService = {
         cogs: totalBase.salesCents === 0 && allVenuesCogs.cogsCents === 0 ? 'missing' : allVenuesCogs.source
       },
       warnings: [
+        // Said first, because it is the reason two of the headline figures are
+        // blank. A percentage of sales needs both sides to span the same days.
+        ...(purchasesCoverPeriod
+          ? []
+          : [
+              firstInvoice?.invoiceDate
+                ? `Supplier invoices only start ${firstInvoice.invoiceDate
+                    .toISOString()
+                    .slice(0, 10)}, covering ${Math.round(
+                    purchaseCoverage * 100
+                  )}% of this period, so COGS % and prime cost % are not shown. The dollar figures are the purchases actually recorded.`
+                : 'No supplier invoices fall in this period, so COGS % and prime cost % are not shown.'
+            ]),
         allVenuesCogs.source === 'stock_bounded'
           ? 'COGS is the canonical figure: opening stock + ex-GST purchases − closing stock for the period.'
           : 'COGS is estimated from ex-GST purchases only — lock an opening and closing stocktake at the period boundaries for a true opening + purchases − closing figure.',

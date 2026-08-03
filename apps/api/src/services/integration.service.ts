@@ -1866,10 +1866,31 @@ function squareOrderLineGrossCents(line: SquareOrderLineItem) {
   return Number.isFinite(quantity) && quantity > 0 ? Math.round(base * quantity) : Math.max(0, Math.round(base));
 }
 
+/**
+ * A line's net sales, ex-GST.
+ *
+ * Square's `total_money` is GST *inclusive* — the forecast normaliser has said
+ * so since it was written — and this took it as "net sales" regardless. The two
+ * revenue figures on the reports page were 9.3% apart because of it: the daily
+ * sales import lands ex-GST at $2,624,237 for FY25/26 while these item rows
+ * summed to $2,867,429. Month by month the ratio sat between 1.091 and 1.102,
+ * which is GST and nothing else. Prime cost reads the first, menu profitability
+ * reads the second, and both were on the same screen.
+ *
+ * Ex-GST is the basis a P&L wants, so the tax is taken back off: by subtraction
+ * where Square reports it, and by backing it out of the inclusive total only
+ * where it does not. GST-free lines report no tax and are left alone, which is
+ * why the observed ratio is a little under a clean 1.10.
+ */
 function squareOrderLineNetCents(line: SquareOrderLineItem) {
-  return typeof line.total_money?.amount === 'number'
-    ? Math.max(0, Math.round(line.total_money.amount))
-    : squareOrderLineGrossCents(line);
+  const totalIncGst =
+    typeof line.total_money?.amount === 'number'
+      ? Math.max(0, Math.round(line.total_money.amount))
+      : squareOrderLineGrossCents(line);
+  const taxCents = typeof line.total_tax_money?.amount === 'number'
+    ? Math.max(0, Math.round(line.total_tax_money.amount))
+    : 0;
+  return Math.max(0, totalIncGst - taxCents);
 }
 
 function squareOrderLineQuantity(line: SquareOrderLineItem) {

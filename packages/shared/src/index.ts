@@ -3739,8 +3739,19 @@ export type ReportsPrimeCostVenueRow = {
   cogsQuality: 'complete' | 'missing_opening' | 'missing_closing' | 'estimated' | 'closing_implausible';
   primeCostCents: number;
   wagePercent: number | null;
+  /**
+   * Null when supplier invoices do not cover the period.
+   *
+   * FY25/26 read COGS 2.7% and prime cost 31.8% against a real figure nearer
+   * 60%, because invoices only begin in April 2026 — three months of purchases
+   * divided by twelve months of sales. A percentage of sales is only a fact
+   * when both sides span the same days, so it is withheld rather than guessed.
+   * The dollar figures beside it remain true: they are what was recorded.
+   */
   cogsPercent: number | null;
   primeCostPercent: number | null;
+  /** 0–1: the fraction of the period supplier invoices actually cover. */
+  purchaseCoverage: number;
   timesheetHours: number;
   rosterHours: number;
   salesDays: number;
@@ -3802,6 +3813,8 @@ export type ReportsPrimeCostPayload = {
   totals: Omit<ReportsPrimeCostVenueRow, 'venue' | 'sourceQuality' | 'missing'> & {
     sourceQuality: ReportsPrimeCostVenueRow['sourceQuality'];
     missing: string[];
+    /** The date supplier invoices begin, when they do not cover the period. */
+    purchasesFrom: string | null;
   };
   venues: ReportsPrimeCostVenueRow[];
   sources: {
