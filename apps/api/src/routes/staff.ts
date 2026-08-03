@@ -1371,7 +1371,7 @@ staffRouter.delete('/:id/records/:recordId', requireManager, async (req, res, ne
 
 staffRouter.post('/:id/onboarding/approve', requireManager, async (req, res, next) => {
   try {
-    res.json(await staffService.approveOnboarding(String(req.params.id), req.user));
+    res.json(await staffService.approveOnboarding(String(req.params.id), req.user, req.body));
   } catch (error) {
     next(error);
   }

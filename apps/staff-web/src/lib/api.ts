@@ -146,6 +146,30 @@ export function installSuiteHandoff() {
 
 import { createOfflineQueue } from './offline-queue';
 
+/**
+ * Fetch a binary endpoint as a Blob.
+ *
+ * The session is a bearer token in localStorage, so a plain <a href> to an
+ * authenticated endpoint gets a 401. Putting the token in the query string
+ * would fix that and leak the session into history and logs, so the bytes come
+ * back with the header and go to the browser as an object URL.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${normalisePath(path)}`, {
+    credentials: 'include',
+    headers: requestHeaders()
+  });
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearApiAuthToken();
+      throw new ApiError('Please sign in again.', response.status);
+    }
+    const errorBody = await response.json().catch(() => ({ message: 'Download failed' }));
+    throw new ApiError(errorBody.message ?? 'Download failed', response.status);
+  }
+  return response.blob();
+}
+
 const offlineQueue = createOfflineQueue({
   send: (path, init) => api(path, init),
   // ApiError with status 0 is the network-level failure api() raises when

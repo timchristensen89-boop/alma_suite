@@ -100,6 +100,23 @@ function isReadOnlyAccount(user: AuthUser) {
   });
 }
 
+/**
+ * API surfaces the ALMA Staff app exposes to an ordinary staff member.
+ *
+ * These are the pages in the staff app's own navigation — Report an issue,
+ * Today's checks, Temperatures, Academy, Handbook. A new hire is created with
+ * STAFF access only, so anything here that demanded COMPLIANCE was a dead link
+ * for the people it was built for.
+ */
+const STAFF_APP_SURFACES = [
+  '/api/issues',
+  '/api/incidents',
+  '/api/checklists',
+  '/api/temperatures',
+  '/api/training',
+  '/api/handbook-documents'
+];
+
 function isStaffWriteAllowed(req: Request) {
   if (!isWrite(req)) return true;
   if (req.path.startsWith('/api/issues')) return true;
@@ -214,6 +231,19 @@ export async function authMiddleware(
   if (!settingsRequest) {
     if (req.path.startsWith('/api/staff')) {
       if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE'])) {
+        return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
+      }
+    } else if (STAFF_APP_SURFACES.some((prefix) => req.path.startsWith(prefix))) {
+      // Pages the ALMA Staff app puts in its own navigation: report an issue,
+      // today's checks, fridge temperatures, the academy, the handbook.
+      //
+      // A new hire is created with STAFF access and nothing else, so requiring
+      // Compliance here meant a brand-new floor staffer could open "Report an
+      // issue" and be told Compliance isn't enabled on their account. The write
+      // allowlist below already says staff may raise an issue and complete a
+      // checklist run — this gate was contradicting it. Manager-only actions on
+      // these routes are still enforced by that allowlist and by the routes.
+      if (!hasAnyEnabledAppAccess(req.user, ['STAFF', 'COMPLIANCE', 'TRAINING'])) {
         return next(new HttpError(403, 'Your Alma Staff access is turned off. Ask an Alma admin to enable it.'));
       }
     } else if (req.path.startsWith('/api/reports') || req.path.startsWith('/api/forecast')) {

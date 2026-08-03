@@ -2279,10 +2279,15 @@ model StaffInvite {
   expiresAt      DateTime?
   completedAt    DateTime?
   staffProfileId String?
+  /// Reminder day-numbers already sent, so a daily job nudges once per stage.
+  remindersSent  Int[]     @default([])
+  /// Set when the manager has been told this invite is dying or dead.
+  managerAlertAt DateTime?
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
   @@index([token])
+  @@index([completedAt, expiresAt])
 }
 
 // @domain: people-core | home: suite
@@ -3192,6 +3197,31 @@ model SupplierInvoice {
 // The original uploaded invoice file (PDF/photo) kept so a manager can open it
 // and key in lines by hand when OCR only reads a total (or misses lines). The
 // blob lives in its own table so it never bloats SupplierInvoice list queries.
+// @domain: compliance | home: suite
+/// A file that belongs to the staff handbook — a policy PDF, a floor plan, a
+/// photo of how the pass should look. Stored as bytes in the database rather
+/// than an object store because the suite has no bucket wired and these are a
+/// handful of small files, the same call SupplierInvoiceDocument makes.
+model HandbookDocument {
+  id                String   @id @default(cuid())
+  title             String
+  description       String?
+  fileName          String
+  mimeType          String
+  sizeBytes         Int
+  data              Bytes
+  venue             String?
+  /// Attach to the invite email a new starter receives.
+  sendOnOnboarding  Boolean  @default(false)
+  position          Int      @default(0)
+  uploadedByStaffId String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  @@index([venue])
+  @@index([sendOnOnboarding])
+}
+
 model SupplierInvoiceDocument {
   id        String          @id @default(cuid())
   invoiceId String          @unique

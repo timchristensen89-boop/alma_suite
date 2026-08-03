@@ -68,7 +68,8 @@ import {
   getAwardClassification,
   getAwardRateSet,
   normaliseStaffDefaults,
-  resolveClockTime
+  resolveClockTime,
+  onboardingGaps
 } from '@alma/shared';
 import type {
   AuthUser,
@@ -87,6 +88,7 @@ import { configuredSuperRateFraction } from './settings.service.js';
 import { authService } from './auth.service.js';
 import { communicationsService } from './communications.service.js';
 import { mailService } from './mail.service.js';
+import { handbookDocumentService } from './handbook-document.service.js';
 import { createThread } from './messaging.service.js';
 
 function generateToken() {
@@ -6301,6 +6303,7 @@ export const staffService = {
     });
 
     const inviteLink = inviteLinkFor(invite.token, onboardingBaseUrl);
+    const handbook = await handbookDocumentService.onboardingAttachments(targetVenue || null);
     const emailDelivery =
       email && inviteLink
         ? await mailService.sendStaffInvite({
@@ -6310,7 +6313,8 @@ export const staffService = {
             venue: targetVenue || null,
             note: data.note || null,
             inviteLink,
-            expiresAt
+            expiresAt,
+            attachments: handbook.attachments
           })
         : ({
             status: 'skipped',
@@ -6425,6 +6429,7 @@ export const staffService = {
         })
       : null;
     const inviteLink = inviteLinkFor(invite.token, onboardingBaseUrl);
+    const handbook = await handbookDocumentService.onboardingAttachments(profile?.venue ?? data.venue ?? null);
     const emailDelivery =
       email && inviteLink
         ? await mailService.sendStaffInvite({
@@ -6434,7 +6439,8 @@ export const staffService = {
             venue: profile?.venue ?? data.venue ?? null,
             note: data.note || null,
             inviteLink,
-            expiresAt
+            expiresAt,
+            attachments: handbook.attachments
           })
         : ({
             status: 'skipped',
@@ -6498,6 +6504,7 @@ export const staffService = {
         ? await prisma.staffInvite.update({ where: { id }, data: { expiresAt } })
         : invite;
 
+    const handbook = await handbookDocumentService.onboardingAttachments(profile?.venue ?? null);
     const emailDelivery =
       email && inviteLink
         ? await mailService.sendStaffInvite({
@@ -6507,7 +6514,8 @@ export const staffService = {
             venue: profile?.venue ?? null,
             note: invite.note,
             inviteLink,
-            expiresAt
+            expiresAt,
+            attachments: handbook.attachments
           })
         : ({
             status: 'skipped',
@@ -6823,8 +6831,23 @@ export const staffService = {
     return toStaffDocumentReview(resolved);
   },
 
-  async approveOnboarding(staffProfileId: string, actor?: AuthUser) {
+  /**
+   * Activate a staff member once onboarding is genuinely done.
+   *
+   * This used to check only for required *uploaded documents*, both of which
+   * ship optional — so in practice it checked nothing, and a manager could
+   * activate somebody who had never opened their invite. Production shows the
+   * result: 17 of 30 active staff were sent an invite, never completed it, and
+   * were made active anyway; 13 have no tax file number and 12 no bank account.
+   *
+   * So the payroll fields are now checked too. Managers still need people on a
+   * roster before the paperwork lands, so `force` is allowed — it just has to
+   * be a decision somebody makes and that gets written down, rather than the
+   * silent default.
+   */
+  async approveOnboarding(staffProfileId: string, actor?: AuthUser, input?: unknown) {
     const profile = await this.getById(staffProfileId, actor);
+    const options = (input ?? {}) as { force?: boolean; reason?: string };
     const onboardingSettings = await getOnboardingSettings();
     const missingDocuments = requiredOnboardingDocumentTitles(onboardingSettings).filter((title) => {
       const record = profile.records.find(
@@ -6835,6 +6858,48 @@ export const staffService = {
 
     if (missingDocuments.length) {
       throw new HttpError(400, `Missing required uploaded documents: ${missingDocuments.join(', ')}`);
+    }
+
+    const raw = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: {
+        passwordHash: true,
+        dateOfBirth: true,
+        phone: true,
+        addressLine1: true,
+        emergencyContactName: true,
+        emergencyContactPhone: true,
+        taxFileNumber: true,
+        superFundName: true,
+        bankAccountName: true,
+        bankBsb: true,
+        bankAccountNumber: true,
+        visaStatus: true
+      }
+    });
+    const { blocking } = onboardingGaps(raw ?? {});
+
+    if (blocking.length && !options.force) {
+      throw new HttpError(
+        400,
+        `${profile.firstName} hasn't finished onboarding — still missing ${blocking
+          .map((gap) => gap.label)
+          .join(', ')}. Resend their onboarding link, or approve anyway if they're starting before the paperwork lands.`
+      );
+    }
+
+    if (blocking.length && options.force) {
+      // Written to the profile so the gap is visible to whoever runs payroll,
+      // not just to whoever clicked the button.
+      const note = `Onboarding approved with gaps ${new Date().toISOString().slice(0, 10)} by ${
+        actor ? `${actor.firstName} ${actor.lastName}` : 'a manager'
+      }: missing ${blocking.map((gap) => gap.label).join(', ')}.${
+        options.reason ? ` Reason: ${options.reason.trim()}` : ''
+      }`;
+      await prisma.staffProfile.update({
+        where: { id: staffProfileId },
+        data: { notes: appendRecordNote(profile.notes, note) }
+      });
     }
 
     await prisma.staffComplianceRecord.updateMany({

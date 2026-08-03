@@ -90,6 +90,31 @@ export function apiUrl(path: string) {
   return `${API_BASE_URL}${normalisePath(path)}`;
 }
 
+/**
+ * Fetch a binary endpoint as a Blob.
+ *
+ * Authentication is a bearer token held in localStorage, so a plain <a href>
+ * to an authenticated endpoint gets a 401. Putting the token in the query
+ * string would fix that and leak the session into browser history, proxy logs
+ * and referrer headers — so the bytes are fetched with the header instead and
+ * handed to the browser as an object URL.
+ */
+export async function apiBlob(path: string): Promise<Blob> {
+  const response = await fetch(`${API_BASE_URL}${normalisePath(path)}`, {
+    credentials: 'include',
+    headers: requestHeaders()
+  });
+  if (!response.ok) {
+    if (response.status === 401) {
+      clearApiAuthToken();
+      throw new ApiError('Please sign in again.', response.status);
+    }
+    const errorBody = await response.json().catch(() => ({ message: 'Download failed' }));
+    throw new ApiError(errorBody.message ?? 'Download failed', response.status);
+  }
+  return response.blob();
+}
+
 function urlWithSuiteToken(href: string, token: string) {
   const url = new URL(href, window.location.origin);
   url.searchParams.set('suite_token', token);

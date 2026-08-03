@@ -10,6 +10,7 @@ import { giftCardService } from '../services/gift-card.service.js';
 import { guestCrmService } from '../services/guest-crm.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { marketingService } from '../services/marketing.service.js';
+import { onboardingChaseService } from '../services/onboarding-chase.service.js';
 import { reportsService } from '../services/reports.service.js';
 import { temperatureService } from '../services/temperature.service.js';
 
@@ -263,6 +264,21 @@ integrationJobsRouter.post('/staff-consumption-prompt', async (_req, res, next) 
       note: 'Weekly nudge issued. Head chef logs food spend, venue manager logs drinks spend. Both feed the staff-meal COGS line in Reports.',
       ranAt: new Date().toISOString()
     });
+  } catch (error) {
+    next(error);
+  }
+});
+
+/**
+ * Daily: nudge new starters who have not finished onboarding, and tell managers
+ * which invites are about to expire or already have.
+ *
+ * Before this ran, 20 of 33 invites expired unused with nobody told.
+ * `{"dryRun": true}` reports what it would send without sending anything.
+ */
+integrationJobsRouter.post('/staff/onboarding-chase', async (req, res, next) => {
+  try {
+    res.json(await onboardingChaseService.run(req.body ?? {}));
   } catch (error) {
     next(error);
   }

@@ -9,6 +9,7 @@ export * from './venue-day.js';
 export * from './guest-tags.js';
 export * from './guest-import.js';
 export * from './temperature-escalation.js';
+export * from './onboarding-completion.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {

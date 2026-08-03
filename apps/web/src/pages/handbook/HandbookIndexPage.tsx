@@ -19,6 +19,7 @@ import {
 import { IconArrowRight, IconHandbook, IconUsers } from '../../lib/icons';
 import { useAsync } from '../../hooks/useAsync';
 import { api } from '../../lib/api';
+import { HandbookDocumentList, HandbookDocumentsEditor, type HandbookDocument } from './HandbookDocuments';
 
 /* --------------------------------------------------------------------------
  * Helpers
@@ -544,13 +545,14 @@ function MaintenanceContactsEditor({
  * CMS section editor
  * ------------------------------------------------------------------------ */
 
-type FixedSectionId = 'org-chart' | 'guidelines' | 'onboarding' | 'maintenance';
+type FixedSectionId = 'org-chart' | 'guidelines' | 'onboarding' | 'maintenance' | 'documents';
 
 const FIXED_SECTIONS: { id: FixedSectionId; label: string; description: string }[] = [
   { id: 'org-chart', label: 'Org chart', description: 'Team structure and reporting lines' },
   { id: 'guidelines', label: 'Guidelines', description: 'RSA, allergens, service standards' },
   { id: 'onboarding', label: 'Onboarding', description: 'First-day steps and setup tasks' },
-  { id: 'maintenance', label: 'Maintenance', description: 'Contacts, categories, and before-you-call' }
+  { id: 'maintenance', label: 'Maintenance', description: 'Contacts, categories, and before-you-call' },
+  { id: 'documents', label: 'Documents', description: 'PDFs and images, and what new starters are sent' }
 ];
 
 function CmsSectionEditor({
@@ -751,7 +753,11 @@ function cloneState(content: ResolvedHandbookContent): EditorState {
 }
 
 export function HandbookAdminPage({ staffHandbookHref = '/handbook' }: { staffHandbookHref?: string }) {
-  const settings = useAsync<{ handbookContent?: Record<string, unknown> }>(() => api('/api/settings'), []);
+  const settings = useAsync<{ handbookContent?: Record<string, unknown>; venues?: Array<{ name: string }> }>(
+    () => api('/api/settings'),
+    []
+  );
+  const venueNames = (settings.data?.venues ?? []).map((entry) => entry.name).filter(Boolean);
   const [saved, setSaved] = useState<EditorState | null>(null);
   const [draft, setDraft] = useState<EditorState | null>(null);
   const [selected, setSelected] = useState<EditorSelection>(null);
@@ -937,9 +943,12 @@ export function HandbookAdminPage({ staffHandbookHref = '/handbook' }: { staffHa
         <div className="handbook-editor-fixed-panel">
           <div className="handbook-editor-panel-header">
             <h3>{FIXED_SECTIONS.find((s) => s.id === selected.id)?.label}</h3>
-            <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void saveFixed()}>
-              {saving ? 'Saving…' : 'Save changes'}
-            </Button>
+            {/* Documents save the moment you act on them, so a Save button there would be a lie. */}
+            {selected.id === 'documents' ? null : (
+              <Button type="button" variant="secondary" size="sm" disabled={saving} onClick={() => void saveFixed()}>
+                {saving ? 'Saving…' : 'Save changes'}
+              </Button>
+            )}
           </div>
           {selected.id === 'org-chart' && (
             <OrgEditor
@@ -959,6 +968,7 @@ export function HandbookAdminPage({ staffHandbookHref = '/handbook' }: { staffHa
               setOnboardingSteps={(value) => setDraft((c) => ({ ...(c ?? editable), onboardingSteps: value }))}
             />
           )}
+          {selected.id === 'documents' && <HandbookDocumentsEditor venues={venueNames} />}
           {selected.id === 'maintenance' && (
             <div className="page-stack">
               <MaintenanceContactsEditor
@@ -1104,6 +1114,9 @@ const iconBySection: Record<string, JSX.Element> = {
 
 export function HandbookIndexPage() {
   const settings = useAsync<{ handbookContent?: Record<string, unknown> }>(() => api('/api/settings'), []);
+  // Scoped to the reader's own venue by the API, so a Freshwater document does
+  // not turn up in an Avalon staff member's handbook.
+  const documents = useAsync<HandbookDocument[]>(() => api('/api/handbook-documents'), []);
   const handbook = resolveHandbookContent(settings.data?.handbookContent ?? DEFAULT_HANDBOOK_CONTENT);
   const readySections = handbook.handbookSections.filter((section) => section.status === 'ready');
   const topLevelCount = handbook.orgMembers.filter((m) => m.reportsTo === null).length;
@@ -1181,6 +1194,18 @@ export function HandbookIndexPage() {
               ) : null}
             </Card>
           ))}
+        </div>
+      ) : null}
+
+      {documents.data && documents.data.length > 0 ? (
+        <div className="page-stack">
+          <h2 className="section-heading">Documents</h2>
+          <Card
+            title="Policies, forms and photos"
+            subtitle="Tap to open. These are the files you were sent when you joined."
+          >
+            <HandbookDocumentList documents={documents.data} />
+          </Card>
         </div>
       ) : null}
 

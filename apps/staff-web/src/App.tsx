@@ -100,7 +100,7 @@ import {
 import { SuiteSignOutButton } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
-import { api, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
+import { api, apiBlob, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import {
@@ -360,6 +360,12 @@ const NAV_ITEMS = [
     icon: <IconMail />
   },
   {
+    to: '/handbook',
+    label: 'Handbook',
+    description: 'Policies and guides sent to every new starter',
+    icon: <DocumentIcon />
+  },
+  {
     to: '/settings',
     label: 'Staff settings',
     description: 'Staff defaults, onboarding and access',
@@ -494,6 +500,12 @@ const STAFF_MEMBER_NAV_ITEMS = [
     to: '/documents',
     label: 'Documents',
     description: 'Requests and uploads',
+    icon: <DocumentIcon />
+  },
+  {
+    to: '/handbook',
+    label: 'Handbook',
+    description: 'Policies and guides, the ones you were emailed when you joined',
     icon: <DocumentIcon />
   },
   {
@@ -1889,9 +1901,14 @@ function StaffMemberHome({
     setMessageTarget('clock');
     try {
       if (action === 'clock-in') {
+        // Only today's shift. `nextShift` is simply the earliest upcoming one
+        // and can be days away, so falling back to it attached this morning's
+        // hours to a shift next Tuesday — and roster-versus-actual then
+        // compared the wrong two things. No shift now means no shift: the
+        // server records an unattached session, which is the truth.
         await api('/api/staff/me/clock/in', {
           method: 'POST',
-          body: JSON.stringify({ rosterShiftId: todayShift?.id || nextShift?.id || '' })
+          body: JSON.stringify({ rosterShiftId: todayShift?.id || '' })
         });
       } else if (action === 'clock-out') {
         await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
@@ -2011,6 +2028,7 @@ function StaffMemberHome({
           <Button type="button" variant="secondary" onClick={() => navigate('/leave')}>Request leave</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/compliance')}>Compliance</Button>
           <Button type="button" variant="ghost" onClick={() => navigate('/documents')}>Documents</Button>
+          <Button type="button" variant="ghost" onClick={() => navigate('/handbook')}>Handbook</Button>
         </div>
       </Card>
 
@@ -4228,6 +4246,129 @@ function StaffMemberCompliancePage() {
             </div>
           ))}
         </div>
+      </Card>
+    </div>
+  );
+}
+
+type HandbookDocumentSummary = {
+  id: string;
+  title: string;
+  description: string | null;
+  fileName: string;
+  mimeType: string;
+  sizeBytes: number;
+  venue: string | null;
+  sendOnOnboarding: boolean;
+};
+
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+}
+
+/**
+ * The handbook, on the phone in their pocket.
+ *
+ * New starters are emailed the policies with their invite, and an email from
+ * six weeks ago is not where anybody looks for the allergen matrix mid-service.
+ * This is the same set of documents, scoped to their venue, always to hand.
+ */
+function StaffHandbookPage() {
+  const [documents, setDocuments] = useState<HandbookDocumentSummary[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setDocuments(await api<HandbookDocumentSummary[]>('/api/handbook-documents'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the handbook.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  async function openDocument(doc: HandbookDocumentSummary) {
+    setOpeningId(doc.id);
+    setMessage(null);
+    try {
+      const blob = await apiBlob(`/api/handbook-documents/${doc.id}/file`);
+      const url = URL.createObjectURL(blob);
+      const opened = window.open(url, '_blank', 'noopener');
+      if (!opened) {
+        // Popup blocked, which is the norm inside a webview — download instead.
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = doc.fileName;
+        link.click();
+      }
+      // Revoked late: revoking straight away closes the tab that just opened.
+      window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not open that document.');
+    } finally {
+      setOpeningId(null);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Handbook"
+        title="Policies & guides"
+        description="The documents you were sent when you joined, plus anything added since."
+        actions={
+          <Button type="button" variant="secondary" disabled={loading} onClick={() => void load()}>
+            {loading ? 'Refreshing…' : 'Refresh'}
+          </Button>
+        }
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      <Card title="Documents" subtitle="Tap to open. PDFs open in your phone's viewer.">
+        {loading ? <Spinner label="Loading the handbook…" /> : null}
+        {!loading && documents.length === 0 ? (
+          <EmptyState
+            title="Nothing here yet"
+            description="When a manager adds a policy or a guide, it will appear here and go out with new starter invites."
+          />
+        ) : null}
+        {documents.length > 0 ? (
+          <div className="staff-expiry-list">
+            {documents.map((doc) => (
+              <div key={doc.id} className="staff-expiry-row">
+                <span>
+                  <strong>{doc.title}</strong>
+                  {doc.description ? <span className="subtle">{doc.description}</span> : null}
+                  <span className="subtle">
+                    {doc.mimeType.startsWith('image/') ? 'Image' : 'PDF'} · {formatFileSize(doc.sizeBytes)}
+                    {doc.venue ? ` · ${doc.venue}` : ''}
+                  </span>
+                </span>
+                <span className="staff-row-actions">
+                  <Button
+                    type="button"
+                    size="sm"
+                    disabled={openingId === doc.id}
+                    onClick={() => void openDocument(doc)}
+                  >
+                    {openingId === doc.id ? 'Opening…' : 'Open'}
+                  </Button>
+                </span>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </Card>
     </div>
   );
@@ -14739,19 +14880,46 @@ function ApprovalsPage({ staff, reload }: { staff: StaffProfile[]; reload: () =>
     }
   }
 
-  async function approveProfile(memberId: string) {
+  /**
+   * Approve a new starter.
+   *
+   * The API refuses when payroll details are missing and names them, because
+   * activating somebody with no tax file number or bank account is how 13 of
+   * the 30 active staff ended up needing chasing by hand. A manager who really
+   * does need them on Saturday's roster can still say so — they're asked for a
+   * reason, which is written onto the profile where payroll will see it.
+   */
+  async function approveProfile(memberId: string, options: { force?: boolean; reason?: string } = {}) {
     setSaving(true);
     setMessage(null);
     setMessageTarget(`profile:${memberId}`);
     try {
       await api<StaffProfile>(`/api/staff/${memberId}/onboarding/approve`, {
         method: 'POST',
-        body: JSON.stringify({})
+        body: JSON.stringify(options)
       });
       await reload();
-      setMessage('Onboarding approved and profile activated.');
+      setMessage(
+        options.force
+          ? 'Activated with onboarding gaps. Noted on their profile for payroll.'
+          : 'Onboarding approved and profile activated.'
+      );
     } catch (err) {
-      setMessage(err instanceof Error ? err.message : 'Could not approve onboarding.');
+      const text = err instanceof Error ? err.message : 'Could not approve onboarding.';
+      if (!options.force && text.includes("hasn't finished onboarding")) {
+        const reason = window.prompt(
+          `${text}\n\nTo activate them anyway, say why (this is saved on their profile):`
+        );
+        if (reason === null) {
+          setMessage(text);
+          setSaving(false);
+          return;
+        }
+        setSaving(false);
+        await approveProfile(memberId, { force: true, reason: reason.trim() || 'No reason given' });
+        return;
+      }
+      setMessage(text);
     } finally {
       setSaving(false);
     }
@@ -19520,6 +19688,7 @@ function StaffShell() {
           <Route path="/stocktake" element={<StocktakeHandoffPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
+          <Route path="/handbook" element={<StaffHandbookPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
           <Route path="/timesheets" element={<TimesheetsPage staff={staff} roster={roster} />} />
@@ -19549,6 +19718,7 @@ function StaffShell() {
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
+          <Route path="/handbook" element={<StaffHandbookPage />} />
           <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/checks" element={<TodayChecksPage />} />
           <Route path="/temperatures" element={<TemperaturesPage />} />
