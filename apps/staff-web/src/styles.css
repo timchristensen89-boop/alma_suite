@@ -8794,3 +8794,56 @@ html[data-theme='dark'] .deputy-shift-fatigue-flag {
 }
 
 html[data-theme='dark'] .notice { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Report an issue (staff) ──────────────────────────────────────────── */
+.issue-form { display: grid; gap: 18px; }
+.issue-form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+.issue-field-label {
+  display: block;
+  margin-bottom: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-muted, #475569);
+}
+/* Severity is the field that decides how fast this gets looked at, so it is
+   four buttons rather than a picker — one tap, and all four options visible
+   at once so the choice is a comparison instead of a guess. */
+.issue-severity-options {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+.issue-severity-options button {
+  display: grid;
+  gap: 2px;
+  min-height: 62px;
+  padding: 8px 6px;
+  border: 1px solid rgba(31, 53, 36, 0.16);
+  border-radius: 12px;
+  background: var(--color-elevated, #fff);
+  font: inherit;
+  cursor: pointer;
+  text-align: center;
+}
+.issue-severity-options button strong { font-size: 13px; }
+.issue-severity-options button small { font-size: 11px; opacity: 0.6; }
+.issue-severity-options button.is-on {
+  border-color: var(--color-accent, #2f5d3a);
+  background: var(--color-accent, #2f5d3a);
+  color: #f6f2e9;
+}
+.issue-severity-options button.is-on small { opacity: 0.8; }
+
+@media (max-width: 560px) {
+  .issue-form-row { grid-template-columns: 1fr; }
+  .issue-severity-options { grid-template-columns: 1fr 1fr; }
+}
+
+html[data-theme='dark'] .issue-severity-options button { background: var(--color-elevated, #1c2027); }

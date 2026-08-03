@@ -3351,6 +3351,168 @@ function NoticeboardPage() {
   );
 }
 
+/**
+ * Report a problem, from the floor.
+ *
+ * The full issue form lives in the compliance app and asks for severity,
+ * category, area, assignee, due date and resolution notes — right for a
+ * manager triaging a list, wrong for somebody standing in front of a broken
+ * fridge with one hand free. This asks what only they can answer and lets the
+ * area rules pick the assignee.
+ */
+function ReportIssuePage() {
+  const [title, setTitle] = useState('');
+  const [description, setDescription] = useState('');
+  const [severity, setSeverity] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
+  const [area, setArea] = useState('');
+  const [category, setCategory] = useState('');
+  const [areas, setAreas] = useState<string[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [saving, setSaving] = useState(false);
+  const [sent, setSent] = useState<{ title: string } | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Both lists are admin-managed and small. If either call fails the form
+    // still works — area and category simply become free text.
+    void Promise.all([
+      api<string[]>('/api/issues/areas').catch(() => []),
+      api<string[]>('/api/issues/categories').catch(() => [])
+    ]).then(([areaNames, categoryNames]) => {
+      setAreas(areaNames);
+      setCategories(categoryNames);
+      setCategory((current) => current || categoryNames[0] || 'Maintenance');
+    });
+  }, []);
+
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (title.trim().length < 3 || description.trim().length < 3 || saving) return;
+    setSaving(true);
+    setMessage(null);
+    try {
+      await api('/api/issues', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: title.trim(),
+          description: description.trim(),
+          severity,
+          category: category.trim() || 'Maintenance',
+          area: area.trim(),
+          status: 'OPEN'
+        })
+      });
+      setSent({ title: title.trim() });
+      setTitle('');
+      setDescription('');
+      setSeverity('MEDIUM');
+      setArea('');
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not send that. Try again.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (sent) {
+    return (
+      <div className="page-stack">
+        <PageHeader eyebrow="Reported" title="Thanks — that's logged" description={`"${sent.title}" has gone to whoever looks after that area.`} />
+        <Card>
+          <p className="subtle">You don't need to do anything else. If it's urgent as well as logged, tell a manager on shift.</p>
+          <Button type="button" onClick={() => setSent(null)}>Report another</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Report"
+        title="Something needs fixing"
+        description="Broken, unsafe, out of stock, not right — log it here and it reaches the person who owns that area."
+      />
+
+      {message ? <p className="error-text">{message}</p> : null}
+
+      <Card>
+        <form className="issue-form" onSubmit={submit}>
+          <Input
+            label="What's wrong?"
+            value={title}
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setTitle(value);
+            }}
+            placeholder="Bar fridge door won't seal"
+            required
+          />
+          <Textarea
+            label="Anything else worth knowing"
+            rows={3}
+            value={description}
+            onChange={(event) => {
+              const { value } = event.currentTarget;
+              setDescription(value);
+            }}
+            placeholder="Where it is, when it started, what you've already tried."
+            required
+          />
+
+          {/* Severity as buttons, not a dropdown — it is the one field that
+              changes how fast this gets looked at, and it should be a single
+              tap rather than a picker. */}
+          <div className="issue-severity">
+            <span className="issue-field-label">How bad is it?</span>
+            <div className="issue-severity-options">
+              {([
+                { id: 'LOW', label: 'Minor', hint: 'Annoying' },
+                { id: 'MEDIUM', label: 'Should fix', hint: 'Soon' },
+                { id: 'HIGH', label: 'Urgent', hint: 'Today' },
+                { id: 'CRITICAL', label: 'Stop work', hint: 'Unsafe' }
+              ] as const).map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  className={severity === option.id ? 'is-on' : ''}
+                  onClick={() => setSeverity(option.id)}
+                >
+                  <strong>{option.label}</strong>
+                  <small>{option.hint}</small>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="issue-form-row">
+            <Select
+              label="Where"
+              value={area}
+              onChange={(event) => setArea(event.currentTarget.value)}
+              options={[{ value: '', label: 'Not sure' }, ...areas.map((name) => ({ value: name, label: name }))]}
+            />
+            <Select
+              label="What kind"
+              value={category}
+              onChange={(event) => setCategory(event.currentTarget.value)}
+              options={
+                categories.length
+                  ? categories.map((name) => ({ value: name, label: name }))
+                  : [{ value: 'Maintenance', label: 'Maintenance' }]
+              }
+            />
+          </div>
+
+          <Button type="submit" disabled={saving || title.trim().length < 3 || description.trim().length < 3}>
+            {saving ? 'Sending…' : 'Report it'}
+          </Button>
+        </form>
+      </Card>
+    </div>
+  );
+}
+
 function StaffMemberCompliancePage() {
   const [home, setHome] = useState<StaffDailyHomePayload | null>(null);
   const [loading, setLoading] = useState(true);
@@ -18704,6 +18866,7 @@ function StaffShell() {
           <Route path="/availability" element={<StaffMemberAvailabilityPage />} />
           <Route path="/leave" element={<StaffMemberLeavePage />} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
+          <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
@@ -18735,6 +18898,7 @@ function StaffShell() {
           <Route path="/roster" element={<HubLayout tabs={ROSTER_PAY_TABS}><RosterPage staff={staff} roster={roster} reload={reload} /></HubLayout>} />
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
+          <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
