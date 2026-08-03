@@ -12482,6 +12482,11 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   }
 
   .page-header {
+    /* display:flex is stated, not assumed. A rule at 900px sets .page-header to
+       display:grid with a single column, so flex-direction alone was inert and
+       the header quietly stacked — 110px where a real row is 70px. Measured
+       both ways rather than trusted. */
+    display: flex;
     flex-direction: row;
     align-items: flex-start;
     gap: 10px;
@@ -12508,5 +12513,88 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
     flex: none;
     flex-wrap: wrap;
     gap: 8px;
+  }
+}
+
+
+/* ── Phone: tables you can actually read, and forms you can actually fill ──
+   Three screens were called out as unusable on a phone — leave, stock counts
+   and the reports — and they failed in the same two ways.
+
+   Tables. Every table was pinned to min-width:680px, so a three-column table
+   overflowed a 351px screen exactly as badly as a twelve-column one, and
+   nothing on screen said it could be scrolled. Width is now driven by content:
+   a narrow table fits, a wide one scrolls, and the wide one keeps its first
+   column pinned so you still know which row you are reading when the numbers
+   have slid past. A fade at the right edge is the only honest way to say
+   "there is more this way" without adding furniture.
+
+   Forms. A submit button that is 90px wide in the bottom-right corner of a
+   card is a desk affordance. On a phone the thing you came to do should be
+   the width of your thumb's travel, not tucked into a corner. */
+@media (max-width: 860px) {
+  .table-scroll,
+  .table-card {
+    /* The fade is painted on the scroll container and pinned to its right edge,
+       so it disappears once you reach the end of the table. */
+    position: relative;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    background:
+      linear-gradient(to right, var(--color-surface) 30%, rgba(255, 255, 255, 0)) left center / 22px 100% no-repeat,
+      linear-gradient(to left, var(--color-surface) 30%, rgba(255, 255, 255, 0)) right center / 22px 100% no-repeat,
+      radial-gradient(farthest-side at 0 50%, rgba(18, 28, 16, 0.16), transparent) left center / 12px 100% no-repeat,
+      radial-gradient(farthest-side at 100% 50%, rgba(18, 28, 16, 0.16), transparent) right center / 12px 100% no-repeat;
+    background-attachment: local, local, scroll, scroll;
+  }
+
+  .table-scroll table,
+  .table-card table,
+  table {
+    /* Was a flat min-width:680px, which made every table too wide whether it
+       needed to be or not. */
+    min-width: 100%;
+    width: max-content;
+    font-size: 13px;
+  }
+
+  /* Keep the row's name on screen while its numbers scroll past it. */
+  .table-scroll table th:first-child,
+  .table-scroll table td:first-child,
+  .table-card table th:first-child,
+  .table-card table td:first-child {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--color-surface);
+    /* A hairline, so the pinned column reads as pinned rather than as a column
+       that happens to be first. */
+    box-shadow: 1px 0 0 var(--color-border);
+  }
+  .table-scroll table thead th:first-child,
+  .table-card table thead th:first-child {
+    z-index: 2;
+    background: var(--color-surface-muted, var(--color-surface));
+  }
+
+  /* The action you opened the page for gets the width of a thumb. */
+  .card .toolbar-right,
+  .staff-profile-form .toolbar-right {
+    justify-content: stretch;
+  }
+  .card .toolbar-right > .btn,
+  .card .toolbar-right > button,
+  .staff-profile-form .toolbar-right > .btn,
+  .staff-profile-form .toolbar-right > button {
+    flex: 1 1 100%;
+    min-height: 44px;
+  }
+
+  /* Leave, expiries, and every other "label left, badge right" list: at 351px
+     the badge squeezed the text into a column two words wide. */
+  .staff-expiry-row {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
   }
 }

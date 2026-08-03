@@ -63,13 +63,17 @@ async function main() {
       const started = Date.now();
       try {
         const result: any = await integrationService.importSquareItemSales(
-          { start: month.start, end: month.end, account, orderLimit: 1000 },
+          // startDate/endDate, NOT start/end. The importer reads
+          // `input.startDate` and silently falls back to a 7-day lookback when
+          // it is absent, so passing start/end re-imported the same recent
+          // week fourteen times and moved the stored total by 0.1%.
+          { startDate: month.start, endDate: month.end, account, orderLimit: 1000 },
           actor
         );
-        const imported = result?.imported ?? result?.rows ?? result?.count ?? '?';
+        const imported = result?.itemSalesRowsUpserted ?? '?';
         console.log(
-          `  ${month.label} ${account.padEnd(9)} ${String(imported).padStart(5)} rows  ${String(Date.now() - started).padStart(6)}ms` +
-            (result?.warnings?.length ? `  (${result.warnings.length} warning(s))` : '')
+          `  ${month.label} ${account.padEnd(9)} ${String(imported).padStart(5)} rows  ${String(result?.ordersRead ?? '?').padStart(5)} orders  ${String(Date.now() - started).padStart(6)}ms` +
+            (result?.limited ? '  CAPPED — shorten the range' : '')
         );
         for (const warning of result?.warnings ?? []) {
           if (String(warning).includes('first')) console.log(`      ! ${warning}`);

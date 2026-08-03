@@ -235,7 +235,12 @@ integrationsRouter.post('/square/import-customers', async (req, res, next) => {
 
 // Pull Square item-level sales — payment totals are imported by /import-sales;
 // this one breaks orders down to the line-item level so Reports can do
-// menu-engineering. Body: { start, end, venue?, locationId? }
+// menu-engineering.
+//
+// Body: { startDate, endDate, account?, orderLimit? }. Note startDate/endDate,
+// not start/end — the sibling tips import uses start/end, and this one silently
+// falls back to a 7-day lookback when startDate is missing rather than
+// complaining, so the wrong names cost a whole backfill before anyone noticed.
 integrationsRouter.post('/square/import-item-sales', async (req, res, next) => {
   try {
     res.json(await integrationService.importSquareItemSales({
