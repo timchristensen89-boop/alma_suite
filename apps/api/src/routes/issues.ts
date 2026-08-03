@@ -94,6 +94,17 @@ issuesRouter.get('/mine', async (req, res, next) => {
   }
 });
 
+// The open backlog grouped by how it actually failed: owned by someone who
+// left, owned by nobody, or genuinely held. Above /:id so "triage" is never
+// read as an issue id.
+issuesRouter.get('/triage', requireManager, async (_req, res, next) => {
+  try {
+    res.json(await issueService.triage());
+  } catch (error) {
+    next(error);
+  }
+});
+
 issuesRouter.get('/meta', async (_req, res) => {
   res.json(await issueService.meta());
 });

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Issue } from '@alma/shared';
 import {
   Badge,
@@ -40,6 +40,74 @@ const severityOptions = [
   { label: 'High', value: 'HIGH' },
   { label: 'Critical', value: 'CRITICAL' }
 ];
+
+type TriagePayload = {
+  totals: { open: number; orphaned: number; unassigned: number; held: number; olderThan90Days: number };
+  owners: Array<{ id: string; name: string; hasLeft: boolean; count: number; oldestDays: number }>;
+};
+
+/**
+ * The shape of the backlog, above the list rather than buried in it.
+ *
+ * A filterable list of 200-odd issues where almost all are HIGH does not tell
+ * anyone where to start. This says the three things that decide that: how much
+ * nobody owns, how much is owned by people who have left, and who is carrying
+ * an unreasonable share.
+ */
+function BacklogTriage() {
+  const [data, setData] = useState<TriagePayload | null>(null);
+
+  useEffect(() => {
+    // Manager-only endpoint; a non-manager simply doesn't see this panel.
+    void api<TriagePayload>('/api/issues/triage')
+      .then(setData)
+      .catch(() => setData(null));
+  }, []);
+
+  if (!data || data.totals.open === 0) return null;
+
+  const { totals } = data;
+  // Anyone holding a fifth of everything open is a bottleneck rather than an
+  // owner — that is the number worth surfacing, not a raw count.
+  const hoarders = data.owners.filter((owner) => owner.count >= Math.max(10, totals.open * 0.2));
+  const oldest = data.owners.reduce((max, owner) => Math.max(max, owner.oldestDays), 0);
+
+  return (
+    <Card title="Where the backlog actually is" subtitle={`${totals.open} open${oldest ? ` · oldest ${oldest} days` : ''}`}>
+      <div className="issue-triage">
+        <div className="issue-triage-stat">
+          <strong>{totals.unassigned}</strong>
+          <span>nobody owns</span>
+        </div>
+        <div className={`issue-triage-stat ${totals.orphaned ? 'is-bad' : ''}`}>
+          <strong>{totals.orphaned}</strong>
+          <span>owner has left</span>
+        </div>
+        <div className="issue-triage-stat">
+          <strong>{totals.held}</strong>
+          <span>someone is holding</span>
+        </div>
+        <div className={`issue-triage-stat ${totals.olderThan90Days ? 'is-bad' : ''}`}>
+          <strong>{totals.olderThan90Days}</strong>
+          <span>older than 90 days</span>
+        </div>
+      </div>
+
+      {hoarders.length > 0 ? (
+        <p className="issue-triage-note">
+          {hoarders.map((owner) => `${owner.name} is holding ${owner.count}`).join('; ')} — worth spreading before
+          adding more.
+        </p>
+      ) : null}
+      {totals.orphaned > 0 ? (
+        <p className="issue-triage-note is-bad">
+          {totals.orphaned} {totals.orphaned === 1 ? 'issue is' : 'issues are'} assigned to someone who has left.
+          Nobody is going to pick {totals.orphaned === 1 ? 'it' : 'them'} up.
+        </p>
+      ) : null}
+    </Card>
+  );
+}
 
 export function IssuesListPage() {
   const [status, setStatus] = useState('');
@@ -109,6 +177,8 @@ export function IssuesListPage() {
           </>
         }
       />
+
+      <BacklogTriage />
 
       <Card
         title="Filters"

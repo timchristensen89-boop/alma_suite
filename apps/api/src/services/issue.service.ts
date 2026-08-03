@@ -189,10 +189,19 @@ function toAssigneeOption(staff: IssueAssigneeStaff): IssueAssigneeOption {
   };
 }
 
-async function resolveAssignee(value?: string | null) {
+type ResolvedAssignee = {
+  assignee: string | null;
+  staffId: string | null;
+  staff: IssueAssigneeStaff | null;
+  /** The name resolved to somebody who is no longer active. */
+  departed: boolean;
+  departedName?: string;
+};
+
+async function resolveAssignee(value?: string | null): Promise<ResolvedAssignee> {
   const assignee = value?.trim();
   if (!assignee) {
-    return { assignee: null, staff: null as IssueAssigneeStaff | null };
+    return { assignee: null, staffId: null, staff: null, departed: false };
   }
 
   const staff = await activeAssigneeStaff();
@@ -202,10 +211,40 @@ async function resolveAssignee(value?: string | null) {
     ?? staff.find((item) => staffLabel(item).toLowerCase() === normalized)
     ?? staff.find((item) => item.email?.toLowerCase() === normalized);
 
-  return {
-    assignee: match ? staffName(match) : assignee,
-    staff: match ?? null
-  };
+  if (match) {
+    return { assignee: staffName(match), staffId: match.id, staff: match, departed: false };
+  }
+
+  // No ACTIVE profile answers to that name. It may be a plain typo, or — the
+  // case that built this backlog — somebody who has since left, whose name an
+  // area rule kept writing onto new issues. Say which, and never silently
+  // hand work to a person who is gone.
+  const departed = await prisma.staffProfile.findFirst({
+    where: {
+      OR: [
+        { id: assignee },
+        { email: { equals: assignee, mode: 'insensitive' } }
+      ]
+    },
+    select: { id: true, firstName: true, lastName: true, employmentStatus: true }
+  });
+  const departedByName = departed
+    ? null
+    : (
+        await prisma.staffProfile.findMany({
+          where: { mergedIntoStaffProfileId: null },
+          select: { id: true, firstName: true, lastName: true, employmentStatus: true }
+        })
+      ).filter((row) => `${row.firstName} ${row.lastName}`.trim().toLowerCase() === normalized);
+
+  const gone = departed ?? (departedByName?.length === 1 ? departedByName[0] : null);
+  if (gone) {
+    return { assignee: null, staffId: null, staff: null, departed: true, departedName: `${gone.firstName} ${gone.lastName}`.trim() };
+  }
+
+  // An unrecognised name is kept as typed — some assignees are contractors who
+  // have no staff profile at all.
+  return { assignee, staffId: null, staff: null, departed: false };
 }
 
 // Resolve the assignee, falling back to the area's default responsible person
@@ -245,6 +284,97 @@ export const issueService = {
       take: Math.min(Math.max(limit, 1), 100),
       include: issueInclude()
     });
+  },
+
+  /**
+   * The open backlog, told honestly.
+   *
+   * A flat list of 202 issues where 201 are HIGH is not a work queue, it is a
+   * pile. This groups it the way the pile actually failed: work owned by
+   * somebody who has left, work owned by nobody, and work someone is holding.
+   *
+   * Ages come from createdAt rather than dueDate, because 200 of them have no
+   * due date and never will — the age is the only honest urgency signal in the
+   * data.
+   */
+  async triage() {
+    const open = await prisma.issue.findMany({
+      where: { status: { notIn: ['RESOLVED', 'CLOSED'] } },
+      orderBy: [{ createdAt: 'asc' }],
+      select: {
+        id: true,
+        title: true,
+        severity: true,
+        status: true,
+        area: true,
+        category: true,
+        assignee: true,
+        assigneeStaffId: true,
+        dueDate: true,
+        createdAt: true
+      }
+    });
+
+    const ownerIds = [...new Set(open.map((issue) => issue.assigneeStaffId).filter((id): id is string => Boolean(id)))];
+    const owners = ownerIds.length
+      ? await prisma.staffProfile.findMany({
+          where: { id: { in: ownerIds } },
+          select: { id: true, firstName: true, lastName: true, employmentStatus: true, mergedIntoStaffProfileId: true }
+        })
+      : [];
+    const ownerById = new Map(owners.map((owner) => [owner.id, owner]));
+    const isGone = (id: string | null) => {
+      if (!id) return false;
+      const owner = ownerById.get(id);
+      if (!owner) return false;
+      return owner.employmentStatus !== 'ACTIVE' || Boolean(owner.mergedIntoStaffProfileId);
+    };
+
+    const now = Date.now();
+    const withAge = open.map((issue) => ({
+      ...issue,
+      ageDays: Math.floor((now - issue.createdAt.getTime()) / 86_400_000),
+      ownerHasLeft: isGone(issue.assigneeStaffId)
+    }));
+
+    const orphaned = withAge.filter((issue) => issue.ownerHasLeft);
+    const unassigned = withAge.filter((issue) => !issue.ownerHasLeft && !issue.assignee);
+    const held = withAge.filter((issue) => !issue.ownerHasLeft && Boolean(issue.assignee));
+
+    // Who is holding what, worst backlog first — the question a manager
+    // actually asks before reassigning anything.
+    const byOwner = new Map<string, { name: string; hasLeft: boolean; count: number; oldestDays: number }>();
+    for (const issue of withAge) {
+      if (!issue.assignee) continue;
+      const key = issue.assigneeStaffId ?? issue.assignee;
+      const row = byOwner.get(key) ?? {
+        name: issue.assignee,
+        hasLeft: issue.ownerHasLeft,
+        count: 0,
+        oldestDays: 0
+      };
+      row.count += 1;
+      row.oldestDays = Math.max(row.oldestDays, issue.ageDays);
+      byOwner.set(key, row);
+    }
+
+    return {
+      generatedAt: new Date().toISOString(),
+      totals: {
+        open: open.length,
+        orphaned: orphaned.length,
+        unassigned: unassigned.length,
+        held: held.length,
+        // Anything untouched for a quarter is not a backlog item, it is a
+        // decision nobody has made.
+        olderThan90Days: withAge.filter((issue) => issue.ageDays > 90).length
+      },
+      owners: [...byOwner.entries()]
+        .map(([id, row]) => ({ id, ...row }))
+        .sort((a, b) => b.count - a.count),
+      orphaned: orphaned.slice(0, 100),
+      unassigned: unassigned.slice(0, 100)
+    };
   },
 
   async list(filters: { status?: string; severity?: string; search?: string }) {
@@ -319,6 +449,7 @@ export const issueService = {
           area,
           status: data.status,
           assignee: resolvedAssignee.assignee,
+          assigneeStaffId: resolvedAssignee.staffId,
           // Stamp the reporter by id, not just the name the activity log
           // carries — a name can't answer "show me what I reported".
           reportedByStaffId: actor?.id ?? null,

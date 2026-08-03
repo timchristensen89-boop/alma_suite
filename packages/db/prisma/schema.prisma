@@ -444,6 +444,10 @@ model Issue {
   // beginning, but a name is not an identity — they collide, they change, and
   // a person can hold two staff profiles. The id is what makes "issues I
   // reported" answerable.
+  // Who owns it. `assignee` has always been a free-text name, which is why a
+  // third of the open backlog still points at someone who left months ago —
+  // an area rule kept writing their name and nothing could tell.
+  assigneeStaffId   String?
   reportedByStaffId String?
   reportedByName    String?
   createdAt       DateTime         @default(now())
