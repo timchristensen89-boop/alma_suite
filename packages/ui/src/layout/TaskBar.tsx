@@ -53,6 +53,13 @@ const STYLE_ID = 'alma-taskbar-styles';
  * cannot drift between apps. Everything is scoped under .alma-taskbar.
  */
 const CSS = `
+:root {
+  /* One number for the bar's height, used by the bar, the sheet that rests on
+     it, and the padding that keeps page content clear of it. Hard-coding 56px
+     in three places left the sheet tucked 9px behind the bar, because the bar
+     is 56px of target plus a 1px top border. */
+  --alma-taskbar-h: 57px;
+}
 .alma-taskbar { display: none; }
 .alma-taskbar-sheet-backdrop { display: none; }
 
@@ -70,6 +77,7 @@ const CSS = `
     border-top: 1px solid var(--color-border, rgba(31, 53, 36, 0.12));
     /* Sit above the home indicator, not under it. */
     padding-bottom: env(safe-area-inset-bottom);
+    min-height: var(--alma-taskbar-h);
     box-shadow: 0 -6px 18px -12px rgba(18, 28, 16, 0.4);
   }
   .alma-taskbar-item {
@@ -136,7 +144,7 @@ const CSS = `
     left: 0;
     right: 0;
     /* Rests on top of the bar. */
-    bottom: calc(56px + env(safe-area-inset-bottom));
+    bottom: calc(var(--alma-taskbar-h) + env(safe-area-inset-bottom));
     z-index: 61;
     background: var(--color-elevated, #fff);
     border-top: 1px solid var(--color-border, rgba(31, 53, 36, 0.12));
@@ -159,7 +167,7 @@ const CSS = `
 
   /* Give the page back the height the bar covers, or the last row of every
      screen sits underneath it. */
-  body { padding-bottom: calc(56px + env(safe-area-inset-bottom)); }
+  body { padding-bottom: calc(var(--alma-taskbar-h) + env(safe-area-inset-bottom)); }
 }
 
 @media (prefers-reduced-motion: no-preference) {

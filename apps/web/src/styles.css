@@ -12598,3 +12598,77 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
     gap: 6px;
   }
 }
+
+
+/* ── Phone: one header, not two ───────────────────────────────────────────
+   Driven from a real signed-in phone rather than from the markup. Content
+   started 144px down, behind two stacked bars:
+
+     .app-shell-sidebar   63px   the brand lockup, plus a nav dropdown
+     .app-shell-topbar    81px   the page title, plus four action buttons
+
+   and almost everything in the first was already in the second. "Home" was
+   the nav-toggle's label and the topbar's title. The app said "Staff" in the
+   brand lockup and again on the Switch-apps button. The brand wordmark was
+   clipped behind the dropdown at 375px because the two never fit side by side.
+
+   The dropdown was the one thing carrying its own weight, and the task bar
+   now does that job — so the row goes, and the topbar becomes the header.
+   Access is preserved rather than assumed: the bar appends any nav item its
+   own list does not name, so nothing a person could reach through the
+   dropdown became unreachable when it disappeared. */
+@media (max-width: 860px) {
+  .app-shell-sidebar {
+    display: none;
+  }
+
+  .app-shell-topbar {
+    /* It is the only header now, so it carries the top edge itself. */
+    position: sticky;
+    top: 0;
+    z-index: 30;
+    padding: 6px 0 0;
+  }
+}
+
+
+/* ── Phone: stat cards two-up ─────────────────────────────────────────────
+   Measured on the real Leave screen: four stat cards, one per row, 116px each
+   — 493px of a 812px screen spent on four numbers before the leave list or the
+   request form appears at all. The grid was auto-fit with a 210px minimum,
+   which at 351px of usable width can only ever fit one.
+
+   Two-up halves it to roughly 250px and still leaves each card 170px wide,
+   which is more than enough for a label, a number and a hint. The numbers
+   themselves come down a little because a 24px figure next to a 10px label was
+   sized for a dashboard on a monitor. */
+@media (max-width: 860px) {
+  /* Seven rules already compete for this one property, across five
+     breakpoints (1180, 900, 860, 720, 480, 420). The one that was actually
+     winning at 375px is `.page-stack > .stats-grid` in the 420px block — two
+     classes, so a plain `.stats-grid` here loses to it however late it sits.
+     Matching that shape is what makes this rule take effect; the bare
+     selectors keep it working for grids that are not page-stack children. */
+  .page-stack > .stats-grid,
+  .page-stack > .stat-grid,
+  .stats-grid,
+  .stat-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .stat-card {
+    min-height: 0;
+    padding: 12px;
+  }
+
+  .stat-card-value {
+    font-size: 21px;
+  }
+
+  /* A card that has to stand alone (a single stat on a page) still spans. */
+  .stats-grid > :only-child,
+  .stat-grid > :only-child {
+    grid-column: 1 / -1;
+  }
+}

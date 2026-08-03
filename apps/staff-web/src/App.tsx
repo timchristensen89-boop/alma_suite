@@ -970,17 +970,25 @@ function BottomTabs({ items }: { items: typeof NAV_ITEMS }) {
   const location = useLocation();
   const navigate = useNavigate();
 
-  const tasks: TaskBarItem[] = TASK_ORDER.flatMap((task) => {
-    const item = items.find((navItem) => navItem.to === task.to);
-    if (!item) return [];
-    return [{
-      key: task.to,
-      label: task.label,
-      href: task.to,
-      icon: item.icon,
-      active: staffNavMatches(item, location.pathname)
-    }];
+  const toTask = (item: (typeof items)[number], label: string): TaskBarItem => ({
+    key: item.to,
+    label,
+    href: item.to,
+    icon: item.icon,
+    active: staffNavMatches(item, location.pathname)
   });
+
+  const ordered = TASK_ORDER.flatMap((task) => {
+    const item = items.find((navItem) => navItem.to === task.to);
+    return item ? [toTask(item, task.label)] : [];
+  });
+  // Anything this person can reach that TASK_ORDER does not name goes on the
+  // end. The mobile nav dropdown is hidden on phones now that this bar exists,
+  // so a screen missing from both would simply be unreachable — and the list
+  // above is hand-written, which is exactly the kind of thing that goes stale.
+  const named = new Set(ordered.map((task) => task.key));
+  const rest = items.filter((item) => !named.has(item.to)).map((item) => toTask(item, item.label));
+  const tasks: TaskBarItem[] = [...ordered, ...rest];
 
   // One tab is not a tab bar. Below two, the dropdown alone is less clutter.
   if (tasks.length < 2) return null;
