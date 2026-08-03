@@ -3652,6 +3652,7 @@ function ReportIssuePage() {
           <p className="subtle">You don't need to do anything else. If it's urgent as well as logged, tell a manager on shift.</p>
           <Button type="button" onClick={() => setSent(null)}>Report another</Button>
         </Card>
+        <MyReportedIssues />
       </div>
     );
   }
@@ -3739,7 +3740,61 @@ function ReportIssuePage() {
           </Button>
         </form>
       </Card>
+
+      <MyReportedIssues />
     </div>
+  );
+}
+
+/**
+ * What you've reported, and what happened to it.
+ *
+ * Without this, reporting a fault is shouting into a hole — you never learn
+ * whether anyone picked it up, which is exactly how people stop bothering.
+ */
+function MyReportedIssues() {
+  const [issues, setIssues] = useState<Array<{
+    id: string;
+    title: string;
+    status: string;
+    severity: string;
+    assignee: string | null;
+    createdAt: string;
+  }> | null>(null);
+
+  useEffect(() => {
+    // A failure here must not take the report form down with it.
+    void api<typeof issues>('/api/issues/mine?limit=20')
+      .then((rows) => setIssues(rows ?? []))
+      .catch(() => setIssues([]));
+  }, []);
+
+  if (!issues || issues.length === 0) return null;
+
+  const open = issues.filter((issue) => !['RESOLVED', 'CLOSED'].includes(issue.status));
+
+  return (
+    <Card title="What you've reported" subtitle={open.length ? `${open.length} still open` : 'All sorted'}>
+      <div className="my-issues">
+        {issues.map((issue) => {
+          const done = ['RESOLVED', 'CLOSED'].includes(issue.status);
+          return (
+            <div key={issue.id} className={`my-issue ${done ? 'is-done' : ''}`}>
+              <div className="my-issue-text">
+                <strong>{issue.title}</strong>
+                <small>
+                  {new Date(issue.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })}
+                  {issue.assignee ? ` · with ${issue.assignee}` : ' · not picked up yet'}
+                </small>
+              </div>
+              <Badge tone={done ? 'positive' : issue.status === 'IN_PROGRESS' ? 'info' : 'muted'}>
+                {done ? 'Done' : issue.status.replace('_', ' ').toLowerCase()}
+              </Badge>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
   );
 }
 

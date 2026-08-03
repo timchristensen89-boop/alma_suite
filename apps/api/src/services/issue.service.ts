@@ -219,6 +219,34 @@ async function resolveAssigneeWithArea(value: string | null | undefined, area: s
 }
 
 export const issueService = {
+  /**
+   * Issues this person raised, newest first.
+   *
+   * Follows a merged profile to the surviving one: someone who reported a
+   * fault under a duplicate account should still see it after the merge.
+   */
+  async listReportedBy(staffProfileId: string, limit = 50) {
+    const profile = await prisma.staffProfile.findUnique({
+      where: { id: staffProfileId },
+      select: { id: true, mergedIntoStaffProfileId: true }
+    });
+    const ids = [staffProfileId];
+    if (profile?.mergedIntoStaffProfileId) ids.push(profile.mergedIntoStaffProfileId);
+    // And the other direction: profiles that were merged INTO this one.
+    const merged = await prisma.staffProfile.findMany({
+      where: { mergedIntoStaffProfileId: staffProfileId },
+      select: { id: true }
+    });
+    ids.push(...merged.map((row) => row.id));
+
+    return prisma.issue.findMany({
+      where: { reportedByStaffId: { in: [...new Set(ids)] } },
+      orderBy: [{ createdAt: 'desc' }],
+      take: Math.min(Math.max(limit, 1), 100),
+      include: issueInclude()
+    });
+  },
+
   async list(filters: { status?: string; severity?: string; search?: string }) {
     const where: Prisma.IssueWhereInput = {
       status: filters.status ? (filters.status as never) : undefined,
@@ -291,6 +319,10 @@ export const issueService = {
           area,
           status: data.status,
           assignee: resolvedAssignee.assignee,
+          // Stamp the reporter by id, not just the name the activity log
+          // carries — a name can't answer "show me what I reported".
+          reportedByStaffId: actor?.id ?? null,
+          reportedByName: actor ? `${actor.firstName} ${actor.lastName}`.trim() || actor.email || null : null,
           dueDate: data.dueDate ? new Date(data.dueDate) : null,
           notes: data.notes || null,
           resolutionNotes: data.resolutionNotes || null,

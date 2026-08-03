@@ -80,6 +80,20 @@ issuesRouter.post('/', async (req, res, next) => {
   }
 });
 
+// What this staff member has reported. Sits above /:id so "mine" is never
+// read as an issue id.
+issuesRouter.get('/mine', async (req, res, next) => {
+  try {
+    if (!req.user?.id) {
+      res.status(401).json({ message: 'Not authenticated' });
+      return;
+    }
+    res.json(await issueService.listReportedBy(req.user.id, Number(req.query.limit) || undefined));
+  } catch (error) {
+    next(error);
+  }
+});
+
 issuesRouter.get('/meta', async (_req, res) => {
   res.json(await issueService.meta());
 });

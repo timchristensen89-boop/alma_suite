@@ -440,6 +440,12 @@ model Issue {
   dueDate         DateTime?
   notes           String?
   resolutionNotes String?
+    // Who raised it. The activity log has carried the reporter's NAME since the
+  // beginning, but a name is not an identity — they collide, they change, and
+  // a person can hold two staff profiles. The id is what makes "issues I
+  // reported" answerable.
+  reportedByStaffId String?
+  reportedByName    String?
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
   evidence        IssueEvidence[]
