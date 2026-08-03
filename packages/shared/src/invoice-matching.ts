@@ -264,7 +264,8 @@ export function matchInvoiceLine(
   items: MatchCandidate[],
   options: { supplierName?: string | null; aliases?: Map<string, string> } = {}
 ): InvoiceMatch {
-  const description = line.description ?? '';
+  // Score on the product, not the delivery note appended to it.
+  const description = productDescription(line.description ?? '');
 
   if (isNonStockLine(description, options.supplierName)) {
     return { itemId: null, status: 'NON_STOCK', confidence: 1, reason: 'NON_STOCK' };
@@ -359,6 +360,36 @@ export function suggestItems(
 }
 
 /** The key an alias is remembered under. */
+/**
+ * Per-delivery commentary suppliers append to an otherwise fixed product name.
+ *
+ * FoodByUs writes the weight actually delivered onto every line:
+ *
+ *   BEEF SHORT RIBS GRAINFED 3 RIB. Ordered: 26 KG, Supplied Qty: 26.3 KG,
+ *   Reason for adjustment: Random Weight
+ *
+ * That makes every line unique. In production 231 of 470 unmatched lines carry
+ * it, turning 138 real products into 232 distinct wordings — and, worse, the
+ * alias learned when somebody matches one records the delivered weight too, so
+ * it can never fire again. Twelve deliveries of the same beef rib were twelve
+ * separate decisions that taught the system nothing.
+ */
+const SUPPLIER_LINE_COMMENTARY = /\.\s*Ordered:.*$/i;
+
+/**
+ * The product name with any per-delivery commentary removed.
+ *
+ * Used for both matching and aliasing, so a match made once covers every
+ * delivery of the same product rather than only the one in front of you.
+ */
+export function productDescription(description: string): string {
+  const stripped = (description ?? '').replace(SUPPLIER_LINE_COMMENTARY, '').trim();
+  // Never return empty: a line that is *only* commentary keeps its own text so
+  // it stays a distinct thing to review rather than collapsing into every other
+  // unparseable line.
+  return stripped || (description ?? '').trim();
+}
+
 export function aliasKey(description: string): string {
-  return normaliseName(description);
+  return normaliseName(productDescription(description));
 }

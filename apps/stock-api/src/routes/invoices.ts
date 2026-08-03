@@ -27,6 +27,16 @@ invoicesRouter.get('/cogs-lines', async (req, res, next) => {
   }
 });
 
+// Where the unattributed supplier spend actually sits, grouped by the wording
+// the supplier uses rather than one line at a time.
+invoicesRouter.get('/unmatched-spend', async (_req, res, next) => {
+  try {
+    res.json(await invoicesService.unmatchedSpend());
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.get('/summary', async (_req, res, next) => {
   try {
     res.json(await invoicesService.summary());

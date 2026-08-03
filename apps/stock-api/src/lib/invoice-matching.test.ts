@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   aliasKey,
+  productDescription,
   isNonStockLine,
   matchInvoiceLine,
   packFormat,
@@ -292,4 +293,63 @@ test('describesDifferentProduct is the single place all three checks live', () =
   assert.equal(describesDifferentProduct('Carrots Box', 'Carrots Bunch'), true);
   assert.equal(describesDifferentProduct('CHICKEN SKIN ON', 'CHICKEN SKIN OFF'), true);
   assert.equal(describesDifferentProduct('Coconut Milk', 'COCONUT MILK 400ML (Royal Line) EA'), false);
+});
+
+/**
+ * Per-delivery commentary. FoodByUs appends the weight actually delivered to
+ * every line, which made each of twelve deliveries of the same beef rib a
+ * separate wording — and taught an alias that recorded the weight, so it could
+ * never fire again. 231 of 470 unmatched production lines carried it.
+ */
+const RIB = 'BEEF SHORT RIBS GRAINFED 3 RIB';
+const DELIVERIES = [
+  `${RIB}. Ordered: 26 KG, Supplied Qty: 26.3 KG, Reason for adjustment: Random Weight`,
+  `${RIB}. Ordered: 40 KG, Supplied Qty: 41.1 KG, Reason for adjustment: Random Weight`,
+  `${RIB}. Ordered: 14 KG, Supplied Qty: 17.1 KG, Reason for adjustment: Delivered Less/More`
+];
+
+test('delivery commentary is not part of the product name', () => {
+  for (const line of DELIVERIES) {
+    assert.equal(productDescription(line), RIB);
+  }
+});
+
+test('every delivery of the same product shares one alias key', () => {
+  const keys = new Set(DELIVERIES.map(aliasKey));
+  assert.equal(keys.size, 1, 'twelve deliveries should teach one alias, not twelve');
+  assert.equal([...keys][0], aliasKey(RIB));
+});
+
+test('an alias learned on one delivery matches the next one', () => {
+  const items: MatchCandidate[] = [{ id: 'beef-rib', name: 'Beef Short Rib Grainfed', sku: null }];
+  const aliases = new Map([[aliasKey(DELIVERIES[0]!), 'beef-rib']]);
+  const match = matchInvoiceLine({ description: DELIVERIES[2]! }, items, { aliases });
+  assert.equal(match.itemId, 'beef-rib');
+});
+
+test('a description with no commentary is untouched', () => {
+  assert.equal(productDescription('OIL COTTONSEED 20LT (Trading) EA'), 'OIL COTTONSEED 20LT (Trading) EA');
+  assert.equal(productDescription('Chives Bunch'), 'Chives Bunch');
+});
+
+test('a full stop that is not commentary survives', () => {
+  // "1.5-2KG" and "No. 7" must not be treated as the start of a delivery note.
+  assert.equal(
+    productDescription('SALMON FILLET S/ON TASI SASHIMI 1.5-2KG (Huon)'),
+    'SALMON FILLET S/ON TASI SASHIMI 1.5-2KG (Huon)'
+  );
+  assert.equal(productDescription('GLOVES RUBBER PINK NO 7 Bastion'), 'GLOVES RUBBER PINK NO 7 Bastion');
+});
+
+test('a line that is only commentary keeps its own text', () => {
+  // Stripping to nothing would collapse every such line into one review row.
+  const odd = '. Ordered: 4 KG, Supplied Qty: 4.2 KG';
+  assert.equal(productDescription(odd), odd);
+});
+
+test('different products still do not share an alias', () => {
+  assert.notEqual(
+    aliasKey('BEEF SHORT RIBS GRAINFED 3 RIB. Ordered: 26 KG'),
+    aliasKey('BEEF FLANKS / THIN SKIRTS. Ordered: 26 KG')
+  );
 });

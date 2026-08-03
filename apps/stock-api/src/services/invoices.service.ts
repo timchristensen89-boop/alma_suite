@@ -29,6 +29,8 @@ import {
   type StockInvoiceTriageStatus,
   type StockInvoicesPayload,
   type StockInvoicesSummary,
+  type StockUnmatchedSpendPayload,
+  type StockUnmatchedSpendRow,
   type StockSupplierInvoice,
   type StockSupplierInvoiceLine
 } from '@alma/shared';
@@ -414,6 +416,42 @@ async function ensureSupplier(
     data: { name, email: supplierEmail, status: 'ACTIVE' }
   });
   return created.id;
+}
+
+/**
+ * Apply a freshly-taught alias to the lines already in the review queue.
+ *
+ * Supplier wording repeats verbatim: 471 unmatched lines in production are only
+ * 138 distinct descriptions, and the worst offender wears the same words eleven
+ * times. Teaching the alias without sweeping them means a manager answers the
+ * same question eleven times.
+ *
+ * Scoped to lines that are still unmatched — a manual match somebody made by
+ * hand is never overwritten — and to the supplier the alias was learned from
+ * when it is supplier-specific.
+ */
+async function applyAliasToWaitingLines(
+  key: string,
+  itemId: string,
+  supplierId: string | null,
+  exceptLineId: string
+): Promise<number> {
+  const candidates = await prisma.supplierInvoiceLine.findMany({
+    where: {
+      id: { not: exceptLineId },
+      itemId: null,
+      matchingStatus: 'NEEDS_REVIEW',
+      ...(supplierId ? { invoice: { supplierId } } : {})
+    },
+    select: { id: true, description: true }
+  });
+  const ids = candidates.filter((line) => aliasKey(line.description) === key).map((line) => line.id);
+  if (ids.length === 0) return 0;
+  const result = await prisma.supplierInvoiceLine.updateMany({
+    where: { id: { in: ids } },
+    data: { itemId, matchingStatus: 'AUTO_MATCHED' }
+  });
+  return result.count;
 }
 
 function toLinePayload(row: InvoiceLineRow): StockSupplierInvoiceLine {
@@ -1349,6 +1387,11 @@ export const invoicesService = {
             data: { aliasKey: key, supplierId, stockItemId: itemId, sourceText: existing.description }
           });
         }
+        // ...and apply it to the lines already waiting. The alias only used to
+        // help the *next* import, so identifying "BEEF SHORT RIBS GRAINFED
+        // 3 RIB" cleared one line and left the other ten sitting in the queue
+        // wearing the same words. One decision should settle all of them.
+        await applyAliasToWaitingLines(key, itemId, supplierId, lineId);
       }
     }
 
@@ -1724,6 +1767,104 @@ export const invoicesService = {
       needsReviewCount,
       replacedLineCount,
       invoice: await getInvoicePayload(invoiceId)
+    };
+  },
+
+  /**
+   * Where the unattributed spend actually is.
+   *
+   * 471 lines sit unmatched in production, but they are only 138 distinct
+   * descriptions and $45,593 of spend — and 88% of that money is in the top
+   * twenty wordings. Reviewed one line at a time that is 471 decisions; grouped
+   * by what the supplier calls it, it is an afternoon.
+   *
+   * Two different problems live in this list and they need opposite actions,
+   * so they are separated rather than piled together:
+   *
+   *  - A *summary line* — "Alcoholic Beverages", "Xero bill line", a bare
+   *    supplier name — is not a product and will never match an item. It needs
+   *    the invoice's real lines pasted in. That is the single biggest chunk:
+   *    $15,290 of Paramount alone.
+   *  - A *real product* the venue buys — beef short ribs, snapper fillets —
+   *    that simply is not in the catalogue yet.
+   */
+  async unmatchedSpend(): Promise<StockUnmatchedSpendPayload> {
+    const lines = await prisma.supplierInvoiceLine.findMany({
+      where: { itemId: null, matchingStatus: 'NEEDS_REVIEW' },
+      select: {
+        id: true,
+        description: true,
+        lineAmountCents: true,
+        invoice: { select: { id: true, supplierName: true, invoiceDate: true, lines: { select: { id: true } } } }
+      }
+    });
+
+    const groups = new Map<string, {
+      description: string;
+      lineCount: number;
+      totalCents: number;
+      suppliers: Set<string>;
+      lastSeen: Date | null;
+      invoiceIds: Set<string>;
+      summaryLineInvoices: number;
+    }>();
+
+    for (const line of lines) {
+      // The supplier's order commentary — ". Ordered: 1 unit, Supplied Qty: 1
+      // unit" — is appended to otherwise identical descriptions, so the same
+      // product appears twice in the queue. Group on the wording without it.
+      const clean = line.description.replace(/\.\s*Ordered:.*$/i, '').trim() || line.description;
+      const key = clean.toLowerCase();
+      const group = groups.get(key) ?? {
+        description: clean,
+        lineCount: 0,
+        totalCents: 0,
+        suppliers: new Set<string>(),
+        lastSeen: null as Date | null,
+        invoiceIds: new Set<string>(),
+        summaryLineInvoices: 0
+      };
+      group.lineCount += 1;
+      group.totalCents += line.lineAmountCents;
+      if (line.invoice?.supplierName) group.suppliers.add(line.invoice.supplierName);
+      if (line.invoice?.invoiceDate && (!group.lastSeen || line.invoice.invoiceDate > group.lastSeen)) {
+        group.lastSeen = line.invoice.invoiceDate;
+      }
+      if (line.invoice?.id) {
+        group.invoiceIds.add(line.invoice.id);
+        // An invoice with one line is a bill that arrived summarised.
+        if ((line.invoice.lines?.length ?? 0) <= 1) group.summaryLineInvoices += 1;
+      }
+      groups.set(key, group);
+    }
+
+    const rows: StockUnmatchedSpendRow[] = [...groups.values()]
+      .map((group) => ({
+        description: group.description,
+        lineCount: group.lineCount,
+        totalCents: group.totalCents,
+        suppliers: [...group.suppliers].sort(),
+        lastSeen: group.lastSeen?.toISOString() ?? null,
+        invoiceIds: [...group.invoiceIds],
+        // Every line of it came off a one-line invoice: there is no product to
+        // create here, the bill needs its detail pasted in.
+        looksSummarised: group.summaryLineInvoices >= group.lineCount && group.lineCount > 0
+      }))
+      .sort((a, b) => b.totalCents - a.totalCents);
+
+    const totalCents = rows.reduce((sum, row) => sum + row.totalCents, 0);
+    const summarisedCents = rows
+      .filter((row) => row.looksSummarised)
+      .reduce((sum, row) => sum + row.totalCents, 0);
+
+    return {
+      rows: rows.slice(0, 60),
+      distinctDescriptions: rows.length,
+      lineCount: lines.length,
+      totalCents,
+      // Split out because the two halves need opposite actions.
+      summarisedCents,
+      catalogueGapCents: totalCents - summarisedCents
     };
   },
 

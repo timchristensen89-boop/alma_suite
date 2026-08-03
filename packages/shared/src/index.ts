@@ -6057,6 +6057,27 @@ export type StockInvoicePasteResult = {
   invoice?: StockSupplierInvoice;
 };
 
+/** One wording the supplier uses that no stock item answers to. */
+export type StockUnmatchedSpendRow = {
+  description: string;
+  lineCount: number;
+  totalCents: number;
+  suppliers: string[];
+  lastSeen: string | null;
+  invoiceIds: string[];
+  /** Every line came off a one-line bill — paste its detail, don't create an item. */
+  looksSummarised: boolean;
+};
+
+export type StockUnmatchedSpendPayload = {
+  rows: StockUnmatchedSpendRow[];
+  distinctDescriptions: number;
+  lineCount: number;
+  totalCents: number;
+  summarisedCents: number;
+  catalogueGapCents: number;
+};
+
 export const stockInvoiceImportInputSchema = z.object({
   source: z.string().min(1).default('XERO'),
   venue: z.string().optional().or(z.literal('')),

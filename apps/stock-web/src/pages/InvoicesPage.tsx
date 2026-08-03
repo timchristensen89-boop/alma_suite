@@ -18,6 +18,7 @@ import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner
 import { IconInvoices } from '../lib/icons';
 import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
 import { InvoicePasteLinesPanel } from '../components/InvoicePasteLinesPanel';
+import { UnmatchedSpendCard } from '../components/UnmatchedSpendCard';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api, apiBlob } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
@@ -871,6 +872,18 @@ export function InvoicesPage() {
       </div>
 
       <RematchBacklog canManage={canManage} onDone={() => void loadInvoices()} />
+
+      {/* Re-running the matcher only helps where the wording is already known.
+          This says where the money that never matches actually is, so the
+          catalogue gaps and the summarised bills can be worked worst-first. */}
+      {canManage ? (
+        <UnmatchedSpendCard
+          onOpenInvoice={(id) => {
+            setSelectedInvoiceId(id);
+            document.querySelector('.stock-invoice-table')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+          }}
+        />
+      ) : null}
 
       <Card
         title="Add invoices"
