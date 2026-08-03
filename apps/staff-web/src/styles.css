@@ -8932,3 +8932,48 @@ html[data-theme='dark'] .check-item { background: var(--color-elevated, #1c2027)
 .my-issue-text small { font-size: 12px; color: var(--color-text-muted, #475569); }
 /* A finished item stays on the list but stops competing for attention. */
 .my-issue.is-done .my-issue-text strong { opacity: 0.55; }
+
+
+/* ── Fridge temperatures (staff) ──────────────────────────────────────── */
+.fridge-list { display: grid; gap: 12px; }
+.fridge {
+  display: grid;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid rgba(31, 53, 36, 0.12);
+  border-left-width: 3px;
+  border-left-color: transparent;
+  border-radius: 14px;
+  background: var(--color-elevated, #fff);
+}
+.fridge.is-out { border-left-color: #b23c3c; }
+.fridge-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+.fridge-text { display: grid; gap: 2px; min-width: 0; }
+.fridge-text small { font-size: 12px; color: var(--color-text-muted, #475569); }
+.fridge-reading { display: grid; justify-items: end; gap: 1px; }
+/* The number is the whole point of the row, so it is the biggest thing in it. */
+.fridge-reading span { font-size: 27px; font-weight: 700; line-height: 1; }
+.fridge-reading span.is-ok { color: #2f7d4f; }
+.fridge-reading span.is-bad { color: #b23c3c; }
+.fridge-reading span.is-none { color: var(--color-text-muted, #475569); opacity: 0.5; }
+.fridge-reading small { font-size: 11px; color: var(--color-text-muted, #475569); }
+.fridge-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12px;
+  color: var(--color-text-muted, #475569);
+}
+.fridge-form { display: grid; gap: 12px; }
+.fridge-form-actions { display: flex; gap: 10px; }
+.fridge-warning {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: rgba(178, 60, 60, 0.1);
+  color: #b23c3c;
+  font-size: 13px;
+}
+
+html[data-theme='dark'] .fridge { background: var(--color-elevated, #1c2027); }

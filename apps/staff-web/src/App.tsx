@@ -3389,6 +3389,189 @@ type StaffChecklistRun = {
  * A failed item is the interesting one: it offers to raise an issue there and
  * then, because the alternative is somebody meaning to report it later and not.
  */
+type FridgeAsset = {
+  id: string;
+  name: string;
+  venue: string | null;
+  area: string | null;
+  assetType: string;
+  minTempC: number;
+  maxTempC: number;
+  integrationProvider: string | null;
+  lastReadingAt: string | null;
+  logs: Array<{ id: string; temperatureC: number; recordedAt: string; source: string | null }>;
+};
+
+/**
+ * Fridge temperatures, logged from the floor.
+ *
+ * Most fridges have a Govee sensor reporting hourly, but not all of them do,
+ * and a sensor that has gone quiet still needs a reading in the book. This is
+ * the manual path: what each one is sitting at, and a way to write down what
+ * the probe says.
+ *
+ * Out of range asks what was done about it, because a temperature log with no
+ * corrective action is a record of a problem nobody addressed.
+ */
+function TemperaturesPage() {
+  const { user } = useAuth();
+  const [assets, setAssets] = useState<FridgeAsset[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState<string | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [reading, setReading] = useState('');
+  const [action, setAction] = useState('');
+  const [saving, setSaving] = useState(false);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      setAssets(await api<FridgeAsset[]>('/api/temperatures/assets'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load the fridges.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const parsed = Number(reading.replace(/[^0-9.-]/g, ''));
+  const openAsset = assets.find((asset) => asset.id === openId) ?? null;
+  // Whether the number being typed is already outside the safe band — asked
+  // for before saving, not after, so the person is still standing there.
+  const outOfRange =
+    openAsset && Number.isFinite(parsed) && reading.trim() !== ''
+      ? parsed < openAsset.minTempC || parsed > openAsset.maxTempC
+      : false;
+
+  async function saveReading() {
+    if (!openAsset || !Number.isFinite(parsed) || reading.trim() === '' || saving) return;
+    if (outOfRange && !action.trim()) return;
+    setSaving(true);
+    try {
+      await api(`/api/temperatures/assets/${openAsset.id}/logs`, {
+        method: 'POST',
+        body: JSON.stringify({
+          temperatureC: parsed,
+          correctiveAction: action.trim(),
+          recordedBy: user ? `${user.firstName} ${user.lastName}`.trim() : ''
+        })
+      });
+      setOpenId(null);
+      setReading('');
+      setAction('');
+      await load();
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'That reading did not save.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Food safety"
+        title="Fridge temperatures"
+        description="Sensored fridges report themselves. The rest need a probe reading, and so does any sensor that has gone quiet."
+      />
+      {message ? <p className="error-text">{message}</p> : null}
+
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : (
+        <div className="fridge-list">
+          {assets.map((asset) => {
+            const latest = asset.logs[0];
+            const inRange = latest ? latest.temperatureC >= asset.minTempC && latest.temperatureC <= asset.maxTempC : null;
+            const stale =
+              !asset.lastReadingAt || Date.now() - new Date(asset.lastReadingAt).getTime() > 6 * 3600_000;
+            return (
+              <article key={asset.id} className={`fridge ${inRange === false ? 'is-out' : ''}`}>
+                <div className="fridge-head">
+                  <div className="fridge-text">
+                    <strong>{asset.name.trim()}</strong>
+                    <small>{[asset.area, asset.venue].filter(Boolean).join(' · ') || asset.assetType}</small>
+                  </div>
+                  <div className="fridge-reading">
+                    {latest ? (
+                      <>
+                        <span className={inRange ? 'is-ok' : 'is-bad'}>{latest.temperatureC.toFixed(1)}°</span>
+                        <small>{new Date(latest.recordedAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}</small>
+                      </>
+                    ) : (
+                      <span className="is-none">—</span>
+                    )}
+                  </div>
+                </div>
+                <div className="fridge-meta">
+                  <span>Safe {asset.minTempC}° to {asset.maxTempC}°</span>
+                  {/* A sensor that stopped reporting looks identical to a cold
+                      fridge unless you say so. */}
+                  {asset.integrationProvider && stale ? <Badge tone="warning">Sensor quiet</Badge> : null}
+                  {!asset.integrationProvider ? <Badge tone="muted">Manual only</Badge> : null}
+                </div>
+
+                {openId === asset.id ? (
+                  <div className="fridge-form">
+                    <Input
+                      label="What does the probe say?"
+                      inputMode="decimal"
+                      value={reading}
+                      onChange={(event) => {
+                        const { value } = event.currentTarget;
+                        setReading(value);
+                      }}
+                      placeholder="3.5"
+                    />
+                    {outOfRange ? (
+                      <>
+                        <p className="fridge-warning">
+                          That's outside {asset.minTempC}°–{asset.maxTempC}°. What did you do about it?
+                        </p>
+                        <Textarea
+                          label="What you did"
+                          rows={2}
+                          value={action}
+                          onChange={(event) => {
+                            const { value } = event.currentTarget;
+                            setAction(value);
+                          }}
+                          placeholder="Moved stock to the walk-in, called the fridge tech."
+                        />
+                      </>
+                    ) : null}
+                    <div className="fridge-form-actions">
+                      <Button
+                        type="button"
+                        disabled={saving || reading.trim() === '' || !Number.isFinite(parsed) || (outOfRange && !action.trim())}
+                        onClick={() => void saveReading()}
+                      >
+                        {saving ? 'Saving…' : 'Log it'}
+                      </Button>
+                      <Button type="button" variant="secondary" onClick={() => { setOpenId(null); setReading(''); setAction(''); }}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
+                  <Button type="button" variant="secondary" onClick={() => { setOpenId(asset.id); setReading(''); setAction(''); }}>
+                    Log a reading
+                  </Button>
+                )}
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function TodayChecksPage() {
   const [runs, setRuns] = useState<StaffChecklistRun[]>([]);
   const [openRunId, setOpenRunId] = useState<string | null>(null);
@@ -19153,6 +19336,7 @@ function StaffShell() {
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/checks" element={<TodayChecksPage />} />
+          <Route path="/temperatures" element={<TemperaturesPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
@@ -19186,6 +19370,7 @@ function StaffShell() {
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/checks" element={<TodayChecksPage />} />
+          <Route path="/temperatures" element={<TemperaturesPage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
