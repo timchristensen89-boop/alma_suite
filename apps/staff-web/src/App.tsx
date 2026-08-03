@@ -97,7 +97,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
 import { api, apiBlob, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
@@ -931,38 +931,75 @@ function OfflineQueueBanner() {
   );
 }
 
+/**
+ * The jobs staff actually open the app to do, in the order they reach for them.
+ *
+ * The bar used to carry the app's four sections. Sections are how the app is
+ * organised; they are not what somebody is holding their phone to do. A closing
+ * shift wants Clock, a rostered week wants Leave, and neither wants to go
+ * through a menu to find it. Everything past the first five sits behind More.
+ *
+ * One list covers both managers and floor staff: whatever the person's own nav
+ * does not contain is simply dropped, so nobody is offered a screen they cannot
+ * open.
+ */
+const TASK_ORDER: Array<{ to: string; label: string }> = [
+  { to: '/', label: 'Home' },
+  { to: '/clock', label: 'Clock' },
+  { to: '/manager', label: 'Today' },
+  { to: '/roster', label: 'Roster' },
+  { to: '/leave', label: 'Leave' },
+  { to: '/checks', label: 'Checks' },
+  { to: '/profiles', label: 'People' },
+  { to: '/availability', label: 'Availability' },
+  { to: '/timesheets', label: 'Timesheets' },
+  { to: '/tips', label: 'Tips' },
+  { to: '/my-pay', label: 'My pay' },
+  { to: '/temperatures', label: 'Temps' },
+  { to: '/noticeboard', label: 'Notices' },
+  { to: '/handbook', label: 'Handbook' },
+  { to: '/academy', label: 'Academy' },
+  { to: '/documents', label: 'Documents' },
+  { to: '/compliance', label: 'Compliance' },
+  { to: '/report', label: 'Report issue' },
+  { to: '/stocktake', label: 'Stocktake' },
+  { to: '/communications', label: 'Messages' }
+];
+
 function BottomTabs({ items }: { items: typeof NAV_ITEMS }) {
   const location = useLocation();
-  const tabs = BOTTOM_TAB_PATHS.map((path) => items.find((item) => item.to === path)).filter(
-    (item): item is (typeof NAV_ITEMS)[number] => Boolean(item)
-  );
+  const navigate = useNavigate();
+
+  const tasks: TaskBarItem[] = TASK_ORDER.flatMap((task) => {
+    const item = items.find((navItem) => navItem.to === task.to);
+    if (!item) return [];
+    return [{
+      key: task.to,
+      label: task.label,
+      href: task.to,
+      icon: item.icon,
+      active: staffNavMatches(item, location.pathname)
+    }];
+  });
+
   // One tab is not a tab bar. Below two, the dropdown alone is less clutter.
-  if (tabs.length < 2) return null;
+  if (tasks.length < 2) return null;
 
   return (
-    <nav className="staff-tabbar" aria-label="Main">
-      {tabs.map((item) => (
-        <NavLink
-          key={item.to}
-          to={item.to}
-          end={item.end}
-          className={() => (staffNavMatches(item, location.pathname) ? 'is-on' : undefined)}
-        >
-          <span className="staff-tabbar-icon" aria-hidden>{item.icon}</span>
-          {/* Short labels: "Today's checks" does not fit a fifth of a phone. */}
-          <span className="staff-tabbar-label">{TAB_LABELS[item.to] ?? item.label}</span>
-        </NavLink>
-      ))}
-    </nav>
+    <TaskBar
+      items={tasks}
+      label="Staff actions"
+      onNavigate={(item, event) => {
+        // Keep it a real link for middle-click and long-press, but navigate in
+        //-app on a plain tap rather than reloading the whole bundle.
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
   );
 }
 
-const TAB_LABELS: Record<string, string> = {
-  '/': 'Today',
-  '/clock': 'Clock',
-  '/roster': 'Roster',
-  '/checks': 'Checks'
-};
 
 function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
   const location = useLocation();
