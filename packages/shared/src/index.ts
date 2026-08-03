@@ -989,12 +989,52 @@ export const staffShiftConfirmationInputSchema = z.object({
 });
 
 export const staffClockInInputSchema = z.object({
-  rosterShiftId: z.string().optional().or(z.literal(''))
+  rosterShiftId: z.string().optional().or(z.literal('')),
+  /**
+   * When the button was actually pressed, ISO.
+   *
+   * Only meaningful for a clock captured while offline and replayed later —
+   * without it a queued clock-on records the moment the wifi came back, which
+   * is worse than not queueing at all. The server clamps it: never in the
+   * future, never more than OFFLINE_CLOCK_MAX_AGE_HOURS ago.
+   */
+  occurredAt: z.string().optional().or(z.literal(''))
 });
 
 export const staffClockOutInputSchema = z.object({
-  note: z.string().trim().max(1000).optional().or(z.literal(''))
+  note: z.string().trim().max(1000).optional().or(z.literal('')),
+  occurredAt: z.string().optional().or(z.literal(''))
 });
+
+/**
+ * How far back a client-supplied clock time is trusted.
+ *
+ * Long enough to cover a dead patch of wifi or a phone that stayed in a pocket
+ * until the end of service; short enough that it cannot be used to write a
+ * shift into last week.
+ */
+export const OFFLINE_CLOCK_MAX_AGE_HOURS = 12;
+
+/**
+ * The instant to record for a clock event.
+ *
+ * Returns the clamped time and whether the client's value was used, so the
+ * caller can note an adjusted or rejected time rather than silently accepting
+ * whatever a phone said.
+ */
+export function resolveClockTime(
+  requested: string | undefined | null,
+  now: Date = new Date()
+): { at: Date; source: 'server' | 'offline'; adjusted: boolean } {
+  if (!requested) return { at: now, source: 'server', adjusted: false };
+  const parsed = new Date(requested);
+  if (Number.isNaN(parsed.getTime())) return { at: now, source: 'server', adjusted: false };
+  // A phone with a fast clock must not create a shift that has not happened.
+  if (parsed.getTime() > now.getTime()) return { at: now, source: 'offline', adjusted: true };
+  const floor = now.getTime() - OFFLINE_CLOCK_MAX_AGE_HOURS * 3600_000;
+  if (parsed.getTime() < floor) return { at: new Date(floor), source: 'offline', adjusted: true };
+  return { at: parsed, source: 'offline', adjusted: false };
+}
 
 export const staffClockBreakInputSchema = z.object({
   note: z.string().trim().max(1000).optional().or(z.literal(''))

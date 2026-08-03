@@ -8977,3 +8977,78 @@ html[data-theme='dark'] .check-item { background: var(--color-elevated, #1c2027)
 }
 
 html[data-theme='dark'] .fridge { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Bottom tab bar (phones) ──────────────────────────────────────────── */
+.staff-tabbar { display: none; }
+
+@media (max-width: 760px) {
+  .staff-tabbar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 40;
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
+    background: var(--color-elevated, #fff);
+    border-top: 1px solid rgba(31, 53, 36, 0.12);
+    /* Sits above the home indicator rather than under it. */
+    padding-bottom: env(safe-area-inset-bottom);
+    box-shadow: 0 -6px 18px -12px rgba(18, 28, 16, 0.4);
+  }
+  .staff-tabbar a {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 3px;
+    /* 56px of tappable height before the safe-area padding. */
+    min-height: 56px;
+    padding: 7px 4px;
+    text-decoration: none;
+    color: var(--color-text-muted, #475569);
+  }
+  .staff-tabbar a.is-on { color: var(--color-accent, #2f5d3a); }
+  .staff-tabbar-icon { display: grid; place-items: center; width: 22px; height: 22px; }
+  .staff-tabbar-icon svg { width: 20px; height: 20px; }
+  .staff-tabbar-label { font-size: 11px; line-height: 1; font-weight: 600; }
+
+  /* Give the page back the height the bar covers, or the last row of every
+     screen sits underneath it. */
+  .app-shell-main,
+  .page-stack {
+    padding-bottom: calc(72px + env(safe-area-inset-bottom));
+  }
+}
+
+html[data-theme='dark'] .staff-tabbar { background: var(--color-elevated, #1c2027); }
+
+
+/* ── Offline queue banner ─────────────────────────────────────────────── */
+.offline-banner {
+  position: sticky;
+  top: 0;
+  z-index: 45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 16px;
+  background: #8a6d1f;
+  color: #fdf6e6;
+  font-size: 13px;
+}
+.offline-banner button {
+  flex: none;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid rgba(253, 246, 230, 0.5);
+  border-radius: 999px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.offline-banner button:disabled { opacity: 0.6; cursor: default; }

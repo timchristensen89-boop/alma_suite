@@ -123,3 +123,30 @@ export function installSuiteHandoff() {
     }).almaCreateSuiteHandoffUrl;
   };
 }
+
+/* ------------------------------------------------------------------ */
+/* Offline queue wiring                                                */
+/* ------------------------------------------------------------------ */
+
+import { createOfflineQueue } from './offline-queue';
+
+const offlineQueue = createOfflineQueue({
+  send: (path, init) => api(path, init),
+  // ApiError with status 0 is the network-level failure api() raises when
+  // fetch itself could not complete.
+  isOffline: (error) => error instanceof ApiError && error.status === 0
+});
+
+export const apiQueued = offlineQueue.enqueue;
+export const flushQueue = offlineQueue.flush;
+export const queuedRequestCount = offlineQueue.count;
+
+if (typeof window !== 'undefined') {
+  // Coming back online is the obvious moment; returning to the tab is the one
+  // that actually catches a phone taken out of a pocket, because iOS often
+  // reports online before the connection really works.
+  window.addEventListener('online', () => void flushQueue());
+  window.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') void flushQueue();
+  });
+}

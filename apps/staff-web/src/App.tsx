@@ -100,7 +100,7 @@ import {
 import { SuiteSignOutButton } from '@alma/ui';
 import { LoginPage } from './LoginPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordRecoveryPages';
-import { api, createSuiteHandoffUrl } from './lib/api';
+import { api, apiQueued, createSuiteHandoffUrl, flushQueue, queuedRequestCount } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
 import {
@@ -863,6 +863,94 @@ function currentPage(pathname: string, items = NAV_ITEMS) {
     }
   );
 }
+
+/**
+ * The handful of destinations a staff member opens every shift.
+ *
+ * The mobile nav is a dropdown: tap to open, tap to choose. Fine for a
+ * settings page nobody visits twice, wrong for clocking on — which happens
+ * twice a day, in a doorway, usually late. A bottom bar makes the things that
+ * actually get used one tap from anywhere, and puts them where a thumb
+ * already is.
+ *
+ * Paths not in a person's nav are dropped rather than shown broken, so a
+ * manager and a casual get different bars from the same component.
+ */
+const BOTTOM_TAB_PATHS = ['/', '/clock', '/roster', '/checks'] as const;
+
+/**
+ * A standing note that something is waiting to send.
+ *
+ * A queue you cannot see is a queue you find out about at the pay run. This
+ * sits above everything until it drains, and offers to try now rather than
+ * making someone guess whether the app is stuck.
+ */
+function OfflineQueueBanner() {
+  const [pending, setPending] = useState(() => queuedRequestCount());
+  const [trying, setTrying] = useState(false);
+
+  useEffect(() => {
+    // Cheap poll: localStorage has no change event within the same tab, and
+    // the count only moves when the person acts or the connection returns.
+    const timer = window.setInterval(() => setPending(queuedRequestCount()), 3000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  if (pending === 0) return null;
+
+  return (
+    <div className="offline-banner" role="status">
+      <span>
+        {pending} {pending === 1 ? 'thing' : 'things'} saved on this phone, waiting for a connection.
+      </span>
+      <button
+        type="button"
+        disabled={trying}
+        onClick={async () => {
+          setTrying(true);
+          await flushQueue();
+          setPending(queuedRequestCount());
+          setTrying(false);
+        }}
+      >
+        {trying ? 'Trying…' : 'Try now'}
+      </button>
+    </div>
+  );
+}
+
+function BottomTabs({ items }: { items: typeof NAV_ITEMS }) {
+  const location = useLocation();
+  const tabs = BOTTOM_TAB_PATHS.map((path) => items.find((item) => item.to === path)).filter(
+    (item): item is (typeof NAV_ITEMS)[number] => Boolean(item)
+  );
+  // One tab is not a tab bar. Below two, the dropdown alone is less clutter.
+  if (tabs.length < 2) return null;
+
+  return (
+    <nav className="staff-tabbar" aria-label="Main">
+      {tabs.map((item) => (
+        <NavLink
+          key={item.to}
+          to={item.to}
+          end={item.end}
+          className={() => (staffNavMatches(item, location.pathname) ? 'is-on' : undefined)}
+        >
+          <span className="staff-tabbar-icon" aria-hidden>{item.icon}</span>
+          {/* Short labels: "Today's checks" does not fit a fifth of a phone. */}
+          <span className="staff-tabbar-label">{TAB_LABELS[item.to] ?? item.label}</span>
+        </NavLink>
+      ))}
+    </nav>
+  );
+}
+
+const TAB_LABELS: Record<string, string> = {
+  '/': 'Today',
+  '/clock': 'Clock',
+  '/roster': 'Roster',
+  '/checks': 'Checks'
+};
 
 function SidebarNav({ items = NAV_ITEMS }: { items?: typeof NAV_ITEMS }) {
   const location = useLocation();
@@ -2721,25 +2809,37 @@ function StaffMemberClockPage() {
     setSaving(true);
     setMessage(null);
     setMessageTarget(action);
+    // The moment the button was pressed. If this has to be queued, that is the
+    // time recorded — not whenever the wifi comes back.
+    const occurredAt = new Date().toISOString();
     try {
+      let outcome = { sent: true };
       if (action === 'clock-in') {
-        await api('/api/staff/me/clock/in', { method: 'POST', body: JSON.stringify({ rosterShiftId: selectedShiftId }) });
+        outcome = await apiQueued('/api/staff/me/clock/in', {
+          body: JSON.stringify({ rosterShiftId: selectedShiftId, occurredAt })
+        });
       } else if (action === 'clock-out') {
-        await api('/api/staff/me/clock/out', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/out', { body: JSON.stringify({ occurredAt }) });
       } else if (action === 'break-start') {
-        await api('/api/staff/me/clock/break/start', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/break/start', { body: JSON.stringify({ occurredAt }) });
       } else {
-        await api('/api/staff/me/clock/break/end', { method: 'POST', body: JSON.stringify({}) });
+        outcome = await apiQueued('/api/staff/me/clock/break/end', { body: JSON.stringify({ occurredAt }) });
       }
-      await loadClock();
-      setMessage(
+      if (outcome.sent) await loadClock();
+      const done =
         action === 'clock-in'
           ? 'Clocked in.'
           : action === 'clock-out'
             ? 'Clocked out.'
             : action === 'break-start'
               ? 'Break started.'
-              : 'Break ended.'
+              : 'Break ended.';
+      // Say what actually happened. Claiming success on something still
+      // sitting in a queue is how people find out at the pay run.
+      setMessage(
+        outcome.sent
+          ? done
+          : `Saved at ${new Date(occurredAt).toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit' })}. No connection — it'll send itself when you're back on.`
       );
     } catch (err) {
       setMessage(err instanceof Error ? err.message : 'Could not update your clock status.');
@@ -19386,6 +19486,8 @@ function StaffShell() {
       sidebar={<SidebarNav items={navItems} />}
       topBar={<TopBarWithContext />}
     >
+      <OfflineQueueBanner />
+      <BottomTabs items={navItems} />
       {user?.accountType === 'VENUE_DEVICE' ? (
         <Routes>
           <Route path="/device" element={<DeviceHomePage />} />

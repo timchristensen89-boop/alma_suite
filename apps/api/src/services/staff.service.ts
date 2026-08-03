@@ -67,7 +67,8 @@ import {
   DEFAULT_STAFF_DEFAULTS,
   getAwardClassification,
   getAwardRateSet,
-  normaliseStaffDefaults
+  normaliseStaffDefaults,
+  resolveClockTime
 } from '@alma/shared';
 import type {
   AuthUser,
@@ -4862,7 +4863,11 @@ export const staffService = {
       throw new HttpError(403, 'You can only clock into your own shift.');
     }
 
-    const clockInAt = new Date();
+    // A clock captured offline carries the moment the button was pressed; the
+    // resolver clamps it so a queued replay can't land in the future or be
+    // used to backdate a shift.
+    const resolvedClockIn = resolveClockTime(data.occurredAt, new Date());
+    const clockInAt = resolvedClockIn.at;
     const created = await prisma.$transaction(async (tx) => {
       const session = await tx.staffClockSession.create({
         data: {
@@ -4927,7 +4932,8 @@ export const staffService = {
       throw new HttpError(400, 'No active clock session found.');
     }
 
-    const clockOutAt = new Date();
+    const resolvedClockOut = resolveClockTime(data.occurredAt, new Date());
+    const clockOutAt = resolvedClockOut.at;
     const breakMinutes = sessionBreakMinutes(existing, clockOutAt);
     const updated = await prisma.$transaction(async (tx) => {
       const session = await tx.staffClockSession.update({
