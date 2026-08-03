@@ -17,6 +17,7 @@ import type {
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { IconInvoices } from '../lib/icons';
 import { InvoiceExclusionRulesCard } from '../components/InvoiceExclusionRulesCard';
+import { InvoicePasteLinesPanel } from '../components/InvoicePasteLinesPanel';
 import { useDocumentTitle } from '../hooks/useDocumentTitle';
 import { ApiError, api, apiBlob } from '../lib/api';
 import { confirmDangerousAction } from '../lib/confirmDangerousAction';
@@ -1068,6 +1069,11 @@ export function InvoicesPage() {
                   />
                 </div>
               ) : null}
+              <InvoicePasteLinesPanel
+                invoice={selectedInvoice}
+                canManage={canManage}
+                onApplied={() => loadInvoices()}
+              />
               <InvoiceTriagePanel
                 invoice={selectedInvoice}
                 assigneeOptions={assigneeOptions}

@@ -10,6 +10,8 @@ export * from './guest-tags.js';
 export * from './guest-import.js';
 export * from './temperature-escalation.js';
 export * from './onboarding-completion.js';
+export * from './invoice-paste.js';
+import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {
@@ -6008,6 +6010,33 @@ export type StockInvoiceApplyAllCostsResult = {
   invoice: StockSupplierInvoice;
 };
 
+/**
+ * What comes back from pasting invoice text over an invoice's lines.
+ *
+ * Carries the full parse, not just a count, so the screen can show exactly what
+ * it read and what it could not before anything is written.
+ */
+export type StockInvoicePasteResult = {
+  dryRun: boolean;
+  applied: boolean;
+  lines: ParsedInvoiceLine[];
+  columnsApplied: string[];
+  warnings: string[];
+  unparsed: string[];
+  parsedSubtotalCents: number;
+  parsedTaxCents: number;
+  parsedTotalCents: number;
+  invoiceTotalCents: number;
+  totalVarianceCents: number;
+  subtotalVarianceCents: number;
+  taxVarianceCents: number;
+  matches: boolean;
+  matchedCount: number;
+  needsReviewCount: number;
+  replacedLineCount: number;
+  invoice?: StockSupplierInvoice;
+};
+
 export const stockInvoiceImportInputSchema = z.object({
   source: z.string().min(1).default('XERO'),
   venue: z.string().optional().or(z.literal('')),
@@ -6055,6 +6084,20 @@ export const stockInvoiceMarkNeedsReviewInputSchema = z.object({
   notes: z.string().optional().or(z.literal(''))
 });
 
+export const stockInvoicePasteLinesInputSchema = z.object({
+  text: z.string().min(1, 'Paste the invoice text first'),
+  /**
+   * Preview only. The screen always previews before it writes, because
+   * replacing the lines on an invoice is not something to discover afterwards.
+   */
+  dryRun: z.boolean().optional(),
+  /**
+   * Write the lines even when they do not add up to the invoice total. The
+   * screen asks; a variance usually means a row was missed off the copy.
+   */
+  acceptVariance: z.boolean().optional()
+});
+
 export const stockInvoiceDeleteInputSchema = z.object({
   confirmationText: z.literal('DELETE INVOICE', {
     errorMap: () => ({ message: 'Type DELETE INVOICE to confirm deletion' })
@@ -6073,6 +6116,7 @@ export type StockInvoiceMarkNeedsReviewInput = z.infer<
   typeof stockInvoiceMarkNeedsReviewInputSchema
 >;
 export type StockInvoiceDeleteInput = z.infer<typeof stockInvoiceDeleteInputSchema>;
+export type StockInvoicePasteLinesInput = z.infer<typeof stockInvoicePasteLinesInputSchema>;
 
 /* ------------------------------------------------------------------------- */
 /* Recipes                                                                    */

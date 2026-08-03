@@ -16,6 +16,9 @@ import {
   stockInvoiceMarkNoItemInputSchema,
   stockInvoiceRipInputSchema,
   stockInvoiceOcrInputSchema,
+  stockInvoicePasteLinesInputSchema,
+  parseInvoicePaste,
+  reconcilePaste,
   type InvoiceExclusionRule,
   type StockInvoiceApplyAllCostsResult,
   type StockInvoiceAssignee,
@@ -1546,6 +1549,180 @@ export const invoicesService = {
       appliedCount: eligible.length,
       skippedCount: skipped.length,
       skipped,
+      invoice: await getInvoicePayload(invoiceId)
+    };
+  },
+
+  /**
+   * Rebuild an invoice's lines from text pasted off the original document.
+   *
+   * Some bills arrive as one summary line — a Xero sync that carried a single
+   * "Alcoholic Beverages $1,035.25" row, or a scan OCR only read the total
+   * from. Everything on that invoice then sits uncosted, and there was no way
+   * to get the detail in short of retyping it as a new invoice.
+   *
+   * A manager selects the table on the PDF, pastes it here, and the existing
+   * lines are replaced with the real ones — matched to stock items by the same
+   * matcher the importer uses, so aliases and manual matches behave identically.
+   *
+   * Two things this deliberately does NOT do. It never edits the invoice
+   * header: the supplier's own total is the thing worth reconciling against,
+   * so overwriting it would destroy the only independent check there is. And
+   * it refuses to write when the lines do not add up to that total, unless the
+   * caller says otherwise — a variance nearly always means a row was left out
+   * of the selection.
+   */
+  async pasteLines(invoiceId: string, input: unknown) {
+    const data = stockInvoicePasteLinesInputSchema.parse(input);
+    const invoice = await prisma.supplierInvoice.findUnique({
+      where: { id: invoiceId },
+      select: {
+        id: true,
+        supplierName: true,
+        supplierId: true,
+        subtotalCents: true,
+        taxCents: true,
+        totalCents: true
+      }
+    });
+    if (!invoice) throw new HttpError(404, 'That invoice no longer exists.');
+
+    const parsed = parseInvoicePaste(data.text);
+    const reconciliation = reconcilePaste(parsed, invoice);
+
+    const preview = {
+      dryRun: data.dryRun === true,
+      applied: false,
+      lines: parsed.lines,
+      columnsApplied: parsed.columnsApplied,
+      warnings: parsed.warnings,
+      unparsed: parsed.unparsed,
+      parsedSubtotalCents: parsed.subtotalCents,
+      parsedTaxCents: parsed.taxCents,
+      parsedTotalCents: parsed.totalCents,
+      invoiceTotalCents: invoice.totalCents,
+      ...reconciliation,
+      matchedCount: 0,
+      needsReviewCount: 0,
+      replacedLineCount: 0
+    };
+
+    if (data.dryRun) {
+      // Match on the preview too, so the screen can show what will and won't
+      // find a stock item before anything is written.
+      const matchItems = await prisma.stockItem.findMany({
+        where: { status: 'ACTIVE' },
+        select: matchItemSelect,
+        orderBy: { name: 'asc' }
+      });
+      const aliases = await invoicesService.loadAliases(invoice.supplierId);
+      let matched = 0;
+      for (const line of parsed.lines) {
+        const match = findItemMatch(
+          { description: line.description, itemCode: line.itemCode } as NormalisedLine,
+          matchItems,
+          { supplierName: invoice.supplierName, aliases }
+        );
+        if (match.itemId) matched += 1;
+      }
+      return { ...preview, matchedCount: matched, needsReviewCount: parsed.lines.length - matched };
+    }
+
+    if (parsed.lines.length === 0) {
+      throw new HttpError(400, 'No item lines could be read from that text.');
+    }
+
+    if (!reconciliation.matches && data.acceptVariance !== true) {
+      const variance = reconciliation.totalVarianceCents / 100;
+      throw new HttpError(
+        400,
+        `Those lines come to $${(parsed.totalCents / 100).toFixed(2)} but the invoice total is $${(
+          invoice.totalCents / 100
+        ).toFixed(2)} — ${variance > 0 ? '$' + variance.toFixed(2) + ' over' : '$' + Math.abs(variance).toFixed(2) + ' short'}. Check for a row missed off the copy, or confirm to save anyway.`
+      );
+    }
+
+    const matchItems = await prisma.stockItem.findMany({
+      where: { status: 'ACTIVE' },
+      select: matchItemSelect,
+      orderBy: { name: 'asc' }
+    });
+    const aliases = await invoicesService.loadAliases(invoice.supplierId);
+
+    let matchedCount = 0;
+    let needsReviewCount = 0;
+    let replacedLineCount = 0;
+
+    await prisma.$transaction(async (tx) => {
+      // Replace wholesale. A pasted table is the whole invoice, so keeping old
+      // lines alongside it would double the cost of everything on the bill.
+      const removed = await tx.supplierInvoiceLine.deleteMany({ where: { supplierInvoiceId: invoiceId } });
+      replacedLineCount = removed.count;
+
+      for (const line of parsed.lines) {
+        const normalised: NormalisedLine = {
+          lineNumber: line.lineNumber,
+          // Stable per invoice and per line, so pasting twice updates in place
+          // rather than stacking duplicates.
+          lineKey: buildHash(['paste', line.lineNumber, line.itemCode, line.description, line.lineAmountCents]),
+          externalLineId: null,
+          description: line.description,
+          itemCode: line.itemCode,
+          accountCode: null,
+          quantity: line.quantity,
+          unit: line.pack,
+          unitAmountCents: line.unitAmountCents,
+          lineAmountCents: line.lineAmountCents,
+          taxAmountCents: line.taxAmountCents,
+          sourceMetadata: {
+            pastedFromDocument: true,
+            printedQuantity: line.printedQuantity,
+            pack: line.pack,
+            parseWarnings: line.warnings
+          }
+        };
+        const match = findItemMatch(normalised, matchItems, {
+          supplierName: invoice.supplierName,
+          aliases
+        });
+        if (match.itemId) matchedCount += 1;
+        else needsReviewCount += 1;
+
+        await tx.supplierInvoiceLine.create({
+          data: {
+            supplierInvoiceId: invoiceId,
+            lineNumber: normalised.lineNumber,
+            lineKey: normalised.lineKey,
+            description: normalised.description,
+            itemCode: normalised.itemCode,
+            quantity: normalised.quantity,
+            unit: normalised.unit,
+            unitAmountCents: normalised.unitAmountCents,
+            lineAmountCents: normalised.lineAmountCents,
+            taxAmountCents: normalised.taxAmountCents,
+            itemId: match.itemId,
+            matchingStatus: match.status,
+            notes: line.warnings.length > 0 ? line.warnings.join(' ') : null,
+            sourceMetadata: toJson(normalised.sourceMetadata)
+          }
+        });
+      }
+
+      // The invoice was a single unreviewed line; now it has real ones waiting
+      // to be matched, so put it back in the triage queue rather than leaving
+      // it looking done.
+      await tx.supplierInvoice.update({
+        where: { id: invoiceId },
+        data: { triageStatus: needsReviewCount > 0 ? 'PENDING' : 'REVIEWED' }
+      });
+    });
+
+    return {
+      ...preview,
+      applied: true,
+      matchedCount,
+      needsReviewCount,
+      replacedLineCount,
       invoice: await getInvoicePayload(invoiceId)
     };
   },

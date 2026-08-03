@@ -163,6 +163,18 @@ invoicesRouter.post('/:id/mark-needs-review', async (req, res, next) => {
   }
 });
 
+// Rebuild an invoice's lines from text pasted off the original document, for
+// bills that arrived as a single summary line. Post { dryRun: true } first —
+// the screen previews before it replaces anything.
+invoicesRouter.post('/:id/paste-lines', async (req, res, next) => {
+  try {
+    requireStockManager(req.user);
+    res.json(await invoicesService.pasteLines(String(req.params.id), req.body));
+  } catch (error) {
+    next(error);
+  }
+});
+
 invoicesRouter.post('/:id/reset-triage', async (req, res, next) => {
   try {
     requireStockManager(req.user);
