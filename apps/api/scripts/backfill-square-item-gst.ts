@@ -58,29 +58,62 @@ async function main() {
   console.log(`Re-importing ${months.length} month(s), both Square accounts.`);
   console.log(`Stored item-sales total before: $${(before / 100).toLocaleString('en-AU')}\n`);
 
+  /**
+   * Import one window, and split it if Square capped the read.
+   *
+   * Square returns at most 1,000 orders per search. The busier account passes
+   * that inside a calendar month, and a capped read silently leaves the tail of
+   * the month on the old GST-inclusive figures — which is exactly the kind of
+   * partial success that looks like success. Halving until it fits is the only
+   * way to know the whole period was covered.
+   */
+  async function importWindow(
+    label: string,
+    account: 'primary' | 'secondary',
+    start: string,
+    end: string,
+    depth = 0
+  ): Promise<void> {
+    const started = Date.now();
+    const indent = '  '.repeat(depth + 1);
+    let result: any;
+    try {
+      result = await integrationService.importSquareItemSales(
+        // startDate/endDate, NOT start/end. The importer reads
+        // `input.startDate` and silently falls back to a 7-day lookback when it
+        // is absent, so passing start/end re-imported the same recent week
+        // fourteen times and moved the stored total by 0.1%.
+        { startDate: start, endDate: end, account, orderLimit: 1000 },
+        actor
+      );
+    } catch (error) {
+      console.log(`${indent}${label} ${account.padEnd(9)} FAILED — ${(error as Error).message}`);
+      return;
+    }
+
+    console.log(
+      `${indent}${label.padEnd(18)} ${account.padEnd(9)} ${String(result?.itemSalesRowsUpserted ?? '?').padStart(5)} rows  ` +
+        `${String(result?.ordersRead ?? '?').padStart(5)} orders  ${String(Date.now() - started).padStart(6)}ms` +
+        (result?.limited ? '  CAPPED — splitting' : '')
+    );
+
+    if (!result?.limited) return;
+    // A single day that still caps cannot be split any further; say so rather
+    // than recursing forever.
+    const from = new Date(start).getTime();
+    const to = new Date(end).getTime();
+    if (to - from <= 24 * 60 * 60 * 1000) {
+      console.log(`${indent}  ! ${label} still caps at one day — more than 1,000 orders in a day.`);
+      return;
+    }
+    const mid = new Date(from + Math.floor((to - from) / 2)).toISOString();
+    await importWindow(`${label} a`, account, start, mid, depth + 1);
+    await importWindow(`${label} b`, account, mid, end, depth + 1);
+  }
+
   for (const month of months) {
     for (const account of ['primary', 'secondary'] as const) {
-      const started = Date.now();
-      try {
-        const result: any = await integrationService.importSquareItemSales(
-          // startDate/endDate, NOT start/end. The importer reads
-          // `input.startDate` and silently falls back to a 7-day lookback when
-          // it is absent, so passing start/end re-imported the same recent
-          // week fourteen times and moved the stored total by 0.1%.
-          { startDate: month.start, endDate: month.end, account, orderLimit: 1000 },
-          actor
-        );
-        const imported = result?.itemSalesRowsUpserted ?? '?';
-        console.log(
-          `  ${month.label} ${account.padEnd(9)} ${String(imported).padStart(5)} rows  ${String(result?.ordersRead ?? '?').padStart(5)} orders  ${String(Date.now() - started).padStart(6)}ms` +
-            (result?.limited ? '  CAPPED — shorten the range' : '')
-        );
-        for (const warning of result?.warnings ?? []) {
-          if (String(warning).includes('first')) console.log(`      ! ${warning}`);
-        }
-      } catch (error) {
-        console.log(`  ${month.label} ${account.padEnd(9)} FAILED — ${(error as Error).message}`);
-      }
+      await importWindow(month.label, account, month.start, month.end);
     }
   }
 
