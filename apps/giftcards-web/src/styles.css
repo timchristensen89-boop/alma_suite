@@ -1244,6 +1244,15 @@
    ========================================================= */
 .alma-giftcards-page {
   --gc-paper:        #FAF6EE;
+  /* Boxes were painted in --gc-paper, the same colour as the page behind them,
+     so an amount tile and the background were literally indistinguishable and
+     only the hairline border said anything was there. --gc-surface is one
+     considered step off the paper: enough to read as a raised object at a
+     glance, not so much that the page turns into a grid of grey rectangles. */
+  --gc-surface:      #F3EDE0;
+  /* Inputs stay near-white, because a field should look like somewhere you
+     type rather than another panel. */
+  --gc-input:        #FFFDF8;
   --gc-bone:         #EFE8DC;
   --gc-shell:        #F5DCCE;
   --gc-clay:         #EEF0E9;
@@ -1694,7 +1703,7 @@
 /* ── Quick info pill row ── */
 .alma-giftcards-quickinfo {
   padding: 22px 36px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-bottom: 1px solid var(--gc-hair);
   display: flex;
   gap: 36px;
@@ -1827,7 +1836,7 @@
   max-height: min(92vh, 940px);
   overflow: auto;
   border-radius: 18px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   color: var(--gc-ink);
   border: 1px solid rgba(255, 241, 230, 0.2);
   box-shadow: 0 40px 100px rgba(0, 0, 0, 0.32);
@@ -1920,7 +1929,7 @@
 /* ── Configurator ── */
 .alma-giftcards-configure {
   padding: 110px 36px 130px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
 }
 .alma-giftcards-configure__head {
   display: flex;
@@ -2099,7 +2108,7 @@
 .alma-giftcards-amount {
   padding: 18px 8px 16px;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 12px;
   cursor: pointer;
   transition: all 200ms;
@@ -2197,7 +2206,7 @@
 .alma-giftcards-design {
   cursor: pointer;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 14px;
   padding: 14px;
   transition: border-color 200ms, transform 200ms;
@@ -2273,7 +2282,7 @@
 .alma-giftcards-toggle {
   cursor: pointer;
   border: 1px solid var(--gc-hair);
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-radius: 12px;
   padding: 16px 18px;
   display: flex;
@@ -2327,9 +2336,11 @@
 .alma-giftcards-field textarea,
 .alma-giftcards-field select {
   padding: 14px 16px;
-  border: 1px solid var(--gc-hair);
+  /* A firmer hairline than the panels: a field has to invite typing, and the
+     lighter fill alone is too quiet to say "this one is yours". */
+  border: 1px solid var(--gc-hair-strong);
   border-radius: 12px;
-  background: var(--gc-paper);
+  background: var(--gc-input);
   font-family: var(--gc-sans);
   font-size: 15px;
   color: var(--gc-ink);
@@ -2534,7 +2545,7 @@
 /* ── Venues ── */
 .alma-giftcards-venues {
   padding: 110px 36px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
 }
 .alma-giftcards-venues__head { margin-bottom: 48px; }
 .alma-giftcards-venues__head .alma-giftcards-h1 { max-width: 18ch; }
@@ -2593,7 +2604,7 @@
 /* ── FAQ ── */
 .alma-giftcards-faq {
   padding: 110px 36px 130px;
-  background: var(--gc-paper);
+  background: var(--gc-surface);
   border-top: 1px solid var(--gc-hair);
 }
 .alma-giftcards-faq__container { max-width: 920px; }
