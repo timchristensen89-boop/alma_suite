@@ -99,6 +99,89 @@ export function catalogueKey(name: string): string {
     .trim();
 }
 
+/**
+ * Deciding whether a name Alma has never seen is genuinely a new product.
+ *
+ * This matters because the alternative to matching is *creating*, and a wrong
+ * creation is a duplicate that nobody notices until the counts stop adding up.
+ * The two systems' wordings differ constantly — "Gewuztraminer" for
+ * "Gewurztraminer", "Puilly-Fuisse" for "Pouilly-Fuisse", "ArteNom1579" for
+ * "ArteNom 1579" — and every one of those is the same bottle.
+ *
+ * Closeness alone cannot decide it. Measured on the 124 unmatched St Alma
+ * lines, "First Press Cold Drip Coffee Mixer" and "First Press **Black** Cold
+ * Drip Coffee Mixer" score 0.85 and are the same product, while "Bruxo No. 2"
+ * and "Bruxo No. 4" score 0.90 and are different mezcals. The bands overlap, so
+ * a threshold on similarity by itself is guaranteed to be wrong both ways.
+ *
+ * What separates them is digits. In drinks a number is almost always part of
+ * the identity — an expression, an age, a blend number — so two names that
+ * disagree about their numbers are different products however close the letters
+ * are. Vintages and case sizes are stripped first by `catalogueKey`, since
+ * those describe the packet rather than the product.
+ */
+export const NEAR_DUPLICATE_SIMILARITY = 0.93;
+export const POSSIBLE_DUPLICATE_SIMILARITY = 0.8;
+
+/** Levenshtein distance, iterative and allocation-light. */
+function editDistance(a: string, b: string): number {
+  if (a === b) return 0;
+  let previous = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 1; i <= a.length; i++) {
+    const current = [i];
+    for (let j = 1; j <= b.length; j++) {
+      current[j] = Math.min(
+        previous[j]! + 1,
+        current[j - 1]! + 1,
+        previous[j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1)
+      );
+    }
+    previous = current;
+  }
+  return previous[b.length]!;
+}
+
+/** 1 for identical, 0 for nothing in common. */
+export function nameSimilarity(a: string, b: string): number {
+  const longest = Math.max(a.length, b.length);
+  return longest === 0 ? 1 : 1 - editDistance(a, b) / longest;
+}
+
+/** The numbers in a name, sorted — an identity check, not a similarity one. */
+export function significantDigits(name: string): string {
+  return (name.match(/\d+/g) ?? []).sort().join(',');
+}
+
+export type DuplicateVerdict =
+  | { verdict: 'new' }
+  | { verdict: 'same'; match: string; similarity: number }
+  | { verdict: 'unsure'; match: string; similarity: number };
+
+/**
+ * Whether `name` is already in `existing` under a different wording.
+ *
+ * Returns `unsure` rather than choosing whenever something is close but not
+ * decisively the same — those are for a person to confirm, because both
+ * possible mistakes (a duplicate item, or a count filed against the wrong
+ * product) are expensive and neither is visible afterwards.
+ */
+export function classifyAgainstCatalogue(name: string, existing: string[]): DuplicateVerdict {
+  const key = catalogueKey(name);
+  const digits = significantDigits(key);
+
+  let best: { match: string; similarity: number } | null = null;
+  for (const candidate of existing) {
+    const similarity = nameSimilarity(key, catalogueKey(candidate));
+    if (!best || similarity > best.similarity) best = { match: candidate, similarity };
+  }
+  if (!best || best.similarity < POSSIBLE_DUPLICATE_SIMILARITY) return { verdict: 'new' };
+
+  const sameNumbers = digits === significantDigits(catalogueKey(best.match));
+  return best.similarity >= NEAR_DUPLICATE_SIMILARITY && sameNumbers
+    ? { verdict: 'same', ...best }
+    : { verdict: 'unsure', ...best };
+}
+
 export type ValuationOutlier = {
   name: string;
   loadedCents: number;

@@ -122,6 +122,15 @@ async function main() {
   const byAlias = index(aliasKey);
   const byCatalogue = index(catalogueKey);
 
+  // Wordings already recorded against an item — including the ones the
+  // catalogue backfill wrote, so a name reconciled once stays reconciled.
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const recorded = new Map<string, (typeof items)[number]>();
+  for (const alias of await prisma.stockItemAlias.findMany({ select: { aliasKey: true, stockItemId: true } })) {
+    const item = byId.get(alias.stockItemId);
+    if (item) recorded.set(alias.aliasKey, item);
+  }
+
   const matched: Array<{ item: (typeof items)[number]; line: (typeof sheet.lines)[number] }> = [];
   const unmatched: typeof sheet.lines = [];
   const ambiguous: Array<{ line: (typeof sheet.lines)[number]; candidates: string[] }> = [];
@@ -132,7 +141,11 @@ async function main() {
     // be a guess with a price on it.
     const alias = byAlias.get(aliasKey(line.name));
     const loose = byCatalogue.get(catalogueKey(line.name));
-    const hit = exact ?? (alias?.length === 1 ? alias[0] : undefined) ?? (loose?.length === 1 ? loose[0] : undefined);
+    const hit =
+      exact ??
+      recorded.get(aliasKey(line.name)) ??
+      (alias?.length === 1 ? alias[0] : undefined) ??
+      (loose?.length === 1 ? loose[0] : undefined);
     if (hit) {
       matched.push({ item: hit, line });
     } else {

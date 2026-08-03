@@ -145,6 +145,61 @@ function round2(value: number): number {
   return Math.round(value * 100) / 100;
 }
 
+/**
+ * How a new Alma item should be shaped, read from the unit Loaded counted in.
+ *
+ * Alma's existing drinks all follow one convention — `unit` and `countUnit`
+ * both "bottle", conversion 1, and the bottle size in `measurePerCountUnit` —
+ * and new items have to match it or the same mismatch starts over.
+ *
+ * The cost that comes with this is per Loaded's unit, so mirroring Loaded's
+ * unit is also what keeps `avgCostCents` meaning what Alma thinks it means:
+ * a cost per count unit.
+ */
+export type NewItemShape = {
+  unit: string;
+  countUnit: string;
+  conversionFactor: number;
+  measurePerCountUnit: number | null;
+  measureUnit: string | null;
+};
+
+/** Pack sizes are written "750 mL", "1 KG", "12 Pack" — a number then a unit. */
+const PACK = /^([\d.]+)\s*(.+)$/;
+
+export function newItemShapeFromLoadedUnit(loadedUnit: string, isDrink: boolean): NewItemShape {
+  const text = (loadedUnit ?? '').trim();
+
+  // A bare measure: count in that measure and record nothing else. Alma's food
+  // items that carry a blanket "100 g per each" are the reason not to invent a
+  // pack size here — an honest "kg" beats a made-up one.
+  const measure = bareMeasure(text);
+  if (measure) {
+    const canonical = measure.dimension === 'volume' ? (measure.perUnit === 1 ? 'ml' : 'L') : measure.perUnit === 1 ? 'g' : 'kg';
+    return { unit: canonical, countUnit: canonical, conversionFactor: 1, measurePerCountUnit: null, measureUnit: null };
+  }
+
+  const packed = PACK.exec(text);
+  const size = packed ? Number(packed[1]) : NaN;
+  const sizeMeasure = packed ? bareMeasure(packed[2] ?? '') : null;
+  if (packed && sizeMeasure && Number.isFinite(size) && size > 0) {
+    const inBase = size * sizeMeasure.perUnit;
+    // A bottle is what the floor calls a 700ml or 750ml of anything drinkable.
+    const label = isDrink && sizeMeasure.dimension === 'volume' && inBase <= 1500 ? 'bottle' : 'each';
+    return {
+      unit: label,
+      countUnit: label,
+      conversionFactor: 1,
+      measurePerCountUnit: inBase,
+      measureUnit: sizeMeasure.dimension === 'volume' ? 'ml' : 'g'
+    };
+  }
+
+  // "Each", "Punnet", "Bunch", "12 Pack" — a countable thing with no measure.
+  const label = text.toLowerCase() || 'each';
+  return { unit: label, countUnit: label, conversionFactor: 1, measurePerCountUnit: null, measureUnit: null };
+}
+
 export type EvidencedReconciliation = UnitReconciliation & {
   /**
    * How the quantity was decided:
