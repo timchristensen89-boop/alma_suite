@@ -341,6 +341,7 @@ export function StocktakePage() {
   const [deleting, setDeleting] = useState(false);
   const [bulkBusy, setBulkBusy] = useState<null | 'submit' | 'approve'>(null);
   const [applyingId, setApplyingId] = useState<string | null>(null);
+  const [lockingId, setLockingId] = useState<string | null>(null);
   const [reopeningId, setReopeningId] = useState<string | null>(null);
   // Data quality snapshot from /api/items/data-quality — fed by Sprint 1's
   // new dataQualityReport service. Renders as a Card above the stocktake
@@ -464,6 +465,42 @@ export function StocktakePage() {
       setDetailError(err instanceof ApiError ? err.message : 'Could not refresh stocktake');
     } finally {
       setDetailLoading(false);
+    }
+  }
+
+  /**
+   * Lock a count so it becomes the baseline the next one is measured against.
+   *
+   * The variance report — counted versus what sales and deliveries say should
+   * be there, which is the whole reason to count — needs a previous LOCKED
+   * stocktake at the venue. In production **not one count had ever been
+   * locked**, because the API could do it and nothing in the app called it. So
+   * the report has always come back blank. Locking a single count turned it
+   * from 0 to 149 comparable lines.
+   */
+  async function lockStocktake(stocktake: Stocktake) {
+    if (!canManageReview) {
+      setError('Manager access is required to lock stocktakes.');
+      return;
+    }
+    const confirmed = confirmDangerousAction({
+      title: `Lock "${stocktake.name}"?`,
+      message:
+        'A locked count becomes the baseline the next count is measured against, and reports prefer it. ' +
+        'Lock it once you are happy the numbers are right — you can still reopen it with a reason.',
+      confirmationText: 'LOCK COUNT'
+    });
+    if (!confirmed) return;
+
+    setLockingId(stocktake.id);
+    setError(null);
+    try {
+      await api<Stocktake>(`/api/stocktake/${stocktake.id}/lock`, { method: 'POST' });
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError || err instanceof Error ? err.message : 'Could not lock the stocktake.');
+    } finally {
+      setLockingId(null);
     }
   }
 
@@ -782,6 +819,20 @@ export function StocktakePage() {
                         onClick={() => void applyStocktake(stocktake)}
                       >
                         {applyingId === stocktake.id ? 'Approving…' : 'Apply count to stock'}
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        disabled={lockingId !== null || !canManageReview}
+                        title={
+                          canManageReview
+                            ? 'Lock this count as the baseline the next one is measured against — the variance report needs it'
+                            : 'Manager access required'
+                        }
+                        onClick={() => void lockStocktake(stocktake)}
+                      >
+                        {lockingId === stocktake.id ? 'Locking…' : 'Lock as baseline'}
                       </Button>
                       <Button
                         type="button"
