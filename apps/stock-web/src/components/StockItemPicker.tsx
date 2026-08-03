@@ -1,5 +1,11 @@
 import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import type { StockItem } from '@alma/shared';
+
+/**
+ * All the picker reads off an item. Kept minimal on purpose so callers can pass
+ * a lean payload — the operations screens send only these fields rather than
+ * the whole 715-item catalogue.
+ */
+type PickableItem = { id: string; name: string; sku: string | null };
 
 const USAGE_KEY = 'alma.stock.itemUsage';
 
@@ -22,12 +28,12 @@ function bumpUsage(id: string) {
   }
 }
 
-function labelFor(item: StockItem) {
+function labelFor(item: PickableItem) {
   return `${item.name}${item.sku ? ` · ${item.sku}` : ''}`;
 }
 
 type Props = {
-  items: StockItem[];
+  items: PickableItem[];
   value: string;
   onChange: (id: string) => void;
   label?: string;
@@ -68,7 +74,7 @@ function StockItemPickerImpl({ items, value, onChange, label = 'Item', placehold
 
   const filtered = useMemo(() => {
     const term = query.trim().toLowerCase();
-    if (!term) return [] as StockItem[];
+    if (!term) return [] as PickableItem[];
     return items
       .filter((item) => item.name.toLowerCase().includes(term) || (item.sku ?? '').toLowerCase().includes(term))
       .slice(0, 50);

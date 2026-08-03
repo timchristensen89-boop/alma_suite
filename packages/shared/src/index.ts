@@ -5423,9 +5423,28 @@ export type StockWastageRecord = {
   stockItem?: Pick<StockItem, 'id' | 'sku' | 'name' | 'unit' | 'countUnit' | 'avgCostCents' | 'category'> | null;
 };
 
+/**
+ * The bit of a stock item these operations screens actually use.
+ *
+ * Wastage, staff usage and deliveries each shipped all 715 active items in
+ * full — roughly half a megabyte — to render a list that in production has
+ * never had a single row in it. The picker needs a name and a SKU to search
+ * on, and the form needs the unit to record against; nothing on these screens
+ * reads a par level, a cost or a timestamp.
+ */
+export type StockOperationsItem = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string;
+  countUnit: string | null;
+  /** Only the venue override is read; the rest of the venue row is not. */
+  venueStock: { unitOverride: string | null } | null;
+};
+
 export type StockWastagePayload = {
   records: StockWastageRecord[];
-  items: StockItem[];
+  items: StockOperationsItem[];
   venues: string[];
   scope: { venue: string | null; admin: boolean };
 };
@@ -5469,7 +5488,7 @@ export type StockDeliveryCheck = {
 
 export type StockDeliveryChecksPayload = {
   checks: StockDeliveryCheck[];
-  items: StockItem[];
+  items: StockOperationsItem[];
   suppliers: Supplier[];
   venues: string[];
   scope: { venue: string | null; admin: boolean };

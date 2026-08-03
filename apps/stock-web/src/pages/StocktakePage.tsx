@@ -17,6 +17,7 @@ import type {
   StocktakesPayload,
   StocktakesSummary
 } from '@alma/shared';
+import { IMPLAUSIBLE_COUNT_SHARE, IMPLAUSIBLE_COUNT_FLOOR_CENTS } from '@alma/shared';
 import { ActionFeedback, Badge, Button, Card, EmptyState, Input, Select, Spinner, StatCard, Textarea } from '@alma/ui';
 import { LoadedStocktakeImportCard } from '../components/LoadedStocktakeImportCard';
 import { StockItemPicker } from '../components/StockItemPicker';
@@ -1146,6 +1147,25 @@ function StocktakeForm({
   // half a million comparisons on every keystroke.
   const itemsById = useMemo(() => new Map(items.map((item) => [item.id, item])), [items]);
 
+  // Running value of the count so far. A single line worth a large share of it
+  // is how a millilitre count recorded as bottles announces itself — see
+  // count-scale.ts. Catching it here means the counter fixes it on the floor
+  // rather than a costing report finding it months later. Memoised: a full
+  // count is 716 rows and this runs on every keystroke otherwise.
+  const countTotalCents = useMemo(
+    () =>
+      draft.lines.reduce((total, line) => {
+        const item = line.itemId ? itemsById.get(line.itemId) : undefined;
+        if (!item) return total;
+        const raw = String(line.countedQty ?? '').trim();
+        if (raw === '') return total;
+        const qty = Number(raw);
+        if (!Number.isFinite(qty)) return total;
+        return total + Math.max(0, estimateLineValueCents(item, qty, line.unit || null).cents ?? 0);
+      }, 0),
+    [draft.lines, itemsById]
+  );
+
   /**
    * Count lines grouped by category, one collapsible section each.
    *
@@ -1392,6 +1412,7 @@ function StocktakeForm({
               line={line}
               item={line.itemId ? itemsById.get(line.itemId) : undefined}
               items={items}
+              countTotalCents={countTotalCents}
               showAreaHeader={showAreaHeader}
               onSelectItem={makeSelectLineItem(index)}
                     onUpdate={onUpdateLine}
@@ -1434,6 +1455,7 @@ const CountLineRow = memo(function CountLineRow({
   line,
   item,
   items,
+  countTotalCents,
   showAreaHeader,
   onSelectItem,
   onUpdate,
@@ -1443,6 +1465,8 @@ const CountLineRow = memo(function CountLineRow({
   line: LineDraft;
   item: StockItem | undefined;
   items: StockItem[];
+  /** Value of the whole count so far, to judge this line against. */
+  countTotalCents: number;
   showAreaHeader: boolean;
   onSelectItem: (itemId: string) => void;
   onUpdate: (index: number, patch: Partial<LineDraft>) => void;
@@ -1453,6 +1477,22 @@ const CountLineRow = memo(function CountLineRow({
   const estimate = item
     ? estimateLineValueCents(item, Number.isFinite(countedQty as number) ? (countedQty as number) : null, line.unit || null)
     : null;
+
+  // A single line worth a large share of the whole count is not a count, it is
+  // a units mistake. The same rule the costing-health check uses, applied while
+  // the person is still standing in front of the shelf.
+  const outOfScale =
+    estimate?.cents != null &&
+    estimate.cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS &&
+    countTotalCents > 0 &&
+    estimate.cents / countTotalCents >= IMPLAUSIBLE_COUNT_SHARE;
+  // If the item knows how much its count unit holds, say what the number would
+  // mean read as that measure — usually the count they meant.
+  const measurePer = item?.measurePerCountUnit ?? null;
+  const asMeasure =
+    outOfScale && measurePer && measurePer > 0 && item?.measureUnit && countedQty
+      ? Math.round((countedQty / measurePer) * 100) / 100
+      : null;
 
   return (
     <div>
@@ -1471,10 +1511,18 @@ const CountLineRow = memo(function CountLineRow({
         estimate.unitCostCents === null ? (
           <div className="stocktake-count-cost is-missing">No cost set for {item.name} — value can&apos;t be checked</div>
         ) : (
-          <div className={`stocktake-count-cost${estimate.unitMismatch ? ' is-alert' : ''}`}>
+          <div className={`stocktake-count-cost${estimate.unitMismatch || outOfScale ? ' is-alert' : ''}`}>
             <span>{formatCurrency(estimate.unitCostCents)} / {estimate.countUnit}</span>
             {estimate.unitMismatch ? (
               <strong>⚠ unit “{line.unit}” ≠ {estimate.countUnit} — check against parent product</strong>
+            ) : outOfScale ? (
+              <strong>
+                ⚠ {formatCurrency(estimate.cents ?? 0)} — {Math.round(((estimate.cents ?? 0) / countTotalCents) * 100)}% of
+                this whole count.{' '}
+                {asMeasure !== null
+                  ? `If you counted ${item?.measureUnit}, that is about ${asMeasure} ${estimate.countUnit}.`
+                  : `Check you are counting ${estimate.countUnit}.`}
+              </strong>
             ) : estimate.cents !== null ? (
               <strong>line value {formatCurrency(estimate.cents)}</strong>
             ) : null}

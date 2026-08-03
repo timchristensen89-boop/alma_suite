@@ -17,6 +17,7 @@ import {
   type StockReorderNotice,
   type StockReorderNoticesPayload,
   type StockSupplierOrderEmailResult,
+  type StockOperationsItem,
   type StockWastagePayload,
   type StockWastageRecord
 } from '@alma/shared';
@@ -177,53 +178,42 @@ async function venuesForActor(actor?: AuthUser | null) {
   return rows.map((row) => row.venue);
 }
 
-async function itemsForActor(actor?: AuthUser | null, venue?: string | null) {
+/**
+ * Active items, as much of them as the wastage / staff-usage / deliveries
+ * screens actually use.
+ *
+ * This used to select every column and hand back the whole item — 715 of them,
+ * about half a megabyte, on screens that in production have never held a
+ * single record. All any of them do with the list is populate a picker (name,
+ * SKU) and pre-fill a unit. Fetching and serialising the rest was pure weight
+ * on a venue iPad.
+ */
+async function itemsForActor(
+  actor?: AuthUser | null,
+  venue?: string | null
+): Promise<StockOperationsItem[]> {
   const scopeVenue = actorVenueScope(actor, venue);
   const rows = await prisma.stockItem.findMany({
     where: { status: 'ACTIVE' },
-    include: {
-      category: { select: { id: true, name: true } },
-      venueStock: scopeVenue ? { where: { venue: scopeVenue }, take: 1 } : false
+    select: {
+      id: true,
+      name: true,
+      sku: true,
+      unit: true,
+      countUnit: true,
+      venueStock: scopeVenue
+        ? { where: { venue: scopeVenue }, take: 1, select: { unitOverride: true } }
+        : false
     },
     orderBy: { name: 'asc' }
   });
   return rows.map((row) => ({
     id: row.id,
-    legacyId: row.legacyId,
-    sku: row.sku,
     name: row.name,
-    categoryId: row.categoryId,
-    category: row.category,
+    sku: row.sku,
     unit: row.unit,
     countUnit: row.countUnit,
-    conversionFactor: row.conversionFactor,
-    countArea: row.countArea,
-    measurePerCountUnit: row.measurePerCountUnit ?? null,
-    measureUnit: row.measureUnit ?? null,
-    latestCostCents: row.latestCostCents,
-    latestCostAt: row.latestCostAt?.toISOString() ?? null,
-    onHand: row.onHand,
-    parLevel: row.parLevel,
-    reorderPoint: row.reorderPoint,
-    avgCostCents: row.avgCostCents,
-    status: row.status,
-    notes: row.notes,
-    createdAt: row.createdAt.toISOString(),
-    updatedAt: row.updatedAt.toISOString(),
-    venueStock: row.venueStock?.[0]
-      ? {
-          id: row.venueStock[0].id,
-          venue: row.venueStock[0].venue,
-          stockItemId: row.venueStock[0].stockItemId,
-          parLevel: row.venueStock[0].parLevel,
-          reorderPoint: row.venueStock[0].reorderPoint,
-          onHand: row.venueStock[0].onHand,
-          unitOverride: row.venueStock[0].unitOverride,
-          active: row.venueStock[0].active,
-          createdAt: row.venueStock[0].createdAt.toISOString(),
-          updatedAt: row.venueStock[0].updatedAt.toISOString()
-        }
-      : null
+    venueStock: row.venueStock?.[0] ? { unitOverride: row.venueStock[0].unitOverride } : null
   }));
 }
 
