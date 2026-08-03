@@ -79,9 +79,15 @@ const GIFTCARD_NAV_ITEMS = [
     icon: <SearchIcon />
   },
   {
+    href: '/counter',
+    label: 'Sell at the counter',
+    description: 'Take payment, issue a number, check a balance',
+    icon: <SearchIcon />
+  },
+  {
     href: '/activate#activate',
-    label: 'Activate physical',
-    description: 'Sell a pre-printed card at the counter',
+    label: 'Activate pre-printed',
+    description: 'A card that already has a number on it',
     icon: <SearchIcon />
   },
   {
@@ -2294,10 +2300,14 @@ export function App() {
   const isOrdersPath = window.location.pathname.startsWith('/orders');
   const isAdminPath = window.location.pathname.startsWith('/admin');
   const isPrintPath = window.location.pathname.startsWith('/print');
+  // /activate is in the staff nav and has its own page copy, but was missing
+  // from this dispatch — so it fell through to the customer shop. A staff
+  // member following their own menu landed on the buy page.
+  const isActivatePath = window.location.pathname.startsWith('/activate');
 
   if (isPrintPath) return <PrintableGiftCardPage />;
   if (isArtPath) return <CardArtGallery />;
   if (isCounterPath) return <CounterApp />;
-  if (!isRedeemPath && !isOrdersPath && !isAdminPath) return <PublicGiftCardShop />;
+  if (!isRedeemPath && !isOrdersPath && !isAdminPath && !isActivatePath) return <PublicGiftCardShop />;
   return <GiftCardAdminApp />;
 }
