@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
+import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
 import { DashboardPage } from './pages/DashboardPage';
 import { LoginPage } from './pages/LoginPage';
@@ -221,6 +221,54 @@ function TopBarWithContext() {
   );
 }
 
+/**
+ * The jobs a stock person opens the app to do, in the order they reach for them.
+ *
+ * Not the sidebar. The sidebar is how the app is organised — Items, Purchasing,
+ * Recipes — and organisation is not what somebody standing in a cool room with
+ * a phone is trying to do. They are counting, writing off a broken bottle,
+ * moving a keg between venues, checking a delivery in, or raising an order.
+ */
+const STOCK_TASKS: Array<{ to: string; label: string; match?: string[] }> = [
+  { to: '/stocktake', label: 'Count', match: ['/stocktake-templates'] },
+  { to: '/wastage', label: 'Wastage' },
+  { to: '/transfers', label: 'Transfer' },
+  { to: '/deliveries', label: 'Delivery' },
+  { to: '/purchase-orders', label: 'Orders', match: ['/buying'] },
+  { to: '/', label: 'Home' },
+  { to: '/items', label: 'Items', match: ['/items/health', '/reorder'] },
+  { to: '/invoices', label: 'Invoices' },
+  { to: '/recipes', label: 'Recipes' },
+  { to: '/suppliers', label: 'Suppliers' },
+  { to: '/staff-usage', label: 'Staff usage' },
+  { to: '/price-movement', label: 'Prices' }
+];
+
+function StockTaskBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const items: TaskBarItem[] = STOCK_TASKS.map((task) => ({
+    key: task.to,
+    label: task.label,
+    href: task.to,
+    icon: NAV_ITEMS.find((nav) => nav.to === task.to)?.icon,
+    active: [task.to, ...(task.match ?? [])].some((path) =>
+      path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
+    )
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Stock actions"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
+  );
+}
+
 function StockAppShell() {
   const { user } = useAuth();
   return (
@@ -275,6 +323,7 @@ function StockAppShell() {
       </Routes>
       </Suspense>
       </AppAccessGate>
+      <StockTaskBar />
     </AppShell>
   );
 }

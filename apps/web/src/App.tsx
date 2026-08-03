@@ -7,7 +7,7 @@ import {
   useLocation,
   useNavigate
 } from 'react-router-dom';
-import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
+import { AppShell, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, useDismissibleLayer } from '@alma/ui';
 import { DashboardPage } from './pages/DashboardPage';
 import { OnboardingPage } from './pages/OnboardingPage';
 import { LoginPage } from './pages/LoginPage';
@@ -206,6 +206,58 @@ function TopBarWithContext() {
   );
 }
 
+/**
+ * The compliance jobs somebody does standing up, on a phone, mid-shift.
+ *
+ * Temperatures and checklists get done walking the floor; an incident gets
+ * logged the moment it happens or not at all. Those belong under a thumb, not
+ * three taps into a sidebar written for a desk.
+ */
+const COMPLIANCE_TASKS: Array<{ to: string; label: string; match?: string[] }> = [
+  { to: '/', label: 'Home' },
+  { to: '/checklists', label: 'Checks', match: ['/checklists/runs'] },
+  { to: '/temperatures', label: 'Temps' },
+  { to: '/issues/new', label: 'Log issue' },
+  { to: '/incidents', label: 'Incidents' },
+  { to: '/issues', label: 'Issues' },
+  { to: '/audits', label: 'Audits' },
+  { to: '/licences', label: 'Licences' },
+  { to: '/handbook', label: 'Handbook' },
+  { to: '/staff', label: 'Staff' }
+];
+
+function ComplianceTaskBar() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { user } = useAuth();
+  const allowed = new Set(navItemsForRole(user).map((item) => item.to));
+  const items: TaskBarItem[] = COMPLIANCE_TASKS.filter(
+    // Only offer what this person's own nav already grants them; the routes
+    // themselves are role-gated, and a bar full of locked doors is worse than
+    // a shorter bar.
+    (task) => allowed.has(task.to) || allowed.has(`/${task.to.split('/')[1] ?? ''}`)
+  ).map((task) => ({
+    key: task.to,
+    label: task.label,
+    href: task.to,
+    icon: NAV_ITEMS.find((nav) => nav.to === task.to)?.icon,
+    active: [task.to, ...(task.match ?? [])].some((path) =>
+      path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
+    )
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Compliance actions"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        navigate(item.href);
+      }}
+    />
+  );
+}
+
 function AuthenticatedApp() {
   const { user } = useAuth();
   const canManageChecks = canManage(user);
@@ -227,6 +279,7 @@ function AuthenticatedApp() {
     { to: '/handbook/onboarding', label: 'Onboarding' },
     { to: '/handbook/maintenance', label: 'Maintenance' }
   ];
+
   return (
     <AppShell
       sidebar={<SidebarNav />}
@@ -274,6 +327,7 @@ function AuthenticatedApp() {
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </ErrorBoundary>
+      <ComplianceTaskBar />
     </AppShell>
   );
 }

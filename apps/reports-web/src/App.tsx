@@ -51,7 +51,7 @@ import {
   TopBar,
   useDismissibleLayer
 } from '@alma/ui';
-import { SuiteSignOutButton } from '@alma/ui';
+import { SuiteSignOutButton, TaskBar, type TaskBarItem } from '@alma/ui';
 import {
   clearApiAuthTokens,
   consumeSuiteHandoffToken,
@@ -386,6 +386,60 @@ const LEGACY_REPORT_HASHES: Record<string, ReportSectionId> = {
 function reportHash(section: ReportSectionId) {
   return `#${section}`;
 }
+
+/**
+ * The numbers an operator checks on a phone, in the order they ask for them.
+ *
+ * Reports has sixteen sections in the sidebar, which is right at a desk and
+ * useless standing in a kitchen wanting one figure. These are the five worth a
+ * thumb: what we took, what it cost to buy, what it cost to staff, and the two
+ * screens that explain a bad answer.
+ */
+const REPORT_TASKS: Array<{ id: ReportSectionId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'sales', label: 'Sales' },
+  { id: 'menu-engineering', label: 'COGS' },
+  { id: 'staff', label: 'Wages' },
+  { id: 'stock', label: 'Stock' },
+  { id: 'forecast', label: 'Forecast' },
+  { id: 'supplier-spend', label: 'Suppliers' },
+  { id: 'monthly-recap', label: 'Recap' },
+  { id: 'compliance', label: 'Compliance' },
+  { id: 'gift-cards', label: 'Gift cards' },
+  { id: 'exports', label: 'Exports' }
+];
+
+function ReportsTaskBar({
+  activeSection,
+  onSelect
+}: {
+  activeSection: ReportSectionId;
+  onSelect: (section: ReportSectionId) => void;
+}) {
+  // Reports navigates by hash, not by route, so the bar drives the same
+  // section setter the sidebar does rather than pushing a URL.
+  const items: TaskBarItem[] = REPORT_TASKS.filter((task) =>
+    REPORT_NAV_ITEMS.some((nav) => nav.id === task.id && !nav.hidden)
+  ).map((task) => ({
+    key: task.id,
+    label: task.label,
+    href: reportHash(task.id),
+    icon: REPORT_NAV_ITEMS.find((nav) => nav.id === task.id)?.icon,
+    active: activeSection === task.id
+  }));
+  return (
+    <TaskBar
+      items={items}
+      label="Report sections"
+      onNavigate={(item, event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.button !== 0) return;
+        event.preventDefault();
+        onSelect(item.key as ReportSectionId);
+      }}
+    />
+  );
+}
+
 
 function reportSectionFromHash(hash: string): ReportSectionId {
   if (hash in LEGACY_REPORT_HASHES) return LEGACY_REPORT_HASHES[hash]!;
@@ -4565,6 +4619,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
           />
         ) : null}
       </div>
+      <ReportsTaskBar activeSection={activeSection} onSelect={selectReportSection} />
     </AppShell>
   );
 
