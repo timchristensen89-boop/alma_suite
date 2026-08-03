@@ -1,10 +1,15 @@
 import { prisma } from '@alma/db';
 import {
+  dedupeGuests,
   defaultRuleForSlug,
   guestMatchesRule,
+  hasAnyConsent,
   isMeaningfulRule,
+  normaliseEmail,
+  normalisePhone,
   type GuestFacts,
-  type GuestTagRule
+  type GuestTagRule,
+  type ImportedGuest
 } from '@alma/shared';
 
 /**
@@ -60,7 +65,13 @@ export const guestCrmService = {
       rolls.set(row.guestId, roll);
     }
 
+    // Only guests whose bookings actually live here. A guest imported from the
+    // booking system carries that system's own visit history, and this database
+    // holds none of the reservations behind it — recomputing from local
+    // reservations would zero a real count of 42 visits because none of them
+    // happened in this table. That is not a rollup, it is data loss.
     const guests = await prisma.reserveGuest.findMany({
+      where: { id: { in: [...rolls.keys()] } },
       select: { id: true, totalVisits: true, noShowCount: true, firstVisitAt: true, lastVisitAt: true }
     });
 
@@ -87,7 +98,12 @@ export const guestCrmService = {
       updated += 1;
     }
 
-    return { guests: guests.length, updated, generatedAt: new Date().toISOString() };
+    return {
+      /** Guests with reservations in this database — the only ones this owns. */
+      guestsWithLocalBookings: guests.length,
+      updated,
+      generatedAt: new Date().toISOString()
+    };
   },
 
   /**
@@ -255,6 +271,141 @@ export const guestCrmService = {
           guests: row._count._all
         }))
         .sort((a, b) => b.guests - a.guests),
+      generatedAt: new Date().toISOString()
+    };
+  }
+};
+
+/**
+ * Bring a booking-system guest export into this database.
+ *
+ * Kept separate from the service object above because it is a one-directional
+ * import that runs rarely, not part of the nightly cycle.
+ */
+export const guestImportService = {
+  /**
+   * Match imported guests to existing ones and write them.
+   *
+   * Matching is email first, then phone — never name, because this export has
+   * hundreds of guests who are a first name and nothing else, and fusing those
+   * would pool the consent of strangers.
+   *
+   * Per-venue consent is kept in `preferences.marketingConsent` rather than
+   * flattened, because agreeing to hear from St Alma is not agreeing to hear
+   * from Alma Avalon. `marketingOptIn` stays as the coarse "agreed to
+   * something" flag the rest of the system already reads.
+   *
+   * Visit counts from the export overwrite rather than add: the export is the
+   * booking system's own total, and adding it to a number this database
+   * derived from the same bookings would double-count.
+   */
+  async importGuests(
+    incoming: ImportedGuest[],
+    options: { dryRun?: boolean; defaultVenue?: string | null } = {}
+  ) {
+    const { guests, unidentifiable } = dedupeGuests(incoming);
+
+    const existing = await prisma.reserveGuest.findMany({
+      select: {
+        id: true,
+        email: true,
+        phone: true,
+        marketingOptIn: true,
+        emailUnsubscribedAt: true,
+        preferences: true,
+        tags: true
+      }
+    });
+    const byEmail = new Map<string, (typeof existing)[number]>();
+    const byPhone = new Map<string, (typeof existing)[number]>();
+    for (const row of existing) {
+      const email = normaliseEmail(row.email);
+      const phone = normalisePhone(row.phone);
+      if (email && !byEmail.has(email)) byEmail.set(email, row);
+      if (phone && !byPhone.has(phone)) byPhone.set(phone, row);
+    }
+
+    let matched = 0;
+    let created = 0;
+    let consentGranted = 0;
+    const writes: Array<() => Promise<unknown>> = [];
+
+    for (const guest of guests) {
+      const found = (guest.email ? byEmail.get(guest.email) : undefined) ?? (guest.phone ? byPhone.get(guest.phone) : undefined);
+      const anyConsent = hasAnyConsent(guest);
+      if (anyConsent) consentGranted += 1;
+
+      const base = {
+        firstName: guest.firstName || 'Guest',
+        lastName: guest.lastName,
+        email: guest.email,
+        phone: guest.phone,
+        venue: guest.venue ?? options.defaultVenue ?? null,
+        totalVisits: guest.visits,
+        noShowCount: guest.noShows,
+        totalSpendCents: guest.spendCents,
+        lastVisitAt: guest.lastVisitAt,
+        birthday: guest.birthday,
+        source: 'sevenrooms_import'
+      };
+
+      if (found) {
+        matched += 1;
+        // Merge into what is already there rather than replacing it. 1,741 of
+        // these guests carry preferences a staff member entered, and an import
+        // that flattens a guest's dietary note to make room for a consent flag
+        // has done more harm than good.
+        const priorPreferences =
+          found.preferences && typeof found.preferences === 'object' && !Array.isArray(found.preferences)
+            ? (found.preferences as Record<string, unknown>)
+            : {};
+        const mergedTags = [...new Set([...(found.tags ?? []), ...guest.tags])];
+        // An unsubscribe recorded here outranks a stale export: somebody who
+        // opted out since it was taken must not be opted back in by it.
+        const unsubscribedHere = Boolean(found.emailUnsubscribedAt) || found.marketingOptIn === false;
+        writes.push(() =>
+          prisma.reserveGuest.update({
+            where: { id: found.id },
+            data: {
+              ...base,
+              tags: mergedTags,
+              marketingOptIn: unsubscribedHere ? found.marketingOptIn : anyConsent,
+              preferences: { ...priorPreferences, marketingConsent: guest.consent } as object
+            }
+          })
+        );
+      } else {
+        created += 1;
+        writes.push(() =>
+          prisma.reserveGuest.create({
+            data: {
+              ...base,
+              tags: guest.tags,
+              marketingOptIn: anyConsent,
+              preferences: { marketingConsent: guest.consent } as object
+            }
+          })
+        );
+      }
+    }
+
+    if (!options.dryRun) {
+      // Sequential on purpose: 33,000 concurrent writes would exhaust the
+      // connection pool, and this runs rarely enough that speed is not the
+      // point.
+      for (const write of writes) await write();
+    }
+
+    return {
+      readRows: incoming.length,
+      people: guests.length,
+      matchedExisting: matched,
+      created,
+      /** People who agreed to marketing from at least one venue. */
+      consentGranted,
+      /** Rows with neither email nor phone — unmatchable, not imported. */
+      unidentifiable: unidentifiable.length,
+      dryRun: options.dryRun === true,
       generatedAt: new Date().toISOString()
     };
   }
