@@ -7,6 +7,7 @@ import { checklistService } from '../services/checklist.service.js';
 import { deputyService } from '../services/deputy.service.js';
 import { forecastService } from '../services/forecast.service.js';
 import { giftCardService } from '../services/gift-card.service.js';
+import { guestCrmService } from '../services/guest-crm.service.js';
 import { integrationService } from '../services/integration.service.js';
 import { marketingService } from '../services/marketing.service.js';
 import { reportsService } from '../services/reports.service.js';
@@ -166,6 +167,18 @@ integrationJobsRouter.post('/gift-cards/sweep', async (req, res, next) => {
         Number.isFinite(hours) ? { abandonedAfterHours: hours } : {}
       )
     );
+  } catch (error) {
+    next(error);
+  }
+});
+
+// Guest CRM nightly: roll reservations up onto the guest, then re-apply the
+// automatic tags to the result. Order matters — tags read the rollups.
+integrationJobsRouter.post('/guests/refresh', async (_req, res, next) => {
+  try {
+    const rollups = await guestCrmService.rebuildGuestRollups();
+    const tags = await guestCrmService.applyAutomaticTags();
+    res.json({ rollups, tags });
   } catch (error) {
     next(error);
   }
