@@ -122,7 +122,10 @@ import {
   IconFiles,
   IconFileSignature,
   IconFileText,
+  IconIssues,
   IconMail,
+  IconPackageCheck,
+  IconTemperature,
   IconTriangle,
   IconUserPlus,
   IconUsers,
@@ -461,6 +464,31 @@ const STAFF_MEMBER_NAV_ITEMS = [
     label: 'My compliance',
     description: 'My documents, training and reminders',
     icon: <IconFileLock />
+  },
+  // The jobs that used to mean leaving for another site.
+  {
+    to: '/checks',
+    label: "Today's checks",
+    description: 'Opening, closing and food safety checklists',
+    icon: <IconChecklist />
+  },
+  {
+    to: '/temperatures',
+    label: 'Fridge temps',
+    description: 'Log a probe reading',
+    icon: <IconTemperature />
+  },
+  {
+    to: '/report',
+    label: 'Report a problem',
+    description: 'Something broken, unsafe or not right',
+    icon: <IconIssues />
+  },
+  {
+    to: '/stocktake',
+    label: 'Stocktake',
+    description: 'Count stock',
+    icon: <IconPackageCheck />
   },
   {
     to: '/documents',
@@ -3413,6 +3441,56 @@ type FridgeAsset = {
  * Out of range asks what was done about it, because a temperature log with no
  * corrective action is a record of a problem nobody addressed.
  */
+/**
+ * Hands off to the stocktake counting screen, already signed in.
+ *
+ * Counting lives in the stock app and is 2,000 lines of screen that was tuned
+ * for exactly this job earlier — a second, thinner copy here would be a worse
+ * version of a good thing, and two places to fix every counting bug. What was
+ * actually missing is that reaching it meant signing in again.
+ *
+ * The suite handoff mints a short-lived token, so the tap lands on the count
+ * with a live session. When the native shell arrives this becomes a webview
+ * inside the same app and the seam disappears entirely.
+ */
+function StocktakeHandoffPage() {
+  const [failed, setFailed] = useState(false);
+  const target = `${STOCK_WEB_URL.replace(/\/+$/, '')}/`;
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const href = await createSuiteHandoffUrl(target);
+        if (!cancelled) window.location.href = href;
+      } catch {
+        // Without a handoff the plain link still works — it just asks them to
+        // sign in, which beats a dead end.
+        if (!cancelled) setFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [target]);
+
+  return (
+    <div className="page-stack">
+      <PageHeader eyebrow="Stock" title="Opening the count" description="Taking you to the stocktake screen." />
+      <Card>
+        {failed ? (
+          <>
+            <p className="subtle">Couldn't sign you in automatically.</p>
+            <Button type="button" onClick={() => window.location.assign(target)}>Open stocktake</Button>
+          </>
+        ) : (
+          <Spinner />
+        )}
+      </Card>
+    </div>
+  );
+}
+
 function TemperaturesPage() {
   const { user } = useAuth();
   const [assets, setAssets] = useState<FridgeAsset[]>([]);
@@ -19337,6 +19415,7 @@ function StaffShell() {
           <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/checks" element={<TodayChecksPage />} />
           <Route path="/temperatures" element={<TemperaturesPage />} />
+          <Route path="/stocktake" element={<StocktakeHandoffPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
@@ -19371,6 +19450,7 @@ function StaffShell() {
           <Route path="/report" element={<ReportIssuePage />} />
           <Route path="/checks" element={<TodayChecksPage />} />
           <Route path="/temperatures" element={<TemperaturesPage />} />
+          <Route path="/stocktake" element={<StocktakeHandoffPage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />
