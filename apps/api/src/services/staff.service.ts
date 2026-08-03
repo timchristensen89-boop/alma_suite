@@ -69,7 +69,8 @@ import {
   getAwardRateSet,
   normaliseStaffDefaults,
   resolveClockTime,
-  onboardingGaps
+  onboardingGaps,
+  timesheetFromClockSession
 } from '@alma/shared';
 import type {
   AuthUser,
@@ -4960,6 +4961,71 @@ export const staffService = {
           metadata: existing.currentBreakStartedAt ? { breakClosedOnClockOut: true } : {}
         }
       });
+      // Raise the timesheet. Until this existed the clock recorded hours that
+      // never reached payroll — 209 Alma-native timesheets in production and
+      // not one of them from a clock session — which is why Deputy still runs.
+      //
+      // Inside the same transaction as the clock-out: a session that closed
+      // without its timesheet is silent unpaid work, and nobody would notice
+      // until payday.
+      const conversion = timesheetFromClockSession({
+        id: session.id,
+        staffProfileId: session.staffProfileId,
+        rosterShiftId: session.rosterShiftId,
+        venue: session.venue,
+        area: session.area,
+        roleTitle: session.roleTitle,
+        clockInAt: session.clockInAt,
+        clockOutAt: session.clockOutAt,
+        accumulatedBreakMinutes: session.accumulatedBreakMinutes,
+        managerNote: session.managerNote
+      });
+
+      if ('draft' in conversion) {
+        const draft = conversion.draft;
+        const timesheetData = {
+          staffProfileId: draft.staffProfileId,
+          rosterShiftId: draft.rosterShiftId,
+          venue: draft.venue,
+          area: draft.area,
+          roleTitle: draft.roleTitle,
+          workDate: draft.workDate,
+          clockInAt: draft.clockInAt,
+          clockOutAt: draft.clockOutAt,
+          breakMinutes: draft.breakMinutes,
+          notes: draft.notes
+        };
+        // Submitted, not approved: a manager still signs off the week. Keyed on
+        // the session so a repeated clock-out or a corrected session updates
+        // the row rather than paying the hours twice.
+        await tx.timesheet.upsert({
+          where: { clockSessionId: session.id },
+          create: {
+            ...timesheetData,
+            clockSessionId: session.id,
+            status: 'SUBMITTED',
+            submittedAt: clockOutAt
+          },
+          update: timesheetData
+        });
+      } else {
+        // Never trap somebody on shift because the paperwork disagreed: the
+        // clock-out stands, and the reason goes on the session for a manager.
+        await tx.staffClockSession.update({
+          where: { id: session.id },
+          data: {
+            managerNote: [session.managerNote, `Timesheet not raised: ${conversion.rejected.reason}`]
+              .filter(Boolean)
+              .join(' — ')
+          }
+        });
+        console.warn('[staff.clockOut] no timesheet raised', {
+          sessionId: session.id,
+          staffProfileId: session.staffProfileId,
+          reason: conversion.rejected.reason
+        });
+      }
+
       return tx.staffClockSession.findUniqueOrThrow({
         where: { id: session.id },
         include: {

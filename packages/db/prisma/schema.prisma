@@ -2106,6 +2106,10 @@ model GiftCardRedemption {
 model Timesheet {
   id                 String          @id @default(cuid())
   deputyTimesheetId  String?         @unique
+  /// The clock session this was raised from. Unique so clocking off twice, or
+  /// a manager correcting a session, updates the timesheet instead of adding a
+  /// second one for the same hours.
+  clockSessionId     String?         @unique
   staffProfileId     String
   rosterShiftId      String?
   venue              String?
