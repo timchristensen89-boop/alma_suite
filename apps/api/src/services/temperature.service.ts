@@ -4,7 +4,9 @@ import {
   temperatureAssetCreateInputSchema,
   temperatureExternalIngestInputSchema,
   temperatureLogCreateInputSchema,
-  temperatureSensorMapInputSchema
+  temperatureSensorMapInputSchema,
+  TEMPERATURE_ESCALATION_WINDOW_MINUTES,
+  decideTemperatureEscalation
 } from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { mailService } from './mail.service.js';
@@ -81,6 +83,32 @@ async function resolveVenueHeadChefName(venue: string | null | undefined): Promi
   const match = candidates.find((staff) => (staff.venue ?? '').trim().toLowerCase() === target);
   if (!match) return null;
   return `${match.firstName} ${match.lastName}`.trim() || match.email || null;
+}
+
+/**
+ * The email of the active head chef for a venue.
+ *
+ * A temperature warning is only useful to whoever is standing near the fridge.
+ * Falls back to null so the caller can decide — silently sending nowhere would
+ * look identical to a fridge that is fine.
+ */
+async function resolveVenueHeadChefEmail(venue: string | null | undefined): Promise<string | null> {
+  const target = (venue ?? '').trim().toLowerCase();
+  if (!target) return null;
+  const candidates = await prisma.staffProfile.findMany({
+    where: {
+      accountType: 'HUMAN',
+      employmentStatus: 'ACTIVE',
+      mergedIntoStaffProfileId: null,
+      roleTitle: { contains: 'head chef', mode: 'insensitive' },
+      email: { not: null }
+    },
+    select: { email: true, venue: true },
+    orderBy: { createdAt: 'asc' }
+  });
+  const atVenue = candidates.find((row) => (row.venue ?? '').trim().toLowerCase() === target);
+  // A head chef with no venue set covers every venue rather than nobody.
+  return (atVenue ?? candidates.find((row) => !row.venue))?.email ?? null;
 }
 
 async function maybeCreateIssue(
@@ -246,7 +274,37 @@ async function createLogForAsset(assetId: string, input: {
 
   const recordedAt = input.recordedAt ?? new Date();
   const status = determineStatus(input.temperatureC, asset.minTempC, asset.maxTempC);
-  const issueId = status === 'OUT_OF_RANGE' ? await maybeCreateIssue(asset, input.temperatureC) : null;
+  // A fridge reads warm for innocent reasons — a door held open during
+  // stocking, a defrost cycle, a delivery going away. Raising a job every time
+  // teaches people to close jobs without looking. So a breach warns the venue's
+  // head chef, and only three breaches close together become work.
+  const recentForEscalation =
+    status === 'OUT_OF_RANGE'
+      ? await prisma.temperatureLog.findMany({
+          where: {
+            assetId,
+            recordedAt: { gte: new Date(recordedAt.getTime() - TEMPERATURE_ESCALATION_WINDOW_MINUTES * 60_000) }
+          },
+          select: { recordedAt: true, status: true }
+        })
+      : [];
+  const openJob =
+    status === 'OUT_OF_RANGE'
+      ? await prisma.issue.findFirst({
+          where: {
+            category: 'Temperature',
+            notes: { contains: `temperature-asset:${assetId}` },
+            status: { in: ['OPEN', 'IN_PROGRESS', 'BLOCKED'] }
+          },
+          select: { id: true }
+        })
+      : null;
+  const escalation = decideTemperatureEscalation(
+    { recordedAt, status },
+    recentForEscalation,
+    { alreadyEscalated: Boolean(openJob) }
+  );
+  const issueId = escalation.escalate ? await maybeCreateIssue(asset, input.temperatureC) : null;
 
   // Check the previous log so we can fire an email only on the
   // IN_RANGE → OUT_OF_RANGE state transition (avoids spamming when a sensor
@@ -323,22 +381,32 @@ async function createLogForAsset(assetId: string, input: {
 
       if (sustainedFor30Min && !previouslyAlerted) {
         const settings = await prisma.appSettings.findUnique({ where: { id: 'singleton' } });
-        const recipient = settings?.notifyEmail?.trim();
+        // The venue's head chef first — they are the person standing near the
+        // fridge. The configured address is a fallback for a venue with no
+        // head chef on file, not the default.
+        const recipient = (await resolveVenueHeadChefEmail(asset.venue)) ?? settings?.notifyEmail?.trim();
         if (recipient && settings?.notifyOutOfRangeTemp !== false) {
           const complianceUrl = (process.env.COMPLIANCE_WEB_URL ?? 'https://alma-compliance.web.app').replace(/\/+$/, '');
           const minutesOut = streakStart ? Math.round((recordedAt.getTime() - streakStart.getTime()) / 60000) : 30;
           await mailService.sendAlert({
             to: recipient,
-            subject: `[Temp alert] ${asset.name} out of range for ${minutesOut}+ minutes`,
-            title: `${asset.name} has been out of range for ${minutesOut} minutes`,
+            subject: issueId
+              ? `[Check the fridge] ${asset.name} out of range ${escalation.breachesInWindow} times`
+              : `[Temp warning] ${asset.name} is running warm`,
+            title: issueId
+              ? `${asset.name} needs checking`
+              : `${asset.name} has been out of range for ${minutesOut} minutes`,
             body: [
               `${asset.name}${asset.venue ? ` at ${asset.venue}` : ''} now reads ${input.temperatureC.toFixed(1)}°C.`,
               `Allowed range: ${asset.minTempC.toFixed(1)}°C to ${asset.maxTempC.toFixed(1)}°C.`,
               `Sustained out-of-range readings since ${streakStart?.toLocaleString() ?? 'recently'}.`,
-              issueId ? `An issue has been auto-created for follow-up.` : ''
+              issueId
+                ? `That is ${escalation.breachesInWindow} breaches in ${escalation.spanMinutes} minutes, so this is no longer a door being held open. A job has been raised to check what is in it.`
+                : 'Nothing to do yet — worth a look if it keeps happening.'
             ].filter(Boolean).join('\n'),
             venue: asset.venue,
-            severity: 'critical',
+            // A warning is a warning. Only the raised job is critical.
+            severity: issueId ? 'critical' : 'warning',
             ctaUrl: `${complianceUrl}/temperatures`,
             ctaLabel: 'Open compliance'
           });

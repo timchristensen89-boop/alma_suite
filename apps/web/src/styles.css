@@ -12311,3 +12311,18 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   color: var(--color-text-muted, #475569);
 }
 .issue-triage-note.is-bad { color: #b23c3c; }
+
+/* Reveal for archived and terminated staff on the certificates list. Their
+   records still matter for an audit; they just should not be in the way of
+   the live question. */
+.staff-inactive-toggle {
+  margin-left: 12px;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  font-size: 12.5px;
+  color: var(--color-text-muted, #475569);
+  text-decoration: underline;
+  cursor: pointer;
+}
