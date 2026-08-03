@@ -3360,6 +3360,236 @@ function NoticeboardPage() {
  * fridge with one hand free. This asks what only they can answer and lets the
  * area rules pick the assignee.
  */
+type StaffChecklistItem = {
+  id: string;
+  label: string;
+  description: string | null;
+  position: number;
+  result: 'PENDING' | 'PASS' | 'FAIL' | 'NA';
+  notes: string | null;
+};
+
+type StaffChecklistRun = {
+  id: string;
+  status: string;
+  runDate: string;
+  area: string | null;
+  template: { id: string; name: string };
+  items: StaffChecklistItem[];
+};
+
+/**
+ * Today's checks, done from the floor.
+ *
+ * The scheduler raises a run from every due template at 04:30, so by the time
+ * someone opens the venue there are ten waiting. Until now the only place to
+ * complete one was the compliance site on a laptop, which is not where opening
+ * checks happen.
+ *
+ * A failed item is the interesting one: it offers to raise an issue there and
+ * then, because the alternative is somebody meaning to report it later and not.
+ */
+function TodayChecksPage() {
+  const [runs, setRuns] = useState<StaffChecklistRun[]>([]);
+  const [openRunId, setOpenRunId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [savingItemId, setSavingItemId] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [failNoteFor, setFailNoteFor] = useState<string | null>(null);
+  const [failNote, setFailNote] = useState('');
+  const [raiseIssue, setRaiseIssue] = useState(true);
+
+  const loadRuns = useCallback(async () => {
+    setLoading(true);
+    try {
+      // ?today=1 rather than sending our own date: the phone's toISOString()
+      // gives the UTC day, which through a Sydney morning is yesterday — the
+      // board would read empty with ten checks sitting on it.
+      setRuns(await api<StaffChecklistRun[]>('/api/checklists/runs?today=1&status=OPEN'));
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'Could not load today’s checks.');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRuns();
+  }, [loadRuns]);
+
+  async function setResult(
+    run: StaffChecklistRun,
+    item: StaffChecklistItem,
+    result: StaffChecklistItem['result'],
+    options: { notes?: string; createIssue?: boolean } = {}
+  ) {
+    setSavingItemId(item.id);
+    try {
+      await api(`/api/checklists/runs/${run.id}/items/${item.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          result,
+          notes: options.notes ?? item.notes ?? '',
+          createIssue: options.createIssue ?? false,
+          issueTitle: options.createIssue ? `${item.label} — ${run.template.name}` : '',
+          issueCategory: 'Maintenance',
+          issueSeverity: 'MEDIUM'
+        })
+      });
+      // Update in place. Reloading the whole list would scroll a half-finished
+      // checklist back to the top, which is maddening halfway down sixteen items.
+      setRuns((current) =>
+        current.map((entry) =>
+          entry.id !== run.id
+            ? entry
+            : {
+                ...entry,
+                items: entry.items.map((existing) =>
+                  existing.id === item.id ? { ...existing, result, notes: options.notes ?? existing.notes } : existing
+                )
+              }
+        )
+      );
+      setMessage(null);
+    } catch (err) {
+      setMessage(err instanceof Error ? err.message : 'That did not save. Try again.');
+    } finally {
+      setSavingItemId(null);
+      setFailNoteFor(null);
+      setFailNote('');
+      setRaiseIssue(true);
+    }
+  }
+
+  const openRun = runs.find((run) => run.id === openRunId) ?? null;
+
+  if (openRun) {
+    const done = openRun.items.filter((item) => item.result !== 'PENDING').length;
+    return (
+      <div className="page-stack">
+        <PageHeader
+          eyebrow={openRun.area ?? 'Checks'}
+          title={openRun.template.name}
+          description={`${done} of ${openRun.items.length} done`}
+          actions={<Button type="button" variant="secondary" onClick={() => setOpenRunId(null)}>Back</Button>}
+        />
+        {message ? <p className="error-text">{message}</p> : null}
+        <div className="check-list">
+          {openRun.items.map((item) => (
+            <article key={item.id} className={`check-item is-${item.result.toLowerCase()}`}>
+              <div className="check-item-text">
+                <strong>{item.label}</strong>
+                {item.description ? <span>{item.description}</span> : null}
+                {item.notes ? <em>{item.notes}</em> : null}
+              </div>
+              {failNoteFor === item.id ? (
+                <div className="check-fail-form">
+                  <Textarea
+                    label="What's wrong?"
+                    rows={2}
+                    value={failNote}
+                    onChange={(event) => {
+                      const { value } = event.currentTarget;
+                      setFailNote(value);
+                    }}
+                  />
+                  <label className="check-fail-raise">
+                    <input
+                      type="checkbox"
+                      checked={raiseIssue}
+                      onChange={(event) => {
+                        const { checked } = event.currentTarget;
+                        setRaiseIssue(checked);
+                      }}
+                    />
+                    Report this so someone fixes it
+                  </label>
+                  <div className="check-fail-actions">
+                    <Button
+                      type="button"
+                      disabled={savingItemId === item.id}
+                      onClick={() => void setResult(openRun, item, 'FAIL', { notes: failNote, createIssue: raiseIssue })}
+                    >
+                      {savingItemId === item.id ? 'Saving…' : 'Save'}
+                    </Button>
+                    <Button type="button" variant="secondary" onClick={() => { setFailNoteFor(null); setFailNote(''); }}>
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <div className="check-item-actions">
+                  <button
+                    type="button"
+                    className={item.result === 'PASS' ? 'is-on is-pass' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void setResult(openRun, item, 'PASS')}
+                  >
+                    OK
+                  </button>
+                  <button
+                    type="button"
+                    className={item.result === 'FAIL' ? 'is-on is-fail' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => { setFailNoteFor(item.id); setFailNote(item.notes ?? ''); }}
+                  >
+                    Not OK
+                  </button>
+                  <button
+                    type="button"
+                    className={item.result === 'NA' ? 'is-on' : ''}
+                    disabled={savingItemId === item.id}
+                    onClick={() => void setResult(openRun, item, 'NA')}
+                  >
+                    N/A
+                  </button>
+                </div>
+              )}
+            </article>
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page-stack">
+      <PageHeader
+        eyebrow="Today"
+        title="Checks to run"
+        description="Raised automatically each morning. Anything not done by close shows on the manager's readiness board."
+      />
+      {message ? <p className="error-text">{message}</p> : null}
+      {loading ? (
+        <Card><Spinner /></Card>
+      ) : runs.length === 0 ? (
+        <EmptyState title="Nothing outstanding" description="Every check raised for today has been completed." />
+      ) : (
+        <div className="check-runs">
+          {runs.map((run) => {
+            const done = run.items.filter((item) => item.result !== 'PENDING').length;
+            const failed = run.items.filter((item) => item.result === 'FAIL').length;
+            return (
+              <button key={run.id} type="button" className="check-run" onClick={() => setOpenRunId(run.id)}>
+                <span className="check-run-text">
+                  <strong>{run.template.name}</strong>
+                  <small>{run.area ?? 'Whole venue'}</small>
+                </span>
+                <span className="check-run-progress">
+                  <Badge tone={done === run.items.length ? 'positive' : failed ? 'warning' : 'muted'}>
+                    {done}/{run.items.length}
+                  </Badge>
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ReportIssuePage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -18867,6 +19097,7 @@ function StaffShell() {
           <Route path="/leave" element={<StaffMemberLeavePage />} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/report" element={<ReportIssuePage />} />
+          <Route path="/checks" element={<TodayChecksPage />} />
           <Route path="/compliance" element={<StaffMemberCompliancePage />} />
           <Route path="/documents" element={<StaffMemberDocumentsPage />} />
           <Route path="/academy" element={<StaffMemberAcademyPage staff={staff} loading={loading} />} />
@@ -18899,6 +19130,7 @@ function StaffShell() {
           <Route path="/leave" element={<HubLayout tabs={ROSTER_PAY_TABS}><LeaveCalendarPage staff={staff} /></HubLayout>} />
           <Route path="/noticeboard" element={<NoticeboardPage />} />
           <Route path="/report" element={<ReportIssuePage />} />
+          <Route path="/checks" element={<TodayChecksPage />} />
           <Route path="/compliance" element={<HubLayout tabs={COMPLIANCE_TABS}><StaffMemberCompliancePage /></HubLayout>} />
           <Route path="/academy" element={<HubLayout tabs={COMPLIANCE_TABS}><TrainingPage staff={staff} reloadStaff={reload} /></HubLayout>} />
           <Route path="/training" element={<Navigate to="/academy" replace />} />

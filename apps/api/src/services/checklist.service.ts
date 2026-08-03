@@ -1,4 +1,4 @@
-import { describeChecklistCadence, isChecklistCadence, isChecklistDue } from '@alma/shared';
+import { describeChecklistCadence, isChecklistCadence, isChecklistDue, venueDayBounds, venueDayKey } from '@alma/shared';
 import { prisma } from '@alma/db';
 import {
   ALMA_IMPORTED_CHECKLIST_TEMPLATES,
@@ -210,9 +210,32 @@ export const checklistService = {
     return { ok: true };
   },
 
-  async listRuns() {
+  /**
+   * Runs, newest first.
+   *
+   * Unfiltered this returns every run ever recorded with all of its items —
+   * fine when there were eight of them, and roughly 3,650 a year now the
+   * scheduler raises ten each morning. The filters exist so a phone can ask
+   * for today's open ones instead of the archive.
+   */
+  async listRuns(filters: { date?: string; status?: string; limit?: number; today?: boolean } = {}) {
+    let runDate: { gte: Date; lt: Date } | undefined;
+    // `today` means the venue's today, not the server's. Sydney is ten hours
+    // ahead of UTC, so for most of a morning shift the UTC date is still
+    // yesterday — a client sending its own toISOString() date would ask for
+    // the wrong day and find an empty board with ten checks sitting on it.
+    const day = filters.today ? venueDayKey(new Date()) : filters.date;
+    if (day) {
+      const bounds = venueDayBounds(day);
+      if (bounds) runDate = bounds;
+    }
     return prisma.checklistRun.findMany({
+      where: {
+        ...(runDate ? { runDate } : {}),
+        ...(filters.status && filters.status !== 'all' ? { status: filters.status as never } : {})
+      },
       orderBy: [{ runDate: 'desc' }],
+      take: Math.min(Math.max(filters.limit ?? 200, 1), 500),
       include: {
         template: { include: { items: { orderBy: [{ position: 'asc' }] } } },
         items: { include: { linkedIssue: true }, orderBy: [{ position: 'asc' }] }

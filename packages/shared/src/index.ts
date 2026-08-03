@@ -5,6 +5,7 @@ export * from './invoice-matching.js';
 export * from './purchase-history.js';
 export * from './xero-timesheet-push.js';
 export * from './checklist-cadence.js';
+export * from './venue-day.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
 import {
