@@ -3331,3 +3331,24 @@ html[data-theme='dark'] .hub-tab.is-active { color: var(--color-accent-text, #ff
 .stock-buying-group-head:hover {
   background: var(--color-surface-muted, rgba(148, 163, 184, 0.16));
 }
+
+/* Order suggestions held back because the par behind them cannot be right. */
+.stock-buying-needs-check {
+  margin: 0 12px 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--tone-warning-dot);
+  border-radius: var(--radius-md);
+  background: var(--tone-warning-bg);
+  color: var(--tone-warning-fg);
+}
+.stock-buying-needs-check p {
+  margin: 4px 0 8px;
+}
+.stock-buying-needs-check ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.stock-buying-needs-check li {
+  margin-bottom: 3px;
+}

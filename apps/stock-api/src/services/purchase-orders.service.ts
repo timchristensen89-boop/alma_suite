@@ -1,6 +1,11 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
-import { orderQuantityToPar, type AuthUser } from '@alma/shared';
+import {
+  orderQuantityToPar,
+  IMPLAUSIBLE_COUNT_SHARE,
+  IMPLAUSIBLE_COUNT_FLOOR_CENTS,
+  type AuthUser
+} from '@alma/shared';
 import { HttpError } from '../lib/http.js';
 import { itemsService } from './items.service.js';
 
@@ -242,15 +247,52 @@ export const purchaseOrdersService = {
       if (unitCostCents !== null) group.subtotalCents += Math.round(unitCostCents * quantity);
     }
 
-    const suppliers = [...groups.values()].sort((a, b) => {
-      if (a.supplierId === null) return 1;
-      if (b.supplierId === null) return -1;
-      return b.subtotalCents - a.subtotalCents;
-    });
+    // Par levels derived from a count made in the wrong unit produce order
+    // lines nobody would ever place: St Alma's suggestion was $2.17M, 99% of
+    // it five lines, the worst being 21,724 bottles of gin because someone
+    // counted millilitres. Proposing those alongside real ones makes the whole
+    // screen untrustworthy — which is why not one purchase order has ever been
+    // raised in production. So they come out of the totals and are listed
+    // separately for somebody to fix at the item.
+    const allLines = [...groups.values()].flatMap((group) => group.lines);
+    const suggestedTotal = allLines.reduce(
+      (sum, line) => sum + Math.max(0, Number(line.lineTotalCents) || 0),
+      0
+    );
+    const needsCheck: Array<Record<string, unknown>> = [];
+    if (suggestedTotal > 0) {
+      for (const group of groups.values()) {
+        const keep: Array<Record<string, unknown>> = [];
+        for (const line of group.lines) {
+          const cents = Math.max(0, Number(line.lineTotalCents) || 0);
+          const share = cents / suggestedTotal;
+          if (cents >= IMPLAUSIBLE_COUNT_FLOOR_CENTS && share >= IMPLAUSIBLE_COUNT_SHARE) {
+            needsCheck.push({ ...line, supplierName: group.supplierName, shareOfSuggested: Math.round(share * 100) / 100 });
+            group.subtotalCents -= cents;
+            continue;
+          }
+          keep.push(line);
+        }
+        group.lines = keep;
+      }
+    }
+
+    const suppliers = [...groups.values()]
+      .filter((group) => group.lines.length > 0)
+      .sort((a, b) => {
+        if (a.supplierId === null) return 1;
+        if (b.supplierId === null) return -1;
+        return b.subtotalCents - a.subtotalCents;
+      });
 
     return {
       venue,
       suppliers,
+      // Order lines left out of the totals because the par behind them cannot
+      // be right. Named so the screen can say so rather than quietly dropping
+      // them: the stock still needs ordering, the par just needs fixing first.
+      needsCheck,
+      needsCheckTotalCents: needsCheck.reduce((sum, line) => sum + (Number(line.lineTotalCents) || 0), 0),
       itemsBelowPar,
       // Honest about the gap rather than quietly dropping these: an item with
       // no purchase history still needs ordering, somebody just has to say

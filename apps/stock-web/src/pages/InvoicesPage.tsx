@@ -981,6 +981,15 @@ export function InvoicesPage() {
               description={error}
             />
           ) : payload && payload.invoices.length > 0 ? (
+            <>
+            {/* The list is capped server-side. Saying so beats a manager
+                concluding an older invoice was never imported. */}
+            {summary && summary.totalInvoices > payload.invoices.length ? (
+              <p className="subtle small" style={{ margin: '0 0 8px' }}>
+                Showing the {payload.invoices.length} most recent of {summary.totalInvoices} invoices. Use search to
+                find an older one.
+              </p>
+            ) : null}
             <div className="table-card stock-invoice-table">
               <table>
                 <thead>
@@ -1029,6 +1038,7 @@ export function InvoicesPage() {
                 </tbody>
               </table>
             </div>
+            </>
           ) : (
             <EmptyState
               icon={<IconInvoices size={24} />}

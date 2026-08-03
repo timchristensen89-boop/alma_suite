@@ -11,6 +11,7 @@ export * from './guest-import.js';
 export * from './temperature-escalation.js';
 export * from './onboarding-completion.js';
 export * from './invoice-paste.js';
+export * from './count-scale.js';
 import type { ParsedInvoiceLine } from './invoice-paste.js';
 import { CHECKLIST_CADENCES, type ChecklistCadence } from './checklist-cadence.js';
 import { z } from 'zod';
@@ -6245,7 +6246,9 @@ export type StockConfigHealthIssueCode =
   | 'no-avg-cost'
   | 'recipe-unit-mismatch'
   | 'measure-half-set'
-  | 'stale-cost';
+  | 'stale-cost'
+  /// A counted quantity that cannot mean what its unit says — see count-scale.ts.
+  | 'count-out-of-scale';
 
 export type StockConfigHealthIssue = {
   code: StockConfigHealthIssueCode;

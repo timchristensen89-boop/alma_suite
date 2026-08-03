@@ -1,6 +1,7 @@
 import { Prisma } from '@prisma/client';
 import { prisma } from '@alma/db';
 import {
+  implausibleCountLines,
   summarisePurchases,
   type PurchaseFacts,
   type PurchaseLine,
@@ -1451,6 +1452,50 @@ export const itemsService = {
       }
     });
 
+    // Counts made in the wrong unit. Every field on these lines is individually
+    // valid — a number, a real cost, a real unit — so nothing else here can see
+    // them; only the product is absurd. In production eight such lines carried
+    // 76% of all counted stock value, and the par levels derived from them made
+    // the reorder screen propose a $2.17M order.
+    const countedLines = await prisma.stocktakeLine.findMany({
+      where: { itemId: { not: null }, countedQty: { not: null } },
+      select: {
+        itemId: true,
+        label: true,
+        countedQty: true,
+        stocktake: { select: { venue: true } },
+        item: {
+          select: {
+            name: true,
+            avgCostCents: true,
+            countUnit: true,
+            measurePerCountUnit: true,
+            measureUnit: true
+          }
+        }
+      }
+    });
+    const badCounts = implausibleCountLines(
+      countedLines
+        .filter((line) => line.item)
+        .map((line) => ({
+          itemId: line.itemId!,
+          itemName: line.item!.name,
+          venue: line.stocktake?.venue ?? null,
+          countedQty: line.countedQty ?? 0,
+          unitCostCents: line.item!.avgCostCents,
+          countUnit: line.item!.countUnit,
+          measurePerCountUnit: line.item!.measurePerCountUnit,
+          measureUnit: line.item!.measureUnit
+        }))
+    );
+    // Worst line per item — an item counted wrongly three times is one problem.
+    const badCountByItem = new Map<string, (typeof badCounts)[number]>();
+    for (const bad of badCounts) {
+      const existing = badCountByItem.get(bad.itemId);
+      if (!existing || bad.lineValueCents > existing.lineValueCents) badCountByItem.set(bad.itemId, bad);
+    }
+
     const staleDays = options.staleDays ?? 180;
     const staleCutoff = new Date(Date.now() - staleDays * 24 * 60 * 60 * 1000);
 
@@ -1514,6 +1559,16 @@ export const itemsService = {
           code: 'stale-cost',
           severity: 'warn',
           message: `Cost hasn't been updated in ${ageDays} days — margins may be drifting. Re-import a recent invoice for this item.`
+        });
+      }
+
+      // 4. A counted quantity that cannot mean what its unit says.
+      const badCount = badCountByItem.get(item.id);
+      if (badCount) {
+        issues.push({
+          code: 'count-out-of-scale',
+          severity: 'error',
+          message: badCount.message
         });
       }
 

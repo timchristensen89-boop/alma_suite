@@ -135,6 +135,9 @@ type SuggestionsPayload = {
   suppliers: Array<{ supplierId: string | null; supplierName: string; lines: SuggestionLine[]; subtotalCents: number }>;
   itemsBelowPar: number;
   itemsWithNoSupplier: number;
+  /** Lines kept out of the totals because the par behind them cannot be right. */
+  needsCheck?: Array<SuggestionLine & { supplierName: string; shareOfSuggested: number }>;
+  needsCheckTotalCents?: number;
   needsVenue: boolean;
   generatedAt: string;
 };
@@ -237,6 +240,34 @@ function SuggestedOrders({
         />
       ) : null}
       {message ? <p className="subtle" style={{ padding: '6px 12px' }}>{message}</p> : null}
+
+      {/* Order lines left out of the totals because the count behind the par
+          was made in the wrong unit — 21,724 bottles of gin, not 29. Shown
+          rather than hidden: the stock may still need ordering, the item just
+          has to be fixed first. */}
+      {payload?.needsCheck && payload.needsCheck.length > 0 ? (
+        <div className="stock-buying-needs-check">
+          <strong>
+            {payload.needsCheck.length} line{payload.needsCheck.length === 1 ? '' : 's'} held back —
+            {' '}{money(payload.needsCheckTotalCents ?? 0)} of suggestions that cannot be right
+          </strong>
+          <p className="subtle small">
+            The last count of these came to far more than the venue holds, so the par worked out from it is wrong.
+            Fix the count unit on the item, then recount.
+          </p>
+          <ul>
+            {payload.needsCheck.map((line) => (
+              <li key={line.stockItemId}>
+                <strong>{line.description}</strong>
+                <span className="subtle">
+                  {' '}— would order {line.orderedQuantity.toLocaleString()} {line.unit ?? 'units'} for{' '}
+                  {money(line.lineTotalCents ?? 0)} (on hand {line.onHand}, par {line.parLevel})
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
 
       {(payload?.suppliers ?? []).map((group) => {
         const key = group.supplierId ?? '__none__';
