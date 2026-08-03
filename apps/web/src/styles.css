@@ -12443,3 +12443,70 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   text-decoration: underline;
   cursor: pointer;
 }
+
+/* ── Phone: give the screen back to the content ──────────────────────────
+   Measured on a 375px phone before this block: the page header alone was
+   190px tall and the top bar another 60px, so 250px of an 812px screen —
+   nearly a third — went on saying where you were before showing anything.
+
+   Most of that was repetition. The eyebrow said "Alma Stock" directly under
+   a top bar already saying Alma Stock, in an app you opened on purpose. The
+   description restated the title in a sentence. Now that the task bar carries
+   navigation, the top bar has less to do as well.
+
+   Four layouts were measured rather than guessed at. Dropping the description
+   entirely got to 101px but takes the one line that sometimes says something
+   the title cannot. Stacking the actions under the title costs a whole row
+   (141px). Keeping the header a row and clamping the description to a single
+   line lands at 126px and keeps both. That is the one below: 190 -> 126, and
+   250 -> 174 with the top bar, which is 76px — nearly a tenth of the screen —
+   back on every page in every app.
+
+   Scoped to the same 860px breakpoint the task bar uses, so the two agree
+   about what counts as a phone. */
+@media (max-width: 860px) {
+  :root {
+    --topbar-height: 48px;
+  }
+
+  .app-shell-main {
+    /* Bottom padding is small on purpose: the task bar already pads <body> by
+       its own height, and 28px on top of that left a dead strip above it. */
+    padding: 10px 12px 12px;
+  }
+
+  /* The app name is in the top bar and on the home-screen icon. A third
+     telling costs 23px of a screen somebody is holding in one hand. */
+  .page-header-eyebrow {
+    display: none;
+  }
+
+  .page-header {
+    flex-direction: row;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .page-header-title,
+  .page-header h1,
+  .hero-text h1 {
+    font-size: 19px;
+    line-height: 1.2;
+  }
+
+  .page-header-description {
+    font-size: 12.5px;
+    line-height: 1.35;
+    /* One line of context is a hint; four is a wall between you and the page. */
+    display: -webkit-box;
+    -webkit-line-clamp: 1;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .page-header-actions {
+    flex: none;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+}
