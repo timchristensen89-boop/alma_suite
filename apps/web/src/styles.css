@@ -12485,11 +12485,25 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
     /* display:flex is stated, not assumed. A rule at 900px sets .page-header to
        display:grid with a single column, so flex-direction alone was inert and
        the header quietly stacked — 110px where a real row is 70px. Measured
-       both ways rather than trusted. */
+       both ways rather than trusted.
+       
+       It wraps, and the text keeps a floor. The first version paired a row with
+       `flex: none` on the actions, which was exactly backwards: on Issues &
+       Incidents the actions are a full-width "New incident" button, so refusing
+       to shrink them drove .page-header-text to a **computed width of zero** and
+       the title set itself one word per line down the page. A header is allowed
+       to take a second row; it is not allowed to erase its own title. */
     display: flex;
     flex-direction: row;
+    flex-wrap: wrap;
     align-items: flex-start;
-    gap: 10px;
+    gap: 8px 10px;
+  }
+
+  .page-header-text {
+    /* Roughly a dozen characters of title before anything else gets a say. */
+    flex: 1 1 12rem;
+    min-width: 0;
   }
 
   .page-header-title,
@@ -12510,7 +12524,8 @@ html[data-theme='dark'] .alma-panel.alma-band-sage {
   }
 
   .page-header-actions {
-    flex: none;
+    /* Sits beside the title when it fits, drops to its own row when it does not. */
+    flex: 1 1 auto;
     flex-wrap: wrap;
     gap: 8px;
   }

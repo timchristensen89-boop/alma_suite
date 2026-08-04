@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { Navigate, NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { AppAccessGate, AppShell, HelpButton, Spinner, SUITE_APPS, SuiteAppSwitcher, SuiteClock, SuiteInboxWidget, SuiteSignOutButton, TaskBar, type TaskBarItem, ThemeToggle, TopBar, accessibleSuiteApps, useDismissibleLayer } from '@alma/ui';
 import { STOCK_HELP } from './config/help';
@@ -9,7 +9,22 @@ import { NAV_ITEMS, type NavItem } from './config/navigation';
 import { HubLayout, type HubTab } from './components/HubTabs';
 import { withSuiteAppLinks } from './config/suiteLinks';
 import { useDocumentTitle } from './hooks/useDocumentTitle';
-import { IconChevronDown, IconExternal } from './lib/icons';
+import {
+  IconChevronDown,
+  IconDashboard,
+  IconDeliveries,
+  IconExternal,
+  IconInvoices,
+  IconItems,
+  IconPrep,
+  IconPriceChange,
+  IconRecipes,
+  IconReorder,
+  IconStocktake,
+  IconSuppliers,
+  IconTransfer,
+  IconWastage
+} from './lib/icons';
 import { api } from './lib/api';
 import { AuthProvider, useAuth } from './lib/auth';
 
@@ -229,19 +244,23 @@ function TopBarWithContext() {
  * a phone is trying to do. They are counting, writing off a broken bottle,
  * moving a keg between venues, checking a delivery in, or raising an order.
  */
-const STOCK_TASKS: Array<{ to: string; label: string; match?: string[] }> = [
-  { to: '/stocktake', label: 'Count', match: ['/stocktake-templates'] },
-  { to: '/wastage', label: 'Wastage' },
-  { to: '/transfers', label: 'Transfer' },
-  { to: '/deliveries', label: 'Delivery' },
-  { to: '/purchase-orders', label: 'Orders', match: ['/buying'] },
-  { to: '/', label: 'Home' },
-  { to: '/items', label: 'Items', match: ['/items/health', '/reorder'] },
-  { to: '/invoices', label: 'Invoices' },
-  { to: '/recipes', label: 'Recipes' },
-  { to: '/suppliers', label: 'Suppliers' },
-  { to: '/staff-usage', label: 'Staff usage' },
-  { to: '/price-movement', label: 'Prices' }
+const STOCK_TASKS: Array<{ to: string; label: string; icon: ReactNode; match?: string[] }> = [
+  // Icons are named here rather than looked up from NAV_ITEMS. Most of these
+  // are hub sub-pages — /wastage, /transfers, /deliveries, /purchase-orders —
+  // so the sidebar has no entry for them and the lookup returned undefined:
+  // the bar shipped with a single icon on Count and bare labels either side.
+  { to: '/stocktake', label: 'Count', icon: <IconStocktake />, match: ['/stocktake-templates'] },
+  { to: '/wastage', label: 'Wastage', icon: <IconWastage /> },
+  { to: '/transfers', label: 'Transfer', icon: <IconTransfer /> },
+  { to: '/deliveries', label: 'Delivery', icon: <IconDeliveries /> },
+  { to: '/purchase-orders', label: 'Orders', icon: <IconReorder />, match: ['/buying'] },
+  { to: '/', label: 'Home', icon: <IconDashboard /> },
+  { to: '/items', label: 'Items', icon: <IconItems />, match: ['/items/health', '/reorder'] },
+  { to: '/invoices', label: 'Invoices', icon: <IconInvoices /> },
+  { to: '/recipes', label: 'Recipes', icon: <IconRecipes /> },
+  { to: '/suppliers', label: 'Suppliers', icon: <IconSuppliers /> },
+  { to: '/staff-usage', label: 'Staff usage', icon: <IconPrep /> },
+  { to: '/price-movement', label: 'Prices', icon: <IconPriceChange /> }
 ];
 
 function StockTaskBar() {
@@ -251,7 +270,7 @@ function StockTaskBar() {
     key: task.to,
     label: task.label,
     href: task.to,
-    icon: NAV_ITEMS.find((nav) => nav.to === task.to)?.icon,
+    icon: task.icon,
     active: [task.to, ...(task.match ?? [])].some((path) =>
       path === '/' ? location.pathname === '/' : location.pathname === path || location.pathname.startsWith(`${path}/`)
     )
