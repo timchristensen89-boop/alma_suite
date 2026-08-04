@@ -1196,8 +1196,14 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
   const [periodPreset, setPeriodPreset] = useState<PeriodPresetKey>('this-week');
   const period = useMemo(() => periodFromPreset(periodPreset), [periodPreset]);
   const periodLabel = period.label;
-  const periodStartIso = period.start.toISOString();
-  const periodEndIso = period.end.toISOString();
+  // Send DATE-ONLY keys, not timestamps. period.start is local (Sydney)
+  // midnight, whose toISOString() is 14:00Z the PREVIOUS day — but serviceDate
+  // rows are stored at UTC midnight of the local date, so a timestamped window
+  // silently drops the first local day of every period (e.g. "this week" lost
+  // its Sunday, which hid the set-menu panel and understated weekly takings).
+  // The server parses a bare date as UTC midnight, matching storage exactly.
+  const periodStartIso = localIsoDate(period.start);
+  const periodEndIso = localIsoDate(period.end);
   // Menu Engineering filters persist across refreshes (like the forecast inputs)
   // so an analyst doesn't re-pick account/venue/category/mapping every visit.
   const storedMenuFilters = loadJsonDraft<{
