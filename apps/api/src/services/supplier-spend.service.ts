@@ -57,10 +57,30 @@ export const supplierSpendService = {
     const venue = parsed.venue && parsed.venue.toLowerCase() !== 'all' ? parsed.venue : null;
     const notes: string[] = [];
 
+    // Three fetches, none of which needs another's answer: the P&L trend, the
+    // sales forecast, and the trailing supplier bills. They ran one after the
+    // other, and two of them are Xero round-trips, so the report took 12-14
+    // seconds — long enough that people assumed it had hung. Started together,
+    // the wall time is the slowest one rather than the sum.
+    //
+    // Each gets a no-op catch at creation so that bailing out on the first
+    // failure below does not leave the others as unhandled rejections; the
+    // original promises still reject when awaited, so error handling is
+    // unchanged.
+    const trendPromise = integrationService.xeroProfitAndLossTrend(7);
+    const outlookPromise = forecastService.outlook(
+      { weeks: parsed.weeks, ...(venue ? { venue } : {}) },
+      actor
+    );
+    const spendPromise = integrationService.xeroSupplierSpend(SUPPLIER_WINDOW_DAYS);
+    trendPromise.catch(() => {});
+    outlookPromise.catch(() => {});
+    spendPromise.catch(() => {});
+
     // ── 1. COGS% trend from Xero P&L ────────────────────────────────────────
     let trend: Awaited<ReturnType<typeof integrationService.xeroProfitAndLossTrend>>;
     try {
-      trend = await integrationService.xeroProfitAndLossTrend(7);
+      trend = await trendPromise;
     } catch (error) {
       // A 401 from Xero on the Reports endpoint means the connection predates
       // the accounting.reports.read scope — a reconnect grants it.
@@ -128,10 +148,7 @@ export const supplierSpendService = {
     }
 
     // ── 3. Weekly sales forecast ────────────────────────────────────────────
-    const outlook = await forecastService.outlook(
-      { weeks: parsed.weeks, ...(venue ? { venue } : {}) },
-      actor
-    );
+    const outlook = await outlookPromise;
     const forecastWeeks = outlook.totals.weeks.slice(0, parsed.weeks);
     if (forecastWeeks.length === 0) {
       throw new HttpError(409, 'No forecast weeks available — run the forecast first.');
@@ -142,7 +159,7 @@ export const supplierSpendService = {
     // posted to Direct Costs accounts — landlords, processors and utilities
     // never enter the split. Buckets come from the same account classifier
     // as the P&L trend, so shares and totals share one basis.
-    const spend = await integrationService.xeroSupplierSpend(SUPPLIER_WINDOW_DAYS);
+    const spend = await spendPromise;
     const spendRows = venue ? spend.rows.filter((row) => row.venue === venue || row.venue === null) : spend.rows;
     if (spendRows.length === 0) {
       notes.push('No supplier bills on Direct Costs accounts found in Xero for the trailing 12 weeks — supplier split unavailable, showing bucket totals only.');
