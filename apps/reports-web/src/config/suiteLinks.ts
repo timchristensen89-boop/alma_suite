@@ -15,6 +15,7 @@ export const RESERVE_WEB_URL = envUrl('VITE_RESERVE_WEB_URL', 'http://localhost:
 export const MARKETING_WEB_URL = envUrl('VITE_MARKETING_WEB_URL', 'http://localhost:5178');
 export const GIFTCARDS_WEB_URL = envUrl('VITE_GIFTCARDS_WEB_URL', 'http://localhost:5179');
 export const SETTINGS_WEB_URL = envUrl('VITE_SETTINGS_WEB_URL', '');
+export const ADMIN_WEB_URL = envUrl('VITE_ADMIN_WEB_URL', 'http://localhost:5172');
 
 function safeProductionUrl(name: string, value: string) {
   if (import.meta.env.PROD && /^https?:\/\/(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(value)) {

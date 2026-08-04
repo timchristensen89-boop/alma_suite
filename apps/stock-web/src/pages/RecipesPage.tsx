@@ -459,7 +459,17 @@ export function RecipesPage({ mode = 'item' }: { mode?: RecipesPageMode }) {
   // (used by the "Edit recipe" links in Reports). The param is then stripped so
   // a refresh doesn't reopen it.
   useEffect(() => {
-    const deepId = new URLSearchParams(window.location.search).get('recipe');
+    const params = new URLSearchParams(window.location.search);
+    // ?q= pre-fills the search box — used by Reports' set-menu "Cost →" links
+    // so a course lands here already filtered.
+    const query = params.get('q');
+    if (query) {
+      setSearch(query);
+      const url = new URL(window.location.href);
+      url.searchParams.delete('q');
+      window.history.replaceState({}, '', url.toString());
+    }
+    const deepId = params.get('recipe');
     if (!deepId) return;
     let active = true;
     void (async () => {

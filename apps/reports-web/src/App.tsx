@@ -61,7 +61,7 @@ import {
   staffApi,
   stockApi
 } from './lib/api';
-import { COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
+import { ADMIN_WEB_URL, COMPLIANCE_WEB_URL, GIFTCARDS_WEB_URL, STAFF_WEB_URL, STOCK_WEB_URL, withSuiteAppLinks } from './config/suiteLinks';
 import { historicalSalesForWeek, normaliseHistoricalVenue, isVenueOpenOnDate } from './data/historicalSales';
 import { Donut, HBars, TrendLine, CHART_COLORS } from './components/Charts';
 
@@ -1214,14 +1214,20 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
     });
   // Open a recipe in the Stock app (new tab) via the suite handoff so it stays
   // signed in — for editing the recipe behind a flagged/menu item.
-  function openRecipeInStock(recipeId: string) {
-    const href = `https://alma-stock-v18.web.app/recipes?recipe=${encodeURIComponent(recipeId)}`;
+  // Open any Stock app path in a new tab, staying signed in via the suite
+  // handoff (falls back to a plain open if the handoff helper isn't loaded).
+  function openStockPath(path: string) {
+    const href = `${STOCK_WEB_URL}${path}`;
     const handoff = (globalThis as typeof globalThis & { almaCreateSuiteHandoffUrl?: (h: string) => Promise<string> }).almaCreateSuiteHandoffUrl;
     if (handoff) {
       void handoff(href).then((url) => window.open(url, '_blank', 'noopener')).catch(() => window.open(href, '_blank', 'noopener'));
     } else {
       window.open(href, '_blank', 'noopener');
     }
+  }
+
+  function openRecipeInStock(recipeId: string) {
+    openStockPath(`/recipes?recipe=${encodeURIComponent(recipeId)}`);
   }
   // Top-of-report period preset — the single source of truth for every figure
   // on the page that is measured over a span of time.
@@ -3986,6 +3992,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
               <Card
                 title="Set menu margins"
                 subtitle="Theoretical margin for the priced set menus — revenue from the menu line vs the COGS of its $0 component courses (✷ tasting/grazing, BB bottomless). 'Costed' shows how many component units have a recipe cost; the rest are excluded until you cost them, so COGS is a floor."
+                action={appButton(ADMIN_WEB_URL, '/integrations/square/menu-mapping', 'Open menu mapping')}
               >
                 <div className="menu-cogs-grid">
                   {groups.map((g) => (
@@ -4004,14 +4011,32 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                         <div><span>Covers</span><strong>{g.covers.toLocaleString()}</strong></div>
                         <div><span>COGS / cover</span><strong>{g.perCoverCogsCents == null ? '—' : formatCurrency(g.perCoverCogsCents)}</strong></div>
                       </div>
+                      {g.revenueCents === 0 && g.componentUnits > 0 ? (
+                        <p className="menu-cogs-hint">
+                          Menu revenue reads $0 — the priced menu line isn't linked. Use <strong>Open menu mapping</strong> (top right) to map the parent item (e.g. the "{g.label.split('·')[0]?.trim()}" Square item) to its recipe.
+                        </p>
+                      ) : null}
                       {g.missingUnits > 0 ? (
                         <details className="menu-cogs-missing">
                           <summary>{g.missingUnits.toLocaleString()} component units still need a cost recipe</summary>
                           <ul>
                             {g.topMissing.map((m) => (
-                              <li key={m.itemName}><span>{m.itemName}</span><span>{m.units.toLocaleString()}×</span></li>
+                              <li key={m.itemName}>
+                                <span>{m.itemName}</span>
+                                <span className="menu-cogs-missing-actions">
+                                  {m.units.toLocaleString()}×
+                                  <button
+                                    type="button"
+                                    className="menu-cogs-fix"
+                                    onClick={() => openStockPath(`/recipes?q=${encodeURIComponent(m.itemName)}`)}
+                                  >
+                                    Cost →
+                                  </button>
+                                </span>
+                              </li>
                             ))}
                           </ul>
+                          <p className="subtle">"Cost →" opens Stock → Recipes searched for the course — create or cost the recipe there and this panel picks it up.</p>
                         </details>
                       ) : null}
                     </div>
