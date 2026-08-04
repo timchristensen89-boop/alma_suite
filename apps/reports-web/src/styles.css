@@ -2668,3 +2668,42 @@ html[data-theme='dark'] .recap-legend-tick, html[data-theme='dark'] .recap-gauge
   color: var(--color-text-muted, inherit);
   font-size: 13.5px;
 }
+
+/* ── Phone: stop one wide child dragging the whole report sideways ────────
+   Found by driving the Overview signed in at 375px: the page scrolled
+   horizontally, and 174 elements sat past the right edge. None of them was
+   the cause.
+
+   `.report-section-stack` is a grid, and a grid's implicit column is `auto`,
+   which is never narrower than its widest child's min-content. One child —
+   `.alma-page-grid-kpis`, two KPI tracks side by side — has a min-content of
+   388px. That set the column to 388px, and every sibling stretched to match,
+   so the hero, the sources strip, the prime-cost panel and both `.ov-two`
+   blocks were all 65px too wide because of a grid none of them are in.
+
+   `minmax(0, 1fr)` lets the column shrink below its content, which is what
+   turns "the page scrolls sideways" into "the one wide thing scrolls".
+   The KPI grid then stacks, because two columns of numbers do not fit a
+   phone and never did. */
+@media (max-width: 860px) {
+  .report-section-stack,
+  .report-detail-grid,
+  .ov-two,
+  .ov-prime {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .alma-page-grid-kpis {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  /* Grid and flex children default to min-width:auto, which is the same trap
+     one level down. */
+  .report-section-stack > *,
+  .report-detail-grid > *,
+  .ov-two > *,
+  .alma-page-grid-kpis > * {
+    min-width: 0;
+  }
+}
