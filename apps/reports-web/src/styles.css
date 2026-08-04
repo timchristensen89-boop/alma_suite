@@ -1378,6 +1378,65 @@ html[data-theme='dark'] .cost-tile { background: rgba(255, 255, 255, 0.03); }
 .report-active-section > .card > .card-header > .card-action {
   flex: 0 1 auto;
 }
+/* Under the shared 760px breakpoint .card-header flips to a COLUMN, where the
+   280px flex-basis above becomes a 280px-tall block (a huge dead gap on
+   phones). Reset the basis in column mode. */
+@media (max-width: 760px) {
+  .report-active-section > .card > .card-header > .card-header-text {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .report-active-section > .card > .card-header > .card-action {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+  /* Week-nav cluster: let the date pill shrink instead of overflowing the
+     card edge; buttons already wrap below it. */
+  .reports-section-actions {
+    width: 100%;
+  }
+  .reports-section-actions > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .alma-roster-weeknav.reports-weeknav {
+    width: 100%;
+    justify-content: space-between;
+  }
+  .reports-weeknav-preset {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .reports-weeknav-label-btn {
+    max-width: 100%;
+    overflow: hidden;
+  }
+}
+
+/* Long staff-costing warnings arrive as badges; badges don't wrap by default
+   and shoot past the phone viewport. Stack and wrap them. */
+.staff-cost-warnings {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+.staff-cost-warnings .badge {
+  white-space: normal;
+  text-align: left;
+  line-height: 1.35;
+  height: auto;
+}
+
+/* Monthly Recap bars: the bar width is a % of the track, and the nowrap value
+   label beside it pushed the pair past the card edge on phones. Reserve room
+   for the label. */
+.recap-bar-track {
+  min-width: 0;
+}
+.recap-bar {
+  max-width: calc(100% - 72px);
+}
 
 /* Prev/next period steppers (roster-style round icon buttons). */
 .alma-roster-weeknav {
