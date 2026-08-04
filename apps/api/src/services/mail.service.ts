@@ -41,6 +41,10 @@ type GiftCardEmailInput = {
     primaryColor?: string;
     accentColor?: string;
   };
+  // "Create your own": the customer's rendered card image. When present it
+  // replaces the generated SVG attachment and appears inline via the hosted
+  // URL (data-URI images get stripped by Gmail/Outlook; hosted URLs don't).
+  customArtwork?: { data: Buffer; mimeType: string; url: string };
 };
 
 type PasswordResetEmailInput = {
@@ -664,13 +668,23 @@ export const mailService = {
       .filter(Boolean)
       .join('\n');
 
-    const attachments: EmailAttachment[] = [
-      {
-        filename: `alma-gift-card-${input.code}.svg`,
-        content: giftCardArtworkSvg(input, amount, balance, expiry),
-        contentType: 'image/svg+xml'
-      }
-    ];
+    // Custom-designed cards attach the customer's own rendered image; stock
+    // designs keep the generated SVG artwork.
+    const attachments: EmailAttachment[] = input.customArtwork
+      ? [
+          {
+            filename: `alma-gift-card-${input.code}.${input.customArtwork.mimeType === 'image/jpeg' ? 'jpg' : input.customArtwork.mimeType === 'image/webp' ? 'webp' : 'png'}`,
+            content: input.customArtwork.data,
+            contentType: input.customArtwork.mimeType
+          }
+        ]
+      : [
+          {
+            filename: `alma-gift-card-${input.code}.svg`,
+            content: giftCardArtworkSvg(input, amount, balance, expiry),
+            contentType: 'image/svg+xml'
+          }
+        ];
     if (input.redeemUrl) {
       try {
         attachments.push({
@@ -704,6 +718,7 @@ export const mailService = {
         <div style="padding:30px;background:#faf8f3;border:1px solid #e6ded0;border-top:0;border-radius:0 0 18px 18px">
           <p style="font-size:17px;margin:0 0 10px">Hi ${safeRecipient},</p>
           <p style="font-size:15px;margin:0 0 22px;color:#4c5d4d">${escapeHtml(intro)}</p>
+          ${input.customArtwork ? `<img src="${escapeHtml(input.customArtwork.url)}" alt="Your gift card" width="620" style="display:block;width:100%;max-width:620px;height:auto;border-radius:16px;margin:0 0 22px" />` : ''}
           <div style="background:${primaryColor};background-image:linear-gradient(160deg,#233628 0%,#14241A 100%);border-radius:16px;padding:26px 28px;margin:0 0 22px;color:#F5DCCE">
             <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
               <tr>

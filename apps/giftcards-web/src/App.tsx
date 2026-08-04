@@ -1,6 +1,7 @@
 import { type CSSProperties, FormEvent, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { CardArtGallery } from './cardArt/Gallery';
 import { CounterApp } from './CounterApp';
+import { CustomCardDesigner, type CustomCardDesignerHandle } from './CustomCardDesigner';
 import { loadStripe, type Stripe, type StripeEmbeddedCheckout } from '@stripe/stripe-js';
 import {
   DEFAULT_GIFT_CARD_SETTINGS,
@@ -282,6 +283,10 @@ function PublicGiftCardShop() {
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
   const [design, setDesign] = useState<GiftCardDesign>(DEFAULT_GIFT_CARD_DESIGN);
+  // "Create your own" designer: when on, the canvas designer replaces the
+  // stock preview and its exported image ships with the order.
+  const [customOn, setCustomOn] = useState(false);
+  const designerRef = useRef<CustomCardDesignerHandle>(null);
   // Scheduled delivery — when deliverMode='later', deliverDate (YYYY-MM-DD)
   // is resolved to 07:00 venue-local and posted as scheduledDeliveryAt.
   // Server defers the email until the /jobs/gift-cards/drain scheduler
@@ -447,7 +452,8 @@ function PublicGiftCardShop() {
           recipientName,
           recipientEmail,
           message,
-          design,
+          design: customOn ? undefined : design,
+          customArtwork: customOn ? designerRef.current?.exportArtwork() ?? undefined : undefined,
           checkoutUiMode: 'embedded',
           scheduledDeliveryAt: deliverMode === 'later' && deliverDate
             ? new Date(`${deliverDate}T07:00`).toISOString()
@@ -599,12 +605,16 @@ function PublicGiftCardShop() {
             {checkoutOverlay === 'complete' && paidCard ? (
               <div className="alma-giftcards-checkout__complete">
                 <div className="alma-giftcards-checkout__art">
-                  <GiftCardArt
-                    design={resolveGiftCardDesign(paidCard.design)}
-                    amount={Math.round(paidCard.initialValueCents / 100)}
-                    code={paidCard.code}
-                    recipient={paidCard.recipientName ?? undefined}
-                  />
+                  {paidCard.customArtworkUrl ? (
+                    <img src={paidCard.customArtworkUrl} alt="Your custom gift card" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+                  ) : (
+                    <GiftCardArt
+                      design={resolveGiftCardDesign(paidCard.design)}
+                      amount={Math.round(paidCard.initialValueCents / 100)}
+                      code={paidCard.code}
+                      recipient={paidCard.recipientName ?? undefined}
+                    />
+                  )}
                 </div>
                 <div className="alma-giftcards-checkout__details">
                   <div>
@@ -641,12 +651,16 @@ function PublicGiftCardShop() {
               Your card <em>is ready.</em>
             </h2>
             <div style={{ maxWidth: 480, margin: '8px 0', position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-              <GiftCardArt
-                design={resolveGiftCardDesign(paidCard.design)}
-                amount={Math.round(paidCard.initialValueCents / 100)}
-                code={paidCard.code}
-                recipient={paidCard.recipientName ?? undefined}
-              />
+              {paidCard.customArtworkUrl ? (
+                <img src={paidCard.customArtworkUrl} alt="Your custom gift card" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+              ) : (
+                <GiftCardArt
+                  design={resolveGiftCardDesign(paidCard.design)}
+                  amount={Math.round(paidCard.initialValueCents / 100)}
+                  code={paidCard.code}
+                  recipient={paidCard.recipientName ?? undefined}
+                />
+              )}
             </div>
             <div className="alma-giftcards-paid__details">
               <div>
@@ -786,15 +800,19 @@ function PublicGiftCardShop() {
                 </div>
               </div>
 
-              <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
-                <GiftCardArt
-                  design={design}
-                  amount={amountWhole}
-                  recipient={recipientDisplay !== '—' ? recipientDisplay : undefined}
-                  code="ALMA-7C92F0"
-                  side={previewSide}
-                />
-              </div>
+              {customOn ? (
+                <CustomCardDesigner ref={designerRef} recipientName={recipientName} />
+              ) : (
+                <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
+                  <GiftCardArt
+                    design={design}
+                    amount={amountWhole}
+                    recipient={recipientDisplay !== '—' ? recipientDisplay : undefined}
+                    code="ALMA-7C92F0"
+                    side={previewSide}
+                  />
+                </div>
+              )}
 
               <div className="alma-giftcards-preview__message">
                 <span className="alma-giftcards-preview__quote" aria-hidden="true">&ldquo;</span>
@@ -870,9 +888,12 @@ function PublicGiftCardShop() {
                       <button
                         key={d}
                         type="button"
-                        className={`alma-giftcards-design ${design === d ? 'is-on' : ''}`}
-                        onClick={() => setDesign(d)}
-                        aria-pressed={design === d}
+                        className={`alma-giftcards-design ${!customOn && design === d ? 'is-on' : ''}`}
+                        onClick={() => {
+                          setCustomOn(false);
+                          setDesign(d);
+                        }}
+                        aria-pressed={!customOn && design === d}
                       >
                         <span className="alma-giftcards-design__swatch" style={{ background: meta.swatchBg, color: meta.swatchFg }}>
                           <span className="alma-giftcards-design__mark">alma</span>
@@ -882,6 +903,18 @@ function PublicGiftCardShop() {
                       </button>
                     );
                   })}
+                  <button
+                    type="button"
+                    className={`alma-giftcards-design ${customOn ? 'is-on' : ''}`}
+                    onClick={() => setCustomOn(true)}
+                    aria-pressed={customOn}
+                  >
+                    <span className="alma-giftcards-design__swatch alma-giftcards-design__swatch--custom">
+                      <span className="alma-giftcards-design__mark">✎</span>
+                    </span>
+                    <span className="alma-giftcards-design__name">Create your own</span>
+                    <span className="alma-giftcards-design__who">Your text, colours, fish — or your photo</span>
+                  </button>
                 </div>
               </div>
 
@@ -1295,12 +1328,16 @@ function PrintableGiftCardPage() {
         <section className="giftcards-print-card">
           <div className="giftcards-print-brand">ALMA Gift Cards</div>
           <div style={{ position: 'relative', width: '100%', maxWidth: 540, aspectRatio: '1.586 / 1', margin: '0 auto 18px' }}>
-            <GiftCardArt
-              design={resolveGiftCardDesign(card.design)}
-              amount={Math.round(card.balanceCents / 100)}
-              code={card.code}
-              recipient={card.recipientName ?? undefined}
-            />
+            {card.customArtworkUrl ? (
+              <img src={card.customArtworkUrl} alt="Custom gift card artwork" style={{ width: '100%', borderRadius: 16, display: 'block' }} />
+            ) : (
+              <GiftCardArt
+                design={resolveGiftCardDesign(card.design)}
+                amount={Math.round(card.balanceCents / 100)}
+                code={card.code}
+                recipient={card.recipientName ?? undefined}
+              />
+            )}
           </div>
           <div className="giftcards-print-code">{card.code}</div>
           <p className="giftcards-print-balance">{formatCents(card.balanceCents)} · redeemable at ALMA venues</p>

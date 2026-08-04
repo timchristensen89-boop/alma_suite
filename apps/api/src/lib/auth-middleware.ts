@@ -43,6 +43,9 @@ const PUBLIC_PREFIXES = [
   '/api/gift-cards/session/',
   '/api/gift-cards/print/',
   '/api/gift-cards/qr/',
+  // Customer-designed card artwork, addressed by the (secret) card code —
+  // same trust model as /qr/ and /print/ above.
+  '/api/gift-cards/artwork/',
   '/api/gift-cards/wallet/apple/',
   '/api/gift-cards/wallet/google/',
   '/api/staff/invites/by-token/',

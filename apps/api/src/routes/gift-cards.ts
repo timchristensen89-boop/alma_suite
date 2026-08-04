@@ -103,6 +103,19 @@ giftCardsRouter.get('/print/:code', async (req, res, next) => {
   }
 });
 
+// Customer-designed "Create your own" artwork. Public by card code — the code
+// itself is the secret, matching /qr/:code and /print/:code.
+giftCardsRouter.get('/artwork/:code', async (req, res, next) => {
+  try {
+    const artwork = await giftCardService.getArtworkByCode(String(req.params.code));
+    res.setHeader('Content-Type', artwork.mimeType);
+    res.setHeader('Cache-Control', 'private, max-age=3600');
+    res.send(artwork.data);
+  } catch (error) {
+    next(error);
+  }
+});
+
 giftCardsRouter.get('/qr/:code', async (req, res, next) => {
   try {
     res.setHeader('Content-Type', 'image/svg+xml');

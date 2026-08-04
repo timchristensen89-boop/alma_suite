@@ -110,7 +110,10 @@ function publicGiftCard(card: ReturnType<typeof toGiftCardPayload>) {
     paidAt: card.paidAt,
     expiresAt: card.expiresAt,
     qrCodeUrl: qrCodeUrl(card.code),
-    redeemUrl: redeemUrl(card.code)
+    redeemUrl: redeemUrl(card.code),
+    // design === 'custom' is set exactly when a GiftCardArtwork row was stored,
+    // so it doubles as the marker without an extra query per card.
+    customArtworkUrl: card.design === 'custom' ? artworkUrl(card.code) : null
   };
 }
 
@@ -153,6 +156,25 @@ function googleWalletUrl(code: string) {
 
 function qrCodeUrl(code: string) {
   return apiUrl(`/api/gift-cards/qr/${encodeURIComponent(code)}.svg`);
+}
+
+function artworkUrl(code: string) {
+  return apiUrl(`/api/gift-cards/artwork/${encodeURIComponent(code)}`);
+}
+
+// "Create your own" artwork arrives as a data URL the checkout schema has
+// already shape-checked; decode and enforce the real byte cap here (base64
+// inflates ~4/3, so the string cap alone can't guarantee the decoded size).
+const CUSTOM_ARTWORK_MAX_BYTES = 4 * 1024 * 1024;
+function decodeCustomArtwork(dataUrl: string): { mimeType: string; data: Buffer } {
+  const match = dataUrl.match(/^data:(image\/(?:png|jpeg|webp));base64,(.+)$/s);
+  if (!match) throw new HttpError(400, 'Custom artwork must be a PNG, JPEG, or WebP image.');
+  const data = Buffer.from(match[2]!, 'base64');
+  if (data.length === 0) throw new HttpError(400, 'Custom artwork is empty.');
+  if (data.length > CUSTOM_ARTWORK_MAX_BYTES) {
+    throw new HttpError(400, 'Custom artwork is too large — keep it under 4 MB.');
+  }
+  return { mimeType: match[1]!, data };
 }
 
 function walletConfigStatus() {
@@ -571,6 +593,10 @@ export const giftCardService = {
       }
     }
 
+    // Decode "Create your own" artwork up front so a bad upload fails the
+    // request before any card row exists.
+    const customArtwork = data.customArtwork ? decodeCustomArtwork(data.customArtwork) : null;
+
     if (settings.testCheckoutEnabled) {
       const testSessionId = `TEST-${randomBytes(8).toString('hex').toUpperCase()}`;
       const card = await createGiftCardReservingPromo(
@@ -587,7 +613,7 @@ export const giftCardService = {
           recipientName: data.recipientName?.trim() || null,
           recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
           message: data.message?.trim() || null,
-          design: data.design ?? null,
+          design: customArtwork ? 'custom' : data.design ?? null,
           promoCodeId: promoResult?.promo.id ?? null,
           promoCodeSnapshot: promoResult?.promo.code ?? null,
           testMode: true,
@@ -598,6 +624,11 @@ export const giftCardService = {
         },
         promoResult?.promo
       );
+      if (customArtwork) {
+        await prisma.giftCardArtwork.create({
+          data: { giftCardId: card.id, mimeType: customArtwork.mimeType, data: new Uint8Array(customArtwork.data) }
+        });
+      }
       if (!scheduledDeliveryAt) {
         await this.sendGiftCardEmail(card, settings);
       }
@@ -627,7 +658,7 @@ export const giftCardService = {
         recipientName: data.recipientName?.trim() || null,
         recipientEmail: data.recipientEmail?.trim().toLowerCase() || null,
         message: data.message?.trim() || null,
-        design: data.design ?? null,
+        design: customArtwork ? 'custom' : data.design ?? null,
         promoCodeId: promoResult?.promo.id ?? null,
         promoCodeSnapshot: promoResult?.promo.code ?? null,
         saleChannel: options.counter ? 'COUNTER' : 'ONLINE',
@@ -638,6 +669,13 @@ export const giftCardService = {
       },
       promoResult?.promo
     );
+    // Persist the artwork BEFORE the Stripe session: Stripe metadata can't
+    // carry it (500-char values), and the webhook path only knows the card id.
+    if (customArtwork) {
+      await prisma.giftCardArtwork.create({
+        data: { giftCardId: card.id, mimeType: customArtwork.mimeType, data: new Uint8Array(customArtwork.data) }
+      });
+    }
 
     const commonSession: Stripe.Checkout.SessionCreateParams = {
       mode: 'payment',
@@ -1186,10 +1224,26 @@ export const giftCardService = {
     return { eligible: due.length, sent, failed, generatedAt: new Date().toISOString() };
   },
 
+  // Serve the customer-designed artwork by card code (public — the code is the
+  // secret, same trust model as /qr/:code and /print/:code).
+  async getArtworkByCode(code: string): Promise<{ mimeType: string; data: Buffer }> {
+    const card = await prisma.giftCard.findUnique({ where: { code }, select: { id: true } });
+    if (!card) throw new HttpError(404, 'Gift card not found.');
+    const artwork = await prisma.giftCardArtwork.findUnique({ where: { giftCardId: card.id } });
+    if (!artwork) throw new HttpError(404, 'This gift card has no custom artwork.');
+    return { mimeType: artwork.mimeType, data: Buffer.from(artwork.data) };
+  },
+
   async sendGiftCardEmail(card: Parameters<typeof toGiftCardPayload>[0], settings: GiftCardSettings) {
     if (card.emailedAt) return toGiftCardPayload(card);
     const recipients = Array.from(new Set([card.purchaserEmail, card.recipientEmail].filter(Boolean)));
     if (recipients.length === 0) return toGiftCardPayload(card);
+
+    // "Create your own" cards carry the customer's rendered artwork — the
+    // email attaches it and shows it inline via the hosted URL.
+    const artworkRow = card.design === 'custom'
+      ? await prisma.giftCardArtwork.findUnique({ where: { giftCardId: card.id } })
+      : null;
 
     const results = await Promise.all(
       recipients.map((to) =>
@@ -1208,7 +1262,16 @@ export const giftCardService = {
           googleWalletUrl: googleWalletUrl(card.code),
           design: card.design,
           expiresAt: card.expiresAt,
-          settings
+          settings,
+          ...(artworkRow
+            ? {
+                customArtwork: {
+                  data: Buffer.from(artworkRow.data),
+                  mimeType: artworkRow.mimeType,
+                  url: artworkUrl(card.code)
+                }
+              }
+            : {})
         })
       )
     );

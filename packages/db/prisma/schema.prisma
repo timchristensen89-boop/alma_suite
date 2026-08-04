@@ -2053,6 +2053,7 @@ model GiftCard {
   updatedAt               DateTime             @updatedAt
   promoCode               GiftCardPromoCode?   @relation(fields: [promoCodeId], references: [id], onDelete: SetNull)
   redemptions             GiftCardRedemption[]
+  customArtwork           GiftCardArtwork?
 
   @@index([status])
   @@index([purchaserEmail])
@@ -2060,6 +2061,21 @@ model GiftCard {
   @@index([createdAt])
   @@index([promoCodeId])
   @@index([testMode])
+}
+
+// Customer-designed card artwork from the public "Create your own" designer.
+// The client renders the design ONCE to a PNG/JPEG at checkout and we persist
+// the bytes here — the email, the printable page, and the confirmation all
+// serve this same image, so the card never has to be re-rendered server-side.
+// Bytes-in-Postgres per the house pattern (no object store is wired); its own
+// table so the blob never rides along on GiftCard list queries.
+model GiftCardArtwork {
+  id         String   @id @default(cuid())
+  giftCardId String   @unique
+  mimeType   String
+  data       Bytes
+  createdAt  DateTime @default(now())
+  giftCard   GiftCard @relation(fields: [giftCardId], references: [id], onDelete: Cascade)
 }
 
 // @domain: giftcards | home: suite

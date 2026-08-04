@@ -1799,6 +1799,15 @@ export const giftCardCheckoutInputSchema = z.object({
   recipientEmail: z.string().email().optional().or(z.literal('')),
   message: z.string().max(500).optional().or(z.literal('')),
   design: giftCardDesignSchema.optional(),
+  // "Create your own": the designer canvas exported as a data URL. Rendered
+  // once client-side; the API stores the decoded bytes and every later surface
+  // (email, print page, confirmation) serves that stored image. ~4MB of image
+  // → ~5.4M base64 chars; Express's 6MB body limit is the hard ceiling.
+  customArtwork: z
+    .string()
+    .regex(/^data:image\/(png|jpeg|webp);base64,/, 'Artwork must be a PNG, JPEG, or WebP data URL')
+    .max(5_500_000)
+    .optional(),
   // ISO date-time. When provided + in the future, the card is created
   // immediately on Stripe completion but the delivery email is deferred
   // until the /jobs/gift-cards/drain scheduler reaches it.
@@ -4518,6 +4527,9 @@ export type GiftCardPublic = Pick<
   testMode: boolean;
   qrCodeUrl: string;
   redeemUrl: string;
+  // Hosted URL of the customer-designed artwork ("Create your own"), when the
+  // card has one — surfaces render this image instead of a stock design.
+  customArtworkUrl?: string | null;
 };
 
 export type GiftCardCheckoutResult = {
