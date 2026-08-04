@@ -869,7 +869,14 @@ export function App() {
               ) : null}
             </div>
 
-            {(isVenueDeviceRoute || signedInHuman) ? <SuiteAppGrid apps={apps} onOpenApp={user ? openSuiteApp : undefined} /> : null}
+            {/* Suite links also show on the phone PIN screen — moving the clock
+                beside the wordmark frees the room for them. Kept phone-only so
+                the desktop/iPad kiosk card still fits without scrolling. */}
+            <SuiteAppGrid
+              apps={apps}
+              onOpenApp={user ? openSuiteApp : undefined}
+              phoneOnly={!isVenueDeviceRoute && !signedInHuman}
+            />
           </>
         )}
       </div>
@@ -1408,10 +1415,18 @@ function Keypad({ onPress, disabled = false }: { onPress: (key: string) => void;
   );
 }
 
-function SuiteAppGrid({ apps, onOpenApp }: { apps: SuiteAppIdentity[]; onOpenApp?: AppOpenHandler }) {
+function SuiteAppGrid({
+  apps,
+  onOpenApp,
+  phoneOnly = false
+}: {
+  apps: SuiteAppIdentity[];
+  onOpenApp?: AppOpenHandler;
+  phoneOnly?: boolean;
+}) {
   if (apps.length === 0) return null;
   return (
-    <div className="kiosk-suitegrid">
+    <div className={`kiosk-suitegrid${phoneOnly ? ' kiosk-suitegrid--phone' : ''}`}>
       <h4 className="kiosk-suitegrid__head">Jump to a suite app</h4>
       <div className="kiosk-suitegrid__row">
         {apps.map((app) => (

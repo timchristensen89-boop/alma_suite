@@ -920,6 +920,11 @@ html[data-theme='dark'] body:has(.kiosk) {
   text-align: center;
   line-height: 1.2;
 }
+/* Launcher on the signed-out PIN screen is a phone-only extra — the desktop
+   and iPad kiosk card is a fixed height and has no room for it. */
+.kiosk-suitegrid--phone {
+  display: none;
+}
 
 /* ── Overlays (confirm + setup) ─────────────────────────────────── */
 .kiosk-overlay {
@@ -1459,25 +1464,36 @@ html[data-theme='dark'] body:has(.kiosk) {
     grid-template-rows: auto 1fr;
   }
 
-  /* Compact clock strip */
+  /* Header strip: wordmark left, clock right, on one line. The venue pill is
+     dropped on a phone so the clock can sit beside the logo, which buys back
+     the vertical space the suite links need below the keypad. */
   .kiosk__left {
-    padding: 14px 22px 6px;
+    padding: 10px 20px 8px;
     min-height: 0;
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
   }
   .kiosk-greeting { display: none; }
   .kiosk-onshift { display: none; }
-  .kiosk-clockwrap { margin-top: 6px; }
-  .kiosk-bigtime { font-size: 42px; line-height: 1; }
-  .kiosk-bigtime__ap { font-size: 17px; }
-  .kiosk-datestr { font-size: 12px; margin-top: 2px; }
+  .kiosk-venue-pill { display: none; }
+  .kiosk-brandbar { flex: 0 1 auto; min-width: 0; }
+  .kiosk-wordmark__logo { width: 88px; }
+  .kiosk-wordmark span { font-size: 15px; padding-bottom: 3px; }
+  .kiosk-clockwrap { flex: 0 0 auto; margin-top: 0; text-align: right; }
+  .kiosk-bigtime { font-size: 32px; line-height: 1; margin-top: 0; }
+  .kiosk-bigtime__ap { font-size: 13px; margin-left: 5px; }
+  .kiosk-datestr { font-size: 11px; margin-top: 1px; }
 
   /* Cards are optional — drop them on a phone so nothing scrolls */
   .kiosk-summary-desktop,
   .kiosk-summary-mobile { display: none; }
 
-  /* PIN panel fills the rest and fits without scrolling */
+  /* PIN panel fills the rest and fits without scrolling. The bottom padding
+     clears the fixed theme toggle so it can't sit on top of a suite tile. */
   .kiosk__right {
-    padding: 6px 22px 16px;
+    padding: 6px 22px 68px;
     justify-content: center;
     gap: 4px;
   }
@@ -1494,5 +1510,38 @@ html[data-theme='dark'] body:has(.kiosk) {
     aspect-ratio: 1 / 0.52;
     min-height: 46px;
     font-size: 25px;
+  }
+
+  /* Tighten the link row so the suite grid has room */
+  .kiosk-right-foot {
+    margin-top: 12px;
+    padding-top: 10px;
+  }
+
+  /* Suite links under the keypad — compact enough that nothing scrolls */
+  .kiosk-suitegrid--phone {
+    display: block;
+  }
+  .kiosk-suitegrid {
+    margin-top: 10px;
+    padding-top: 10px;
+  }
+  .kiosk-suitegrid__head {
+    margin-bottom: 8px;
+    font-size: 9px;
+    letter-spacing: 0.28em;
+  }
+  .kiosk-suitegrid__row {
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+  }
+  .kiosk-suitegrid__tile {
+    padding: 7px 3px 6px;
+    gap: 4px;
+    border-radius: 12px;
+  }
+  .kiosk-suitegrid__label {
+    font-size: 9px;
+    letter-spacing: 0.02em;
   }
 }
