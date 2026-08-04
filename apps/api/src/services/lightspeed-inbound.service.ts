@@ -168,6 +168,8 @@ export type LightspeedInboundResult = {
   attachmentsParsed?: number;
   rowsParsed?: number;
   itemRowsUpserted?: number;
+  dayTotalsUpserted?: number;
+  dayTotalsSkipped?: number;
   warnings?: string[];
 };
 
@@ -334,6 +336,56 @@ export const lightspeedInboundService = {
       );
     }
 
+    // ── Day totals fallback ─────────────────────────────────────────────────
+    // The authoritative daily total is the Lightspeed→Xero invoice read by the
+    // scheduled Xero import (source "lightspeed-xero"). Until that connection
+    // works, derive the day total here as the sum of item net sales — and skip
+    // any venue+day the Xero feed already covers, so the two sources can never
+    // both count the same day. (The Xero writer deletes these fallback rows
+    // when it lands, superseding them.)
+    const dayTotals = new Map<string, { venue: string; serviceDateKey: string; netCents: number; itemRows: number }>();
+    for (const row of rows) {
+      if (row.netSalesCents === null) continue;
+      const key = `${row.venue}|${row.serviceDateKey}`;
+      const existing = dayTotals.get(key) ?? { venue: row.venue, serviceDateKey: row.serviceDateKey, netCents: 0, itemRows: 0 };
+      existing.netCents += row.netSalesCents;
+      existing.itemRows += 1;
+      dayTotals.set(key, existing);
+    }
+    let dayTotalsUpserted = 0;
+    let dayTotalsSkipped = 0;
+    for (const total of dayTotals.values()) {
+      const serviceDate = new Date(`${total.serviceDateKey}T00:00:00Z`);
+      const xeroRow = await prisma.salesActualEntry.findFirst({
+        where: { venue: total.venue, serviceDate, source: 'lightspeed-xero' },
+        select: { id: true }
+      });
+      if (xeroRow) {
+        dayTotalsSkipped += 1;
+        continue;
+      }
+      const source = 'lightspeed-email';
+      const externalId = `${source}:${total.venue}:${total.serviceDateKey}`;
+      await prisma.salesActualEntry.upsert({
+        where: {
+          venue_serviceDate_source_externalId: { venue: total.venue, serviceDate, source, externalId }
+        },
+        create: {
+          venue: total.venue,
+          serviceDate,
+          salesCents: total.netCents,
+          source,
+          externalId,
+          notes: `Lightspeed daily total from emailed item CSV (ex GST, sum of ${total.itemRows} item rows).`
+        },
+        update: {
+          salesCents: total.netCents,
+          notes: `Lightspeed daily total from emailed item CSV (ex GST, sum of ${total.itemRows} item rows).`
+        }
+      });
+      dayTotalsUpserted += 1;
+    }
+
     await prisma.integrationWebhookEvent.updateMany({
       where: { provider: 'LIGHTSPEED', accountKey: 'inbound-email', providerEventId: messageId },
       data: {
@@ -343,6 +395,8 @@ export const lightspeedInboundService = {
           attachmentsParsed: csvTexts.length,
           rowsParsed,
           itemRowsUpserted: rows.length,
+          dayTotalsUpserted,
+          dayTotalsSkipped,
           warnings: warnings.slice(0, 25)
         } as Prisma.InputJsonObject
       }
@@ -353,6 +407,8 @@ export const lightspeedInboundService = {
       attachmentsParsed: csvTexts.length,
       rowsParsed,
       itemRowsUpserted: rows.length,
+      dayTotalsUpserted,
+      dayTotalsSkipped,
       warnings
     };
   }

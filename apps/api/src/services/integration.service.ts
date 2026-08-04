@@ -2571,6 +2571,12 @@ async function importLightspeedDailySalesFromXero(input: {
         importedById: integrationSchedulerActor.id
       }
     });
+    // Supersede the email-derived fallback total for the same venue+day: the
+    // Xero invoice is authoritative, and reports SUM across sources, so the
+    // fallback row must not survive alongside this one.
+    await prisma.salesActualEntry.deleteMany({
+      where: { venue: row.venue, serviceDate: startOfUtcDate(row.serviceDateKey), source: 'lightspeed-email' }
+    });
   }
 
   return { invoicesMatched: invoices.length, daysUpserted: rows.length, salesCentsTotal, warnings, unmatchedContacts: [] };
