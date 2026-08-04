@@ -283,10 +283,26 @@ function PublicGiftCardShop() {
   const [amountCents, setAmountCents] = useState(12000);
   const [customAmount, setCustomAmount] = useState('');
   const [design, setDesign] = useState<GiftCardDesign>(DEFAULT_GIFT_CARD_DESIGN);
-  // "Create your own" designer: when on, the canvas designer replaces the
-  // stock preview and its exported image ships with the order.
+  // "Create your own" designer. The editor lives in a modal (the preview
+  // column can't scroll, so inline controls were unreachable); the modal stays
+  // MOUNTED once opened and is only hidden, so the design survives reopening.
+  // customPreview holds the exported image — the preview column shows it and
+  // it ships with the order.
   const [customOn, setCustomOn] = useState(false);
+  const [designerOpen, setDesignerOpen] = useState(false);
+  const [customPreview, setCustomPreview] = useState<string | null>(null);
   const designerRef = useRef<CustomCardDesignerHandle>(null);
+  useEffect(() => {
+    document.body.style.overflow = designerOpen ? 'hidden' : '';
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [designerOpen]);
+  function closeDesigner() {
+    const exported = designerRef.current?.exportArtwork() ?? null;
+    if (exported) setCustomPreview(exported);
+    setDesignerOpen(false);
+  }
   // Scheduled delivery — when deliverMode='later', deliverDate (YYYY-MM-DD)
   // is resolved to 07:00 venue-local and posted as scheduledDeliveryAt.
   // Server defers the email until the /jobs/gift-cards/drain scheduler
@@ -453,7 +469,7 @@ function PublicGiftCardShop() {
           recipientEmail,
           message,
           design: customOn ? undefined : design,
-          customArtwork: customOn ? designerRef.current?.exportArtwork() ?? undefined : undefined,
+          customArtwork: customOn ? designerRef.current?.exportArtwork() ?? customPreview ?? undefined : undefined,
           checkoutUiMode: 'embedded',
           scheduledDeliveryAt: deliverMode === 'later' && deliverDate
             ? new Date(`${deliverDate}T07:00`).toISOString()
@@ -801,7 +817,20 @@ function PublicGiftCardShop() {
               </div>
 
               {customOn ? (
-                <CustomCardDesigner ref={designerRef} recipientName={recipientName} />
+                <div className="alma-custom-snapshot">
+                  {customPreview ? (
+                    <img src={customPreview} alt="Your custom card design" />
+                  ) : (
+                    <div className="alma-custom-snapshot__empty">Your design will appear here.</div>
+                  )}
+                  <button
+                    type="button"
+                    className="alma-giftcards-btn alma-giftcards-btn--primary"
+                    onClick={() => setDesignerOpen(true)}
+                  >
+                    {customPreview ? 'Edit your design' : 'Open the designer'}
+                  </button>
+                </div>
               ) : (
                 <div style={{ position: 'relative', width: '100%', aspectRatio: '1.586 / 1' }}>
                   <GiftCardArt
@@ -906,7 +935,10 @@ function PublicGiftCardShop() {
                   <button
                     type="button"
                     className={`alma-giftcards-design ${customOn ? 'is-on' : ''}`}
-                    onClick={() => setCustomOn(true)}
+                    onClick={() => {
+                      setCustomOn(true);
+                      setDesignerOpen(true);
+                    }}
                     aria-pressed={customOn}
                   >
                     <span className="alma-giftcards-design__swatch alma-giftcards-design__swatch--custom">
@@ -916,6 +948,26 @@ function PublicGiftCardShop() {
                     <span className="alma-giftcards-design__who">Your text, colours, fish — or your photo</span>
                   </button>
                 </div>
+                {customOn ? (
+                  <div className={`alma-designer-modal ${designerOpen ? 'is-open' : ''}`} role="dialog" aria-modal="true" aria-label="Design your gift card">
+                    <div className="alma-designer-modal__overlay" onClick={closeDesigner} />
+                    <div className="alma-designer-modal__panel">
+                      <div className="alma-designer-modal__head">
+                        <div>
+                          <p className="alma-giftcards-eyebrow">Create your own</p>
+                          <h3 className="alma-giftcards-h3">Design <em>your card.</em></h3>
+                        </div>
+                        <button type="button" className="alma-designer-modal__close" onClick={closeDesigner} aria-label="Close designer">×</button>
+                      </div>
+                      <CustomCardDesigner ref={designerRef} recipientName={recipientName} />
+                      <div className="alma-designer-modal__foot">
+                        <button type="button" className="alma-giftcards-btn alma-giftcards-btn--primary" onClick={closeDesigner}>
+                          Done — use this design
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
 
               {/* 3 — DELIVERY */}
