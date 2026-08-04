@@ -1748,8 +1748,10 @@ export const reportsService = {
 
     type MenuGroup = { key: string; label: string; venue: string; parent: RegExp; component: 'star' | 'bb' };
     const GROUPS: MenuGroup[] = [
-      { key: 'tasting', label: 'Trust Our Chef · tasting', venue: 'St Alma', parent: /trust our chef/i, component: 'star' },
-      { key: 'grazing', label: 'Grazing Menu', venue: 'Alma Avalon', parent: /grazing menu/i, component: 'star' },
+      // The POS renamed the tasting/grazing parents to "Feasting Menu" at both
+      // venues (Aug 2026) — match old and new names so revenue keeps counting.
+      { key: 'tasting', label: 'Feasting Menu · St Alma', venue: 'St Alma', parent: /trust our chef|feasting menu/i, component: 'star' },
+      { key: 'grazing', label: 'Feasting Menu · Alma Avalon', venue: 'Alma Avalon', parent: /grazing menu|feasting menu/i, component: 'star' },
       { key: 'bottomless-sta', label: 'Bottomless Lunch · St Alma', venue: 'St Alma', parent: /bottomless lunch (food|drinks)/i, component: 'bb' },
       { key: 'bottomless-ava', label: 'Bottomless Lunch · Alma Avalon', venue: 'Alma Avalon', parent: /bottomless lunch (food|drinks)/i, component: 'bb' }
     ];

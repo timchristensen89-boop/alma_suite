@@ -4013,7 +4013,7 @@ function ReportsDashboard({ user, onLogout }: { user: AuthUser; onLogout: () => 
                       </div>
                       {g.revenueCents === 0 && g.componentUnits > 0 ? (
                         <p className="menu-cogs-hint">
-                          Menu revenue reads $0 — the priced menu line isn't linked. Use <strong>Open menu mapping</strong> (top right) to map the parent item (e.g. the "{g.label.split('·')[0]?.trim()}" Square item) to its recipe.
+                          Menu revenue reads $0 — no sold item name matched this menu's name pattern in the period. Components still count. If the menu was renamed on the POS, the pattern needs updating to the new name.
                         </p>
                       ) : null}
                       {g.missingUnits > 0 ? (
